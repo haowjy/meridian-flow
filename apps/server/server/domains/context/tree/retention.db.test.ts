@@ -121,7 +121,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
       wordCount: 0,
       pendingChanges: { [`${work?.draftId}`]: { changes: 1, chats: [], writer: true } },
       documentHash: Buffer.alloc(32),
-      cutAdmissionSeq: -1n,
+      cutContentSeq: -1n,
       cutLocationVersion: -1n,
       extractorVersion: 0,
     });

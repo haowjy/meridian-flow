@@ -185,7 +185,7 @@
       {
         "path": "apps/server/server/domains/collab/adapters/agent-edit-observability.ts",
         "line": "} catch {",
-        "count": 2
+        "count": 1
       },
       {
         "path": "apps/server/server/domains/collab/adapters/in-memory/drafts.ts",

@@ -41,7 +41,7 @@ export interface ImportRecord {
 /**
  * What a batch worked out for a file's document and cannot work out twice: its properties and
  * aliases, and the links it made to documents that do not exist yet (their random ids are
- * inside the text the journal holds). The import's last step reads it.
+ * inside the text its room's rows hold). The import's last step reads it.
  */
 export interface EntryAhead {
   properties?: StoredDocumentProperties;

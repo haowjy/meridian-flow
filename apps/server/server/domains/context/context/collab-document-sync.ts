@@ -8,16 +8,11 @@
  * fresh write that finds the document already holds content is `stale_target`.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import {
-  DocumentMutationRejectedError,
-  DocumentSyncError,
-} from "../../collab/domain/markdown-document.js";
+import { DocumentSyncError } from "../../collab/domain/markdown-document.js";
 import type {
   BoundWrite,
   DocumentSeedOrigin,
   DocumentWriteOrigin,
-  HeldLiveDocument,
-  HeldWriteExpectation,
   MarkdownDocumentStore,
   SyncError,
 } from "../../collab/index.js";
@@ -25,7 +20,7 @@ import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
 
 export type CollabMarkdownResult =
-  | { ok: true; markdown: string; updateSeq?: number }
+  | { ok: true; markdown: string }
   | { ok: false; error: AdapterFault };
 
 function syncFault(error: SyncError): AdapterFault {
@@ -33,12 +28,10 @@ function syncFault(error: SyncError): AdapterFault {
     case "not_found":
       return {
         code: "io_error",
-        message: `Yjs document not found: ${error.documentId}`,
+        message: `Document not found: ${error.documentId}`,
       };
     case "stale_document":
       return { code: "io_error", message: `Document changed under the write: ${error.documentId}` };
-    case "checkpoint_not_found":
-      return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
     case "corrupt_state":
       return { code: "io_error", message: error.message };
   }
@@ -80,9 +73,6 @@ function threadIdFromProvenance(provenance: WriteProvenance | undefined): Thread
 }
 
 function thrownFault(error: unknown): AdapterFault {
-  if (error instanceof DocumentMutationRejectedError) {
-    return { code: "invalid_operation" };
-  }
   if (error instanceof DocumentSyncError && error.code === "stale_document") {
     return { code: "stale_target" };
   }
@@ -109,7 +99,7 @@ export async function writeCollabMarkdown(input: {
         origin: collabOrigin,
         threadId: threadIdFromProvenance(provenance),
       });
-      return { ok: true, markdown: result.markdown, updateSeq: result.updateSeq };
+      return { ok: true, markdown: result.markdown };
     } catch (error) {
       return { ok: false, error: thrownFault(error) };
     }
@@ -124,35 +114,5 @@ export async function writeCollabMarkdown(input: {
 
   const readBack = await documentSync.readAsMarkdown(documentId);
   if (!readBack.ok) return { ok: false, error: syncFault(readBack.error) };
-  return { ok: true, markdown: readBack.value, updateSeq: write.value?.updateSeq };
-}
-
-/**
- * A revealed document's first content (contract §6.3 B3), inside the reveal's command
- * transaction and under the live lease the caller took before it: journaled durably with
- * the reveal, applied to the warm room only after commit.
- */
-export async function writeCollabMarkdownHeld(input: {
-  documentSync: Pick<MarkdownDocumentStore, "writeDocumentHeld">;
-  held: HeldLiveDocument;
-  content: BoundWrite;
-  expected: HeldWriteExpectation;
-  provenance?: WriteProvenance;
-}): Promise<CollabMarkdownResult> {
-  const { provenance } = input;
-  const origin =
-    (provenance && provenanceToWriteOrigin(provenance)) ?? provenanceToSeedOrigin(provenance);
-  try {
-    const written = await input.documentSync.writeDocumentHeld({
-      held: input.held,
-      content: input.content,
-      expected: input.expected,
-      origin,
-      threadId: threadIdFromProvenance(provenance),
-    });
-    if (!written.ok) return { ok: false, error: syncFault(written.error) };
-    return { ok: true, markdown: written.value.markdown, updateSeq: written.value.updateSeq };
-  } catch (error) {
-    return { ok: false, error: thrownFault(error) };
-  }
+  return { ok: true, markdown: readBack.value };
 }

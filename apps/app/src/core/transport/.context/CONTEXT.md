@@ -14,8 +14,9 @@ The Join exchange, which the server's handler speaks too (local-first design §4
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
-The server does not relay presence yet: it drops every ephemeral-store frame, so a remote caret
-shows only once the relay lands.
+The server relays presence (`apps/server/server/lib/loro-presence.ts`): a presence Join is answered
+with the presence the room holds, each update goes to the room's other sockets unacked, and a
+socket that leaves has its entries deleted for the others at once.
 
 A room without presence (a tree list) passes no store and joins no presence channel. `onJoined`
 sees each `JoinResponseOk`'s `extra` before anything is sent and may ask to rejoin: a tree copy of

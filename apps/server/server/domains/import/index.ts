@@ -118,7 +118,7 @@ export function createImportObjectSweeper(
   const repository = createDrizzleImportRepository(db);
   return async () => {
     const result = await sweepImportObjects(repository, objects, {
-      journals: {
+      texts: {
         discardUnborn: (documentIds) =>
           documents.discardUnbornDocuments(documentIds as DocumentId[]),
       },

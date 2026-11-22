@@ -260,7 +260,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text("scratch://ideas")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
       expect(listed(await next("ls", { path: "scratch://", verbose: true }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@w1/ideas" }),
+        expect.objectContaining({ uri: "scratch://@w1/ideas", wordCount: 2 }),
       );
     });
   });

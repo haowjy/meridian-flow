@@ -1,5 +1,5 @@
 /**
- * Document-link scopes across doors: images in search, draft review, Apply and live reversal.
+ * Document-link scopes across doors: images in search and in the model's read.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one captured link scope per search operation
@@ -22,7 +22,6 @@ import { modelWrite } from "./test-support/model-write.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
-  DRAFT_DESTINATION,
   PROJECT_ID,
   SOURCE_ID,
   THREAD_ID,
@@ -71,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      const grant = testFileGrant(DRAFT_DESTINATION, DOC_ID);
+      const grant = testFileGrant({ kind: "live" }, DOC_ID);
       await expect(
         modelWrite(
           collab.modelEdits(),
@@ -92,9 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
     }
 
-    // The thread view exercises the same one-scope search as a writer's live
-    // view, through a draft view; the adapter's snapshot reuse is pinned in
-    // `document-link-scope.db.test.ts`.
+    // The adapter's snapshot reuse is pinned in `document-link-scope.db.test.ts`.
     it("shares search paths across chapters in a thread view", async () => {
       const links = createTestDocumentLinkScopes(db);
       const collab = createTestCollab(links);
@@ -138,7 +135,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             draftId: WORK_DRAFT_ID,
             handle: "w1",
           },
-          writeMode: "draft",
+          writeMode: "direct",
         },
         documentSync: {
           ...collab,
@@ -180,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       // The model's read spells them alike, and records the deleted cover where it showed it.
-      const grant = testFileGrant(DRAFT_DESTINATION, secondDocumentId);
+      const grant = testFileGrant({ kind: "live" }, secondDocumentId);
       const read = await collab.agentEdit().read(
         { file: "chapter-two", documentId: secondDocumentId },
         {

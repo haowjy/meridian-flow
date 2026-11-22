@@ -311,7 +311,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
       hocuspocus: () => hocuspocus as never,
       journal: persistence.journal,
@@ -322,8 +321,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    initialDocumentSeeds: persistence.seeds,
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
+    rooms,
+    transaction: (work) =>
+      isInDrizzleTransaction()
+        ? work(currentDrizzleDb(db))
+        : runInDrizzleTransaction(db, () => work(currentDrizzleDb(db))),
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
@@ -333,7 +336,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({
     liveCore: runtime.liveCore,
-    liveUtilityCore: runtime.liveUtilityCore,
     draftView: runtime.draftView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);

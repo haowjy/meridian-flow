@@ -62,16 +62,19 @@ export function placeAccess(facts: FileFacts): AiAccess {
   return access === "ask" && !isDrafted(facts.contentScheme) ? "deny" : access;
 }
 
+/**
+ * Where an agent's write lands. Phase 1 of the Loro move is Live-only (loro-build plan): every
+ * agent write lands Live, whatever the chat's write mode or the place's access, until drafts come
+ * back on forks in phase 2, which restores the rule: a drafted source goes to the chat's draft in
+ * draft mode or where the place asks for review.
+ */
 function destinationAt(
-  writeMode: AiWriteMode,
-  access: AiAccess,
-  scheme: ContextUriScheme,
-  owner: DraftOwnerRef,
+  _writeMode: AiWriteMode,
+  _access: AiAccess,
+  _scheme: ContextUriScheme,
+  _owner: DraftOwnerRef,
 ): FileDestination {
-  const draft = access === "ask" || writeMode === "draft";
-  return draft && isDrafted(scheme)
-    ? { kind: "draft", draftId: owner.draftId, ownerHandle: owner.handle }
-    : { kind: "live" };
+  return { kind: "live" };
 }
 
 /**

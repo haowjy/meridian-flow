@@ -209,7 +209,6 @@ export class ContextFS implements ContextSchemeAdapter {
       store: deps.store,
       tree: deps.writes,
       executor: this.commandExecutor,
-      documentSync: deps.documentSync,
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
       liveCreate: this.liveCreate,
     });
@@ -230,15 +229,13 @@ export class ContextFS implements ContextSchemeAdapter {
       case "not_found":
         return {
           code: "io_error",
-          message: `Yjs document not found: ${error.documentId}`,
+          message: `Document not found: ${error.documentId}`,
         };
       case "stale_document":
         return {
           code: "io_error",
           message: `Document changed under the write: ${error.documentId}`,
         };
-      case "checkpoint_not_found":
-        return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
         return { code: "io_error", message: error.message };
     }
@@ -366,7 +363,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       documentId: existing.id,
       markdown: write.markdown,
-      updateSeq: write.updateSeq,
     });
   }
 

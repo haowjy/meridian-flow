@@ -4,15 +4,15 @@ import { createHash } from "node:crypto";
 import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
-  fragmentOf,
-  storedPendingChanges,
-  type YProsemirrorDocumentModel,
+  type LoroDocument,
+  loroModel,
+  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { encodeRoomVersion } from "@meridian/document-model";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
-import type { DraftPending } from "@meridian/suggestions";
-import * as Y from "yjs";
+import type { StoredLinkOccurrence } from "@meridian/markup/stored-links";
+import type { Schema } from "prosemirror-model";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
 import { isCodeDocument } from "./document-schema-type.js";
@@ -26,17 +26,13 @@ import type {
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
 
-/**
- * What the derivation reads a cut with: the model that projects it, the codec that spells it.
- * Injected as a function because the runtime owning the model is built after this service.
- */
-export type ReadCut = (documentId: DocumentId, doc: Y.Doc) => Promise<CutRead>;
+/** What the derivation reads a cut with: the model that projects it, the codec that spells it. */
+export type ReadCut = (documentId: DocumentId, doc: LoroDocument) => Promise<CutRead>;
 
-/** A cut as Live reads it (its blocks and links), and the Works whose views read it otherwise. */
+/** A cut as Live reads it: its blocks and links. */
 export type CutRead = {
   blocks: DerivedBlock[];
   links: StoredLinkOccurrence[];
-  pendingChanges: Record<string, DraftPending>;
 };
 
 export function createDocumentDerivationService(input: {
@@ -106,61 +102,54 @@ export async function deriveDocument(
   for (let attempt = 0; attempt < 3; attempt++) {
     const cut = await input.store.capture(documentId);
     if (!cut) return { status: "missing" };
-    const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, cut.state);
-      // Before projecting: a repair there edits the private doc, not the cut.
-      const stateVector = Y.encodeStateVector(doc);
-      const outputs = await deriveDocumentOutputs(cut, doc, input.readCut);
+      const version = encodeRoomVersion(cut.doc.docs.version());
+      const outputs = await deriveDocumentOutputs(cut, input.readCut);
       if (await input.store.certify(cut, outputs, at)) {
         // Also when the cut was already certified: a failed earlier registration retries here.
         if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);
-        return { status: "derived", stateVector };
+        return { status: "derived", version };
       }
     } finally {
-      doc.destroy();
+      cut.doc.docs.free();
     }
   }
   return { status: "deferred" };
 }
 
-/** The blocks and link rows of one private document, which the projection may repair in place. */
+/** The blocks and link rows of the cut's document. */
 export async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
-  doc: Y.Doc,
   readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {
-  const read = await readCut(cut.documentId, doc);
-  const { blocks, pendingChanges } = read;
-  const rows = (occurrences: readonly StoredLinkOccurrence[]) =>
-    cut.holderUri ? deriveDocumentLinkRows({ occurrences, holderUri: cut.holderUri }) : [];
-  // Every Work's links, for ahead registration; only Live's say whether the document was edited.
-  const links = rows(extractStoredLinks(fragmentOf(doc)));
+  const read = await readCut(cut.documentId, cut.doc);
+  const { blocks } = read;
+  const links = cut.holderUri
+    ? deriveDocumentLinkRows({ occurrences: read.links, holderUri: cut.holderUri })
+    : [];
   return {
     blocks,
     wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),
-    pendingChanges,
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
-    documentHash: documentHash(blocks, rows(read.links)),
+    documentHash: documentHash(blocks, links),
     links,
   };
 }
 
 /**
  * The cut's blocks in document order as Live reads them, normalized and hashed here, before the
- * certify transaction: nothing downstream reads text back under the lock. The doc is the
- * derivation's own, so the projection runs on it with no copy, and repairs it before the Works
- * with suggestions in it are read from what it stores.
+ * certify transaction: nothing downstream reads text back under the lock.
  */
 export function createCutReader(deps: {
-  /** A thunk: the runtime that owns the model is built after the derivation service. */
-  runtime(): { model: YProsemirrorDocumentModel; codec: AgentEditCodecFactory };
+  schema: Schema;
+  /** A thunk: the runtime that owns the codec is built after the derivation service. */
+  codec(): AgentEditCodecFactory;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): ReadCut {
+  const model = loroModel(deps.schema);
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
-    const { model, codec } = deps.runtime();
-    const read = grepBlocksOf(doc, model, codec.markup, verbatim);
+    const read = grepBlocksOf(toLoroHandle(doc), model, deps.codec().markup, verbatim);
     return {
       blocks: read.map(({ block, destinationFree, text }) => ({
         id: block.key,
@@ -172,7 +161,6 @@ export function createCutReader(deps: {
         ref: attrs.ref,
         href: attrs.href,
       })),
-      pendingChanges: storedPendingChanges(doc, model.schema),
     };
   };
 }

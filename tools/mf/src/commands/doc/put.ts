@@ -1,10 +1,4 @@
-import {
-  apiProjectDocumentReadPath,
-  contextReadResponseSchema,
-  documentFilenameAt,
-  readSegment,
-  renderFilename,
-} from "@meridian/contracts/protocol";
+import { documentFilenameAt, readSegment, renderFilename } from "@meridian/contracts/protocol";
 import { type CreateRecord, isSourceRoot, LIVE, newId, segmentOf } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
 import {
@@ -15,7 +9,6 @@ import {
   stringOption,
 } from "../../core/command";
 import type { Session } from "../../core/session";
-import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 import { writeMarkdown } from "./document-room";
 import { deleteAt } from "./rm";
@@ -100,24 +93,8 @@ export async function putDocument(
         },
       );
     }
-    if (input.content.trim() !== "") {
-      const stored = async () => {
-        const read = await session.request(
-          "GET",
-          apiProjectDocumentReadPath(input.projectId, created.node),
-          undefined,
-          { decode: jsonResponse(contextReadResponseSchema) },
-        );
-        return read.kind === "tracked" && read.content.trim() !== "";
-      };
-      await writeMarkdown(
-        session,
-        created.node,
-        input.content,
-        stored,
-        kept ? "source" : undefined,
-      );
-    }
+    if (input.content.trim() !== "")
+      await writeMarkdown(session, created.node, input.content, kept ? "source" : undefined);
     // The path it landed at: a twin's segment carries its `~id`.
     const shown = opened.list.replay();
     const landed: string[] = [];

@@ -1,4 +1,3 @@
-import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentSnapshots, drafts, type StoredFrontiers } from "@meridian/database/schema";
 import { freshServerPeerId } from "@meridian/document-model";
@@ -104,17 +103,8 @@ export type PgTreeListStore = TreeListStore & {
   listen(): Promise<{ unlisten: () => Promise<void> }>;
 };
 
-/** A text document a create in a Work's version made: it needs that Work's text draft. */
-export type DraftedDocument = { documentId: DocumentId; draftId: DraftId };
-
 export function createDrizzleTreeListStore(deps: {
   db: Database;
-  /**
-   * Makes the Live room of each drafted document in the admitting transaction, under the list's
-   * key, so the document opens in its Work as soon as its create is admitted. Collab's
-   * (`seedWorkCreates`); a composition without collab makes rows only.
-   */
-  seedWorkCreates?: (created: readonly DraftedDocument[]) => Promise<void>;
   /**
    * A Work's or lineage's review count follows its draft's rows, which a tree commit may change
    * outside any Work lock: the Works boundary recounts them once the commit lands.
@@ -291,12 +281,13 @@ export function createDrizzleTreeListStore(deps: {
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
-    const {
-      created: made,
-      changedDrafts,
-      liveChangedUnder,
-      reassigned,
-    } = await syncRows(tx, list, listId, copy.doc, created);
+    const { changedDrafts, liveChangedUnder, reassigned } = await syncRows(
+      tx,
+      list,
+      listId,
+      copy.doc,
+      created,
+    );
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
     if (changedDrafts.length > 0 && deps.recountAfterCommit) {
@@ -311,12 +302,6 @@ export function createDrizzleTreeListStore(deps: {
       });
     }
     await testHook("treeList.afterRows");
-    const drafted = made.flatMap((record) =>
-      record.kind === "document" && record.draft !== null
-        ? [{ documentId: record.node as DocumentId, draftId: record.draft as DraftId }]
-        : [],
-    );
-    if (drafted.length > 0) await deps.seedWorkCreates?.(drafted);
     const committed = { listId, update };
     const owner = copy.pending;
     runAfterDrizzleCommit(async () => {

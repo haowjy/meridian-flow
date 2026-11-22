@@ -13,7 +13,7 @@ import { treeListOfSource } from "./tree-list-facts.js";
 
 export interface ApplyLevelFilesDeps {
   db: Database;
-  documentSync: Pick<CollabDomain, "mergeCodeText" | "readFrozenMarkdown">;
+  documentSync: Pick<CollabDomain, "mergeCodeText" | "readAsMarkdown">;
   treeLists: TreeListStore;
 }
 

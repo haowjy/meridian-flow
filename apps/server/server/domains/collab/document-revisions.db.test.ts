@@ -26,10 +26,10 @@ import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
-import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
 import { scopeEffectiveReader } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
+import { createWorkCreates } from "./domain/work-creates.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -87,17 +87,13 @@ async function fixture(
     createEffectiveDocumentReader({
       blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
       resolveFiletype: async () => null,
-      agentEdit: f.collab.agentEdit(),
-      rooms: f.rooms,
       schema: buildDocumentSchema(),
       documents: f.runtime.markdownDocuments,
-      model: f.runtime.model,
-      draftView: f.runtime.draftView,
       codec: f.runtime.codec,
       links,
     }),
     links,
-    createDrizzleWorkCreates(db, { documents: f.runtime.markdownDocuments }),
+    createWorkCreates({ documents: f.runtime.markdownDocuments }),
   );
   const revisions = createDocumentRevisions({
     links,

@@ -3,6 +3,7 @@
  * document and its write context, and this turns them into a holder and view
  * over the operation's document-link scope (contract §4.3–4.4).
  */
+import { createHash } from "node:crypto";
 import type {
   AheadMint,
   DocumentLinksPort,
@@ -10,9 +11,16 @@ import type {
   WriteContext,
 } from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { cutRevision, documentRevision, viewRevision } from "./document-revision.js";
+import { extractStoredLinks } from "@meridian/markup/stored-links";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import * as Y from "yjs";
+import { cutRevision, viewRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
-import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
+import type {
+  AheadRefRegistrar,
+  DocumentLinkScopes,
+  HolderLinkScope,
+} from "./ports/document-link-scope.js";
 
 export function createScopedDocumentLinks(input: {
   scopes: DocumentLinkScopes;
@@ -46,7 +54,7 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.draft),
+    revision: (doc, scope) => viewRevision(yjsRevision(doc, scope), input.draft),
   };
 }
 
@@ -59,6 +67,31 @@ export function createScopedLoroDocumentLinks(input: {
     ...createScopedDocumentLinks({ ...input, viewFor: liveViewFor, draft: null }),
     revision: cutRevision,
   };
+}
+
+/**
+ * The Yjs core's revision: `y2:` + sha256 over the Yjs snapshot, the holder's URI and how every
+ * ref-bearing link and `asset:` source spells. It goes with the Yjs core; the Loro one's is
+ * `cutRevision`.
+ */
+function yjsRevision(doc: Y.Doc, scope: HolderLinkScope): string {
+  const triples = new Set<string>();
+  for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))) {
+    const asset = occurrence.kind !== "link" && occurrence.href.startsWith("asset:");
+    if (occurrence.ref === null && !asset) continue;
+    const spelled =
+      occurrence.kind === "link"
+        ? scope.spellLink({ href: occurrence.href, ref: occurrence.ref })
+        : scope.spellSource({ src: occurrence.href, ref: occurrence.ref });
+    triples.add(JSON.stringify([occurrence.ref, occurrence.href, spelled.href]));
+  }
+  return `y2:${createHash("sha256")
+    .update(Y.encodeSnapshot(Y.snapshot(doc)))
+    .update(Uint8Array.of(0))
+    .update(scope.holder.uri ?? "", "utf8")
+    .update(Uint8Array.of(0))
+    .update(JSON.stringify([...triples].sort()), "utf8")
+    .digest("base64url")}`;
 }
 
 /** The live utility core: every command reads and writes the live tree. */

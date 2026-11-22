@@ -53,14 +53,7 @@ export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "syste
 export type SyncError =
   | { code: "stale_document"; documentId: string }
   | { code: "not_found"; documentId: string }
-  | { code: "checkpoint_not_found"; checkpointId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
-
-export interface CheckpointInfo {
-  id: string;
-  reason: string;
-  createdAt: string;
-}
 
 export type PersistedUpdate = {
   updateSeq: number;
@@ -71,17 +64,9 @@ export type DocumentWriteOrigin =
   | { type: "agent"; actorTurnId: TurnId }
   | { type: "user"; actorUserId: UserId };
 
-/** A live document under the coordinator lease its caller holds (contract §6.3 B3). */
-export type HeldLiveDocument = { documentId: DocumentId; doc: Y.Doc };
-/** The creation-bound content is admitted only for this document at this address. */
-export type HeldWriteExpectation = { documentId: DocumentId; uri: string };
-export type HeldWriteStaged = { markdown: string; updateSeq: number };
-
 export type DocumentWriteResult = {
   documentId: DocumentId;
   markdown: string;
-  updateSeq: number;
-  updateData: Buffer;
   originType: DocumentWriteOrigin["type"];
   actorTurnId: TurnId | null;
   actorUserId: UserId | null;
@@ -325,22 +310,16 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  /**
-   * Gives a document that has no state its authority, seeded empty: a create's own step, or
-   * the repair of an old anomaly on an explicit touch. A no-op when it has authority.
-   */
-  ensureDocumentAuthority(documentId: DocumentId): Promise<void>;
+  /** The markdown of the document's text, even one in the trash; empty when it holds none. */
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  /** The markdown of a document's stored Yjs, even one in the trash; empty when it holds none. */
-  readFrozenMarkdown(documentId: DocumentId): Promise<string>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,
     content: BoundWrite,
     origin: DocumentSeedOrigin,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  /** Deletes the journals of documents that never got a row (an import that ended early). */
-  discardUnbornDocuments: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardUnbornDocuments"];
+  ): Promise<Result<void, SyncError>>;
+  /** Deletes the stored text of documents that never got a row (an import that ended early). */
+  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
@@ -364,37 +343,11 @@ export type MarkdownDocumentStore = LinkBinder & {
     target: string;
     origin: DocumentWriteOrigin;
   }): Promise<Result<{ text: string; clashes: number; changed: boolean }, SyncError>>;
-  /**
-   * The live coordinator's lease on a document, taken outside any transaction (contract
-   * §6.3 B3): a revealed document's first content is admitted under it.
-   */
-  withLiveDocument<T>(
-    documentId: string,
-    operation: (held: HeldLiveDocument) => Promise<T>,
-  ): Promise<T>;
-  /**
-   * A revealed document's first content, under a lease the caller holds and inside its
-   * transaction: verifies identity and address, stages on a clone, journals durably, and
-   * applies to the warm document only after commit.
-   */
-  writeDocumentHeld(input: {
-    held: HeldLiveDocument;
-    content: BoundWrite;
-    expected: HeldWriteExpectation;
-    origin: DocumentWriteOrigin | DocumentSeedOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
 
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
-};
-
-export type DocumentCheckpoints = {
-  checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
-  restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
-  listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
 /** The model-facing list row: which documents have a draft, nothing more. */
@@ -544,13 +497,9 @@ export type EffectiveDocumentReader = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * Each text document a draft's admitted create just made gets its Live authority, empty, in
-   * the admitting transaction under the list's key: the tree list store calls it for every create
-   * in a Work's version, the writer's and the AI's alike. Its text is plain Live text; the
-   * pending create is its whole pending state.
+   * A Work's copy's documents' first text, written into Live: a document a draft's create made is
+   * plain Live text, and the pending create is its whole pending state.
    */
-  seedWorkCreates(created: readonly { documentId: DocumentId; draftId: DraftId }[]): Promise<void>;
-  /** A Work's copy's documents' first text, written into Live after `seedWorkCreates`. */
   writeWorkCreatedContent(
     created: readonly { documentId: DocumentId; content: BoundWrite }[],
     origin: DocumentWriteOrigin,
@@ -581,7 +530,6 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  DocumentCheckpoints &
   DocumentAttribution &
   EffectiveDocumentReader &
   CollabDrafts &

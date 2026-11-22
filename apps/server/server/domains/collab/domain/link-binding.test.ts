@@ -1,5 +1,4 @@
 /** Pure planned-binding contracts, including occurrence identity and capability isolation. */
-import { yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
@@ -21,11 +20,8 @@ function setup() {
   const deps = {
     schema,
     codec: mdxCodec({ schema }),
-    model: yProsemirrorModel(schema),
-    coordinator: {
-      withDocument: async () => {
-        throw new Error("fresh binding never reads a room");
-      },
+    currentBlocks: async () => {
+      throw new Error("fresh binding never reads a room");
     },
     links: createStaticDocumentLinkScopes({
       projectId: "binding",
@@ -51,7 +47,7 @@ function setup() {
     resolveFiletype: async () => "markdown",
     inTransaction: () => false,
   };
-  const { coordinator: _coordinator, model: _model, ...importDeps } = deps;
+  const { currentBlocks: _currentBlocks, ...importDeps } = deps;
   return {
     ordinary: createLinkBinder(deps),
     planned: createImportLinkBinder(importDeps),

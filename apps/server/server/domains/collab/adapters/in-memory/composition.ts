@@ -1,26 +1,16 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
-import type {
-  AgentEditCodecFactory,
-  LoroDocumentEdits,
-  YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
-import { agentEditRooms, toDocHandle } from "@meridian/agent-edit/integration";
+import { agentEditRooms, type LoroDocumentEdits } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createMemoryDocumentRooms } from "@meridian/document-model/rooms";
+import {
+  createMemoryDocumentRooms,
+  type MemoryDocumentRooms,
+} from "@meridian/document-model/rooms";
 import { shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
 import type { DrizzleDb } from "../../../../shared/drizzle-transaction.js";
-import { Ok } from "../../../../shared/result.js";
-import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
-import type {
-  CollabDomain,
-  CollabDrafts,
-  EffectiveDocumentReader,
-  ServerDocumentRooms,
-} from "../../contracts.js";
+import type { CollabDomain, CollabDrafts, ServerDocumentRooms } from "../../contracts.js";
 import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
 import {
   attributionFromMeta,
@@ -29,10 +19,8 @@ import {
 } from "../../domain/agent-edit-runtime.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
-import { readHashlines, versioned } from "../../domain/document-revision.js";
-import { isCodeDocument } from "../../domain/document-schema-type.js";
 import { createDrafts } from "../../domain/drafts.js";
-import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
+import { createEffectiveDocumentReader } from "../../domain/effective-document-reader.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
@@ -64,6 +52,8 @@ export function createInMemoryCollabDomain(
   const resolveDocumentFiletype = async () => null;
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
+  const schema = buildDocumentSchema();
+  const memory = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => operation(),
   });
@@ -74,10 +64,10 @@ export function createInMemoryCollabDomain(
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const links = createStaticDocumentLinkScopes();
-  const rooms = memoryServerRooms();
+  const serverRooms = memoryServerRooms(memory);
   const runtime = createAgentEditRuntime({
     loro: {
-      rooms: agentEditRooms(rooms, {
+      rooms: agentEditRooms(serverRooms, {
         roomFor: async (documentId) => ({ kind: "live", documentId }),
         // The memory rooms run each commit as its own transaction.
         transaction: () => null as unknown as DrizzleDb,
@@ -92,20 +82,10 @@ export function createInMemoryCollabDomain(
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     inTransaction: () => false,
     journal,
-    coordinator,
     agentCoordinator: coordinator,
-    initialDocumentSeeds: {
-      async discardUnbornDocuments() {},
-      seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      async seedInitialDocuments(seeds) {
-        for (const { documentId, state } of seeds)
-          await journal.seedInitialDocument(documentId, state);
-      },
-      async lacksAuthority(documentId) {
-        const snapshot = await journal.read(documentId);
-        return !snapshot.checkpoint && snapshot.updates.length === 0;
-      },
-    },
+    rooms: memory,
+    transaction: (work) => memory.transaction(work),
+    lockDocument: async () => {},
     runDocumentWriteHook,
     resolveDocumentFiletype,
     observability: createAgentEditObservabilityOptions({}),
@@ -116,7 +96,6 @@ export function createInMemoryCollabDomain(
   });
   const agentEdit = createAgentEditRouter({
     liveCore: runtime.liveCore,
-    liveUtilityCore: runtime.liveUtilityCore,
     draftView: runtime.draftView,
   });
   const projections = { refresh: runDocumentWriteHook };
@@ -130,18 +109,12 @@ export function createInMemoryCollabDomain(
     resolveDocumentUri: async (documentId) => documentId,
     resolveLastDocumentUri: async (documentId) => documentId,
   });
-  const checkpoints = createCheckpointService({
-    coordinator,
-    store,
-    journal: journal,
-    markdownDocuments: runtime.markdownDocuments,
-  });
 
   return createCollabFacade({
     importBinder: runtime.importBinder,
     lifecycle: { dispose: async () => {} },
     transport: {
-      rooms,
+      rooms: serverRooms,
       documentSchemaVersion: async () => null,
       onRoomsEnded: () => () => undefined,
       bindHocuspocus: hocuspocusBinding.bind,
@@ -176,9 +149,7 @@ export function createInMemoryCollabDomain(
     },
     documents: {
       readForExport: runtime.markdownDocuments.readForExport,
-      ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
-      readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       async discardUnbornDocuments() {},
@@ -186,8 +157,6 @@ export function createInMemoryCollabDomain(
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       mergeCodeText: runtime.markdownDocuments.mergeCodeText,
-      withLiveDocument: runtime.markdownDocuments.withLiveDocument,
-      writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
@@ -205,7 +174,6 @@ export function createInMemoryCollabDomain(
       },
     },
     lineage,
-    checkpoints,
     attribution: {
       async getLastUpdateAttribution(documentId) {
         const latest = await store.latestUpdate(documentId);
@@ -215,14 +183,20 @@ export function createInMemoryCollabDomain(
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    effectiveReader: createInMemoryEffectiveReaderStub(
-      runtime.markdownDocuments,
-      coordinator,
-      runtime.model,
-      runtime.codec,
-      links,
-      resolveDocumentFiletype,
-    ),
+    effectiveReader: {
+      ...createEffectiveDocumentReader({
+        // Nothing is derived in memory.
+        blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
+        documents: runtime.markdownDocuments,
+        schema,
+        codec: runtime.codec,
+        links,
+        resolveFiletype: resolveDocumentFiletype,
+      }),
+      async writeWorkCreatedContent() {
+        throw new Error("Work creates need Postgres; the in-memory collab domain has no drafts");
+      },
+    },
     drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
@@ -234,60 +208,6 @@ export function createInMemoryCollabDomain(
     },
     documentCreation,
   });
-}
-
-function createInMemoryEffectiveReaderStub(
-  documents: {
-    readVersionedMarkdown(
-      documentId: string,
-    ): ReturnType<
-      import("../../domain/markdown-document.js").MarkdownDocumentEngine["readVersionedMarkdown"]
-    >;
-  },
-  coordinator: {
-    withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
-  },
-  model: YProsemirrorDocumentModel,
-  codec: AgentEditCodecFactory,
-  links: DocumentLinkScopes,
-  resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
-): EffectiveDocumentReader {
-  return {
-    async readEffectiveRevision(input) {
-      const read = await documents.readVersionedMarkdown(input.documentId);
-      return read.ok ? read.value.revision : null;
-    },
-    // Nothing is derived in memory.
-    readStoredGrepTexts: async () => new Map(),
-    readStoredWordCounts: async () => new Map(),
-    readDraftMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
-    readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
-    readEffectiveBlocks: (input) =>
-      coordinator.withDocument(input.documentId, async (doc) => {
-        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        return Ok({
-          content: model.projectBlocks(toDocHandle(doc)).map((block) => block.node),
-          version: "live" as const,
-          revision: versioned(doc, scope, () => null).revision,
-          holderUri: scope.holder.uri,
-          stateVector: Y.encodeStateVector(doc),
-          // The in-memory link scopes never settle an ahead ref.
-          aheadSettlements: new Map<string, string>(),
-        });
-      }),
-    readEffectiveHashlines: (input) =>
-      coordinator.withDocument(input.documentId, async (doc) => {
-        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
-        return Ok(readHashlines(doc, scope, model, codec, verbatim));
-      }),
-    async writeWorkCreatedContent() {
-      throw new Error("Work creates need Postgres; the in-memory collab domain has no drafts");
-    },
-    async seedWorkCreates() {
-      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
-    },
-  };
 }
 
 function createInMemoryDraftStub(): CollabDrafts {
@@ -357,22 +277,18 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
 
 function inMemoryStore(journal: InMemoryJournal) {
   return {
-    createCheckpoint: journal.createCheckpoint.bind(journal),
-    getCheckpoint: (id: string) => journal.getCheckpoint(id),
-    listCheckpoints: (docId: string) => journal.listCheckpoints(docId),
     latestUpdate: (docId: string) => journal.latestUpdate(docId),
     latestUpdateSeq: (docId: string) => journal.latestUpdateSeq(docId),
   };
 }
 
-/** The in-memory rooms behind the server's door: each commit or seed is its own transaction. */
 const NO_EDIT_HISTORY: LoroDocumentEdits = {
   read: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
   execute: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
 };
 
-function memoryServerRooms(): ServerDocumentRooms {
-  const memory = createMemoryDocumentRooms(shapeSchemaOf(buildDocumentSchema()));
+/** The in-memory rooms behind the server's door: each commit or seed is its own transaction. */
+function memoryServerRooms(memory: MemoryDocumentRooms): ServerDocumentRooms {
   return {
     read: memory.read,
     sync: memory.sync,

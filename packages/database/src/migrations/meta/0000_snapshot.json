@@ -4323,6 +4323,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 3003000
+        },
+        "content_seq": {
+          "name": "content_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
         }
       },
       "indexes": {
@@ -6540,6 +6547,19 @@
         },
         "saved_at": {
           "name": "saved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "history_mark": {
+          "name": "history_mark",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "history_mark_at": {
+          "name": "history_mark_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -9148,8 +9168,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "cut_admission_seq": {
-          "name": "cut_admission_seq",
+        "cut_content_seq": {
+          "name": "cut_content_seq",
           "type": "bigint",
           "primaryKey": false,
           "notNull": true

@@ -1,21 +1,18 @@
 /** Effective document reads for non-tool callers: the same view a model call would read. */
 import {
   type AgentEditCodecFactory,
-  type DocHandle,
   isDocumentNotFoundError,
-  toDocHandle,
-  unwrapDoc,
-  type YProsemirrorDocumentModel,
+  type LoroDocument,
+  loroModel,
+  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
+import type { DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { encodeRoomVersion, readDocument } from "@meridian/document-model";
-import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { nodeOf } from "@meridian/loro-prosemirror";
+import { encodeRoomVersion } from "@meridian/document-model";
 import { settledAheads } from "@meridian/markup/links";
 import type { Schema } from "prosemirror-model";
-import * as Y from "yjs";
-import { Err, Ok, type Result } from "../../../shared/result.js";
+import { Ok, type Result } from "../../../shared/result.js";
 import type {
   EffectiveBlocksRead,
   EffectiveDocumentReader,
@@ -23,15 +20,7 @@ import type {
   HashlineRead,
   SyncError,
 } from "../contracts.js";
-import type { AgentEditRouter } from "./agent-edit-router.js";
-import type { DraftViews } from "./agent-edit-runtime.js";
-import {
-  cutRevision,
-  documentRevision,
-  inView,
-  readHashlines,
-  viewRevision,
-} from "./document-revision.js";
+import { cutRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { BlockText } from "./ports/block-text.js";
@@ -44,89 +33,58 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   blockText: BlockText;
-  agentEdit: AgentEditRouter;
-  /** Live's text, which the model's tools read: a Live revision is the Loro core's. */
-  rooms: DocumentRooms<unknown>;
+  documents: Pick<MarkdownDocumentEngine, "readRoom" | "serializeVersionedDocument">;
   schema: Schema;
-  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
-  /** Live's view. */
-  model: YProsemirrorDocumentModel;
-  /** A draft is Live read through the draft's view. */
-  draftView: DraftViews;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
-}): Omit<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent"> {
+}): Omit<EffectiveDocumentReader, "writeWorkCreatedContent"> {
+  const model = loroModel(input.schema);
+
   /** The view a read spells in: the version it reads. */
-  async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
+  function viewOf(command: EffectiveReadInput): LinkView {
     return command.destination === "draft"
       ? { kind: "draft", draftId: command.draft }
       : { kind: "live" };
   }
 
-  async function spelling(command: EffectiveReadInput, doc: Y.Doc) {
-    const holder = { documentId: command.documentId, view: await viewOf(command) };
-    await input.links.prepare({ holders: [holder], docs: [doc] });
+  async function spelling(command: EffectiveReadInput, doc: LoroDocument) {
+    const holder = { documentId: command.documentId, view: viewOf(command) };
+    const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+    await input.links.prepare({ holders: [holder], stored: blocks });
     return input.links.holder(holder);
   }
 
   /**
-   * Reads the document's Live room through `draft`'s view, or Live's view. Choosing the content
-   * view never chooses the link view: every source renders through the same `read`, which spells
-   * in the command's own view.
+   * Reads `draft`'s fork of the document (Live where the draft wrote nothing), or Live. Choosing
+   * the content never chooses the link view: every source renders through the same `read`,
+   * which spells in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
-    read: (doc: DocHandle, model: YProsemirrorDocumentModel, draft: string | null) => Promise<T>,
+    read: (doc: LoroDocument, draft: string | null) => Promise<T>,
     draft: DraftId | null = command.destination === "draft" ? command.draft : null,
   ): Promise<Result<T, SyncError>> {
-    const model = draft ? input.draftView.model(draft) : input.model;
-    let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
-    try {
-      room = await input.agentEdit.readRoom({ documentId: command.documentId });
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause))
-        return Err({ code: "not_found", documentId: command.documentId });
-      throw cause;
-    }
-    try {
-      return Ok(await read(toDocHandle(room.doc), model, draft));
-    } finally {
-      room.dispose();
-    }
+    const room: DocumentRoom = draft
+      ? { kind: "fork", draftId: draft, documentId: command.documentId }
+      : { kind: "live", documentId: command.documentId };
+    return Ok(await input.documents.readRoom(room, (doc) => read(doc, draft)));
   }
 
-  /** The revision the Loro core gives a read of Live (`revision` in `tool/loro-write.ts`). */
-  async function liveRevision(command: EffectiveReadInput): Promise<string> {
-    const docs = await input.rooms.read({ kind: "live", documentId: command.documentId });
-    try {
-      const blocks = readDocument(docs).map((block) => nodeOf(input.schema, block));
-      const holder = { documentId: command.documentId, view: await viewOf(command) };
-      await input.links.prepare({ holders: [holder], stored: blocks });
-      return cutRevision(
-        { version: encodeRoomVersion(docs.version()), blocks },
-        input.links.holder(holder),
-      );
-    } finally {
-      docs.free();
-    }
-  }
+  const versionOf = (doc: LoroDocument) => encodeRoomVersion(doc.docs.shownVersion());
 
   return {
     async readEffectiveRevision(command) {
-      if (command.destination !== "draft")
-        return liveRevision(command).catch((cause) => {
-          if (isDocumentNotFoundError(cause)) return null;
-          throw cause;
-        });
       try {
-        const result = await readEffective(command, async (handle, _model, view) => {
-          const doc = unwrapDoc(handle);
-          return viewRevision(documentRevision(doc, await spelling(command, doc)), view);
+        const result = await readEffective(command, async (doc, view) => {
+          const scope = await spelling(command, doc);
+          const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+          return viewRevision(cutRevision({ version: versionOf(doc), blocks }, scope), view);
         });
         return result.ok ? result.value : null;
-      } catch {
-        return null;
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return null;
+        throw cause;
       }
     },
     readStoredGrepTexts: ({ documentIds, ...version }) =>
@@ -137,26 +95,20 @@ export function createEffectiveDocumentReader(input: {
     readDraftMarkdown: ({ documentId, draft }) =>
       readEffective(
         { documentId, destination: "live" },
-        async (doc, model, view) =>
+        async (doc, view) =>
           inView(
-            await input.documents.serializeVersionedDocument(
-              documentId,
-              unwrapDoc(doc),
-              { kind: "live" },
-              model,
-            ),
+            await input.documents.serializeVersionedDocument(documentId, doc, { kind: "live" }),
             view,
           ),
         draft,
       ),
     readEffectiveMarkdown(command) {
-      return readEffective(command, async (doc, model, view) =>
+      return readEffective(command, async (doc, view) =>
         inView(
           await input.documents.serializeVersionedDocument(
             command.documentId,
-            unwrapDoc(doc),
-            await viewOf(command),
-            model,
+            doc,
+            viewOf(command),
           ),
           view,
         ),
@@ -165,16 +117,16 @@ export function createEffectiveDocumentReader(input: {
     readEffectiveBlocks(command) {
       return readEffective(
         { documentId: command.documentId, destination: "live" },
-        async (handle, model, view): Promise<EffectiveBlocksRead> => {
-          const doc = unwrapDoc(handle);
+        async (doc, view): Promise<EffectiveBlocksRead> => {
           const scope = await spelling(command, doc);
-          const blocks = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+          const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+          const version = versionOf(doc);
           return {
             content: blocks,
             version: view ? "draft" : "live",
-            revision: viewRevision(documentRevision(doc, scope), view),
+            revision: viewRevision(cutRevision({ version, blocks }, scope), view),
             holderUri: scope.holder.uri,
-            stateVector: Y.encodeStateVector(doc),
+            stateVector: version,
             aheadSettlements: settledAheads(blocks, scope),
           };
         },
@@ -182,13 +134,15 @@ export function createEffectiveDocumentReader(input: {
       );
     },
     readEffectiveHashlines(command) {
-      return readEffective(command, async (handle, model, view): Promise<HashlineRead> => {
-        const doc = unwrapDoc(handle);
+      return readEffective(command, async (doc, view): Promise<HashlineRead> => {
         const [scope, verbatim] = await Promise.all([
           spelling(command, doc),
           isCodeDocument(input.resolveFiletype, command.documentId),
         ]);
-        return inView(readHashlines(doc, scope, model, input.codec, verbatim), view);
+        return inView(
+          readHashlines(toLoroHandle(doc), versionOf(doc), scope, model, input.codec, verbatim),
+          view,
+        );
       });
     },
   };

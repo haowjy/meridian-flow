@@ -42,8 +42,8 @@ export {
   getBlockItemId,
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
-export type { LoroDocument, LoroDocumentModel } from "./model/loro-model.js";
-export { loroModel } from "./model/loro-model.js";
+export type { LoroDocumentModel } from "./model/loro-model.js";
+export { LoroDocument, loroModel, toLoroHandle } from "./model/loro-model.js";
 export { suggestingModel } from "./model/suggesting-model.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";

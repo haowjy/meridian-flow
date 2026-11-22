@@ -55,6 +55,7 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
+import { createPresenceRelay } from "./loro-presence.js";
 import type { TreeRooms } from "./loro-tree-rooms.js";
 import { createRoomAccessIndex, type RoomRegistration } from "./room-access.js";
 
@@ -122,6 +123,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
   let accepting = true;
   const connections = new Set<LoroGatewayConnection>();
   const access = createRoomAccessIndex();
+  const presence = createPresenceRelay();
   const unsubscribeAccess = services.fileAccessChanges.subscribe((change) =>
     access.revokeOwner(fileAccessChangeKey(change), "closed" in change ? change.closed : undefined),
   );
@@ -147,6 +149,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const joined = connection.joined.get(name);
     if (!joined) return;
     connection.joined.delete(name);
+    presence.leave(connection, name);
     joined.unsubscribe();
     access.unregister(joined.registration);
   }
@@ -412,10 +415,24 @@ export function createLoroGateway(services: LoroGatewayServices) {
     ack(UpdateStatusCode.Ok);
   }
 
+  /**
+   * A room's presence, open to a socket that has joined the room: its Join is answered with who
+   * is there, its updates go to the room's other sockets.
+   */
+  function relayPresence(connection: LoroGatewayConnection, message: ProtocolMessage) {
+    if (!("roomId" in message)) return;
+    const name = message.roomId;
+    if (message.type === MessageType.Leave) return presence.leave(connection, name);
+    if (!connection.joined.has(name)) return;
+    if (message.type === MessageType.JoinRequest)
+      return presence.join(connection, name, (frame) => send(connection, frame));
+    if (message.type === MessageType.DocUpdate)
+      return presence.update(connection, name, message.updates);
+  }
+
   async function handle(connection: LoroGatewayConnection, message: ProtocolMessage) {
-    // Presence (%EPH) is not relayed yet. Its Join and updates share the document's room id, so
-    // handling them below would refuse the client's document room or write presence into it.
-    if (message.crdt === CrdtType.LoroEphemeralStore) return;
+    // Presence shares the document room's id, on its own channel.
+    if (message.crdt === CrdtType.LoroEphemeralStore) return relayPresence(connection, message);
     switch (message.type) {
       case MessageType.JoinRequest:
         return join(connection, message);
@@ -491,6 +508,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         connection.peer.close(WS_CLOSE.SERVER_SHUTDOWN.code, WS_CLOSE.SERVER_SHUTDOWN.reason);
         this.close(connection);
       }
+      presence.dispose();
       await services.trees.dispose();
       await services.rooms.close();
     },

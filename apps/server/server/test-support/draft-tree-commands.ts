@@ -3,10 +3,12 @@ import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts
 import type { DraftItem } from "@meridian/contracts/drafts";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { walkLinkOccurrences } from "@meridian/markup/links";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
+import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { writerEdit } from "../domains/collab/test-support/live-room-text.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -61,10 +63,10 @@ export interface ScenarioWriter {
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
-   * The writer types in the document's live room: `edit` changes a copy of the room, and its
-   * update goes through the room's durable admission, as a tab's does.
+   * The writer types in the document's live room: a tab's copy appends `blocks` and sends the
+   * difference as a socket's batch.
    */
-  editLive(documentId: DocumentId, edit: (doc: Y.Doc) => void): Promise<void>;
+  editLive(documentId: DocumentId, blocks: (schema: Schema) => readonly PMNode[]): Promise<void>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -294,30 +296,12 @@ export function draftTreeCommands(
       });
       if (!written.ok) throw new Error(JSON.stringify(written.error));
     },
-    async editLive(documentId, edit) {
-      const { ports, hocuspocus } = composed().runtime;
-      const sync = ports.documentSync;
-      await sync.ensureDocumentAuthority(documentId);
-      // The room holds the document as it is; the writer's tab edits its own copy and sends the difference.
-      const document = new Y.Doc({ gc: false });
-      const state = await sync.loadHocuspocusDocument(documentId, document);
-      if (state) Y.applyUpdate(document, state);
-      const tab = new Y.Doc({ gc: false });
-      Y.applyUpdate(tab, Y.encodeStateAsUpdate(document));
-      edit(tab);
-      hocuspocus.documents.set(documentId, document as never);
-      try {
-        await sync.admitLiveWriterUpdate({
-          documentId,
-          document,
-          update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
-          origin: { type: "user", userId },
-        });
-      } finally {
-        hocuspocus.documents.delete(documentId);
-        document.destroy();
-        tab.destroy();
-      }
+    async editLive(documentId, blocks) {
+      const schema = buildDocumentSchema();
+      const { rooms } = ports().documentSync;
+      await writerEdit(rooms, documentId, (current) => [...current, ...blocks(schema)]);
+      // A writer's edit is stored on the room's debounce; a derivation reads only stored rows.
+      await rooms.flush({ kind: "live", documentId });
     },
   };
 
@@ -397,13 +381,17 @@ export function draftTreeCommands(
     purge,
     review,
     items: async (work) => (await review(work)).items,
-    storedLinks: (documentId) =>
-      ports().documentSync.withLiveDocument(documentId, async ({ doc }) =>
-        extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map((link) => ({
-          ref: link.ref,
-          href: link.href,
-        })),
-      ),
+    async storedLinks(documentId) {
+      const read = await ports().documentSync.readEffectiveBlocks({
+        documentId,
+        destination: "live",
+      });
+      if (!read.ok) throw new Error(JSON.stringify(read.error));
+      return walkLinkOccurrences(read.value.content).map(({ attrs }) => ({
+        ref: attrs.ref,
+        href: attrs.href,
+      }));
+    },
     linkAnswer,
     async liveMeaning({ ref, href, holder }) {
       const { answer } = await linkAnswer({

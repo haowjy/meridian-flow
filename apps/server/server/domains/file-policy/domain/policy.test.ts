@@ -126,39 +126,6 @@ describe("file policy", () => {
     );
     expect([result.level, result.limitedBy]).toEqual([level, limitedBy]);
   });
-
-  it("routes drafted sources to the agent's Work draft and caps them by its Work", () => {
-    const drafting = (draftWork: FileWorkFacts): [Principal, FileFacts] => [
-      {
-        accountId: OWNER,
-        agent: {
-          projectId: PROJECT,
-          chain: [link("edit", draftWork.id)],
-          draftOwner: {
-            owner: { kind: "work", workId: draftWork.id },
-            draftId: draftOf(draftWork.id),
-            handle: draftWork.handle,
-          },
-          writeMode: "draft",
-        },
-      },
-      file("manuscript", null, { draftOwner: ownerFacts(draftWork) }),
-    ];
-    const live = decide(...drafting(A), ownerGrants);
-    expect(live.destination).toEqual({
-      kind: "draft",
-      draftId: draftOf("a"),
-      ownerHandle: "a",
-    });
-    expect(live.level).toBe("edit");
-    const frozen = decide(...drafting(archived), ownerGrants);
-    expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);
-    // Scratch and uploads stay live in draft mode.
-    const [principal] = drafting(archived);
-    expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
-      kind: "live",
-    });
-  });
 });
 
 describe("skill rule", () => {

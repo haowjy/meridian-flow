@@ -1,24 +1,16 @@
 /** The model's reads: Live, or Live through the reading chat's draft view. */
-import type { AgentEditCore, ReadCommand, WriteOutcome } from "@meridian/agent-edit/integration";
+import type { ReadCommand, WriteOutcome } from "@meridian/agent-edit/integration";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
 import type { DraftViews } from "./agent-edit-runtime.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 
 export type AgentEditRouter = {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
-  /**
-   * The live room copy of a document on the Yjs journal, for the effective reader until it moves
-   * onto `DocumentRooms`. The caller disposes it.
-   */
-  readRoom(input: { documentId: DocumentId }): ReturnType<AgentEditCore["readRoom"]>;
 };
 
 export function createAgentEditRouter(input: {
   liveCore: LiveAgentEditCore;
-  /** The Yjs journal's room copies, for `readRoom`. */
-  liveUtilityCore: Pick<AgentEditCore, "readRoom">;
   /** A drafted read is Live through the draft's view; its links spell in the draft's tree. */
   draftView: DraftViews;
 }): AgentEditRouter {
@@ -91,7 +83,5 @@ export function createAgentEditRouter(input: {
           }
         : outcome;
     },
-
-    readRoom: ({ documentId }) => input.liveUtilityCore.readRoom(documentId),
   };
 }

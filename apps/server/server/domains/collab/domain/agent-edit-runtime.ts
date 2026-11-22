@@ -15,6 +15,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type Author, liveView } from "@meridian/suggestions";
@@ -28,21 +29,15 @@ import {
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
 import { codeFiletypeOf } from "./document-schema-type.js";
 import { createImportLinkBinder, createLinkBinder } from "./link-binding.js";
-import {
-  createMarkdownDocumentEngine,
-  type MarkdownSerializationAnomalyObserver,
-  type RuntimeOrigin,
-} from "./markdown-document.js";
+import { createMarkdownDocumentEngine, type RuntimeOrigin } from "./markdown-document.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
-import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
   "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 >;
 
-export function createAgentEditRuntime(input: {
+export function createAgentEditRuntime<Tx>(input: {
   journal: UpdateJournal;
   /** The model's Live reads and writes: agent-edit's Loro core on the server's rooms. */
   loro: {
@@ -50,13 +45,9 @@ export function createAgentEditRuntime(input: {
     documentEdits: LoroDocumentEdits;
     authorOfTurn(turnId: string): Promise<string | null>;
   };
-  /** The live room door the Markdown engine and link binder work on. */
-  coordinator: LiveDocumentCoordinator;
-  /** The live agent-edit core's reads and saves (production delivers a save after commit). */
+  /** The Yjs draft views' reads and saves (production delivers a save after commit). */
   agentCoordinator: DocumentCoordinator;
-  initialDocumentSeeds: InitialDocumentSeeds;
-  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
-  lockDocument?(documentId: DocumentId): Promise<void>;
+  lockDocument(documentId: DocumentId): Promise<void>;
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
@@ -64,7 +55,10 @@ export function createAgentEditRuntime(input: {
   links: DocumentLinkScopes;
   /** Durable ahead-ref registration for refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
+  /** The server's one door to document rooms: the Markdown engine reads and writes through it. */
+  rooms: DocumentRooms<Tx>;
+  /** Runs work in the caller's transaction, or in one of its own outside any. */
+  transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
   /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
   inTransaction(): boolean;
 }) {
@@ -116,9 +110,6 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  // The Markdown engine's identity-preserving write and the effective reader's room copy still
-  // run on the Yjs journal, until the engine moves onto `DocumentRooms` (phase 1b-2).
-  const liveUtilityCore = liveCoreOver(model, null);
   const draftView: DraftViews = {
     model: (draft) => suggestingModel(storedModel, { draft }, null),
     core: (draft, author) => liveCoreOver(suggestingModel(storedModel, { draft }, author), draft),
@@ -126,51 +117,22 @@ export function createAgentEditRuntime(input: {
   };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
+      schema,
       codec: markupCodec,
       exportCodec: mdxCodec({ schema, export: true }),
       links: input.links,
-      model,
-      journal: input.journal,
-      coordinator: input.coordinator,
-      initialDocumentSeeds: input.initialDocumentSeeds,
-      deferUntilCommit: input.deferUntilCommit,
+      rooms: input.rooms,
+      transaction: input.transaction,
       lockDocument: input.lockDocument,
-      metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
-      identityPreservingWrite: ({ documentId, content, actor }) =>
-        liveUtilityCore.write(
-          {
-            command: "create",
-            file: "document",
-            documentId,
-            content: content.markdown,
-            // Bound against the holder's document: overwrite it. Bound fresh: an empty one only.
-            overwrite: !content.fresh,
-          },
-          {
-            boundNodes: content.blocks,
-            actor,
-            sessionId:
-              actor.kind === "human"
-                ? actor.userId
-                : actor.kind === "agent"
-                  ? actor.turnId
-                  : `system:${actor.origin}`,
-            ...(actor.kind === "agent" || actor.kind === "human"
-              ? { threadId: actor.threadId }
-              : {}),
-          },
-        ),
       resolveFiletype: input.resolveDocumentFiletype,
-      observeSerializationAnomaly: input.observeSerializationAnomaly,
     }),
     input.links,
   );
   const linkBinder = createLinkBinder({
     codec: markupCodec,
     schema,
-    model,
-    coordinator: input.coordinator,
+    currentBlocks: markdownDocuments.currentBlocks,
     links: input.links,
     registrar: input.aheadRefs,
     resolveFiletype: input.resolveDocumentFiletype,
@@ -185,12 +147,12 @@ export function createAgentEditRuntime(input: {
     inTransaction: input.inTransaction,
   });
   return {
+    schema,
     codec,
     codecFor,
     linkBinder,
     importBinder,
     liveCore,
-    liveUtilityCore,
     draftView,
     markdownDocuments,
     markupCodec,

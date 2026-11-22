@@ -1,6 +1,12 @@
+import type { DocumentId } from "@meridian/contracts";
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentSnapshots, documents, type StoredFrontiers } from "@meridian/database/schema";
+import {
+  documentForks,
+  documentSnapshots,
+  documents,
+  type StoredFrontiers,
+} from "@meridian/database/schema";
 import {
   type DocKey,
   decodeEnvelope,
@@ -12,10 +18,15 @@ import {
   type ShapeSchema,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
-import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import type { LoroDoc, PeerID } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { holdsFrontiers, writeSnapshots } from "../../../shared/document-snapshots.js";
+import {
+  holdsFrontiers,
+  loroFrontiers,
+  storedFrontiers,
+  writeSnapshots,
+} from "../../../shared/document-snapshots.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -38,6 +49,10 @@ export interface RoomBounds {
   maxRooms: number;
   /** ...or above this estimated size: ten times a room's snapshot bytes (gate 3). */
   maxBytes: number;
+  /** A Live room whose rows pass this many bytes compacts its history on unload... */
+  compactBytes: number;
+  /** ...cutting each doc where it stood at least this long ago (design §4, "History cutoff"). */
+  historyMs: number;
 }
 
 export const DEFAULT_ROOM_BOUNDS: RoomBounds = {
@@ -46,6 +61,8 @@ export const DEFAULT_ROOM_BOUNDS: RoomBounds = {
   idleMs: 5 * 60_000,
   maxRooms: 200,
   maxBytes: 1024 * 1024 * 1024,
+  compactBytes: 5 * 1024 * 1024,
+  historyMs: 7 * 24 * 60 * 60_000,
 };
 
 /** A loaded room's estimated memory against its snapshot bytes, as gate 3 measured it. */
@@ -56,6 +73,12 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   loaded(): string[];
   /** Save every loaded room and free it: the process is stopping. */
   close(): Promise<void>;
+  /**
+   * Deletes the Live rows of documents that never got a `documents` row (an import that stopped
+   * wrote their first states ahead of their creates). A document with a row is left alone: its
+   * row's delete takes its rooms' rows.
+   */
+  discardUnborn(documentIds: readonly DocumentId[]): Promise<void>;
 }
 
 interface Loaded {
@@ -100,6 +123,8 @@ export function createPostgresDocumentRooms(input: {
   eventSink: EventSink;
   /** The packed collab schema this server writes: a save raises `documents.schema_version` to it. */
   schemaVersion: number;
+  /** A save of a Live room's rows committed: its text moved for everyone who derives from it. */
+  onLiveSaved?(documentId: DocumentId): void;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
   const { db, shape, eventSink, schemaVersion } = input;
@@ -343,8 +368,13 @@ export function createPostgresDocumentRooms(input: {
     const bytes = await writeSnapshots(tx, rows);
     await tx
       .update(documents)
-      .set({ schemaVersion })
-      .where(and(eq(documents.id, room.documentId), lt(documents.schemaVersion, schemaVersion)));
+      .set({
+        schemaVersion: sql`greatest(${documents.schemaVersion}, ${schemaVersion})`,
+        // Live's saves move the document's content: its derivations are stale from here.
+        ...(room.kind === "live" ? { contentSeq: sql`${documents.contentSeq} + 1` } : {}),
+      })
+      .where(eq(documents.id, room.documentId));
+    if (room.kind === "live") deferUntilDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
     return { bytes, docs: rows.length };
   }
 
@@ -425,6 +455,16 @@ export function createPostgresDocumentRooms(input: {
       if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
       if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
       loaded.docs.free();
+      if (room.kind === "live" && loaded.snapshotBytes > bounds.compactBytes)
+        await compact(room).catch((cause) =>
+          emitEvent(eventSink, {
+            level: "error",
+            source: "collab.rooms",
+            name: "history.compact_failed",
+            correlation: { documentId: room.documentId },
+            payload: { room: loaded.name, error: String(cause) },
+          }),
+        );
     })();
     loaded.unloading = run;
     // A failed save keeps the room loaded and dirty; the next unload or save tries again.
@@ -432,6 +472,133 @@ export function createPostgresDocumentRooms(input: {
       if (!loaded.docs.isFreed) loaded.unloading = null;
     });
     return run;
+  }
+
+  /**
+   * Cuts the history of a Live room's docs, and of its forks, where each doc stood at its history
+   * mark, once that mark is `historyMs` old and the room's rows pass `compactBytes` (design §4).
+   * It works on the stored rows under the document's lock, after the room unloaded. Each fork is
+   * first forwarded to Live and cut at Live's marks: a fork cut there keeps importing Live, and
+   * one left behind the cut never could. Content does not change, so `content_seq` does not move.
+   * A tab whose base is below a cut is refused from then on (`HistoryCutoffError`).
+   */
+  async function compact(live: DocumentRoom & { kind: "live" }) {
+    const name = loroRoomName(live);
+    const result = await runOutsideDrizzleTransaction(() =>
+      runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
+        await lockRoom(tx, live);
+        const [size] = await tx
+          .select({
+            bytes: sql<number>`coalesce(sum(octet_length(${documentSnapshots.snapshot})), 0)::bigint`,
+          })
+          .from(documentSnapshots)
+          .where(eq(documentSnapshots.roomKey, name));
+        const before = Number(size?.bytes ?? 0);
+        if (before <= bounds.compactBytes) return null;
+        const ripe = await tx
+          .select({ docKey: documentSnapshots.docKey, mark: documentSnapshots.historyMark })
+          .from(documentSnapshots)
+          .where(
+            and(
+              eq(documentSnapshots.roomKey, name),
+              lte(documentSnapshots.historyMarkAt, new Date(Date.now() - bounds.historyMs)),
+            ),
+          );
+        if (ripe.length === 0) return null;
+        const marks = new Map(ripe.map((row) => [row.docKey, row.mark]));
+        const liveDocs = await build(tx, live, null, freshServerPeerId());
+        let after = before;
+        let cut = 0;
+        let forksCut = 0;
+        try {
+          const forks = await tx
+            .select({ draftId: documentForks.draftId })
+            .from(documentForks)
+            .where(eq(documentForks.documentId, live.documentId));
+          for (const { draftId } of forks) {
+            const fork = { kind: "fork", draftId, documentId: live.documentId } as const;
+            const forkName = loroRoomName(fork);
+            const stored = await readFrontiers(tx, forkName);
+            if (stored.length === 0) continue;
+            const docs = await build(tx, fork, liveDocs, freshServerPeerId());
+            try {
+              for (const { docKey } of stored) {
+                const saved = await cutRow(
+                  tx,
+                  forkName,
+                  docKey,
+                  docs.doc(docKey),
+                  marks.get(docKey),
+                );
+                if (saved > 0) forksCut++;
+              }
+            } finally {
+              docs.free();
+            }
+          }
+          for (const [docKey, mark] of marks) {
+            const saved = await cutRow(tx, name, docKey, liveDocs.doc(docKey), mark);
+            after -= saved;
+            if (saved > 0) cut++;
+          }
+        } finally {
+          liveDocs.free();
+        }
+        return { before, after, docs: cut, forkDocs: forksCut };
+      }),
+    );
+    if (!result || result.docs + result.forkDocs === 0) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.rooms",
+      name: "history.compacted",
+      correlation: { documentId: live.documentId },
+      payload: {
+        bytesBefore: result.before,
+        bytesAfter: result.after,
+        docs: result.docs,
+        forkDocs: result.forkDocs,
+      },
+    });
+  }
+
+  /**
+   * Rewrites one row as `doc` cut at `mark`, and moves the mark to where the doc stands now, so
+   * the next compaction cuts there. Returns the bytes the row lost: 0 for no cut (no mark, or one
+   * the doc lacks), and 0 where the cut would not shrink the row (a doc little changed since its
+   * mark), which keeps its history and only moves the mark.
+   */
+  async function cutRow(
+    tx: DrizzleDb,
+    roomKey: string,
+    docKey: DocKey,
+    doc: LoroDoc | undefined,
+    mark: StoredFrontiers | undefined,
+  ): Promise<number> {
+    if (!doc || !mark || mark.length === 0 || !holdsFrontiers(doc, mark)) return 0;
+    const shallow = doc.export({ mode: "shallow-snapshot", frontiers: loroFrontiers(mark) });
+    const [row] = await tx
+      .select({ bytes: sql<number>`octet_length(${documentSnapshots.snapshot})` })
+      .from(documentSnapshots)
+      .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
+    const stored = Number(row?.bytes ?? 0);
+    const now = storedFrontiers(doc);
+    const shrinks = shallow.byteLength < stored;
+    await tx
+      .update(documentSnapshots)
+      .set({
+        ...(shrinks
+          ? {
+              snapshot: Buffer.from(shallow.buffer, shallow.byteOffset, shallow.byteLength),
+              frontiers: now,
+            }
+          : {}),
+        historyMark: now,
+        historyMarkAt: sql`now()`,
+      })
+      .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
+    return shrinks ? stored - shallow.byteLength : 0;
   }
 
   /**
@@ -553,6 +720,8 @@ export function createPostgresDocumentRooms(input: {
       };
     },
 
+    // The save takes the document's lock in a transaction of its own: a caller whose transaction
+    // holds that lock and awaits this waits on itself.
     async flush(room) {
       const loaded = rooms.get(loroRoomName(room));
       if (loaded && !loaded.docs.isFreed) await save(loaded, "flush");
@@ -561,6 +730,17 @@ export function createPostgresDocumentRooms(input: {
     unload: unloadRoom,
 
     loaded: () => [...rooms.keys()],
+
+    async discardUnborn(documentIds) {
+      if (documentIds.length === 0) return;
+      await currentDrizzleDb(db).execute(sql`
+        delete from document_snapshots s
+        where s.room_key in (${sql.join(
+          documentIds.map((id) => sql`${`live:${id}`}`),
+          sql`, `,
+        )})
+          and not exists (select 1 from documents d where 'live:' || d.id::text = s.room_key)`);
+    },
 
     async close() {
       closed = true;

@@ -837,18 +837,6 @@ export function createDrizzleJournal(
 
 function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
   return {
-    async discardUnbornDocuments(documentIds) {
-      if (documentIds.length === 0) return;
-      // The heads' foreign keys take the checkpoints and updates with them.
-      await currentDrizzleDb(db as Database).execute(sql`
-        delete from document_yjs_heads h
-        where h.kind = 'document'
-          and h.document_id in (${sql.join(
-            documentIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-          and not exists (select 1 from documents d where d.id = h.document_id)`);
-    },
     async seedInitialDocument(docId, state) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;

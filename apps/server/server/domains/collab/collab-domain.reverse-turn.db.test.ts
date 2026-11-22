@@ -15,7 +15,6 @@ import { modelWrite } from "./test-support/model-write.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
-  DRAFT_DESTINATION,
   PROJECT_ID,
   SOURCE_ID,
   THREAD_ID,
@@ -157,7 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
+            grant: testFileGrant({ kind: "live" }, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseIdentity: {
@@ -180,7 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
+            grant: testFileGrant({ kind: "live" }, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseIdentity: {
