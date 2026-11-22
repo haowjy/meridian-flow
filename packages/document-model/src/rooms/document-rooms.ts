@@ -54,9 +54,10 @@ export interface DocumentRooms<Tx> {
    * A client's batch (a keystroke): imported, sent to the other subscribers, forwarded into loaded
    * forks, and saved on the debounce (2 s after the last batch, 10 s after the first). Resolves
    * once imported, which is when the socket acks it; `pending` says some ops wait on others not yet
-   * seen, and the batch is acked either way. Rejects only for bytes that do not decode or fail
-   * Loro's checksum (`EnvelopeError`, `CorruptDocBytesError`: `LORO_ROOM_ERROR.CORRUPT_UPDATE`),
-   * and then imports none of the batch, or depend on history below the cutoff.
+   * seen, and the batch is acked either way. Rejects for two things only, and then imports none of
+   * the batch: bytes that do not decode or fail Loro's checksum (`EnvelopeError`,
+   * `CorruptDocBytesError`: `LORO_ROOM_ERROR.CORRUPT_UPDATE`), and an update that depends on
+   * history below a doc's shallow cutoff (`HistoryCutoffError`: `LORO_ROOM_ERROR.HISTORY_CUTOFF`).
    */
   write(room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin): Promise<{ pending: boolean }>;
 

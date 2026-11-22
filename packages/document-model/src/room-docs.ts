@@ -1,4 +1,10 @@
-import { decodeImportBlobMeta, type Frontiers, LoroDoc, VersionVector } from "loro-crdt";
+import {
+  decodeImportBlobMeta,
+  type Frontiers,
+  type ImportBlobMetadata,
+  LoroDoc,
+  VersionVector,
+} from "loro-crdt";
 import { decodeEnvelope, type Envelope, encodeEnvelope } from "./envelope.js";
 import type { PeerId } from "./peer.js";
 import {
@@ -31,15 +37,66 @@ export class CorruptDocBytesError extends Error {
   }
 }
 
-function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean) {
-  let mode: string;
+/**
+ * An update for one doc of a batch that depends on history below that doc's shallow cutoff (a tab
+ * offline past the cutoff, design §4: `LORO_ROOM_ERROR.HISTORY_CUTOFF`). Thrown before anything
+ * is imported or created.
+ */
+export class HistoryCutoffError extends Error {
+  constructor(
+    readonly key: DocKey,
+    reason: string,
+  ) {
+    super(`doc ${key}: depends on history below the shallow cutoff (${reason})`);
+    this.name = "HistoryCutoffError";
+  }
+}
+
+function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): ImportBlobMetadata {
+  let meta: ImportBlobMetadata;
   try {
-    mode = decodeImportBlobMeta(bytes, true).mode;
+    meta = decodeImportBlobMeta(bytes, true);
   } catch (error) {
     throw new CorruptDocBytesError(key, `not Loro bytes, or a failed checksum (${String(error)})`);
   }
-  if (snapshot && mode !== "snapshot" && mode !== "shallow-snapshot")
-    throw new CorruptDocBytesError(key, `a snapshot row holds a Loro ${mode}`);
+  if (snapshot && meta.mode !== "snapshot" && meta.mode !== "shallow-snapshot")
+    throw new CorruptDocBytesError(key, `a snapshot row holds a Loro ${meta.mode}`);
+  return meta;
+}
+
+/**
+ * Throws `HistoryCutoffError` if `doc` would refuse `bytes` for depending on history below its
+ * shallow cutoff. The metadata clears every update that starts at or after the cutoff, or brings
+ * nothing `doc` lacks. One that starts below it may still land, when its ops below the cutoff are
+ * ones `doc` already has and its new ops depend only on ops after it (a tab that rejoined and
+ * sends from an old version); the metadata cannot tell that from a stale tab's offline typing, so
+ * only that case is settled by importing into a fork.
+ */
+function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: ImportBlobMetadata) {
+  if (!doc.isShallow()) return;
+  const have = doc.oplogVersion();
+  const brings = [...meta.partialEndVersionVector.toJSON()].some(
+    ([peer, end]) => (have.get(peer) ?? 0) < end,
+  );
+  if (!brings) return;
+  const since = doc.shallowSinceVV();
+  const roots = doc.shallowSinceFrontiers();
+  const belowCutoff =
+    meta.startFrontiers.length === 0 ||
+    meta.startFrontiers.some(
+      (id) =>
+        id.counter < (since.get(id.peer) ?? 0) &&
+        !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
+    );
+  if (!belowCutoff) return;
+  const trial = doc.fork();
+  try {
+    trial.import(bytes);
+  } catch (error) {
+    throw new HistoryCutoffError(key, String(error));
+  } finally {
+    trial.free();
+  }
 }
 
 /**
@@ -155,22 +212,27 @@ export class RoomDocs {
    * offline peer's edit. Each doc is `fork().checkout(frontiers)` with detached editing on, which
    * works on a doc compacted to a shallow snapshot where `forkAt` does not (design §4); the
    * caller checks first that each frontier is in its doc and not below the cutoff, or this
-   * throws. A text doc the frontiers do not name did not exist at the read and is left out. In a
-   * draft, the copy has its own copy of Live holding Live's texts at their frontiers. Not forwarded;
-   * the caller frees it.
+   * throws, having made nothing. A text doc the frontiers do not name did not exist at the read and
+   * is left out. In a draft, the copy has its own copy of Live holding Live's texts at their
+   * frontiers, with an empty structure: a draft reads its structure from its own fork. Not
+   * forwarded; the caller frees it. Export its writes from the `shownVersion()` of the copy it was
+   * made from, not the view's own version, which would ship a forked block's whole history.
    */
   at(frontiers: ReadonlyMap<DocKey, Frontiers>, peer: PeerId): RoomDocs {
     const view = (doc: LoroDoc, at: Frontiers) => {
       const copy = doc.fork();
-      copy.checkout(at);
+      try {
+        copy.checkout(at);
+      } catch (error) {
+        copy.free();
+        throw error;
+      }
       copy.setDetachedEditing(true);
       return copy;
     };
-    const structureAt = frontiers.get(STRUCTURE_KEY) ?? [];
-    const live = this.live
-      ? new RoomDocs(this.shape, peer, this.live.structure.fork(), null)
-      : null;
-    const copy = new RoomDocs(this.shape, peer, view(this.structure, structureAt), live);
+    const structure = view(this.structure, frontiers.get(STRUCTURE_KEY) ?? []);
+    const live = this.live ? new RoomDocs(this.shape, peer, new LoroDoc(), null) : null;
+    const copy = new RoomDocs(this.shape, peer, structure, live);
     copy.ownedLive = live;
     try {
       for (const [key, at] of frontiers) {
@@ -227,6 +289,20 @@ export class RoomDocs {
     return out;
   }
 
+  /**
+   * The version of every doc a read of this copy shows, as `frontiers()` names them: the room
+   * version plus, in a draft, Live's version of each text it has no fork of. A planning view's
+   * writes are exported from the room's `shownVersion()` (`view.exportSince(docs.shownVersion())`,
+   * design §5): a block the view forked from Live then ships only its new ops, which the draft
+   * room imports into its own fork of Live's doc (`importBatch`).
+   */
+  shownVersion(): Map<DocKey, VersionVector> {
+    const out = new Map<DocKey, VersionVector>();
+    for (const [key, doc] of this.live?.texts ?? []) out.set(key, doc.oplogVersion());
+    for (const [key, vv] of this.version()) out.set(key, vv);
+    return out;
+  }
+
   /** The update of every owned doc that has ops beyond `since` (all of a doc it lacks). */
   exportSince(since: ReadonlyMap<DocKey, VersionVector> = new Map()): Map<DocKey, Uint8Array> {
     const out = new Map<DocKey, Uint8Array>();
@@ -252,8 +328,9 @@ export class RoomDocs {
   }
 
   /**
-   * Import a batch, as one: every entry is checked first (`CorruptDocBytesError`), so a batch
-   * with a bad entry imports nothing and creates no doc. A doc key this copy has no doc for (a
+   * Import a batch, as one: every entry is checked first, so a batch with an entry that is not
+   * Loro bytes (`CorruptDocBytesError`) or depends on history below its doc's shallow cutoff
+   * (`HistoryCutoffError`) imports nothing and creates no doc. A doc key this copy has no doc for (a
    * block another copy created or first wrote) gets one: in a draft a fork of Live's doc of that
    * key when Live has one, else empty, so a fork's first write into a block lands rather than
    * staying pending (design §4). Returns the keys that changed and whether any import is pending
@@ -261,7 +338,11 @@ export class RoomDocs {
    */
   importBatch(batch: Envelope): { changed: DocKey[]; pending: boolean } {
     this.alive();
-    for (const [key, bytes] of batch) checkBytes(key, bytes, false);
+    for (const [key, bytes] of batch) {
+      const meta = checkBytes(key, bytes, false);
+      const target = this.doc(key) ?? this.live?.textOf(key);
+      if (target) checkCutoff(key, target, bytes, meta);
+    }
     const changed: DocKey[] = [];
     let pending = false;
     for (const [key, bytes] of batch) {

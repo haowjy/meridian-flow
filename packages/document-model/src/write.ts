@@ -73,23 +73,30 @@ export class StructureWriter {
   }
 
   /**
-   * Every key of a new or changed block but its order. A parent the read moved to the document
-   * to break a cycle is left as stored when the write keeps it there, so writing back an unchanged
-   * read writes nothing (and in a draft makes no override the writer never made).
+   * Every key of a new or changed block but its order. A parent the read moved to the document to
+   * break a cycle is left as stored when the write leaves the block where it read (same parent,
+   * `moved` false), so writing back an unchanged read writes nothing (and in a draft makes no
+   * override the writer never made). A block the write moves among its siblings gets its parent
+   * written, or the move would be lost once the cycle is mended.
    */
   block(
     id: BlockId,
     parent: BlockId | null,
     node: string,
     attrs: Readonly<Record<string, unknown>>,
+    moved = false,
   ) {
-    const read = this.view.parent(id);
-    if (!(read === parent && read !== this.view.value("parent", id)))
-      this.set("parent", id, parent);
+    if (moved || !this.brokenCycle(id, parent)) this.set("parent", id, parent);
     this.set("node", id, node);
     const stored = storedAttrs(attrs);
     for (const name of new Set([...Object.keys(this.view.attrs(id)), ...Object.keys(stored)]))
       this.set("attrs", `${id}/${name}`, stored[name] ?? null);
+  }
+
+  /** The read shows `id` under `parent` only because it broke a cycle there. */
+  brokenCycle(id: BlockId, parent: BlockId | null): boolean {
+    const read = this.view.parent(id);
+    return read === parent && read !== this.view.value("parent", id);
   }
 
   /**
@@ -109,6 +116,17 @@ export class StructureWriter {
       if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
         comments.delete(key);
   }
+}
+
+/** Whether `id` has other siblings before it in `written` than in `read`, among those in both. */
+function movedAmong(read: readonly BlockId[], written: readonly BlockId[], id: BlockId): boolean {
+  const inRead = new Set(read);
+  const inWritten = new Set(written);
+  const before = (list: readonly BlockId[], keep: Set<BlockId>) =>
+    new Set(list.slice(0, list.indexOf(id)).filter((other) => keep.has(other)));
+  const was = before(read, inWritten);
+  const now = before(written, inRead);
+  return was.size !== now.size || [...was].some((other) => !now.has(other));
 }
 
 function sameOrderAsBase(view: StructureView, id: BlockId): boolean {
@@ -178,10 +196,13 @@ export function writeDocument(
       random,
     ))
       writer.set("order", id, key);
+    const ids = stored.map((block) => block.id);
     for (const block of stored) {
       if (written.has(block.id)) throw new Error(`block id ${block.id} appears twice`);
       written.add(block.id);
-      writer.block(block.id, parent, block.node, block.attrs);
+      const moved =
+        writer.brokenCycle(block.id, parent) && movedAmong(view.children(parent), ids, block.id);
+      writer.block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);
       else {
         const rule = shape.node(block.node);

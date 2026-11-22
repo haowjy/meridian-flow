@@ -26,6 +26,7 @@ export {
   CorruptDocBytesError,
   decodeRoomVersion,
   encodeRoomVersion,
+  HistoryCutoffError,
   RoomDocs,
   RoomDocsFreedError,
 } from "./room-docs.js";

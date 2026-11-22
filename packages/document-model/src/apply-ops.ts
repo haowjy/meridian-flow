@@ -208,7 +208,7 @@ export function applyOps(
   }
   function insertBlock(block: ShapeBlock, parent: BlockId | null, key: string) {
     writer.set("order", block.id, key);
-    writer.block(block.id, parent, block.node, block.attrs);
+    writer.block(block.id, parent, block.node, block.attrs, true);
     if (block.kind === "container") {
       const keys = orderKeys(
         block.children.map((child) => child.id),
