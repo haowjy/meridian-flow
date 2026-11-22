@@ -1,3 +1,4 @@
+import type { TreeDoc } from "./list-doc.js";
 import type { Actor, TreeRecord, TreeRecordInput } from "./record.js";
 import {
   type Change,
@@ -33,7 +34,7 @@ const standsIn = (deletes: ReadonlySet<string>, record: TreeRecord) =>
   deletes.has(record.id) || deletes.has(record.carries ?? record.id);
 
 /** The delete `recordId` names as `asked` has it, and the view whose Trash holds it. */
-function deleteIn(writer: TreeWriter, asked: View, recordId: string) {
+function deleteIn(writer: TreeWriter<TreeDoc>, asked: View, recordId: string) {
   const record = lastOfFamily(writer.doc, asked, recordId);
   if (!record || record === "unknown" || record.type !== "delete") return null;
   return { record, projection: writer.view(record.draft === null ? LIVE : asked) };
@@ -43,7 +44,7 @@ function deleteIn(writer: TreeWriter, asked: View, recordId: string) {
  * Whether the delete `recordId` can still be undone: it is in force in the view (not lifted by a
  * restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
  */
-export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
+export function deleteStands(writer: TreeWriter<TreeDoc>, asked: View, recordId: string): boolean {
   const found = deleteIn(writer, asked, recordId);
   return found !== null && standsIn(found.projection.standingDeletes, found.record);
 }
@@ -52,7 +53,7 @@ export function deleteStands(writer: TreeWriter, asked: View, recordId: string):
  * Whether the delete `recordId` is in force and hides something now (`hidingDeletes`): whether
  * its Undo would bring anything back. One that hides nothing may hide again, while it stands.
  */
-export function deleteHides(writer: TreeWriter, asked: View, recordId: string): boolean {
+export function deleteHides(writer: TreeWriter<TreeDoc>, asked: View, recordId: string): boolean {
   const found = deleteIn(writer, asked, recordId);
   return found !== null && standsIn(found.projection.hidingDeletes, found.record);
 }
@@ -68,7 +69,7 @@ export function deleteHides(writer: TreeWriter, asked: View, recordId: string): 
  * (Trash reads that: a rename leaves what the move lifted lifted), else of the change's type.
  */
 function turn(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   view: View,
   actor: Actor,
   history: NodeHistory,
@@ -166,7 +167,7 @@ const notTaken = (reason: SkipReason): NotUndone =>
  * end of it: the Work's replay is started again when live has grown under it.
  */
 function takeBack(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   actor: Actor,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean,
@@ -268,7 +269,7 @@ function takeBack(
  * written (`{ closed: source }`): the change stays, as it does in `undoApply`.
  */
 export function undoChange(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   asked: View,
   actor: Actor,
   recordId: string,
@@ -285,7 +286,7 @@ export function undoChange(
  * without it.
  */
 export function undoReports(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
 ): Map<string, UndoReport> {
@@ -299,7 +300,7 @@ export function undoReports(
 
 /** Takes the steps back in the order given (`takeBack`), and writes the ones that land. */
 export function takeBackAll(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   actor: Actor,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
@@ -332,7 +333,7 @@ export function changeUndone(
  * replay's to say (`wouldTake`), not this function's.
  */
 function opposite(
-  writer: TreeWriter,
+  writer: TreeWriter<TreeDoc>,
   view: View,
   actor: Actor,
   tree: TreeStanding,

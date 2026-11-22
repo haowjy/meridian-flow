@@ -1080,6 +1080,9 @@ importers:
       fractional-indexing:
         specifier: ^4.0.0
         version: 4.0.0
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.18.0
       yjs:
         specifier: 13.6.33
         version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
