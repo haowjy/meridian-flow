@@ -68,7 +68,7 @@ Sees: every sidebar source turns to the Work's tree on a grey review ground, at 
 
 Does: opens a drafted document.
 
-Sees (phase 2): a Draft chip in the toolbar and a line of review controls above the page, with the Work's changes to the text painted in it. The Live menu lists every Work with changes to the page.
+Sees: from phase 2, a Draft chip in the toolbar and a line of review controls above the page, with the Work's changes to the text painted in it. The Live menu lists every Work with changes to the page.
 
 - Map: [editor](../app-documents.md#editor), [draft-review](../app-documents.md#draft-review), [file-policy](../server-documents.md#file-policy)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)
