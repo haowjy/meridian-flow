@@ -22,8 +22,6 @@ export interface RoomSync {
   version: Uint8Array;
   /** Null when the copy lacks nothing. */
   update: Uint8Array | null;
-  /** The Unix time, in seconds, of the oldest change the copy lacks; null when it lacks none. */
-  oldestLacking: number | null;
 }
 
 /**

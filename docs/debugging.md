@@ -658,9 +658,8 @@ curl -sS \
   "$SERVER_URL/api/debug/events?source=collab.rooms&documentId=X&limit=50" | jq .
 ```
 
-The room server's own records are `collab.rooms`: `room.join` (with `room`, `permission`,
-`sentBytes` and, for a document, `daysBehind`: how old the oldest change the joining copy lacked
-is, in days), `room.refused_cutoff`, `room.write_failed`, `snapshot.saved`, `snapshot.save_failed`,
+The room server's own records are `collab.rooms`: `room.join` (with `room`, `permission`
+and `sentBytes`), `room.refused_cutoff`, `room.write_failed`, `snapshot.saved`, `snapshot.save_failed`,
 `history.compacted` and `history.compact_failed`.
 
 `GET /api/debug/events/stream` is live-only SSE with the same record filters.

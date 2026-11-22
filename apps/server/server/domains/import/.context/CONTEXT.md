@@ -169,7 +169,7 @@ A pass that fails keeps its lease for a delay; five failed passes without a reve
 with `organize_failed`. Retry starts again from the stored plan and the texts already written.
 
 **A stopped or abandoned import** deletes its waiting texts by its entries' ids in the sweep that
-removes its objects (`discardUnbornDocuments`: heads of documents that never got a row).
+removes its objects (`endDocumentRooms`: the text of documents that never got a row).
 
 Context and Collab refusals retain typed causes in server diagnostics. Browser
 entry reasons remain the import-specific reason union; do not expose provider

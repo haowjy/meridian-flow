@@ -316,11 +316,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
         room: room.kind,
         permission: admission.permission,
         sentBytes: sync.update?.byteLength ?? 0,
-        // How far behind the joining copy is: what the history cutoff (7 days) is tuned on.
-        daysBehind:
-          sync.oldestLacking === null
-            ? 0
-            : Math.max(0, Math.round((Date.now() / 1000 - sync.oldestLacking) / 864) / 100),
       },
     });
   }
@@ -398,7 +393,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         status,
       });
     const joined = connection.joined.get(name);
-    if (!joined || joined.permission !== "write") return ack(UpdateStatusCode.PermissionDenied);
+    if (joined?.permission !== "write") return ack(UpdateStatusCode.PermissionDenied);
     try {
       for (const batch of updates) await joined.write(batch);
     } catch (cause) {

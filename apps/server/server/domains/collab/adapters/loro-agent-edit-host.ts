@@ -13,7 +13,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, documents, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
@@ -30,7 +30,9 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
         const [row] = await db()
           .select({ id: documents.id })
           .from(documents)
-          .where(eq(documents.id, documentId as DocumentId));
+          .where(
+            and(eq(documents.id, documentId as DocumentId), isNull(documents.contentPurgedAt)),
+          );
         if (!row) throw new DocumentNotFoundError(documentId);
         return { kind: "live", documentId };
       },

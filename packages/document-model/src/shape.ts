@@ -84,8 +84,6 @@ export interface ShapeSchema {
  * keys and `inline` take the default, `none`.
  */
 export function configureDoc(doc: LoroDoc, shape: ShapeSchema): LoroDoc {
-  // Each change carries its commit time: a Join reports how far behind the joining copy is.
-  doc.setRecordTimestamp(true);
   doc.configTextStyle(shape.styles);
   doc.configDefaultTextStyle({ expand: "none" });
   return doc;

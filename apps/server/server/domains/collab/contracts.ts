@@ -285,8 +285,12 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<void, SyncError>>;
-  /** Deletes the stored text of documents that never got a row (an import that ended early). */
-  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  /**
+   * Ends the documents' loaded rooms without saving them, inside the transaction that holds their
+   * locks and is about to delete their rows (a content release). Also deletes the stored text of
+   * documents that never got a row (an import that ended early).
+   */
+  endDocumentRooms(documentIds: readonly DocumentId[]): Promise<void>;
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */

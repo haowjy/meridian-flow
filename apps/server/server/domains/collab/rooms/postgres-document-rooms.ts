@@ -74,11 +74,15 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   /** Save every loaded room and free it: the process is stopping. */
   close(): Promise<void>;
   /**
-   * Deletes the Live rows of documents that never got a `documents` row (an import that stopped
-   * wrote their first states ahead of their creates). A document with a row is left alone: its
-   * row's delete takes its rooms' rows.
+   * Ends the documents' loaded rooms, Live and forks, without saving: timers stop, unsaved
+   * batches are dropped and the docs are freed, so no save can run for them afterwards. A caller
+   * that deletes the documents' rows calls it inside the transaction that holds their locks (a
+   * save already waiting on one of them then finds its room gone). It also deletes the Live rows
+   * of documents that never got a `documents` row (an import that stopped wrote their first states
+   * ahead of their creates); a document with a row keeps its rows here: its row's delete, or
+   * the caller, takes them.
    */
-  discardUnborn(documentIds: readonly DocumentId[]): Promise<void>;
+  end(documentIds: readonly DocumentId[]): Promise<void>;
 }
 
 interface Loaded {
@@ -400,6 +404,8 @@ export function createPostgresDocumentRooms(input: {
         runInDrizzleTransaction(db, async () => {
           const tx = currentDrizzleDb(db);
           await lockRoom(tx, loaded.room);
+          // The room ended while this save waited for the lock.
+          if (loaded.docs.isFreed) return;
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
             merged = true;
@@ -657,7 +663,6 @@ export function createPostgresDocumentRooms(input: {
       const sync = {
         version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
-        oldestLacking: loaded.docs.oldestLacking(since),
       };
       for (const vector of since.values()) vector.free();
       return sync;
@@ -735,8 +740,23 @@ export function createPostgresDocumentRooms(input: {
 
     loaded: () => [...rooms.keys()],
 
-    async discardUnborn(documentIds) {
+    async end(documentIds) {
       if (documentIds.length === 0) return;
+      // A load in flight would register its room after this one ended.
+      await Promise.allSettled([...loading.values()]);
+      const ending = new Set<string>(documentIds);
+      const victims = [...rooms.values()]
+        .filter((r) => ending.has(r.room.documentId))
+        .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
+      for (const loaded of victims) {
+        if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
+        if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+        loaded.idleTimer = loaded.saveTimer = null;
+        loaded.dirty = new Set();
+        loaded.firstDirtyAt = 0;
+        if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+        loaded.docs.free();
+      }
       await currentDrizzleDb(db).execute(sql`
         delete from document_snapshots s
         where s.room_key in (${sql.join(

@@ -3,6 +3,7 @@
  * and everything that was only about its text and history. The `documents` row stays, marked
  * `content_purged_at` and stripped of its bytes, so a link bound to it still resolves to "gone".
  * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts;
+ * the documents' loaded rooms end first, so a save waiting on those locks finds nothing to write;
  * the caller deletes the returned storage objects after the commit.
  */
 
@@ -30,6 +31,8 @@ export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 export async function releaseDocumentContent(
   db: Database,
+  /** Collab's `endDocumentRooms`: the loaded rooms end unsaved, so nothing saves the text back. */
+  endRooms: (documentIds: readonly DocumentId[]) => Promise<void>,
   documentIds: readonly DocumentId[],
 ): Promise<Released> {
   if (documentIds.length === 0) return { documentIds: [], storageUrls: [] };
@@ -40,6 +43,7 @@ export async function releaseDocumentContent(
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
+  await endRooms(list);
   // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx.delete(documentSnapshots).where(inArray(documentSnapshots.roomKey, list.map(liveRoom)));
