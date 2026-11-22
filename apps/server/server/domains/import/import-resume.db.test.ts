@@ -60,12 +60,12 @@ describe.runIf(enabled)("import resume", () => {
       .from(documentSnapshots)
       .where(like(documentSnapshots.roomKey, "live:%"));
   afterAll(async () => {
-    await deleteDrizzleRows(db, [imports, users]);
+    await deleteDrizzleRows(db, [imports, users, documentSnapshots]);
     await db.close();
   });
 
   it("resumes an interrupted build, revives after Retry, and reveals documents with block rows", async () => {
-    await deleteDrizzleRows(db, [imports, users]);
+    await deleteDrizzleRows(db, [imports, users, documentSnapshots]);
     const userId = randomUUID();
     const projectId = randomUUID();
     await db.insert(users).values(conformanceUserValues(userId, "import-resume"));
@@ -201,7 +201,7 @@ describe.runIf(enabled)("import resume", () => {
   }, 60_000);
 
   it("deletes the waiting texts of a stopped import with its objects", async () => {
-    await deleteDrizzleRows(db, [imports, users]);
+    await deleteDrizzleRows(db, [imports, users, documentSnapshots]);
     const userId = randomUUID();
     const projectId = randomUUID();
     await db.insert(users).values(conformanceUserValues(userId, "import-stop"));

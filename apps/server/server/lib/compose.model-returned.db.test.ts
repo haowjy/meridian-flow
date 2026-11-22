@@ -1,6 +1,6 @@
 /**
  * The AI's edit that cannot land is answered, not refused: the writer deleted the document or a
- * paragraph, or the Work is closed. (An edit the writer's Discard left behind lands in a new draft.)
+ * paragraph, or the Work is closed.
  * The call is a plain `done` command row that says `returned`, nothing opens, nothing is journalled, and the result
  * shows the document as it now stands, so the model's next edit lands.
  */
@@ -38,18 +38,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { handleDraftListRequest, handlePressRequest, selectDraftRouteServices } = await import(
-      "./draft-review-route.js"
-    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000e03";
     const WORK_ID = "00000000-0000-4000-8000-000000000e04";
-    const DRAFTING = {
-      threadId: "00000000-0000-4000-8000-000000000e05",
-      turnId: "00000000-0000-4000-8000-000000000e06",
-    };
     const LIVE_CHAT = {
       threadId: "00000000-0000-4000-8000-000000000e07",
       turnId: "00000000-0000-4000-8000-000000000e08",
@@ -88,38 +81,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scope: "project",
       });
       await treeSeeder(db).document(SOURCE_ID, "ch1", { id: CH1 });
-      for (const [chat, mode] of [
-        [DRAFTING, "draft"],
-        [LIVE_CHAT, "direct"],
-      ] as const) {
-        await db.insert(schema.threads).values({
-          rootThreadId: chat.threadId,
-          id: chat.threadId,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          title: `${mode} chat`,
-          kind: "primary",
-          aiWriteMode: mode,
-        });
-        await db.insert(schema.turns).values({
-          id: chat.turnId,
-          threadId: chat.threadId,
-          position: 1,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        });
-        await db.insert(schema.threadWorks).values({
-          threadId: chat.threadId,
-          workId: WORK_ID,
-          projectId: PROJECT_ID,
-          isPrimary: true,
-        });
-      }
+      await db.insert(schema.threads).values({
+        rootThreadId: LIVE_CHAT.threadId,
+        id: LIVE_CHAT.threadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "direct chat",
+        kind: "primary",
+        aiWriteMode: "direct",
+      });
+      await db.insert(schema.turns).values({
+        id: LIVE_CHAT.turnId,
+        threadId: LIVE_CHAT.threadId,
+        position: 1,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await db.insert(schema.threadWorks).values({
+        threadId: LIVE_CHAT.threadId,
+        workId: WORK_ID,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
     });
 
     /** One model reply as the loop runs it: frontiers credit the blocks the reply carries. */
-    async function reply(chat: typeof DRAFTING) {
+    async function reply(chat: typeof LIVE_CHAT) {
       const runtime = await runtimes.compose();
       await writeMarkdown(runtime.ports.documentSync, {
         documentId: CH1,
@@ -170,89 +158,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.commands)
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
-    const draftRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
-    const workDraft = async () => {
-      const [row] = await db
-        .select({ draftId: schema.works.draftId })
-        .from(schema.works)
-        .where(eq(schema.works.id, WORK_ID));
-      return row?.draftId;
-    };
     const hashOf = (read: string, word: string) =>
       read
         .split("\n")
         .find((line) => line.includes(word))
         ?.split("|")[0] as string;
-
-    async function writerDiscards(runtime: Awaited<ReturnType<typeof reply>>["runtime"]) {
-      const routes = selectDraftRouteServices(runtime.app);
-      const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-      const listed = await handleDraftListRequest(routes, {
-        ...scope,
-        draft: await workDraft(),
-      } as never);
-      if (!listed.items.some((item) => item.documentId === CH1))
-        throw new Error("the model's edit made no draft to discard");
-      await handlePressRequest(routes, {
-        ...scope,
-        request: {
-          commandId: randomUUID(),
-          draft: await workDraft(),
-          verdict: "discard",
-          items: [{ node: CH1 }],
-        },
-      } as never);
-    }
-
-    it("the writer discards the draft mid-round: the next edit lands in the same draft", async () => {
-      const { runtime, call } = await reply(DRAFTING);
-      const read = await call("read", { path: "ch1" });
-      const first = await call("write", {
-        command: "replace",
-        path: "ch1",
-        find: "Bravo two.",
-        content: "Bravo, edited.",
-      });
-      expect(first.isError, first.text).toBeFalsy();
-      await writerDiscards(runtime);
-      const earlier = await draftRows();
-
-      const replayId = randomUUID();
-      const args = {
-        command: "replace",
-        path: "ch1",
-        find: "Charlie three.",
-        content: "Charlie, edited.",
-      };
-      const landed = await call("write", args, replayId);
-      expect(landed.isError, landed.text).toBeFalsy();
-      expect(landed.text).toContain("status: success");
-      expect(landed.text).not.toMatch(/re-read|retry|read again/i);
-      // A Discard closes no draft: the write lands in the Work's one draft.
-      expect(await draftRows()).toHaveLength(earlier.length);
-      const listed = await handleDraftListRequest(selectDraftRouteServices(runtime.app), {
-        userId: USER_ID,
-        projectId: PROJECT_ID,
-        draft: await workDraft(),
-      } as never);
-      expect(listed.items.find((item) => item.documentId === CH1)?.actorThreads).toEqual([
-        expect.objectContaining({ threadId: DRAFTING.threadId }),
-      ]);
-      const rows = await modelEditRows();
-      const last = rows.at(-1)?.outcome as never as {
-        status: string;
-        result: { settled?: unknown };
-      };
-      expect(last.status).toBe("done");
-      expect(last.result.settled).toBeUndefined();
-
-      // A crash between the row's commit and the answer: the call, sent again under its id,
-      // reads the same row and the same text.
-      const replayed = await call("write", args, replayId);
-      expect(replayed.text).toBe(landed.text);
-      expect((await modelEditRows()).length).toBe(rows.length);
-      expect(read.text).toContain("Alpha one.");
-    });
 
     it("the writer deletes a paragraph: an edit to it is returned with the document", async () => {
       const { runtime, call } = await reply(LIVE_CHAT);

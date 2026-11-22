@@ -90,7 +90,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",
-  "apps/server/server/lib/compose.draft-mode-tools.db.test.ts",
+  "apps/server/server/lib/compose.write-tool.db.test.ts",
   "apps/server/server/lib/compose.tree-tools.db.test.ts",
   "apps/server/server/lib/compose.model-returned.db.test.ts",
   "apps/server/server/lib/compose.file-access-tools.db.test.ts",

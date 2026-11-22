@@ -248,6 +248,12 @@ importers:
       '@meridian/database':
         specifier: workspace:*
         version: link:packages/database
+      '@meridian/document-model':
+        specifier: workspace:*
+        version: link:packages/document-model
+      '@meridian/loro-prosemirror':
+        specifier: workspace:*
+        version: link:packages/loro-prosemirror
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:packages/prosemirror-schema
@@ -275,6 +281,9 @@ importers:
       lefthook:
         specifier: ^2.2.2
         version: 2.2.2
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.18.0
       nx:
         specifier: ^24.0.6
         version: 24.0.6

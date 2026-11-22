@@ -298,10 +298,10 @@ export function draftTreeCommands(
     },
     async editLive(documentId, blocks) {
       const schema = buildDocumentSchema();
-      await writerEdit(ports().documentSync.rooms, documentId, (current) => [
-        ...current,
-        ...blocks(schema),
-      ]);
+      const { rooms } = ports().documentSync;
+      await writerEdit(rooms, documentId, (current) => [...current, ...blocks(schema)]);
+      // A writer's edit is stored on the room's debounce; a derivation reads only stored rows.
+      await rooms.flush({ kind: "live", documentId });
     },
   };
 

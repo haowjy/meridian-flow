@@ -8,10 +8,11 @@ that a small room compacts and a mark ripens in 600 ms.
 
 ```sh
 pnpm dev:infra   # Postgres
-node --import tsx apps/server/server/domains/collab/rooms/.context/qa/history-compaction.probe.ts
+pnpm test:probes history-compaction
 ```
 
-It makes and drops its own `lfd_probe_*` database (the model-edit harness's `createScratchDatabase`)
+The script is [`tools/qa/probes/history-compaction/run.mts`](../../../../../../../../tools/qa/probes/history-compaction/run.mts), so `pnpm test:probes` runs it with the
+other self-contained probes. It makes and drops its own `lfd_probe_*` database (the model-edit harness's `createScratchDatabase`)
 and prints one line per check:
 
 | Check | What it shows |
@@ -25,5 +26,4 @@ and prints one line per check:
 | A tab whose base is below the cut is refused | `HistoryCutoffError`, which the socket answers with `history-cutoff` |
 | A tab joined after the cut writes | Nothing else is refused |
 
-Run it by hand when `collab/rooms/` or `shared/document-snapshots.ts` changes. Record the commit,
-date and outcome in the work directory.
+Run it when `collab/rooms/` or `shared/document-snapshots.ts` changes.

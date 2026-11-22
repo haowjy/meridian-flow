@@ -1,7 +1,9 @@
 /**
  * History compaction of a Live room and its fork, on a scratch database (recipe:
- * `history-compaction.md` beside this file). Bounds are lowered so a small room compacts and a
- * mark ripens in under a second.
+ * `apps/server/server/domains/collab/rooms/.context/qa/history-compaction.md`). Bounds are lowered
+ * so a small room compacts and a mark ripens in under a second.
+ *
+ *   pnpm test:probes history-compaction
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -22,15 +24,15 @@ import {
 } from "@meridian/prosemirror-schema";
 import { LoroDoc } from "loro-crdt";
 import postgres from "postgres";
-import { createScratchDatabase } from "../../../../../../../../tools/qa/probes/model-edit-harness/scratch.mts";
-import { treeSeeder } from "../../../../../test-support/tree-seed.js";
-import type { EventRecord } from "../../../../observability/index.js";
+import { createPostgresDocumentRooms } from "../../../../apps/server/server/domains/collab/rooms/postgres-document-rooms.ts";
 import {
   liveMarkdown,
   writeLiveMarkdown,
   writerEdit,
-} from "../../../test-support/live-room-text.js";
-import { createPostgresDocumentRooms } from "../../postgres-document-rooms.js";
+} from "../../../../apps/server/server/domains/collab/test-support/live-room-text.ts";
+import type { EventRecord } from "../../../../apps/server/server/domains/observability/index.ts";
+import { treeSeeder } from "../../../../apps/server/server/test-support/tree-seed.ts";
+import { createScratchDatabase } from "../model-edit-harness/scratch.mts";
 
 const HISTORY_MS = 600;
 const schema = buildDocumentSchema();
@@ -87,7 +89,11 @@ try {
       select doc_key, octet_length(snapshot) as bytes, snapshot from document_snapshots
       where room_key = ${roomKey} order by doc_key`;
   const seq = async () =>
-    (await raw<{ n: string }[]>`select content_seq::text as n from documents where id = ${documentId}`)[0]?.n;
+    (
+      await raw<
+        { n: string }[]
+      >`select content_seq::text as n from documents where id = ${documentId}`
+    )[0]?.n;
 
   await writeLiveMarkdown(rooms, documentId, "Opening.\n\nFirst.");
   await rooms.flush(live);
@@ -129,7 +135,9 @@ try {
   await rooms.unload(live);
   const compacted = events.find((event) => event.name === "history.compacted");
   const sizeAfter = (await rows(`live:${documentId}`)).reduce((sum, row) => sum + row.bytes, 0);
-  console.log(`     live rows ${sizeBefore} -> ${sizeAfter} bytes; event ${JSON.stringify(compacted?.payload)}`);
+  console.log(
+    `     live rows ${sizeBefore} -> ${sizeAfter} bytes; event ${JSON.stringify(compacted?.payload)}`,
+  );
   check(sizeAfter < sizeBefore, "the second cut shrinks the Live rows");
   check((await liveMarkdown(rooms, documentId)) === text, "the text is the same after the cut");
   check((await seq()) === seqBefore, "a cut does not move content_seq");
