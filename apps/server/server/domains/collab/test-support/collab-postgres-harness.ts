@@ -25,7 +25,7 @@ import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js"
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
+import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
@@ -44,6 +44,7 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import { createLoroAgentEditHost } from "../adapters/loro-agent-edit-host.js";
 import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import { createAgentEditRouter } from "../domain/agent-edit-router.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
@@ -52,6 +53,8 @@ import { createDrafts } from "../domain/drafts.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import { createPostgresDocumentRooms } from "../rooms/postgres-document-rooms.js";
+import { liveMarkdown, writeLiveMarkdown } from "./live-room-text.js";
 import { modelWrite } from "./model-write.js";
 
 const { createDb } = await import("@meridian/database");
@@ -73,7 +76,6 @@ export const {
   runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
-const { createPostgresDocumentRooms } = await import("../rooms/postgres-document-rooms.js");
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
@@ -243,14 +245,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const { ALPHA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const documentName = (documentId: DocumentId) =>
     documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
-  const DRAFT_DESTINATION = {
-    kind: "draft",
-    draftId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_DRAFT_ID,
-    owner: { kind: "work", workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID },
-    ownerHandle: "atomicity-work",
-  } as const;
   const persistence = createDrizzleCollabPersistence(db);
-  const _testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
@@ -300,15 +295,19 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     diagnostics: projectionDiagnostics,
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
-  const modelDocumentEdits = createModelDocumentEdits({ service: () => turnInverse });
   const rooms = createPostgresDocumentRooms({
     db,
     shape: shapeSchemaOf(buildDocumentSchema()),
     eventSink,
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
   });
+  const loroHost = createLoroAgentEditHost({ db, rooms });
   const runtime = createAgentEditRuntime({
-    documentEdits: modelDocumentEdits,
+    loro: {
+      rooms: loroHost.rooms,
+      documentEdits: createModelDocumentEdits({ service: () => turnInverse }),
+      authorOfTurn: loroHost.authorOfTurn,
+    },
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
@@ -336,7 +335,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const projections = { refresh: runDocumentWriteHook };
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({
-    liveUtilityCore: runtime.liveUtilityCore,
+    liveCore: runtime.liveCore,
     draftView: runtime.draftView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
@@ -347,7 +346,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
-          liveCore: runtime.liveUtilityCore,
+          liveCore: runtime.liveCore,
           draftView: runtime.draftView,
           drafts: workDrafts,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
@@ -366,7 +365,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const turnInverse = createDrizzleTurnInverseService({
     db,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
+    rooms,
     resolveDocumentUri,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
@@ -480,11 +479,13 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         seq: 0,
       });
     });
+    // Live is the Loro room the model's tools read; the journal copy serves the draft views.
+    await writeLiveMarkdown(rooms, ALPHA_ID, markdown);
     await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
-        grant: testFileGrant(DRAFT_DESTINATION),
+        grant: testFileGrant({ kind: "live" }, ALPHA_ID),
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -511,6 +512,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       persistence,
       liveCoordinator,
       collab,
+      rooms,
       workMarkdown,
       hocuspocus,
       model,
@@ -519,16 +521,13 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     }),
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
-      liveCoordinator.stop();
       await rooms.close();
+      liveCoordinator.stop();
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;
     },
-    liveMarkdown: (documentId: DocumentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) =>
-        serializeMarkdown(doc, runtime.model),
-      ),
+    liveMarkdown: (documentId: DocumentId) => liveMarkdown(rooms, documentId),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
   };
 }

@@ -2,12 +2,13 @@
 
 Editing core for the model's document `read` and `write`,
 write handles and the receipts their Undo reads. Two cores live side by side while the
-Loro move lands: the Yjs core (`createWriteCore`, what the server and browser run today) and
-the Loro core (`createLoroEditCore`, design §5), which replaces it when the server's host moves
-onto `DocumentRooms`. A change to shared code (`apply/`, `content-merge/`, the ports) must keep
-both building; don't extend the Yjs-only files (`frontier.ts`, `yjs-mutation.ts`, `undo/`) with
-anything the Loro core would need: see [the Loro core](.context/CONTEXT.md#the-loro-core). A write commits at its tool call; the host
-runs it as one command. Hosts supply
+Loro move lands: the Loro core (`createLoroEditCore`, design §5), which the server runs for every
+Live chat on `DocumentRooms`, and the Yjs core (`createWriteCore`), which still serves Work-draft
+views (off in phase 1), the Markdown engine's room copy and the browser's suggestion stack until
+they move. A change to shared code (`apply/`, `content-merge/`, the ports) must keep both
+building; don't extend the Yjs-only files (`frontier.ts`, `yjs-mutation.ts`, `undo/`) with
+anything the Loro core would need: see [the Loro core](.context/CONTEXT.md#the-loro-core). A
+write commits at its tool call; the host runs it as one command. Hosts supply
 the journal, coordinator, lifecycle, link and model ports; this package owns no
 Postgres, routes, auth or Project/Work concepts.
 
@@ -20,7 +21,6 @@ Postgres, routes, auth or Project/Work concepts.
 - Reporting is best-effort and never changes what a save keeps.
 - Attribution comes from the host per interaction, never from session-lifetime
   snapshots.
-- `./diff` and `./yjs-mutation` load in the browser and import no host code;
-  `./yjs-mutation` imports only Yjs, not the package barrel or the undo engine.
+- `./diff` loads in the browser and imports no host code.
 
 Contracts and architecture: [.context/CONTEXT.md](.context/CONTEXT.md).

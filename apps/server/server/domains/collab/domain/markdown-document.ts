@@ -42,7 +42,7 @@ import type {
   UpdateOrigin,
 } from "../contracts.js";
 import { mergeCodeText } from "./code-merge.js";
-import { documentRevision } from "./document-revision.js";
+import { cutRevision } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
 import {
   type DocumentLinkScopes,
@@ -228,10 +228,7 @@ export function createMarkdownDocumentEngine<Tx>(
     const links = await spelling(documentId, blocks, view);
     return {
       content: serializeForSchema(blocks, schemaType, links),
-      revision: documentRevision(
-        { version: encodeRoomVersion(doc.docs.shownVersion()), blocks },
-        links,
-      ),
+      revision: cutRevision({ version: encodeRoomVersion(doc.docs.shownVersion()), blocks }, links),
     };
   }
 

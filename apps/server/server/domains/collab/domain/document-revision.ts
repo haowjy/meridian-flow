@@ -20,7 +20,7 @@ import type { HashlineRead } from "../contracts.js";
 import { grepBlocksOf } from "./grep-blocks.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
 
-export function documentRevision(cut: DocumentCut, scope: HolderLinkScope): string {
+export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
   const triples = new Set<string>();
   for (const { kind, attrs } of walkLinkOccurrences(cut.blocks)) {
     const asset = kind !== "link" && attrs.href.startsWith("asset:");
@@ -79,10 +79,7 @@ export function readHashlines(
       verbatim,
       links: spelledLinks([block.node], scope),
     })),
-    revision: documentRevision(
-      { version, blocks: grepBlocks.map(({ block }) => block.node) },
-      scope,
-    ),
+    revision: cutRevision({ version, blocks: grepBlocks.map(({ block }) => block.node) }, scope),
     holder: { uri: scope.holder.uri, view: scope.holder.view },
     locate: (block, range) => bodyRange(codecs.markup, block.destinationFree, block.body, range),
   };

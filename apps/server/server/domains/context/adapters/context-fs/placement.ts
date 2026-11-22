@@ -12,7 +12,6 @@ import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contrac
 import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Ok, type Result } from "../../../../shared/result.js";
-import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";

@@ -2,10 +2,12 @@
 import {
   type AgentEditCodecFactory,
   type AgentEditCore,
+  type AgentEditRooms,
   createAgentEditCodecFactory,
   createAgentEditCore,
+  createLoroEditCore,
   type DocumentCoordinator,
-  type DocumentEdits,
+  type LoroDocumentEdits,
   suggestingModel,
   type UpdateJournal,
   type UpdateMeta,
@@ -19,7 +21,11 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type Author, liveView } from "@meridian/suggestions";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
-import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
+import {
+  createScopedDocumentLinks,
+  createScopedLoroDocumentLinks,
+  liveViewFor,
+} from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
 import { codeFiletypeOf } from "./document-schema-type.js";
 import { createImportLinkBinder, createLinkBinder } from "./link-binding.js";
@@ -33,8 +39,13 @@ type AgentEditObservability = Pick<
 
 export function createAgentEditRuntime<Tx>(input: {
   journal: UpdateJournal;
-  documentEdits?: DocumentEdits;
-  /** The live agent-edit core's reads and saves (production delivers a save after commit). */
+  /** The model's Live reads and writes: agent-edit's Loro core on the server's rooms. */
+  loro: {
+    rooms: AgentEditRooms;
+    documentEdits: LoroDocumentEdits;
+    authorOfTurn(turnId: string): Promise<string | null>;
+  };
+  /** The Yjs draft views' reads and saves (production delivers a save after commit). */
   agentCoordinator: DocumentCoordinator;
   lockDocument(documentId: DocumentId): Promise<void>;
   runDocumentWriteHook: DocumentWriteHookRunner;
@@ -80,14 +91,25 @@ export function createAgentEditRuntime<Tx>(input: {
         draft,
       }),
       journal: input.journal,
-      documentEdits: input.documentEdits,
       coordinator: input.agentCoordinator,
       codec,
       codecFor,
       model: coreModel,
       ...input.observability,
     });
-  const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model, null));
+  const liveCore = asLiveAgentEditCore(
+    createLoroEditCore({
+      rooms: input.loro.rooms,
+      journal: input.journal,
+      schema,
+      codec,
+      codecFor,
+      links: createScopedLoroDocumentLinks({ scopes: input.links, registrar: input.aheadRefs }),
+      documentEdits: input.loro.documentEdits,
+      authorOfTurn: input.loro.authorOfTurn,
+      ...input.observability,
+    }),
+  );
   const draftView: DraftViews = {
     model: (draft) => suggestingModel(storedModel, { draft }, null),
     core: (draft, author) => liveCoreOver(suggestingModel(storedModel, { draft }, author), draft),
@@ -130,7 +152,7 @@ export function createAgentEditRuntime<Tx>(input: {
     codecFor,
     linkBinder,
     importBinder,
-    liveUtilityCore,
+    liveCore,
     draftView,
     markdownDocuments,
     markupCodec,

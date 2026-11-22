@@ -15,13 +15,7 @@ export type {
   ObservationFrontier,
   ReplyMutations,
 } from "./frontier.js";
-export {
-  createReplyMutations,
-  decodeSnapshot,
-  dropUnseenContent,
-  frontierBlockId,
-  frontierDelta,
-} from "./frontier.js";
+export { createReplyMutations, dropUnseenContent } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";

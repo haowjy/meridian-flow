@@ -71,8 +71,6 @@ export function scopeAgentEdit(
   scopes: DocumentLinkScopes,
 ): AgentEditRouter {
   return {
-    // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    readRoom: router.readRoom,
     read: (command, context) =>
       scopes.within(
         {

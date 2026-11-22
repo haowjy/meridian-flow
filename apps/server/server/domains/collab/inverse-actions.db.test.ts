@@ -5,11 +5,8 @@
  * - strict newest-first model history alongside the writer's card Undo (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { randomUUID } from "node:crypto";
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
-import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import {
   ALPHA_ID,
@@ -21,6 +18,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
+import { withBlockText, writerEdit } from "./test-support/live-room-text.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -28,7 +26,7 @@ const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
-it("Undo after the writer replaced the model's text leaves the writer's text without a second copy of the original", async () => {
+it("the card's Undo leaves a change of the model's that the writer altered as it stands", async () => {
   const { harness, view, context, responseId } = await fixture();
   try {
     await harness.seedWriterDocument("red\n\nblue\n\nblack", responseId);
@@ -67,22 +65,7 @@ it("Undo after the writer replaced the model's text leaves the writer's text wit
         current,
       ),
     ).toMatchObject({ status: "success", writeId: "e2" });
-    const change = (doc: Y.Doc) => {
-      doc.clientID = allocateDocumentClient(doc);
-      const text = (doc.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText;
-      return Y.mergeUpdates(
-        captureMutationUpdates(doc, () => {
-          text.delete(0, text.length);
-          text.insert(0, "pink");
-        }),
-      );
-    };
-    await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      await view.persistence.journal.append(ALPHA_ID, change(doc), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
+    await writerEdit(view.rooms, ALPHA_ID, (blocks) => withBlockText(blocks, 1, "pink"));
     const text = () => harness.liveMarkdown(ALPHA_ID);
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(
@@ -91,10 +74,10 @@ it("Undo after the writer replaced the model's text leaves the writer's text wit
         turnId: currentTurn,
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "reversed" });
-    expect(await text()).toBe("gold\n\npink\n\nblack\n");
+    ).toMatchObject({ status: "expired" });
+    // The writer changed the model's one change (two touching blocks), so it no longer stands.
+    expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, currentTurn)).toMatchObject({
-      undone: true,
       control: "view_change",
     });
   } finally {

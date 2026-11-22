@@ -19,7 +19,7 @@ import {
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
-import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
+import type { LoroDoc, PeerID } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   holdsFrontiers,
@@ -510,6 +510,7 @@ export function createPostgresDocumentRooms(input: {
         const liveDocs = await build(tx, live, null, freshServerPeerId());
         let after = before;
         let cut = 0;
+        let forksCut = 0;
         try {
           const forks = await tx
             .select({ draftId: documentForks.draftId })
@@ -523,44 +524,50 @@ export function createPostgresDocumentRooms(input: {
             const docs = await build(tx, fork, liveDocs, freshServerPeerId());
             try {
               for (const { docKey } of stored) {
-                const written = await cutRow(
+                const saved = await cutRow(
                   tx,
                   forkName,
                   docKey,
                   docs.doc(docKey),
                   marks.get(docKey),
                 );
-                after += written;
-                if (written !== 0) cut++;
+                if (saved > 0) forksCut++;
               }
             } finally {
               docs.free();
             }
           }
           for (const [docKey, mark] of marks) {
-            const written = await cutRow(tx, name, docKey, liveDocs.doc(docKey), mark);
-            after += written;
-            if (written !== 0) cut++;
+            const saved = await cutRow(tx, name, docKey, liveDocs.doc(docKey), mark);
+            after -= saved;
+            if (saved > 0) cut++;
           }
         } finally {
           liveDocs.free();
         }
-        return { before, after, docs: cut };
+        return { before, after, docs: cut, forkDocs: forksCut };
       }),
     );
-    if (!result) return;
+    if (!result || result.docs + result.forkDocs === 0) return;
     emitEvent(eventSink, {
       level: "info",
       source: "collab.rooms",
       name: "history.compacted",
       correlation: { documentId: live.documentId },
-      payload: { bytesBefore: result.before, bytesAfter: result.after, docs: result.docs },
+      payload: {
+        bytesBefore: result.before,
+        bytesAfter: result.after,
+        docs: result.docs,
+        forkDocs: result.forkDocs,
+      },
     });
   }
 
   /**
-   * Rewrites one row as `doc` cut at `mark`, and moves the mark to where the doc stands now.
-   * Returns the change in the row's bytes (0 for no cut: no mark, or one the doc lacks).
+   * Rewrites one row as `doc` cut at `mark`, and moves the mark to where the doc stands now, so
+   * the next compaction cuts there. Returns the bytes the row lost: 0 for no cut (no mark, or one
+   * the doc lacks), and 0 where the cut would not shrink the row (a doc little changed since its
+   * mark), which keeps its history and only moves the mark.
    */
   async function cutRow(
     tx: DrizzleDb,
@@ -575,17 +582,23 @@ export function createPostgresDocumentRooms(input: {
       .select({ bytes: sql<number>`octet_length(${documentSnapshots.snapshot})` })
       .from(documentSnapshots)
       .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
+    const stored = Number(row?.bytes ?? 0);
     const now = storedFrontiers(doc);
+    const shrinks = shallow.byteLength < stored;
     await tx
       .update(documentSnapshots)
       .set({
-        snapshot: Buffer.from(shallow.buffer, shallow.byteOffset, shallow.byteLength),
-        frontiers: now,
+        ...(shrinks
+          ? {
+              snapshot: Buffer.from(shallow.buffer, shallow.byteOffset, shallow.byteLength),
+              frontiers: now,
+            }
+          : {}),
         historyMark: now,
         historyMarkAt: sql`now()`,
       })
       .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
-    return shallow.byteLength - Number(row?.bytes ?? 0);
+    return shrinks ? stored - shallow.byteLength : 0;
   }
 
   /**

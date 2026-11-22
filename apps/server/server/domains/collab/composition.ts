@@ -80,6 +80,7 @@ import {
   createDeferredLiveProjectionCoordinator,
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
+import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -253,9 +254,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
   });
-  const modelDocumentEdits = createModelDocumentEdits({ service: () => turnInverse });
+  const loroHost = createLoroAgentEditHost({ db: deps.db, rooms });
   const runtime = createAgentEditRuntime({
-    documentEdits: modelDocumentEdits,
+    loro: {
+      rooms: loroHost.rooms,
+      documentEdits: createModelDocumentEdits({ service: () => turnInverse }),
+      authorOfTurn: loroHost.authorOfTurn,
+    },
     journal: persistence.journal,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
       hocuspocus: hocuspocusBinding.require,
@@ -281,7 +286,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({
-    liveUtilityCore: runtime.liveUtilityCore,
+    liveCore: runtime.liveCore,
     draftView: runtime.draftView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
@@ -289,7 +294,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    liveCore: runtime.liveUtilityCore,
+    liveCore: runtime.liveCore,
     draftView: runtime.draftView,
     drafts: workDrafts,
     fileAccess: deps.fileAccess,
@@ -335,7 +340,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const turnInverse = createDrizzleTurnInverseService({
     db: deps.db,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
+    rooms,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
@@ -389,15 +394,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const usage = createUsageEvents(deps.db, deps.eventSink);
-  const turnUndo = turnInverse;
   const lineage = createTurnLiveLineageReadModel({
     store: lineageStore,
-    receiptStore: turnUndo,
+    receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
   });
   const turnReversal = createTurnReversalService({
-    turnInverse: turnUndo,
+    turnInverse,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,

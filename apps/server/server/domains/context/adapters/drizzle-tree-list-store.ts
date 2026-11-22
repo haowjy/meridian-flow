@@ -1,4 +1,3 @@
-import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentSnapshots, drafts, type StoredFrontiers } from "@meridian/database/schema";
 import { freshServerPeerId } from "@meridian/document-model";
@@ -103,8 +102,6 @@ export type PgTreeListStore = TreeListStore & {
   /** Starts hearing every instance's commits (this one's too) for `onListAdvanced`. */
   listen(): Promise<{ unlisten: () => Promise<void> }>;
 };
-
-/** A text document a create in a Work's version made: it needs that Work's text draft. */
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
@@ -284,12 +281,13 @@ export function createDrizzleTreeListStore(deps: {
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
-    const {
-      created: made,
-      changedDrafts,
-      liveChangedUnder,
-      reassigned,
-    } = await syncRows(tx, list, listId, copy.doc, created);
+    const { changedDrafts, liveChangedUnder, reassigned } = await syncRows(
+      tx,
+      list,
+      listId,
+      copy.doc,
+      created,
+    );
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
     if (changedDrafts.length > 0 && deps.recountAfterCommit) {

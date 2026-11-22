@@ -11,6 +11,12 @@ A model's document-changing tool call (`write`: text, `undo`/`revert`, `move`, `
 - `modelEdits().read` is a read inside a `run` effect (the text a returned edit shows): it joins the command's transaction and pulls nothing, as a write's room read does.
 - A server failure (an apply or commit that failed, an effect that threw) is not the model's to retry: `effectSettler` (`lib/model-tools/document-tools.ts`) runs the effect once more under the same command id, and only a second failure is answered, as an edit that did not land and asks for no retry. What an effect leaves in memory outlives its rollback, so each attempt starts from a checkpoint of the reply's own updates (`ReplyMutations.checkpoint`) and a rolled-back one restores it; captured call inputs (a Copy's source nodes) stay immutable and each attempt derives its own.
 
+## Live edits on Loro rooms
+
+A Live chat's `read` and `write` run agent-edit's Loro core over the server's `DocumentRooms` (`adapters/loro-agent-edit-host.ts`). A write's batch goes to `rooms.commit` in the command transaction, with origin `server:agent` and commit message `turn:<turnId>`, and its receipt (`document_edits`, one part: the batch, an empty `effect`, the `delta`) is written in the same transaction; the room imports the batch after the commit. The Live turn inverse (`adapters/drizzle-turn-inverse.ts`) reads the room, takes back by content (`takeBack`), and commits its batch the same way (origin `server:inverse`; the model's own undo carries `turn:<turnId>`, so the next read credits it to the chat).
+
+What still reads or writes the Yjs journal until it moves onto `DocumentRooms` (phase 1b-2 and 1e): the Markdown engine's writes and seeds, derivations (block text, word counts, links), and the effective reader's Markdown and hashlines. The effective reader's Live revision already reads the Loro room (`cutRevision`, `l1:`). Draft-mode chats (drafts are off in phase 1) stay on the Yjs suggestion path, and their model `undo` answers that there is no edit history.
+
 ## One connection
 
 The edit holds its document's lock while it plans, so a second connection or a process mutex waiting on a lock the first holds would never return, and Postgres would not see it. Every command shares this rule and its guard (`CONTEXT.md`, the lock order): a root transaction or read snapshot opened under `runInCommandTransaction` runs inside it, and in dev and test a `KeyedMutex` or a second connection throws. What cannot join moved:

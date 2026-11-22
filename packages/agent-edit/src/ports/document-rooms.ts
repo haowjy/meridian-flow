@@ -4,8 +4,8 @@ import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
 import type { StoredDelta } from "../content-merge/stands.js";
-import type { MutationActor, WriteStatus } from "../tool/types.js";
-import type { ModelInverseCommand } from "./document-edits.js";
+import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
+import type { DocumentEditRequest, ModelInverseCommand } from "./document-edits.js";
 import type { DocumentLinksPort } from "./document-links.js";
 
 /** A call's copy of the room it reads, named by the room. The caller frees `docs`. */
@@ -64,8 +64,8 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /** Store a write's record in `tx`, beside its batch. */
-  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
+  /** Store a write's record in `tx`, beside its batch (`batch`, the envelope `save` committed). */
+  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -80,7 +80,7 @@ export function agentEditRooms<Tx>(
     async save(room, batch, record) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record);
+      if (record) await host.recordWrite(tx, record, batch);
     },
   };
 }
@@ -101,20 +101,25 @@ export interface DocumentCut {
   blocks: readonly PMNode[];
 }
 
-/** The host's record of a document's AI edits and their inverses, on Loro. */
+/**
+ * The host's record of a document's AI edits and their inverses, on Loro: the requests of
+ * `DocumentEdits`, answered with a message (the model's `undo`/`revert` echo is its message).
+ */
 export interface LoroDocumentEdits {
   /** The model's list of its edits (`read` with `format: "edits"`). */
-  read(request: { documentId: string; threadId: string }): Promise<{
+  read(request: DocumentEditRequest & { command: ReadCommand }): Promise<{
     status: "success" | Exclude<WriteStatus, "success">;
     message: string;
   }>;
   /** The model's `undo` or `revert`: the host writes the inverse and says what it did. */
-  execute(request: {
-    documentId: string;
-    threadId: string;
-    command: ModelInverseCommand;
-  }): Promise<
+  execute(request: DocumentEditRequest & { command: ModelInverseCommand }): Promise<
     | { status: Exclude<WriteStatus, "success">; message: string }
-    | { status: "success"; message: string; writeId?: string }
+    | {
+        status: "success";
+        message: string;
+        writeId?: string;
+        /** The batches the inverse committed: the reply's later writes plan on them. */
+        updates?: readonly Uint8Array[];
+      }
   >;
 }

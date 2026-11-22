@@ -1,5 +1,5 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
-import type { AgentEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
+import type { LoroEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -22,11 +22,12 @@ export type RoutedWriteOutcome = WriteOutcome & {
 
 declare const liveAgentEditCoreBrand: unique symbol;
 
-export type LiveAgentEditCore = AgentEditCore & {
+/** The model's reads and writes of Live: agent-edit's Loro core on the server's rooms. */
+export type LiveAgentEditCore = Pick<LoroEditCore, "read" | "write"> & {
   readonly [liveAgentEditCoreBrand]: "live-agent-edit-core";
 };
 
-export function asLiveAgentEditCore(core: AgentEditCore): LiveAgentEditCore {
+export function asLiveAgentEditCore(core: Pick<LoroEditCore, "read" | "write">): LiveAgentEditCore {
   return core as LiveAgentEditCore;
 }
 

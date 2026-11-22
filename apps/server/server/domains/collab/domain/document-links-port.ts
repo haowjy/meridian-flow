@@ -4,12 +4,17 @@
  * over the operation's document-link scope (contract §4.3–4.4).
  */
 import { createHash } from "node:crypto";
-import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
+import type {
+  AheadMint,
+  DocumentLinksPort,
+  LoroLinksPort,
+  WriteContext,
+} from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { viewRevision } from "./document-revision.js";
+import { cutRevision, viewRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type {
   AheadRefRegistrar,
@@ -53,10 +58,21 @@ export function createScopedDocumentLinks(input: {
   };
 }
 
+/** The same port for the Loro core, which reads and writes Live only (drafts are off). */
+export function createScopedLoroDocumentLinks(input: {
+  scopes: DocumentLinkScopes;
+  registrar: AheadRefRegistrar;
+}): LoroLinksPort {
+  return {
+    ...createScopedDocumentLinks({ ...input, viewFor: liveViewFor, draft: null }),
+    revision: cutRevision,
+  };
+}
+
 /**
  * The Yjs core's revision: `y2:` + sha256 over the Yjs snapshot, the holder's URI and how every
  * ref-bearing link and `asset:` source spells. It goes with the Yjs core; the Loro one's is
- * `documentRevision` over a cut.
+ * `cutRevision`.
  */
 function yjsRevision(doc: Y.Doc, scope: HolderLinkScope): string {
   const triples = new Set<string>();

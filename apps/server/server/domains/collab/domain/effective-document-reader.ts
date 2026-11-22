@@ -1,6 +1,7 @@
 /** Effective document reads for non-tool callers: the same view a model call would read. */
 import {
   type AgentEditCodecFactory,
+  isDocumentNotFoundError,
   type LoroDocument,
   loroModel,
   toLoroHandle,
@@ -19,7 +20,7 @@ import type {
   HashlineRead,
   SyncError,
 } from "../contracts.js";
-import { documentRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
+import { cutRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { BlockText } from "./ports/block-text.js";
@@ -78,11 +79,12 @@ export function createEffectiveDocumentReader(input: {
         const result = await readEffective(command, async (doc, view) => {
           const scope = await spelling(command, doc);
           const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
-          return viewRevision(documentRevision({ version: versionOf(doc), blocks }, scope), view);
+          return viewRevision(cutRevision({ version: versionOf(doc), blocks }, scope), view);
         });
         return result.ok ? result.value : null;
-      } catch {
-        return null;
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return null;
+        throw cause;
       }
     },
     readStoredGrepTexts: ({ documentIds, ...version }) =>
@@ -122,7 +124,7 @@ export function createEffectiveDocumentReader(input: {
           return {
             content: blocks,
             version: view ? "draft" : "live",
-            revision: viewRevision(documentRevision({ version, blocks }, scope), view),
+            revision: viewRevision(cutRevision({ version, blocks }, scope), view),
             holderUri: scope.holder.uri,
             stateVector: version,
             aheadSettlements: settledAheads(blocks, scope),
