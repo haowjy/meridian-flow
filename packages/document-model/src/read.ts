@@ -4,6 +4,7 @@ import {
   type Attrs,
   type BlockId,
   COMMENT_STYLE_PREFIX,
+  type DocKey,
   INLINE_STYLE,
   type InlineItem,
   type Marks,
@@ -13,6 +14,7 @@ import {
   SENTINEL,
   type ShapeBlock,
   type ShapeSchema,
+  STRUCTURE_KEY,
   sameValue,
   storedAttrs,
   TEXT_KEY,
@@ -25,7 +27,7 @@ import { StructureView } from "./structure.js";
  */
 export const emptyParagraphId = (parent: BlockId | null) => `${parent ?? ""}/empty`;
 
-const emptyParagraph = (parent: BlockId | null): ShapeBlock => ({
+const derivedEmpty = (parent: BlockId | null): ShapeBlock => ({
   kind: "text",
   id: emptyParagraphId(parent),
   node: "paragraph",
@@ -65,6 +67,30 @@ export function isDerivedEmpty(block: ShapeBlock, parent: BlockId | null): boole
 }
 
 /**
+ * The blocks of a child list that are stored: all of them, unless the list is only the unstored
+ * empty paragraph a reader shows in an empty container. An empty paragraph with that id beside
+ * others (Enter in an empty cell) is stored like any block, or the editor would show a paragraph
+ * the docs do not hold.
+ */
+export function storedOf(
+  list: readonly ShapeBlock[],
+  parent: BlockId | null,
+): readonly ShapeBlock[] {
+  return list.length === 1 && isDerivedEmpty(list[0], parent) ? [] : list;
+}
+
+/**
+ * What a reader read before, to read again by what changed since (`readDocument`'s `since`).
+ * `blocks` is what the docs read as then, `comments` the comments it saw bodies of then
+ * (`visibleComments`), and `changed` every doc key whose state changed since.
+ */
+export interface ReadSince {
+  blocks: readonly ShapeBlock[];
+  comments: ReadonlySet<string>;
+  changed: ReadonlySet<DocKey>;
+}
+
+/**
  * The read normalizer (design §1): what every reader shows, identically and without writing an op.
  * Loro merges concurrent ops into states the schema forbids, and this is the one place they read
  * as something valid:
@@ -76,33 +102,109 @@ export function isDerivedEmpty(block: ShapeBlock, parent: BlockId | null): boole
  * - a `comment_<c>` style whose body the reader cannot see shows nothing;
  * - structure: `StructureView`'s parent, cycle and empty-container rules, and a fillable container
  *   with no shown block shows an empty paragraph with id `<parent id>/empty`.
+ *
+ * With `since`, only what changed is read again, and every block that reads as it did is
+ * `since`'s own object (so a caller can tell unchanged blocks by identity): a batch that touched
+ * only text docs re-reads those blocks' text and no structure; one that touched the structure
+ * reads the structure and the text docs in `changed`. The result is the same as a full read.
  */
-export function readDocument(docs: RoomDocs): ShapeBlock[] {
-  return readBlocks(docs, new StructureView(docs.structure, docs.draft, docs.shape));
+export function readDocument(docs: RoomDocs, since?: ReadSince): ShapeBlock[] {
+  if (since && !since.changed.has(STRUCTURE_KEY)) {
+    const texts = readTexts(docs, since);
+    if (texts) return texts;
+  }
+  return readBlocks(docs, new StructureView(docs.structure, docs.draft, docs.shape), since);
 }
 
-export function readBlocks(docs: RoomDocs, view: StructureView): ShapeBlock[] {
+export function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): ShapeBlock[] {
   const shape = docs.shape;
-  const visibleComments = commentVisibility(view);
+  const visibleComment = commentVisibility(view);
+  const previous = since ? blocksById(since.blocks) : new Map<BlockId, ShapeBlock>();
+  const reread = since?.changed ?? new Set<DocKey>();
+  // A comment whose body came or went changes how every text doc reads.
+  const textsHold = since ? sameSet(since.comments, visibleComments(docs)) : false;
   const one = (id: BlockId): ShapeBlock => {
     const node = view.node(id) as string;
     const rule = shape.node(node) as NodeRule;
     const attrs = view.attrs(id);
-    if (rule.textblock)
+    const was = previous.get(id);
+    const same = was !== undefined && was.node === node && sameValue(was.attrs, attrs);
+    if (rule.textblock) {
+      if (same && was.kind === "text" && textsHold && !reread.has(id)) return was;
       return {
         kind: "text",
         id,
         node,
         attrs,
-        inline: readInline(docs.textOf(id), rule, shape, visibleComments),
+        inline: readInline(docs.textOf(id), rule, shape, visibleComment),
       };
+    }
     const children = view.children(id).map(one);
-    if (children.length === 0 && rule.fillable) children.push(emptyParagraph(id));
+    if (children.length === 0 && rule.fillable)
+      children.push(emptyParagraph(id, was?.kind === "container" ? was.children : undefined));
+    if (same && was.kind === "container" && sameList(was.children, children)) return was;
     return { kind: "container", id, node, attrs, children };
   };
   const blocks = view.children(null).map(one);
-  if (blocks.length === 0 && shape.node(shape.root)?.fillable) blocks.push(emptyParagraph(null));
+  if (blocks.length === 0 && shape.node(shape.root)?.fillable)
+    blocks.push(emptyParagraph(null, since?.blocks));
   return blocks;
+}
+
+/**
+ * The read after a batch that changed text docs only: the blocks named in `changed` read again,
+ * the rest as they were. Null when a changed key is an empty paragraph's id, whose read depends
+ * on whether the structure stores it.
+ */
+function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] | null {
+  for (const key of since.changed) if (key.endsWith(emptyParagraphId(null))) return null;
+  const visibleComment = commentVisibility(structureValues(docs));
+  const again = (block: ShapeBlock): ShapeBlock => {
+    if (block.kind === "text") {
+      if (!since.changed.has(block.id)) return block;
+      const rule = docs.shape.node(block.node) as NodeRule;
+      return {
+        ...block,
+        inline: readInline(docs.textOf(block.id), rule, docs.shape, visibleComment),
+      };
+    }
+    const children = block.children.map(again);
+    return sameList(block.children, children) ? block : { ...block, children };
+  };
+  return since.blocks.map(again);
+}
+
+/** The unstored empty paragraph of `parent`: the one read before, if it showed one then. */
+function emptyParagraph(parent: BlockId | null, was?: readonly ShapeBlock[]): ShapeBlock {
+  return was?.length === 1 && isDerivedEmpty(was[0], parent) ? was[0] : derivedEmpty(parent);
+}
+
+/** The stored blocks of `blocks` by id: an unstored empty paragraph is no block to reuse. */
+function blocksById(blocks: readonly ShapeBlock[]): Map<BlockId, ShapeBlock> {
+  const out = new Map<BlockId, ShapeBlock>();
+  const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
+    for (const block of storedOf(list, parent)) {
+      out.set(block.id, block);
+      if (block.kind === "container") walk(block.children, block.id);
+    }
+  };
+  walk(blocks, null);
+  return out;
+}
+
+const sameList = <T>(a: readonly T[], b: readonly T[]) =>
+  a.length === b.length && a.every((item, i) => item === b[i]);
+
+const sameSet = <T>(a: ReadonlySet<T>, b: ReadonlySet<T>) =>
+  a.size === b.size && [...a].every((item) => b.has(item));
+
+/** The comments this reader sees a body of (Live's `comments`, or a draft's override of it). */
+export function visibleComments(docs: RoomDocs): Set<string> {
+  const { structure } = docs;
+  const keys = new Set(structure.getMap("comments").keys());
+  if (docs.draft) for (const key of structure.getMap(overrideMap("comments")).keys()) keys.add(key);
+  const visible = commentVisibility(structureValues(docs));
+  return new Set([...keys].filter(visible));
 }
 
 /**

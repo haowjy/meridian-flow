@@ -17,6 +17,13 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   block's text doc alone; any other change goes through `writeDocument`. `replaceText` writes a
   style op only where Loro's stored style differs from the editor's, so typing inside a mark is
   one op.
+- A change costs what it touches, by identity. The codec maps each ProseMirror node to its
+  `ShapeBlock` and back (`blocksOf`, `nodeOf`), so a node a transaction left alone is the block it
+  was. A write passes the transaction's starting document as `previous` and compares only the
+  blocks that are new objects; a remote batch is read with `since` (the editor's document, the
+  comments it showed bodies of, the doc keys the batch changed) and keeps every other node. Both
+  lean on the invariant above: a `previous` or `since.doc` that is not what the docs read as
+  writes or shows the wrong thing.
 - Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
   docs still alive.
 

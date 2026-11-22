@@ -30,12 +30,7 @@ decoration (flat model design, section 7).
 - The Loro room socket has no `./mf` wire tap; the old Yjs inspector read Yjs frames.
 - Old `meridian:document:` y-indexeddb copies stay in browsers; nothing reads or deletes them.
 - `tab-change-counts` has no publisher while drafts are off.
-- Enter and Backspace across blocks cost about 25–40 ms at 500 paragraphs (7–9 ms on Yjs): any
-  change that is not one text replace writes the whole document (`writeDocument` in
-  `@meridian/document-model`), and every remote batch re-reads it (`readProseMirror`, about 11 ms
-  at 500 paragraphs). Write and read only the blocks the transaction or batch touched.
-- `RoomError` `server-error` (1b) rejoins; the Join `extra`'s `readOnlyWhy` is not read yet: the
-  read-only reason shows only after a revoke names it.
+- `RoomError` `server-error` (1b) rejoins.
 
 ## Composition undo grouping
 

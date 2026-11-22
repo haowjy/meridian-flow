@@ -2,10 +2,11 @@ import type { Frontiers, LoroDoc } from "loro-crdt";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
-  isDerivedEmpty,
   normalizeInline,
   readInline,
   shownUnits,
+  storedOf,
+  structureValues,
 } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -38,6 +39,12 @@ export interface WriteOptions {
   /** The commit origin local subscribers see (the binding skips its own). */
   origin?: string;
   random?: Random;
+  /**
+   * What the docs read as now, when the caller holds it (the editor's document before a
+   * transaction). A block of the write that is the same object as here, under the same parent, is
+   * known to read as written and is not compared again, so a write costs what it changed.
+   */
+  previous?: readonly ShapeBlock[];
 }
 
 /**
@@ -166,7 +173,8 @@ export function setCommentBody(
  * blocks that left are tombstoned, and a textblock's text doc gets a splice and a style patch.
  * Because the comparison is against the normalized read, a broken cycle, a hidden container or a
  * filled empty cell writes nothing by itself, and after the write the docs read as `blocks`.
- * Returns the docs it changed, committed.
+ * With `options.previous`, blocks unchanged since it are skipped. Returns the docs it changed,
+ * committed.
  */
 export function writeDocument(
   docs: RoomDocs,
@@ -174,35 +182,63 @@ export function writeDocument(
   options: WriteOptions = {},
 ): DocChange[] {
   const { shape } = docs;
-  const view = new StructureView(docs.structure, docs.draft, shape);
-  const writer = new StructureWriter(docs, view);
+  const known = options.previous && indexOf(options.previous);
+  // With `previous`, the structure is read only when the write changes it: a change to text alone
+  // reads and writes only the text docs it changed.
+  let view: StructureView | undefined;
+  let writer: StructureWriter | undefined;
+  const read = () => {
+    view ??= new StructureView(docs.structure, docs.draft, shape);
+    return view;
+  };
+  const structure = () => {
+    writer ??= new StructureWriter(docs, read());
+    return writer;
+  };
   const before = docs.structure.frontiers();
   const random = options.random ?? Math.random;
-  const visibleComment = commentVisibility(view);
+  const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
   const written = new Set<BlockId>();
+  const take = (id: BlockId) => {
+    if (written.has(id)) throw new Error(`block id ${id} appears twice`);
+    written.add(id);
+  };
+  const keep = (block: ShapeBlock) => {
+    take(block.id);
+    if (block.kind === "container") for (const child of block.children) keep(child);
+  };
 
   const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
-    const stored = list.filter((block) => !isDerivedEmpty(block, parent));
-    const current = new Map(
-      stored.map((block) => {
-        const order = view.parent(block.id) === parent ? view.order(block.id) : undefined;
-        return [block.id, typeof order === "string" ? order : undefined] as const;
-      }),
-    );
-    for (const [id, key] of orderKeys(
-      stored.map((block) => block.id),
-      current,
-      random,
-    ))
-      writer.set("order", id, key);
+    const stored = storedOf(list, parent);
     const ids = stored.map((block) => block.id);
+    const reordered = !sameIds(
+      known ? (known.children.get(parent) ?? []) : read().children(parent),
+      ids,
+    );
+    if (reordered) {
+      const current = new Map(
+        stored.map((block) => {
+          const order = read().parent(block.id) === parent ? read().order(block.id) : undefined;
+          return [block.id, typeof order === "string" ? order : undefined] as const;
+        }),
+      );
+      for (const [id, key] of orderKeys(ids, current, random)) structure().set("order", id, key);
+    }
     for (const block of stored) {
-      if (written.has(block.id)) throw new Error(`block id ${block.id} appears twice`);
-      written.add(block.id);
       const moved =
-        writer.brokenCycle(block.id, parent) && movedAmong(view.children(parent), ids, block.id);
-      writer.block(block.id, parent, block.node, block.attrs, moved);
+        reordered &&
+        structure().brokenCycle(block.id, parent) &&
+        movedAmong(read().children(parent), ids, block.id);
+      const was = known?.blocks.get(block.id);
+      const inPlace = !moved && was !== undefined && was.parent === parent;
+      if (inPlace && was.block === block) {
+        keep(block);
+        continue;
+      }
+      take(block.id);
+      if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
+        structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);
       else {
         const rule = shape.node(block.node);
@@ -219,12 +255,35 @@ export function writeDocument(
     }
   };
   walk(blocks, null);
-  writer.dropMatchingOverrides(written);
-  for (const id of view.shown) if (!written.has(id)) writer.remove(id);
-  const structure = commitStructure(docs, before, options);
-  if (structure) changes.unshift(structure);
+  const left = !known || [...known.blocks.keys()].some((id) => !written.has(id));
+  if (docs.draft || writer || left) structure().dropMatchingOverrides(written);
+  if (left) for (const id of read().shown) if (!written.has(id)) structure().remove(id);
+  const committed = commitStructure(docs, before, options);
+  if (committed) changes.unshift(committed);
   return changes;
 }
+
+/** `previous` by id: each stored block and its parent, and each parent's stored children in order. */
+function indexOf(previous: readonly ShapeBlock[]) {
+  const blocks = new Map<BlockId, { block: ShapeBlock; parent: BlockId | null }>();
+  const children = new Map<BlockId | null, BlockId[]>();
+  const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
+    const stored = storedOf(list, parent);
+    for (const block of stored) {
+      blocks.set(block.id, { block, parent });
+      if (block.kind === "container") walk(block.children, block.id);
+    }
+    children.set(
+      parent,
+      stored.map((block) => block.id),
+    );
+  };
+  walk(previous, null);
+  return { blocks, children };
+}
+
+const sameIds = (a: readonly BlockId[], b: readonly BlockId[]) =>
+  a.length === b.length && a.every((id, i) => id === b[i]);
 
 export function commitStructure(
   docs: RoomDocs,

@@ -5,6 +5,7 @@ export {
   inlineOf,
   marksOf,
   nodeOf,
+  type ProseMirrorSince,
   readProseMirror,
   shapeSchemaOf,
   storedMark,

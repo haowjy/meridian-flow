@@ -40,40 +40,35 @@ export function orderKeys(
   current: ReadonlyMap<string, string | undefined>,
   random: Random,
 ): Map<string, string> {
+  // The longest run of current keys in strictly increasing order, by patience sorting: `tails[k]`
+  // is the index ending the best run of length k + 1 found so far.
   const n = list.length;
-  const length = new Array<number>(n).fill(0);
   const previous = new Array<number>(n).fill(-1);
-  let best = -1;
+  const tails: number[] = [];
   for (let i = 0; i < n; i++) {
     const key = current.get(list[i]);
     if (typeof key !== "string") continue;
-    length[i] = 1;
-    for (let j = 0; j < i; j++) {
-      const other = current.get(list[j]);
-      if (length[j] && typeof other === "string" && other < key && length[j] + 1 > length[i]) {
-        length[i] = length[j] + 1;
-        previous[i] = j;
-      }
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((current.get(list[tails[mid]]) as string) < key) lo = mid + 1;
+      else hi = mid;
     }
-    if (best < 0 || length[i] > length[best]) best = i;
+    previous[i] = lo > 0 ? tails[lo - 1] : -1;
+    tails[lo] = i;
   }
   const keep = new Set<number>();
-  for (let i = best; i >= 0; i = previous[i]) keep.add(i);
+  for (let i = tails.at(-1) ?? -1; i >= 0; i = previous[i]) keep.add(i);
+  const upper = new Array<string | null>(n);
+  for (let i = n - 1, next: string | null = null; i >= 0; i--) {
+    upper[i] = next;
+    if (keep.has(i)) next = current.get(list[i]) as string;
+  }
   const result = new Map<string, string>();
   let lower: string | null = null;
   for (let i = 0; i < n; i++) {
-    if (keep.has(i)) {
-      lower = current.get(list[i]) as string;
-      result.set(list[i], lower);
-      continue;
-    }
-    let upper: string | null = null;
-    for (let j = i + 1; j < n; j++)
-      if (keep.has(j)) {
-        upper = current.get(list[j]) as string;
-        break;
-      }
-    lower = keyBetween(lower, upper, random);
+    lower = keep.has(i) ? (current.get(list[i]) as string) : keyBetween(lower, upper[i], random);
     result.set(list[i], lower);
   }
   return result;
