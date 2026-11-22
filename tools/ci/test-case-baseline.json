@@ -360,7 +360,6 @@
     "packages/thread-client/src/turns/reduce-turn-event.test.ts": 5,
     "packages/thread-client/src/view/transcript-model.test.ts": 2,
     "packages/thread-client/src/view/view-transcript.test.ts": 6,
-    "packages/tree-list-sync/src/parts.test.ts": 3,
     "packages/yjs-inspect/src/inspect.test.ts": 4,
     "tools/dev/lib/database-targets.test.ts": 8,
     "tools/dev/lib/migration-runner.db.test.ts": 1,

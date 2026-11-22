@@ -61,8 +61,7 @@ Every `DocumentSession` subscribes to `change_event`.
 
 ## Dev-only wire observation
 
-The thread socket (`ThreadWireTap`) and the tree list's Yjs socket (`TappedWebSocket`, until the
-tree list moves to Loro) are tapped. The Loro room socket has no tap yet: the
+Only the thread socket is tapped (`ThreadWireTap`). The Loro room socket has no tap yet: the
 old Yjs inspector read Yjs frames, and its Loro replacement is left for 1e.
 
 Thread protocol, cursor and deadline contracts belong to the

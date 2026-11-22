@@ -78,11 +78,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/transport/tapped-websocket.ts",
-        "line": "} catch {",
-        "count": 4
-      },
-      {
         "path": "apps/app/src/core/transport/wire-tap.ts",
         "line": "} catch {",
         "count": 3
@@ -139,11 +134,6 @@
       },
       {
         "path": "apps/app/src/features/debug/trace/trace-store.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/debug/trace/yjs-wire-tap.ts",
         "line": "} catch {",
         "count": 1
       },

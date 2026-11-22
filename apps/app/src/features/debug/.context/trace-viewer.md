@@ -20,11 +20,10 @@ Filters and exports use that projection or the live one, never a second store.
 
 ## Producers
 
-Taps attach at the canonical socket seams, `TappedWebSocket` and
-`SocketLifecycleController`. `installTraceCapture()` registers them and the agent API
-before a subtree can create either socket. The runtime debug toggle controls the viewer,
-not capture. Fast Refresh has to preserve observer sequences and Yjs room attribution
-through `import.meta.hot.data`. The
+The tap attaches at the thread socket's seam, `SocketLifecycleController`.
+`installTraceCapture()` registers it and the agent API before a subtree can create the
+socket. The Loro room socket has no tap yet. The runtime debug toggle controls the viewer,
+not capture. Fast Refresh has to preserve observer sequences through `import.meta.hot.data`. The
 [transport context](../../../core/transport/.context/CONTEXT.md) owns the wire
 vocabulary.
 
