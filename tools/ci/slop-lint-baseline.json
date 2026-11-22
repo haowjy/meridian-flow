@@ -78,11 +78,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/transport/wire-tap.ts",
-        "line": "} catch {",
-        "count": 3
-      },
-      {
         "path": "apps/app/src/features/account/useAccountSettings.ts",
         "line": "void getAccountSettings({ signal: capturedEpoch })",
         "count": 1
