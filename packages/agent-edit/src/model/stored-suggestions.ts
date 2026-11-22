@@ -156,38 +156,6 @@ export function dropDraft(doc: Y.Doc, schema: Schema, draft: string): boolean {
   return decided.size > 0;
 }
 
-/**
- * What the writer did with the suggestions one write left, read from the changes the write's own
- * update bytes (its receipt's) carry and the document's recorded verdicts: `applied` when every
- * one was accepted, `discarded` when every one was rejected, null otherwise (one is pending, or two
- * resolves decided it opposite ways). The bytes, not the document's items: a checkpoint drops the
- * content of the items a resolve deleted.
- */
-export function writeVerdict(doc: Y.Doc, update: Uint8Array): "applied" | "discarded" | null {
-  const ids = new Set<string>();
-  for (const item of Y.decodeUpdate(update).structs) {
-    if (!(item instanceof Y.Item)) continue;
-    const { content } = item;
-    if (content instanceof Y.ContentFormat) {
-      const id = markOf(content.key) ? changeId(content.value) : null;
-      if (id) ids.add(id);
-    } else if (item.parentSub === "sug" || (item.parentSub && isLayerKey(item.parentSub))) {
-      const id = changeId(content.getContent()[0]);
-      if (id) ids.add(id);
-    }
-  }
-  if (ids.size === 0) return null;
-  const verdicts = suggestionVerdicts(doc);
-  const decided = new Set<Verdict>();
-  for (const id of ids) {
-    const accepted = verdicts.has(id, "accept");
-    if (accepted === verdicts.has(id, "reject")) return null;
-    decided.add(accepted ? "accept" : "reject");
-  }
-  if (decided.size > 1) return null;
-  return decided.has("accept") ? "applied" : "discarded";
-}
-
 /** A verdict entry a press wrote: its key and the id of the map item that holds it. */
 export type WrittenVerdict = { key: string; client: number; clock: number };
 

@@ -3,9 +3,14 @@
  * document and its write context, and this turns them into a holder and view
  * over the operation's document-link scope (contract §4.3–4.4).
  */
-import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
+import type {
+  AheadMint,
+  DocumentLinksPort,
+  LoroLinksPort,
+  WriteContext,
+} from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { documentRevision, viewRevision } from "./document-revision.js";
+import { cutRevision, documentRevision, viewRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -42,6 +47,17 @@ export function createScopedDocumentLinks(input: {
       else await input.registrar.register(registrations);
     },
     revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.draft),
+  };
+}
+
+/** The same port for the Loro core, which reads and writes Live only (drafts are off). */
+export function createScopedLoroDocumentLinks(input: {
+  scopes: DocumentLinkScopes;
+  registrar: AheadRefRegistrar;
+}): LoroLinksPort {
+  return {
+    ...createScopedDocumentLinks({ ...input, viewFor: liveViewFor, draft: null }),
+    revision: cutRevision,
   };
 }
 

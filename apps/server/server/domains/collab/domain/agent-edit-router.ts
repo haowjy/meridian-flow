@@ -8,12 +8,17 @@ import { runWithInversePrincipal } from "./inverse-principal.js";
 
 export type AgentEditRouter = {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
-  /** The live room copy of a document. The caller disposes it. */
+  /**
+   * The live room copy of a document on the Yjs journal, for the effective reader until it moves
+   * onto `DocumentRooms`. The caller disposes it.
+   */
   readRoom(input: { documentId: DocumentId }): ReturnType<AgentEditCore["readRoom"]>;
 };
 
 export function createAgentEditRouter(input: {
-  liveUtilityCore: LiveAgentEditCore;
+  liveCore: LiveAgentEditCore;
+  /** The Yjs journal's room copies, for `readRoom`. */
+  liveUtilityCore: Pick<AgentEditCore, "readRoom">;
   /** A drafted read is Live through the draft's view; its links spell in the draft's tree. */
   draftView: DraftViews;
 }): AgentEditRouter {
@@ -63,7 +68,7 @@ export function createAgentEditRouter(input: {
       const routedContext = { ...context, linkView: { kind: "live" } as const };
       // An edits read shows history, not the document: it records no frontier.
       const readCore = () =>
-        input.liveUtilityCore.read(
+        input.liveCore.read(
           command,
           command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
         );

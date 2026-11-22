@@ -32,7 +32,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/link-binding.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/turn-inverse.db.test.ts",
-  "apps/server/server/domains/collab/inverse-integration.db.test.ts",
   "apps/server/server/domains/collab/inverse-attribution.db.test.ts",
   "apps/server/server/domains/collab/model-inverse.db.test.ts",
   "apps/server/server/domains/collab/inverse-actions.db.test.ts",

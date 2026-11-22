@@ -1,14 +1,8 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
 
 import { randomUUID } from "node:crypto";
-import {
-  type DocumentEditResult,
-  type ModelInverseCommand,
-  storedPendingTurns,
-  writeVerdict,
-} from "@meridian/agent-edit/integration";
+import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseStep } from "./inverse-stream.js";
@@ -21,8 +15,6 @@ import type {
   StoredInversePart,
   TurnInverseStore,
 } from "./turn-inverse-service.js";
-
-const schema = buildDocumentSchema();
 
 export function createModelInversePolicy(store: TurnInverseStore) {
   type ModelPlanPreview = { status: "planned" };
@@ -150,8 +142,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     return {
       status: "success",
       actionId,
-      room: document.liveRoom,
-      ...(committed.cut ?? {}),
+      room: null,
       updates: committed.updates,
       destination: "live" as const,
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
@@ -232,12 +223,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
           : null;
         const index = policy.actions.actions;
-        // A write whose turn still has suggestions here is pending, not Live.
-        const pending = storedPendingTurns(document.live, schema);
-        const suggesting = (turnId: string | null | undefined) => !!turnId && pending.has(turnId);
-        const updates = await store.partUpdates(
-          page.flatMap((entry) => entry.parts.map((part) => part.id)),
-        );
         const lines = await Promise.all(
           page.map(async (entry) => {
             const undos = index.actions.filter((action) =>
@@ -245,13 +230,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             );
             const popped = index.byPart;
             const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
-            // What the writer did with the suggestions each part left: the model reads Apply and
-            // Discard apart from an edit of its text.
-            const verdicts = entry.parts.map((part) => {
-              const update = updates.get(part.id);
-              return update ? writeVerdict(document.live, update) : null;
-            });
-            const applied = verdicts.filter((verdict) => verdict === "applied").length;
             const state = fullyUndone
               ? undos.some((undo) =>
                   undo.parts.some(
@@ -260,17 +238,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 )
                 ? "undone by the user"
                 : "undone"
-              : applied
-                ? applied === entry.parts.length
-                  ? "applied"
-                  : `partly applied (${applied} of ${entry.parts.length})`
-                : verdicts.every((verdict) => verdict === "discarded")
-                  ? "discarded"
-                  : entry.parts.some((part) => policy.changed(part))
-                    ? "changed"
-                    : entry.parts.some((part) => suggesting(part.turnId))
-                      ? "pending"
-                      : "live";
+              : entry.parts.some((part) => policy.changed(part))
+                ? "changed"
+                : "live";
             let command = "none";
             const revertPlan = policy.textPlan(entry, "revert");
             const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
@@ -290,13 +260,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
           }),
         );
-        const shownVersion = suggesting(topEntry?.parts[0]?.turnId) ? "draft" : "live";
         return {
           status: "success",
           actionId: randomUUID(),
           room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: ${shownVersion})`,
+            `your edits to ${document.uri}, newest first (version: live)`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),

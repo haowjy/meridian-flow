@@ -19,7 +19,7 @@ export function entries(history: readonly StoredInversePart[], threadId: string)
       part.actor !== "agent" ||
       part.wId === null ||
       (part.kind !== "write" && part.kind !== "revert") ||
-      (!part.effect.inserted.length && !part.effect.deleted.length)
+      part.delta === null
     )
       continue;
     const entry = map.get(part.editId) ?? {

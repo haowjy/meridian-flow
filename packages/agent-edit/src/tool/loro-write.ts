@@ -125,7 +125,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const parsed = ReadCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand("read", parsed.error);
     return execute("read", parsed.data, context, (valid, session) =>
-      valid.format === "edits" ? readEdits(valid, session) : readDocumentCommand(valid, context),
+      valid.format === "edits"
+        ? readEdits(valid, session, context)
+        : readDocumentCommand(valid, context),
     );
   };
 
@@ -143,7 +145,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           return mutate(valid, session, context);
         case "undo":
         case "revert":
-          return inverse(valid, session);
+          return inverse(valid, session, context);
       }
     });
   };
@@ -276,11 +278,16 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     });
   }
 
-  async function readEdits(command: ReadCommand, session: ActorSession) {
+  async function readEdits(command: ReadCommand, session: ActorSession, context: WriteContext) {
     const port = options.documentEdits;
     if (!port) return status("invalid_write", "This host has no edit history.");
     const address = parseFileAddress(command) as Address;
-    const result = await port.read({ documentId: address.documentId, threadId: session.threadId });
+    const result = await port.read({
+      documentId: address.documentId,
+      threadId: session.threadId,
+      context,
+      command,
+    });
     if (result.status !== "success") return status(result.status, result.message);
     return {
       status: "success" as const,
@@ -292,6 +299,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   async function inverse(
     command: Extract<WriteCommand, { command: "undo" | "revert" }>,
     session: ActorSession,
+    context: WriteContext,
   ): Promise<InternalWriteResult> {
     const port = options.documentEdits;
     if (!port) return status("invalid_write", "This host has no edit history.");
@@ -299,9 +307,12 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const result = await port.execute({
       documentId: address.documentId,
       threadId: session.threadId,
+      context,
       command,
     });
     if (result.status !== "success") return status(result.status, result.message);
+    if (result.updates?.length)
+      context.frontiers?.reply?.append(address.documentId, result.updates);
     return {
       status: "success",
       phase: "committed",

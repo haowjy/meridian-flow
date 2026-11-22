@@ -1,10 +1,8 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
-import { readBlocks } from "@meridian/agent-edit/diff";
-import { fragmentOf } from "@meridian/agent-edit/integration";
 import type { Node as PMNode } from "prosemirror-model";
 import { partKey as key } from "./inverse-actions.js";
-import { inverseSchema, takeBack } from "./inverse-text.js";
+import { takeBack } from "./inverse-text.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import type {
   InverseDocument,
@@ -32,11 +30,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
    * Live's text after the steps planned so far, so a later step of one command is judged on what
    * the earlier ones leave, as its commit will.
    */
-  let text: readonly PMNode[] | null = null;
-  const textNow = () => {
-    text ??= readBlocks(fragmentOf(document.live), inverseSchema);
-    return text;
-  };
+  let text: readonly PMNode[] = document.live;
+  const textNow = () => text;
   /** Whether a change of the part still stands in Live. */
   const stands = (part: StoredInversePart) => takeBack(textNow(), [part]).taken.length > 0;
   /** Records that `parts` were chosen to be taken out of Live. */
