@@ -615,6 +615,12 @@ importers:
       '@meridian/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@meridian/document-model':
+        specifier: workspace:*
+        version: link:../../packages/document-model
+      '@meridian/loro-prosemirror':
+        specifier: workspace:*
+        version: link:../../packages/loro-prosemirror
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
@@ -669,6 +675,12 @@ importers:
       lib0:
         specifier: ^0.2.120
         version: 0.2.120
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.18.0
+      loro-protocol:
+        specifier: 'catalog:'
+        version: 0.3.0
       mammoth:
         specifier: 1.13.0
         version: 1.13.0
