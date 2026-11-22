@@ -9,8 +9,10 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import {
+  applyOps,
   encodeEnvelope,
   freshPeerId,
+  freshServerPeerId,
   HistoryCutoffError,
   readDocument,
   writeDocument,
@@ -180,6 +182,54 @@ try {
   check(
     (await liveMarkdown(rooms, documentId)).includes("A fresh tab types."),
     "a tab joined after the cut writes",
+  );
+
+  // The room's copy answers removals (design §1, "Removed blocks", rule 1), on rows cut above: the
+  // AI's text lands in the room while the only tab, which has not received it, deletes the
+  // paragraph. Only the room holds a write the removal did not read, so the room brings it back.
+  const origins: string[] = [];
+  const stop = rooms.subscribe(live, (batch) => origins.push(batch.origin));
+  const tab = await rooms.read(live, { peer: freshPeerId() });
+  const tabBase = tab.encodedVersion();
+  const agent = await rooms.read(live, { peer: freshServerPeerId() });
+  const agentBase = agent.encodedVersion();
+  const target = readDocument(agent).at(-1);
+  const content = [{ kind: "text" as const, text: "The AI adds this. ", marks: {} }];
+  const ai = applyOps(
+    agent,
+    [
+      {
+        kind: "text",
+        block: target?.id ?? "",
+        splices: [{ from: 0, to: 0, content }],
+        formats: [],
+      },
+    ],
+    { message: "turn:probe" },
+  );
+  await rooms.commit(db, live, encodeEnvelope(agent.exportSince(agentBase)), "turn:probe");
+  agent.free();
+  writeDocument(tab, readDocument(tab).slice(0, -1));
+  await rooms.write(live, encodeEnvelope(tab.exportSince(tabBase)), "probe:tab");
+  tab.free();
+  const raced = await liveMarkdown(rooms, documentId);
+  console.log(`     after the race: ${JSON.stringify(raced)}`);
+  check(
+    ai.ok && raced.includes("The AI adds this. A fresh tab types."),
+    "a tab's removal that did not read the AI's text: the room brings the paragraph back",
+  );
+  check(origins.includes("server:restore"), "the room sends its restore to every socket");
+  stop();
+  await rooms.flush(live);
+  await rooms.unload(live);
+  check(
+    (await liveMarkdown(rooms, documentId)).includes("The AI adds this."),
+    "the restore is saved",
+  );
+  await writerEdit(rooms, documentId, (current) => current.slice(0, -1));
+  check(
+    !(await liveMarkdown(rooms, documentId)).includes("The AI adds this."),
+    "a removal that read the AI's text stands",
   );
 } finally {
   await rooms.close();
