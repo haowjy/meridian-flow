@@ -74,7 +74,12 @@ export class DocumentHistory {
    * take back and closes the open step: bookkeeping between two edits keeps them apart (an
    * upload's token leaving before its picture lands).
    */
-  record(changes: readonly DocChange[], tr: Transaction, before: EditorState): void {
+  record(
+    changes: readonly DocChange[],
+    tr: Transaction,
+    before: EditorState,
+    source?: Editor,
+  ): void {
     if (!this.active || changes.length === 0) return;
     if (tr.getMeta("addToHistory") === false) {
       this.closed = true;
@@ -96,7 +101,7 @@ export class DocumentHistory {
     }
     this.closed = false;
     this.redoSteps.length = 0;
-    this.changed();
+    this.changed(source);
   }
 
   /** The next write starts its own step. */
@@ -178,14 +183,17 @@ export class DocumentHistory {
   private shown = "";
 
   /** Tells listeners and editors when Undo or Redo becomes available or not: not per keystroke. */
-  private changed(): void {
+  private changed(source?: Editor): void {
     if (!this.active) return;
     const shown = `${this.canUndo()}|${this.canRedo()}`;
     if (shown === this.shown) return;
     this.shown = shown;
     for (const listener of this.listeners) listener();
+    // Not into the editor whose write this is (its own transaction shows the change), and not into
+    // one composing: a dispatch mid-composition commits its first keystroke as text.
     for (const editor of this.editors)
-      if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
+      if (editor !== source && !editor.isDestroyed && !editor.view.composing)
+        editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
 }
 

@@ -22,7 +22,7 @@ export const LoroSyncExtension = Extension.create<LoroSyncOptions>({
         docs: copy.docs,
         onLocalWrite: (changes, tr) => {
           copy.publish(changes);
-          history?.record(changes, tr, editor.view.state);
+          history?.record(changes, tr, editor.view.state, editor);
         },
       }),
     ];
