@@ -34,14 +34,32 @@ decoration (flat model design, section 7).
 
 ## Undo of dependent steps
 
-Each change is inverted on a fork at its own `after` (`invertChange`), so undoing two steps of
-one text doc in turn makes two inverses that merge as concurrent edits. Two cases fail: bold,
-then unbold, then Ctrl+Z twice leaves the text bold; and Enter, then Backspace to join, then a
-paste in the joined block, each its own step, undone in turn, leaves the tail
-(`"alpha beta gamma.beta gamma."`). Steps of one burst no longer hit this, because a doc's
-consecutive changes in a step are merged (`extend` in `editor-history.ts`). The fix is the Undo
-rule itself (design §2, §6): an inverse that also builds on the inverses already applied to its
-doc, without taking back a peer's ops in between.
+Ctrl+Z twice can bring text back twice. Press Enter in a paragraph, Backspace to join it back,
+paste into it (each its own step), then Ctrl+Z twice: the paste goes, then the paragraph's end
+shows both still joined and as its own paragraph again. Bold, then unbold, then Ctrl+Z twice
+leaves the text bold.
+
+The cause is the Undo rule (design §2, §6, `invertChange`). An inverse is the diff from a
+change's `after` back to its `before`, computed on a fork at `after` and imported as concurrent
+ops. Text an inverse puts back is new characters, so an earlier step's inverse, which names the
+characters its change wrote, no longer finds them (the join's copied tail, which the paste moved
+and the paste's inverse rewrote); and two inverses of one range merge as concurrent edits (the
+bold). Within one step a doc's consecutive changes are merged (`extend` in
+`editor-history.ts`), so a quick burst no longer hits it. A fix inverts against the document as it
+is now: positional inverses carried through the edits made since, as Loro's `UndoManager` keeps
+them, instead of inverses by character id at the change's own frontier.
+
+## What an Enter or a mark toggle costs outside the binding
+
+The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800
+blocks in node). In the dev build an Enter still takes about 20–25 ms to the DOM and a mark toggle
+about 18 ms, at 150 and at 500 paragraphs alike. A mark toggle's profile: about 3 ms in
+ProseMirror's dispatch, about 16 ms in a synchronous render of `DocumentToolbar`, most of it
+React's dev-build component timing (`startProfilerTimer`). An Enter adds about 2 ms in
+`fixBlockIds` (`extensions/block-id/`), which maps every block of the old document through the
+transaction and so grows with it, and about 7 ms of native layout when ProseMirror puts the
+selection into the DOM. Measure a production build before changing any of them; the fixer could
+look only at blocks that are not the same node in both documents, as the binding does.
 
 ## Composition undo grouping
 
