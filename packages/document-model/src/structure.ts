@@ -1,15 +1,79 @@
 import type { LoroDoc } from "loro-crdt";
 import { compareOrder } from "./order-key.js";
+import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
   type BlockId,
+  type DocKey,
   overrideMap,
   type ShapeSchema,
   STRUCTURE_MAPS,
   type StructureMap,
+  TEXT_KEY,
 } from "./shape.js";
 
 type MapValues = Readonly<Record<string, unknown>>;
+
+/**
+ * A removed block's `order` (design §1, "Removed blocks"): the key it had, and for every text doc
+ * under it (itself included) what the removal read: the doc's version as `{ peer: counter }` and
+ * a hash of its text. A doc with no entry was read empty.
+ */
+export interface Removal {
+  at: string;
+  seen: Readonly<Record<DocKey, TextRead>>;
+}
+
+export interface TextRead {
+  version: Readonly<Record<string, number>>;
+  text: number;
+}
+
+function removalOf(value: unknown): Removal | null {
+  if (value === null || typeof value !== "object") return null;
+  const { at, seen } = value as Partial<Removal>;
+  return typeof at === "string" && seen && typeof seen === "object" ? { at, seen } : null;
+}
+
+/** What a removal records of a text doc as it reads now. */
+export function textRead(doc: LoroDoc): TextRead {
+  return {
+    version: Object.fromEntries(doc.oplogVersion().toJSON()),
+    text: textHash(doc.getText(TEXT_KEY).toString()),
+  };
+}
+
+/**
+ * Whether `key`'s text reads differently from what `removal` read. The version is checked first,
+ * so a doc nobody edited since costs no read of its text; a Ctrl+Z and Redo that give back the
+ * text the removal read leave the block removed.
+ */
+function editedSince(docs: RoomDocs, key: DocKey, removal: Removal): boolean {
+  const doc = docs.textOf(key);
+  if (!doc) return false;
+  const read = removal.seen[key];
+  const version = read?.version ?? {};
+  let beyond = false;
+  for (const [peer, counter] of doc.oplogVersion().toJSON())
+    if (counter > (version[peer] ?? 0)) beyond = true;
+  return beyond && textHash(doc.getText(TEXT_KEY).toString()) !== (read?.text ?? EMPTY_TEXT);
+}
+
+/** cyrb53: a 53-bit string hash, the same on every peer. */
+function textHash(text: string): number {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+const EMPTY_TEXT = textHash("");
 
 /**
  * One read of a structure doc (design §1): the effective value of every key (a fork's override
@@ -19,8 +83,9 @@ type MapValues = Readonly<Record<string, unknown>>;
  *
  * A block shows when its `order` is set, its parent is the document or a shown block, and, for a
  * required container that cannot be filled (a table, a row), it has a shown child it accepts. A
- * cycle (concurrent moves of a cell and a `jsx_container`) reads with its smallest id as a child
- * of the document, on every peer alike.
+ * removed block (`order` a `Removal`) reads as set at its old key while a text doc under it reads
+ * differently from what the removal read (`revived`). A cycle (concurrent moves of a cell and a
+ * `jsx_container`) reads with its smallest id as a child of the document, on every peer alike.
  */
 export class StructureView {
   readonly draft: boolean;
@@ -29,11 +94,16 @@ export class StructureView {
   private readonly attrIndex = new Map<BlockId, Record<string, unknown>>();
   private readonly parentOf = new Map<BlockId, BlockId | null | undefined>();
   private readonly childrenOf = new Map<BlockId | null, BlockId[]>();
+  private readonly orders = new Map<BlockId, string>();
+  private below: Map<BlockId, BlockId[]> | undefined;
   readonly shown = new Set<BlockId>();
+  /** Removed blocks that read as set again: text under them changed since their removal read it. */
+  readonly revived = new Set<BlockId>();
   /** Every block id the structure names, shown or not. */
   readonly ids: readonly BlockId[];
 
-  constructor(doc: LoroDoc, draft: boolean, shape: ShapeSchema) {
+  constructor(docs: RoomDocs) {
+    const { structure: doc, draft, shape } = docs;
     this.draft = draft;
     const read = (name: string) => doc.getMap(name).toJSON() as MapValues;
     this.base = Object.fromEntries(STRUCTURE_MAPS.map((n) => [n, read(n)])) as Record<
@@ -66,6 +136,7 @@ export class StructureView {
       attrs[key.slice(slash + 1)] = value;
     }
     this.breakCycles();
+    this.computeOrders(docs);
     this.computeShown(shape);
   }
 
@@ -93,9 +164,38 @@ export class StructureView {
     return typeof node === "string" ? node : undefined;
   }
 
+  /** The key a reader sorts by: the stored one, a revived block's old one; null when removed. */
   order(id: BlockId): string | null | undefined {
-    const order = this.value("order", id);
-    return typeof order === "string" ? order : order === null ? null : undefined;
+    const order = this.orders.get(id);
+    if (order !== undefined) return order;
+    return this.value("order", id) === undefined ? undefined : null;
+  }
+
+  /** The removal stored for `id`, if its `order` holds one. */
+  removal(id: BlockId): Removal | null {
+    return removalOf(this.value("order", id));
+  }
+
+  /** Every text doc key under `id` (itself included), by the parents as read, shown or not. */
+  textKeysUnder(id: BlockId): DocKey[] {
+    if (!this.below) {
+      const below = new Map<BlockId, BlockId[]>();
+      for (const [child, parent] of this.parentOf) {
+        if (typeof parent !== "string") continue;
+        const list = below.get(parent);
+        if (list) list.push(child);
+        else below.set(parent, [child]);
+      }
+      this.below = below;
+    }
+    const below = this.below;
+    const out: DocKey[] = [];
+    const walk = (at: BlockId) => {
+      out.push(at);
+      for (const child of below.get(at) ?? []) walk(child);
+    };
+    walk(id);
+    return out;
   }
 
   attrs(id: BlockId): Attrs {
@@ -139,6 +239,36 @@ export class StructureView {
     }
   }
 
+  /**
+   * Every block's key as read. A removed block revives when a text doc now under it (its own, or
+   * a block's below it) reads differently from what the removal read: typing that raced the
+   * removal. Each doc is checked against every removed block above it, so a container revives
+   * with the text typed into it.
+   */
+  private computeOrders(docs: RoomDocs) {
+    const removals = new Map<BlockId, Removal>();
+    for (const id of this.ids) {
+      const order = this.value("order", id);
+      if (typeof order === "string") this.orders.set(id, order);
+      else {
+        const removal = removalOf(order);
+        if (removal) removals.set(id, removal);
+      }
+    }
+    if (removals.size === 0) return;
+    for (const key of this.ids) {
+      let at: BlockId | null | undefined = key;
+      while (typeof at === "string") {
+        const removal = removals.get(at);
+        if (removal && !this.revived.has(at) && editedSince(docs, key, removal)) {
+          this.revived.add(at);
+          this.orders.set(at, removal.at);
+        }
+        at = this.parentOf.get(at);
+      }
+    }
+  }
+
   private computeShown(shape: ShapeSchema) {
     const memo = new Map<BlockId, boolean>();
     const visit = (id: BlockId): boolean => {
@@ -148,7 +278,7 @@ export class StructureView {
       const parent = this.parentOf.get(id);
       const node = this.node(id);
       const shows =
-        typeof this.order(id) === "string" &&
+        this.orders.has(id) &&
         node !== undefined &&
         shape.node(node) !== undefined &&
         (parent === null || (typeof parent === "string" && visit(parent)));
@@ -197,6 +327,8 @@ export class StructureView {
       list.push(id);
     }
     for (const list of this.childrenOf.values())
-      list.sort((a, b) => compareOrder(this.order(a) as string, a, this.order(b) as string, b));
+      list.sort((a, b) =>
+        compareOrder(this.orders.get(a) as string, a, this.orders.get(b) as string, b),
+      );
   }
 }

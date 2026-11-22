@@ -9,8 +9,14 @@ mapping or `UndoHistory` changes:
 pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/two-editors.probe.ts [seeds] [steps]
 ```
 
-Defaults are 20 seeds of 400 steps (about 30 seconds). It prints `ok: …` or each failed seed with
-the block the editor shows beside the one the docs read, and exits non-zero.
+Defaults are 20 seeds of 400 steps (about 30 seconds). It prints `ok: …` or each failed case or
+seed with the block the editor shows beside the one the docs read, and exits non-zero.
+
+Before the seeds it runs the raced removals: A removes a block while B types into it and the
+batches cross (the phase 1 gate's lost `[remo`). B's typing must show on both screens, whether it
+lands before the removal reaches B or straddles it; B's Ctrl+Z of that typing lets the removal
+stand; a removal that read the typing stands, as does a second removal of a revived block; and
+typing into a cell of a removed table brings the whole table back.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs (`readProseMirror` without `since`), and after a final exchange

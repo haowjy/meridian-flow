@@ -4,6 +4,7 @@ import {
   emptyParagraphId,
   type RoomDocs,
   replaceText,
+  revivedBlock,
   STRUCTURE_KEY,
   structureValues,
   visibleComments,
@@ -151,6 +152,9 @@ function typingWrite(
     !sameAttrs($after.parent, block)
   )
     return null;
+  // A write into a block shown by revival stores its key, which the full write does.
+  for (let depth = 1; depth <= $from.depth; depth++)
+    if (revivedBlock(docs, $from.node(depth).attrs.id)) return null;
   const { doc, before } = docs.writableText(id);
   const from = $from.parentOffset;
   replaceText(
@@ -173,7 +177,8 @@ function sameAttrs(a: Node, b: Node): boolean {
  * The transaction that brings the editor to the docs after an import, or null if nothing shows.
  * The selection follows its cursors. A selected node that still stands stays selected. A caret
  * whose block a peer removed goes to that block's neighbour, the end of the one before it where
- * there is one: typing composed into the removed block stays in its text doc, hidden with it.
+ * there is one. A block the writer typed into before the removal arrived does not go: the removal
+ * did not read that typing, so the block reads as revived (design §1, "Removed blocks").
  */
 function remoteTransaction(
   docs: RoomDocs,

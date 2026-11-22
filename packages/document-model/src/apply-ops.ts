@@ -65,7 +65,7 @@ export function applyOps(
   options: WriteOptions = {},
 ): ApplyOpsResult {
   const { shape } = docs;
-  const view = new StructureView(docs.structure, docs.draft, shape);
+  const view = new StructureView(docs);
   const visibleComment = commentVisibility(view);
   const derived = (id: BlockId | null) =>
     id === null ? undefined : derivedEmptyParent(view, shape, id);
@@ -149,6 +149,7 @@ export function applyOps(
 
   for (const op of of("text")) {
     store(op.block);
+    writer.keep(op.block);
     const { doc, before: start } = docs.writableText(op.block);
     const rules = { rule: ruleOf(op.block) as NodeRule, shape, visibleComment };
     const text = doc.getText(TEXT_KEY);
@@ -166,6 +167,7 @@ export function applyOps(
   }
 
   for (const op of of("attrs")) {
+    writer.keep(op.block);
     if (op.unit === undefined) {
       store(op.block);
       const merged = { ...view.attrs(op.block), ...op.attrs };
@@ -224,14 +226,7 @@ export function applyOps(
     record(writeText(docs, block.id, block.inline, { rule, shape, visibleComment }, options));
   }
 
-  for (const op of of("delete")) {
-    if (!view.shown.has(op.block)) continue;
-    const remove = (id: BlockId) => {
-      writer.remove(id);
-      for (const child of view.children(id)) remove(child);
-    };
-    remove(op.block);
-  }
+  for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
 
   const structure = commitStructure(docs, before, options);
   return { ok: true, changes: [...(structure ? [structure] : []), ...changes.values()] };

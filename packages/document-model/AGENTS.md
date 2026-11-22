@@ -27,6 +27,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   changed: a block that is the same object as in `previous` (under the same parent) is not
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
   only with what the docs read as now; with neither, both work on the whole document.
+- A removal is a `Removal` in `order[id]` (`StructureWriter.remove`, on the topmost removed block
+  only), recording what it read of every text doc under the block. Text that reads differently
+  since revives the block (`StructureView.revived`), so a text edit can show or hide a removed
+  block: a shortcut that skips the structure for a text change must check `revivedBlock` first,
+  and a write into a revived block stores its key (`StructureWriter.keep`).
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
   shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's

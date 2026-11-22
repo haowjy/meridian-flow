@@ -44,6 +44,68 @@ type Editor = {
 };
 type Place = { node: Node; pos: number };
 
+/** An editor with the binding and its Undo on `docs`, started from what they read. */
+function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
+  const history = new UndoHistory(docs);
+  const plugin = loroSyncPlugin({ docs, history });
+  const view = {
+    state: EditorState.create({ schema, doc: readProseMirror(docs, schema), plugins: [plugin] }),
+    composing: false,
+    isDestroyed: false,
+    dom: new EventTarget(),
+    dispatch(tr: Transaction) {
+      this.state = this.state.apply(tr);
+    },
+  };
+  const handle = plugin.spec.view?.(view as never) ?? {};
+  return {
+    name,
+    docs,
+    history,
+    view,
+    destroy: () => {
+      handle.destroy?.();
+      history.destroy();
+    },
+  };
+}
+
+const sync = (from: Editor, to: Editor) => {
+  const batch = from.docs.exportSince(to.docs.version());
+  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch));
+};
+
+/** Where the editor's document differs from a full read of its docs, or null. */
+function differs(e: Editor, when: string): string | null {
+  const read = readProseMirror(e.docs, schema);
+  if (read.eq(e.view.state.doc)) return null;
+  const at = e.view.state.doc.content.findDiffStart(read.content) ?? 0;
+  const block = (doc: Node) =>
+    JSON.stringify(doc.resolve(Math.min(at, doc.content.size)).parent.toJSON()).slice(0, 600);
+  return `${when}: the editor shows ${block(e.view.state.doc)}\n  the docs read ${block(read)}`;
+}
+
+/** Ctrl+Z or Redo as the app runs it: publish nothing, re-read the changed docs, put the selection back. */
+function runHistory(e: Editor, direction: "undo" | "redo"): boolean {
+  const ran = direction === "undo" ? e.history.undo(e.view.state) : e.history.redo(e.view.state);
+  if (!ran) return false;
+  notifyChanged(
+    e.docs,
+    ran.changes.map((change) => change.key),
+  );
+  const { doc } = e.view.state;
+  const at = (end: typeof ran.selection.anchor) => end && resolveCursor(e.docs, doc, end);
+  const anchor = at(ran.selection.anchor);
+  const head = at(ran.selection.head) ?? anchor;
+  if (anchor != null && head != null)
+    e.view.dispatch(
+      e.view.state.tr
+        .setSelection(TextSelection.create(doc, anchor, head))
+        .setMeta("addToHistory", false),
+    );
+  return true;
+}
+
 function run(seed: number): string | null {
   let state = seed;
   const rand = () => {
@@ -63,30 +125,6 @@ function run(seed: number): string | null {
     const docs = RoomDocs.create(shape, freshPeerId());
     owned.push(docs);
     return docs;
-  };
-  const editor = (name: string, docs: RoomDocs): Editor & { destroy(): void } => {
-    const history = new UndoHistory(docs);
-    const plugin = loroSyncPlugin({ docs, history });
-    const view = {
-      state: EditorState.create({ schema, doc: readProseMirror(docs, schema), plugins: [plugin] }),
-      composing: false,
-      isDestroyed: false,
-      dom: new EventTarget(),
-      dispatch(tr: Transaction) {
-        this.state = this.state.apply(tr);
-      },
-    };
-    const handle = plugin.spec.view?.(view as never) ?? {};
-    return {
-      name,
-      docs,
-      history,
-      view,
-      destroy: () => {
-        handle.destroy?.();
-        history.destroy();
-      },
-    };
   };
   // The app's block-id fixer, simplified: a block with no id or a taken one gets a fresh one.
   const fixIds = (tr: Transaction) => {
@@ -227,32 +265,11 @@ function run(seed: number): string | null {
     for (const doc of e.docs.texts.values()) all += ` ${doc.getText(TEXT_KEY).toString()} `;
     return new Set(all.split(/[^a-zA-Z0-9]+/));
   };
-  // Ctrl+Z or Redo as the app runs it: publish nothing here, re-read the changed docs, put the
-  // selection back.
-  const history = (e: Editor, direction: "undo" | "redo") => {
-    const ran = direction === "undo" ? e.history.undo(e.view.state) : e.history.redo(e.view.state);
-    if (!ran) return false;
-    notifyChanged(
-      e.docs,
-      ran.changes.map((change) => change.key),
-    );
-    const { doc } = e.view.state;
-    const at = (end: typeof ran.selection.anchor) => end && resolveCursor(e.docs, doc, end);
-    const anchor = at(ran.selection.anchor);
-    const head = at(ran.selection.head) ?? anchor;
-    if (anchor != null && head != null)
-      e.view.dispatch(
-        e.view.state.tr
-          .setSelection(TextSelection.create(doc, anchor, head))
-          .setMeta("addToHistory", false),
-      );
-    return true;
-  };
   // An Undo keeps every word the other editor typed (it may hide the block they are in).
   const undoKeeps = (e: Editor, when: string) => {
     const other = typed[e.name === "A" ? "B" : "A"];
     const before = words(e);
-    history(e, "undo");
+    runHistory(e, "undo");
     const after = words(e);
     for (const word of before)
       if (other.has(word) && !after.has(word)) return `${when}: ${e.name}'s Undo took ${word}`;
@@ -269,10 +286,10 @@ function run(seed: number): string | null {
     for (let i = 0; i < k; i++) {
       const bad = differs(e, `${when}, Undo ${i}`);
       if (bad) return bad;
-      if (history(e, "undo")) ran++;
+      if (runHistory(e, "undo")) ran++;
     }
     for (let i = 0; e.history.canRedo(); i++) {
-      if (!history(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
+      if (!runHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
       const bad = differs(e, `${when}, Redo ${i}`);
       if (bad) return bad;
     }
@@ -331,25 +348,12 @@ function run(seed: number): string | null {
       return `${when} [${names}]: ${what} gave ${block(got)}\n  want ${block(want)}`;
     };
     for (let i = 0; i < steps; i++)
-      if (!history(e, "undo")) return `${when} [${names}]: Undo ${i} found nothing`;
+      if (!runHistory(e, "undo")) return `${when} [${names}]: Undo ${i} found nothing`;
     const undone = compare(start, `${steps} Undos`);
     if (undone) return undone;
     for (let i = 0; i < steps; i++)
-      if (!history(e, "redo")) return `${when} [${names}]: Redo ${i} found nothing`;
+      if (!runHistory(e, "redo")) return `${when} [${names}]: Redo ${i} found nothing`;
     return compare(end, `${steps} Redos`);
-  };
-
-  const sync = (from: Editor, to: Editor) => {
-    const batch = from.docs.exportSince(to.docs.version());
-    if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch));
-  };
-  const differs = (e: Editor, when: string) => {
-    const read = readProseMirror(e.docs, schema);
-    if (read.eq(e.view.state.doc)) return null;
-    const at = e.view.state.doc.content.findDiffStart(read.content) ?? 0;
-    const block = (doc: Node) =>
-      JSON.stringify(doc.resolve(Math.min(at, doc.content.size)).parent.toJSON()).slice(0, 600);
-    return `${when}: the editor shows ${block(e.view.state.doc)}\n  the docs read ${block(read)}`;
   };
 
   try {
@@ -368,7 +372,7 @@ function run(seed: number): string | null {
         if (bad) return bad;
       } else if (roll < 0.22) {
         name = "redo";
-        history(who, "redo");
+        runHistory(who, "redo");
       } else if (roll < 0.25) {
         name = "chain";
         const bad = chain(who, `step ${step} (chain)`);
@@ -413,7 +417,147 @@ function run(seed: number): string | null {
   }
 }
 
+/**
+ * Typing that races a removal of its block (design §1, "Removed blocks"): A removes a block while
+ * B types into it, and the batches cross. Nothing B typed may go out of view, B's own Ctrl+Z of
+ * the typing lets the removal stand, and a removal that read the typing stands. Each case starts a
+ * room of its own and ends with both editors equal to their docs and to each other.
+ */
+function racedRemovals(): string[] {
+  const p = (id: string, text: string) => schema.nodes.paragraph.create({ id }, schema.text(text));
+  const cell = (id: string, text: string) =>
+    schema.nodes.table_cell.create({ id }, [p(`${id}p`, text)]);
+  const table = schema.nodes.table.create({ id: "t" }, [
+    schema.nodes.table_row.create({ id: "r1" }, [cell("c1", "Cell one."), cell("c2", "Cell two.")]),
+    schema.nodes.table_row.create({ id: "r2" }, [cell("c3", "Cell three."), cell("c4", "Cell four.")]),
+  ]);
+  const start = () => [p("a", "First."), p("x", "Delete-target before after."), table, p("z", "Last.")];
+
+  const room = () => {
+    const seed = RoomDocs.create(shape, freshPeerId());
+    writeProseMirror(seed, schema.topNodeType.create(null, start()));
+    const copy = () => {
+      const docs = RoomDocs.create(shape, freshPeerId());
+      docs.importBatch(seed.exportSince());
+      return docs;
+    };
+    const a = editor("A", copy());
+    const b = editor("B", copy());
+    return {
+      a,
+      b,
+      free: () => {
+        for (const e of [a, b]) {
+          e.destroy();
+          e.docs.free();
+        }
+        seed.free();
+      },
+    };
+  };
+  const posOf = (e: Editor, id: string) => {
+    let at = -1;
+    e.view.state.doc.descendants((node, pos) => {
+      if (node.attrs.id === id) at = pos;
+      return at < 0;
+    });
+    return at;
+  };
+  const caret = (e: Editor, id: string, offset: number) => {
+    const { state } = e.view;
+    e.view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, posOf(e, id) + 1 + offset)));
+  };
+  const remove = (e: Editor, id: string) => {
+    const at = posOf(e, id);
+    const { state } = e.view;
+    e.view.dispatch(state.tr.delete(at, at + (state.doc.nodeAt(at) as Node).nodeSize));
+    e.history.endStep();
+  };
+  const type = (e: Editor, text: string) => {
+    for (const ch of text) e.view.dispatch(e.view.state.tr.insertText(ch));
+    e.history.endStep();
+  };
+  const shown = (e: Editor) => e.view.state.doc.textBetween(0, e.view.state.doc.content.size, "|");
+  const settle = (r: ReturnType<typeof room>, name: string, want: (text: string) => string | null) => {
+    sync(r.a, r.b);
+    sync(r.b, r.a);
+    for (const e of [r.a, r.b]) {
+      const bad = differs(e, `${name} (${e.name})`) ?? want(shown(e));
+      if (bad) return `${name}: ${e.name} ${bad}`;
+    }
+    return shown(r.a) === shown(r.b) ? null : `${name}: the editors differ`;
+  };
+  const showsAll = (...parts: string[]) => (text: string) =>
+    parts.every((part) => text.includes(part)) ? null : `shows "${text}", wanted ${parts.join(", ")}`;
+  const showsNone = (...parts: string[]) => (text: string) =>
+    parts.some((part) => text.includes(part)) ? `shows "${text}", wanted none of ${parts.join(", ")}` : null;
+
+  const cases: Record<string, (r: ReturnType<typeof room>) => string | null> = {
+    // The prober's case: B's first keys land before the removal reaches it, the rest after.
+    "typing across the removal's arrival": (r) => {
+      caret(r.b, "x", 14);
+      remove(r.a, "x");
+      type(r.b, "[remo");
+      sync(r.a, r.b);
+      type(r.b, "te-edit]");
+      return settle(r, "typing across the removal's arrival", showsAll("Delete-target [remote-edit]before"));
+    },
+    "typing before the removal arrives": (r) => {
+      caret(r.b, "x", 14);
+      remove(r.a, "x");
+      type(r.b, "[remote-edit]");
+      return settle(r, "typing before the removal arrives", showsAll("Delete-target [remote-edit]before"));
+    },
+    "the typer's Ctrl+Z lets the removal stand": (r) => {
+      caret(r.b, "x", 14);
+      remove(r.a, "x");
+      type(r.b, "[remote-edit]");
+      sync(r.a, r.b);
+      if (!shown(r.b).includes("[remote-edit]")) return `Ctrl+Z case: B lost its typing: ${shown(r.b)}`;
+      runHistory(r.b, "undo");
+      return settle(r, "the typer's Ctrl+Z lets the removal stand", showsNone("Delete-target"));
+    },
+    "a removal that read the typing stands": (r) => {
+      caret(r.b, "x", 14);
+      type(r.b, "[remote-edit]");
+      sync(r.b, r.a);
+      remove(r.a, "x");
+      return settle(r, "a removal that read the typing stands", showsNone("Delete-target", "[remote-edit]"));
+    },
+    "a revived block removed again stays removed": (r) => {
+      caret(r.b, "x", 14);
+      remove(r.a, "x");
+      type(r.b, "[remote-edit]");
+      sync(r.b, r.a);
+      sync(r.a, r.b);
+      remove(r.a, "x");
+      return settle(r, "a revived block removed again stays removed", showsNone("[remote-edit]"));
+    },
+    "typing in a cell brings its removed table back": (r) => {
+      caret(r.b, "c3p", 5);
+      remove(r.a, "t");
+      type(r.b, "[in-cell]");
+      return settle(r, "typing in a cell brings its removed table back", showsAll("Cell [in-cell]three.", "Cell one."));
+    },
+  };
+  const failures: string[] = [];
+  for (const [name, run] of Object.entries(cases)) {
+    const r = room();
+    try {
+      const bad = run(r);
+      if (bad) failures.push(bad);
+    } finally {
+      r.free();
+    }
+  }
+  return failures;
+}
+
 let failed = 0;
+for (const failure of racedRemovals()) {
+  failed++;
+  process.stderr.write(`FAIL raced removal: ${failure}\n`);
+}
 for (let seed = 1; seed <= seeds; seed++) {
   const failure = run(seed);
   if (failure) {
@@ -421,5 +565,7 @@ for (let seed = 1; seed <= seeds; seed++) {
     process.stderr.write(`FAIL seed ${seed}: ${failure}\n`);
   }
 }
-process.stdout.write(failed ? `${failed} of ${seeds} seeds failed\n` : `ok: ${seeds} seeds × ${steps} steps\n`);
+process.stdout.write(
+  failed ? `${failed} failed\n` : `ok: raced removals, ${seeds} seeds × ${steps} steps\n`,
+);
 process.exitCode = failed ? 1 : 0;

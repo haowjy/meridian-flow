@@ -17,6 +17,7 @@ export {
   type ReadSince,
   readDocument,
   readInline,
+  revivedBlock,
   shownUnits,
   structureValues,
   type TextUnit,

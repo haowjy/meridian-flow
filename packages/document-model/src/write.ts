@@ -4,6 +4,7 @@ import {
   commentVisibility,
   normalizeInline,
   readInline,
+  revivedBlock,
   shownUnits,
   storedOf,
   structureValues,
@@ -22,7 +23,7 @@ import {
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";
-import { StructureView } from "./structure.js";
+import { type Removal, StructureView, type TextRead, textRead } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
@@ -81,9 +82,31 @@ export class StructureWriter {
     } else if (!sameValue(override, value)) overrides.set(key, value as never);
   }
 
-  /** Remove a block (and what shows under it reads as removed with it): `order` to null. */
+  /**
+   * Remove a block (what is under it hides with it): `order` becomes a
+   * `Removal` holding what it read of every text doc under it, so text edited concurrently brings
+   * the block back (design §1, "Removed blocks").
+   */
   remove(id: BlockId): void {
-    this.set("order", id, null);
+    const seen: Record<DocKey, TextRead> = {};
+    for (const key of this.view.textKeysUnder(id)) {
+      const doc = this.docs.textOf(key);
+      if (doc) seen[key] = textRead(doc);
+    }
+    const removal: Removal = { at: this.view.order(id) as string, seen };
+    this.set("order", id, removal);
+  }
+
+  /**
+   * Store the key of `id` and of every block above it that shows only because it was revived.
+   * A write into a revived block (its text, attributes or children) restores it, so the write
+   * cannot hide it again (the writer deleting the text that revived it, or moving it out).
+   */
+  keep(id: BlockId): void {
+    for (let at: BlockId | null | undefined = id; at && this.view.revived.has(at); ) {
+      this.set("order", at, this.view.order(at));
+      at = this.view.parent(at);
+    }
   }
 
   /**
@@ -122,7 +145,7 @@ export class StructureWriter {
   dropMatchingOverrides(ids: Iterable<BlockId>) {
     if (!this.docs.draft) return;
     const { structure } = this.docs;
-    const after = new StructureView(structure, true, this.docs.shape);
+    const after = new StructureView(this.docs);
     const orders = structure.getMap(overrideMap("order"));
     for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
     const comments = structure.getMap(overrideMap("comments"));
@@ -165,7 +188,7 @@ export function setCommentBody(
   body: CommentBody | null,
   options: WriteOptions = {},
 ) {
-  const view = new StructureView(docs.structure, docs.draft, docs.shape);
+  const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
   if (body === null && !docs.draft) docs.structure.getMap("comments").delete(comment);
@@ -177,7 +200,8 @@ export function setCommentBody(
  * Write a whole document as the editor (or a seed) has it (design §6): diff it against the
  * normalized read and write only what differs. Blocks pair by `id`, so there is nothing to
  * reconcile: changed values are set, only blocks whose relative order changed are re-keyed, shown
- * blocks that left are tombstoned, and a textblock's text doc gets a splice and a style patch.
+ * blocks that left are tombstoned (the topmost of each removed subtree), and a textblock's text doc
+ * gets a splice and a style patch.
  * Because the comparison is against the normalized read, a broken cycle, a hidden container or a
  * filled empty cell writes nothing by itself, and after the write the docs read as `blocks`.
  * With `options.previous`, blocks unchanged since it are skipped. Returns the docs it changed,
@@ -195,7 +219,7 @@ export function writeDocument(
   let view: StructureView | undefined;
   let writer: StructureWriter | undefined;
   const read = () => {
-    view ??= new StructureView(docs.structure, docs.draft, shape);
+    view ??= new StructureView(docs);
     return view;
   };
   const structure = () => {
@@ -244,6 +268,7 @@ export function writeDocument(
         continue;
       }
       take(block.id);
+      if (revivedBlock(docs, block.id)) structure().keep(block.id);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
         structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);
@@ -264,7 +289,13 @@ export function writeDocument(
   walk(blocks, null);
   const left = !known || [...known.blocks.keys()].some((id) => !written.has(id));
   if (docs.draft || writer || left) structure().dropMatchingOverrides(written);
-  if (left) for (const id of read().shown) if (!written.has(id)) structure().remove(id);
+  if (left)
+    for (const id of read().shown) {
+      // A block under a removed block hides with it, and comes back with it.
+      const parent = read().parent(id);
+      const goesWithParent = typeof parent === "string" && !written.has(parent);
+      if (!written.has(id) && !goesWithParent) structure().remove(id);
+    }
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;
