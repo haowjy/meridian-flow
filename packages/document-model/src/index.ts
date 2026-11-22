@@ -16,7 +16,6 @@ export {
   normalizeInline,
   normalizeMarks,
   type ReadSince,
-  readBlocks,
   readDocument,
   readInline,
   shownUnits,

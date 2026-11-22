@@ -29,5 +29,5 @@ Provider-specific auth stays at the adapter and composition boundary.
 Application repositories maintain rollups except for thread activity, which is
 trigger-maintained.
 
-Yjs storage, immutable receipts and other contracts:
+Room storage, immutable receipts and other contracts:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

@@ -10,14 +10,12 @@
 import type { AheadRef, LinkView } from "@meridian/contracts";
 import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
-import type * as Y from "yjs";
 import type { ShownLink } from "../links/correspondence.js";
 import type { WriteContext } from "../tool/types.js";
+import type { DocumentCut } from "./document-rooms.js";
 
 export interface LinkPrepareRequest {
   documentId: string;
-  /** Docs the next synchronous block serializes or assigns against (old runtime, overlays). */
-  docs: readonly Y.Doc[];
   /** Freshly parsed nodes whose written addresses ref assignment may resolve. */
   written?: readonly PMNode[];
   /**
@@ -50,6 +48,9 @@ export interface DocumentLinksPort {
   scopeFor(documentId: string, context: WriteContext | undefined): HolderLinkScope;
   /** Independent durable registration (§6). Throws if called inside a DB transaction. */
   registerAhead(mints: readonly AheadMint[]): Promise<void>;
-  /** View revision (§8), synchronous with the render or apply it identifies. */
-  revision(doc: Y.Doc, scope: HolderLinkScope): string;
+  /**
+   * View revision (§8), synchronous with the render or apply it identifies: it names a cut by its
+   * room version and the blocks it shows.
+   */
+  revision(cut: DocumentCut, scope: HolderLinkScope): string;
 }

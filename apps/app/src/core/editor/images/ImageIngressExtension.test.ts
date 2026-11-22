@@ -9,10 +9,10 @@
  *
  * Most of that is one writer alone, so `mount` is one editor. `mountPair`
  * brings a real collaborator, and a case reaches for it only when its own claim
- * names one: y-prosemirror rebuilds the whole document and reports every
+ * names one: the binding rebuilds the whole document and reports every
  * position deleted, which is the hazard the anchored hold exists for, and undo
- * on a shared document is the Yjs UndoManager rather than ProseMirror's own
- * history.
+ * on a shared document is the editor's own collaborative history
+ * (`editor-history.ts`) rather than ProseMirror's.
  */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { history, undo } from "@tiptap/pm/history";
@@ -333,7 +333,7 @@ describe("a pending picture can be moved while its bytes travel", () => {
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
 
-    // One transaction, delete plus insert: the move y-prosemirror reconciles as
+    // One transaction, delete plus insert: the move the binding reconciles as
     // a new identity, and the shape a drag inside the manuscript produces.
     const transaction = editor.state.tr;
     const picture = editor.state.doc.nodeAt(5);
@@ -560,7 +560,7 @@ describe("an image file pasted over a sweep replaces the sweep", () => {
 
 describe("Replace aims at the picture the writer pointed at", () => {
   it("takes the whole replacement back in one undo", async () => {
-    // Undo on a shared document is the Yjs UndoManager, so the shared document
+    // Undo on a shared document is the editor's collaborative history, so the shared document
     // is what these two cases are for — not a peer.
     const { editor, held } = mountPair();
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });

@@ -10,7 +10,6 @@ import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
@@ -209,7 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const store = () => createDrizzleTreeListStore({ db });
     /** The writer's own change to the project's list, as their browser's record would be admitted. */
-    const asWriter = async (make: (writer: TreeWriter<LoroDoc>) => void) =>
+    const asWriter = async (make: (writer: TreeWriter) => void) =>
       store().submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => make(writer),

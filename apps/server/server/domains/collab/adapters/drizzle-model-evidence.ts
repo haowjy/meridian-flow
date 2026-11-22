@@ -58,7 +58,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
               sourceBlockId: blockId as never,
               roomKey: frontier.room,
               snapshot: Buffer.from(frontier.snapshot),
-              journalPosition: frontier.position,
             })),
           );
       }
@@ -103,19 +102,13 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       // savepoint, so a failed lookup leaves the caller's usable.
       const [row] = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
-          .select({ snapshot: frontiers.snapshot, journalPosition: frontiers.journalPosition })
+          .select({ snapshot: frontiers.snapshot })
           .from(frontiers)
           .where(and(eq(frontiers.roomKey, room), amongBlocks(blockIds)))
           .orderBy(sql`${frontiers.recordedSeq} DESC NULLS LAST`)
           .limit(1),
       );
-      return row
-        ? {
-            room,
-            snapshot: new Uint8Array(row.snapshot),
-            ...(row.journalPosition === null ? {} : { position: row.journalPosition }),
-          }
-        : null;
+      return row ? { room, snapshot: new Uint8Array(row.snapshot) } : null;
     },
 
     async frontiersIn(room, blockIds) {

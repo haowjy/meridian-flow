@@ -1,9 +1,6 @@
-import { LoroDoc } from "loro-crdt";
-import * as Y from "yjs";
-import type { TreeDoc } from "./list-doc.js";
-import { recordsOf, type TreeRecord } from "./record.js";
+import type { LoroDoc } from "loro-crdt";
+import type { TreeRecord } from "./record.js";
 import { replay, type TreeNode, type TreeProjection } from "./replay.js";
-import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
 import { droppedRecords, listRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
@@ -15,168 +12,14 @@ export type Connection = {
   closed: (source: string) => boolean;
 };
 
-/**
- * A copy that does something an honest client's never does (a deletion, a struct whose position
- * can't be decided, a server-only kind). Nothing was stored. The room closes the connection with
- * one terminal code; the client does not retry (`COPY_BROKEN`).
- */
-export class CopyFault extends Error {
-  constructor(readonly why: string) {
-    super(`a copy the list cannot take: ${why}`);
-  }
-}
-
-/** Keeps the guard cheap: no honest update holds this many records. Honest clients send parts of 250. */
-export const MAX_RECORDS = 2000;
-/** Yjs client ids below this are the server's, as they are for text. */
-const SERVER_CLIENT_IDS = 1000;
-
-/**
- * Whether a client may write this value: not a kind or field only the server writes. A value the
- * reader cannot read passes (every replay skips it the same way); a `purge` is final in every
- * replay and `blob`, `carries` and the rest name storage or misattribute copies, so a client
- * that sends one is broken, not mistaken.
- */
-export function clientMayWrite(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) return true;
-  const fields = value as Record<string, unknown>;
-  const serverKeys = [...SERVER_BASE, ...(SERVER_FIELDS.get(String(fields.type)) ?? [])];
-  if (fields.type === "purge" || (fields.type === "create" && fields.kind === "file")) return false;
-  return !serverKeys.some((key) => fields[key] !== undefined);
-}
-
-/** The part of one Yjs struct the server does not hold yet. */
-type Struct = {
-  client: number;
-  from: number;
-  to: number;
-  /** Where it sits: the neighbours of its first item (the held record before it, if it was cut), or the type it names. */
-  origin: Y.ID | null;
-  rightOrigin: Y.ID | null;
-  parent: Y.Item["parent"];
-  values: unknown[];
-};
-
-/**
- * The one structural guard: what an honest client's copy never does, judged on the update's bytes
- * and each struct's client id, never on a writer's act. Throws `CopyFault`, having read the
- * update without applying it. Every new struct is an item of plain values in `ops` from a client
- * id of 1,000 or more; it follows what the server holds from that client with no gap; every
- * neighbour is already held, with no loop (a struct whose position can't be decided now would
- * stay pending in Yjs and reach the journal later, where it could land in `settle`); it carries
- * no server-only kind or field; and there are at most `MAX_RECORDS` records.
- */
-export function guard(doc: Y.Doc, update: Uint8Array): void {
-  let decoded: ReturnType<typeof Y.decodeUpdate>;
-  try {
-    decoded = Y.decodeUpdate(update);
-  } catch {
-    throw new CopyFault("not an update");
-  }
-  if (decoded.ds.clients.size > 0) throw new CopyFault("a deletion");
-  const list = recordsOf(doc);
-  const state = (client: number) => Y.getState(doc.store, client);
-
-  // Each client's new structs must follow what the server holds from it, with no gap.
-  const byClient = new Map<number, Struct[]>();
-  for (const item of decoded.structs) {
-    if (!(item instanceof Y.Item)) throw new CopyFault("not an item");
-    const { client, clock } = item.id;
-    if (client < SERVER_CLIENT_IDS) throw new CopyFault("a reserved client id");
-    // Held already, as when two tabs of one browser each forward the same update.
-    if (clock + item.length <= state(client)) continue;
-    const cut = Math.max(0, state(client) - clock);
-    const structs = byClient.get(client) ?? [];
-    const last = structs[structs.length - 1];
-    if (clock + cut !== (last ? last.to : state(client))) throw new CopyFault("not the next clock");
-    if (item.parentSub !== null) throw new CopyFault("a map entry");
-    if (!(item.content instanceof Y.ContentAny)) {
-      // Anything but plain records: text, a type, a format. Said by where it sits, when it names that.
-      throw new CopyFault(
-        typeof item.parent === "string" && item.parent !== "ops"
-          ? "not the list"
-          : "not plain records",
-      );
-    }
-    structs.push({
-      client,
-      from: clock + cut,
-      to: clock + item.length,
-      origin: cut > 0 ? { client, clock: clock + cut - 1 } : item.origin,
-      rightOrigin: item.rightOrigin,
-      parent: cut > 0 ? null : item.parent,
-      values: item.content.getContent().slice(cut),
-    });
-    byClient.set(client, structs);
-  }
-  const inUpdate = (id: { client: number; clock: number }) =>
-    byClient.get(id.client)?.find((struct) => id.clock >= struct.from && id.clock < struct.to);
-
-  // Every struct must sit in `ops`, by its neighbours: each is the server's or the update's own.
-  const inList = new Set<Struct>();
-  const sitsInList = (struct: Struct, path: Set<Struct>): string | null => {
-    const { parent, origin, rightOrigin } = struct;
-    if (typeof parent === "string") return parent === "ops" ? null : "not the list";
-    if (parent !== null) return "a nested type";
-    if (origin === null && rightOrigin === null) return "no parent";
-    if (path.has(struct)) return "a neighbour loop";
-    path.add(struct);
-    for (const neighbour of [origin, rightOrigin]) {
-      if (neighbour === null) continue;
-      const within = inUpdate(neighbour);
-      if (within) {
-        if (!inList.has(within)) {
-          const why = sitsInList(within, path);
-          if (why) return why;
-          inList.add(within);
-        }
-      } else if (state(neighbour.client) <= neighbour.clock) return "a neighbour the server lacks";
-      else if (Y.getItem(doc.store, neighbour).parent !== list) return "not the list";
-    }
-    path.delete(struct);
-    return null;
-  };
-
-  let records = 0;
-  for (const structs of byClient.values())
-    for (const struct of structs) {
-      const why = sitsInList(struct, new Set());
-      if (why) throw new CopyFault(why);
-      for (const value of struct.values)
-        if (!clientMayWrite(value)) throw new CopyFault("a kind or field only the server writes");
-      records += struct.values.length;
-      if (records > MAX_RECORDS) throw new CopyFault("too many records");
-    }
-}
-
 /** A record the update added. */
 type Added = TreeRecord;
-
-/** The records of the update, inside the Yjs transaction that applies it, in the order they landed. */
-function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
-  const list = recordsOf(doc);
-  const added: Added[] = [];
-  const watch = (event: Y.YArrayEvent<TreeRecord>) => {
-    for (const change of event.changes.delta)
-      for (const value of change.insert ?? []) {
-        const read = readStored(value);
-        if (read.ok) added.push(read.record);
-      }
-  };
-  list.observe(watch);
-  try {
-    Y.applyUpdate(doc, update, "client");
-  } finally {
-    list.unobserve(watch);
-  }
-  return added;
-}
 
 /**
  * A Loro copy takes the update as sent, with no check of what it says: the records it adds are
  * those whose ids the copy did not hold, in list order.
  */
-function integrateLoro(doc: LoroDoc, update: Uint8Array): Added[] {
+function integrate(doc: LoroDoc, update: Uint8Array): Added[] {
   const held = new Set(listRecords(doc).map((record) => record.id));
   doc.import(update);
   return listRecords(doc).filter((record) => !held.has(record.id));
@@ -223,7 +66,7 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
 }
 
 /** Judge segments against the records kept so far. */
-function stamp(doc: TreeDoc, added: readonly Added[], connection: Connection): string[] {
+function stamp(doc: LoroDoc, added: readonly Added[], connection: Connection): string[] {
   const out: string[] = [];
   const excluded = new Set(added.map((record) => record.id));
   const droppedNodes = new Set(
@@ -289,24 +132,12 @@ function stamp(doc: TreeDoc, added: readonly Added[], connection: Connection): s
 }
 
 /**
- * Admits an update to the server's copy: the guard first (it throws `CopyFault`, nothing
- * stored), then the update is applied, and each record that changes a closed Work is stamped
- * `dropped`, in one transaction. The copy is changed in place, which is safe under the list's
- * lock: if anything throws, the caller reloads the copy from the journal. The caller has the
- * update journaled with the stamps.
+ * Admits an update to the server's copy: the update is applied, and each record that changes a
+ * closed Work is stamped `dropped`, in one transaction. The copy is changed in place, which is safe
+ * under the list's lock: if anything throws, the caller reloads the copy from storage.
  */
-export function admit(
-  server: TreeWriter<TreeDoc>,
-  update: Uint8Array,
-  connection: Connection,
-): Admission {
-  const doc = server.doc;
-  let records: TreeRecord[];
-  if (doc instanceof LoroDoc) records = integrateLoro(doc, update);
-  else {
-    guard(doc, update);
-    records = integrate(doc, update);
-  }
+export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
+  const records = integrate(server.doc, update);
   const dropped = stamp(server.doc, records, connection);
   if (dropped.length > 0)
     server.transact(() =>

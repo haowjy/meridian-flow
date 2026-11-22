@@ -1,5 +1,5 @@
 /**
- * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread, context, and Yjs endpoints.
+ * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread and context endpoints.
  * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
  */
 
@@ -33,7 +33,6 @@ export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
 export const API_ACCOUNT_CONTEXT_SOURCES_PATH = "/api/account/context-sources";
 export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents";
 export const API_AUTH_ME_PATH = "/api/auth/me";
-export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
 export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;

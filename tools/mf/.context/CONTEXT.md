@@ -135,7 +135,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   reports `previousDocumentId`, and says the old document was already deleted if the create
   then fails. `doc rm` deletes documents, not folders. Seed scenario names use writer spelling.
   `doc copy` stays the server's Copy route: one Copy command per run under a fresh operation
-  ID, each source's identity (`expected`) read from the list, no state vector (it holds nothing
+  ID, each source's identity (`expected`) read from the list, no room version (it holds nothing
   open); `--draft-work` reads every source through that Work's draft.
 - **Usage refusals** are current pending state, not terminal run events. Send
   exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's

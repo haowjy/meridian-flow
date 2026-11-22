@@ -26,7 +26,7 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
 
 - `child.mts` is one composed server: production ports and services over the scratch database
   with a pool of `max: 2` (a second connection held under a lock hangs the probe instead of
-  production), the mock model, and the Hocuspocus gateway. The parent drives it with JSON lines
+  production), the mock model, and the Loro rooms. The parent drives it with JSON lines
   on stdin: queue a scripted reply, arm a test hook point, send a message, run the recovery
   lanes once, resolve a key, send a card's Undo, shorten a tool's timeout.
 - `harness.mts` is the parent: it seeds a Work, chats and documents by SQL, bundles the child

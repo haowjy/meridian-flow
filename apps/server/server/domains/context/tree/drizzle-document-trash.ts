@@ -69,6 +69,7 @@ export function createDrizzleDocumentTrash(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   purges: DocumentPurgeDisposal;
+  endRooms(documentIds: readonly DocumentId[]): Promise<void>;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
   const objects = createObjectRelease({
@@ -296,7 +297,7 @@ export function createDrizzleDocumentTrash(deps: {
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
-        return releaseDocumentContent(deps.db, taken.documentIds);
+        return releaseDocumentContent(deps.db, deps.endRooms, taken.documentIds);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;
@@ -386,7 +387,7 @@ export function createDrizzleDocumentTrash(deps: {
             }
           },
         });
-        return releaseDocumentContent(deps.db, [documentId]);
+        return releaseDocumentContent(deps.db, deps.endRooms, [documentId]);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;

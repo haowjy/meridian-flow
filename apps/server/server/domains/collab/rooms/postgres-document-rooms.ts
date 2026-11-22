@@ -20,6 +20,7 @@ import {
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   holdsFrontiers,
@@ -74,11 +75,14 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   /** Save every loaded room and free it: the process is stopping. */
   close(): Promise<void>;
   /**
-   * Deletes the Live rows of documents that never got a `documents` row (an import that stopped
-   * wrote their first states ahead of their creates). A document with a row is left alone: its
-   * row's delete takes its rooms' rows.
+   * Ends the documents' loaded rooms, Live and forks, without saving: timers stop, unsaved
+   * batches are dropped and the docs are freed. A purge calls it after its transaction commits
+   * (a rollback leaves the rooms as they were); until then a save writes nothing for a purged
+   * document (`writeRows`). It also deletes the Live rows of documents that never got a
+   * `documents` row (an import that stopped wrote their first states ahead of their creates); a
+   * document with a row keeps its rows here: its row's delete, or the purge, takes them.
    */
-  discardUnborn(documentIds: readonly DocumentId[]): Promise<void>;
+  end(documentIds: readonly DocumentId[]): Promise<void>;
 }
 
 interface Loaded {
@@ -90,11 +94,15 @@ interface Loaded {
   /** When the first unsaved batch arrived; 0 when nothing is unsaved. */
   firstDirtyAt: number;
   saveTimer: ReturnType<typeof setTimeout> | null;
+  /** Ends the room's pending save in `processDetachedWork`, which shutdown and DB tests drain. */
+  settleSave: (() => void) | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
   lastUsed: number;
   snapshotBytes: number;
   /** Saves and the unload run one at a time, in this order. */
   queue: Promise<void>;
+  /** Saves queued or running; the tracked save settles only when none is left. */
+  saving: number;
   /** Set once an unload starts; a load of the same room waits for it. */
   unloading: Promise<void> | null;
 }
@@ -230,10 +238,12 @@ export function createPostgresDocumentRooms(input: {
         dirty: new Set(docs.forward()),
         firstDirtyAt: 0,
         saveTimer: null,
+        settleSave: null,
         idleTimer: null,
         lastUsed: Date.now(),
         snapshotBytes: rows.reduce((sum, row) => sum + row.snapshot.byteLength, 0),
         queue: Promise.resolve(),
+        saving: 0,
         unloading: null,
       };
       rooms.set(name, loaded);
@@ -314,6 +324,13 @@ export function createPostgresDocumentRooms(input: {
   }
 
   function schedule(loaded: Loaded) {
+    if (!loaded.settleSave)
+      void processDetachedWork.track(
+        new Promise<void>((resolve) => {
+          loaded.settleSave = resolve;
+        }),
+        `document room save ${loaded.name}`,
+      );
     const now = Date.now();
     if (loaded.firstDirtyAt === 0) loaded.firstDirtyAt = now;
     if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
@@ -360,6 +377,13 @@ export function createPostgresDocumentRooms(input: {
     docs: RoomDocs,
     keys: Iterable<DocKey>,
   ) {
+    // A purged document holds no content: every write to its rows runs under its lock, which the
+    // purge held, so this read decides whether the write comes before or after the purge.
+    const [row] = await tx
+      .select({ purgedAt: documents.contentPurgedAt })
+      .from(documents)
+      .where(eq(documents.id, room.documentId));
+    if (row?.purgedAt) return { bytes: 0, docs: 0 };
     const rows = [...keys].flatMap((docKey) => {
       const doc = docs.doc(docKey);
       return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
@@ -380,13 +404,25 @@ export function createPostgresDocumentRooms(input: {
 
   /** One save of a loaded room's unsaved docs, queued behind the room's other saves. */
   function save(loaded: Loaded, reason: string): Promise<void> {
-    const run = loaded.queue.then(() => saveNow(loaded, reason));
+    loaded.saving++;
+    const run = loaded.queue.then(() => saveUnlessIdle(loaded, reason));
     // The next save waits for this one to settle; this one's caller hears its failure.
-    loaded.queue = Promise.allSettled([run]).then(() => undefined);
+    loaded.queue = Promise.allSettled([run]).then(() => {
+      loaded.saving--;
+      settleIfIdle(loaded);
+    });
     return run;
   }
 
-  async function saveNow(loaded: Loaded, reason: string) {
+  /** Whatever ended a save or dropped the room's dirty docs: nothing is waiting any more. */
+  function settleIfIdle(loaded: Loaded) {
+    if (loaded.saving > 0 || loaded.saveTimer || (loaded.dirty.size > 0 && !loaded.docs.isFreed))
+      return;
+    loaded.settleSave?.();
+    loaded.settleSave = null;
+  }
+
+  async function saveUnlessIdle(loaded: Loaded, reason: string) {
     if (loaded.docs.isFreed) return;
     if (reason === "debounce" && loaded.dirty.size === 0) return;
     if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
@@ -400,6 +436,8 @@ export function createPostgresDocumentRooms(input: {
         runInDrizzleTransaction(db, async () => {
           const tx = currentDrizzleDb(db);
           await lockRoom(tx, loaded.room);
+          // The room ended while this save waited for the lock.
+          if (loaded.docs.isFreed) return;
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
             merged = true;
@@ -652,11 +690,14 @@ export function createPostgresDocumentRooms(input: {
 
     async sync(room, version) {
       const loaded = await load(room);
-      const update = loaded.docs.exportSince(decodeRoomVersion(version));
-      return {
+      const since = decodeRoomVersion(version);
+      const update = loaded.docs.exportSince(since);
+      const sync = {
         version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
       };
+      for (const vector of since.values()) vector.free();
+      return sync;
     },
 
     async write(room, batch, origin) {
@@ -731,8 +772,26 @@ export function createPostgresDocumentRooms(input: {
 
     loaded: () => [...rooms.keys()],
 
-    async discardUnborn(documentIds) {
+    async end(documentIds) {
       if (documentIds.length === 0) return;
+      // A load in flight would register its room after this one ended.
+      await Promise.allSettled([...loading.values()]);
+      const ending = new Set<string>(documentIds);
+      const victims = [...rooms.values()]
+        .filter((r) => ending.has(r.room.documentId))
+        .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
+      for (const loaded of victims) {
+        if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
+        if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+        loaded.idleTimer = loaded.saveTimer = null;
+        loaded.dirty = new Set();
+        loaded.firstDirtyAt = 0;
+        if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+        // A save already running finishes with the docs it started on.
+        await loaded.queue;
+        loaded.docs.free();
+        settleIfIdle(loaded);
+      }
       await currentDrizzleDb(db).execute(sql`
         delete from document_snapshots s
         where s.room_key in (${sql.join(

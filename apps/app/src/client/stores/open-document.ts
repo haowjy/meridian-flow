@@ -9,8 +9,8 @@ import type {
   Filetype,
   LineageOwnerRef,
   ProjectContextTreeScheme,
+  TrackedSchemaType,
   WorkOwnerRef,
-  YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 /**
  * A tab's owner, a `ContextOwner`: a Work row id (Scratch), a No Work chat's lineage with the
@@ -61,7 +61,7 @@ export type OpenDocument =
       name: string;
       editable: true;
       filetype: Filetype;
-      schemaType: YjsTrackedSchemaType;
+      schemaType: TrackedSchemaType;
       provisionalName?: boolean;
     } & OpenDocumentOwner)
   | ({

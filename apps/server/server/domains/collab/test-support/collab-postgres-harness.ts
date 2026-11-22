@@ -1,12 +1,7 @@
 /** Focused real-Postgres harness for collab durability tests. */
 
 import type { WriteCommand } from "@meridian/agent-edit/integration";
-import {
-  createAgentEditCodecFactory,
-  type ObservationFrontier,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit/integration";
+import { createAgentEditCodecFactory, loroModel } from "@meridian/agent-edit/integration";
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -15,12 +10,8 @@ import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
-  PROSEMIRROR_FRAGMENT_NAME,
   packCollabSchemaVersion,
-  withBlockIds,
 } from "@meridian/prosemirror-schema";
-import { updateYFragment } from "@tiptap/y-tiptap";
-import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
@@ -34,12 +25,12 @@ import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "../adapters/drizzle-drafts.js";
-import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
 import { createDrizzlePress } from "../adapters/drizzle-press.js";
 import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
+import { createDrizzleWriteOrdinals } from "../adapters/drizzle-write-ordinals.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -65,7 +56,6 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 export const {
   currentDrizzleDb,
-  deferUntilDrizzleCommit,
   isInDrizzleTransaction,
   deferUntilDrizzleRollback,
   runAfterDrizzleCommit,
@@ -89,10 +79,6 @@ const { draftFolderIds, createDrizzleDraftTreeState } = await import(
 );
 const { createDrizzleDraftTreeActors } = await import("../adapters/drizzle-draft-tree-actors.js");
 const { treeSeeder } = await import("../../../test-support/tree-seed.js");
-const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
-const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
-  "../adapters/hocuspocus-coordinator.js"
-);
 const {
   createAgentEditObservabilityOptions,
   createDocumentProjectionDiagnostics,
@@ -122,7 +108,7 @@ const markupCodec = mdxCodec({
   schema: documentSchema,
 });
 const agentEditCodec = createAgentEditCodecFactory(markupCodec).forScope(UNSCOPED_DOCUMENT_LINKS);
-const model = yProsemirrorModel(documentSchema);
+const model = loroModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
 export const OTHER_USER_ID = "00000000-0000-4000-8000-000000000809";
@@ -245,12 +231,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const { ALPHA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const documentName = (documentId: DocumentId) =>
     documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
-  const persistence = createDrizzleCollabPersistence(db);
-  const hocuspocus = fakeHocuspocus();
-  const liveCoordinator = createHocuspocusCoordinator({
-    hocuspocus: () => hocuspocus as never,
-    journal: persistence.journal,
-  });
+  const ordinals = createDrizzleWriteOrdinals(db);
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(db),
     boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
@@ -305,22 +286,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,
+      ordinals,
       documentEdits: createModelDocumentEdits({ service: () => turnInverse }),
       authorOfTurn: loroHost.authorOfTurn,
     },
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    journal: persistence.journal,
-    agentCoordinator: createDeferredLiveProjectionCoordinator({
-      hocuspocus: () => hocuspocus as never,
-      journal: persistence.journal,
-      live: liveCoordinator,
-      transactions: {
-        inTransaction: isInDrizzleTransaction,
-        outsideTransaction: runOutsideDrizzleTransaction,
-        afterCommit: deferUntilDrizzleCommit,
-      },
-    }),
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
     rooms,
     transaction: (work) =>
@@ -334,10 +305,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   const projections = { refresh: runDocumentWriteHook };
   // Scoped as composition scopes it, so a real link scope sees every model call.
-  const agentEditRouter = createAgentEditRouter({
-    liveCore: runtime.liveCore,
-    draftView: runtime.draftView,
-  });
+  const agentEditRouter = createAgentEditRouter({ liveCore: runtime.liveCore });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
   const modelEvidence = createDrizzleModelEvidence(db);
@@ -347,14 +315,11 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       write: scopeModelEditWrite(
         createModelEditWriter({
           liveCore: runtime.liveCore,
-          draftView: runtime.draftView,
-          drafts: workDrafts,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-          enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
-          enterDraftSeam: async () => {
+          enterLiveSeam: async (documentId) => {
             await lockSeamWorks(db, []);
+            await lockDocumentMutation(currentDrizzleDb(db), documentId);
           },
-          existsOnlyIn: async () => false,
         }),
         links,
       ),
@@ -364,7 +329,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   );
   const turnInverse = createDrizzleTurnInverseService({
     db,
-    journal: persistence.journal,
+    ordinals,
     rooms,
     resolveDocumentUri,
     resolveLastDocumentUri,
@@ -408,8 +373,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const presses = createDrizzlePress(db, {
     workProjection: createTestWorkProjectionMutation(db),
     drafts: workDrafts,
-    live: persistence.journal,
-    liveCoordinator,
     treeLists,
     onCommitted: async () => {},
   });
@@ -447,41 +410,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     presses,
   };
 
-  // The host's frontier store: a seeded write plans on the view its read showed.
-  const shownFrontiers = new Map<string, ObservationFrontier>();
-  const lookupShown = async (room: string) => shownFrontiers.get(room) ?? null;
-  const _modelFrontiers = { recording: lookupShown, planning: lookupShown };
-  function _remember<T extends { frontier?: ObservationFrontier }>(outcome: T): T {
-    if (outcome.frontier) shownFrontiers.set(outcome.frontier.room, outcome.frontier);
-    return outcome;
-  }
-
-  const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
-  const workKey = scenario.WORK_DRAFT_ID;
-  /**
-   * The document's live authority, which a draft-mode write needs before its read; a fixture
-   * that seeds drafted content provisions it first.
-   */
-  async function provisionDraft(documentId: DocumentId = ALPHA_ID) {
-    await persistence.seeds.seedInitialDocument(
-      documentId,
-      Y.encodeStateAsUpdate(new Y.Doc({ gc: false })),
-    );
-  }
-
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
-    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, markdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    // Live is the Loro room the model's tools read; the journal copy serves the draft views.
     await writeLiveMarkdown(rooms, ALPHA_ID, markdown);
-    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -494,27 +424,15 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     );
   }
 
-  /** The document as the scenario's Work reads it: Live with its suggestions taken. */
-  const workMarkdown = (documentId: DocumentId = ALPHA_ID) =>
-    liveCoordinator.withDocument(documentId, async (doc) =>
-      serializeMarkdown(doc, runtime.draftView.model(workKey)),
-    );
-
   return {
-    workMarkdown,
     seedWriterDocument,
     crossWorkProbeFixture: () => ({
-      provisionDraft,
       runtime,
       links,
       db,
       schema,
-      persistence,
-      liveCoordinator,
       collab,
       rooms,
-      workMarkdown,
-      hocuspocus,
       model,
       markupCodec,
       agentEditCodec,
@@ -522,45 +440,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       await rooms.close();
-      liveCoordinator.stop();
-      for (const doc of hocuspocus.documents.values()) doc.destroy();
-      hocuspocus.documents.clear();
-      hocuspocus.broadcasts.length = 0;
     },
     liveMarkdown: (documentId: DocumentId) => liveMarkdown(rooms, documentId),
-    liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
-  };
-}
-
-function serializeMarkdown(doc: Y.Doc, view: typeof model): string {
-  const nodes = view.projectBlocks(toDocHandle(doc)).map((block) => block.node);
-  return nodes.length === 0 ? "" : markupCodec.serialize(nodes, UNSCOPED_DOCUMENT_LINKS);
-}
-
-function replaceMarkdown(doc: Y.Doc, markdown: string): void {
-  const parsed = markupCodec.parse(markdown);
-  const replacement = documentSchema.node("doc", null, parsed.blocks.map(withBlockIds));
-  updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
-    mapping: new Map(),
-    isOMark: new Map(),
-  });
-}
-
-function fakeHocuspocus() {
-  const documents = new Map<string, Y.Doc>();
-  const broadcasts: string[] = [];
-  return {
-    documents,
-    broadcasts,
-    async openDirectConnection(documentName: string) {
-      let document = documents.get(documentName);
-      if (!document) {
-        document = new Y.Doc({ gc: false });
-        document.clientID = Number.parseInt(documentName.replaceAll("-", "").slice(-7), 16);
-        document.on("update", () => broadcasts.push(documentName));
-        documents.set(documentName, document);
-      }
-      return { document, disconnect: async () => undefined };
-    },
   };
 }

@@ -5,8 +5,8 @@ and client share: holder scope, fresh-link resolution (`assignFreshLink`, the
 third pass of ref assignment) and stored-link walks. MDX is the canonical wire
 format; plain Markdown is a supported subset. This is a leaf package: it never
 imports `@meridian/agent-edit` or an app or server shell. The link rules ship at
-`@meridian/markup/links` and the Yjs walks at `@meridian/markup/stored-links`;
-keep both out of the root barrel so neither pulls in codecs, Yjs or the schema
+`@meridian/markup/links` and the stored-link keys at `@meridian/markup/stored-links`;
+keep both out of the root barrel so neither pulls in the codecs or the schema
 builder.
 
 Consumers use `markdownCodec` and `mdxCodec`; codec and plugin composition stays internal.

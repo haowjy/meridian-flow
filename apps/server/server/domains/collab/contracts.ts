@@ -1,5 +1,4 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus } from "@hocuspocus/server";
 import type { CommandId, DraftId, LinkView } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
@@ -17,7 +16,6 @@ import type {
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
-import type * as Y from "yjs";
 import type {
   CommandEnvelope,
   CommandLookup,
@@ -55,11 +53,6 @@ export type SyncError =
   | { code: "not_found"; documentId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
 
-export type PersistedUpdate = {
-  updateSeq: number;
-  updateData: Uint8Array;
-};
-
 export type DocumentWriteOrigin =
   | { type: "agent"; actorTurnId: TurnId }
   | { type: "user"; actorUserId: UserId };
@@ -78,19 +71,6 @@ export type DocumentWriteHook = (event: {
   at: Date;
 }) => Promise<void>;
 
-export type CollabPersistenceMetrics = {
-  queues: Array<{
-    documentId: string;
-    depth: number;
-    oldestAgeMs: number;
-    dropped: number;
-  }>;
-  liveDocumentCount: number;
-  openConnectionCount: number;
-};
-
-export type AdmitLiveWriterUpdateResult = { admitted: true } | { admitted: false };
-
 /** The server's document rooms: the door, and `close` to save and free every room at shutdown. */
 export type ServerDocumentRooms = DocumentRooms<DrizzleDb> & { close(): Promise<void> };
 
@@ -101,15 +81,6 @@ export type CollabTransport = {
   documentSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
   /** Documents whose rooms end for good (a purge), after the purge commits. */
   onRoomsEnded(listener: (documentIds: readonly DocumentId[]) => void): () => void;
-  bindHocuspocus(instance: Hocuspocus): void;
-  headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-  loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
-  admitLiveWriterUpdate(input: {
-    documentId: DocumentId;
-    document: Y.Doc;
-    update: Uint8Array;
-    origin: Extract<UpdateOrigin, { type: "user" | "system" }>;
-  }): Promise<AdmitLiveWriterUpdateResult>;
   /**
    * The drafts that alone hold the document (its create is pending there): its Live room serves
    * their view of it. Unauthorized, like `roomRemoval`.
@@ -123,10 +94,6 @@ export type CollabTransport = {
   roomRemoval(
     documentId: DocumentId,
   ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;
-  validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  drainHocuspocusPersistence(): Promise<void>;
-  getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
 export type AgentEditAccess = {
@@ -318,8 +285,12 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<void, SyncError>>;
-  /** Deletes the stored text of documents that never got a row (an import that ended early). */
-  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  /**
+   * Ends the documents' loaded rooms without saving them, inside the transaction that holds their
+   * locks and is about to delete their rows (a content release). Also deletes the stored text of
+   * documents that never got a row (an import that ended early).
+   */
+  endDocumentRooms(documentIds: readonly DocumentId[]): Promise<void>;
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
@@ -432,7 +403,7 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   version: "live" | "draft";
   /** Canonical address the cut's links spell from; null for a chat with no holder. */
   holderUri: string | null;
-  stateVector: Uint8Array;
+  roomVersion: Uint8Array;
   /**
    * The document each `ahead:` ref in this cut now settles to. A ref minted before its target
    * existed still reads as its target, so a copy has to remap it like a `doc:` ref.
@@ -479,8 +450,8 @@ export type EffectiveDocumentReader = {
   /**
    * One document's frozen cut for a copy: the blocks a whole-document write would see,
    * the revision a `read` of that version reports, the holder those links spell from, and
-   * the Yjs state vector of the cut (what a client's own vector is compared against). A draft
-   * view reads the named Work's draft if present, otherwise live content. Links still spell
+   * the room version of the cut (what a client's own version is compared against). A draft
+   * view reads Live content (phase 1 has no text drafts). Links still spell
    * in the named Work's tree view.
    */
   readEffectiveBlocks(
@@ -506,15 +477,6 @@ export type EffectiveDocumentReader = {
   ): Promise<void>;
 };
 
-export type DocumentAttribution = {
-  getLastUpdateAttribution(documentId: DocumentId): Promise<{
-    originType: string | null;
-    actorTurnId: TurnId | null;
-    actorUserId: UserId | null;
-    updateSeq: number | null;
-  }>;
-};
-
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
   /**
@@ -530,7 +492,6 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  DocumentAttribution &
   EffectiveDocumentReader &
   CollabDrafts &
   CollabDraftResolver &

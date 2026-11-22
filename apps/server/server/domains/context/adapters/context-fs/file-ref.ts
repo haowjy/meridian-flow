@@ -3,7 +3,7 @@
  * object storage). One mapping serves `ContextFS.stat`, which finds the row by path, and the
  * read route, which finds it by id.
  */
-import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { classifyFiletype, type TrackedSchemaType } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { documentMetadataFacts } from "../../document-metadata.js";
 import type { AdapterFault, AdapterFileRef } from "../../ports/context-adapter.js";
@@ -14,7 +14,7 @@ import { mapDocument } from "./drizzle-store.js";
 
 export function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
-): Result<YjsTrackedSchemaType, AdapterFault> {
+): Result<TrackedSchemaType, AdapterFault> {
   const classification = classifyFiletype(filetype);
   if (classification.kind === "tracked") return Ok(classification.schemaType);
   if (classification.kind === "unknown") return Ok("document");

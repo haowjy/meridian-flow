@@ -3,37 +3,7 @@
 Each port's shape and method comments are in `src/ports/`. These are what a host
 must do that the types can't say.
 
-## `UpdateJournal`
-
-`read` returns a checkpoint and the retained updates in order; `since` does not
-hide retained rows behind a newer checkpoint, and a persistence watermark includes
-the checkpoint cut even when no rows remain above it. The host, not this package,
-mints captured checkpoint cuts.
-
-## `DocumentCoordinator`
-
-**`readRoom`.** A rejected entry leaves the scope and never reappears. The host reads the
-document's Live room without taking its mutex; a Work's view is the model's, over that same copy.
-
-**`prepareSave`.** It reconciles as `readRoom` does and keeps every entry.
-The host installs a write at root commit, never at `transfer`, or at once outside a
-transaction. `persist` captures the save's cut inside the append, where the host
-serializes it, before its transaction commits, for every outcome (appended,
-contained or nothing new). Nothing fallible runs between the rows becoming durable
-and `persist` resolving, so a stored write is never reported as a failed one. The
-rows are Yjs updates and land the same whatever the cut, so a moved base changes
-the report, not the write.
-
-**`SavePrecondition`.** A check before the lock would let two concurrent creates,
-or a create and a writer's frame, both land, so nothing judges it before the append,
-and a failure appends nothing even inside an ambient transaction. The host's
-`appendBatch` judges it on each document's state under the lock.
-
-The host does not fence a WebSocket transport from this port: nothing applies to a live
-room inside a transaction. See the [WebSocket concurrency
-contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md).
-
-## `AgentEditRooms` (Loro core)
+## `AgentEditRooms`
 
 `save(room, batch, record)` runs inside the host's command: `commit` the batch, then
 `recordWrite` the record in the same transaction, so a write and its Undo record land or fail
@@ -43,8 +13,7 @@ stay. `readRoom` returns a copy the core frees; it holds none between calls.
 
 ## `AgentEditCodec`
 
-The immutable block-origin map travels with every room copy, snapshot planning view
-and inverse cut, including deleted-block listings. A command takes one scoped codec
+A command takes one scoped codec
 at entry and passes it to every serialization door; the package has no default
 Meridian schema. The host's `codecFor(documentId)` picks the codec per document: a code
 document's is `verbatimCodec` (`@meridian/markup`), whose text is one code block and never
@@ -58,16 +27,11 @@ invented location.
 
 ## `AgentEditModel`
 
-`projectBlocks` runs the binding's repair (`@tiptap/y-tiptap`) on the document it is given (an
-unbuildable element is deleted and hashes cover the survivors), so hand it a private
-copy, never a shared document. The resolver projects once, first; its scopes, hashes
-and anchors index that repaired list, and a whole-document write takes its scope
-from it, never from a count taken earlier.
+The resolver projects once, first (`projectBlocks`); its scopes, hashes and anchors index that
+list, and a whole-document write takes its scope from it, never from a count taken earlier.
 
-`key` names the block in this document: the local Yjs item (`clientID:clock`) on the Yjs model,
-used for mutation and provenance; the block id on Loro. On Yjs, `hash` and `fullHash` come from
-the block's origin identity, which differs from `key` for a Work-draft block seeded from live, so
-hash lookup matches `fullHash` and never rebuilds a hash from `key`.
+`key` names the block in this document: its block id. `hash` and `fullHash` come from the same id
+(`fullHashForBlockId`); hash lookup matches `fullHash`.
 
 ## `AgentEditCore`
 

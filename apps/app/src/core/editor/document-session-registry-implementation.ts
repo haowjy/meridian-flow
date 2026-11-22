@@ -149,13 +149,6 @@ export class DocumentSessionRegistry {
     return this.liveRooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  unsentRoomVersions(): Map<DocumentId, Uint8Array> {
-    const versions = new Map<DocumentId, Uint8Array>();
-    for (const [documentId, { session }] of this.liveRooms)
-      if (session?.hasUnacknowledgedEdits()) versions.set(documentId, session.roomVersion());
-    return versions;
-  }
-
   whenLiveHeld(documentId: DocumentId): Promise<void> {
     return (
       this.liveRooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve()

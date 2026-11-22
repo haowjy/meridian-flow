@@ -101,7 +101,7 @@ export interface CopySourceHandoff {
    * The client's own room version (`encodeRoomVersion`), when it holds this document open. Only a file source
    * carries one; the cut compared against it is the view's room.
    */
-  stateVector?: Uint8Array;
+  roomVersion?: Uint8Array;
 }
 
 /** Where a copy lands: the destination parent, resolved to its adapter and path. */
@@ -380,7 +380,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const documents = new Map<string, PreparedDocument>();
     if (snapshot.kind === "file") {
       if (snapshot.fileType === null) {
-        const prepared = await prepareDocument(source, snapshot, source.stateVector);
+        const prepared = await prepareDocument(source, snapshot, source.roomVersion);
         if (!prepared.ok) return prepared;
         documents.set(snapshot.documentId, prepared.value);
       }
@@ -423,7 +423,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             return Err({ code: "io_error", uri: source.uri, message: read.error.code });
         }
       }
-      if (client && behind(client, read.value.stateVector)) {
+      if (client && behind(client, read.value.roomVersion)) {
         if (Date.now() < deadline) {
           await delay(SOURCE_CATCH_UP_POLL_MS);
           continue;

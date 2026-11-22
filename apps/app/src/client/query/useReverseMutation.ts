@@ -1,7 +1,7 @@
 /**
  * useReverseMutation — React Query mutations for chat turn undo.
  *
- * The editor is updated by server-side Yjs sync; the mutation refreshes the
+ * The editor is updated by its Live room's sync; the mutation refreshes the
  * turn lineage cache so transcript undo affordances reflect server state.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";

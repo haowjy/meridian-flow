@@ -9,12 +9,7 @@ import { createStandaloneEditorExtensions } from "./config";
 /**
  * Pins implementation decisions (rewrite or delete this case when one changes):
  * - the browser and shared schemas are assembled separately but have one wire surface
- * - the suggestion surface (`sug`, `sugAttrs`, `suggest_ins`, `suggest_del`) has left the browser
- *   schema; the shared schema drops it at 4.0.0 (phase 1e), and this exclusion goes with it
  */
-
-const SUGGESTION_ATTRS = new Set(["sug", "sugAttrs"]);
-const SUGGESTION_MARKS = new Set(["suggest_ins", "suggest_del"]);
 
 const editors: Editor[] = [];
 
@@ -38,14 +33,8 @@ function editorSurface(editor: Editor, kind: "nodes" | "marks") {
 function sharedSurface(specs: Record<string, { attrs?: Record<string, unknown> } | object>) {
   return Object.fromEntries(
     Object.entries(specs)
-      .filter(([name]) => !SUGGESTION_MARKS.has(name))
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, spec]) => [
-        name,
-        attributeNames("attrs" in spec ? spec.attrs : undefined).filter(
-          (attr) => !SUGGESTION_ATTRS.has(attr),
-        ),
-      ]),
+      .map(([name, spec]) => [name, attributeNames("attrs" in spec ? spec.attrs : undefined)]),
   );
 }
 

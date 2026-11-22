@@ -12,7 +12,7 @@
  */
 import { useCallback, useMemo } from "react";
 import type { DraftChangesView } from "./draft-changes";
-import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
+import { type ReviewChange, resolveFocusedChange } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
@@ -84,7 +84,7 @@ export function useReviewChanges(
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!review) return;
       settleFocus(change);
-      const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
+      const outcome = await controller.commandChange(mode, review);
       // The change is back: the writer returns to it. Only in the review the command was sent
       // from: the writer may have opened another while it was in flight.
       if (outcome.kind === "settled") controller.focusReviewChange(review, change);

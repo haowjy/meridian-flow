@@ -38,7 +38,7 @@ import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
  * transaction held. A copy set aside is freed when nothing holds it: no transaction that took it
  * under the list's key has ended and no read is between its awaits.
  */
-type Copy = { doc: LoroDoc; writer: TreeWriter<LoroDoc>; pending: object | null; retired: boolean };
+type Copy = { doc: LoroDoc; writer: TreeWriter; pending: object | null; retired: boolean };
 
 /**
  * What a root transaction holds in this store: its identity, and the lists whose keys it has

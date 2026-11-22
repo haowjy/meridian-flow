@@ -1,9 +1,8 @@
 // Block snapshots, and the echo a write shows of what it changed.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
-import type { DocHandle } from "../handles.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
-import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
@@ -23,16 +22,7 @@ export interface EchoInput {
   agentDeletedBlocks: readonly string[];
 }
 
-/** Capture the agent-visible block lines used by echo and concurrent diffing. */
-export function snapshotBlocks(
-  doc: DocHandle,
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-): BlockSnapshot[] {
-  return snapshotProjected(model.projectBlocks(doc), codec);
-}
-
-/** `snapshotBlocks` over a projection the caller already holds. */
+/** The agent-visible block lines used by echo and concurrent diffing, over a projection the caller holds. */
 export function snapshotProjected(
   projected: readonly ProjectedBlock[],
   codec: AgentEditCodec,

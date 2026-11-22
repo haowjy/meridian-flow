@@ -1,7 +1,7 @@
 /**
  * The editor owns Mod-z / Mod-y / Mod-Shift-z.
  *
- * Mounted editor history interleaves native Yjs segments with editor-originated
+ * Mounted editor history interleaves the writer's collaborative steps (`editor-history.ts`) with editor-originated
  * Apply boundaries. Meridian binds the keys itself, at a priority above every
  * other extension, because undo is
  * the writer's recovery over LLM writes: the keys are a named

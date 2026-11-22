@@ -53,7 +53,7 @@ export type ApplyOpsResult =
  * Apply `ops` to the docs (in a draft, as overrides and forked text docs) and commit every doc they
  * touched under `options.message`. Every op is checked against the docs before anything changes,
  * so a write that does not fit leaves them alone. Text and attributes go first, then inserts,
- * then deletes, as the Yjs `applyOps` did.
+ * then deletes.
  *
  * The unstored empty paragraph a reader sees in an empty document or cell (`derivedEmptyParent`)
  * is addressable like any block: a text or attribute op stores it first, an insert after it goes

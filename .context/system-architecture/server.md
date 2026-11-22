@@ -50,7 +50,7 @@ Chat turns: admitting a message, the run with the model, the saved thread.
 
 ## documents
 
-The writer's documents: live Yjs rooms, drafts, the context filesystem and who may edit what.
+The writer's documents: live Loro rooms, drafts, the context filesystem and who may edit what.
 
 `collab`, `context` and `file-policy`. The model and the writer both edit through collab; context gives documents their addresses; file-policy answers whether this actor may read or write this document.
 
@@ -93,7 +93,7 @@ The startup plugin boots the process and, in a built server, ends it on a boot f
 - Kind: module
 - Paths: `apps/server/server/routes`, `apps/server/server/plugins`, `apps/server/server/middleware`
 - Docs: [server CONTEXT](../../apps/server/.context/CONTEXT.md), [server AGENTS](../../apps/server/AGENTS.md)
-- Drift: the startup plugin imports `routes/ws/yjs` and `routes/ws/loro`, so plugins depend on routes.
+- Drift: the startup plugin imports `routes/ws/loro`, so plugins depend on routes.
 
 ## lib
 
@@ -111,7 +111,7 @@ The composition root: builds every domain into `AppServices` and gives it to the
 
 The writer's browser tab.
 
-Sends HTTP requests, holds the thread socket and the Yjs socket.
+Sends HTTP requests, holds the thread socket and the Loro socket.
 
 - Kind: context
 - See: [browser](system.md#browser)

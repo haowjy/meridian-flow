@@ -43,6 +43,7 @@ import type {
 } from "@/core/editor/document-session";
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
+import { notifyLoroMessage, notifyLoroSocketClose, notifyLoroSocketOpen } from "./wire-tap";
 
 export type RoomVersion = Map<DocKey, VersionVector>;
 
@@ -221,8 +222,13 @@ export function createLoroRoomTransport({
     barriers.clear();
   };
 
+  const transmit = (ws: WebSocket, message: ProtocolMessage) => {
+    const bytes = frame(message);
+    notifyLoroMessage("client_to_server", roomId, message, bytes.byteLength);
+    ws.send(bytes);
+  };
   const write = (message: ProtocolMessage) => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(frame(message));
+    if (socket?.readyState === WebSocket.OPEN) transmit(socket, message);
   };
   const sendBatch = (
     crdt: typeof CrdtType.Loro | typeof CrdtType.LoroEphemeralStore,
@@ -379,25 +385,27 @@ export function createLoroRoomTransport({
     ws.binaryType = "arraybuffer";
     socket = ws;
     ws.onopen = () => {
+      notifyLoroSocketOpen(roomId, attempt);
       if (socket !== ws) return;
-      ws.send(
-        frame({
-          type: MessageType.JoinRequest,
-          crdt: CrdtType.Loro,
-          roomId,
-          auth: encodeLoroJoinAuth({
-            schema: formatCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-            peer,
-          }),
-          version: encodeRoomVersion(copy.version()),
+      transmit(ws, {
+        type: MessageType.JoinRequest,
+        crdt: CrdtType.Loro,
+        roomId,
+        auth: encodeLoroJoinAuth({
+          schema: formatCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+          peer,
         }),
-      );
+        version: encodeRoomVersion(copy.version()),
+      });
     };
     ws.onmessage = (event) => {
       if (socket !== ws || !(event.data instanceof ArrayBuffer)) return;
-      onMessage(decode(new Uint8Array(event.data)));
+      const message = decode(new Uint8Array(event.data));
+      notifyLoroMessage("server_to_client", roomId, message, event.data.byteLength);
+      onMessage(message);
     };
     ws.onclose = (event) => {
+      notifyLoroSocketClose(roomId, attempt, event.code, event.wasClean);
       if (socket !== ws) return;
       socket = null;
       joined = false;
@@ -478,7 +486,7 @@ export function createLoroRoomTransport({
       const ws = socket;
       socket = null;
       if (ws?.readyState === WebSocket.OPEN)
-        ws.send(frame({ type: MessageType.Leave, crdt: CrdtType.Loro, roomId }));
+        transmit(ws, { type: MessageType.Leave, crdt: CrdtType.Loro, roomId });
       ws?.close(1000, "destroyed");
       failBarriers();
     },

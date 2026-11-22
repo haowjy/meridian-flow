@@ -7,7 +7,7 @@
  * not the session lifecycle (see `document-session.ts`).
  */
 
-import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocChange, RoomDocs } from "@meridian/document-model";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -87,7 +87,7 @@ export type CreateEditorExtensionsOptions = {
   copy: EditorCopy;
   /** The document's undo, owned by its session; this editor attaches while mounted. */
   history: DocumentHistory;
-  schemaType?: YjsTrackedSchemaType;
+  schemaType?: TrackedSchemaType;
   /**
    * A code document's filetype, which is its fence's language: it paints the fence, and the
    * fence an empty file is filled with stores it, as the one the server writes does.

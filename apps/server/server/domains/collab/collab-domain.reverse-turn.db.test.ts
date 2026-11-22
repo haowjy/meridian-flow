@@ -34,7 +34,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { documentBlockRooms, documentBlocks, documentEdits, documents, modelResponses } =
       await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    const { createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);
@@ -50,7 +50,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const { createSourceTree } = await import("../context/adapters/context-fs/tree-writes.js");
       const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
       await db.insert(modelResponses).values({
         id: TURN_ID,
         turnId: TURN_ID,
@@ -117,7 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps distinct responses that reuse a provider-local tool id", async () => {
       const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
       await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",

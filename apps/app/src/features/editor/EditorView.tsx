@@ -2,7 +2,7 @@
  * The document body: one Live editor, whatever the review. Drafts of a document's text are off
  * for now: a Work's review shows its tree changes over Live text.
  */
-import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
 import { useLayoutEffect } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -18,7 +18,7 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   bindingKey?: string;
   detached?: boolean;
   projectId?: string;
-  schemaType?: YjsTrackedSchemaType;
+  schemaType?: TrackedSchemaType;
   filetype?: Filetype;
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */

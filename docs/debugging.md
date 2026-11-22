@@ -16,7 +16,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
 | `GET /api/debug/events/stream` | Live SSE tail while reproducing | [Consume Server Events](#consume-server-events) |
 | DebugOverlay → **LLM Calls** | Inspect gateway calls plus Markdown, Raw, and Debug request views | [Inspect Model Context](#inspect-model-context) |
-| DebugOverlay → **Streams** | Client Yjs / thread-socket traces; toggle in the server feed | [Durable Logs](#durable-logs) |
+| DebugOverlay → **Streams** | Client Loro-room (`wire.loro`) and thread-socket (`wire.thread`) traces; toggle in the server feed | [Durable Logs](#durable-logs) |
 | `logs/events/*.jsonl` + `jq` | Post-restart forensics; best-effort mirror | [Consume Server Events](#consume-server-events) |
 | `logs/portless.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
 
@@ -563,8 +563,10 @@ instead of `console.log`.
   cap; process bootstrap is capped at 1,000 records or 4 MiB.
 - Model-request diagnostics use a separate owner-gated, in-memory capture path.
   Protected prompt and tool content stays out of ordinary searchable logs.
-- Client Yjs and thread-socket diagnostics are captured as metadata-only
-  `EventRecord`s in debug-enabled builds. Open **Streams** from the debug pill
+- Client Loro-room and thread-socket diagnostics are captured as metadata-only
+  `EventRecord`s in debug-enabled builds: `wire.loro` records each room frame (its class, bytes,
+  batch id and channel, stream `loro:<room>`) and each socket open and close, never the updates;
+  `wire.thread` the thread socket's. Open **Streams** from the debug pill
   for the live viewer, or use `window.__meridianTrace` for programmatic queries,
   stats, clearing, and next-event waits. API results are detached clones; caller
   mutation cannot alter retained evidence. Enable **Server feed** in Streams for
@@ -653,21 +655,25 @@ SERVER_URL=https://<lane>.server.meridian.localhost
 
 ```bash
 curl -sS \
-  "$SERVER_URL/api/debug/events?source=wire.yjs&documentId=X&limit=50" | jq .
+  "$SERVER_URL/api/debug/events?source=collab.rooms&documentId=X&limit=50" | jq .
 ```
+
+The room server's own records are `collab.rooms`: `room.join` (with `room`, `permission`
+and `sentBytes`), `room.refused_cutoff`, `room.write_failed`, `snapshot.saved`, `snapshot.save_failed`,
+`history.compacted` and `history.compact_failed`.
 
 `GET /api/debug/events/stream` is live-only SSE with the same record filters.
 Each message carries one `EventRecord` as JSON in its `data` field; history stays
 on the query endpoint.
 
 ```bash
-curl -N "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
+curl -N "$SERVER_URL/api/debug/events/stream?source=collab.rooms&documentId=X"
 ```
 
 After a restart, use the JSONL mirror for best-effort forensics:
 
 ```bash
-jq -c 'select(.source == "wire.yjs" and .correlation.documentId == "X")' \
+jq -c 'select(.source == "collab.rooms" and .correlation.documentId == "X")' \
   logs/events/*.jsonl | tail -n 50
 ```
 
@@ -683,10 +689,10 @@ import { emitEvent, unknownToEventPayload } from "../observability/index.js";
 emitEvent(sink, {
   level: "info",                       // debug | info | warn | error
   source: "collab",                    // stable area name — a query filter
-  name: "collab.checkpoint.collapsed", // dot-namespaced — name-prefix queryable
+  name: "history.compacted",           // dot-namespaced — name-prefix queryable
   correlation: { documentId },         // every key becomes a query parameter
   sensitivity: "safe",
-  payload: { reason, cutSeq },         // compact metadata, never raw content
+  payload: { bytes, docs },            // compact metadata, never raw content
 });
 ```
 

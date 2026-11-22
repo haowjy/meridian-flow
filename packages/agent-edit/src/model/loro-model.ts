@@ -6,7 +6,6 @@ import {
   type BlockId,
   COMMENT_MARK,
   COMMENT_STYLE_PREFIX,
-  encodeRoomVersion,
   type RoomDocs,
   readDocument,
   type ShapeBlock,
@@ -135,19 +134,8 @@ export function loroModel(schema: Schema): LoroDocumentModel {
 
     getText: (ref) => nodeFor(blockOf(ref)).textContent,
 
-    // Loro keeps no per-character item lineage for a write to certify against: the write's record
-    // is its `delta`, and its ops depend on the frontiers the model read (design §5).
-    nodeLineage: () => [],
-    textblockLineage: () => [],
-
     // Each write commits as it applies; there is no transaction to open around it.
     transact: (_doc, fn) => fn(),
-
-    encodeStateVector: (doc) => encodeRoomVersion(loroDocumentOf(doc).docs.version()),
-
-    applyUpdate: () => {
-      throw new Error("A Loro document imports batches through its room, not the model");
-    },
 
     insertBlocks(doc, after, parsed) {
       const document = loroDocumentOf(doc);
@@ -270,11 +258,10 @@ function shapeBlockOf(schema: Schema, node: PMNode): ShapeBlock {
 
 /**
  * The stored style of a lowered format's key: the mark's name, or for a mark that may overlap
- * (`name--<hash>`, the Yjs key the lowering spells) the Loro key (`comment_<id>` for a comment).
+ * the Loro key (`comment_<id>` for a comment).
  */
 function styleKey(mark: string, attrs: Record<string, unknown> | null): string {
-  const name = mark.split("--")[0];
-  if (name === COMMENT_MARK && attrs?.id != null)
+  if (mark === COMMENT_MARK && attrs?.id != null)
     return `${COMMENT_STYLE_PREFIX}${String(attrs.id)}`;
-  return name;
+  return mark;
 }

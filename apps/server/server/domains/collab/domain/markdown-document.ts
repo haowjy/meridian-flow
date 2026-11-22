@@ -18,7 +18,7 @@ import type { LinkView } from "@meridian/contracts";
 import {
   classifyFiletype,
   type DocumentRoom,
-  type YjsTrackedSchemaType,
+  type TrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import {
@@ -50,7 +50,7 @@ import {
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
 
-export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
+type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
 type MarkdownWriteHook = (event: { documentId: DocumentId; threadId?: ThreadId }) => Promise<void>;
 
@@ -161,7 +161,7 @@ export function createMarkdownDocumentEngine<Tx>(
 
   async function documentFormat(
     documentId: DocumentId,
-  ): Promise<Result<{ schemaType: YjsTrackedSchemaType; filetype: string | null }, SyncError>> {
+  ): Promise<Result<{ schemaType: TrackedSchemaType; filetype: string | null }, SyncError>> {
     const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
     const classification = classifyFiletype(filetype);
     if (classification.kind === "tracked")
@@ -180,7 +180,7 @@ export function createMarkdownDocumentEngine<Tx>(
 
   function serializeForSchema(
     blocks: readonly PMNode[],
-    schemaType: YjsTrackedSchemaType,
+    schemaType: TrackedSchemaType,
     links: DocumentLinkScope,
     codec: MarkupCodec = deps.codec,
   ): string {
@@ -222,7 +222,7 @@ export function createMarkdownDocumentEngine<Tx>(
     documentId: DocumentId,
     doc: LoroDocument,
     view: LinkView,
-    schemaType: YjsTrackedSchemaType,
+    schemaType: TrackedSchemaType,
   ) {
     const blocks = blocksOf(doc);
     const links = await spelling(documentId, blocks, view);
@@ -236,7 +236,7 @@ export function createMarkdownDocumentEngine<Tx>(
   function checkBound(
     documentId: DocumentId,
     content: BoundWrite,
-    format: { schemaType: YjsTrackedSchemaType },
+    format: { schemaType: TrackedSchemaType },
     use: HolderUse,
   ): Result<BoundWrite, SyncError> {
     assertHolder(documentId, content, use);
@@ -291,7 +291,7 @@ export function createMarkdownDocumentEngine<Tx>(
   async function changeDocument(
     input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
     change: DocumentChange,
-    format: { schemaType: YjsTrackedSchemaType },
+    format: { schemaType: TrackedSchemaType },
   ): Promise<Result<{ markdown: string }, SyncError>> {
     const result = await deps.transaction(async (tx) => {
       await deps.lockDocument(input.documentId);

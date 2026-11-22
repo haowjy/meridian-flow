@@ -6,8 +6,8 @@
  */
 
 import { childAtSegment, idHex } from "@meridian/contracts/protocol";
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import {
   applyDraft,
   changedFolders,
@@ -16,9 +16,9 @@ import {
   discardedBy,
   fingerprint,
   LIVE,
+  listRecords,
   pendingRecords,
   rankAt,
-  recordsOf,
   replayView,
   restoreDiscard,
   segmentOf,
@@ -44,7 +44,7 @@ const CHAT2 = "agent:c2/t1";
 const D: View = { draft: "work-1" };
 
 function start() {
-  const doc = new Y.Doc({ gc: false });
+  const doc = new LoroDoc();
   const w = new TreeWriter(doc);
   const folder = (name: string, parent = ROOT, view: View = LIVE, actor = WRITER) =>
     w.create(view, actor, { kind: "folder", name, parent }).node;
@@ -71,8 +71,8 @@ describe("part 1: a draft and live changed the same thing", () => {
     const t = start();
     const folder = t.folder("Destination");
     const chapter = t.chapter("Chapter");
-    t.doc.getArray("ops").push([
-      {
+    t.w.transact(() =>
+      t.doc.getList("ops").push({
         id: cmd(),
         node: chapter,
         actor: WRITER,
@@ -82,8 +82,8 @@ describe("part 1: a draft and live changed the same thing", () => {
         rank: "a0",
         from: { parent: ROOT, rank: "a0" },
         name: "Chapter 2",
-      },
-    ]);
+      }),
+    );
     expect(t.at(chapter)).toMatchObject({ parent: folder, name: "Chapter" });
   });
 
@@ -109,9 +109,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect(t.at(ch)?.name).toBe("Draft name");
     // What review can say: the drafted rename was made over "Chapter 49"; live now says "Live name".
     expect(copy).toMatchObject({ type: "rename", fromName: "Live name" });
-    const drafted = recordsOf(t.doc)
-      .toArray()
-      .find((op) => op.draft === "work-1");
+    const drafted = listRecords(t.doc).find((op) => op.draft === "work-1");
     expect(drafted).toMatchObject({ fromName: "Chapter 49" });
   });
 
@@ -290,19 +288,19 @@ describe("part 2: two authors inside one Work's draft", () => {
   it("14. one discards 'create Arc' while the other had added a scene inside it: the scene is discarded with it when the discard saw it, and shown at the top when it did not", () => {
     const t = start();
     const arc = t.folder("Arc", ROOT, D, CHAT);
-    const createArc = recordsOf(t.doc)
-      .toArray()
-      .find((op) => op.type === "create" && op.node === arc) as TreeRecord;
+    const createArc = listRecords(t.doc).find(
+      (op) => op.type === "create" && op.node === arc,
+    ) as TreeRecord;
     const scene = t.chapter("Scene", arc, D, CHAT2);
     // Discard that saw the scene takes it too (case 20).
     const both = start();
     const arc2 = both.folder("Arc", ROOT, D, CHAT);
     both.chapter("Scene", arc2, D, CHAT2);
-    const create2 = recordsOf(both.doc).toArray()[0] as TreeRecord;
+    const create2 = listRecords(both.doc)[0] as TreeRecord;
     expect(discardDraft(both.w, "work-1", WRITER, cmd(), [create2.id]).discarded).toHaveLength(2);
     // A discard that did not see the scene (two writers, or a scene written after the discard
     // was computed): only the folder's create is settled.
-    t.doc.transact(() => t.w.settle(CHAT, [createArc.id], "discarded"));
+    t.w.transact(() => t.w.settle(CHAT, [createArc.id], "discarded"));
     const view = t.w.view(D);
     expect(view.rescued).toHaveLength(1);
     expect(view.nodes.get(scene)).toMatchObject({ parent: ROOT, trashed: false });
@@ -342,9 +340,8 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
         .filter((op) => op.draft === "work-1")
         .map((op) => op.id);
     const idOf = (type: string, node: string) =>
-      recordsOf(t.doc)
-        .toArray()
-        .find((op) => op.type === type && op.node === node && op.draft === "work-1")?.id as string;
+      listRecords(t.doc).find((op) => op.type === type && op.node === node && op.draft === "work-1")
+        ?.id as string;
     return { ...t, ch1, ch2, arc, scene, moved, renamed1, renamed2, drafted, idOf };
   }
 
@@ -560,22 +557,19 @@ describe("found in review", () => {
     expect([t.at(f)?.trashed, t.at(y)?.trashed]).toEqual([true, true]);
   });
 
-  it("a Discard and an Undo of an Apply are records with an actor, and the list holds no deletions", () => {
+  it("a Discard and an Undo of an Apply are records with an actor", () => {
     const t = reorganisedOnce();
-    const log = () => t.doc.getArray<{ actor: string; to: string }>("settle").toArray();
+    const log = () => t.doc.getList("settle").toArray() as { actor: string; to: string }[];
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const vectorAfterApply = Y.encodeStateVector(t.doc);
+    const vectorAfterApply = t.doc.oplogVersion().encode();
     undoApply(t.w, command, WRITER, cmd());
-    expect(Y.encodeStateVector(t.doc)).not.toEqual(vectorAfterApply);
+    expect(t.doc.oplogVersion().encode()).not.toEqual(vectorAfterApply);
     discardDraft(t.w, "work-1", CHAT, cmd());
     expect(log().map((record) => [record.actor, record.to])).toEqual([
       [WRITER, "applied"],
       [WRITER, "pending"],
       [CHAT, "discarded"],
     ]);
-    // Nothing in the doc was deleted: the delete set is empty.
-    const snapshot = Y.snapshot(t.doc);
-    expect(snapshot.ds.clients.size).toBe(0);
   });
 });
 
@@ -669,11 +663,7 @@ describe("a purged node is absent from every view, for placement as for display"
     const moved = t.w.move(LIVE, WRITER, kept, old);
     const live = t.w.view(LIVE);
     expect(t.at(made)).toMatchObject({ parent: ROOT, trashed: false });
-    expect(live.rescued).toContain(
-      recordsOf(t.doc)
-        .toArray()
-        .find((r) => r.node === made)?.id,
-    );
+    expect(live.rescued).toContain(listRecords(t.doc).find((r) => r.node === made)?.id);
     expect(live.skipped).toContainEqual({ record: moved.id, reason: "missing-parent" });
     expect(t.at(kept)?.parent).toBe(ROOT);
     expect(treeViolations(live)).toEqual([]);
@@ -794,7 +784,7 @@ describe("Undo of an Apply, fact by fact", () => {
     const t = start();
     const a = t.chapter("A");
     t.w.rename(D, CHAT, a, "Seen");
-    const saw = Y.encodeStateVector(t.doc);
+    const saw = t.doc.oplogVersion().encode();
     const late = t.w.rename(D, CHAT, a, "Typed after the press");
     const result = applyDraft(t.w, "work-1", WRITER, cmd(), undefined, saw);
     expect(result.copies.map((copy) => (copy.type === "rename" ? copy.name : null))).toEqual([
@@ -854,7 +844,7 @@ describe("part 5: what a document is", () => {
   it("32. undoes a drafted create after Discard then restore: takes back the pending copy", () => {
     const t = start();
     const ch = t.chapter("Chapter 1", ROOT, D, CHAT);
-    const created = recordsOf(t.doc).toArray()[0] as TreeRecord;
+    const created = listRecords(t.doc)[0] as TreeRecord;
     const command = cmd();
     discardDraft(t.w, "work-1", WRITER, command);
     expect(undoChange(t.w, D, CHAT, created.id)).toBe("already");
@@ -1286,15 +1276,15 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
 describe("Undo of names and places reads the changes in force", () => {
   const W = WRITER;
   const replica = (client: number, from?: TreeWriter) => {
-    const doc = new Y.Doc({ gc: false });
-    doc.clientID = client;
-    if (from) Y.applyUpdate(doc, Y.encodeStateAsUpdate(from.doc));
+    const doc = new LoroDoc();
+    doc.setPeerId(client);
+    if (from) doc.import(from.doc.export({ mode: "update" }));
     return new TreeWriter(doc);
   };
   const sync = (...writers: TreeWriter[]) => {
     for (const into of writers)
       for (const from of writers)
-        if (into !== from) Y.applyUpdate(into.doc, Y.encodeStateAsUpdate(from.doc));
+        if (into !== from) into.doc.import(from.doc.export({ mode: "update" }));
   };
   const folder = (w: TreeWriter, name: string, parent = ROOT) =>
     w.create(LIVE, W, { kind: "folder", name, parent }).node;
@@ -1586,15 +1576,15 @@ describe("Undo of names and places reads the changes in force", () => {
 
 describe("two replicas of one list", () => {
   function replica(clientID: number): TreeWriter {
-    const doc = new Y.Doc({ gc: false });
-    doc.clientID = clientID;
+    const doc = new LoroDoc();
+    doc.setPeerId(clientID);
     return new TreeWriter(doc);
   }
   function sync(...writers: TreeWriter[]) {
     for (const from of writers)
       for (const to of writers)
         if (from !== to)
-          Y.applyUpdate(to.doc, Y.encodeStateAsUpdate(from.doc, Y.encodeStateVector(to.doc)));
+          to.doc.import(from.doc.export({ mode: "update", from: to.doc.oplogVersion() }));
   }
   function names(writer: TreeWriter, parent: string, draft: string | null = null): string[] {
     return childrenOf(replayView(writer.doc, { draft }), parent).map(segmentOf);
@@ -1748,7 +1738,7 @@ describe("two replicas of one list", () => {
     expect(replayView(a.doc, LIVE).nodes.get(doc)?.parent).toBe(ROOT);
   });
 
-  it("merging a draft's raw Yjs updates instead of rebasing lets client ids pick the winner", () => {
+  it("merging a draft's raw CRDT updates instead of rebasing lets client ids pick the winner", () => {
     // Why Apply re-authors ops: a fork merged as a CRDT orders its old ops by causality, so a
     // drafted rename concurrent with a live rename wins or loses on client id, not on Apply.
     const outcomes = new Set<string>();
@@ -1833,20 +1823,20 @@ describe("two replicas of one list", () => {
       source: "manuscript",
       rank: "a0",
     };
-    for (const copy of [a, b]) copy.doc.getArray("ops").push([again]);
+    for (const copy of [a, b]) copy.transact(() => copy.doc.getList("ops").push(again));
     sync(a, b);
-    expect(recordsOf(a.doc).length).toBe(2);
+    expect(listRecords(a.doc).length).toBe(2);
     expect(replayView(a.doc, LIVE).skipped).toEqual([]);
     expect(names(a, ROOT)).toEqual(["Ch"]);
   });
 
   it("two writers on one copy never make the same record id", () => {
-    const doc = new Y.Doc({ gc: false });
+    const doc = new LoroDoc();
     const first = new TreeWriter(doc);
     const second = new TreeWriter(doc);
     first.create(LIVE, WRITER, { kind: "folder", name: "A", parent: ROOT });
     second.create(LIVE, WRITER, { kind: "folder", name: "B", parent: ROOT });
-    const ids = recordsOf(doc).map((record) => record.id);
+    const ids = listRecords(doc).map((record) => record.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

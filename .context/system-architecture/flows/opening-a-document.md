@@ -19,11 +19,11 @@ sequenceDiagram
   editor->>core-editor: 2. bind a document session
   core-tree-list-->>editor: 3. where the document is now
   core-editor->>core-transport: 4. connect the room
-  core-transport->>server-routes: 5. WebSocket upgrade on /ws/yjs
+  core-transport->>server-routes: 5. WebSocket upgrade on /ws/loro, JoinRequest
   server-routes->>server-lib: 6. authenticate, admit the connection
   server-lib->>file-policy: 7. may this account edit it?
   server-lib->>collab: 8. load the room's state
-  collab->>postgres: 9. read the journal
+  collab->>postgres: 9. read the room's snapshot rows
   collab-->>core-transport: 10. the document's state
   core-transport->>collab: 11. the writer's edits
 ```
@@ -32,12 +32,12 @@ sequenceDiagram
 2. **Bind.** [editor](../app-documents.md#editor) asks [core-editor](../app-core.md#core-editor) for a document session from the session registry.
 3. **Place.** [core-tree-list](../app-core.md#core-tree-list) holds the browser's copy of the project's list. The tab's name, path and type are the replay's for the document's id, so a rename elsewhere shows at once; an address the copy cannot place yet waits for the list to sync.
 4. **Connect.** The session asks [core-transport](../app-core.md#core-transport) to join the room (`loro-room-transport.ts`).
-5. **Upgrade.** The transport opens a WebSocket at `/ws/loro` and sends a `JoinRequest` with its room version (the server side is moving there from `/ws/yjs` in phase 1b) ([routes](../server.md#routes), `routes/ws/yjs.ts`), sending the `wos-session` cookie and the client's schema version.
-6. **Admit.** The route hands the connection to `lib/yjs-ws-handler.ts` (in [lib](../server.md#lib)), which checks the session and the schema version.
-7. **Ask policy.** `onConnect` calls `fileAccess.authorize` for an `edit` grant on the document; a denied edit with read access gives a read-only connection, anything else is refused ([file-policy](../server-documents.md#file-policy)).
-8. **Load.** `onLoadDocument` calls `loadHocuspocusDocument` on [collab](../server-documents.md#collab).
-9. **Read.** Collab rebuilds the room from the document's checkpoint and journal tail in [postgres](../system.md#postgres).
-10. **Sync.** The state goes to the tab and the editor shows the live text.
-11. **Edit.** The writer's keystrokes go up the same socket as Loro batches, each acknowledged; collab judges each of the writer's frames against the room and journals it with one insert before the room accepts it.
+5. **Upgrade.** The transport opens a WebSocket at `/ws/loro` with the `wos-session` cookie ([routes](../server.md#routes), `routes/ws/loro.ts`) and sends a `JoinRequest` for `live:<documentId>` with its room version and the client's schema version.
+6. **Admit.** The route hands the connection to `lib/loro-ws-handler.ts` (in [lib](../server.md#lib)), which checks the session, the room name and the schema version.
+7. **Ask policy.** `admit` calls `fileAccess.authorize` for an `edit` grant on the document; a denied edit with read access gives a read-only room, anything else is a `JoinError` ([file-policy](../server-documents.md#file-policy)).
+8. **Load.** The handler subscribes the socket to the room and asks `DocumentRooms.sync` on [collab](../server-documents.md#collab) for what the tab's version lacks.
+9. **Read.** A room not yet loaded is built from its `document_snapshots` rows in [postgres](../system.md#postgres).
+10. **Sync.** `JoinResponseOk` and the missing updates go to the tab, and the editor shows the live text.
+11. **Edit.** The writer's keystrokes go up the same socket as Loro batches. Each is imported into the room and acknowledged at once; the room saves its rows within seconds.
 
-State machines on this path: [editor core](../../../apps/app/src/core/editor/.context/state-machines.md), [editor](../../../apps/app/src/features/editor/.context/state-machines.md), [collab](../../../apps/server/server/domains/collab/.context/state-machines.md), [lib](../../../apps/server/server/lib/.context/state-machines.md).
+State machines on this path: [editor core](../../../apps/app/src/core/editor/.context/state-machines.md), [editor](../../../apps/app/src/features/editor/.context/state-machines.md), [lib](../../../apps/server/server/lib/.context/state-machines.md).

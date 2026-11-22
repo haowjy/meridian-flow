@@ -43,15 +43,10 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    vetoes a visible one), and the hidden rows stay hidden; in the draft both keep their
    names as twins (`Sheet~…`, `Vault~…`), still holding the draft's text. The same copy where
    the name is held by a live document lands as its twin, `Sheet~…`, and the entry says so.
-3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
-   draft (suggestions in the Live document). Copy it with `--draft-work w1`: the copy holds the
-   text as Work w1 shows it, suggestions taken, and `metadata.copiedFrom.version` is `draft`
-   with a revision ending in `:work:<key>`. Copy without the flag: the live text, `live`. A
-   folder with a draft view copies each document as the Work shows it. The draft is the Work's,
-   whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1` still copies
-   Work w1's view. Discard the Work's suggestions (`./mf api POST /api/projects/<id>/press`
-   with `verdict: "discard"`) and copy again with the draft view: the live text. A document only
-   w1 created copies too, from its plain text.
+3. **Draft source.** A Work's text drafts are phase 2: until then a chat's writes land in the
+   Live document, and a copy with `--draft-work w1` reads the Live text (`metadata.copiedFrom.version`
+   `draft`, the revision ending in `:work:<key>`). A folder with a draft view copies each document
+   as the Work shows it; a document only w1 created copies too, from its plain text.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get
@@ -63,14 +58,14 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    `copies/` count is unchanged).
 6. **Replay.** A second POST of one `operationId` answers the stored receipt, a
    `returned` or `left_out` answer included; another body under the id is `command_conflict`.
-7. **Source not caught up.** POST a source with `stateVector` one client edit ahead of
+7. **Source not caught up.** POST a source with `roomVersion` one client edit ahead of
    the room: after a wait of about 2 s, `io_error` ("The source has edits the server has
    not received yet") as a 503 with `details.reason: "source_behind"`, `retryable: true`, and no
    `commands` row. Resend the same `operationId` with the room's own
-   vector: it copies and the row appears. A vector that arrives within the wait (a
+   version: it copies and the row appears. A version that arrives within the wait (a
    client reconnecting 800 ms after the request) copies on the first send, with the
    typing in the copy. With
-   `view: draft` the vector is compared with the same Live room. A `stateVector` on a folder
+   `view: draft` the version is compared with the same Live room. A `roomVersion` on a folder
    source and one that does not decode (`////////`) are `bad_request`.
 8. **Position and order.** Copy two roots with `--position after:<P1>` into a
    parent holding `P1 P2 P3`: the order is `P1 root-1 root-2 P2 P3` and the parent

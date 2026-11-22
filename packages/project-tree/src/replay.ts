@@ -58,7 +58,7 @@ export type SkipReason =
   | "purged"
   /** Rule 11: a document create or rename to a type that is not a tracked document. */
   | "type-not-editable"
-  /** Rule 12: a rename to a type of another Yjs schema. */
+  /** Rule 12: a rename to a type of another document schema. */
   | "type-across-schemas"
   /** The value is not a record the server writes (decoded from a list that was changed outside the package). */
   | "unreadable";
@@ -281,7 +281,7 @@ export function startReplay(
     (of.draft != null &&
       (record.fromDraft === of.draft ||
         (record.undoes !== undefined && drafted.has(record.undoes))));
-  // Rule 10: a purge is final wherever it sits. A Yjs-merged record placed before it in the list
+  // Rule 10: a purge is final wherever it sits. A merged record placed before it in the list
   // (an offline restore or move admitted later) never lifts the delete it empties.
   const purgedDeletes = new Set<string>();
   // Each purged node, by the position of the purge that took it.

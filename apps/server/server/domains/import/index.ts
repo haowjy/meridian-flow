@@ -119,8 +119,7 @@ export function createImportObjectSweeper(
   return async () => {
     const result = await sweepImportObjects(repository, objects, {
       texts: {
-        discardUnborn: (documentIds) =>
-          documents.discardUnbornDocuments(documentIds as DocumentId[]),
+        discardUnborn: (documentIds) => documents.endDocumentRooms(documentIds as DocumentId[]),
       },
     });
     if (result.failed.length)

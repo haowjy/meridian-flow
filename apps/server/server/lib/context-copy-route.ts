@@ -16,8 +16,8 @@ import type {
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import { decodeRoomVersion } from "@meridian/document-model";
 import { createError } from "nitro/h3";
-import { decodeStateVector } from "yjs";
 import type { Drafts } from "../domains/collab/index.js";
 import {
   type ContextCopyRequest,
@@ -75,7 +75,7 @@ interface ParsedCopySource {
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopyContextEntryView;
   copyId?: string;
-  stateVector?: Uint8Array;
+  roomVersion?: Uint8Array;
 }
 
 interface ParsedCopy {
@@ -131,7 +131,7 @@ function parseSource(raw: unknown): ParsedCopySource {
     throw createError({ statusCode: 400, message: "Each source names its expected identity" });
   }
   const view = parseView(source.view);
-  const stateVector = parseStateVector(source.stateVector, expected.kind);
+  const roomVersion = parseRoomVersion(source.roomVersion, expected.kind);
   return {
     locator: parseSourceLocator(source),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
@@ -139,32 +139,32 @@ function parseSource(raw: unknown): ParsedCopySource {
     ...(source.copyId === undefined
       ? {}
       : { copyId: requireRequestId(source.copyId, "sources[].copyId") }),
-    ...(stateVector ? { stateVector } : {}),
+    ...(roomVersion ? { roomVersion } : {}),
   };
 }
 
 /**
  * The client's vector is for the one room of the one document it holds open: a folder has no
- * such room, and every child's room is a different Y.Doc. Decoding it here keeps a malformed
+ * such room, and every child has a room of its own. Decoding it here keeps a malformed
  * vector a client error instead of a failure inside the command.
  */
-function parseStateVector(raw: unknown, kind: "file" | "folder"): Uint8Array | undefined {
+function parseRoomVersion(raw: unknown, kind: "file" | "folder"): Uint8Array | undefined {
   if (raw === undefined) return undefined;
   if (kind === "folder") {
     throw createError({
       statusCode: 400,
-      message: "`sources[].stateVector` is for a document; a folder has no room of its own",
+      message: "`sources[].roomVersion` is for a document; a folder has no room of its own",
     });
   }
   const bytes = typeof raw === "string" ? Uint8Array.from(Buffer.from(raw, "base64")) : null;
   try {
     if (!bytes || bytes.length === 0) throw new Error("empty");
-    decodeStateVector(bytes);
+    for (const vector of decodeRoomVersion(bytes).values()) vector.free();
     return bytes;
   } catch {
     throw createError({
       statusCode: 400,
-      message: "`sources[].stateVector` must be a base64-encoded Yjs state vector",
+      message: "`sources[].roomVersion` must be a base64-encoded room version",
     });
   }
 }
@@ -294,7 +294,7 @@ interface ResolvedSource {
   expected: { kind: "file" | "folder"; nodeId: string };
   view: CopySourceView;
   copyId?: string;
-  stateVector?: Uint8Array;
+  roomVersion?: Uint8Array;
   /** The file-policy target its read is granted on. */
   target: FileTarget;
   /**
@@ -402,7 +402,7 @@ export async function handleContextCopyRequest(
       expected: source.expected,
       view: source.view,
       ...(source.copyId ? { copyId: source.copyId } : {}),
-      ...(source.stateVector ? { stateVector: source.stateVector } : {}),
+      ...(source.roomVersion ? { roomVersion: source.roomVersion } : {}),
       target:
         source.expected.kind === "file"
           ? source.view.kind === "draft"
@@ -457,7 +457,7 @@ export async function handleContextCopyRequest(
       view: source.view,
       expected: source.expected,
       ...(source.copyId ? { copyId: source.copyId } : {}),
-      ...(source.stateVector ? { stateVector: source.stateVector } : {}),
+      ...(source.roomVersion ? { roomVersion: source.roomVersion } : {}),
     })),
     destinationUri,
     ...(destinationView.kind === "draft" && destinationOwner

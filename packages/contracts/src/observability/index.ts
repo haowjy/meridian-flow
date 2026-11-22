@@ -35,24 +35,22 @@ export interface EventCorrelation {
   errorCode?: string;
   documentId?: string;
   draftId?: string;
-  /** Comma-joined ids (at most three; see `joinIds`), like `yjsSpans`. */
+  /** Comma-joined ids (at most three; see `joinIds`). */
   folderIds?: string;
-  yjsClient?: number;
   /**
-   * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:
-   * `s:<client>:<from>-<to>` and `d:<client>:<from>-<to>` tokens joined by `,`.
-   * Same-kind span overlap is the client/server join rule.
+   * A Loro room batch: a `DocUpdate`'s `batchId`, or the `refId` of the `Ack` that answers it.
+   * The client and server records of one batch share it.
    */
-  yjsSpans?: string;
+  batchId?: string;
 }
 
 export interface TraceStreamRef {
   /**
-   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:tree:<id>`,
+   * Canonical filter key, e.g. `loro:live:<docId>`, `loro:tree:project:<id>`,
    * `thread:<threadId>`, or `gateway:<gatewayCallId>`.
    */
   streamId: string;
-  transport: "thread" | "yjs" | "gateway";
+  transport: "thread" | "loro" | "gateway";
   /** Absolute, not observer-relative. Omitted for lifecycle events. */
   direction?: "client_to_server" | "server_to_client";
   /** Which process recorded this event. The viewer joins client and server views. */
@@ -60,8 +58,8 @@ export interface TraceStreamRef {
   /**
    * Wire-level message class from the transport's own vocabulary:
    * thread: `event` | `subscribed` | `gap` | `ping` | ...
-   * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
-   *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
+   * loro: `join.request` | `join.ok` | `join.error` | `update` | `update.fragment_header` |
+   *   `update.fragment` | `room.error` | `leave` | `ack` | `socket.open` | `socket.close`
    * gateway: `start` | `text.delta` | `reasoning.delta` | `tool_call.delta` |
    *   `usage` | `end` | `error`
    */
@@ -81,7 +79,7 @@ export interface EventRecord {
   /** ISO 8601 UTC timestamp when the event occurred. */
   timestamp: string;
   level: EventLevel;
-  /** Emitting domain or subsystem, e.g. `runtime.orchestrator` or `lib.ws-yjs`. */
+  /** Emitting domain or subsystem, e.g. `runtime.orchestrator` or `wire.loro`. */
   source: string;
   /** Stable event name within the source, e.g. `tool.output_delta.append_failed`. */
   name: string;

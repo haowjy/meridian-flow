@@ -20,8 +20,7 @@
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
-    "postgres": "catalog:",
-    "yjs": "13.6.33"
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "drizzle-kit": "catalog:",

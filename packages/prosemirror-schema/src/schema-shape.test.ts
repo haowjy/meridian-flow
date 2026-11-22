@@ -9,10 +9,8 @@ import { describe, expect, it } from "vitest";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
-  clientSchemaVersionFromSubprotocolHeader,
   documentMarks,
   documentNodes,
-  PROSEMIRROR_FRAGMENT_NAME,
 } from "./index.js";
 import versionHistory from "./schema-shape.history.json";
 
@@ -30,7 +28,8 @@ type TypeSurface = {
 };
 
 type SchemaSurface = {
-  fragmentName: string;
+  /** The fragment the document was stored under, through 3.x; a Loro document has none. */
+  fragmentName?: string;
   nodes: Record<string, TypeSurface>;
   marks: Record<string, TypeSurface>;
 };
@@ -70,7 +69,6 @@ function typeSurface(specs: Record<string, NodeSpec | MarkSpec>): Record<string,
 
 function currentSurface(): SchemaSurface {
   return {
-    fragmentName: PROSEMIRROR_FRAGMENT_NAME,
     nodes: typeSurface(documentNodes),
     marks: typeSurface(documentMarks),
   };
@@ -161,7 +159,7 @@ function validateBump(
   }
   if (!nextMajor) {
     throw new Error(
-      `Removing or renaming schema surface, changing the fragment name, or changing Yjs encoding requires a major bump, a human decision, and a migration plan. See ${POLICY}.`,
+      `Removing or renaming schema surface, or changing the storage encoding requires a major bump, a human decision, and a migration plan. See ${POLICY}.`,
     );
   }
 }
@@ -250,15 +248,4 @@ describe("collaboration schema shape", () => {
     expect(currentSurface()).toEqual(baseline.surface);
     expect(COLLAB_SCHEMA_VERSION).toEqual(baseline.version);
   });
-});
-
-describe("collab schema subprotocol offers", () => {
-  const sentinel = { major: 0, minor: 0, patch: 0 };
-
-  it.each([["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"]])(
-    "maps an %s header (%s) to the sentinel",
-    (header, _case) => {
-      expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
-    },
-  );
 });

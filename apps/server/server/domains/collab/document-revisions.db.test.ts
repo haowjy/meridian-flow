@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   drizzleFileAccess,
@@ -50,7 +49,7 @@ import { createTestDocumentLinkScopes } from "./test-support/document-link-scope
 import { writeLiveMarkdown, writerEdit } from "./test-support/live-room-text.js";
 
 /** A live edit of the tree (rename, delete), as a person's would be. */
-async function liveEdit(db: Database, edit: (writer: TreeWriter<LoroDoc>) => unknown) {
+async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
   await treeSeeder(db).store.submit({
     lists: [await treeListOfSource(db, SOURCE_ID)],
     make: ([{ writer }]) => edit(writer),

@@ -4,7 +4,6 @@ export { contentMerge } from "./merge.js";
 export {
   captureDelta,
   changeStateIn,
-  type EditChange,
   editChanges,
   readDelta,
   type StoredDelta,

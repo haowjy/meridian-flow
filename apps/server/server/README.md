@@ -10,7 +10,7 @@ Modular monolith layout under `apps/server/server/`:
 | `domains/threads/` | Thread/turn/block repositories, event journal, thread event hub |
 | `domains/runtime/` | Orchestrator loop, model gateway, tool registry/executor |
 | `domains/packages/` | Installed package and agent/skill catalog surfaces |
-| `domains/collab/` | Yjs/document sync scaffold |
+| `domains/collab/` | Live documents: Loro rooms, model edits, receipts and Undo |
 | `domains/storage/` | Object store abstractions |
 | `domains/billing/` | Credit ledger and usage accounting |
 

@@ -26,7 +26,6 @@ import {
 } from "@meridian/database/schema";
 import { LIVE, type TrashEntry, type TreeWriter } from "@meridian/project-tree";
 import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { releaseDocumentContent } from "../../context/index.js";
@@ -49,7 +48,7 @@ const WORK_PURGE_BATCH_LIMIT = 100;
  * stands fails the deferred foreign key). What stands is deleted first, since a `purge` names a
  * delete in force. Returns the documents to release.
  */
-function purgeSources(writer: TreeWriter<LoroDoc>, sources: ReadonlySet<string>): DocumentId[] {
+function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): DocumentId[] {
   const inSources = () =>
     [...writer.view(LIVE).nodes.values()].filter((node) => sources.has(node.source));
   const standing = inSources().filter((node) => !node.trashed && !node.purged);
@@ -80,6 +79,7 @@ export function createDrizzleWorkPurger(deps: {
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
   drafts: WorkDraftDisposal;
+  endRooms(documentIds: readonly DocumentId[]): Promise<void>;
   /** The project's list, where the Work's sources' nodes end. */
   tree: Pick<TreeListStore, "submit">;
   /** A purged Work leaves the project's Works list, which is woken for it. */
@@ -257,7 +257,7 @@ export function createDrizzleWorkPurger(deps: {
                 lists: [{ kind: "project", projectId: work.projectId }],
                 make: ([{ writer }]) => purgeSources(writer, sources),
               })
-              .then(({ result }) => releaseDocumentContent(deps.db, result));
+              .then(({ result }) => releaseDocumentContent(deps.db, deps.endRooms, result));
       const objectKeys = [
         // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [

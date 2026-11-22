@@ -68,9 +68,8 @@ export const threadShownLinks = pgTable(
 /**
  * Observation frontiers: the document state the model was shown by one
  * transcript block (a tool result, or a writer turn's reference block whose
- * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
- * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
- * captured with that cut.
+ * materialized read it is sent), per room. `snapshot` holds the frontiers of the docs it
+ * showed (agent-edit's `encodeFrontierMap`).
  * `room_key` is `live:<documentId>`; the room
  * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
  * names shown, `domains/context/tree/names-shown.ts`).
@@ -94,7 +93,6 @@ export const observationFrontiers = pgTable(
     threadId: uuid("thread_id").$type<ThreadId>().notNull(),
     roomKey: text("room_key").notNull(),
     snapshot: byteaColumn("snapshot").notNull(),
-    journalPosition: bigint("journal_position", { mode: "number" }),
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [

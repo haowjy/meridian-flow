@@ -44,7 +44,7 @@ export function parseLinkRef(value: unknown): ParsedLinkRef | null {
 }
 
 /**
- * A stored `ref` attr as every reader takes it (codec, occurrence walks, Yjs
+ * A stored `ref` attr as every reader takes it (codec, occurrence walks, room
  * extraction, the editor): null only when absent or empty, else the attr as
  * stored. A present malformed ref stays a ref, so `resolveStoredLink` answers
  * it gone instead of whatever sits at its address; `parseLinkRef` still

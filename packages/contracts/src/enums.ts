@@ -9,9 +9,6 @@ export type FileType = z.infer<typeof FileType>;
 export const ThreadKind = z.enum(["primary", "subagent"]);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
-export const OriginType = z.enum(["spawn", "handoff", "fork"]);
-export type OriginType = z.infer<typeof OriginType>;
-
 export const SpawnStatus = z.enum(["running", "succeeded", "failed", "cancelled"]);
 export type SpawnStatus = z.infer<typeof SpawnStatus>;
 
@@ -57,9 +54,6 @@ export type SubscriptionPlan = z.infer<typeof SubscriptionPlan>;
 
 export const SubscriptionStatus = z.enum(["active", "past_due", "cancelled", "trialing"]);
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatus>;
-
-export const YjsOriginType = z.enum(["user", "agent", "system", "import"]);
-export type YjsOriginType = z.infer<typeof YjsOriginType>;
 
 export const ExecutionSide = z.enum(["provider", "local", "client"]);
 export type ExecutionSide = z.infer<typeof ExecutionSide>;

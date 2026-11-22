@@ -11,12 +11,13 @@ For setup, see [DEVELOPMENT.md](DEVELOPMENT.md). For product context, see [PRODU
 | `@meridian/contracts` | Shared wire types, branded IDs, protocol events, thread DTOs, work/project contracts, interrupt/checkpoint types, and agent metadata. |
 | `@meridian/database` | Drizzle schema, migrations, PL/pgSQL functions, and Postgres connection helpers for the Drizzle-backed local/runtime database. |
 | `@meridian/design-tokens` | Warm-paper design token package for colors, typography, spacing, and shared primitives. |
-| `@meridian/prosemirror-schema` | Shared ProseMirror structural contract for TipTap/Yjs document editing. |
+| `@meridian/prosemirror-schema` | Shared ProseMirror structural contract for TipTap/Loro document editing. |
 | `@meridian/markup` | Text to ProseMirror codecs, and the link rules the server and client share. |
-| `@meridian/agent-edit` | Yjs editing core for the model's document `read` and `write`: reply-scoped save buffering, write handles and undo. |
+| `@meridian/agent-edit` | Loro editing core for the model's document `read` and `write`: write handles, the receipts' deltas and undo. |
 | `@meridian/thread-client` | Framework-free chat core shared by the app and `./mf`: the thread socket, turn reduction, run state and the transcript view model. |
-| `@meridian/project-tree` | The project tree as an append-only list of records in a Yjs document, replayed into a tree; the server and the browser share it. |
-| `@meridian/yjs-inspect` | Turns binary Hocuspocus/Yjs messages into metadata-only summaries, never text. |
+| `@meridian/project-tree` | The project tree as an append-only list of records in a Loro document, replayed into a tree; the server and the browser share it. |
+| `@meridian/document-model` | A document as Loro docs (a structure doc and a text doc per block), its writes and the `DocumentRooms` door. |
+| `@meridian/loro-prosemirror` | The editor's ProseMirror binding to the Loro document shape. |
 
 Domain runtime lives in `apps/server/server/domains/`, not in package route handlers. See [AGENTS.md](AGENTS.md) for the active layout rules.
 

@@ -25,10 +25,8 @@ decoration (flat model design, section 7).
 - Both views share the session's one undo stack (`DocumentSession.history`), so Ctrl+Z in
   either view reverts the writer's last edit in the document, whichever view made it.
 
-## Left for phase 1e (Loro)
+## Left for phase 2 (drafts on Loro forks)
 
-- The Loro room socket has no `./mf` wire tap; the old Yjs inspector read Yjs frames.
-- Old `meridian:document:` y-indexeddb copies stay in browsers; nothing reads or deletes them.
 - `tab-change-counts` has no publisher while drafts are off.
 - `RoomError` `server-error` (1b) rejoins.
 

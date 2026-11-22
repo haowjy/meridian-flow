@@ -1,5 +1,3 @@
-import type * as Y from "yjs";
-
 export type NodeKind = "folder" | "document" | "file";
 /** The Work's draft id for a drafted record. */
 export type DraftId = string;
@@ -122,7 +120,7 @@ export type Settlement =
 
 /**
  * A settlement is a record too, appended and never changed. A record's state is its last
- * settlement in list order, so the list holds no deletions and a state vector names a point in
+ * settlement in list order, so the list holds no deletions and a version vector names a point in
  * it exactly. `pending` puts a drafted record back, as an Undo of an Apply does. A Discard is
  * final: restoring one appends new pending copies, never a `pending` settlement.
  */
@@ -136,11 +134,3 @@ export type SettleRecord = {
   /** The command (a uuid) that made it: Undo of an Apply and the restore of a Discard select by it. */
   command?: string;
 };
-
-export function recordsOf(doc: Y.Doc): Y.Array<TreeRecord> {
-  return doc.getArray<TreeRecord>("ops");
-}
-
-export function settleLogOf(doc: Y.Doc): Y.Array<SettleRecord> {
-  return doc.getArray<SettleRecord>("settle");
-}

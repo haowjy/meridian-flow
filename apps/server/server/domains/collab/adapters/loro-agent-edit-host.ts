@@ -13,7 +13,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, documents, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
@@ -30,14 +30,16 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
         const [row] = await db()
           .select({ id: documents.id })
           .from(documents)
-          .where(eq(documents.id, documentId as DocumentId));
+          .where(
+            and(eq(documents.id, documentId as DocumentId), isNull(documents.contentPurgedAt)),
+          );
         if (!row) throw new DocumentNotFoundError(documentId);
         return { kind: "live", documentId };
       },
       transaction: db,
       origin: "server:agent",
-      recordWrite: async (tx, record, batch) => {
-        await recordWrite(tx, record, batch);
+      recordWrite: async (tx, record) => {
+        await recordWrite(tx, record);
       },
     }),
     async authorOfTurn(turnId) {
@@ -51,8 +53,8 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
   };
 }
 
-/** One write's receipt: an edit of kind `write` and its one part, the batch and its delta. */
-function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, batch: Uint8Array) {
+/** One write's receipt: an edit of kind `write` and its one part, its delta. */
+function recordWrite(tx: DrizzleDb, record: AgentWriteRecord) {
   const { actor } = record;
   return recordDocumentEdit(tx, {
     documentId: record.documentId as DocumentId,
@@ -65,8 +67,6 @@ function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, batch: Uint8Array)
     actorUserId: actor.kind === "human" ? (actor.userId as UserId) : null,
     receipts: [
       {
-        update: batch,
-        effect: { inserted: [], deleted: [] },
         origin: { kind: "live" },
         delta: record.delta,
       },

@@ -75,8 +75,9 @@ synchronously, then drains transports and leases.
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
 - The editor shows Live only. Drafts, suggestion paint, review marks and peer marks are gone
-  until drafts come back as Loro forks (phase 1e). `sug`/`sugAttrs` and the `suggest_*` marks
-  stay in the shared schema until then; the app schema leaves them out.
+  until drafts come back as Loro forks (phase 2). Schema 4.0.0 has no suggestion marks or attrs.
+- Builds on Yjs kept document copies in IndexedDB; `core/stale-yjs-copies.ts` deletes them once
+  per signed-in load (`routes/_authenticated.tsx`).
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is

@@ -1,9 +1,11 @@
 /**
- * Releases purged documents' content, the one way a document ends for good: its Yjs journal and
- * everything that was only about its text and history. The `documents` row stays, marked
+ * Releases purged documents' content, the one way a document ends for good: its rooms' snapshots
+ * and everything that was only about its text and history. The `documents` row stays, marked
  * `content_purged_at` and stripped of its bytes, so a link bound to it still resolves to "gone".
- * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts;
- * the caller deletes the returned storage objects after the commit.
+ * Runs in the caller's transaction, which has closed their drafts. It takes the documents' locks
+ * itself: a snapshot write reads `content_purged_at` under the same lock and writes nothing for a
+ * purged document, so a save waiting on those locks cannot bring the content back; the loaded rooms end after the commit, and the caller deletes the
+ * returned storage objects then too.
  */
 
 import type { DocumentId } from "@meridian/contracts";
@@ -12,35 +14,42 @@ import {
   agentEditWidCounters,
   documentBlockRooms,
   documentEdits,
+  documentForks,
   documentLinks,
   documentPreviousLocations,
+  documentSnapshots,
   documents,
-  documentYjsHeads,
   observationFrontiers,
   threadDocuments,
   threadShownLinks,
   userRecentDocuments,
 } from "@meridian/database/schema";
 import { and, inArray, isNull } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { liveRoom } from "../../collab/index.js";
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 export async function releaseDocumentContent(
   db: Database,
+  /** Collab's `endDocumentRooms`, run after the commit: the loaded rooms end unsaved. */
+  endRooms: (documentIds: readonly DocumentId[]) => Promise<void>,
   documentIds: readonly DocumentId[],
 ): Promise<Released> {
   if (documentIds.length === 0) return { documentIds: [], storageUrls: [] };
   const tx = currentDrizzleDb(db);
+  for (const id of [...new Set(documentIds)].sort()) await lockDocumentMutation(tx, id);
   const held = await tx
     .select({ id: documents.id, storageUrl: documents.storageUrl })
     .from(documents)
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
-  // The head's foreign keys take its checkpoints and updates with it.
-  await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
+  deferUntilDrizzleCommit(() => endRooms(list));
+  // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
+  await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
+  await tx.delete(documentSnapshots).where(inArray(documentSnapshots.roomKey, list.map(liveRoom)));
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
   // Observation frontiers have no document foreign key; their room key is the only ownership.

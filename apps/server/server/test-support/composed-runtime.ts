@@ -1,17 +1,14 @@
 /**
- * The production app composed over a test database, with a Hocuspocus server
- * bound for open editors, and a script that drives model replies through the
- * real tool executor and the reply's save.
+ * The production app composed over a test database, and a script that drives model replies
+ * through the real tool executor and the reply's save.
  */
 
 import { randomUUID } from "node:crypto";
-import { Hocuspocus } from "@hocuspocus/server";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { modelResponses, observationFrontiers, threads } from "@meridian/database/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { afterEach } from "vitest";
-import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
@@ -34,20 +31,10 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
     eventSink,
     environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });
-  const hocuspocus = new Hocuspocus({
-    yDocOptions: { gc: false, gcFilter: () => true },
-    async onLoadDocument({ documentName, document }) {
-      const state = await ports.documentSync.loadHocuspocusDocument(documentName, document);
-      if (state) Y.applyUpdate(document, state);
-    },
-    onStoreDocument: ({ documentName, document }) =>
-      ports.documentSync.storeHocuspocusDocument(documentName, document),
-  });
-  ports.documentSync.bindHocuspocus(hocuspocus);
   // Review membership is projected after an append commits; review reads wait for it.
   convergedReview(ports.documentSync);
   const app = composeAppServices(ports);
-  return { ports, hocuspocus, app };
+  return { ports, app };
 }
 
 /** Tool calls read the thread's Agent binding for its permission (file-access §8). */
@@ -66,22 +53,9 @@ export async function bindEditAgent(runtime: ComposedRuntime, threadId: string):
   );
 }
 
-/** Unloads every open room, scheduling its final checkpoint store. */
-export async function unloadHocuspocus(server: Hocuspocus): Promise<void> {
-  for (let pass = 0; pass < 3; pass += 1) {
-    await Promise.all(server.loadingDocuments.values());
-    await Promise.all(
-      [...server.documents.values()].map((document) => server.unloadDocument(document)),
-    );
-    await Promise.all(server.unloadingDocuments.values());
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
-
 /**
- * Registers per-case cleanup for composed runtimes: rooms unload and the app
- * shuts down (cancelling scheduled live pulls), then checkpoint stores drain
- * before the next case can reset tables. `db` is read
+ * Registers per-case cleanup for composed runtimes: the app shuts down (cancelling scheduled live
+ * pulls), saving and freeing its rooms, before the next case can reset tables. `db` is read
  * at call time, so a rollback suite passes its current transaction.
  */
 export function useComposedRuntimes(db: () => Database) {
@@ -91,9 +65,7 @@ export function useComposedRuntimes(db: () => Database) {
   const sequences = new Map<string, number>();
   afterEach(async () => {
     for (const runtime of runtimes.splice(0)) {
-      await unloadHocuspocus(runtime.hocuspocus);
       await runtime.app.shutdown();
-      await runtime.ports.documentSync.drainHocuspocusPersistence();
     }
   });
 

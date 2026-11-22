@@ -65,7 +65,7 @@ change of an edit from the text (a drafted change that stands, or an applied cha
 word the writer typed over it. The card never takes back a whole Apply; a Changes row's Undo and
 Ctrl+Z do. Undo is offered only while a press would take something back. A change the writer typed
 inside is not taken, and the card has no Undo for it. The receipt immediately shows Undoing while the command runs;
-Yjs publishes the edit after durable commit and failures stay on the card.
+the Live room publishes the edit after durable commit and failures stay on the card.
 Eligibility is the text's: a change stands when taking it out merges cleanly
 (`content-merge/stands.ts`). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card

@@ -48,7 +48,7 @@ export function replaceBlock(tr: Transaction, pos: number, made: ProseMirrorNode
   const current = tr.doc.nodeAt(pos);
   if (!current) return;
   const kept = retypedAttrs(current, made.type, attrs);
-  // Same type: change attributes only, so the block keeps its Yjs element and a peer's typing.
+  // Same type: change attributes only, so the block keeps its text and a peer's typing.
   if (current.type === made.type && current.content.eq(made.content)) {
     tr.setNodeMarkup(pos, undefined, kept);
   } else {

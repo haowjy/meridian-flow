@@ -187,7 +187,7 @@ export function fromMessage(source: CopySource, message: string): string {
 }
 
 /**
- * A binary copy duplicates the stored object at once. It isn't a Yjs
+ * A binary copy duplicates the stored object at once. It isn't a room
  * write, so it has no write handle and isn't part of the reply's save. In a
  * draft-mode chat it lands in the draft as its own hidden row (12b-Q2).
  */

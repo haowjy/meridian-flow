@@ -47,7 +47,7 @@ export function TraceTable({
             <th className="px-2 py-1.5 font-medium">dir</th>
             <th className="px-2 py-1.5 font-medium">class</th>
             <th className="px-2 py-1.5 text-right font-medium">bytes</th>
-            <th className="px-2 py-1.5 font-medium">Yjs spans</th>
+            <th className="px-2 py-1.5 font-medium">batch</th>
           </tr>
         </thead>
         <tbody>
@@ -82,8 +82,8 @@ export function TraceTable({
                   {stream?.messageClass ?? record.name}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{stream?.bytes ?? "—"}</td>
-                <td className="max-w-64 truncate px-2 py-1.5" title={record.correlation?.yjsSpans}>
-                  {record.correlation?.yjsSpans ? truncate(record.correlation.yjsSpans) : "—"}
+                <td className="max-w-64 truncate px-2 py-1.5" title={record.correlation?.batchId}>
+                  {record.correlation?.batchId ? truncate(record.correlation.batchId) : "—"}
                 </td>
               </tr>
             );

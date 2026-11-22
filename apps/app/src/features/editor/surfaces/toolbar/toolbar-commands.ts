@@ -1,6 +1,6 @@
 /** Defines document-toolbar state and commands. */
 
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { TrackedSchemaType } from "@meridian/contracts/protocol";
 import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import { type Editor, isActive } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
@@ -120,7 +120,7 @@ export type ToolbarContext = {
   /** False behind a schema fence or a read-only host; every verb greys. */
   editable: boolean;
   /** A code file holds one code block; the document-only verbs cannot serve it. */
-  schemaType: YjsTrackedSchemaType;
+  schemaType: TrackedSchemaType;
   canUndo: boolean;
   canRedo: boolean;
   /** Uploads land in a project's asset namespace; without one there is none. */

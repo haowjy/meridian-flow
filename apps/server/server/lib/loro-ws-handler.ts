@@ -117,6 +117,8 @@ type Admission = {
   readOnlyWhy?: ClosedOwnerWhy;
   target: FileTarget;
   accessKeys: string[];
+  /** The project the document is in; null for an account's document. */
+  projectId: string | null;
 };
 
 export function createLoroGateway(services: LoroGatewayServices) {
@@ -227,6 +229,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         : {}),
       target,
       accessKeys: accessKeys(found.facts, documentId),
+      projectId: found.facts.owner.kind === "project" ? found.facts.owner.projectId : null,
     };
   }
 
@@ -305,7 +308,10 @@ export function createLoroGateway(services: LoroGatewayServices) {
       level: "info",
       source: "collab.rooms",
       name: "room.join",
-      correlation: { documentId: room.documentId },
+      correlation: {
+        documentId: room.documentId,
+        ...(admission.projectId ? { projectId: admission.projectId } : {}),
+      },
       payload: {
         room: room.kind,
         permission: admission.permission,
@@ -387,7 +393,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         status,
       });
     const joined = connection.joined.get(name);
-    if (!joined || joined.permission !== "write") return ack(UpdateStatusCode.PermissionDenied);
+    if (joined?.permission !== "write") return ack(UpdateStatusCode.PermissionDenied);
     try {
       for (const batch of updates) await joined.write(batch);
     } catch (cause) {

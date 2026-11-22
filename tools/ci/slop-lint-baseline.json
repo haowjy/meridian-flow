@@ -78,11 +78,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/transport/wire-tap.ts",
-        "line": "} catch {",
-        "count": 3
-      },
-      {
         "path": "apps/app/src/features/account/useAccountSettings.ts",
         "line": "void getAccountSettings({ signal: capturedEpoch })",
         "count": 1
@@ -193,11 +188,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/hocuspocus-rooms.ts",
-        "line": "matching.map((name) => hocuspocus.loadingDocuments.get(name)?.catch(() => undefined)),",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/context/project-wake-hub.ts",
         "line": "} catch {",
         "count": 2
@@ -263,26 +253,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/lib/yjs-ws-handler.ts",
-        "line": "const removed = await removedForReader(services, room, userId, cause).catch(",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/shared/keyed-mutex.ts",
-        "line": "void run.catch(() => {});",
-        "count": 1
-      },
-      {
-        "path": "packages/agent-edit/src/frontier.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "packages/agent-edit/src/tool/write.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "packages/markup/src/escape.ts",
         "line": "} catch {",
         "count": 1
@@ -301,11 +271,6 @@
         "path": "packages/thread-client/src/socket/socket-lifecycle.ts",
         "line": "} catch {",
         "count": 3
-      },
-      {
-        "path": "packages/yjs-inspect/src/frame.ts",
-        "line": "} catch {",
-        "count": 1
       },
       {
         "path": "playwright.config.ts",

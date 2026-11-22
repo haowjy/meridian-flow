@@ -61,7 +61,7 @@ offers Retry; the phone's document host (`DocumentHost`, phone presentation) use
 
 A document that exists only in a Work (a new document the Work created) opens in its Live room
 like any other: its text is plain Live text, and the project's list doesn't have it, so the host
-admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the Yjs gateway
+admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the room gateway
 admits the room for that Work. Both shells find the document through `route-document-owner.ts`:
 the bound identity in the live tree, then the document the answered address names
 (`addressedDocument`, built from the address's draft row when live lacks it), before any path

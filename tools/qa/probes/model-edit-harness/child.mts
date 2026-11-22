@@ -25,10 +25,6 @@ import {
 } from "../../../../apps/server/server/lib/compose.ts";
 import { reverseTurnCard } from "../../../../apps/server/server/lib/work-receipt-reversal.ts";
 import {
-  createYjsGateway,
-  selectYjsGatewayServices,
-} from "../../../../apps/server/server/lib/yjs-ws-handler.ts";
-import {
   setTestHook,
   type TestHookPoint,
 } from "../../../../apps/server/server/shared/test-hooks.ts";
@@ -58,8 +54,6 @@ const ports = await createProductionAppPorts({
   environment: { APP_DEBUG: "1", NODE_ENV: "test" },
 });
 const app = composeAppServices(ports);
-// The gateway binds the Hocuspocus instance the collab domain's rooms live in.
-const yjs = createYjsGateway(selectYjsGatewayServices(app as never));
 
 const held = new Map<string, () => void>();
 const seen = new Map<string, number>();
@@ -153,7 +147,6 @@ async function handle(message: Op): Promise<unknown> {
       await app.recovery.repairOrphans();
       return app.recovery.scanWakes();
     case "exit":
-      await yjs.drain();
       await app.shutdown();
       process.exit(0);
   }

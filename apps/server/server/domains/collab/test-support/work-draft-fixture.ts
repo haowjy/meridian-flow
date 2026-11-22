@@ -10,7 +10,6 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import * as Y from "yjs";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import {
   DOCUMENT_RUNTIME_RESET_TABLES,
@@ -37,15 +36,7 @@ export const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 /** The draft the Work names. */
 export const WORK_DRAFT_ID = "workfixture1";
 
-export const DRAFT_DESTINATION = {
-  kind: "draft",
-  draftId: WORK_DRAFT_ID,
-  owner: { kind: "work", workId: WORK_ID },
-  ownerHandle: "work",
-} as const;
-
 export function createWorkDraftFixture(db: Database) {
-  const hocuspocus = fakeHocuspocus();
   const collabs: Array<{ dispose(): Promise<void> }> = [];
   /** Without custom links, use the real tree-backed scope, as production does. */
   const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
@@ -68,7 +59,6 @@ export function createWorkDraftFixture(db: Database) {
   };
 
   async function reset() {
-    hocuspocus.documents.clear();
     await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
     await db.insert(users).values(conformanceUserValues(USER_ID, "collab-reverse"));
     await db
@@ -131,20 +121,5 @@ export function createWorkDraftFixture(db: Database) {
       .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
   }
 
-  return { hocuspocus, createTestCollab, reset, dispose };
-}
-
-function fakeHocuspocus() {
-  const documents = new Map<string, Y.Doc>();
-  return {
-    documents,
-    async openDirectConnection(documentName: string) {
-      let document = documents.get(documentName);
-      if (!document) {
-        document = new Y.Doc({ gc: false });
-        documents.set(documentName, document);
-      }
-      return { document, disconnect: async () => undefined };
-    },
-  };
+  return { createTestCollab, reset, dispose };
 }

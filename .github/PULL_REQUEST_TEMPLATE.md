@@ -102,7 +102,7 @@
      - Migrations and state: name each migration and how it stays online-safe
        with no data loss. Diagram changed tables and relationships in Mermaid,
        marking added, dropped and renamed columns, constraints and indexes.
-       Say how existing rows, Yjs documents and stored state upgrade.
+       Say how existing rows, Loro documents and stored state upgrade.
      - Clients during a deploy: what an already-open web app, or a stale
        cached build, does against the new server.
      - Rollback: what reverting this PR leaves behind.
