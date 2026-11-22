@@ -12,7 +12,6 @@
  */
 import { useCallback, useMemo } from "react";
 import type { DraftChangesView } from "./draft-changes";
-import { useHostEditor } from "./host-editor";
 import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
@@ -29,7 +28,7 @@ export type ReviewChangesView = DraftChangesView & {
   completing: "apply" | "discard" | null;
   /** The review has no differences left. */
   finished: boolean;
-  focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
+  focus: (change: ReviewChange) => void;
   step: (direction: 1 | -1) => void;
 };
 
@@ -48,8 +47,8 @@ export function useReviewChanges(
     [documentId, itemKey],
   );
   const focus = useCallback(
-    (change: ReviewChange, options?: { scroll?: boolean; instant?: boolean }) => {
-      if (review) controller.focusReviewChange(review, change, options);
+    (change: ReviewChange) => {
+      if (review) controller.focusReviewChange(review, change);
     },
     [controller.focusReviewChange, review],
   );
@@ -64,44 +63,36 @@ export function useReviewChanges(
             ? 0
             : changes.length - 1
           : (from + direction + changes.length) % changes.length;
-      focus(changes[to], { scroll: true });
+      focus(changes[to]);
     },
     [changes, focus, focusedIndex],
   );
 
-  /** Keep the next group in view when a local action removes this one. */
+  /** Focus the next group when a local action removes this one. */
   const settleFocus = useCallback(
-    (change: ReviewChange, instant: boolean) => {
+    (change: ReviewChange) => {
       if (focused && focused.id !== change.id) return;
       const at = changes.indexOf(change);
       const next = changes[at + 1] ?? changes[at - 1];
-      if (next) focus(next, { scroll: true, instant });
+      if (next) focus(next);
     },
     [changes, focus, focused],
   );
 
-  const editor = useHostEditor();
   const run = useCallback(
-    async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
+    async (change: ReviewChange, mode: "apply" | "discard") => {
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!review) return;
-      settleFocus(change, instant);
-      // A suggestion is resolved in the tab, as one edit of the writer's: Ctrl+Z takes it back.
-      if (!change.tree && !change.whole) {
-        if (mode === "apply") editor?.commands.acceptSuggestions({ id: change.id });
-        else editor?.commands.rejectSuggestions({ id: change.id });
-        return;
-      }
+      settleFocus(change);
       const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
       // The change is back: the writer returns to it. Only in the review the command was sent
       // from: the writer may have opened another while it was in flight.
-      if (outcome.kind === "settled")
-        controller.focusReviewChange(review, change, { scroll: true });
+      if (outcome.kind === "settled") controller.focusReviewChange(review, change);
     },
-    [controller.commandChange, controller.focusReviewChange, review, settleFocus, editor],
+    [controller.commandChange, controller.focusReviewChange, review, settleFocus],
   );
-  const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
-  const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
+  const apply = useCallback((change: ReviewChange) => run(change, "apply"), [run]);
+  const discard = useCallback((change: ReviewChange) => run(change, "discard"), [run]);
 
   return {
     documentId,

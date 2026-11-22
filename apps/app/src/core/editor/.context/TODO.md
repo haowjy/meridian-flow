@@ -11,11 +11,6 @@ during a healthy cold load.
 Preserve cursor and selection across live and review remounts; scroll restoration
 is best effort.
 
-## Block identity probe
-
-Add a probe that moves a figure and verifies every other block keeps its hash
-while the moved figure receives a fresh Yjs item identity.
-
 ## Lists and screen readers
 
 List markers are generated content on flat sibling blocks, with `aria-level` on each listed
@@ -30,13 +25,17 @@ decoration (flat model design, section 7).
 - Both views share the session's one undo stack (`DocumentSession.history`), so Ctrl+Z in
   either view reverts the writer's last edit in the document, whichever view made it.
 
-## Unsent edits in a detached session
+## Left for phase 1e (Loro)
 
-`hasUnacknowledgedEdits()` reads the transport provider, so an edit written into a retained
-session whose socket is detached (no editor, e.g. an upload finishing) does not count as
-unsent. The registry can then retire the session without holding it for delivery. Check
-whether local persistence alone carries that edit to the server on the next open; if not,
-count local-only updates as unsent while detached.
+- The Loro room socket has no `./mf` wire tap; the old Yjs inspector read Yjs frames.
+- Old `meridian:document:` y-indexeddb copies stay in browsers; nothing reads or deletes them.
+- `tab-change-counts` has no publisher while drafts are off.
+- Enter and Backspace across blocks cost about 25–40 ms at 500 paragraphs (7–9 ms on Yjs): any
+  change that is not one text replace writes the whole document (`writeDocument` in
+  `@meridian/document-model`), and every remote batch re-reads it (`readProseMirror`, about 11 ms
+  at 500 paragraphs). Write and read only the blocks the transaction or batch touched.
+- `RoomError` `server-error` (1b) rejoins; the Join `extra`'s `readOnlyWhy` is not read yet: the
+  read-only reason shows only after a revoke names it.
 
 ## Composition undo grouping
 

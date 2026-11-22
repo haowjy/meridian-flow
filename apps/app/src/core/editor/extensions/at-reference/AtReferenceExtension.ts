@@ -1,5 +1,4 @@
 import type { Range } from "@tiptap/core";
-import { closeHistory } from "@tiptap/pm/history";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import type {
   ReferenceBrowserOpenContext,
@@ -90,7 +89,6 @@ const lane = createSuggestionLane<
       linkAhead: (name) => catalog()?.linkAhead?.(name) ?? null,
       onLinkAhead: ({ row, triggerRange }) => {
         endUndoStep(editor.state);
-        editor.view.dispatch(closeHistory(editor.state.tr));
         insertLinkAhead(editor, triggerRange, { label: row.label, uri: row.uri });
       },
       onCompleteSegment: ({ prefix, triggerRange }) => {
@@ -98,7 +96,6 @@ const lane = createSuggestionLane<
       },
       onSelect: ({ row, triggerRange }) => {
         endUndoStep(editor.state);
-        editor.view.dispatch(closeHistory(editor.state.tr));
         const current = catalog();
         const node = current?.referenceNode(editor.schema, row);
         if (node) insertReference(editor, triggerRange, node);

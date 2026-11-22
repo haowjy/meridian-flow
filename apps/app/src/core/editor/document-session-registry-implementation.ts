@@ -1,25 +1,22 @@
 /** Account-scoped owner of live document sessions. Acquisition is lease-required. */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import * as Y from "yjs";
-import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
+import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import { DocumentSession, type DocumentSessionAccess, updatesRefused } from "./document-session";
+import { DocumentSession, type DocumentSessionAccess, historyCutOff } from "./document-session";
 import type {
   LiveDocumentSessionLease,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import type { DocumentHistory } from "./editor-history";
-import type { Ranges } from "./item-ranges";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
-import { readBeyond, readCopy, typedText } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
+import { storedWordsBeyond } from "./unsent-words";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
@@ -61,7 +58,6 @@ export class DocumentSessionRegistry {
   /** Sessions no host holds, kept while their history has something to undo or redo. */
   private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
-  private readonly historyObservers = new Set<() => void>();
   private liveDocCapWarningEmitted = false;
   private readonly droppedTypingObservers = new Set<() => void>();
   /** Each session's copy: the room's key and the incarnation it opened. */
@@ -74,11 +70,7 @@ export class DocumentSessionRegistry {
 
   constructor(
     private readonly accountId: AccountId,
-    private readonly transportFactory: DocumentSessionTransportFactory = ({
-      roomKey,
-      document,
-      awareness,
-    }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    private readonly transportFactory: DocumentSessionTransportFactory = createLoroRoomTransport,
     private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
   ) {
@@ -110,9 +102,7 @@ export class DocumentSessionRegistry {
     }
     await this.teardownOwner.drainRoom(documentId);
     (await state?.hold)?.release();
-    await this.copies.clear(documentId, ({ update, lacking }) =>
-      readCopy(update, (document) => this.dropWords(document, lacking)),
-    );
+    await this.copies.clear(documentId, () => this.dropWords());
   }
 
   /**
@@ -155,32 +145,21 @@ export class DocumentSessionRegistry {
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  openStateVector(documentId: DocumentId): Uint8Array | null {
-    const session = this.liveRooms.get(documentId)?.session;
-    return session ? Y.encodeStateVector(session.document) : null;
+  openRoomVersion(documentId: DocumentId): Uint8Array | null {
+    return this.liveRooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  unsentStateVectors(): Map<DocumentId, Uint8Array> {
-    const vectors = new Map<DocumentId, Uint8Array>();
+  unsentRoomVersions(): Map<DocumentId, Uint8Array> {
+    const versions = new Map<DocumentId, Uint8Array>();
     for (const [documentId, { session }] of this.liveRooms)
-      if (session?.hasUnacknowledgedEdits())
-        vectors.set(documentId, Y.encodeStateVector(session.document));
-    return vectors;
+      if (session?.hasUnacknowledgedEdits()) versions.set(documentId, session.roomVersion());
+    return versions;
   }
 
   whenLiveHeld(documentId: DocumentId): Promise<void> {
     return (
       this.liveRooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve()
     );
-  }
-
-  history(roomKey: string): DocumentHistory | null {
-    return this.liveRooms.get(roomKey as DocumentId)?.session?.history ?? null;
-  }
-
-  observeHistories(observer: () => void): () => void {
-    this.historyObservers.add(observer);
-    return () => this.historyObservers.delete(observer);
   }
 
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
@@ -344,10 +323,6 @@ export class DocumentSessionRegistry {
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
-    // Each caller files the session under its room after this returns, where `history` finds it.
-    queueMicrotask(() => {
-      for (const observer of [...this.historyObservers]) observer();
-    });
     if (replaced) {
       void this.teardownOwner
         .retireReplaced(replaced.session)
@@ -368,17 +343,14 @@ export class DocumentSessionRegistry {
   ): Promise<void> {
     const older = await this.copies.openOlder(copyKey, incarnation);
     if (older.length === 0) return;
-    // Until the first handshake the document is not the server's, and everything would look unsent.
+    // Until the first Join the copy is not the server's, and everything would look unsent.
     await session.whenSynced();
-    const settled = session.getSnapshot().status !== "destroyed";
-    const server = Y.encodeStateVector(session.document);
+    const settled = session.getSnapshot().status !== "destroyed" && !session.docs.isFreed;
+    const server = settled ? session.docs.version() : null;
     await Promise.all(
-      older.map(async ({ update, finish }) => {
+      older.map(async ({ loaded, finish }) => {
         try {
-          if (settled)
-            await readBeyond(update, server, (document, lacking) =>
-              this.dropWords(document, lacking),
-            );
+          if (server && storedWordsBeyond(loaded, server)) this.dropWords();
         } finally {
           await finish();
         }
@@ -405,14 +377,13 @@ export class DocumentSessionRegistry {
       roomKey,
       persistence,
       access,
-      ownUserId: this.accountId,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
     session.subscribe((snapshot) => {
       if (snapshot.holdsUndeliverableEdits)
-        this.requestReplacement(session, updatesRefused(snapshot.connectionState));
+        this.requestReplacement(session, historyCutOff(snapshot.connectionState));
     });
     if (session.room.kind === "live")
       session.subscribe(() => {
@@ -439,23 +410,18 @@ export class DocumentSessionRegistry {
    * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
    * said to other tabs: each tab replaces its own session at its own read admission.
    *
-   * A room whose updates the server refused holds them with no handshake to ask: its copy's typing
-   * beyond the mark is dropped and the copy advanced even when its owner retired the session first
-   * (a draining room retires in the same emit), so no later open resends them.
+   * A room the server ended below its history cutoff holds updates no Join can deliver: its copy's
+   * typing beyond the mark is dropped and the copy advanced even when its owner retired the session
+   * first (a draining room retires in the same emit), so no later open resends them.
    */
   private async replaceRoom(old: DocumentSession, refused: boolean): Promise<void> {
     if (this.replacing.has(old) || !(refused || this.isRoomSession(old))) return;
     this.replacing.add(old);
-    // Words another tab stored that this one never received count too, and the verdict can end here.
-    if (!refused && (!(await old.decideAgain()) || !this.isRoomSession(old))) {
-      this.replacing.delete(old);
-      return;
-    }
     const copy = this.copyOfSession(old);
-    const edits = old.undeliverableEdits();
+    const words = old.undeliverableWords();
     void old.makeInert().catch(reportError);
     // Typing into the old editor after this read goes to its copy, and the older-copy read's.
-    if (edits) await readCopy(edits.copy, (document) => this.dropWords(document, edits.lacking));
+    if (words) this.dropWords();
     if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
@@ -512,14 +478,11 @@ export class DocumentSessionRegistry {
   }
 
   private async dropCopy(name: string): Promise<void> {
-    const beyond = await this.copies.beyondMark(name);
-    if (beyond)
-      await readCopy(beyond.update, (document) => this.dropWords(document, beyond.lacking));
+    if (await this.copies.wordsBeyondMark(name)) this.dropWords();
   }
 
-  /** Words in `lacking` are lost: tell the observers, who show one "Couldn't save". A change with no words (a deletion, a format change) is lost silently. */
-  private dropWords(document: Y.Doc, lacking: Ranges): void {
-    if (typedText(document, lacking) === null) return;
+  /** Typing with words in it is lost: tell the observers, who show one "Couldn't save". */
+  private dropWords(): void {
     for (const observer of this.droppedTypingObservers) observer();
   }
 

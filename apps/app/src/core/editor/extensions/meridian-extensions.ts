@@ -57,7 +57,6 @@ import { exitFence, objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
 import { blockTypeInputRule, setBlockType } from "./block-type";
 import { landSlice } from "./nesting";
-import { shownAttrs, transactionView } from "./suggestion-mode/SuggestionModeExtension";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -243,7 +242,7 @@ export const MeridianParagraph = Paragraph.extend({
             level === null ||
             blocks.every((pos) => {
               const node = tr.doc.nodeAt(pos);
-              return !!node && shownAttrs(transactionView(tr), node).level === level;
+              return !!node && node.attrs.level === level;
             });
           const start = tr.steps.length;
           let changed = false;
@@ -268,12 +267,7 @@ export const MeridianParagraph = Paragraph.extend({
         if (editor.can().undoInputRule()) return false;
         const { empty, $anchor } = tr.selection;
         const { parent: block, pos } = $anchor;
-        if (
-          !empty ||
-          block.type !== this.type ||
-          shownAttrs(transactionView(tr), block).level === null ||
-          block.textContent
-        ) {
+        if (!empty || block.type !== this.type || block.attrs.level === null || block.textContent) {
           return false;
         }
         const $parentPos = pos > 0 ? tr.doc.resolve(pos - 1) : $anchor;

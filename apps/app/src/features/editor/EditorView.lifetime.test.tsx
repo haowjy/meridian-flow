@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as threads from "@/client/query/useProjectThreads";
 import { ThreadStoreProvider } from "@/client/stores";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { redoEditorHistory, undoEditorHistory } from "@/core/editor/editor-history";
 import { createEditorSessions } from "@/test-support/editor-sessions";
 import { installEditorShell } from "@/test-support/editor-shell";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -51,10 +52,6 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
     controller,
     fileForDocument: () => null,
   }),
-}));
-
-vi.mock("@/features/draft-review/useOpenReviewChanges", () => ({
-  useOpenReviewChanges: () => ({ changes: [] }),
 }));
 
 const openDocument = vi.hoisted(() => vi.fn());
@@ -148,11 +145,11 @@ describe("editor lifetime", () => {
         applyProps({ editable: true });
       });
       await act(async () => {
-        expect(mountedEditor().commands.undo()).toBe(true);
+        expect(undoEditorHistory(mountedEditor())).toBe(true);
       });
       expect(mountedEditor().getText()).toBe("");
       await act(async () => {
-        expect(mountedEditor().commands.redo()).toBe(true);
+        expect(redoEditorHistory(mountedEditor())).toBe(true);
       });
       expect(mountedEditor().getText()).toBe("words the writer typed");
 
@@ -163,7 +160,7 @@ describe("editor lifetime", () => {
       });
       expect(mountedEditor().getText()).toBe("");
       await act(async () => {
-        expect(mountedEditor().commands.undo()).toBe(false);
+        expect(undoEditorHistory(mountedEditor())).toBe(false);
       });
       expect(mountedEditor().getText()).toBe("");
     });

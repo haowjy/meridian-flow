@@ -12,8 +12,7 @@
 
 import type { DocumentRef, FolderRef } from "@meridian/contracts";
 import { type Editor, getMarkRange } from "@tiptap/core";
-import { closeHistory } from "@tiptap/pm/history";
-import type { Mark } from "@tiptap/pm/model";
+import type { Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 import {
@@ -24,11 +23,39 @@ import {
   resolveAnchorIn,
 } from "../anchors";
 import { endUndoStep } from "../editor-history";
-import { shownText } from "../extensions/suggestion-mode";
 import { assignWrittenHref } from "./link-assignment";
 import { linkKeyOfMark } from "./link-resolution";
 import { getLinkAnswerCache } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
+
+/**
+ * The text of a link's range, and where an offset into that text stands in the document. Inline
+ * atoms (an image, a mention) take no text, so offsets and positions part where one sits.
+ */
+export function linkText(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+): { text: string; at(offset: number, side: -1 | 1): number } {
+  const runs: Array<{ offset: number; pos: number; length: number }> = [];
+  let text = "";
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return;
+    const start = Math.max(from, pos);
+    const end = Math.min(to, pos + node.nodeSize);
+    runs.push({ offset: text.length, pos: start, length: end - start });
+    text += (node.text ?? "").slice(start - pos, end - pos);
+  });
+  const at = (offset: number, side: -1 | 1) => {
+    const run =
+      (side < 0
+        ? runs.find((r) => offset > r.offset && offset <= r.offset + r.length)
+        : runs.find((r) => offset >= r.offset && offset < r.offset + r.length)) ??
+      (side < 0 ? runs[0] : runs.at(-1));
+    return run ? run.pos + Math.max(0, Math.min(run.length, offset - run.offset)) : from;
+  };
+  return { text, at };
+}
 
 export type LinkSelection = {
   from: number;
@@ -121,7 +148,7 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
       existing: false,
       identity: null,
       needsText: empty,
-      text: shownText(editor.state, from, to).text,
+      text: linkText(editor.state.doc, from, to).text,
       href: "",
     };
   }
@@ -131,7 +158,7 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
     existing: true,
     identity: link.identity,
     needsText: false,
-    text: shownText(editor.state, link.from, link.to).text,
+    text: linkText(editor.state.doc, link.from, link.to).text,
     href: linkKeyOfMark(link.attributes).href,
   };
 }
@@ -221,7 +248,7 @@ export function commitLinkDraft(
     const { state } = editor;
     const linkType = state.schema.marks.link;
     if (!linkType) return false;
-    const shown = shownText(state, range.from, range.to);
+    const shown = linkText(state.doc, range.from, range.to);
     const before = Array.from(shown.text);
     const after = Array.from(text);
     let prefix = 0;
@@ -313,12 +340,8 @@ export function removeLinkAt(editor: Editor, range: { from: number; to: number }
 
 /** A summoned link action is one undo unit, separate from typing on either side. */
 function runLinkEdit(editor: Editor, apply: () => boolean): boolean {
-  const boundary = () => {
-    endUndoStep(editor.state);
-    editor.view.dispatch(closeHistory(editor.state.tr));
-  };
-  boundary();
+  endUndoStep(editor.state);
   const applied = apply();
-  boundary();
+  endUndoStep(editor.state);
   return applied;
 }

@@ -1,9 +1,7 @@
 /** useDraftReviewController — the shared state machine for reviewing a draft's items. */
 
 import type { Work } from "@meridian/contracts/works";
-import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
-import { keepsRestoredPlace } from "@/core/editor/reading-position-navigation";
 import type { CommandOutcome } from "./draft-command-owner";
 import {
   type DraftItemRef,
@@ -29,13 +27,6 @@ export function useDraftReviewStateOwner(): DraftReviewStateOwner {
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   return { state, dispatch };
 }
-
-/** The single review-runtime claim: the mounted editor a review card can scroll to, plus the selection it is showing. */
-type InlineReviewRuntime = {
-  editor: Editor;
-  documentId: string;
-  itemKey: string;
-};
 
 export type DraftReviewController = {
   projectId: string;
@@ -66,24 +57,15 @@ export type DraftReviewController = {
    */
   reportFocusedChange: (review: DraftItemRef, change: ReviewFocus) => void;
   /**
-   * Focus one change: in the manuscript and in every list. `scroll` brings it
-   * into view. `review` is the review the caller meant: a caller that waited
-   * (a command's answer) may find another one open, and then nothing happens.
-   * `keepRestoredPlace`: an editor that reopened at the writer's place stays there.
+   * Focus one change in every list. `review` is the review the caller meant: a caller that
+   * waited (a command's answer) may find another one open, and then nothing happens.
    */
-  focusReviewChange: (
-    review: DraftItemRef,
-    change: ReviewChangeTarget,
-    options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
-  ) => void;
+  focusReviewChange: (review: DraftItemRef, change: ReviewChangeTarget) => void;
   enterInlineReview: (documentId: string, itemKey: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   /** The review editor reports when its body is (or stops being) the painted one. */
   setInlineReviewShown: (documentId: string, itemKey: string, shown: boolean) => void;
-  /** Claim/release the single review-runtime slot. */
-  registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
-  releaseInlineReviewRuntime: (editor: Editor) => void;
   startItem: (mode: "apply" | "discard", item: DraftItemRef) => CommandStart;
   apply: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
@@ -109,7 +91,6 @@ export function useDraftReviewController({
 }): DraftReviewController {
   const { state, dispatch } = stateOwner;
   const stateRef = useRef(state);
-  const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   const commands = usePressCommands({
     projectId,
     work,
@@ -145,19 +126,6 @@ export function useDraftReviewController({
     [],
   );
 
-  const registerInlineReviewRuntime = useCallback((runtime: InlineReviewRuntime) => {
-    inlineRuntimeRef.current = runtime;
-  }, []);
-
-  // Release is a no-op unless the caller still holds the claim: on a review
-  // document switch the new editor may register before the old one's effect
-  // cleanup runs, and that stale cleanup must not clear the fresh claim.
-  const releaseInlineReviewRuntime = useCallback((editor: Editor) => {
-    if (inlineRuntimeRef.current?.editor === editor) {
-      inlineRuntimeRef.current = null;
-    }
-  }, []);
-
   const reportFocusedChange = useCallback((review: DraftItemRef, change: ReviewFocus) => {
     dispatch({
       type: "changeFocused",
@@ -168,29 +136,12 @@ export function useDraftReviewController({
   }, []);
 
   const focusReviewChange = useCallback(
-    (
-      review: DraftItemRef,
-      change: ReviewChangeTarget,
-      options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
-    ) => {
-      // The identity is checked before anything is touched: the open review, and
-      // the editor showing it, are the ones this focus was meant for.
+    (review: DraftItemRef, change: ReviewChangeTarget) => {
+      // The identity is checked before anything is touched: the open review is the one this
+      // focus was meant for.
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
       if (inline?.documentId !== review.documentId || inline.itemKey !== review.itemKey) return;
       reportFocusedChange(review, change);
-      const runtime = inlineRuntimeRef.current;
-      if (
-        !runtime ||
-        runtime.documentId !== review.documentId ||
-        runtime.itemKey !== review.itemKey ||
-        runtime.editor.isDestroyed
-      )
-        return;
-      runtime.editor.commands.setReviewActiveChange(change.id);
-      if (options?.scroll && !(options.keepRestoredPlace && keepsRestoredPlace(runtime.editor)))
-        runtime.editor.commands.scrollReviewChangeIntoView(change.id, {
-          instant: options.instant,
-        });
     },
     [reportFocusedChange],
   );
@@ -214,8 +165,6 @@ export function useDraftReviewController({
       exitInlineReview,
       exitReview,
       setInlineReviewShown,
-      registerInlineReviewRuntime,
-      releaseInlineReviewRuntime,
       startItem,
       apply,
       discard,
@@ -236,8 +185,6 @@ export function useDraftReviewController({
       exitInlineReview,
       exitReview,
       setInlineReviewShown,
-      registerInlineReviewRuntime,
-      releaseInlineReviewRuntime,
       startItem,
       apply,
       discard,

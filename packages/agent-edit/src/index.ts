@@ -11,7 +11,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 
 export { splitDocumentFile } from "./document-address.js";
 export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
-export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
+export { fullHashForBlockId, getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export { bodyRange, destinationFreeBlocks, grepBlockText } from "./model/grep-text.js";
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";

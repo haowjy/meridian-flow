@@ -78,10 +78,16 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     resolve: {
-      dedupe: ["yjs", "y-protocols", "@tiptap/y-tiptap"],
-      alias: {
-        eventemitter3: path.resolve(repoRoot, "apps/app/src/client/shims/eventemitter3.ts"),
-      },
+      dedupe: ["yjs", "y-protocols", "loro-crdt"],
+      alias: [
+        {
+          find: "eventemitter3",
+          replacement: path.resolve(repoRoot, "apps/app/src/client/shims/eventemitter3.ts"),
+        },
+        // The base64 build carries its WASM inline, so no WASM plugin is needed. One instance for
+        // the app and the packages: the binding's `instanceof LoroMap` depends on it.
+        { find: /^loro-crdt$/, replacement: "loro-crdt/base64" },
+      ],
       tsconfigPaths: true,
     },
     plugins: [
@@ -120,8 +126,8 @@ export default defineConfig(({ command, mode }) => {
               if (id.includes("@tiptap") || id.includes("prosemirror-")) {
                 return "editor-tiptap";
               }
-              if (id.includes("@hocuspocus")) {
-                return "collab-transport";
+              if (id.includes("loro-crdt") || id.includes("loro-protocol")) {
+                return "collab-loro";
               }
             }
           },

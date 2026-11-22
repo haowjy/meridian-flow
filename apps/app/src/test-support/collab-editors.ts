@@ -1,140 +1,126 @@
 /**
- * Two editors over one shared document, for surfaces that have to survive a
- * peer's write.
+ * Two editors over one shared document, for surfaces that have to survive a peer's write.
  *
- * The hazard these tests exist for cannot be faked with a hand-built
- * transaction: what makes a remote write different is that y-prosemirror
- * REBUILDS the ProseMirror doc from the Yjs type and dispatches one replace
- * step over the whole document. Only a real second binding produces that, so
- * this runs a real second editor and hands its updates over the way a server
- * would.
+ * The hazard these tests exist for cannot be faked with a hand-built transaction: a remote write
+ * reaches the editor through the binding (`importRemoteUpdate`), which rebuilds the blocks it
+ * changed and dispatches them as one remote transaction. Only a real second copy produces that,
+ * so this runs a real second editor and hands its batches over the way a server would.
  *
- * It also mounts them the way production does. `useMountedEditor` reconciles
- * surface options onto the running editor right after construction, and that
- * `setOptions` call is load-bearing here: it runs `view.updateState`, which is
- * where y-prosemirror decides the editor has real content and may write to the
- * shared document. A harness that skips it leaves the binding still guarding
- * its initial content, and the first edit that reduces a document to the
- * schema default — deleting its only block — is silently never sent.
+ * It also mounts them the way production does: `useMountedEditor` reconciles surface options onto
+ * the running editor right after construction (`setOptions`, which runs `view.updateState`).
  */
 
+import { type DocChange, encodeEnvelope, freshPeerId, RoomDocs } from "@meridian/document-model";
+import { importRemoteUpdate } from "@meridian/loro-prosemirror";
 import { Editor, type JSONContent } from "@tiptap/core";
-import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
-import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
 import { DocumentHistory } from "@/core/editor/editor-history";
-import { createLocalPresence, type LocalPresence } from "@/core/editor/local-presence";
-import type { SessionMarkerStore } from "@/core/editor/session-marker-store";
+import {
+  createLocalPresence,
+  type LocalPresence,
+  type PeerState,
+} from "@/core/editor/local-presence";
+import { documentShape } from "@/core/editor/room-content";
+
+/** What a copy shows on the wire for itself. */
+type WireView = { getLocalState(): PeerState | null };
 
 export type CollabPair = {
   /** The editor under test. */
   local: Editor;
   /** The collaborator. Write through this, then `sync()`. */
   peer: Editor;
-  /** Exchange document updates both ways, as a connected server would. */
+  /** Exchange document batches both ways, as a connected server would. */
   sync: () => void;
   /**
-   * Exchange AWARENESS both ways, for a lane whose subject is ephemeral.
-   *
-   * Separate from `sync()` on purpose: awareness carries collaborator carets
-   * too, so a suite that exchanges it opts into the peer's cursor decorations
-   * appearing in the document under test.
+   * Exchange presence both ways, for a lane whose subject is ephemeral. Separate from `sync()` on
+   * purpose: presence carries collaborator carets too, so a suite that exchanges it opts into the
+   * peer's cursor decorations appearing in the document under test.
    */
   syncAwareness: () => void;
-  awareness: { local: Awareness; peer: Awareness };
+  awareness: { local: WireView; peer: WireView };
   /**
-   * The editor under test's presence owner, as a `DocumentSession` would hold
-   * it: `suspend()` is what a surface like inline review does to the writer's
-   * presence while it is open.
+   * The editor under test's presence owner, as a `DocumentSession` would hold it: `suspend()` is
+   * what a surface like inline review does to the writer's presence while it is open.
    */
   presence: LocalPresence;
   destroy: () => void;
 };
 
-function editorOn(doc: Y.Doc, presence: LocalPresence, markerStore?: SessionMarkerStore): Editor {
-  return new Editor({
+type Copy = { docs: RoomDocs; presence: LocalPresence; editor: Editor | null };
+
+function copyOf(): Copy {
+  const peer = freshPeerId();
+  return {
+    docs: RoomDocs.create(documentShape(), peer),
+    presence: createLocalPresence(peer),
+    editor: null,
+  };
+}
+
+function mount(copy: Copy): Editor {
+  const history = new DocumentHistory(copy.docs, () => {});
+  const editor = new Editor({
     element: document.createElement("div"),
     ...createEditorConfig({
-      document: doc,
-      history: DocumentHistory.forDocument(doc),
-      presence,
-      markerStore,
+      copy: { docs: copy.docs, publish: (_changes: readonly DocChange[]) => {} },
+      history,
+      presence: copy.presence,
     }),
   });
-}
-
-/** The post-mount reconciliation `useMountedEditor` performs, and why. */
-function reconcileMount(editor: Editor): void {
+  history.attach(editor);
+  // The post-mount reconciliation `useMountedEditor` performs.
   editor.setOptions({ editable: editor.isEditable });
   editor.setEditable(true, false);
+  copy.editor = editor;
+  return editor;
 }
 
-function push(from: Y.Doc, to: Y.Doc): void {
-  Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+function push(from: Copy, to: Copy): void {
+  const batch = from.docs.exportSince(to.docs.version());
+  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch));
 }
 
-function pushAwareness(from: Awareness, to: Awareness): void {
-  const clients = Array.from(from.getStates().keys());
-  if (clients.length === 0) return;
-  applyAwarenessUpdate(to, encodeAwarenessUpdate(from, clients), "collab-pair");
+function wireView(copy: Copy): WireView {
+  return {
+    getLocalState: () =>
+      (copy.presence.store.get(copy.presence.peers.clientID) as PeerState | undefined) ?? null,
+  };
 }
 
-/**
- * Both editors bound to the same content.
- *
- * The COLLABORATOR mounts first, while both documents are still empty, so it is
- * the one binding that initializes the shared type — two bindings initializing
- * an empty document would each contribute a paragraph. The editor under test
- * then joins a room that already exists, which is what production does, and
- * the content arriving as a whole-document replace is the very thing these
- * tests are about.
- *
- * Joining an existing room is also the only order that leaves the collaborator
- * a selection it can honor. A binding mounting onto non-empty content carries
- * its own selection across the rebuild, and its default is position 1 — inside
- * an empty paragraph, but between blocks in a document whose first block is an
- * atom (a figure). ProseMirror warned about exactly that on the way past.
- */
-export function createCollabPair(
-  content: JSONContent,
-  /** Peer marks project into the editor under test only, as they do in the app. */
-  options: { markerStore?: SessionMarkerStore } = {},
-): CollabPair {
-  const localDoc = new Y.Doc({ gc: false });
-  const peerDoc = new Y.Doc({ gc: false });
-  const localAwareness = new Awareness(localDoc);
-  const peerAwareness = new Awareness(peerDoc);
-  const localPresence = createLocalPresence(localAwareness);
-
-  const peer = editorOn(peerDoc, createLocalPresence(peerAwareness));
-  reconcileMount(peer);
-  push(peerDoc, localDoc);
-  const local = editorOn(localDoc, localPresence, options.markerStore);
-  reconcileMount(local);
-  local.commands.setContent(content);
+/** Both editors bound to the same content: the collaborator writes it, the editor under test joins. */
+export function createCollabPair(content: JSONContent): CollabPair {
+  const local = copyOf();
+  const peer = copyOf();
+  const peerEditor = mount(peer);
+  peerEditor.commands.setContent(content);
+  push(peer, local);
+  const localEditor = mount(local);
 
   const sync = () => {
-    push(localDoc, peerDoc);
-    push(peerDoc, localDoc);
+    push(local, peer);
+    push(peer, local);
   };
   sync();
 
   return {
-    local,
-    peer,
+    local: localEditor,
+    peer: peerEditor,
     sync,
     syncAwareness: () => {
-      pushAwareness(localAwareness, peerAwareness);
-      pushAwareness(peerAwareness, localAwareness);
+      peer.presence.store.apply(local.presence.store.encodeAll());
+      local.presence.store.apply(peer.presence.store.encodeAll());
     },
-    awareness: { local: localAwareness, peer: peerAwareness },
-    presence: localPresence,
+    awareness: { local: wireView(local), peer: wireView(peer) },
+    presence: local.presence,
     destroy: () => {
-      peer.destroy();
-      local.destroy();
-      peerAwareness.destroy();
-      localAwareness.destroy();
+      peerEditor.destroy();
+      localEditor.destroy();
+      local.presence.release();
+      peer.presence.release();
+      local.docs.free();
+      peer.docs.free();
     },
   };
 }

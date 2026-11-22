@@ -1,7 +1,7 @@
 # features/editor — contracts and architecture
 
 This reference covers the app-facing editor boundary: session binding, review
-projection, scope, shared geometry, and peer marks. Read [`AGENTS.md`](../AGENTS.md)
+projection, scope, shared geometry. Read [`AGENTS.md`](../AGENTS.md)
 for the short operating rules; core editor contracts remain in `core/editor`.
 
 ## Boundary and geometry
@@ -64,10 +64,9 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review paints the Work's suggestions in the Live editor (`SuggestionModeExtension`): a
-deletion is red and struck, an insertion green, the writer's own typing in the Work's view
-included. Attribution supplies bylines without partitioning changes. Desktop review is editable; phone review is
-read-only. Projection, commands and history belong to the
+Drafts are off while the editor moves to Loro: the editor paints Live only, and a review shows
+its changes in the review lists, not as paint in the manuscript. Drafts come back as Loro forks
+in phase 1e. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 Each document host (main, the side, the phone) has its own review
@@ -114,25 +113,6 @@ width, so it fits a narrow side pane. Dismiss hides the bar until the session
 reports another repair and sends focus to the editor, or to Refresh while the
 fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
 and reports a refusal on that excerpt; a pending Copied reset never erases it.
-
-## Peer marks
-
-Dormant: no server code has sent `change_event` since `92967a8b80`, so no mark
-renders and none of this runs in the app. The lane is kept for the history feature;
-don't extend it and don't delete it
-([peer-marks](../surfaces/peer-marks/AGENTS.md)). The rules below describe the code
-as it stands, for whoever revives it.
-
-The peer-mark surface reads the projection plugin's click/Enter/caret state.
-The editor feature holds no duplicate mark state. Review drafts without a
-projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
-for AI changes. *Open conversation* routes through `useRequestConversationReveal`
-with the owning turn, so the chat side lands on that turn. Popover focus
-follows activation: a pointer open leaves the caret in the prose and a
-pointer close restores the held selection; keyboard activation moves focus into
-the popover, and Escape or close returns it to the mark's current span. Neither
-hands focus back when another surface opened in its place (Mod+K arrives as a
-close, and the caret then belongs to what opened).
 
 ## Related contracts
 

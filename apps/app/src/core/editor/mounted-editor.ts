@@ -1,8 +1,8 @@
 /**
  * mounted-editor — the sole authority over a collaborative editor's lifetime.
  *
- * Collaboration binds to one concrete Y.Doc fragment at construction, so
- * rebuilding a TipTap editor destroys its Yjs UndoManager and drops keystrokes
+ * The binding attaches to the session's copy at construction, so rebuilding a
+ * TipTap editor drops keystrokes
  * in flight. That rule is enforced structurally here rather than by convention:
  *
  * - `EditorMountIdentity` holds every fact TipTap can only learn at
@@ -17,7 +17,6 @@ import { Editor, type EditorOptions } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig, type EditorUser } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
@@ -81,8 +80,6 @@ export type MountedEditorInput = {
    * input the session lookup depends on, so it is constant for this mount.
    */
   session: DocumentSession;
-  /** Subscribable name lookup; the projection repaints, the editor is not rebuilt. */
-  agentNames: AgentNameStore;
   /** The signed-in writer, published with the caret. Read once at mount. */
   user: EditorUser;
   placeholder: string;
@@ -103,14 +100,11 @@ export type MountedEditorInput = {
   /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
   wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
-  /** The horizon expired, so any resulting verdict must carry that limitation. */
-  evidenceDegraded?: boolean;
 };
 
 export function useMountedEditor({
   identity,
   session,
-  agentNames,
   user,
   placeholder,
   slashCommandCatalog,
@@ -118,7 +112,6 @@ export function useMountedEditor({
   referenceDrop,
   wikilinkPasteCatalog,
   surface,
-  evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
   // The getter is read at menu-open time, so freezing the reference is safe
   // only if it never goes stale. Keep the live one in a ref the frozen getter
@@ -139,7 +132,7 @@ export function useMountedEditor({
   const [construction] = useState(() => {
     const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
-      document: session.document,
+      copy: { docs: session.docs, publish: (changes) => session.publish(changes) },
       history: session.history,
       // The session owns whether this client is visible, so it owns every local
       // awareness field the editor publishes — the caret's included. Its caret is arbitrated, because another view of
@@ -149,8 +142,6 @@ export function useMountedEditor({
       filetype: identity.filetype,
       assetRenderContext: { projectId: identity.projectId, owner: identity.viewingOwner },
       showCollaborationDecorations: identity.collaborationDecorations,
-      markerStore: session.markerStore,
-      agentNames,
       user,
       placeholder,
       autofocus: false,
@@ -175,7 +166,6 @@ export function useMountedEditor({
         editorProps: { ...editorConfig.editorProps, ...surface.editorProps },
       },
       session,
-      evidenceDegraded,
     };
   });
 
@@ -201,7 +191,6 @@ export function useMountedEditor({
     // gap-free synchronous bracket around every extension lifecycle mutation.
     const { editor: mounted, release } = construction.session.bindEditor(
       () => new Editor(construction.initialOptions),
-      construction.evidenceDegraded,
     );
     const targetScroll = ({ transaction }: { transaction: Transaction }) => {
       if (transaction.scrolledIntoView) markEditorTarget(mounted);

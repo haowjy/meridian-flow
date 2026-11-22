@@ -52,7 +52,7 @@ stateDiagram-v2
   `serverHasLocalChanges`: true once the server has acknowledged every local update sent on
   this connection.
 - **A detached session keeps its document.** `detachTransport` closes the socket and keeps the
-  Y.Doc, local persistence and undo history; edits made meanwhile wait in the document until
+  `RoomDocs`, local persistence and undo history; edits made meanwhile wait in the document until
   the next `attachTransport` syncs them. The session registry detaches a session it is keeping
   when no view wants its socket open and it has no unsent edits
   (`detachUnwantedTransport`). An attach that follows waits for the detach to finish closing.

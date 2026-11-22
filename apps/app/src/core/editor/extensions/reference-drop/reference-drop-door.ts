@@ -5,7 +5,6 @@
  * in text, and nowhere in a code block.
  */
 
-import { closeHistory } from "@tiptap/pm/history";
 import { Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -114,7 +113,7 @@ function insert(
   caretFrom: (end: number) => number,
 ): void {
   endUndoStep(view.state);
-  const transaction = closeHistory(view.state.tr).insert(pos, content);
+  const transaction = view.state.tr.insert(pos, content);
   const end = transaction.mapping.map(pos, 1);
   transaction.setSelection(TextSelection.create(transaction.doc, caretFrom(end)));
   // A chip named like a host ("notes.zip", "a.io") is a link already. Neither autolink nor the
@@ -122,6 +121,5 @@ function insert(
   transaction.setMeta("preventAutolink", true);
   view.dispatch(transaction.scrollIntoView());
   endUndoStep(view.state);
-  view.dispatch(closeHistory(view.state.tr));
   view.focus();
 }

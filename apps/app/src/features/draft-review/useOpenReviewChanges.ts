@@ -1,52 +1,37 @@
 /**
- * Open review rows are the Work's suggestions in the host's editor, without command or focus
- * ownership, after the item's pending move (its tree line) when it has one. A delete replaces the text rows:
+ * Open review rows, without command or focus ownership: the item's pending move (its tree line)
+ * when it has one, then its text changes. A delete replaces the text rows:
  * its banner and single document row are the review. Focus and stepping walk the visible text
  * changes (`changes`) alone; a tree line has no place in the text.
  */
-import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useDraftCommandState } from "./draft-changes";
 import type { DraftItemRef } from "./draft-review-session";
-import { type HostEditor, HostEditorContext } from "./host-editor";
 import { itemChange, type ReviewChange } from "./review-model";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
-import { useSuggestionChanges } from "./useSuggestionChanges";
 
 type ReviewRead = {
-  status: "idle" | "loading" | "ready";
+  status: "idle" | "ready";
   changes: readonly ReviewChange[];
 };
 
 /**
- * The open review's changes are the Work's suggestions in the host's editor. `host` serves the one caller above the host's boundary (its address admission).
+ * The open review's text changes. Drafts of a document's text are off for now: a document only
+ * the Work holds is its one change, and any other has none.
  */
-function useSuggestionRead(
+function useTextChanges(
   draft: (DraftItemRef & { projectId: string; draftId: string }) | null,
-  host: HostEditor | null,
 ): ReviewRead {
-  const fromBoundary = useContext(HostEditorContext);
-  const store = fromBoundary ?? host;
-  const editor = useSyncExternalStore(
-    store?.subscribe ?? noSubscription,
-    store?.get ?? noEditor,
-    noEditor,
-  );
   const listed = useOwnerDraftList(draft?.projectId ?? "", draft?.draftId ?? "", Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
-  const read = useSuggestionChanges(draft ? editor : null, draft?.draftId ?? "", item);
-  // A document only the Work holds is plain text: the document itself is its one change.
-  const changes = item?.wholeItem ? [itemChange(item)] : read.changes;
-  return { status: !draft ? "idle" : read.ready || item?.wholeItem ? "ready" : "loading", changes };
+  return { status: draft ? "ready" : "idle", changes: item?.wholeItem ? [itemChange(item)] : [] };
 }
-const noSubscription = () => () => undefined;
-const noEditor = () => null;
 
 export function useOpenReviewChanges(
   controller: Pick<DraftReviewController, "projectId" | "draftId" | "inlineReview">,
-  options?: { enabled?: boolean; host?: HostEditor | null },
+  options?: { enabled?: boolean },
 ) {
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const draft = inline
@@ -61,7 +46,7 @@ export function useOpenReviewChanges(
   const listed = useOwnerDraftList(controller.projectId, controller.draftId, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.textChanges === 0 || item?.tree?.deleted === true;
-  const read = useSuggestionRead(draft, options?.host ?? null);
+  const read = useTextChanges(draft);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;
   const items = (item && line ? [treeChange(item, line), ...changes] : changes).map((change) => ({

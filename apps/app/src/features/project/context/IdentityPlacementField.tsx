@@ -94,7 +94,6 @@ export function IdentityPlacementField({
     const session = binding.state.kind === "opened" ? binding.state.session : null;
     if (!session) return;
     localSessionRef.current = session;
-    const fragment = session.document.getXmlFragment(session.fragmentName);
     const refresh = () => {
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
       suggestionTimer.current = window.setTimeout(() => {
@@ -102,10 +101,10 @@ export function IdentityPlacementField({
         setGhost(suggestionForSession(document, session));
       }, 300);
     };
-    fragment.observeDeep(refresh);
+    const stop = session.subscribeContent(refresh);
     refresh();
     return () => {
-      fragment.unobserveDeep(refresh);
+      stop();
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
   }, [binding.state, provisionalPlacement, document]);
@@ -362,7 +361,7 @@ function suggestionForSession(
   tab: OpenDocument,
   session: import("@/core/editor/document-session").DocumentSession,
 ): string {
-  const suggestion = suggestedNameFromDocument(session.document);
+  const suggestion = suggestedNameFromDocument(session.docs);
   if (!suggestion || tab.kind === "new") return suggestion;
   // The suggestion carries the file's visible extension (`.json`); a prose name has none.
   const extension = tab.name.slice(entryNameStemEnd(tab.name, documentRow(tab.name)));

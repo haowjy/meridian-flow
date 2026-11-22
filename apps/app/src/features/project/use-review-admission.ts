@@ -8,7 +8,6 @@
 import { useEffect, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
-import type { HostEditor } from "@/features/draft-review/host-editor";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import type { ItemLaunchTarget } from "./review-launch";
 
@@ -37,15 +36,12 @@ export function useReviewAdmission({
   presented,
   admission,
   port,
-  editor,
 }: {
   review: DraftReviewContextValue;
   presented: ReviewedDocument | null;
   /** The route's verdict when the address names this review; "admitted" for every other review. */
   admission: ReviewAddressAdmission;
   port: ReviewAdmissionPort;
-  /** The host's editor, which holds the review in suggestion mode. */
-  editor: HostEditor;
 }) {
   /** The item an admission is in flight for. */
   const restoring = useRef<string | null>(null);
@@ -56,9 +52,7 @@ export function useReviewAdmission({
   const refused = useRef<{ itemKey: string; port: ReviewAdmissionPort } | null>(null);
   /** The focus and the pin's change as last reconciled: whichever differs from it is what moved. */
   const settled = useRef<{ focus?: string; pin?: string }>({});
-  /** The first reconcile with the review painted and read: where a restored place gives way, once. */
-  const reconciled = useRef(false);
-  const { changes, status } = useOpenReviewChanges(review.controller, { host: editor });
+  const { changes, status } = useOpenReviewChanges(review.controller);
   const requested = presented?.review ?? null;
 
   useEffect(() => {
@@ -74,7 +68,6 @@ export function useReviewAdmission({
         requested.itemKey === inline.itemKey;
       if (!names) {
         settled.current = {};
-        reconciled.current = false;
         review.controller.exitInlineReview();
         return;
       }
@@ -94,8 +87,6 @@ export function useReviewAdmission({
       // Until the review has painted and its changes are read, the controller's default (the
       // first change) would stand in for the one the pin names.
       if (!inline.shown || status !== "ready") return;
-      const first = !reconciled.current;
-      reconciled.current = true;
       if (requested.changeId === settled.current.pin) return;
       settled.current.pin = requested.changeId;
       // A change that is gone (applied, discarded, regrouped) leaves the first, which then
@@ -105,12 +96,10 @@ export function useReviewAdmission({
         review.controller.focusReviewChange(
           { documentId: inline.documentId, itemKey: inline.itemKey },
           change,
-          { scroll: true, keepRestoredPlace: first },
         );
       return;
     }
     settled.current = {};
-    reconciled.current = false;
     if (!requested || !presented?.documentId || !presented.scheme || !presented.path) {
       restoring.current = null;
       refused.current = null;

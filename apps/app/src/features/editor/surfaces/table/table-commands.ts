@@ -33,7 +33,6 @@ import {
   getEditorChrome,
   isEditorChromeElement,
 } from "@/core/editor/chrome";
-import { shownAttrs, suggestionView } from "@/core/editor/extensions/suggestion-mode";
 import {
   addTableRow,
   alignTableColumn,
@@ -168,8 +167,7 @@ export function selectedColumnAlignment(state: EditorState): TableAlignment | nu
 }
 
 export function selectedTablePlacement(state: EditorState): TablePlacement {
-  const table = tableSelection(state)?.table;
-  const align = table && shownAttrs(suggestionView(state), table).align;
+  const align = tableSelection(state)?.table.attrs.align;
   return align === "center" || align === "right" ? align : "left";
 }
 

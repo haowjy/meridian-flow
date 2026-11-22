@@ -1,7 +1,6 @@
 /** Suggests a stable filename slug from an untitled document's first line. */
-import { liveView, viewDoc } from "@meridian/suggestions";
+import type { RoomDocs } from "@meridian/document-model";
 import type { JSONContent } from "@tiptap/core";
-import type * as Y from "yjs";
 import { roomContent } from "@/core/editor/room-content";
 
 export function suggestedUntitledDocumentName(content: JSONContent): string {
@@ -24,9 +23,9 @@ function collectText(content: JSONContent | undefined): string {
   return (content.content ?? []).map(collectText).join("");
 }
 
-/** Same suggestion, from a document's first block as Live reads it. */
-export function suggestedNameFromDocument(document: Y.Doc): string {
-  const text = viewDoc(roomContent(document).doc, liveView).firstChild?.textContent.trim() ?? "";
+/** Same suggestion, from a copy's first block. */
+export function suggestedNameFromDocument(docs: RoomDocs): string {
+  const text = roomContent(docs).firstChild?.textContent.trim() ?? "";
   if (!text) return "";
   return suggestedUntitledDocumentName({
     type: "doc",

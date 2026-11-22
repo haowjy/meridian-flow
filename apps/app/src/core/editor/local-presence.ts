@@ -1,241 +1,136 @@
 /**
- * One client's own presence: the fields it publishes, and whether they are on
- * the wire at all.
+ * One client's own presence: the fields it publishes (its caret, which uploads it is sending,
+ * `upload-presence.ts`), and whether they are on the wire at all. The wire is the room's Loro
+ * ephemeral store, one entry per copy keyed by its peer id; the transport relays its local
+ * updates and applies peers'.
  *
- * Awareness carries two kinds of local fact — the caret y-prosemirror writes,
- * and fields the app publishes itself (which slots this browser is filling,
- * `upload-presence.ts`) — while something else entirely decides
- * whether this client should be visible right now: inline review hides the
- * writer's presence in the document behind it, and a schema fence hides a
- * client that may no longer write.
- *
- * Those two questions used to have two owners, and the seam between them lost
- * writes. Yjs' `setLocalStateField` is a silent no-op while local state is
- * null, which is exactly what "suspended" looks like, so a publisher that wrote
- * during suspension recorded a change that never happened — and suspension
- * restored the snapshot it took, resurrecting the value the publisher had
- * already corrected.
- *
- * So one owner holds both: while presence is live, Awareness IS the desired
- * state and a field write goes straight to it. Suspension is the only moment
- * the two can differ, and for exactly that span this holds the desired map:
- * writes land in it, the transport publishes null, and resume publishes the map
- * as it now stands rather than as it was when the writer opened the review.
- *
- * The session is the only writer of this client's local state. The transport's
- * provider is patched never to write local state on an Awareness it did not
- * create (no clear on destroy, none on page hide), so detaching a transport and
- * hiding the page are suspensions the session takes itself. The server relays
- * no explicit null, so peers drop a closed tab when its socket closes.
- *
- * Upstream collaboration plugins know nothing about any of that: TipTap's
- * CollaborationCaret and y-prosemirror's cursor plugin write `user` and
- * `cursor` onto whatever Awareness their provider hands them. So they are
- * handed `caretProvider` instead of the real one. It wears Awareness' shape and
- * routes every local write and read back through this owner, which is why a
- * caret the destroyed editor cleared behind a review stays cleared when the
- * review ends.
+ * One owner holds both questions. While presence is live the store's entry IS the desired state
+ * and a field write goes straight to it. Suspension (inline review hides the document behind it,
+ * a schema fence hides a client that may no longer write, a detached transport, a hidden page)
+ * deletes the entry and holds the desired map: writes land in it, and resume publishes the map
+ * as it now stands rather than as it was when the suspension began.
  */
+import { EphemeralStore, type Value } from "loro-crdt";
 
-import type { Awareness } from "y-protocols/awareness";
+/** One copy's fields, as plain JSON the ephemeral store carries. */
+export type PeerState = { [field: string]: Value };
 
 /**
- * Peers as a publisher may see them: who else is here, what they say, and when
- * that changes.
- *
- * Deliberately narrower than `Awareness`. A local field write belongs to
- * `setField`, and handing out this type is what keeps that a rule of the port
- * rather than a comment the next publisher has to read.
+ * Peers as a publisher may see them: who else is here, what they say, and when that changes. It
+ * cannot write; `setField` does that.
  */
-export type PeerAwareness = Readonly<Pick<Awareness, "clientID" | "getStates" | "on" | "off">>;
+export type PeerAwareness = {
+  /** This copy's own key. */
+  readonly clientID: string;
+  getStates(): Map<string, PeerState>;
+  /** Called when a peer's state changes (an import or an expiry), never for this copy's own. */
+  on(event: "change", handler: () => void): void;
+  off(event: "change", handler: () => void): void;
+};
 
 /**
- * The Awareness shape upstream collaboration plugins reach through
- * `provider.awareness`: CollaborationCaret's `user` write and peer list, and
- * y-prosemirror's `cursor` write, its read of the local cursor it compares
- * against, and its clear on blur and on view destroy. Every one of those is
- * this client's own presence, so all of them route through the owner.
- *
- * No `setLocalState`: nothing upstream calls it, and a whole-state write would
- * let one publisher erase a field it does not own.
- */
-export type CaretAwareness = PeerAwareness &
-  Readonly<Pick<Awareness, "states" | "getLocalState" | "setLocalStateField">>;
-
-/** What `CollaborationCaret.configure({ provider })` takes. */
-export type CaretProvider = { readonly awareness: CaretAwareness };
-
-/**
- * What a publisher holds: the channel it reads peers from, and its own field to
- * write. Not `suspend`/`resume` — whether this client is visible is the
- * session's answer, and a publisher that could resume presence would put a
- * hidden writer back on the wire.
+ * What a publisher holds: the channel it reads peers from, and its own field to write. Not
+ * `suspend`/`resume`: whether this client is visible is the session's answer.
  */
 export type LocalPresenceFields = {
-  /** Read peers from here. It cannot write a local field; `setField` does that. */
   readonly peers: PeerAwareness;
-  /** Follow a draft content-client rotation without leaving a ghost cursor. */
-  adoptDocumentClient: () => void;
   /** Publish one field of this client's presence. Accepted while suspended. */
-  setField: (field: string, value: unknown) => void;
-  /** The same single write path, in the shape upstream plugins demand. */
-  readonly caretProvider: CaretProvider;
+  setField: (field: string, value: Value) => void;
+  /** This client's fields as it means them, on the wire or not. */
+  localState: () => PeerState | null;
   /**
-   * Which editor wrote the caret now on the wire. One slot for the session, so
-   * views of one session can tell whose caret it is (see `gateCaretPresence`).
+   * Which editor wrote the caret now on the wire. One slot for the session, so views of one
+   * session can tell whose caret it is (see `gateCaretPresence`).
    */
   readonly caretPublisher: { current: object | null };
 };
 
 /** The whole of one client's presence, as its owner holds it. */
 export type LocalPresence = LocalPresenceFields & {
-  /** Take this client off the wire, keeping every later field write. */
+  /** The store the transport carries. */
+  readonly store: EphemeralStore;
   suspend: () => void;
-  /** Put the CURRENT desired fields back on the wire. Nests with `suspend`. */
   resume: () => void;
-  /** Presence is over: forget the suspension and whatever it was holding. */
   release: () => void;
 };
 
-export function createLocalPresence(awareness: Awareness): LocalPresence {
+/** A peer's entry expires this long after its last update; carets refresh it while shown. */
+const PRESENCE_TIMEOUT_MS = 30_000;
+
+export function createLocalPresence(self: string): LocalPresence {
+  const store = new EphemeralStore(PRESENCE_TIMEOUT_MS);
   let suspensions = 0;
-  /** The desired fields while suspended, and null whenever Awareness holds them. */
-  let desired: Record<string, unknown> | null = null;
+  let desired: PeerState | null = null;
+  const handlers = new Set<() => void>();
+  // Peers' changes only: a publisher reads peers, and its own writes would only echo.
+  store.subscribe((event) => {
+    if (event.by === "local") return;
+    for (const handler of [...handlers]) handler();
+  });
+  // Peers drop an entry PRESENCE_TIMEOUT_MS after its last write, so a still caret is re-sent.
+  const refresh = setInterval(() => {
+    if (suspensions === 0 && desired) store.set(self, desired);
+  }, PRESENCE_TIMEOUT_MS / 3);
 
-  /**
-   * This client's fields as it means them, on the wire or not. y-prosemirror
-   * compares its own caret against this before writing and before clearing, so
-   * a suspension that answered null would leave it believing it had never
-   * published a caret at all.
-   */
-  const getLocalState = (): Record<string, unknown> | null =>
-    suspensions === 0 ? awareness.getLocalState() : desired;
-
-  const setField = (field: string, value: unknown): void => {
-    if (suspensions === 0) {
-      awareness.setLocalStateField(field, value);
-      return;
-    }
+  const setField = (field: string, value: Value): void => {
     desired = { ...(desired ?? {}), [field]: value };
+    if (suspensions === 0) store.set(self, desired);
   };
 
   return {
-    peers: awareness,
+    store,
+    peers: {
+      clientID: self,
+      getStates: () => new Map(Object.entries(store.getAllStates()) as [string, PeerState][]),
+      on: (_event, handler) => handlers.add(handler),
+      off: (_event, handler) => handlers.delete(handler),
+    },
     setField,
-    adoptDocumentClient() {
-      const next = awareness.doc.clientID;
-      if (next === awareness.clientID) return;
-      const fields = awareness.getLocalState();
-      // Publish removal under the old identity before advertising the new one.
-      // A suspended owner keeps desired fields untouched and stays invisible.
-      awareness.setLocalState(null);
-      awareness.clientID = next;
-      // Seed clock zero as Awareness' constructor does; a remote peer only
-      // accepts the first non-null state when its clock is greater than zero.
-      awareness.setLocalState(null);
-      awareness.setLocalState(fields);
-    },
+    localState: () => desired,
     caretPublisher: { current: null },
-
-    caretProvider: {
-      awareness: {
-        get clientID() {
-          return awareness.clientID;
-        },
-        // A getter rather than the Map itself: `states` is Awareness' own
-        // property, and a copy taken here would stop tracking who is present.
-        get states() {
-          return awareness.states;
-        },
-        getStates: () => awareness.getStates(),
-        getLocalState,
-        setLocalStateField: setField,
-        on: (name, handler) => awareness.on(name, handler),
-        off: (name, handler) => awareness.off(name, handler),
-      },
-    },
-
     suspend() {
-      // Only the outermost suspension takes the snapshot: a nested one would
-      // snapshot the null it is already looking at and drop the desired map.
       if (suspensions++ > 0) return;
-      desired = awareness.getLocalState() as Record<string, unknown> | null;
-      awareness.setLocalState(null);
+      store.delete(self);
     },
-
     resume() {
       if (suspensions === 0) return;
       suspensions -= 1;
       if (suspensions > 0) return;
-      const fields = desired;
-      desired = null;
-      // Null means this client had nothing to say before it was suspended and
-      // said nothing during it, which is still the honest state.
-      if (fields) awareness.setLocalState(fields);
+      if (desired) store.set(self, desired);
     },
-
     release() {
+      clearInterval(refresh);
       suspensions = 0;
       desired = null;
+      handlers.clear();
+      store.destroy();
     },
   };
 }
 
 /**
- * One session can be edited from two views at once: main and the side both
- * showing it. Both write the same `cursor`
- * field, and the view that is not in front would clear the caret of the one
- * that is (y-prosemirror clears a caret it did not just place whenever its
- * own editor updates unfocused), so the two ping-pong awareness writes.
- *
- * So the caret, and only the caret, is arbitrated: this view's `cursor`
- * writes through `caretProvider` pass while `publishing()` is true and are
- * dropped otherwise. Every other field, the image-upload announcements
- * included, is background work the session owns whether or not this view is
- * visible, and passes through untouched, clears included.
- *
- * A view that goes to the back calls `retire()` once, which clears the caret
- * only if this view is still the session's current caret publisher. Its last
- * write, not the cursor's value, decides that: two views can hold equal
- * cursors, and a back view must never clear the front one's, whichever of the
- * two retires or publishes first.
+ * One session can be edited from two views at once (main and the side both showing it). Both
+ * write the same `cursor` field, so the caret, and only the caret, is arbitrated: this view's
+ * `cursor` writes pass while `publishing()` is true and are dropped otherwise. A view that goes to
+ * the back calls `retire()` once, which clears the caret only if this view is still the session's
+ * current caret publisher, so a back view never clears the front one's.
  */
 export function gateCaretPresence(
   presence: LocalPresenceFields,
   publishing: () => boolean,
 ): { presence: LocalPresenceFields; retire: () => void } {
-  const wire = presence.caretProvider.awareness;
   const publisher = presence.caretPublisher;
   const self = {};
-  const setCaretField = (field: string, value: unknown): void => {
-    if (field !== "cursor") {
-      presence.setField(field, value);
-      return;
-    }
-    if (!publishing()) return;
-    publisher.current = self;
-    presence.setField(field, value);
-  };
   return {
     presence: {
       peers: presence.peers,
-      setField: presence.setField,
-      adoptDocumentClient: presence.adoptDocumentClient,
+      localState: presence.localState,
       caretPublisher: publisher,
-      caretProvider: {
-        awareness: {
-          get clientID() {
-            return wire.clientID;
-          },
-          get states() {
-            return wire.states;
-          },
-          getStates: () => wire.getStates(),
-          getLocalState: () => wire.getLocalState(),
-          setLocalStateField: setCaretField,
-          on: (name, handler) => wire.on(name, handler),
-          off: (name, handler) => wire.off(name, handler),
-        },
+      setField(field, value) {
+        if (field !== "cursor") return presence.setField(field, value);
+        if (!publishing()) return;
+        publisher.current = self;
+        presence.setField(field, value);
       },
     },
     retire() {

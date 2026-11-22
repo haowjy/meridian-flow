@@ -19,6 +19,7 @@ import { history, undo } from "@tiptap/pm/history";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { undoEditorHistory } from "@/core/editor/editor-history";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
 import { createStandaloneEditor, requireNode } from "@/test-support/standalone-editor";
 
@@ -579,7 +580,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     await settle();
     expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:new"]);
 
-    expect(editor.commands.undo()).toBe(true);
+    expect(undoEditorHistory(editor)).toBe(true);
     await settle();
 
     expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:old"]);
@@ -593,7 +594,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     held[0].settle(asset("only"));
     await settle();
 
-    expect(editor.commands.undo()).toBe(true);
+    expect(undoEditorHistory(editor)).toBe(true);
     await settle();
 
     expect(imageNodes(editor)).toEqual([]);
