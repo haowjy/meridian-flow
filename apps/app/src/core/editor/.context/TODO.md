@@ -30,27 +30,6 @@ decoration (flat model design, section 7).
 - `tab-change-counts` has no publisher while drafts are off.
 - `RoomError` `server-error` (1b) rejoins.
 
-## Undo of dependent steps
-
-Ctrl+Z twice can bring text back twice. Press Enter in a paragraph, Backspace to join it back,
-paste into it (each its own step), then Ctrl+Z twice: the paste goes, then the paragraph's end
-shows both still joined and as its own paragraph again. Bold, then unbold, then Ctrl+Z twice
-leaves the text bold.
-
-The cause is the Undo rule (design §2, §6, `invertChange`). An inverse is the diff from a
-change's `after` back to its `before`, computed on a fork at `after` and imported as concurrent
-ops. Text an inverse puts back is new characters, so an earlier step's inverse, which names the
-characters its change wrote, no longer finds them (the join's copied tail, which the paste moved
-and the paste's inverse rewrote); and two inverses of one range merge as concurrent edits (the
-bold). Within one step a doc's consecutive changes are merged (`extend` in
-`editor-history.ts`), so a quick burst no longer hits it. A fix inverts against the document as it
-is now: positional inverses carried through the edits made since, as Loro's `UndoManager` keeps
-them, instead of inverses by character id at the change's own frontier.
-
-The same rule makes Ctrl+Z of a 20-paragraph paste cost about 50 ms at 500 paragraphs: it forks
-every doc the step changed (21 here), where the binding's own read of the result is a few
-milliseconds.
-
 ## What an Enter or a mark toggle costs outside the binding
 
 The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800

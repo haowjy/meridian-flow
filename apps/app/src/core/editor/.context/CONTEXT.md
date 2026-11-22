@@ -120,19 +120,25 @@ identity in anchors or holds.
 - Disable TipTap's trailing node and local undo defaults where collaborative
   behavior supplies the contract. `editor-history.ts` is the document's history: its
   `DocumentHistory` is owned by the `DocumentSession`, and each editor attaches to it while
-  mounted. Every write an editor makes is recorded with the docs it changed and their frontiers
-  either side (the binding's `onLocalWrite`); Undo inverts the newest step at its own frontiers
-  (`invertChange` in `@meridian/document-model`) and publishes the inverses as one local batch,
-  so it takes back the writer's change and leaves a peer's or the model's alone. Redo inverts
-  the inverse. Keystrokes closer than `GROUP_MS` join one step, and within a step a doc's
-  changes with nothing between them become one change: two inverses of one doc, each forked at
-  its own `after`, merge as concurrent edits and leave text or marks behind. A step closes on
-  `endUndoStep(state)` (image upload, link actions, `@` references, reference drops, a block
-  drop call it before their edit) and on any document-changing transaction marked
-  `addToHistory: false`; meta-only transactions are not boundaries. Undo puts back the caret
-  the step started from, as a block id and offset. Destroying an editor only detaches it: the
-  history lasts as long as the session, so a tab's undo survives its editor. Reload resets it.
-  With drafts off, a press Apply has no Undo entry.
+  mounted. It wraps the binding's `UndoHistory`, which the sync plugin records every write into:
+  one Loro `UndoManager` per doc the tab changes (the structure's at once, a text doc's at its
+  first write, through `RoomDocs.beforeTextWrite`), each Undo item tagged with the editor step
+  it belongs to. Ctrl+Z runs exactly the managers the newest step touched until their top item
+  is another step's, and publishes what they wrote as one local batch. Loro keeps each inverse
+  as positions moved through every edit since and records only this peer's commits, so a chain
+  of dependent steps (Enter, Backspace, paste; bold, unbold) undoes and redoes exactly, and
+  Ctrl+Z takes back the writer's change and leaves a peer's or the model's alone. Writes closer
+  than `GROUP_MS` join one step. A step closes on `endUndoStep(state)` (image upload, link
+  actions, `@` references, reference drops, a block drop call it before their edit) and on any
+  document-changing transaction marked `addToHistory: false`, which commits under
+  `UNTRACKED_ORIGIN`, as `session.writeDocument` does; meta-only transactions are not
+  boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
+  carries through its inverse (a deleted selection comes back over the restored text); Redo puts
+  back the one Undo was pressed from. Ctrl+Z of a value (a heading level, an image width) puts the
+  step's old value back even over a peer's later write of it: that is Loro's map undo, chosen with
+  the manager (design §6), not a bug to guard. Destroying an editor only detaches it: the history lasts
+  as long as the session, so a tab's undo survives its editor; the session frees its managers
+  before its docs. Reload resets it. With drafts off, a press Apply has no Undo entry.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

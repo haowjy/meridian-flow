@@ -1,12 +1,13 @@
 import { t } from "@lingui/core/macro";
 import type { RoomDocs } from "@meridian/document-model";
+import { resolveCursor } from "@meridian/loro-prosemirror";
 import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { getEditorChrome, hoverOwner, watchManuscriptLayout } from "../chrome";
 import type { LocalPresenceFields } from "../local-presence";
-import { decodePoint, encodePoint, pointAt, resolvePoint } from "../loro-points";
+import { decodePoint, encodePoint, pointAt } from "../loro-points";
 
 /** How far either side of a peer's caret line still names the peer, in px. */
 const REACH = 4;
@@ -33,8 +34,8 @@ function peerCarets(docs: RoomDocs, presence: LocalPresenceFields, doc: Node): P
     const cursor = state.cursor as { anchor?: unknown; head?: unknown } | null | undefined;
     const headPoint = decodePoint(cursor?.head);
     const anchorPoint = decodePoint(cursor?.anchor);
-    const head = headPoint && resolvePoint(docs, doc, headPoint);
-    const anchor = (anchorPoint && resolvePoint(docs, doc, anchorPoint)) ?? head;
+    const head = headPoint && resolveCursor(docs, doc, headPoint);
+    const anchor = (anchorPoint && resolveCursor(docs, doc, anchorPoint)) ?? head;
     if (head == null || anchor == null) continue;
     out.push({
       client,

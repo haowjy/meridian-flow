@@ -33,7 +33,12 @@ import {
   freshPeerId,
   RoomDocs,
 } from "@meridian/document-model";
-import { importRemoteUpdate, notifyChanged, writeProseMirror } from "@meridian/loro-prosemirror";
+import {
+  importRemoteUpdate,
+  notifyChanged,
+  UNTRACKED_ORIGIN,
+  writeProseMirror,
+} from "@meridian/loro-prosemirror";
 import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
@@ -246,7 +251,7 @@ export class DocumentSession {
     this.room = { kind: "live", documentId: roomKey };
     this.documentId = roomKey;
     this.docs = RoomDocs.create(documentShape(), this.peer);
-    this.history = new DocumentHistory(this.docs, (inverses) => this.publish(inverses));
+    this.history = new DocumentHistory(this.docs, (changes) => this.publish(changes));
     this.persistSchemaFence = persistSchemaFence;
     this.localPresence = createLocalPresence(this.peer);
     if (typeof window !== "undefined") {
@@ -285,11 +290,11 @@ export class DocumentSession {
   /**
    * Write a whole document into the copy as a writer outside any editor would (a just-made file's
    * first text): only what differs is written, published like typing, and shown in every editor
-   * of the copy.
+   * of the copy. No Ctrl+Z takes it back.
    */
   writeDocument(doc: Node): void {
     if (this.destroyed || this.docs.isFreed) return;
-    const changes = writeProseMirror(this.docs, doc);
+    const changes = writeProseMirror(this.docs, doc, { origin: UNTRACKED_ORIGIN });
     this.publish(changes);
     notifyChanged(
       this.docs,

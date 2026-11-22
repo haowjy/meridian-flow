@@ -5,14 +5,10 @@ import {
   type RoomDocs,
   replaceText,
   STRUCTURE_KEY,
-  shownUnits,
   structureValues,
-  TEXT_KEY,
-  textUnits,
   visibleComments,
 } from "@meridian/document-model";
-import type { Cursor } from "loro-crdt";
-import type { Node, ResolvedPos, Slice } from "prosemirror-model";
+import type { Node, Slice } from "prosemirror-model";
 import {
   type EditorState,
   NodeSelection,
@@ -24,18 +20,25 @@ import {
 } from "prosemirror-state";
 import { inlineOf, type ProseMirrorSince, readProseMirror, writeProseMirror } from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
+import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
+import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 
 export interface LoroSyncOptions {
   /** The copy the editor shows and writes: a Live copy, or a draft's fork (writes go to overrides). */
   docs: RoomDocs;
-  /** The commit origin of the editor's writes (default `editor`). */
+  /** The commit origin of the editor's tracked writes (default `editor`). */
   origin?: string;
   /** A transaction's commit message; none is the writer's own typing (design §5's attribution). */
   messageOf?: (tr: Transaction) => string | undefined;
-  /** Every local write's doc changes with their frontiers: what the editor's Ctrl+Z records. */
+  /** Every local write's doc changes with their frontiers: what the copy publishes. */
   onLocalWrite?: (changes: DocChange[], tr: Transaction) => void;
+  /**
+   * The copy's Ctrl+Z, which records every write but one marked `addToHistory: false`; that one
+   * commits under `UNTRACKED_ORIGIN` and closes the open step.
+   */
+  history?: UndoHistory;
 }
 
 export interface LoroSyncState {
@@ -63,8 +66,8 @@ export const REMOTE_META = "remote";
  * the import.
  */
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
-  const { docs } = options;
-  const origin = options.origin ?? "editor";
+  const { docs, history } = options;
+  const tracked = options.origin ?? "editor";
   return new Plugin<LoroSyncState>({
     key: loroSyncKey,
     state: {
@@ -72,9 +75,14 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       apply(tr, value, oldState, newState) {
         if (!tr.docChanged || tr.getMeta(loroSyncKey) === REMOTE_META) return value;
         const message = options.messageOf?.(tr);
+        const recorded = tr.getMeta("addToHistory") !== false;
+        if (recorded) history?.beforeWrite(oldState);
+        else history?.endStep();
+        const origin = recorded ? tracked : UNTRACKED_ORIGIN;
         const changes =
           typingWrite(docs, oldState, newState, tr, origin, message) ??
           writeProseMirror(docs, newState.doc, { origin, message, previous: oldState.doc });
+        if (recorded) history?.record(changes);
         if (changes.length > 0) options.onLocalWrite?.(changes, tr);
         return value;
       },
@@ -87,7 +95,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       let comments = visibleComments(docs);
       const unlisten = listenToImports(docs, {
         before: () => {
-          cursors = takeCursors(docs, view.state);
+          cursors = selectionCursors(docs, view.state);
         },
         after: (changed) => {
           const since = { doc: view.state.doc, comments, changed };
@@ -161,53 +169,6 @@ function sameAttrs(a: Node, b: Node): boolean {
   return true;
 }
 
-/** A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits. */
-export interface DocCursor {
-  block: string;
-  cursor: Cursor;
-  /** The cursor holds the unit before a caret, which is one past it. */
-  after: boolean;
-}
-interface SelectionCursors {
-  anchor: DocCursor | null;
-  head: DocCursor | null;
-}
-
-/** The cursor at `$pos`, when it is inside a textblock the docs hold. */
-export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
-  const block = $pos.parent;
-  const id = block.attrs.id;
-  if (!block.isTextblock || typeof id !== "string") return null;
-  const doc = docs.textOf(id);
-  const rule = docs.shape.node(block.type.name);
-  if (!doc || !rule) return null;
-  const units = shownUnits(doc, rule, docs.shape);
-  const offset = $pos.parentOffset;
-  const unit = units[offset > 0 ? offset - 1 : offset];
-  const cursor = doc.getText(TEXT_KEY).getCursor(unit ? unit.pos : 0);
-  return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
-}
-
-/** The selection's ends as cursors in their blocks' text docs, taken while editor and docs agree. */
-function takeCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
-  const { selection } = state;
-  return { anchor: cursorAt(docs, selection.$anchor), head: cursorAt(docs, selection.$head) };
-}
-
-/** Where the textblock `id` starts in `doc`, and the block. */
-function textblockOf(doc: Node, id: string): { node: Node; start: number } | null {
-  let found: { node: Node; start: number } | null = null;
-  doc.descendants((child, pos) => {
-    if (found) return false;
-    if (child.isTextblock && child.attrs.id === id) {
-      found = { node: child, start: pos + 1 };
-      return false;
-    }
-    return !child.isTextblock;
-  });
-  return found;
-}
-
 /**
  * The transaction that brings the editor to the docs after an import, or null if nothing shows.
  * The selection follows its cursors. A selected node that still stands stays selected. A caret
@@ -248,24 +209,4 @@ function remoteTransaction(
     tr.setSelection(Selection.near(tr.doc.resolve(Math.min(at, tr.doc.content.size)), -1));
   }
   return tr;
-}
-
-/**
- * The editor position a cursor stands at now, if its block still shows. A cursor whose held unit
- * was deleted stands where the unit was, so the caret that followed the unit is there too.
- */
-export function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number | null {
-  const text = docs.textOf(at.block);
-  const found = text && textblockOf(doc, at.block);
-  const rule = found && docs.shape.node(found.node.type.name);
-  if (!text || !found || !rule) return null;
-  const position = text.getCursorPos(at.cursor);
-  if (!position) return null;
-  let shown = 0;
-  for (const unit of textUnits(text, rule, docs.shape)) {
-    if (unit.pos >= position.offset) break;
-    if (!unit.hidden) shown++;
-  }
-  const held = at.after && position.update === undefined;
-  return found.start + Math.min(shown + (held ? 1 : 0), found.node.content.size);
 }

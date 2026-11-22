@@ -1,58 +1,33 @@
 /**
- * The document's Undo (design §2's one Undo rule, §6 "Ctrl+Z is ours"): every write an editor
- * makes is recorded as the docs it changed with their frontiers either side (the binding's
- * `onLocalWrite`), and Ctrl+Z inverts the newest step at its own frontiers (`invertChange`), so it
- * takes back the writer's change and leaves a peer's or the model's alone. Redo inverts the
- * inverse. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
+ * The document's Undo (design §6, "Ctrl+Z is Loro's, grouped by us"): the binding's
+ * `UndoHistory`, which keeps one Loro `UndoManager` per doc the tab changes and groups one editor
+ * step across them, so Ctrl+Z takes back the writer's change and leaves a peer's or the model's
+ * alone. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
  * editor attaches while it shows the document.
  */
-import { type DocChange, invertChange, type RoomDocs } from "@meridian/document-model";
-import { loroSyncKey, notifyChanged } from "@meridian/loro-prosemirror";
+import type { DocChange, RoomDocs } from "@meridian/document-model";
+import { loroSyncKey, notifyChanged, resolveCursor, UndoHistory } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
-import type { Node } from "@tiptap/pm/model";
-import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
-import { findBlock } from "./loro-points";
+import { type EditorState, TextSelection } from "@tiptap/pm/state";
 
-/** Keystrokes closer than this join one Undo step. */
-const GROUP_MS = 500;
 const HISTORY_META = "meridian-editor-history";
-
-/** A caret end as a block and an offset in its text, which survives a peer's edit elsewhere. */
-type Point = { block: string; offset: number } | null;
-type Step = { changes: DocChange[]; anchor: Point; head: Point; at: number };
 
 const histories = new WeakMap<Editor, DocumentHistory>();
 const byDocs = new WeakMap<RoomDocs, DocumentHistory>();
 
-function pointOf(doc: Node, pos: number): Point {
-  const $pos = doc.resolve(pos);
-  const id = $pos.parent.attrs.id;
-  return $pos.parent.isTextblock && typeof id === "string"
-    ? { block: id, offset: $pos.parentOffset }
-    : null;
-}
-
-function resolveAt(doc: Node, point: Point): number | null {
-  if (!point) return null;
-  const found = findBlock(doc, point.block);
-  return found?.node.isTextblock
-    ? found.pos + 1 + Math.min(point.offset, found.node.content.size)
-    : null;
-}
-
 export class DocumentHistory {
-  private readonly undoSteps: Step[] = [];
-  private readonly redoSteps: Step[] = [];
-  private closed = true;
+  /** What the binding records the editor's writes into. */
+  readonly steps: UndoHistory;
   private active = true;
   private readonly editors = new Set<Editor>();
   private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly docs: RoomDocs,
-    /** Sends an Undo's or Redo's inverses as one local batch. */
-    private readonly publish: (inverses: readonly DocChange[]) => void,
+    /** Sends an Undo's or Redo's changes as one local batch. */
+    private readonly publish: (changes: readonly DocChange[]) => void,
   ) {
+    this.steps = new UndoHistory(docs);
     byDocs.set(docs, this);
   }
 
@@ -67,57 +42,20 @@ export class DocumentHistory {
     };
   }
 
-  /**
-   * One local write from an editor: joins the open step when it comes soon after the last, else
-   * starts one. `before` is the editor state the transaction started from (its selection is what
-   * Undo puts back). A new write clears Redo. A write marked `addToHistory: false` is no one's to
-   * take back and closes the open step: bookkeeping between two edits keeps them apart (an
-   * upload's token leaving before its picture lands).
-   */
-  record(
-    changes: readonly DocChange[],
-    tr: Transaction,
-    before: EditorState,
-    source?: Editor,
-  ): void {
-    if (!this.active || changes.length === 0) return;
-    if (tr.getMeta("addToHistory") === false) {
-      this.closed = true;
-      return;
-    }
-    const now = Date.now();
-    const last = this.undoSteps.at(-1);
-    if (last && !this.closed && now - last.at < GROUP_MS) {
-      for (const change of changes) extend(last.changes, change);
-      last.at = now;
-    } else {
-      const { selection } = before;
-      this.undoSteps.push({
-        changes: [...changes],
-        anchor: pointOf(before.doc, selection.anchor),
-        head: pointOf(before.doc, selection.head),
-        at: now,
-      });
-    }
-    this.closed = false;
-    this.redoSteps.length = 0;
-    this.changed(source);
-  }
-
   /** The next write starts its own step. */
   endStep(): void {
-    this.closed = true;
+    this.steps.endStep();
   }
 
+  /** Frees the history's Loro managers: before the docs are freed. */
   destroy(): void {
     this.active = false;
-    this.undoSteps.length = 0;
-    this.redoSteps.length = 0;
+    this.steps.destroy();
     this.listeners.clear();
   }
 
   hasEntries(): boolean {
-    return this.undoSteps.length > 0 || this.redoSteps.length > 0;
+    return this.steps.canUndo() || this.steps.canRedo();
   }
 
   subscribe(listener: () => void): () => void {
@@ -126,89 +64,57 @@ export class DocumentHistory {
   }
 
   canUndo(): boolean {
-    return this.undoSteps.length > 0;
+    return this.steps.canUndo();
   }
 
   canRedo(): boolean {
-    return this.redoSteps.length > 0;
+    return this.steps.canRedo();
   }
 
-  /**
-   * Undo or Redo the newest step, synchronously. A step whose inverses change nothing (a peer took
-   * the text out already) is skipped for the next one. Returns whether a step ran.
-   */
+  /** Undo or Redo the newest step, synchronously. Returns whether a step ran. */
   run(direction: "undo" | "redo", editor: Editor): boolean {
     if (this.docs.isFreed) return false;
-    const from = direction === "undo" ? this.undoSteps : this.redoSteps;
-    const to = direction === "undo" ? this.redoSteps : this.undoSteps;
-    this.closed = true;
-    for (let step = from.pop(); step; step = from.pop()) {
-      const inverses: DocChange[] = [];
-      for (const change of [...step.changes].reverse()) {
-        const inverse = invertChange(this.docs, change);
-        if (inverse) inverses.push(inverse);
-      }
-      if (inverses.length === 0) continue;
-      this.publish(inverses);
+    const ran =
+      direction === "undo" ? this.steps.undo(editor.state) : this.steps.redo(editor.state);
+    if (ran) {
+      this.publish(ran.changes);
       notifyChanged(
         this.docs,
-        inverses.map((inverse) => inverse.key),
+        ran.changes.map((change) => change.key),
       );
-      const selection = editor.isDestroyed ? null : editor.state.selection;
-      to.push({
-        changes: inverses,
-        anchor: selection ? pointOf(editor.state.doc, selection.anchor) : step.anchor,
-        head: selection ? pointOf(editor.state.doc, selection.head) : step.head,
-        at: 0,
-      });
-      if (!editor.isDestroyed) {
-        const { doc } = editor.state;
-        const anchor = resolveAt(doc, step.anchor);
-        const head = resolveAt(doc, step.head) ?? anchor;
-        if (anchor !== null && head !== null)
-          editor.view.dispatch(
-            editor.state.tr
-              .setSelection(TextSelection.create(doc, anchor, head))
-              .setMeta("addToHistory", false)
-              .scrollIntoView(),
-          );
-      }
-      this.changed();
-      return true;
+      const { doc } = editor.state;
+      const at = (end: typeof ran.selection.anchor) => end && resolveCursor(this.docs, doc, end);
+      const anchor = at(ran.selection.anchor);
+      const head = at(ran.selection.head) ?? anchor;
+      if (!editor.isDestroyed && anchor != null && head != null)
+        editor.view.dispatch(
+          editor.state.tr
+            .setSelection(TextSelection.create(doc, anchor, head))
+            .setMeta("addToHistory", false)
+            .scrollIntoView(),
+        );
     }
     this.changed();
-    return false;
+    return ran !== null;
   }
 
   private shown = "";
 
-  /** Tells listeners and editors when Undo or Redo becomes available or not: not per keystroke. */
-  private changed(source?: Editor): void {
+  /**
+   * Tells listeners and editors when Undo or Redo becomes available or not: not per keystroke.
+   * `source` is the editor whose write this is: its own transaction shows the change.
+   */
+  changed(source?: Editor): void {
     if (!this.active) return;
     const shown = `${this.canUndo()}|${this.canRedo()}`;
     if (shown === this.shown) return;
     this.shown = shown;
     for (const listener of this.listeners) listener();
-    // Not into the editor whose write this is (its own transaction shows the change), and not into
-    // one composing: a dispatch mid-composition commits its first keystroke as text.
+    // Not into one composing: a dispatch mid-composition commits its first keystroke as text.
     for (const editor of this.editors)
       if (editor !== source && !editor.isDestroyed && !editor.view.composing)
         editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
-}
-
-/**
- * Adds a write's change of one doc to a step. When it starts where the step's last change of that
- * doc ended, the two become one change: each change is inverted on its own fork at its own `after`,
- * so two inverses of one doc would merge as concurrent edits and leave text or marks behind (a join
- * after a split brought back its tail twice). A change with a peer's ops between keeps its own entry.
- */
-function extend(changes: DocChange[], change: DocChange): void {
-  const at = changes.findLastIndex((earlier) => earlier.key === change.key);
-  const earlier = changes[at];
-  if (earlier && change.doc.cmpFrontiers(earlier.after, change.before) === 0)
-    changes[at] = { ...earlier, after: change.after };
-  else changes.push(change);
 }
 
 /**

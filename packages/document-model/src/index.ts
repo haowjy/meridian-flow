@@ -1,6 +1,5 @@
 export { type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
-export { changedKeys, changeUpdate, invertChange } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,
@@ -60,6 +59,7 @@ export {
 export { StructureView } from "./structure.js";
 export { replaceText, type TextRules } from "./text.js";
 export {
+  changeUpdate,
   commitStructure,
   type DocChange,
   StructureWriter,

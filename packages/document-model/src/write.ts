@@ -33,6 +33,13 @@ export interface DocChange {
   after: Frontiers;
 }
 
+/** A doc's update from `before` on: the ops one change wrote, to publish. */
+export function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
+  return before.length === 0
+    ? doc.export({ mode: "update" })
+    : doc.export({ mode: "update", from: doc.frontiersToVV(before) });
+}
+
 export interface WriteOptions {
   /** The commit message: `turn:<id>`, `press:<id>`, or none for the writer's own typing. */
   message?: string;

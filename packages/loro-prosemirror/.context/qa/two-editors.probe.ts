@@ -1,26 +1,33 @@
 /**
  * Two editors probe (`two-editors.md`). Run from the repo root:
  *   pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/two-editors.probe.ts [seeds] [steps]
- * Two editors on two copies of one room make random structural edits and exchange batches at
- * random. After every step each editor must equal a full read of its docs, and at the end the
- * copies must read alike. Exits non-zero on the first failure, printing the block that differs.
+ * Two editors on two copies of one room make random structural edits, Ctrl+Z and Redo, and
+ * exchange batches at random. After every step each editor must equal a full read of its docs, an
+ * Undo must keep every word the other editor typed, an Undo chain followed by as many Redos must
+ * give back the document exactly, and at the end the copies must read alike. Exits non-zero on the
+ * first failure, printing the block that differs.
  */
 import {
   encodeEnvelope,
+  encodeRoomVersion,
   freshPeerId,
   RoomDocs,
   setCommentBody,
+  TEXT_KEY,
   visibleComments,
 } from "@meridian/document-model";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Fragment, type Node, Slice } from "prosemirror-model";
-import { EditorState, type Transaction } from "prosemirror-state";
+import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import {
   importRemoteUpdate,
   loroSyncPlugin,
   notifyChanged,
   readProseMirror,
+  resolveCursor,
   shapeSchemaOf,
+  UNTRACKED_ORIGIN,
+  UndoHistory,
   writeProseMirror,
 } from "../../src/index.js";
 
@@ -29,7 +36,12 @@ const shape = shapeSchemaOf(schema);
 const seeds = Number(process.argv[2] ?? 20);
 const steps = Number(process.argv[3] ?? 400);
 
-type Editor = { docs: RoomDocs; view: { state: EditorState; dispatch(tr: Transaction): void } };
+type Editor = {
+  name: string;
+  docs: RoomDocs;
+  history: UndoHistory;
+  view: { state: EditorState; dispatch(tr: Transaction): void };
+};
 type Place = { node: Node; pos: number };
 
 function run(seed: number): string | null {
@@ -52,8 +64,9 @@ function run(seed: number): string | null {
     owned.push(docs);
     return docs;
   };
-  const editor = (docs: RoomDocs): Editor & { destroy(): void } => {
-    const plugin = loroSyncPlugin({ docs });
+  const editor = (name: string, docs: RoomDocs): Editor & { destroy(): void } => {
+    const history = new UndoHistory(docs);
+    const plugin = loroSyncPlugin({ docs, history });
     const view = {
       state: EditorState.create({ schema, doc: readProseMirror(docs, schema), plugins: [plugin] }),
       composing: false,
@@ -64,7 +77,16 @@ function run(seed: number): string | null {
       },
     };
     const handle = plugin.spec.view?.(view as never) ?? {};
-    return { docs, view, destroy: () => handle.destroy?.() };
+    return {
+      name,
+      docs,
+      history,
+      view,
+      destroy: () => {
+        handle.destroy?.();
+        history.destroy();
+      },
+    };
   };
   // The app's block-id fixer, simplified: a block with no id or a taken one gets a fresh one.
   const fixIds = (tr: Transaction) => {
@@ -98,8 +120,8 @@ function run(seed: number): string | null {
 
   const seedDocs = copy();
   writeProseMirror(seedDocs, schema.topNodeType.create(null, Array.from({ length: 8 }, para)));
-  const a = editor(copy());
-  const b = editor(copy());
+  const a = editor("A", copy());
+  const b = editor("B", copy());
   for (const e of [a, b]) {
     e.docs.importBatch(seedDocs.exportSince());
     e.view.state = EditorState.create({
@@ -109,8 +131,14 @@ function run(seed: number): string | null {
     });
   }
 
+  // Each editor types words of its own (`qA3`), so an Undo can be checked to keep the other's.
+  const typed = { A: new Set<string>(), B: new Set<string>() };
   const edits: Record<string, (e: Editor) => Transaction | null> = {
-    type: ({ view: { state: s } }) => s.tr.insertText("ab", inside(pick(textblocks(s.doc)))),
+    type: ({ name, view: { state: s } }) => {
+      const word = `q${name}${n++}`;
+      typed[name as "A" | "B"].add(word);
+      return s.tr.insertText(` ${word} `, inside(pick(textblocks(s.doc))));
+    },
     split: ({ view: { state: s } }) => {
       const t = pick(textblocks(s.doc));
       return t.node.type.name === "paragraph" ? s.tr.split(inside(t)) : null;
@@ -193,6 +221,124 @@ function run(seed: number): string | null {
     },
   };
 
+  // Every word in a copy's text docs, shown or hidden: a hidden block's doc keeps its text.
+  const words = (e: Editor) => {
+    let all = "";
+    for (const doc of e.docs.texts.values()) all += ` ${doc.getText(TEXT_KEY).toString()} `;
+    return new Set(all.split(/[^a-zA-Z0-9]+/));
+  };
+  // Ctrl+Z or Redo as the app runs it: publish nothing here, re-read the changed docs, put the
+  // selection back.
+  const history = (e: Editor, direction: "undo" | "redo") => {
+    const ran = direction === "undo" ? e.history.undo(e.view.state) : e.history.redo(e.view.state);
+    if (!ran) return false;
+    notifyChanged(
+      e.docs,
+      ran.changes.map((change) => change.key),
+    );
+    const { doc } = e.view.state;
+    const at = (end: typeof ran.selection.anchor) => end && resolveCursor(e.docs, doc, end);
+    const anchor = at(ran.selection.anchor);
+    const head = at(ran.selection.head) ?? anchor;
+    if (anchor != null && head != null)
+      e.view.dispatch(
+        e.view.state.tr
+          .setSelection(TextSelection.create(doc, anchor, head))
+          .setMeta("addToHistory", false),
+      );
+    return true;
+  };
+  // An Undo keeps every word the other editor typed (it may hide the block they are in).
+  const undoKeeps = (e: Editor, when: string) => {
+    const other = typed[e.name === "A" ? "B" : "A"];
+    const before = words(e);
+    history(e, "undo");
+    const after = words(e);
+    for (const word of before)
+      if (other.has(word) && !after.has(word)) return `${when}: ${e.name}'s Undo took ${word}`;
+    return null;
+  };
+  // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
+  // same document. A Redo can take two steps when one of them now changes nothing (a peer wrote
+  // the key it set since), so the Redos are not counted.
+  const chain = (e: Editor, when: string) => {
+    if (e.history.canRedo()) return null;
+    const start = e.view.state.doc;
+    let ran = 0;
+    const k = 1 + Math.floor(rand() * 6);
+    for (let i = 0; i < k; i++) {
+      const bad = differs(e, `${when}, Undo ${i}`);
+      if (bad) return bad;
+      if (history(e, "undo")) ran++;
+    }
+    for (let i = 0; e.history.canRedo(); i++) {
+      if (!history(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
+      const bad = differs(e, `${when}, Redo ${i}`);
+      if (bad) return bad;
+    }
+    if (start.eq(e.view.state.doc)) return null;
+    const at = start.content.findDiffStart(e.view.state.doc.content) ?? 0;
+    const block = (doc: Node) =>
+      JSON.stringify(doc.resolve(Math.min(at, doc.content.size)).parent.toJSON()).slice(0, 600);
+    return `${when}: ${ran} Undos and Redos changed ${block(start)}\n  to ${block(e.view.state.doc)}`;
+  };
+
+  // Edits with no batch between, most a step of their own and some joining the one before, then
+  // as many Ctrl+Z as steps: the document from before them exactly; then as many Redos: the
+  // document after them. This is the chain that broke on Undo by character id (Enter, Backspace,
+  // paste; bold, unbold). Between edits, a write no Ctrl+Z takes back (the body of a comment no
+  // text carries, so the document does not show it) must stay out of every step.
+  const burst = (e: Editor, when: string) => {
+    e.history.endStep();
+    const start = e.view.state.doc;
+    const names: string[] = [];
+    let steps = 0;
+    let open = false;
+    for (let tries = 0; names.length < 2 + Math.floor(rand() * 5) && tries < 20; tries++) {
+      if (rand() < 0.2) {
+        const body = rand() < 0.5 ? { body: "y", author: "u", resolved: false } : null;
+        const change = setCommentBody(e.docs, "c9", body, { origin: UNTRACKED_ORIGIN });
+        if (change) notifyChanged(e.docs, [change.key]);
+      }
+      const name = pick(Object.keys(edits));
+      let tr: Transaction | null = null;
+      try {
+        tr = edits[name](e);
+      } catch {
+        continue;
+      }
+      if (!tr?.docChanged) continue;
+      const version = encodeRoomVersion(e.docs.version()).join();
+      e.view.dispatch(fixIds(tr));
+      // An edit the docs already read as (a cell emptied again) writes nothing and is no step.
+      if (encodeRoomVersion(e.docs.version()).join() !== version) {
+        names.push(name);
+        if (!open) steps++;
+        open = true;
+      }
+      if (rand() < 0.7) {
+        e.history.endStep();
+        open = false;
+      }
+    }
+    const end = e.view.state.doc;
+    const compare = (want: Node, what: string) => {
+      const got = e.view.state.doc;
+      if (want.eq(got)) return differs(e, `${when}, ${what}`);
+      const at = want.content.findDiffStart(got.content) ?? 0;
+      const block = (doc: Node) =>
+        JSON.stringify(doc.resolve(Math.min(at, doc.content.size)).parent.toJSON()).slice(0, 600);
+      return `${when} [${names}]: ${what} gave ${block(got)}\n  want ${block(want)}`;
+    };
+    for (let i = 0; i < steps; i++)
+      if (!history(e, "undo")) return `${when} [${names}]: Undo ${i} found nothing`;
+    const undone = compare(start, `${steps} Undos`);
+    if (undone) return undone;
+    for (let i = 0; i < steps; i++)
+      if (!history(e, "redo")) return `${when} [${names}]: Redo ${i} found nothing`;
+    return compare(end, `${steps} Redos`);
+  };
+
   const sync = (from: Editor, to: Editor) => {
     const batch = from.docs.exportSince(to.docs.version());
     if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch));
@@ -210,11 +356,27 @@ function run(seed: number): string | null {
     for (let step = 0; step < steps; step++) {
       const who = rand() < 0.5 ? a : b;
       let name = "body";
-      if (rand() < 0.07) {
+      const roll = rand();
+      if (roll < 0.07) {
         // A comment's body comes and goes outside the editor, as a command's write does.
         const body = rand() < 0.5 ? { body: "x", author: "u", resolved: false } : null;
-        const change = setCommentBody(who.docs, "c0", body);
+        const change = setCommentBody(who.docs, "c0", body, { origin: UNTRACKED_ORIGIN });
         if (change) notifyChanged(who.docs, [change.key]);
+      } else if (roll < 0.17) {
+        name = "undo";
+        const bad = undoKeeps(who, `step ${step} (undo)`);
+        if (bad) return bad;
+      } else if (roll < 0.22) {
+        name = "redo";
+        history(who, "redo");
+      } else if (roll < 0.25) {
+        name = "chain";
+        const bad = chain(who, `step ${step} (chain)`);
+        if (bad) return bad;
+      } else if (roll < 0.29) {
+        name = "burst";
+        const bad = burst(who, `step ${step} (burst)`);
+        if (bad) return bad;
       } else {
         name = pick(Object.keys(edits));
         let tr: Transaction | null = null;
@@ -225,6 +387,8 @@ function run(seed: number): string | null {
         }
         if (!tr?.docChanged) continue;
         who.view.dispatch(fixIds(tr));
+        // Most edits are a step of their own; the rest join the next, as a quick burst does.
+        if (rand() < 0.7) who.history.endStep();
       }
       for (const e of [a, b]) {
         const bad = differs(e, `step ${step} (${name})`);
