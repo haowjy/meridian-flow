@@ -51,7 +51,6 @@ describe("live document text convergence", () => {
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync,
       eventSink: createInMemoryEventSink(),
-      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
     };
     hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 

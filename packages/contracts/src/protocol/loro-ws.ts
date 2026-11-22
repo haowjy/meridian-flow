@@ -174,26 +174,37 @@ export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
 }
 
 /**
- * `JoinResponseOk.extra` of a `read` Join: why the copy may only read, when a closed owner is the
- * reason (a Work archived or deleted, a frozen chat). Empty otherwise.
+ * `JoinResponseOk.extra`. A document room's `read` Join says why the copy may only read, when a
+ * closed owner is the reason (a Work archived or deleted, a frozen chat). A tree room's names the
+ * list's id: a client whose stored copy is of another list (a reset database, a recreated account
+ * list) drops it and joins again with no version. Empty when there is neither.
  */
-export function encodeLoroJoinExtra(extra: { readOnlyWhy?: ClosedOwnerWhy }): Uint8Array {
-  return extra.readOnlyWhy
-    ? new TextEncoder().encode(JSON.stringify({ readOnlyWhy: extra.readOnlyWhy }))
+export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string };
+
+export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
+  const value = {
+    ...(extra.readOnlyWhy ? { readOnlyWhy: extra.readOnlyWhy } : {}),
+    ...(extra.list ? { list: extra.list } : {}),
+  };
+  return Object.keys(value).length > 0
+    ? new TextEncoder().encode(JSON.stringify(value))
     : new Uint8Array();
 }
 
-const joinExtraSchema = z.object({ readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional() });
+const joinExtraSchema = z.object({
+  readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional(),
+  list: z.string().optional(),
+});
 
-export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): {
-  readOnlyWhy?: ClosedOwnerWhy;
-} {
+export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtra {
   if (!bytes || bytes.byteLength === 0) return {};
   try {
     const parsed = joinExtraSchema.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
-    return parsed.success && parsed.data.readOnlyWhy
-      ? { readOnlyWhy: parsed.data.readOnlyWhy }
-      : {};
+    if (!parsed.success) return {};
+    return {
+      ...(parsed.data.readOnlyWhy ? { readOnlyWhy: parsed.data.readOnlyWhy } : {}),
+      ...(parsed.data.list ? { list: parsed.data.list } : {}),
+    };
   } catch {
     return {};
   }

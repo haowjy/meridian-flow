@@ -16,7 +16,6 @@ import {
 } from "../../../../test-support/drizzle-reset.js";
 import { moveInScope } from "../../../../test-support/entry-ref.js";
 import { treeSeeder } from "../../../../test-support/tree-seed.js";
-import { createDrizzleJournal } from "../../../collab/adapters/drizzle-journal.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
@@ -61,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createContextHarness() {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+      const treeLists = createDrizzleTreeListStore({ db });
       const markdownByDocument = new Map<string, string>();
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const context = new ContextFS({

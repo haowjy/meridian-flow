@@ -141,7 +141,7 @@ export const docPutCommand: CommandSpec = {
   summary:
     "Create a markdown document (seed content); --overwrite deletes and recreates it (new id)",
   args: "<uri>",
-  route: "WS /ws/yjs tree:project:<projectId> create record, then the document's room",
+  route: "WS /ws/loro tree:project:<projectId> create record, then the document's room",
   options: {
     ...PROJECT_OPTION,
     text: { type: "string", description: "Content (literal, @file, or - for stdin)" },

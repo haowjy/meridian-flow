@@ -10,8 +10,8 @@ import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
+import type { LoroDoc } from "loro-crdt";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { runWorkLifecycleCommand } from "../domains/projects/index.js";
@@ -350,9 +350,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "ch1-c", deletedAt: null });
     });
 
-    const store = () => createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+    const store = () => createDrizzleTreeListStore({ db });
     /** The writer's own change to the project's list, as their browser's record would be admitted. */
-    const asWriter = async (make: (writer: TreeWriter) => void) =>
+    const asWriter = async (make: (writer: TreeWriter<LoroDoc>) => void) =>
       store().submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => make(writer),

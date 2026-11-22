@@ -748,9 +748,6 @@ importers:
       '@hocuspocus/provider':
         specifier: 4.8.0
         version: 4.8.0(patch_hash=d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      '@meridian/tree-list-sync':
-        specifier: workspace:*
-        version: link:../../packages/tree-list-sync
       '@types/busboy':
         specifier: ^1.5.5
         version: 1.5.5
@@ -1212,6 +1209,9 @@ importers:
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@meridian/document-model':
+        specifier: workspace:*
+        version: link:../../packages/document-model
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
@@ -1224,9 +1224,12 @@ importers:
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
-      '@meridian/tree-list-sync':
-        specifier: workspace:*
-        version: link:../../packages/tree-list-sync
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.18.0
+      loro-protocol:
+        specifier: 'catalog:'
+        version: 0.3.0
       ws:
         specifier: ^8.23.0
         version: 8.23.0

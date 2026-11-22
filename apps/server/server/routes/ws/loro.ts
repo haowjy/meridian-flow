@@ -2,6 +2,7 @@
 import { defineWebSocketHandler } from "nitro";
 import { runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
+import { createTreeRooms } from "../../lib/loro-tree-rooms.js";
 import {
   createLoroGateway,
   type LoroGateway,
@@ -40,6 +41,7 @@ function selectLoroGatewayServices(app: AppServices): LoroGatewayServices {
     fileAccess: app.fileAccess,
     fileAccessChanges: app.fileAccessChanges,
     rooms: sync.rooms,
+    trees: createTreeRooms({ treeLists: app.treeLists, eventSink: app.eventSink }),
     documents: {
       draftsHolding: sync.draftsHolding,
       roomRemoval: sync.roomRemoval,

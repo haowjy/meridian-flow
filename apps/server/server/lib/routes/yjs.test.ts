@@ -28,7 +28,6 @@ function services() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: { emit() {} } as never,
-    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       ensureDocumentAuthority: vi.fn(async () => {}),
@@ -44,7 +43,6 @@ function gatewayServices() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: { emit() {} } as never,
-    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       bindHocuspocus: () => undefined,
       roomRemoval: async () => null,
@@ -65,7 +63,6 @@ describe("Yjs gateway drain", () => {
     const gateway = createYjsGateway({
       ...gatewayServices(),
       eventSink: { emit: vi.fn() } as never,
-      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       documentSync: {
         roomRemoval: vi.fn(async () => null),
         ensureDocumentAuthority: vi.fn(async () => {}),
@@ -165,7 +162,6 @@ describe("Yjs room access", () => {
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: documentSync as never,
       eventSink: { emit() {} } as never,
-      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
     };
   }

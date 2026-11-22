@@ -5,7 +5,6 @@
 import type { DraftId } from "@meridian/contracts";
 import type { TreeSaw } from "@meridian/contracts/drafts";
 import { sql } from "drizzle-orm";
-import * as Y from "yjs";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 
@@ -88,7 +87,7 @@ export async function treeCutOf(
           (lists[at] as TreeList).kind,
           {
             list: end.list,
-            vector: Buffer.from(Y.encodeStateVector(end.writer.doc)).toString("base64"),
+            vector: Buffer.from(end.writer.doc.oplogVersion().encode()).toString("base64"),
           },
         ]),
       ),

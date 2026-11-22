@@ -38,7 +38,7 @@ have it:
 | Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
 | Press text effect | One press's text change to one document: in force or taken back | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
-| Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| A joined `/ws/loro` room | One room a socket joined (a document's Live or fork, or a tree list): join, batches, how it ends | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
 

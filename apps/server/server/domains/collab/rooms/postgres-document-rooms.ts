@@ -15,6 +15,7 @@ import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-mo
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { holdsFrontiers, writeSnapshots } from "../../../shared/document-snapshots.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -318,7 +319,7 @@ export function createPostgresDocumentRooms(input: {
   async function mergeStored(tx: DrizzleDb, name: string, docs: RoomDocs) {
     const stored = await readFrontiers(tx, name);
     const lacking = stored
-      .filter((row) => !knows(docs.doc(row.docKey), row.frontiers))
+      .filter((row) => !holdsFrontiers(docs.doc(row.docKey), row.frontiers))
       .map((row) => row.docKey);
     if (lacking.length === 0) return null;
     const rows = await readRows(tx, name, lacking);
@@ -334,32 +335,17 @@ export function createPostgresDocumentRooms(input: {
     docs: RoomDocs,
     keys: Iterable<DocKey>,
   ) {
-    const values = [...docs.snapshots(keys)].map(([docKey, snapshot]) => ({
-      roomKey: loroRoomName(room),
-      docKey,
-      snapshot: Buffer.from(snapshot.buffer, snapshot.byteOffset, snapshot.byteLength),
-      frontiers: storedFrontiers(docs.doc(docKey)?.frontiers() ?? []),
-    }));
-    if (values.length === 0) return { bytes: 0, docs: 0 };
-    await tx
-      .insert(documentSnapshots)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [documentSnapshots.roomKey, documentSnapshots.docKey],
-        set: {
-          snapshot: sql`excluded.snapshot`,
-          frontiers: sql`excluded.frontiers`,
-          savedAt: sql`now()`,
-        },
-      });
+    const rows = [...keys].flatMap((docKey) => {
+      const doc = docs.doc(docKey);
+      return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
+    });
+    if (rows.length === 0) return { bytes: 0, docs: 0 };
+    const bytes = await writeSnapshots(tx, rows);
     await tx
       .update(documents)
       .set({ schemaVersion })
       .where(and(eq(documents.id, room.documentId), lt(documents.schemaVersion, schemaVersion)));
-    return {
-      bytes: values.reduce((sum, value) => sum + value.snapshot.byteLength, 0),
-      docs: values.length,
-    };
+    return { bytes, docs: rows.length };
   }
 
   /** One save of a loaded room's unsaved docs, queued behind the room's other saves. */
@@ -584,25 +570,4 @@ export function createPostgresDocumentRooms(input: {
       await Promise.all([...rooms.values()].map((r) => unloadRoom(r.room)));
     },
   };
-}
-
-/**
- * Whether `doc` has every op `frontiers` names. `frontiersToVV` throws for an id the doc lacks
- * (loro-crdt 1.18, though its changelog says it returns undefined).
- */
-function knows(doc: LoroDoc | undefined, frontiers: StoredFrontiers): boolean {
-  if (!doc) return false;
-  try {
-    return (
-      doc.frontiersToVV(
-        frontiers.map(({ peer, counter }) => ({ peer: peer as PeerID, counter })),
-      ) !== undefined
-    );
-  } catch {
-    return false;
-  }
-}
-
-function storedFrontiers(frontiers: Frontiers): StoredFrontiers {
-  return frontiers.map(({ peer, counter }) => ({ peer, counter }));
 }

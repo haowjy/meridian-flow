@@ -132,10 +132,10 @@ export const agentEditWidCounters = pgTable(
  * `document_yjs_checkpoints`) hang from, of one `kind`. A `document` head's `document_id` is a
  * `documents.id`; it names no `documents` row of its own, so a Yjs document can exist before its
  * `documents` row does (an import writes text first), and a `documents` delete takes its head
- * and journal through a trigger. A `tree_list` head is a list's (a project's or an account's):
- * its id is the project's or account's `tree_list_id`, made with it by a trigger, and `project_id`
- * or `user_id` names the owner whose delete takes it. A list needs no living document to be
- * written, and no document's id is ever a list's.
+ * and journal through a trigger. A `tree_list` head is a list's (a project's or an account's): the
+ * identity its rows (`tree_nodes`, `tree_node_ids`) hang from, made with the project or account by
+ * a trigger, and `project_id` or `user_id` names the owner whose delete takes it. The list itself
+ * is stored in `document_snapshots` under `tree:<tree_list_id>`, with no journal rows.
  */
 export const documentYjsHeads = pgTable(
   "document_yjs_heads",

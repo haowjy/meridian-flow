@@ -67,7 +67,6 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.8.0",
-    "@meridian/tree-list-sync": "workspace:*",
     "@types/busboy": "^1.5.5",
     "@types/picomatch": "^4.0.3",
     "@types/proper-lockfile": "^4.1.4",

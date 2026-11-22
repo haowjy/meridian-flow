@@ -14,6 +14,7 @@ import {
   loroAccessChangedReason,
   loroRoomName,
   parseLoroRoomName,
+  type TreeListRef,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
@@ -54,12 +55,14 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
+import type { TreeRooms } from "./loro-tree-rooms.js";
 import { createRoomAccessIndex, type RoomRegistration } from "./room-access.js";
 
 export type LoroGatewayServices = {
   fileAccess: Pick<AppServices["fileAccess"], "authorize" | "historyAccess">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   rooms: Pick<DocumentRooms<unknown>, "sync" | "write" | "subscribe"> & { close(): Promise<void> };
+  trees: Pick<TreeRooms, "open" | "sync" | "write" | "subscribe" | "dispose">;
   documents: {
     draftsHolding(documentId: DocumentId): Promise<DraftId[]>;
     roomRemoval(documentId: DocumentId): Promise<{ documentId: DocumentId } | null>;
@@ -79,8 +82,11 @@ export type LoroGatewayPeer = {
 };
 
 type Joined = {
-  room: DocumentRoom;
+  /** The document a document room holds; null for a tree list's room. */
+  documentId: DocumentId | null;
   permission: Permission;
+  /** Imports one batch a client sent into the room. */
+  write(batch: Uint8Array): Promise<void>;
   /** Batches heard before the Join's answer went out, sent right after it. */
   held: { batch: Uint8Array }[] | null;
   unsubscribe(): void;
@@ -123,7 +129,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const ended = new Set<string>(documentIds);
     for (const connection of connections)
       for (const [name, joined] of [...connection.joined])
-        if (ended.has(joined.room.documentId))
+        if (joined.documentId !== null && ended.has(joined.documentId))
           endRoom(connection, name, LORO_ROOM_ERROR.DOCUMENT_DELETED);
     // The access-changed path is how every other change of access reaches a socket.
   });
@@ -236,10 +242,10 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const parsedSchema = auth ? parseCollabSchemaVersion(auth.schema) : null;
     if (!auth || !parsedSchema) return refuse(LORO_JOIN_ERROR.BAD_AUTH);
     const room = parseLoroRoomName(name);
-    if (!room || room.kind === "tree" || loroRoomName(room) !== name)
-      return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+    if (!room || loroRoomName(room) !== name) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
     drop(connection, name);
     const { userId } = connection.peer;
+    if (room.kind === "tree") return joinTree(connection, message, room.list, refuse);
     let admission: Admission;
     try {
       admission = await admit(userId, room, parsedSchema);
@@ -249,8 +255,11 @@ export function createLoroGateway(services: LoroGatewayServices) {
     }
     // Subscribe before the sync, so no batch falls between the copy's catch-up and the stream.
     const joined: Joined = {
-      room,
+      documentId: room.documentId,
       permission: admission.permission,
+      write: async (batch) => {
+        await services.rooms.write(room, batch, connection.id);
+      },
       held: [],
       unsubscribe: services.rooms.subscribe(room, (batch) => {
         if (batch.origin === connection.id) return;
@@ -302,6 +311,64 @@ export function createLoroGateway(services: LoroGatewayServices) {
     });
   }
 
+  /**
+   * A tree list's room: open to the list's owner, always for writing. `extra` names the list, so
+   * a client holding a copy of another list (a reset database, a recreated account list) drops it
+   * and joins again from nothing.
+   */
+  async function joinTree(
+    connection: LoroGatewayConnection,
+    message: JoinRequest,
+    list: TreeListRef,
+    refuse: (refusal: JoinRefusal) => void,
+  ) {
+    const name = message.roomId;
+    const { userId } = connection.peer;
+    const listId = await services.trees.open(list, userId);
+    if (listId === null) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+    const joined: Joined = {
+      documentId: null,
+      permission: "write",
+      write: (batch) => services.trees.write(list, userId, batch),
+      held: [],
+      unsubscribe: services.trees.subscribe(listId, (batch) => {
+        if (joined.held) joined.held.push({ batch });
+        else sendBatch(connection, name, batch);
+      }),
+      registration: {
+        revoke: (why) =>
+          endRoom(connection, name, LORO_ROOM_ERROR.ACCESS_CHANGED, loroAccessChangedReason(why)),
+      },
+    };
+    connection.joined.set(name, joined);
+    access.register(joined.registration, [name]);
+    // A deletion between the open and the registration reached no room: ask once more.
+    if ((await services.trees.open(list, userId)) !== listId) {
+      drop(connection, name);
+      return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+    }
+    const sync = await services.trees.sync(listId, message.version);
+    if (connection.joined.get(name) !== joined) return;
+    send(connection, {
+      type: MessageType.JoinResponseOk,
+      crdt: CrdtType.Loro,
+      roomId: name,
+      permission: "write",
+      version: sync.version,
+      extra: encodeLoroJoinExtra({ list: listId }),
+    });
+    if (sync.update) sendBatch(connection, name, sync.update);
+    const held = joined.held ?? [];
+    joined.held = null;
+    for (const { batch } of held) sendBatch(connection, name, batch);
+    emitEvent(services.eventSink, {
+      level: "info",
+      source: "collab.rooms",
+      name: "room.join",
+      payload: { room: "tree", permission: "write", sentBytes: sync.update?.byteLength ?? 0 },
+    });
+  }
+
   async function update(
     connection: LoroGatewayConnection,
     name: string,
@@ -319,7 +386,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const joined = connection.joined.get(name);
     if (!joined || joined.permission !== "write") return ack(UpdateStatusCode.PermissionDenied);
     try {
-      for (const batch of updates) await services.rooms.write(joined.room, batch, connection.id);
+      for (const batch of updates) await joined.write(batch);
     } catch (cause) {
       if (cause instanceof EnvelopeError || cause instanceof CorruptDocBytesError)
         return endRoom(connection, name, LORO_ROOM_ERROR.CORRUPT_UPDATE);
@@ -328,8 +395,8 @@ export function createLoroGateway(services: LoroGatewayServices) {
           level: "info",
           source: "collab.rooms",
           name: "room.refused_cutoff",
-          correlation: { documentId: joined.room.documentId },
-          payload: { room: joined.room.kind, doc: cause.key },
+          ...(joined.documentId ? { correlation: { documentId: joined.documentId } } : {}),
+          payload: { room: name, doc: cause.key },
         });
         return endRoom(connection, name, LORO_ROOM_ERROR.HISTORY_CUTOFF);
       }
@@ -337,7 +404,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         level: "error",
         source: "collab.rooms",
         name: "room.write_failed",
-        correlation: { documentId: joined.room.documentId },
+        ...(joined.documentId ? { correlation: { documentId: joined.documentId } } : {}),
         payload: { room: name, ...unknownToEventPayload(cause), ...errorMessageOf(cause) },
       });
       return endRoom(connection, name, LORO_ROOM_ERROR.SERVER_ERROR);
@@ -421,6 +488,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         connection.peer.close(WS_CLOSE.SERVER_SHUTDOWN.code, WS_CLOSE.SERVER_SHUTDOWN.reason);
         this.close(connection);
       }
+      await services.trees.dispose();
       await services.rooms.close();
     },
   };

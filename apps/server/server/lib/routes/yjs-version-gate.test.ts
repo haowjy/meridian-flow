@@ -46,7 +46,6 @@ function versionGateServices(input: { liveHead?: CollabSchemaVersion | null } = 
     fileAccessChanges: createLocalFileAccessChanges(),
     documentSync,
     eventSink: createInMemoryEventSink(),
-    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
   };
 }
 
