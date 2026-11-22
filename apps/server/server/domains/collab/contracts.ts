@@ -14,6 +14,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { DocumentRooms } from "@meridian/document-model/rooms";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
@@ -22,6 +23,7 @@ import type {
   CommandLookup,
   CommandLookupKey,
 } from "../../shared/commands/command-record.js";
+import type { DrizzleDb } from "../../shared/drizzle-transaction.js";
 import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDisposal } from "../context/ports/document-trash.js";
 import type { WorkDraftDisposal } from "../projects/index.js";
@@ -104,7 +106,16 @@ export type CollabPersistenceMetrics = {
 
 export type AdmitLiveWriterUpdateResult = { admitted: true } | { admitted: false };
 
+/** The server's document rooms: the door, and `close` to save and free every room at shutdown. */
+export type ServerDocumentRooms = DocumentRooms<DrizzleDb> & { close(): Promise<void> };
+
 export type CollabTransport = {
+  /** The one door to document rooms (design §4): the socket, commands, reads. */
+  rooms: ServerDocumentRooms;
+  /** The newest collab schema that wrote the document; null when there is no such document. */
+  documentSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
+  /** Documents whose rooms end for good (a purge), after the purge commits. */
+  onRoomsEnded(listener: (documentIds: readonly DocumentId[]) => void): () => void;
   bindHocuspocus(instance: Hocuspocus): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;

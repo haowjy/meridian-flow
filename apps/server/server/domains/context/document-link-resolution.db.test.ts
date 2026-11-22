@@ -20,6 +20,7 @@ import {
 } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
+import type { LoroDoc } from "loro-crdt";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type DocumentLinkRouteDeps,
@@ -65,7 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return id;
     }
     /** Changes the source's live tree with the writer, as a record any actor could make. */
-    async function change(sourceId: string, edit: (writer: TreeWriter) => void) {
+    async function change(sourceId: string, edit: (writer: TreeWriter<LoroDoc>) => void) {
       await treeSeeder(database.current).store.submit({
         lists: [await treeListOfSource(database.current, sourceId)],
         make: ([{ writer }]) => {

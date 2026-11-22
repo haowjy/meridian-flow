@@ -93,7 +93,7 @@ The startup plugin boots the process and, in a built server, ends it on a boot f
 - Kind: module
 - Paths: `apps/server/server/routes`, `apps/server/server/plugins`, `apps/server/server/middleware`
 - Docs: [server CONTEXT](../../apps/server/.context/CONTEXT.md), [server AGENTS](../../apps/server/AGENTS.md)
-- Drift: the startup plugin imports `routes/ws/yjs`, so plugins depend on routes.
+- Drift: the startup plugin imports `routes/ws/yjs` and `routes/ws/loro`, so plugins depend on routes.
 
 ## lib
 

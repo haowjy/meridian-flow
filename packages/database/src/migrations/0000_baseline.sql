@@ -440,6 +440,7 @@ CREATE TABLE "documents" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"content_purged_at" timestamp with time zone,
 	"in_no_view_since" timestamp with time zone,
+	"schema_version" integer DEFAULT 3003000 NOT NULL,
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
 	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0),
 	CONSTRAINT "documents_one_owner" CHECK (num_nonnulls("documents"."project_id", "documents"."user_id") = 1)
@@ -1713,7 +1714,8 @@ CREATE FUNCTION public.create_tree_list_head() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  -- A project's or an account's tree list has its journal head from the moment it exists.
+  -- A project's or an account's tree list has its head from the moment it exists: the identity
+  -- its rows (`tree_nodes`, `tree_node_ids`) hang from. The list itself is in `document_snapshots`.
   IF TG_TABLE_NAME = 'projects' THEN
     INSERT INTO document_yjs_heads (document_id, kind, project_id) VALUES (NEW.tree_list_id, 'tree_list', NEW.id);
   ELSE
@@ -1726,6 +1728,31 @@ $$;
 CREATE TRIGGER projects_create_tree_list_head AFTER INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
 
 CREATE TRIGGER users_create_tree_list_head AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
+
+CREATE FUNCTION public.delete_room_snapshots() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- `document_snapshots` is keyed by room name, with no foreign key: a room's rows go with
+  -- what the room holds. A tree list's room is `tree:<tree_list_id>`.
+  IF TG_TABLE_NAME = 'documents' THEN
+    DELETE FROM document_snapshots WHERE room_key = 'live:' || OLD.id::text;
+  ELSIF TG_TABLE_NAME = 'document_forks' THEN
+    DELETE FROM document_snapshots WHERE room_key = 'fork:' || OLD.draft_id || ':' || OLD.document_id::text;
+  ELSE
+    DELETE FROM document_snapshots WHERE room_key = 'tree:' || OLD.tree_list_id::text;
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER documents_delete_room_snapshots AFTER DELETE ON public.documents FOR EACH ROW EXECUTE FUNCTION public.delete_room_snapshots();
+
+CREATE TRIGGER document_forks_delete_room_snapshots AFTER DELETE ON public.document_forks FOR EACH ROW EXECUTE FUNCTION public.delete_room_snapshots();
+
+CREATE TRIGGER projects_delete_room_snapshots AFTER DELETE ON public.projects FOR EACH ROW EXECUTE FUNCTION public.delete_room_snapshots();
+
+CREATE TRIGGER users_delete_room_snapshots AFTER DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION public.delete_room_snapshots();
 
 CREATE FUNCTION public.create_account_source() RETURNS trigger
     LANGUAGE plpgsql

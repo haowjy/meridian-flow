@@ -9,6 +9,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
+import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -244,6 +245,13 @@ export const documents = pgTable(
      * retention purges it on the Trash window.
      */
     inNoViewSince: timestamp("in_no_view_since", { withTimezone: true, mode: "date" }),
+    /**
+     * The newest collab schema (packed `major.minor.patch`) that wrote the document's text: a
+     * room save raises it to the server's. A client below its major.minor is refused at Join.
+     */
+    schemaVersion: integer("schema_version")
+      .notNull()
+      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
   },
   (table) => [
     check(

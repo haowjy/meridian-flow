@@ -127,7 +127,7 @@ join's forward. It answers from that row (`fileRefOfVisible`, the mapping `Conte
 shares), so it never resolves a path and never sees a draft.
 
 A move inside one list, and every rename, delete and create in it, is a record the browser
-writes in the tree's room (`yjs-tree-room.ts`); no route takes those, and nothing moves between
+writes in the tree's room (`loro-tree-rooms.ts`, on `/ws/loro`); no route takes those, and nothing moves between
 a project's files and the account's: between the two the action is Copy. Owner resolution and the edit recheck are
 `context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy, and the
 destination parsers are in `context-destination.ts`.

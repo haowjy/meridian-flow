@@ -32,7 +32,7 @@ import {
   type TreeRecord,
 } from "@meridian/project-tree";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type * as Y from "yjs";
+import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
@@ -217,7 +217,8 @@ export async function claimNodeIds(
     );
     const used = await tx.execute(sql`
       SELECT id::text AS id FROM documents WHERE id IN (${list})
-      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
+      UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
+      UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list}) LIMIT 1`);
     if (used.length > 0)
       throw new NodeIdRefusedError("a node id already in use", (used[0] as { id: string }).id);
   }
@@ -225,7 +226,7 @@ export async function claimNodeIds(
 
 /**
  * Claims the node ids a client's creates name, each on its own: an id that is not a uuid, or that
- * a document, a list's journal or another list already has, is a failed claim. No row is made for
+ * a document, a list or another list's node already has, is a failed claim. No row is made for
  * it and the rest of the update stands: the node shows in its writer's own tree and opens
  * nothing, and nobody else's document is touched. Returns the node ids that failed.
  */
@@ -245,7 +246,8 @@ export async function claimNodeIdsEach(
     );
     const used = await tx.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM documents WHERE id IN (${list})
-      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list})`);
+      UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
+      UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list})`);
     for (const row of used) failed.add(row.id);
     const open = batch.filter((id) => !failed.has(id));
     if (open.length === 0) continue;
@@ -541,7 +543,7 @@ export async function syncRows(
   db: DrizzleDb,
   list: TreeList,
   listId: string,
-  doc: Y.Doc,
+  doc: LoroDoc,
   added: readonly TreeRecord[],
 ): Promise<{
   created: CreateRecord[];

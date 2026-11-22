@@ -24,7 +24,6 @@ import {
   type AdmitLiveWriterUpdateResult,
   isDocumentSchemaMajorMismatchError,
 } from "../domains/collab/index.js";
-import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import {
   documentAccessKey,
   type FileAccessChanges,
@@ -44,17 +43,10 @@ import {
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
 import {
-  createYjsRoomAccessIndex,
-  type YjsRoomAccessIndex,
-  type YjsRoomRegistration,
-} from "./yjs-room-access.js";
-import {
-  createTreeRooms,
-  SERVER_ERROR_CLOSE,
-  type TreeRoomConnection,
-  TreeRoomRefusal,
-  type TreeRooms,
-} from "./yjs-tree-room.js";
+  createRoomAccessIndex as createYjsRoomAccessIndex,
+  type RoomAccessIndex as YjsRoomAccessIndex,
+  type RoomRegistration as YjsRoomRegistration,
+} from "./room-access.js";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
 
@@ -76,7 +68,6 @@ export type YjsGatewayServices = {
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
-  treeLists: TreeListStore;
 };
 
 type TreeYjsRoom = Extract<NonNullable<ReturnType<typeof parseYjsRoomName>>, { kind: "tree" }>;
@@ -115,12 +106,8 @@ type YjsConnectionContext = {
   userId: UserId;
   traceId: string;
   clientSchemaVersion: CollabSchemaVersion;
-  /** On a tree list's room: the list id the client's stored copy was made of (`?list=`). */
-  storedListId: string | null;
   admittedDocumentId?: DocumentId;
   access?: YjsRoomAccess;
-  /** Set on a tree list's room: its access and rate limit (`yjs-tree-room.ts`). */
-  tree?: TreeRoomConnection;
   registration: YjsRoomRegistration;
   closeTransport(input: { code: number; reason: string }): void;
 };
@@ -210,31 +197,6 @@ async function removedForReader(
     (await services.fileAccess.historyAccess({ accountId: userId }, removed.documentId)) ===
       "deleted"
   );
-}
-
-/**
- * The tree room's one close path: a refusal closes the socket with its own code, any other error
- * with the code the client reconnects on, and both reach Hocuspocus as a refused hook.
- */
-async function withTreeRefusal<T>(
-  services: Pick<YjsGatewayServices, "eventSink">,
-  context: { closeTransport?(close: RoomClose): void },
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run();
-  } catch (cause) {
-    if (!(cause instanceof TreeRoomRefusal))
-      emitEvent(services.eventSink, {
-        level: "error",
-        source: "collab.tree_list",
-        name: "room.failed",
-        payload: unknownToEventPayload(cause),
-      });
-    const close = cause instanceof TreeRoomRefusal ? cause.close : SERVER_ERROR_CLOSE;
-    context.closeTransport?.(close);
-    throw permissionDenied(close.reason, close.code);
-  }
 }
 
 function refuseSchemaAdmission(input: {
@@ -473,7 +435,6 @@ function assertAdmittedForSync(context: YjsConnectionContext, documentName: stri
 export function createHocuspocus(
   services: YjsGatewayServices,
   rooms: YjsRoomAccessIndex,
-  treeRooms: TreeRooms = createTreeRooms(services),
 ): Hocuspocus<YjsConnectionContext> {
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",
@@ -486,17 +447,8 @@ export function createHocuspocus(
         if (!userId) throw permissionDenied("permission-denied");
 
         const anyRoom = parseAnyRoomOrDeny(documentName);
-        if (anyRoom.kind === "tree") {
-          context.tree = await withTreeRefusal(services, context, () =>
-            treeRooms.connect({
-              list: anyRoom.list,
-              accountId: userId,
-              storedListId: context.storedListId,
-              register: (key) => rooms.register(context.registration, [key]),
-            }),
-          );
-          return;
-        }
+        // A tree list's room is on `/ws/loro`.
+        if (anyRoom.kind === "tree") throw permissionDenied("invalid-room");
         const room = anyRoom;
         await withRemovalRefusal(services, room, userId, context, async () => {
           const admission = await classifyYjsConnectionAdmission({
@@ -541,13 +493,7 @@ export function createHocuspocus(
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
         const anyRoom = parseAnyRoomOrDeny(documentName);
-        if (anyRoom.kind === "tree") {
-          if (!context.tree) throw permissionDenied("permission-denied");
-          const tree = context.tree;
-          return withTreeRefusal(services, context, () =>
-            treeRooms.beforeSync({ tree, type, payload }),
-          );
-        }
+        if (anyRoom.kind === "tree") throw permissionDenied("invalid-room");
         const room = anyRoom;
         await withRemovalRefusal(services, room, userId, context, async () => {
           assertAdmittedForSync(context, documentName);
@@ -578,13 +524,7 @@ export function createHocuspocus(
     async onLoadDocument({ documentName, document, context }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const anyRoom = parseAnyRoomOrDeny(documentName);
-        if (anyRoom.kind === "tree") {
-          if (!context.tree) throw permissionDenied("permission-denied");
-          const tree = context.tree;
-          return withTreeRefusal(services, context, () =>
-            treeRooms.load({ documentName, document, tree }),
-          );
-        }
+        if (anyRoom.kind === "tree") throw permissionDenied("invalid-room");
         const room = anyRoom;
         await withRemovalRefusal(services, room, context.userId, context, async () => {
           let state: Uint8Array | undefined;
@@ -613,11 +553,7 @@ export function createHocuspocus(
     },
     async connected({ documentName, connection, context }) {
       const room = parseAnyRoomOrDeny(documentName);
-      if (room.kind === "tree") {
-        // A copy with no list id yet learns the room's, so a later connect can say which list it is of.
-        if (context.tree) connection.sendStateless(JSON.stringify({ list: context.tree.listId }));
-        return;
-      }
+      if (room.kind === "tree") return;
       // The authenticated scope says `readonly`; this says why (for a closed owner), so the client never has to guess.
       if (context.access?.level === "read")
         connection.sendStateless(encodeReadOnlyWsMessage(context.access.why));
@@ -641,12 +577,8 @@ export function createHocuspocus(
         }
       });
     },
-    async afterUnloadDocument({ documentName }) {
-      treeRooms.unloaded(documentName);
-    },
     async onStoreDocument({ documentName, document }) {
       const room = parseAnyRoomOrDeny(documentName);
-      // A list is stored by its admissions, in the journal: the room's copy is never written.
       if (room.kind === "tree") return;
       return runWithEventCorrelation(
         {
@@ -663,8 +595,7 @@ export function createHocuspocus(
 export function createYjsGateway(services: YjsGatewayServices) {
   let acceptingConnections = true;
   const rooms = createYjsRoomAccessIndex();
-  const treeRooms = createTreeRooms(services);
-  const hocuspocus = createHocuspocus(services, rooms, treeRooms);
+  const hocuspocus = createHocuspocus(services, rooms);
   const unsubscribe = services.fileAccessChanges.subscribe((change) =>
     rooms.revokeOwner(fileAccessChangeKey(change), "closed" in change ? change.closed : undefined),
   );
@@ -694,7 +625,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
           userId: peer.userId,
           traceId: peer.traceId,
           clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
-          storedListId: new URL(peer.request.url, "http://gateway").searchParams.get("list"),
           registration,
           closeTransport: ({ code, reason }: { code: number; reason: string }) =>
             peer.close(code, reason),
@@ -730,7 +660,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
     async drain(): Promise<void> {
       acceptingConnections = false;
       unsubscribe();
-      const treeWork = treeRooms.dispose();
       hocuspocus.closeConnections();
       emitEvent(services.eventSink, {
         level: "info",
@@ -738,7 +667,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
         name: "persistence_queue.drain",
         payload: services.documentSync.getPersistenceQueueMetrics(),
       });
-      await treeWork;
       await services.documentSync.drainHocuspocusPersistence();
     },
   };
@@ -752,6 +680,5 @@ export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
     fileAccessChanges: app.fileAccessChanges,
     documentSync: app.documentSync,
     eventSink: app.eventSink,
-    treeLists: app.treeLists,
   };
 }

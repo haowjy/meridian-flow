@@ -1,5 +1,6 @@
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
+import { listOf, type TreeDoc } from "./list-doc.js";
 import { shownName } from "./names.js";
 import {
   type Actor,
@@ -12,9 +13,7 @@ import {
   type PurgeRecord,
   type RenameRecord,
   type RestoreRecord,
-  recordsOf,
   type SettleRecord,
-  settleLogOf,
   sourceIdOf,
   type TreeRecord,
   type TreeRecordInput,
@@ -40,14 +39,14 @@ function indexOf(kids: readonly { id: string }[], place: MovePlace): number {
  * writes its own records this way; the server writes Apply, Discard, Undo and an AI tool's
  * records on a copy at the journal's head, and sends the Yjs update the copy emits.
  */
-export class TreeWriter {
+export class TreeWriter<D extends TreeDoc = Y.Doc> {
   /**
    * `known` answers a view from a projection the caller already holds, current with `doc`, or
    * null for a view it does not hold: the browser's session replays once per change, and a
    * writer that replayed again would pay the whole list for each record.
    */
   constructor(
-    readonly doc: Y.Doc,
+    readonly doc: D,
     private readonly origin: string = "local",
     private readonly known?: (view: View) => TreeProjection | null,
   ) {}
@@ -62,8 +61,8 @@ export class TreeWriter {
   view(view: View): TreeProjection {
     const known = this.known?.(view);
     if (known) return known;
-    const records = recordsOf(this.doc).length;
-    const settles = settleLogOf(this.doc).length;
+    const records = listOf(this.doc).recordCount();
+    const settles = listOf(this.doc).settleCount();
     const hit = this.replays.get(view.draft);
     if (hit && hit.records === records && hit.settles === settles) return hit.projection;
     const projection = replayView(this.doc, view);
@@ -71,9 +70,9 @@ export class TreeWriter {
     return projection;
   }
 
-  /** Runs `change` as one Yjs transaction, so its records and settlements travel as one update. */
+  /** Runs `change` as one transaction, so its records and settlements travel as one update. */
   transact(change: () => void): void {
-    this.doc.transact(change, this.origin);
+    listOf(this.doc).transact(change, this.origin);
   }
 
   /** The record for `input`, read through the reader that will read it back: throws when that would drop it. */
@@ -94,7 +93,7 @@ export class TreeWriter {
 
   /** Appends one record. */
   append(record: TreeRecord): void {
-    this.transact(() => recordsOf(this.doc).push([record]));
+    this.transact(() => listOf(this.doc).pushRecords([record]));
   }
 
   /**
@@ -105,12 +104,12 @@ export class TreeWriter {
     records: readonly TreeRecord[],
     seen: ReadonlyArray<{ view: View; projection: TreeProjection }>,
   ): void {
-    this.transact(() => recordsOf(this.doc).push([...records]));
+    this.transact(() => listOf(this.doc).pushRecords(records));
     const dropped = droppedRecords(this.doc);
     for (const { view, projection } of seen)
       this.replays.set(view.draft, {
-        records: recordsOf(this.doc).length,
-        settles: settleLogOf(this.doc).length,
+        records: listOf(this.doc).recordCount(),
+        settles: listOf(this.doc).settleCount(),
         projection: { ...projection, dropped },
       });
   }
@@ -134,7 +133,7 @@ export class TreeWriter {
     extra: { reason?: string; command?: string } = {},
   ): void {
     if (targets.length === 0) return;
-    settleLogOf(this.doc).push([{ id: newId(), actor, targets: [...targets], to, ...extra }]);
+    listOf(this.doc).pushSettles([{ id: newId(), actor, targets: [...targets], to, ...extra }]);
   }
 
   /** One create: `createAll` of one. */

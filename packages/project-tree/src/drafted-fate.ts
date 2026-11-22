@@ -1,5 +1,5 @@
-import type * as Y from "yjs";
-import { settleLogOf, type TreeRecord } from "./record.js";
+import { listMark, listOf, type TreeDoc } from "./list-doc.js";
+import type { TreeRecord } from "./record.js";
 import { standingOf } from "./replay.js";
 import { listRecords } from "./view.js";
 
@@ -39,11 +39,12 @@ type Index = {
  * One read of a copy's records and settlements, rebuilt only after the copy changed: every reader
  * of the same copy between two updates shares it.
  */
-const indexes = new WeakMap<Y.Doc, Index>();
+const indexes = new WeakMap<TreeDoc, Index & { mark: string }>();
 
-function indexOf(doc: Y.Doc): Index {
+function indexOf(doc: TreeDoc): Index {
+  const mark = listMark(doc);
   const held = indexes.get(doc);
-  if (held) return held;
+  if (held?.mark === mark) return held;
   const records = new Map<string, TreeRecord>();
   const drafted = new Map<string, string[]>();
   const all = listRecords(doc);
@@ -55,8 +56,8 @@ function indexOf(doc: Y.Doc): Index {
     drafted.set(root, [...(drafted.get(root) ?? []), record.id]);
   }
   const settled = new Map<string, RecordSettled>();
-  settleLogOf(doc)
-    .toArray()
+  listOf(doc)
+    .settles()
     .forEach((settle, at) => {
       for (const target of settle.targets) {
         if (settle.to === "pending") {
@@ -74,18 +75,18 @@ function indexOf(doc: Y.Doc): Index {
       }
     });
   const index = {
+    mark,
     records,
     drafted,
     settled,
     standing: standingOf(all.filter((record) => record.draft !== null)),
   };
   indexes.set(doc, index);
-  doc.once("update", () => indexes.delete(doc));
   return index;
 }
 
 /** Each record's own last settlement; a record absent from it is pending (or live). */
-export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
+export function settledRecords(doc: TreeDoc): ReadonlyMap<string, RecordSettled> {
   return indexOf(doc).settled;
 }
 
@@ -94,7 +95,7 @@ export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
  * makes a new pending copy, in the Work's draft as it is now, and leaves the original discarded,
  * so the copy stands for the family. A live record, or an id the list doesn't hold, is absent.
  */
-export function newestDrafted(doc: Y.Doc, ids: readonly string[]): Map<string, TreeRecord> {
+export function newestDrafted(doc: TreeDoc, ids: readonly string[]): Map<string, TreeRecord> {
   const { records, drafted } = indexOf(doc);
   const newest = new Map<string, TreeRecord>();
   for (const id of ids) {
@@ -110,7 +111,7 @@ export function newestDrafted(doc: Y.Doc, ids: readonly string[]): Map<string, T
  * The fate of each drafted record `ids` names, read from its family's newest drafted copy
  * (`newestDrafted`). An id the list doesn't hold reads `discarded`.
  */
-export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, DraftedFate> {
+export function draftedFates(doc: TreeDoc, ids: readonly string[]): Map<string, DraftedFate> {
   const { settled, standing } = indexOf(doc);
   const copies = newestDrafted(doc, ids);
   const fates = new Map<string, DraftedFate>();
@@ -128,7 +129,7 @@ export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, Dr
  * The Apply command that took each drafted record `ids` names, following its family as
  * `draftedFates` does; a record no Apply took is absent.
  */
-export function appliedBy(doc: Y.Doc, ids: readonly string[]): Map<string, string> {
+export function appliedBy(doc: TreeDoc, ids: readonly string[]): Map<string, string> {
   const { settled } = indexOf(doc);
   const by = new Map<string, string>();
   for (const [id, newest] of newestDrafted(doc, ids)) {

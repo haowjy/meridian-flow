@@ -16,11 +16,13 @@ import {
 import { installOutboundHttp1 } from "../lib/outbound-http1";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
+import { getLoroGateway } from "../routes/ws/loro";
 import { getYjsGateway } from "../routes/ws/yjs";
 import { installTestHookController } from "../shared/test-hook-controller";
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
+let loroGateway: ReturnType<typeof getLoroGateway> | undefined;
 
 installOutboundHttp1();
 installApiProcessCrashPolicy({ eventSink });
@@ -39,10 +41,11 @@ async function boot() {
   }
 
   yjsGateway = getYjsGateway(await getApp());
+  loroGateway = getLoroGateway(await getApp());
   // Shutdown callbacks start together so document persistence gets the full
   // process deadline even when runtime settlement is slow.
   registerProcessShutdownCallback(async () => {
-    await yjsGateway?.drain();
+    await Promise.all([yjsGateway?.drain(), loroGateway?.drain()]);
   });
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request

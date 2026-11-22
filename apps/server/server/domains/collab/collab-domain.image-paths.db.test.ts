@@ -4,10 +4,12 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one captured link scope per search operation
  */
+
 import { createDb } from "@meridian/database";
 import { modelResponses } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
 import { grepQuery } from "../../test-support/grep-query.js";
@@ -59,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       sourceId: async () => SOURCE_ID,
     });
     /** A live edit of the tree (rename, delete), as a person's would be. */
-    async function liveEdit(edit: (writer: TreeWriter) => unknown) {
+    async function liveEdit(edit: (writer: TreeWriter<LoroDoc>) => unknown) {
       await seeder.store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => edit(writer),

@@ -29,6 +29,7 @@ export {
   type RecordSettled,
   settledRecords,
 } from "./drafted-fate.js";
+export { type ListDoc, listOf, type TreeDoc } from "./list-doc.js";
 export { shownName } from "./names.js";
 export {
   type Actor,

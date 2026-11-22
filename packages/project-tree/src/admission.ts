@@ -1,8 +1,10 @@
+import { LoroDoc } from "loro-crdt";
 import * as Y from "yjs";
+import type { TreeDoc } from "./list-doc.js";
 import { recordsOf, type TreeRecord } from "./record.js";
 import { replay, type TreeNode, type TreeProjection } from "./replay.js";
 import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
-import { droppedRecords, viewRecords } from "./view.js";
+import { droppedRecords, listRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** What only the server knows about the connection that sent an update. */
@@ -170,6 +172,16 @@ function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
   return added;
 }
 
+/**
+ * A Loro copy takes the update as sent, with no check of what it says: the records it adds are
+ * those whose ids the copy did not hold, in list order.
+ */
+function integrateLoro(doc: LoroDoc, update: Uint8Array): Added[] {
+  const held = new Set(listRecords(doc).map((record) => record.id));
+  doc.import(update);
+  return listRecords(doc).filter((record) => !held.has(record.id));
+}
+
 export type Admission = {
   /** The records the update adds (not those the server already held), in list order. */
   records: TreeRecord[];
@@ -211,7 +223,7 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
 }
 
 /** Judge segments against the records kept so far. */
-function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): string[] {
+function stamp(doc: TreeDoc, added: readonly Added[], connection: Connection): string[] {
   const out: string[] = [];
   const excluded = new Set(added.map((record) => record.id));
   const droppedNodes = new Set(
@@ -283,9 +295,18 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
  * lock: if anything throws, the caller reloads the copy from the journal. The caller has the
  * update journaled with the stamps.
  */
-export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
-  guard(server.doc, update);
-  const records = integrate(server.doc, update);
+export function admit(
+  server: TreeWriter<TreeDoc>,
+  update: Uint8Array,
+  connection: Connection,
+): Admission {
+  const doc = server.doc;
+  let records: TreeRecord[];
+  if (doc instanceof LoroDoc) records = integrateLoro(doc, update);
+  else {
+    guard(doc, update);
+    records = integrate(doc, update);
+  }
   const dropped = stamp(server.doc, records, connection);
   if (dropped.length > 0)
     server.transact(() =>

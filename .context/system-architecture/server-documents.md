@@ -45,7 +45,7 @@ Runs the Hocuspocus rooms for live documents, presses a Work's suggestions (Appl
 
 The context filesystem behind `manuscript://`, `kb://`, `user://`, `unfiled://`, `scratch://` and `uploads://`.
 
-The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is stored through the collab journal and its rows are written with it (the tree list store). The model's tree commands (move, delete, restore, folders) are one command per tool call on that list; each resolves paths through the names the chat was shown and keeps a receipt for its Undo. Trash entries for a view are read from the same list.
+The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is a Loro document stored as one `document_snapshots` row, its rows written in the same transaction (the tree list store), and synced to clients in its room on `/ws/loro`. The model's tree commands (move, delete, restore, folders) are one command per tool call on that list; each resolves paths through the names the chat was shown and keeps a receipt for its Undo. Trash entries for a view are read from the same list.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/context`

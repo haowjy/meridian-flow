@@ -6,11 +6,19 @@ import type {
 } from "@meridian/agent-edit/integration";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { createMemoryDocumentRooms } from "@meridian/document-model/rooms";
+import { shapeSchemaOf } from "@meridian/loro-prosemirror";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
-import type { CollabDomain, CollabDrafts, EffectiveDocumentReader } from "../../contracts.js";
+import type {
+  CollabDomain,
+  CollabDrafts,
+  EffectiveDocumentReader,
+  ServerDocumentRooms,
+} from "../../contracts.js";
 import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
 import {
   attributionFromMeta,
@@ -117,6 +125,9 @@ export function createInMemoryCollabDomain(
     importBinder: runtime.importBinder,
     lifecycle: { dispose: async () => {} },
     transport: {
+      rooms: memoryServerRooms(),
+      documentSchemaVersion: async () => null,
+      onRoomsEnded: () => () => undefined,
       bindHocuspocus: hocuspocusBinding.bind,
       headSchemaVersion: async () => null,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
@@ -335,5 +346,22 @@ function inMemoryStore(journal: InMemoryJournal) {
     listCheckpoints: (docId: string) => journal.listCheckpoints(docId),
     latestUpdate: (docId: string) => journal.latestUpdate(docId),
     latestUpdateSeq: (docId: string) => journal.latestUpdateSeq(docId),
+  };
+}
+
+/** The in-memory rooms behind the server's door: each commit or seed is its own transaction. */
+function memoryServerRooms(): ServerDocumentRooms {
+  const memory = createMemoryDocumentRooms(shapeSchemaOf(buildDocumentSchema()));
+  return {
+    read: memory.read,
+    sync: memory.sync,
+    write: memory.write,
+    commit: (_tx, room, batch, origin) =>
+      memory.transaction((tx) => memory.commit(tx, room, batch, origin)),
+    seed: (_tx, room, snapshots) => memory.transaction((tx) => memory.seed(tx, room, snapshots)),
+    subscribe: memory.subscribe,
+    flush: memory.flush,
+    unload: memory.unload,
+    close: memory.close,
   };
 }

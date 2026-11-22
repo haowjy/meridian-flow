@@ -41,6 +41,8 @@ export const WS_CLOSE = {
    * because a Work or chat closed names it: `access-changed:<ClosedOwnerWhy>`.
    */
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
+  /** The server is stopping (a deploy): reconnect, and the Join exchange resends what is unsaved. */
+  SERVER_SHUTDOWN: { code: 1012, reason: "server-shutdown" },
 } as const;
 
 /** The close that sends a client of another list's copy to load the real list from nothing. */

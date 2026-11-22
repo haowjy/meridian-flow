@@ -10,6 +10,7 @@
 
 import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId, DraftId } from "../ids.js";
 
 export const LORO_WS_PATH = "/ws/loro";
@@ -159,7 +160,55 @@ export const LORO_ROOM_ERROR = {
    * the 7-day cutoff). Its typing cannot land; the tab shows "Couldn't save".
    */
   HISTORY_CUTOFF: { code: RoomErrorCode.Evicted, reason: "history-cutoff" },
+  /**
+   * The server failed to import the batch for a reason of its own (the database down while the
+   * room loads). Nothing of the batch was acked: rejoin, and the Join exchange resends it.
+   */
+  SERVER_ERROR: { code: RoomErrorCode.RejoinSuggested, reason: "server-error" },
 } as const;
+
+/** `RoomError.message` for an access change: `access-changed`, or with the closed owner named. */
+export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
+  const { reason } = LORO_ROOM_ERROR.ACCESS_CHANGED;
+  return why ? `${reason}:${why}` : reason;
+}
+
+/**
+ * `JoinResponseOk.extra`. A document room's `read` Join says why the copy may only read, when a
+ * closed owner is the reason (a Work archived or deleted, a frozen chat). A tree room's names the
+ * list's id: a client whose stored copy is of another list (a reset database, a recreated account
+ * list) drops it and joins again with no version. Empty when there is neither.
+ */
+export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string };
+
+export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
+  const value = {
+    ...(extra.readOnlyWhy ? { readOnlyWhy: extra.readOnlyWhy } : {}),
+    ...(extra.list ? { list: extra.list } : {}),
+  };
+  return Object.keys(value).length > 0
+    ? new TextEncoder().encode(JSON.stringify(value))
+    : new Uint8Array();
+}
+
+const joinExtraSchema = z.object({
+  readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional(),
+  list: z.string().optional(),
+});
+
+export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtra {
+  if (!bytes || bytes.byteLength === 0) return {};
+  try {
+    const parsed = joinExtraSchema.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
+    if (!parsed.success) return {};
+    return {
+      ...(parsed.data.readOnlyWhy ? { readOnlyWhy: parsed.data.readOnlyWhy } : {}),
+      ...(parsed.data.list ? { list: parsed.data.list } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
 
 export type LoroRoomErrorReason = (typeof LORO_ROOM_ERROR)[keyof typeof LORO_ROOM_ERROR]["reason"];
 

@@ -22,6 +22,7 @@ import {
 } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq, inArray, sql } from "drizzle-orm";
+import type { LoroDoc } from "loro-crdt";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -84,7 +85,7 @@ describe("durable document derivations", () => {
   const seeder = treeSeeder(db);
   let fail = false;
   /** A live edit of the tree (move, rename, delete) through the list store, as a person's would be. */
-  async function liveEdit(edit: (writer: TreeWriter) => unknown) {
+  async function liveEdit(edit: (writer: TreeWriter<LoroDoc>) => unknown) {
     await seeder.store.submit({
       lists: [await treeListOfSource(db, sourceId)],
       make: ([{ writer }]) => edit(writer),

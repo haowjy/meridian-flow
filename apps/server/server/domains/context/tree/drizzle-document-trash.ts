@@ -21,7 +21,7 @@ import {
 } from "@meridian/project-tree";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type * as Y from "yjs";
+import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
@@ -53,7 +53,7 @@ function projectTrashMember() {
 }
 
 /** An unsettled drafted record on one of the nodes, or one that creates or moves under them. */
-function unsettledOn(doc: Y.Doc, nodes: ReadonlySet<string>): boolean {
+function unsettledOn(doc: LoroDoc, nodes: ReadonlySet<string>): boolean {
   const settled = settlementsOf(doc);
   return listRecords(doc).some(
     (record) =>

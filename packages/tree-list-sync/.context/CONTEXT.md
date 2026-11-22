@@ -1,8 +1,10 @@
 # tree-list-sync
 
 Design: `work/project-tree-design/design.md`, section 4 ("The admission check", "The browser",
-"The list's room"). The server half is `apps/server/server/lib/yjs-tree-room.ts`; the page for
-its protocol is `apps/server/server/domains/context/.context/tree-list-store.md`.
+"The list's room"). The server half it spoke to (`yjs-tree-room.ts`) is gone: the server's tree
+room is on `/ws/loro` (`apps/server/server/lib/loro-tree-rooms.ts`), and this package goes when the
+browser moves there. The page for the room is
+`apps/server/server/domains/context/.context/tree-list-store.md`.
 
 ## Parts (`parts.ts`)
 

@@ -19,7 +19,6 @@ import {
   recordsOfItem,
   type TreeRecord,
 } from "@meridian/project-tree";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
@@ -167,7 +166,7 @@ export function createApplyTreeOperations(input: {
           const { copies } = applied;
           rows.push({
             scope: list.kind,
-            mark: Y.encodeStateVector(writer.doc),
+            mark: writer.doc.oplogVersion().encode(),
             created: copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
             nodes: [...new Set(copies.map((copy) => copy.node))],
           });

@@ -15,7 +15,7 @@ import {
   type FileGrant,
   isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
-import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
+import { createRoomAccessIndex as createYjsRoomAccessIndex } from "../room-access.js";
 import { admitWriterSync, createHocuspocus, createYjsGateway } from "../yjs-ws-handler.js";
 
 const payload = new Uint8Array([1, 2, 3]);
@@ -28,7 +28,6 @@ function services() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: { emit() {} } as never,
-    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       ensureDocumentAuthority: vi.fn(async () => {}),
@@ -44,7 +43,6 @@ function gatewayServices() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: { emit() {} } as never,
-    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       bindHocuspocus: () => undefined,
       roomRemoval: async () => null,
@@ -65,7 +63,6 @@ describe("Yjs gateway drain", () => {
     const gateway = createYjsGateway({
       ...gatewayServices(),
       eventSink: { emit: vi.fn() } as never,
-      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       documentSync: {
         roomRemoval: vi.fn(async () => null),
         ensureDocumentAuthority: vi.fn(async () => {}),
@@ -165,7 +162,6 @@ describe("Yjs room access", () => {
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: documentSync as never,
       eventSink: { emit() {} } as never,
-      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
     };
   }

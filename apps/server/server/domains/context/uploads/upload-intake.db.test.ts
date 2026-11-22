@@ -22,7 +22,6 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import {
@@ -100,7 +99,7 @@ if (!RUN) {
     ) {
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
-        treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
+        treeLists: createDrizzleTreeListStore({ db }),
         pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
@@ -271,7 +270,7 @@ if (!RUN) {
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
           sourceHints: NO_PROJECT_HINTS,
-          treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
+          treeLists: createDrizzleTreeListStore({ db }),
           pendingDraft: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
@@ -356,10 +355,7 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
-        treeLists: createDrizzleTreeListStore({
-          db: database.current,
-          journal: createDrizzleJournal(database.current),
-        }),
+        treeLists: createDrizzleTreeListStore({ db: database.current }),
         pendingDraft: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,

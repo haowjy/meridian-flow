@@ -23,7 +23,6 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-work-draft-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -664,7 +663,6 @@ export async function createProductionAppPorts(input: {
   // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
   const treeLists = createDrizzleTreeListStore({
     db,
-    journal: createDrizzleJournal(db),
     // Collab is composed below, before anything can submit or admit a record.
     seedWorkCreates: (created) => documentSync.seedWorkCreates(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
@@ -1744,7 +1742,7 @@ export function createInMemoryAppServices(
         throw new Error("Tree lists are unavailable in memory");
       },
       onCommitted: () => () => {},
-      onJournalAdvanced: () => () => {},
+      onListAdvanced: () => () => {},
     },
     liveDocuments: {
       async findById() {

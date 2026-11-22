@@ -26,6 +26,7 @@ import {
   type View,
 } from "@meridian/project-tree";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   answerOf,
@@ -445,7 +446,7 @@ const stepsOf = (receipts: readonly TreeReceipt[]): UndoStep[] =>
 
 /** What the Undo of the receipts' records would do, writing nothing (`stepsOf`'s walk). */
 const reportsOf = (
-  writer: TreeWriter,
+  writer: TreeWriter<LoroDoc>,
   receipts: readonly TreeReceipt[],
   closed?: (source: string) => boolean,
 ) => undoReports(writer, stepsOf(receipts), closed);

@@ -20,7 +20,7 @@ export const docRmCommand: CommandSpec = {
   path: ["doc", "rm"],
   summary: "Delete a document",
   args: "<uri>",
-  route: "WS /ws/yjs tree:project:<projectId> delete record",
+  route: "WS /ws/loro tree:project:<projectId> delete record",
   options: PROJECT_OPTION,
   examples: ['./mf doc rm "manuscript://Chapter 1"'],
   async run(ctx) {

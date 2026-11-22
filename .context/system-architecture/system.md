@@ -67,7 +67,7 @@ Renders pages on the server and owns sign-in (`/login`, `/logout`, `/signup`, `/
 
 `@meridian/server`: Nitro. REST, the thread-event socket, the Yjs socket and the domains behind them.
 
-One process serves `/api/*`, the thread socket at `/api/threads/ws` and the Yjs socket at `/ws/yjs`. The thread hub and the Yjs rooms live in its memory, so there must be one replica.
+One process serves `/api/*`, the thread socket at `/api/threads/ws`, the Yjs socket at `/ws/yjs` and the Loro room socket at `/ws/loro` (documents' rooms and the tree lists'; the Yjs socket goes with the move to Loro). The thread hub and the rooms live in its memory, so there must be one replica.
 
 - Kind: service
 - Paths: `apps/server/nitro.config.ts`, `apps/server/server/lib/app.ts`, `apps/server/server/plugins/startup.ts`
