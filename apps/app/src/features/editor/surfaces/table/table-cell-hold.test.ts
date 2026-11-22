@@ -5,7 +5,7 @@
  * by collaborators the whole time.
  *
  * Two bindings, because that is the only way to produce the change this has to
- * survive: y-prosemirror replaces the whole ProseMirror document on every remote
+ * survive: the Loro binding replaces the whole ProseMirror document on every remote
  * write, so the mapping reports every position deleted, the elements drawing the
  * table are reconciled underneath, and the writer's selection is reconstructed
  * from shared-document anchors. The hold answers which cell; the page answers where it is drawn; the

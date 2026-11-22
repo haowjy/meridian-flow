@@ -44,7 +44,7 @@ function keepsBlocks(transaction: Transaction): boolean {
   });
 }
 
-/** A change the Yjs binding applied: a peer's, an undo or the first load. Its blocks already have their ids. */
+/** A change the Loro binding applied: a peer's, an undo or the first load. Its blocks already have their ids. */
 function fromBinding(transaction: Transaction): boolean {
   return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }

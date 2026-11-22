@@ -15,7 +15,7 @@ import type { LoroDoc } from "loro-crdt";
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
 /** One list's copy handed to a change or a read: the writer on it, and the list's id. */
-export type ListWriter = { writer: TreeWriter<LoroDoc>; list: string };
+export type ListWriter = { writer: TreeWriter; list: string };
 
 /**
  * What the server's own change makes, in the lists' copies under their locks: each writer makes

@@ -1,26 +1,18 @@
 # @meridian/agent-edit
 
-Editing core for the model's document `read` and `write`,
-write handles and the receipts their Undo reads. Two cores live side by side while the
-Loro move lands: the Loro core (`createLoroEditCore`, design §5), which the server runs for every
-Live chat on `DocumentRooms`, and the Yjs core (`createWriteCore`), which still serves Work-draft
-views (off in phase 1), the Markdown engine's room copy and the browser's suggestion stack until
-they move. A change to shared code (`apply/`, `content-merge/`, the ports) must keep both
-building; don't extend the Yjs-only files (`frontier.ts`, `yjs-mutation.ts`, `undo/`) with
-anything the Loro core would need: see [the Loro core](.context/CONTEXT.md#the-loro-core). A
-write commits at its tool call; the host runs it as one command. Hosts supply
-the journal, coordinator, lifecycle, link and model ports; this package owns no
-Postgres, routes, auth or Project/Work concepts.
+Editing core for the model's document `read` and `write`, write handles and the receipts their
+Undo reads: `createLoroEditCore` (design §5) on the host's `DocumentRooms`. A write commits at its
+tool call; the host runs it as one command. Hosts supply the rooms, write ordinals, document
+edits, link and model ports; this package owns no Postgres, routes, auth or Project/Work concepts.
 
-- Hold no document, cache or LRU between calls. Every call reads the room fresh
-  through `DocumentCoordinator.readRoom`, and a reply's accepted mutations live
-  in the `ReplyMutations` the host's reply owns.
-- Every write lands through `prepareSave`, inside the host's command. Durability
-  comes from the host's commit, never from what reached a room: a live room hears
-  of a save only after it.
+- Hold no document, cache or LRU between calls. Every call reads the room fresh through
+  `AgentEditRooms.readRoom` and frees that copy at the call's end; a reply's accepted mutations
+  live in the `ReplyMutations` the host's reply owns.
+- Every write lands through `AgentEditRooms.save`, inside the host's command: the batch and its
+  `AgentWriteRecord` commit together. Durability comes from the host's commit, never from what
+  reached a room.
 - Reporting is best-effort and never changes what a save keeps.
-- Attribution comes from the host per interaction, never from session-lifetime
-  snapshots.
+- Attribution comes from the host per interaction, never from session-lifetime snapshots.
 - `./diff` loads in the browser and imports no host code.
 
 Contracts and architecture: [.context/CONTEXT.md](.context/CONTEXT.md).

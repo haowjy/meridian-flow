@@ -1,6 +1,6 @@
 # @meridian/prosemirror-schema
 
-The shared ProseMirror structural contract for the TipTap/Yjs editor and server
+The shared ProseMirror structural contract for the TipTap/Loro editor and server
 collab code. DOM and editor runtime behavior live outside it.
 
 - The app builds its TipTap schema separately: a node, mark or attr change here is also
@@ -20,7 +20,7 @@ It cannot judge the two rows that need review:
 | Surface identical | No bump required; patch allowed |
 | New node or mark, or new attribute with a default, unless it changes stored content meaning below | Minor `x.(y+1).0` |
 | Content expression or attribute default changed | Next minor or next major; review confirms the minor path only loosens the schema |
-| Node, mark or attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0` |
+| Node, mark or attribute removed or renamed, or the stored Loro shape changed | Major `(x+1).0.0` |
 | Existing stored content is reinterpreted (for example, a stored link target replaces path-based identity) | Major |
 
 A major needs a human call and a migration or reset plan, recorded in the entry's

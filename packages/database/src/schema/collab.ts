@@ -1,21 +1,9 @@
-import type {
-  CommandId,
-  DocumentAuthorityId,
-  DocumentId,
-  ModelResponseId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-  UserId,
-} from "@meridian/contracts";
+import type { CommandId, DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts";
 import type { CommandKind, CommandOutcome } from "@meridian/contracts/commands";
-import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   bigserial,
-  boolean,
   check,
   index,
   integer,
@@ -23,83 +11,14 @@ import {
   pgTable,
   primaryKey,
   text,
-  timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt } from "./_shared";
-import { threads, turns } from "./agent-threads";
+import { threads } from "./agent-threads";
 import { documents, projects } from "./content";
-import { documentEdits } from "./document-edits";
 import { draftIdColumn } from "./drafts";
 import { users } from "./users";
-
-export const documentYjsCheckpoints = pgTable(
-  "document_yjs_checkpoints",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
-    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
-    state: byteaColumn("state").notNull(),
-    stateVector: byteaColumn("state_vector").notNull(),
-    upToSeq: bigint("up_to_seq", { mode: "number" }).notNull(),
-    reason: text("reason"),
-    /**
-     * Written by a room store to shorten a load's replay: each one deletes the document's earlier
-     * background checkpoints. Seeds with content, explicit checkpoints and restores are never
-     * background, whatever their `reason` says.
-     */
-    background: boolean("background").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("document_yjs_checkpoints_document_id_desc").on(table.documentId, table.id.desc()),
-    uniqueIndex("document_yjs_checkpoints_initial")
-      .on(table.documentId)
-      .where(sql`${table.upToSeq} = 0`),
-  ],
-);
-
-export const documentYjsUpdates = pgTable(
-  "document_yjs_updates",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
-    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
-    batchOrdinal: integer("batch_ordinal").notNull().default(0),
-    updateData: byteaColumn("update_data").notNull(),
-    editId: uuid("edit_id").references(() => documentEdits.id, { onDelete: "set null" }),
-    originType: text("origin_type"),
-    actorUserId: uuid("actor_user_id")
-      .$type<UserId>()
-      .references(() => users.id, {
-        onDelete: "set null",
-      }),
-    actorTurnId: uuid("actor_turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, {
-        onDelete: "set null",
-      }),
-    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("document_yjs_updates_document_id").on(table.documentId, table.id),
-    uniqueIndex("document_yjs_updates_authority_admission").on(
-      table.authorityId,
-      table.admissionSequence,
-      table.batchOrdinal,
-    ),
-  ],
-);
 
 export const pendingNotices = pgTable(
   "pending_notices",
@@ -117,6 +36,10 @@ export const pendingNotices = pgTable(
   (table) => [index("pending_notices_thread").on(table.threadId, table.createdAt, table.id)],
 );
 
+/**
+ * The next write handle (`e<N>`, agent-edit `editHandle`) a chat's writes to one document take,
+ * so a model can name an earlier write of its own in that document.
+ */
 export const agentEditWidCounters = pgTable(
   "agent_edit_wid_counters",
   {
@@ -128,49 +51,23 @@ export const agentEditWidCounters = pgTable(
 );
 
 /**
- * One row per Yjs document, the identity its journal rows (`document_yjs_updates`,
- * `document_yjs_checkpoints`) hang from, of one `kind`. A `document` head's `document_id` is a
- * `documents.id`; it names no `documents` row of its own, so a Yjs document can exist before its
- * `documents` row does (an import writes text first), and a `documents` delete takes its head
- * and journal through a trigger. A `tree_list` head is a list's (a project's or an account's): the
- * identity its rows (`tree_nodes`, `tree_node_ids`) hang from, made with the project or account by
- * a trigger, and `project_id` or `user_id` names the owner whose delete takes it. The list itself
- * is stored in `document_snapshots` under `tree:<tree_list_id>`, with no journal rows.
+ * One project's or account's tree list: the identity its rows (`tree_nodes`, `tree_node_ids`)
+ * hang from, made with the project or account by a trigger, and taken by the owner's delete. The
+ * list itself is stored in `document_snapshots` under `tree:<id>`.
  */
-export const documentYjsHeads = pgTable(
-  "document_yjs_heads",
+export const treeLists = pgTable(
+  "tree_lists",
   {
-    documentId: uuid("document_id").$type<DocumentId>().primaryKey(),
-    kind: text("kind").$type<"document" | "tree_list">().notNull().default("document"),
+    id: uuid("id").$type<DocumentId>().primaryKey(),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .references(() => projects.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "cascade" }),
-    authorityId: uuid("authority_id")
-      .$type<DocumentAuthorityId>()
-      .notNull()
-      .default(sql`gen_random_uuid()`),
-    nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
-      .notNull()
-      .default(sql`1`),
-    fragmentName: text("fragment_name").notNull().default("prosemirror"),
-    schemaVersion: integer("schema_version")
-      .notNull()
-      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
-    latestStateVector: byteaColumn("latest_state_vector"),
-    /** No foreign key: checkpoints reference their head, and a cycle has no delete order. */
-    latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    check("document_yjs_heads_kind_valid", sql`${table.kind} IN ('document', 'tree_list')`),
-    check(
-      "document_yjs_heads_list_has_one_owner",
-      sql`(${table.kind} = 'tree_list') = (num_nonnulls(${table.projectId}, ${table.userId}) = 1)`,
-    ),
+    check("tree_lists_one_owner", sql`num_nonnulls(${table.projectId}, ${table.userId}) = 1`),
   ],
 );
 
@@ -188,7 +85,7 @@ export const documentBlockRooms = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
+    /** The top-level blocks' ids in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
     /**
@@ -214,7 +111,7 @@ export const documentBlockRooms = pgTable(
   ],
 );
 
-/** One row per top-level block of a room, keyed by its Yjs item id. */
+/** One row per top-level block of a room, keyed by its block id. */
 export const documentBlocks = pgTable(
   "document_blocks",
   {
@@ -286,33 +183,4 @@ export const applyCommandTrees = pgTable(
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
-);
-
-/**
- * The text half of a press: what the press's one transaction did to this document, by content
- * (the blocks it changed, before and after, as ProseMirror JSON) and the verdict entries it wrote
- * (`suggestion_verdicts` keys, each with the id of the map item that holds it). Its Undo takes
- * each change that still stands back out by content and forgets the verdicts of the changes that
- * are pending again and that no other client has since resolved, so it reads no deleted item: a
- * checkpoint has dropped their content.
- */
-export const pressTextEffects = pgTable(
-  "press_text_effects",
-  {
-    commandId: uuid("command_id")
-      .$type<CommandId>()
-      .notNull()
-      .references(() => commands.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    delta: jsonb("delta")
-      .$type<{ before: Record<string, unknown>[]; after: Record<string, unknown>[] }>()
-      .notNull(),
-    verdicts: jsonb("verdicts").$type<{ key: string; client: number; clock: number }[]>().notNull(),
-    /** The Undo that took it back: a press is taken back once. */
-    undoneBy: uuid("undone_by").$type<CommandId>(),
-  },
-  (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
 );

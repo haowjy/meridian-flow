@@ -1,49 +1,36 @@
 /** PostgreSQL proof that set-wise initial states are indistinguishable from singly seeded documents. */
 
 import { randomUUID } from "node:crypto";
-import { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  documentSnapshots,
   documents,
-  documentYjsCheckpoints,
-  documentYjsHeads,
   projects,
   users,
 } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
-import { loadDocumentState } from "./adapters/document-loader.js";
-import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createCollabDomain } from "./composition.js";
 import { testLinkDeps } from "./test-support/document-link-scopes.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (postgres)", () => {
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 4 });
-  const rooms: Hocuspocus[] = [];
   const domains: ReturnType<typeof createCollabDomain>[] = [];
   let user: string;
   let projectId: string;
   let sourceId: string;
   afterAll(async () => {
-    for (const room of rooms.splice(0)) {
-      room.closeConnections();
-      for (const doc of [...room.documents.values()]) await room.unloadDocument(doc);
-    }
-    for (const domain of domains.splice(0)) {
-      await domain.drainHocuspocusPersistence();
-      await domain.dispose();
-    }
+    for (const domain of domains.splice(0)) await domain.dispose();
     await deleteDrizzleRows(db, [users]);
     await db.close();
   });
@@ -66,16 +53,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       workProjectionMutation: createTestWorkProjectionMutation(db),
     });
     domains.push(collab);
-    const persistence = createDrizzleCollabPersistence(db);
-    const hocuspocus = new Hocuspocus({
-      yDocOptions: { gc: false, gcFilter: () => true },
-      onLoadDocument: async ({ documentName, document }) => {
-        const state = await loadDocumentState(persistence.journal, documentName, document);
-        if (state) Y.applyUpdate(document, state);
-      },
-    });
-    rooms.push(hocuspocus);
-    collab.bindHocuspocus(hocuspocus);
     const single = randomUUID() as DocumentId;
     const batch = [randomUUID(), randomUUID()] as DocumentId[];
     const seed = treeSeeder(db);
@@ -91,28 +68,21 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
     );
 
     const ids = [single, ...batch];
-    const heads = await db
-      .select()
-      .from(documentYjsHeads)
-      .where(inArray(documentYjsHeads.documentId, ids));
-    const checkpoints = await db
-      .select()
-      .from(documentYjsCheckpoints)
-      .where(inArray(documentYjsCheckpoints.documentId, ids));
-    const shape = (id: DocumentId) => {
-      const head = heads.find((row) => row.documentId === id);
-      const checkpoint = checkpoints.find((row) => row.documentId === id);
-      return {
-        headSeq: head?.latestUpdateSeq,
-        headCheckpointIsSeed: head?.latestCheckpointId === checkpoint?.id,
-        authorityMatches: checkpoint?.authorityId === head?.authorityId,
-        next: head?.nextAdmissionSequence,
-        upToSeq: checkpoint?.upToSeq,
-        reason: checkpoint?.reason,
-        manifest: checkpoint?.attributionManifest,
-        vectorKept: head?.latestStateVector !== null,
-      };
-    };
+    const rows = await db
+      .select({ roomKey: documentSnapshots.roomKey, docKey: documentSnapshots.docKey })
+      .from(documentSnapshots)
+      .where(
+        inArray(
+          documentSnapshots.roomKey,
+          ids.map((id) => `live:${id}`),
+        ),
+      );
+    // A room's stored docs, by kind: the structure doc and one text doc per text block.
+    const shape = (id: DocumentId) =>
+      rows
+        .filter((row) => row.roomKey === `live:${id}`)
+        .map((row) => (row.docKey === "s" ? "s" : "text"))
+        .sort();
     expect(shape(batch[0] as DocumentId)).toEqual(shape(single));
     expect(shape(batch[1] as DocumentId)).toEqual(shape(single));
 

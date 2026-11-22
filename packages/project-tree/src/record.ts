@@ -1,5 +1,3 @@
-import type * as Y from "yjs";
-
 export type NodeKind = "folder" | "document" | "file";
 /** The Work's draft id for a drafted record. */
 export type DraftId = string;
@@ -136,11 +134,3 @@ export type SettleRecord = {
   /** The command (a uuid) that made it: Undo of an Apply and the restore of a Discard select by it. */
   command?: string;
 };
-
-export function recordsOf(doc: Y.Doc): Y.Array<TreeRecord> {
-  return doc.getArray<TreeRecord>("ops");
-}
-
-export function settleLogOf(doc: Y.Doc): Y.Array<SettleRecord> {
-  return doc.getArray<SettleRecord>("settle");
-}

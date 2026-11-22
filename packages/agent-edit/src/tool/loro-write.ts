@@ -23,6 +23,7 @@ import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { contentMerge } from "../content-merge/merge.js";
 import { captureDelta } from "../content-merge/stands.js";
+import type { ShownBlock } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
@@ -35,15 +36,11 @@ import {
   toLoroHandle,
 } from "../model/loro-model.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
-import type {
-  AgentEditRooms,
-  AgentRoomRead,
-  LoroDocumentEdits,
-  LoroLinksPort,
-} from "../ports/document-rooms.js";
+import type { DocumentLinksPort } from "../ports/document-links.js";
+import type { AgentEditRooms, AgentRoomRead, LoroDocumentEdits } from "../ports/document-rooms.js";
+import { isDocumentNotFoundError } from "../ports/document-rooms.js";
 import type { ProjectedBlock } from "../ports/model.js";
-import { type AgentEditJournal, editHandle } from "../ports/update-journal.js";
+import { editHandle, type WriteOrdinals } from "../ports/write-ordinals.js";
 import { landCopies } from "../resolver/land-copies.js";
 import { planWrite, type ResolveWriteParams } from "../resolver/resolve.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
@@ -53,12 +50,12 @@ import { createDocumentRenderer, type ParseForCommandResult } from "./document-r
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
 import { recordLoroObservation } from "./loro-observation.js";
 import type { AgentEditResultCommand } from "./model-result.js";
-import type { ShownBlock } from "./read-view.js";
 import { renderReceipt, returnedWriteResult } from "./receipt.js";
 import { formatUnchangedSuccess, status, toOutcome } from "./response-format.js";
 import type {
   DocumentCommandName,
   MutationActor,
+  ObservationFailedDetail,
   ReadCommand,
   ReadFunction,
   UnexpectedWriteErrorDetail,
@@ -67,7 +64,6 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
-import type { ObservationFailedDetail } from "./write-deps.js";
 import {
   createAutoTurnIdNonce,
   errorResponse,
@@ -80,13 +76,14 @@ import {
 
 export interface LoroEditCoreOptions {
   rooms: AgentEditRooms;
-  journal: AgentEditJournal;
+  /** Mints the `e<N>` handle of each write. */
+  ordinals: WriteOrdinals;
   schema: Schema;
   /** Parses purely; each command takes its codec for its prepared holder scope. */
   codec: AgentEditCodecFactory;
   /** A document's own codec where it is not `codec`: a code document's text is not Markdown. */
   codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
-  links: LoroLinksPort;
+  links: DocumentLinksPort;
   documentEdits?: LoroDocumentEdits;
   /**
    * The chat a `turn:<id>` commit message names, as the model reads it (`agent (c15)`); null for a
@@ -231,7 +228,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   ): Promise<CommandLinks> {
     return openCommandLinks(options, {
       documentId,
-      docs: [],
       stored: [...blocksOf(copy), ...(extra.stored ?? [])],
       ...(extra.written ? { written: extra.written } : {}),
       ...(extra.shown ? { shown: extra.shown } : {}),
@@ -512,7 +508,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           if (plan.ok && plan.written.length > 0)
             await options.links.prepare({
               documentId: address.documentId,
-              docs: [],
               written: plan.written,
               context,
             });
@@ -670,7 +665,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       await options.links.registerAhead(edit.assigner.minted);
       await options.links.prepare({
         documentId: docId,
-        docs: [],
         refs: edit.assigner.minted.map((mint) => mint.ref),
         addresses: edit.assigner.minted.map((mint) => mint.address),
         context,
@@ -833,7 +827,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     context: WriteContext,
     commandToolUseId?: string,
   ) {
-    const ordinal = await options.journal.reserveWriteOrdinal(docId, session.threadId);
+    const ordinal = await options.ordinals.reserveWriteOrdinal(docId, session.threadId);
     const toolCallId = commandToolUseId ?? context.tool_use_id;
     // Scoped to the turn so the same tool-call id in another turn is another write.
     const durableId =

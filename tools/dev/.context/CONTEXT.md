@@ -256,6 +256,6 @@ same check. `generate-baseline.ts` rebuilds from schema, function and custom SQL
 inputs; CI checks regeneration produces no diff and applies it from empty.
 See [database rules](../../../packages/database/AGENTS.md).
 
-Plain HTTP requests to `/api/threads/ws` and `/ws/yjs` produce expected 426
+Plain HTTP requests to `/api/threads/ws` and `/ws/loro` produce expected 426
 responses and are suppressed by server observability. Add new WebSocket routes
 to the same expected-status policy.

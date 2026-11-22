@@ -1,4 +1,4 @@
-// Canonical document-scoped Yjs lineage ranges and their set algebra.
+// Canonical document-scoped CRDT lineage ranges and their set algebra.
 
 import type { ContentLineage } from "../ports/model.js";
 

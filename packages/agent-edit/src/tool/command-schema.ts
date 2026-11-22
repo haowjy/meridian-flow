@@ -7,7 +7,7 @@
 // the tool input has them: the host runs them, never the engine.
 import { z } from "zod";
 import { splitDocumentFile } from "../document-address.js";
-import { parseEditHandle } from "../ports/update-journal.js";
+import { parseEditHandle } from "../ports/write-ordinals.js";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
 

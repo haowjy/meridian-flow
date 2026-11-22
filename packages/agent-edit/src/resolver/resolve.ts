@@ -821,7 +821,7 @@ function sameLineageRanges(left: readonly LineageRange[], right: readonly Lineag
 
 /** The revision a semantic IR names: the document's state vector, in hex. */
 export function documentRevision(ctx: { model: AgentEditModel; doc: DocHandle }): string {
-  return [...ctx.model.encodeStateVector(ctx.doc)]
+  return [...ctx.model.encodeVersion(ctx.doc)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }

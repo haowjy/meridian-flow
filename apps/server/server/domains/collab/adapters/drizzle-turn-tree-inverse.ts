@@ -446,7 +446,7 @@ const stepsOf = (receipts: readonly TreeReceipt[]): UndoStep[] =>
 
 /** What the Undo of the receipts' records would do, writing nothing (`stepsOf`'s walk). */
 const reportsOf = (
-  writer: TreeWriter<LoroDoc>,
+  writer: TreeWriter,
   receipts: readonly TreeReceipt[],
   closed?: (source: string) => boolean,
 ) => undoReports(writer, stepsOf(receipts), closed);

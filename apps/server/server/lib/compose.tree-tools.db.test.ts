@@ -209,7 +209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const store = () => createDrizzleTreeListStore({ db });
     /** The writer's own change to the project's list, as their browser's record would be admitted. */
-    const asWriter = async (make: (writer: TreeWriter<LoroDoc>) => void) =>
+    const asWriter = async (make: (writer: TreeWriter) => void) =>
       store().submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => make(writer),

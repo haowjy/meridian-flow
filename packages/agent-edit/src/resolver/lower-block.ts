@@ -1,4 +1,3 @@
-import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
 import { Mapping, ReplaceAroundStep, ReplaceStep, type Transform } from "prosemirror-transform";
@@ -186,7 +185,7 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
  * `delete`, a filler ProseMirror put in where a delete would leave a parent invalid (an emptied
  * document, cell or `jsx_container`) is an `insert` read from its step, and inside a textblock
  * only the deleted units and the removed marks are written. Nothing is diffed, so every unit, run
- * and node the resolve kept keeps its Yjs item, and text typed inside a resolved word stays where
+ * and node the resolve kept keeps its identity, and text typed inside a resolved word stays where
  * it was typed. A resolve does nothing else, so a result that does not pair unit for unit is a bug
  * and throws.
  */
@@ -546,13 +545,12 @@ function keptUnits(
 ): { formats: FormatRange[]; kept: LoweredText["kept"] } {
   const marksA = unitMarks(before);
   const marksB = unitMarks(after);
-  // Keyed as the binding stores them, so two marks of one type that may overlap stay two.
   const names = new Set<string>();
   for (const marks of [...marksA, ...marksB])
     for (const mark of marks ?? [])
-      if (mark.type.spec.markdown !== false) names.add(yjsMarkKey(mark));
+      if (mark.type.spec.markdown !== false) names.add(mark.type.name);
   const value = (marks: readonly Mark[], key: string) => {
-    const mark = marks.find((candidate) => yjsMarkKey(candidate) === key);
+    const mark = marks.find((candidate) => candidate.type.name === key);
     return mark ? JSON.stringify(mark.attrs) : null;
   };
   const formats: FormatRange[] = [];

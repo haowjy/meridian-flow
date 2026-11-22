@@ -152,7 +152,7 @@ journal/AG-UI cursor path.
 
 ## WebSocket auth & resilience
 
-Thread events (`/api/threads/ws`) and Yjs documents (`/ws/yjs`) share hardening
+Thread events (`/api/threads/ws`) and Loro rooms (`/ws/loro`) share hardening
 primitives in `server/lib/`:
 
 - **Upgrade-time auth** returns authenticated or deferred-close contexts. There

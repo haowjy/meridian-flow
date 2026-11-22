@@ -1,5 +1,5 @@
 /** The account's open tree lists: one session per list however many views hold it. */
-import { type TreeListRef, treeRoomName } from "@meridian/contracts/protocol";
+import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
 import { watchBounces } from "../project-tree/tree-bounces";
 import { TreeListSession } from "./tree-list-session";
 
@@ -14,7 +14,7 @@ export class TreeListRegistry {
   /** The list's session, opened if no view holds it. Release the handle when the view goes. */
   acquire(list: TreeListRef): TreeListHandle {
     if (this.closed) throw new Error("The account's tree lists are closed");
-    const key = treeRoomName(list);
+    const key = loroRoomName({ kind: "tree", list });
     let entry = this.sessions.get(key);
     if (!entry) {
       const session = new TreeListSession(this.accountId, list);

@@ -36,8 +36,3 @@ export {
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
 export type { Draft } from "./domain/ports/draft-store.js";
-export {
-  DocumentSchemaMajorMismatchError,
-  isDocumentSchemaMajorMismatchError,
-  isStaleSchema,
-} from "./domain/stale-schema.js";

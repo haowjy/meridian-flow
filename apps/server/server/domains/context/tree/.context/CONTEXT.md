@@ -5,8 +5,8 @@ is the list store; this directory reads them.
 
 ## Where the tree lives
 
-The project tree is a list of records in one Yjs document per project (per account for
-`user://`), stored in the document journal under the list's id. Its rows are derived from the
+The project tree is a list of records in one Loro document per project (per account for
+`user://`), stored as one `document_snapshots` row under the list's room (`tree:<list id>`). Its rows are derived from the
 list in the admitting transaction and written by nothing else:
 
 - `tree_nodes`: one row per node of the live replay (folder or document), with its name,
@@ -55,7 +55,7 @@ One window (`deletionPurgeCutoff`) for both kinds.
 
 ## Import
 
-An import writes each document's first state into the journal under the id its create will have
-(a Yjs head with no `documents` row) and keeps what else a batch worked out on its entry
+An import writes each document's first state as `document_snapshots` rows under the id its create
+will have (rows with no `documents` row yet) and keeps what else a batch worked out on its entry
 (`import_entries.ahead`). Its last step makes every node a `create` record in one submission
 (`../adapters/drizzle-import-reveal.ts`). See `domains/import`.

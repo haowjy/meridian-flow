@@ -23,9 +23,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../test-support/drizzle-reset.js"
     );
-    const { unloadHocuspocus, useComposedRuntimes } = await import(
-      "../test-support/composed-runtime.js"
-    );
+    const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
@@ -90,37 +88,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns a structured history tool error for a removed bound model", async () => {
       const runtime = await runtimes.compose();
-      try {
-        await runtime.app.agentRevisions.bindThread(
-          THREAD_ID,
-          null,
-          {
-            model: "removed-history-model",
-            skills: { load: [], available: [] },
-            namedTargets: [],
-            permission: "edit" as const,
-          },
-          null,
-        );
-        const result = await runtime.app.toolExecutor.executeTool(
-          {
-            id: "history-unavailable",
-            name: "thread_history",
-            arguments: {},
-          },
-          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
-        );
-        // The refusal keeps its typed shape beside the rendered text.
-        expect(result).toMatchObject({
-          isError: true,
-          result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
-        });
-        expect(toolContentText(result.content)).toBe(
-          "Model not found: removed-history-model (model_unavailable)",
-        );
-      } finally {
-        await unloadHocuspocus(runtime.hocuspocus);
-      }
+      await runtime.app.agentRevisions.bindThread(
+        THREAD_ID,
+        null,
+        {
+          model: "removed-history-model",
+          skills: { load: [], available: [] },
+          namedTargets: [],
+          permission: "edit" as const,
+        },
+        null,
+      );
+      const result = await runtime.app.toolExecutor.executeTool(
+        {
+          id: "history-unavailable",
+          name: "thread_history",
+          arguments: {},
+        },
+        { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+      );
+      // The refusal keeps its typed shape beside the rendered text.
+      expect(result).toMatchObject({
+        isError: true,
+        result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+      });
+      expect(toolContentText(result.content)).toBe(
+        "Model not found: removed-history-model (model_unavailable)",
+      );
     });
   });
 }

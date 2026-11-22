@@ -1,22 +1,23 @@
 # collab — live document infrastructure
 
-This page records the contracts that cross collab's Yjs, persistence and transport boundaries.
+This page records the contracts that cross collab's Loro rooms, persistence and transport boundaries.
 The focused pages hold the press, authority, reversal and WebSocket details; this page keeps
 their shared rules.
 
 ## Boundary
 
-`CollabDomain` supplies Postgres/Hocuspocus adapters around `@meridian/agent-edit`. There is one
-Y.Doc per document, its Live room. A Work's draft is that Work's suggestion marks in it
-(`packages/suggestions`), plus the Work's pending tree records on its draft; Apply and Discard
-of them is [the press](press.md).
+`CollabDomain` supplies the Postgres adapters around `@meridian/agent-edit` and
+`@meridian/document-model`. A document's Live text is its Loro room (`DocumentRooms`,
+`rooms/postgres-document-rooms.ts`, on `document_snapshots`): a structure doc and a text doc per
+block. Phase 1 has no text drafts: every AI write lands Live, a named Work's included, and the
+press works on a Work's pending tree records only ([the press](press.md)). Phase 2 brings a draft
+back as a fork room of the document.
 
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
-(`domain/agent-edit-router.ts`). A drafted read or write (Draft mode, or a named Work) goes
-through `draftView(work, author)`, which reads the Work's view of Live and writes into Live as
-that Work's suggestions. Its owner is the chat's Work, or for a chat with no Work its lineage
-(the first chat, its forks and subagents; a handoff starts a new one). `shared/draft-owner.ts`
+(`domain/agent-edit-router.ts`), which routes every one to the Live core. A draft's owner is the
+chat's Work, or for a chat with no Work its lineage (the first chat, its forks and subagents; a
+handoff starts a new one). `shared/draft-owner.ts`
 is the one reader of a draft's owner and lifecycle (`draftOwnerSql`). A lineage is writable
 while some chat in it is live. Scratch and upload content is always live.
 
@@ -30,19 +31,15 @@ persistence, and coordination.
 
 ## Revision and removal
 
-`domain/document-revision.ts` produces a revision from the encoded Yjs snapshot, holder URI, and
-sorted stored-link/image identities. It must include both the delete set and the holder's link
-spelling: a state vector misses pure deletion and a document snapshot misses tree-only moves.
-Reads and applies compute the token synchronously in their prepared link scope; an unverified
-recovery returns `null`, never a later read's token.
+`domain/document-revision.ts` (`cutRevision`) produces a revision from the room version, holder
+URI, and sorted stored-link/image identities: the version covers every text and structure change,
+the link spelling covers tree-only moves. Reads and applies compute the token synchronously in
+their prepared link scope; an unverified recovery returns `null`, never a later read's token.
 
-A removed document's live rooms close `4208`, but only while the removal still stands: after
-every matching room load settles, one batched record read outside DB locks drops live rooms a
-Work Restore has since made living again. A Restore that commits while that read is in flight
-can still have its new live connection closed `4208`; the app's stale-4208 recovery reconnects
-it. Only a committed removal closes live sockets. The room helper closes the gateway transport
-before Hocuspocus's protocol close, which otherwise arrives as `1000`. A `deleted` removal
-retains all bytes, so restoring the document finds its text, suggestions included, as it was.
+A removed document's rooms end (`RoomError` `document-deleted`) only while the removal still
+stands: `closeRemovedRooms` reads the removal records once, outside DB locks, and tells the room
+gateway (`onRoomsEnded`) about the documents still removed. A `deleted` removal retains all bytes,
+so restoring the document finds its text as it was.
 
 ## Save, replay, and grants
 
@@ -51,18 +48,14 @@ result commit together, and live rooms receive the write only after commit, so a
 invisible to open editors. The grant is confirmed once per write and a write whose Work lost
 access is refused.
 
-A chat's write mode decides only where its new AI writes go; chats in one Work may differ. A
-drafted write never applies itself: switching a chat to Auto-apply touches no suggestion, and
-Apply stays the writer's press.
+A chat's write mode (`threads.ai_write_mode`) is kept but sends nothing to a draft in phase 1: the
+file grant's `destinationAt` answers Live for every write.
 
 A write into a room where the model has no frontier plans on the current room. A write with a
-usable frontier plans on that offline view, less the suggestions the writer rejected since
-(`packages/suggestions/.context/CONTEXT.md`, "Who calls it"), and merges onto the current room.
-A write that changes nothing still reports the changes since the frontier and records its own.
-Every model call reads its room fresh through agent-edit's `readRoom`; the live adapter
-(`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and the room without the
-document mutex. A room is named `live:<documentId>` when the copy has a bound
-authority (`domain/observation-rooms.ts`).
+usable frontier plans on the room at that frontier and merges onto the current room. A write that
+changes nothing still reports the changes since the frontier and records its own. Every model call
+reads its room fresh through agent-edit's `readRoom`, a copy of the loaded room taken without the
+document's lock. A room is named `live:<documentId>` (`domain/observation-rooms.ts`).
 
 A call whose caller passes `frontiers` (the read and write tools, and reference reads, which
 pass `recording` only) records an observation frontier in the room its result rendered from. A
@@ -79,13 +72,8 @@ moved is returned too (`block_gone`, from the write core). An insert whose ancho
 writer deleted lands where the anchor was: it is new words, and the anchor's tombstone still
 places them.
 
-Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
-planning-visible item disappearing is not by itself evidence against a write. Only immutable
-inverse removals after the model's frontier revoke one.
-
-Attribution is based on immutable journal provenance and dependency closure, not text
-similarity or block proximity. Writer rows retain their identity. Agent writes use fresh writer
-clients and journal their own transaction deltas.
+Concurrent chat edits and writer deletions are Loro peers: a write merges with them. Who changed
+what since a read comes from the changes' commit messages (`turn:<id>`), never text similarity.
 
 ## Transaction and lock contracts
 
@@ -101,28 +89,19 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work and lineage of the set is active: new AI writes use it (`lockForWrite`), while a press on a closed owner's suggestions locks without it. A draft is minted with its Work or root chat, so no lock creates one. No other collab code locks a Work for a write; the
-live journal's seam locks only the bound grants' Works. No keystroke enters the boundary:
+Work and lineage of the set is active: new AI writes use it (`lockForWrite`), while a press on a closed owner's suggestions locks without it. A draft is minted with its Work or root chat, so no lock creates one. No other collab code locks a Work for a write; a Live write's
+seam (`enterLiveSeam`) locks only the bound grants' Works. No keystroke enters the boundary:
 no keystroke locks a Work or counts. Tests use the same boundary
 (`apps/server/server/test-support/work-projection.ts`), with no catalog or
 availability notice.
 
-Room loads read in the caller's transaction because that transaction may
-already hold the authority head. Provisioning locks the canonical thread row
-before committing the peer in a root transaction, and the root must not re-lock that
-thread. Referenced rows must be committed before a root
-peer can reference them, so manifest identity and its live head commit in a
-root transaction. Live manifest writes instead load the manifest in the
-caller's transaction: during cold project bootstrap the project and source are
-uncommitted and must roll back together, and no such path provisions a root
-peer. Use `NO KEY UPDATE` where a root insert needs FK key
-share against a caller-held lifecycle lock.
+A command's room copy is read in its transaction (`DocumentRooms.read` inside it copies the stored
+rows, merged with what the loaded room holds), so what it plans on is what it holds the lock for.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
 
-1. Live `withDocument` mutexes (sorted), before any transaction.
-2. In the database, the command's claim row (`runCommand`).
-3. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
+1. In the database, the command's claim row (`runCommand`).
+2. Thread rows of a Work's tree, parents first, when the command changes a Work's lifecycle or
    reverses a card's Work receipts (`lockWorkThreadTrees`: all the threads, then all the Works
    and lineages, so several Works never interleave their phases). A card's reversal locks only
    its receipt Works' threads and the chat's own, and each as the runtime's thread lock does
@@ -130,7 +109,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
    the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
    takes), then the draft row.
-4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
+3. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
    a document key. A list's key sorts before every document key, not among them by ID.
@@ -141,8 +120,9 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    key, so they follow the document keys there. A path that takes namespace keys first and then a
    document key can therefore cross with it; none does today (Apply's and a restore's settle
    under the keys they hold).
-5. The sorted document advisory keys (`lockDocumentMutation`, in ID order), each followed by that document's head row `FOR NO KEY UPDATE`, before the command reads. A keystroke takes only the head row.
-6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
+4. The sorted document advisory keys (`lockDocumentMutation`, in ID order), before the command
+   reads. A keystroke takes none: the room imports it in memory and saves on its own connection.
+5. Writes: a list's append and the rows it materializes (`tree_nodes`,
    `draft_tree_nodes`, `tree_node_ids`, `documents`), then the text. Derivation
    certification takes a document key and then locks that document's `tree_nodes` row, so a path
    that holds a document key writes its rows after it, and one that writes first never takes that
@@ -163,9 +143,8 @@ key are current. No path takes a list's key a list's key while holding a documen
 
 A document command (a model edit, a tree tool call, `reverse_turn`, a press or unpress, Copy, the server's move between a project's list and the account's) runs in
 `runCommand` (`shared/commands/drizzle-commands.ts`, through `adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
-whose first write is the claim, then the list above from the Work rows on. It takes no
-`withDocument` mutex: a command that needs a live room reads its journal in the transaction
-under the document key (`committedCopy` under `inLockedWrite()`). A
+whose first write is the claim, then the list above from the Work rows on. A command that needs a
+live room reads its copy in the transaction under the document key. A
 read a command plans on is taken, or taken again, under the locks of what it read: the inverse
 captures off-lock to choose its steps, then reads the text each step writes under its Works,
 document keys. A miss the server retries (a deadlock, a serialization failure,
@@ -178,64 +157,16 @@ reloads; a rollback at any depth drops the copies the transaction held), so it j
 transaction. A card Undo's Work receipts run in the same command as its documents
 (`reversal.md`): the command declares every Work and thread it will lock and takes them before
 its first document key, and reruns when its commit finds a Work it did not declare.
-No process-level lease or mutex exists beyond the live room's `withDocument`. A failed push is
-reported and not retried: the next Live commit or the next connection to the room catches it up.
+No process-level lease or mutex exists. A failed push is reported and not retried: the next Live
+commit or the next connection to the room catches it up.
 
-## Authority, checkpoints, and derivation
+## History and derivation
 
-A live document's authority identity binds its loaded Y.Doc, room, checkpoint, writer frame,
-Markdown replacement, and agent journal batch. Persistence validates the binding under the
-document mutation lock (a writer frame, under the head row it bumps) and drops stale bytes rather
-than relabeling them; a retired handle's room is closed. A document's history is never replaced:
-version restore is a forward write (`restoreFromYDoc`, below), because a browser's copy can't tell
-one history from another (neither its room name nor its IndexedDB copy carries one). A copy that
-predates a replaced history would merge the old one into it on reconnect, showing the text twice,
-and would upload it to a server that has no record of the old one. Whatever needs to replace
-history (a rebuild) has to give copies a way to tell first, and a way for their unsent typing to
-land.
-
-A checkpoint is a host-minted `CapturedCheckpointCut`, not a free state-vector
-and watermark pair and not warm-room bytes. It covers every journal row at or
-below its cut. Materialize outside the persistence lock, then revalidate
-identity under lock. A stale checkpoint returns
-`stale_document`; it does not manufacture a successful checkpoint ID.
-Live journal rows are deleted only by a purge:
-the model's report of what changed since its last read attributes each
-change from the rows after its frontier, however old. A background checkpoint
-(`storeCheckpoint`, `background` set) deletes the document's other background
-checkpoints in its own transaction, before it updates the head row every keystroke
-frame waits on. A document holds its seed, its explicit checkpoints and one background
-checkpoint. A capture whose base a later store
-deleted replays from an older checkpoint and more rows. The manifest reads only the
-rows after the checkpoint it builds on. Retiring live rows into a checkpoint has no code: one
-that is built must fold into a checkpoint that is kept, not the background one the next store
-deletes, and cuts captured before it must stop validating.
-
-A checkpoint, a version and the background one alike, stores the document with the content of
-its deleted items dropped (`materializeCheckpoint`, agent-edit's `dropUnseenContent`): each
-item keeps its id, so a late edit anchored on deleted text still integrates, but its text,
-marks and subtree are gone. A rejected rewrite then costs Live's history its item headers
-(about a quarter of its bytes), not its words. Kept are the items the room's latest frontier shows
-(the last model read of the document), so the chat working on it still plans on what it read
-after a deletion; keeping every chat's last read would keep each rewrite a fresh chat wrote and
-the writer discarded, for good. Every other
-reader of deleted content was moved off it: press Undo and card Undo are by content
-(`inverse-text.ts`), the edit list reads receipts, and `planningSnapshot` refuses a frontier
-that saw an item whose content is gone (a fork planning on its parent's row, a race with the
-capture). A replace in that case plans on the blocks the transcript showed the model, merged
-three ways against Live, so text the writer deleted after the read stays deleted
-([agent-edit](../../../../../packages/agent-edit/.context/CONTEXT.md#planning-on-what-the-model-read)).
-Once a background checkpoint is stored the
-room drops its own deleted content the same way (`cut.dropUnseenContent`), so a room that stays
-loaded through a sitting copies no more per command than a cold load would. Between captures
-the room stays `gc: false`, and the journal rows keep every byte. A version stored before this keeps its full
-history and still restores.
-
-A document rebuilt from journal rows is integrable only after every row has applied with no
-pending structs and no pending delete set. State-vector equality, or a pending-struct check
-before applying, is not enough. A room release queues a live checkpoint's immutable binding, and
-a worker captures a durable cut after the releasing transaction commits. A dropped or late
-checkpoint costs replay time, never data.
+A room's history is its docs' Loro oplogs. History is compacted by age on unload (design §4,
+"History cutoff"): a room past about 5 MB has each doc cut to its frontier as of 7 days ago
+(`history_mark`), and a client update that depends on history below the cut is refused
+(`HistoryCutoffError`, `RoomError` `history-cutoff`). A write whose recorded frontier is below the
+cut plans on the transcript instead ([agent-edit](../../../../../packages/agent-edit/.context/CONTEXT.md#the-edit-core)).
 
 `domain/document-derivations.ts` is the sole pipeline from a document's text to stored text:
 block rows, the order and counts on the room row, `documents.size_bytes` and
@@ -267,8 +198,8 @@ document's and its
 `extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
 reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
 blocks hold Live's text. A Loro room holds no suggestions, so a derivation writes
-`pending_changes` empty; it named the Works whose suggestions a Yjs cut held, and `grepTexts`
-still leaves a document out for a reader in one of those Works. Phase 2's forks replace it. The
+`pending_changes` empty, and `grepTexts` still leaves a document out for a reader in a Work that
+column names. Phase 2's forks replace it. The
 sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
 newer extractor certified, because builds overlap in a deploy, the older build's certify
 refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
@@ -307,7 +238,7 @@ the derivation sweep.
 A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view reads the Work's
 view of Live (`draftView`), with links spelled in the Draft tree. The cut holds
 its projected blocks, the
-revision that version reports, the holder its links spell from, its Yjs state vector, and
+revision that version reports, the holder its links spell from, its room version, and
 where each `ahead:` ref in the cut settles now. `bindCopiedBlocks` turns those blocks into a
 fresh `BoundWrite` for a new holder through `domain/copied-blocks.ts`: identities inside the
 copied set (a settled ahead ref included) name the copy, a ref-less internal spelling is read
@@ -319,10 +250,8 @@ before it. The
 model's `copy` tool runs the same `remapCopiedBlocks` over its own read's blocks, with the
 settlements from the same cut.
 
-A result's concurrent attribution reads only the room journal interval after its
-stored observation position through the rendered cut. There is no preflight or second
-recheck. Baseline containment compares struct clocks and the delete set: equal state vectors
-alone do not establish equality, so delete-only writer edits are still attributed.
+A result's concurrent attribution reads only the changes after its stored observation frontier
+through the rendered cut. There is no preflight or second recheck.
 
 `document_links` is a hint from a certified cut, never link authority. Unlike the blocks it
 is read from the stored document, every Work's pending links included: its only reader is
@@ -331,11 +260,6 @@ A reader that shows these rows to a person (backlinks) must filter them to a vie
 the extractor bumps its version, and no second post-write writer exists.
 
 ## Inverses
-
-A write never regenerates durable rows from a raw state-vector diff, which would reintroduce
-cumulative tombstones. An unresolved sync dependency is an integrity failure, never a partially
-journaled update. Manifest membership mutations still journal cumulative sync bytes
-([#753](https://github.com/haowjy/meridian-flow/issues/753)).
 
 An inverse is an ordinary immutable edit. It does not rewrite target rows, mark them
 reversed, or use a reserved undo client. Card actions and model undo share immutable edit
@@ -350,7 +274,7 @@ recorded frontier, while rendering uses the fresh room copy.
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
 - [Model edits as commands](model-edits.md)
-- [The press: Apply and Discard of a Work's suggestions](press.md)
+- [The press: Apply and Discard of a Work's tree changes](press.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
@@ -364,8 +288,11 @@ owns that ordering in `dispose`. `flush` remains assertion-time convergence, not
 
 ## Import staging
 
-Import preparation produces Yjs state, a state vector, and attribution without publishing document authority. Staged states remain private until Context reveals the matching generation; commit installs sequence-zero checkpoints and heads in the journal adapter's authority order, while discard removes only the bounded staged batch.
-
-A first state is written one of two ways, by where its content comes from. Import stages it (`prepareSeed`, `stageInitialStates`, `commitStagedStates`), because the import queue must keep the encoded states across generations and discard them when a generation is refused. A Copy encodes it in memory (`encodeSeed`) and installs it inside the transaction that inserts the documents (`installSeeds`), because it holds the bound content already and has nothing to resume. Both install heads and sequence-zero checkpoints set-wise; neither writes over an existing head.
+A first state is written one of two ways, by where its content comes from. Import stages it, because
+the import queue must keep the encoded states across generations and discard them when a
+generation is refused. A Copy encodes it in memory (`encodeSeed`) and installs it inside the
+transaction that inserts the documents (`installSeeds`), because it holds the bound content already
+and has nothing to resume. Both seed the document's Live room (`DocumentRooms.seed`); neither
+writes over a room that holds text.
 
 Planned import binding uses stable `doc:<id>` targets before those documents are visible. Its ahead mints remain unregistered until reveal. Ordinary binding still runs before the command transaction, uses the current `LinkView` and folder addresses, and registers through the durable refusal-preserving registry.

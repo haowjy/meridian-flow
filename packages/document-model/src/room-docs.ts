@@ -3,6 +3,7 @@ import {
   type Frontiers,
   type ImportBlobMetadata,
   LoroDoc,
+  type PeerID,
   VersionVector,
 } from "loro-crdt";
 import { decodeEnvelope, type Envelope, encodeEnvelope } from "./envelope.js";
@@ -313,6 +314,25 @@ export class RoomDocs {
       out.set(key, doc.export(from ? { mode: "update", from } : { mode: "update" }));
     }
     return out;
+  }
+
+  /**
+   * The Unix time, in seconds, of the oldest change this copy holds that a copy at `since` lacks;
+   * null when it lacks none. Below a shallow doc's cutoff the oldest change kept stands in.
+   */
+  oldestLacking(since: ReadonlyMap<DocKey, VersionVector>): number | null {
+    let oldest: number | null = null;
+    for (const [key, doc] of this.owned()) {
+      const have = since.get(key)?.toJSON() ?? new Map<PeerID, number>();
+      const kept = doc.isShallow() ? doc.shallowSinceVV().toJSON() : new Map<PeerID, number>();
+      for (const [peer, counter] of doc.oplogVersion().toJSON()) {
+        const from = Math.max(have.get(peer) ?? 0, kept.get(peer) ?? 0);
+        if (from >= counter) continue;
+        const { timestamp } = doc.getChangeAt({ peer, counter: from });
+        if (oldest === null || timestamp < oldest) oldest = timestamp;
+      }
+    }
+    return oldest;
   }
 
   /** A snapshot per owned doc, for `document_snapshots` rows. */

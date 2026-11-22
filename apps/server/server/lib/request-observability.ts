@@ -87,7 +87,9 @@ function isExpectedWsPlainHttpStatus(
   context: RequestObservabilityContext,
   statusCode: number,
 ): boolean {
-  return statusCode === 426 && (context.route === "/api/threads/ws" || context.route === "/ws/yjs");
+  return (
+    statusCode === 426 && (context.route === "/api/threads/ws" || context.route === "/ws/loro")
+  );
 }
 
 export function routeStatusEvent(

@@ -59,18 +59,18 @@ const isSourceBehind = (error: unknown) =>
   error.details.reason === "source_behind";
 
 /** A document's open session's vector, when this tab holds one. */
-export type StateVectorOf = (documentId: string) => Uint8Array | null;
+export type RoomVersionOf = (documentId: string) => Uint8Array | null;
 
 /**
  * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
  * at once, before the server answers; `answered` resolves with what the Copy left undone (nothing
  * made for a closed Work, a source left out) and rejects with the route's error on a refusal.
- * `stateVectorOf` gives a document's open session's vector, when this tab holds one.
+ * `roomVersionOf` gives a document's open session's vector, when this tab holds one.
  */
 export function copyRows(
   projectId: string,
   copy: ReadyCopy,
-  stateVectorOf: StateVectorOf,
+  roomVersionOf: RoomVersionOf,
 ): { copies: readonly EntryRef[]; answered: Promise<readonly Settlement[]> } {
   const minted = copy.copies.map((row) => ({ row, copyId: crypto.randomUUID() }));
   const destination = destinationOf(copy);
@@ -84,7 +84,7 @@ export function copyRows(
       ...ownerFields(row.place),
       view: row.view,
       copyId,
-      ...stateVectorField(row, stateVectorOf),
+      ...roomVersionField(row, roomVersionOf),
     })),
     destinationScheme: copy.scheme,
     destinationFolderPath: folder ? withoutLeadingSlash(folder.path) : "",
@@ -113,11 +113,11 @@ export function copyRows(
 }
 
 /** The open session says what this tab holds of the document; a folder has no room. */
-function stateVectorField(
+function roomVersionField(
   row: ReadyCopy["copies"][number],
-  stateVectorOf: StateVectorOf,
-): { stateVector?: string } {
+  roomVersionOf: RoomVersionOf,
+): { roomVersion?: string } {
   if (row.entry.kind !== "file") return {};
-  const vector = stateVectorOf(row.entry.id);
-  return vector ? { stateVector: btoa(String.fromCharCode(...vector)) } : {};
+  const vector = roomVersionOf(row.entry.id);
+  return vector ? { roomVersion: btoa(String.fromCharCode(...vector)) } : {};
 }

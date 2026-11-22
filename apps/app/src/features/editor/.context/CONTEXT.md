@@ -66,7 +66,7 @@ index rather than a second document list.
 
 Drafts are off while the editor moves to Loro: the editor paints Live only, and a review shows
 its changes in the review lists, not as paint in the manuscript. Drafts come back as Loro forks
-in phase 1e. Projection, commands and history belong to the
+in phase 2. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 Each document host (main, the side, the phone) has its own review
@@ -83,12 +83,7 @@ right margin beside the change when there is room, else in a block slot after
 the change's last paragraph. Commands and Discard history belong to
 [`draft-review`](../../draft-review/.context/draft-review.md).
 
-`PaintHold` retains finished paint across lifecycle handoffs. Apply and Discard
-resolve the Work's marks in the same Live Y.Doc, without replacing the editor,
-selection or undo manager.
-
-`useSuggestionReviewFocus` registers the mounted editor as the review's, so the
-review's focus commands reach it, and keeps its emphasized change the review's. Same-entry URL replacements
+`PaintHold` retains finished paint across lifecycle handoffs. Same-entry URL replacements
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 

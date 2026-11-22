@@ -66,7 +66,6 @@ function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, batch: Uint8Array)
     receipts: [
       {
         update: batch,
-        effect: { inserted: [], deleted: [] },
         origin: { kind: "live" },
         delta: record.delta,
       },

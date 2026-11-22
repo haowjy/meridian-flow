@@ -1,29 +1,19 @@
-// Immutable edit capture shared by writer inverses and the model stack.
-import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
-import { heldBlocks } from "@meridian/agent-edit/diff";
-import {
-  type CapturedPart,
-  captureEditParts,
-  type EditTarget,
-  heldDeletes,
-} from "@meridian/agent-edit/integration";
+// Immutable edit receipts shared by the model's writes, writer inverses and the model stack.
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
   documentEditParts,
   documentEdits,
-  documentYjsUpdates,
   type EditOrigin,
 } from "@meridian/database";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq, inArray } from "drizzle-orm";
-import * as Y from "yjs";
 import {
   getDrizzleTransactionLocal,
   setDrizzleTransactionLocal,
 } from "../../../shared/drizzle-transaction.js";
+import type { EditTarget } from "../domain/turn-inverse-service.js";
 
-type Db = Pick<Database, "select" | "insert" | "update">;
+type Db = Pick<Database, "insert">;
 export interface ReceiptWrite {
   documentId: DocumentId;
   threadId?: ThreadId | null;
@@ -37,14 +27,14 @@ export interface ReceiptWrite {
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
-  receipts: (CapturedPart & {
+  receipts: {
+    /** The batch the part committed. */
+    update: Uint8Array;
     origin: EditOrigin;
     targets?: EditTarget[];
     delta?: StoredDelta | null;
-  })[];
+  }[];
 }
-
-const deltaSchema = buildDocumentSchema();
 
 const modelEditCommand = { name: "model-edit-command" };
 
@@ -90,67 +80,10 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       editId: edit.id,
       ordinal,
       update: Buffer.from(p.update),
-      effect: p.effect,
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
     })),
   );
-  for (const seq of new Set(input.receipts.map((p) => p.origin.seq))) {
-    if (seq === undefined) continue;
-    await db
-      .update(documentYjsUpdates)
-      .set({ editId: edit.id })
-      .where(eq(documentYjsUpdates.id, seq));
-  }
   return edit.id;
-}
-/**
- * Authoritative pre-write state plus transaction deltas, never a state-vector diff. A delete of
- * an item the room had already deleted when the row applied is not the row's effect, whether the
- * author read a stale view or the writer's delete landed after the call. `withDelta` reads each
- * row's text before and after it, for a receipt of an AI write or an Undo that can be undone.
- */
-export function captureReceiptRows(
-  doc: Y.Doc,
-  rows: readonly { update: Uint8Array; origin: EditOrigin }[],
-  withDelta: boolean,
-): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
-  const blocks = withDelta ? heldBlocks(doc, deltaSchema, "readBlocks") : null;
-  let textBefore = blocks?.all() ?? null;
-  const receipts = rows.map((row) => {
-    const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
-    Y.applyUpdate(doc, row.update);
-    const textAfter = blocks?.all() ?? null;
-    const delta = textBefore && textAfter ? captureDelta(textBefore, textAfter) : null;
-    textBefore = textAfter;
-    return { ...row, held, delta };
-  });
-  return receipts.map((receipt, i) => ({
-    ...captureEditParts(doc, [receipt])[0],
-    origin: rows[i].origin,
-    held: receipt.held,
-    delta: receipt.delta,
-  }));
-}
-
-/** Names the command on the receipts of the live updates it appended (rows already recorded). */
-export async function stampLiveEditsWithCommand(
-  db: Db,
-  commandId: string,
-  seqs: readonly number[],
-): Promise<void> {
-  if (!seqs.length) return;
-  await db
-    .update(documentEdits)
-    .set({ commandId })
-    .where(
-      inArray(
-        documentEdits.id,
-        db
-          .select({ id: documentYjsUpdates.editId })
-          .from(documentYjsUpdates)
-          .where(inArray(documentYjsUpdates.id, [...seqs])),
-      ),
-    );
 }

@@ -1,6 +1,10 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
-import { agentEditRooms, type LoroDocumentEdits } from "@meridian/agent-edit/integration";
+import {
+  agentEditRooms,
+  type LoroDocumentEdits,
+  type WriteOrdinals,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import {
   createMemoryDocumentRooms,
@@ -12,28 +16,17 @@ import type { DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type { CollabDomain, CollabDrafts, ServerDocumentRooms } from "../../contracts.js";
 import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
-import {
-  attributionFromMeta,
-  createAgentEditRuntime,
-  metaForOrigin,
-} from "../../domain/agent-edit-runtime.js";
+import { createAgentEditRuntime } from "../../domain/agent-edit-runtime.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { createDrafts } from "../../domain/drafts.js";
 import { createEffectiveDocumentReader } from "../../domain/effective-document-reader.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
-import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
   SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
-import { createHocuspocusBinding } from "../hocuspocus-binding.js";
-import {
-  createInMemoryCoordinator,
-  createInMemoryJournal,
-  type InMemoryJournal,
-} from "./agent-edit.js";
 import {
   createInMemoryDraftStore,
   createInMemoryDraftWriteBoundary,
@@ -50,15 +43,11 @@ export function createInMemoryCollabDomain(
 ): CollabDomain {
   // Nothing in memory carries a filetype: every document is prose.
   const resolveDocumentFiletype = async () => null;
-  const journal = createInMemoryJournal();
-  const coordinator = createInMemoryCoordinator(journal);
   const schema = buildDocumentSchema();
   const memory = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => operation(),
   });
-  const hocuspocusBinding = createHocuspocusBinding();
-  const store = inMemoryStore(journal);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
@@ -75,14 +64,13 @@ export function createInMemoryCollabDomain(
         // Nothing in memory keeps an edit history.
         recordWrite: async () => {},
       }),
+      ordinals: inMemoryWriteOrdinals(),
       documentEdits: NO_EDIT_HISTORY,
       authorOfTurn: async () => null,
     },
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     inTransaction: () => false,
-    journal,
-    agentCoordinator: coordinator,
     rooms: memory,
     transaction: (work) => memory.transaction(work),
     lockDocument: async () => {},
@@ -94,18 +82,10 @@ export function createInMemoryCollabDomain(
     store: createInMemoryDraftStore(namedDraft),
     boundary: createInMemoryDraftWriteBoundary(),
   });
-  const agentEdit = createAgentEditRouter({
-    liveCore: runtime.liveCore,
-    draftView: runtime.draftView,
-  });
+  const agentEdit = createAgentEditRouter({ liveCore: runtime.liveCore });
   const projections = { refresh: runDocumentWriteHook };
-  const hocuspocusPersistence = createHocuspocusPersistenceService({
-    journal,
-    hocuspocus: hocuspocusBinding.current,
-    metaForOrigin,
-  });
   const lineage = createTurnLiveLineageReadModel({
-    store: createInMemoryTurnLiveLineageStore(journal),
+    store: IN_MEMORY_TURN_LIVE_LINEAGE,
     resolveDocumentUri: async (documentId) => documentId,
     resolveLastDocumentUri: async (documentId) => documentId,
   });
@@ -117,17 +97,9 @@ export function createInMemoryCollabDomain(
       rooms: serverRooms,
       documentSchemaVersion: async () => null,
       onRoomsEnded: () => () => undefined,
-      bindHocuspocus: hocuspocusBinding.bind,
-      headSchemaVersion: async () => null,
-      loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
-      admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       // Nothing is removed in memory.
       draftsHolding: async () => [],
       roomRemoval: async () => null,
-      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
-      storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
-      drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
-      getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     agentEdit: {
       agentEdit: () => agentEdit,
@@ -174,15 +146,6 @@ export function createInMemoryCollabDomain(
       },
     },
     lineage,
-    attribution: {
-      async getLastUpdateAttribution(documentId) {
-        const latest = await store.latestUpdate(documentId);
-        if (!latest) {
-          return { originType: null, actorTurnId: null, actorUserId: null, updateSeq: null };
-        }
-        return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
-      },
-    },
     effectiveReader: {
       ...createEffectiveDocumentReader({
         // Nothing is derived in memory.
@@ -251,34 +214,35 @@ function createInMemoryDraftStub(): CollabDrafts {
   };
 }
 
-function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
-  return {
-    async listLiveDocumentIdsForTurn(threadId: string, turnId: string) {
-      return (await journal.documentsForTurn(threadId, turnId)) as DocumentId[];
-    },
-    async listEditedDocumentIdsForTurn(threadId: string, turnId: string) {
-      return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
-        documentId: documentId as DocumentId,
-        scope: "live" as const,
-      }));
-    },
-    // The in-memory host has no tree history.
-    async listFolderTargetsForTurn() {
-      return [];
-    },
-    async placesOf() {
-      return new Map();
-    },
-    async listTreeEntriesForTurn() {
-      return [];
-    },
-  };
-}
+/** Nothing in memory keeps an edit history, so no turn edited anything. */
+const IN_MEMORY_TURN_LIVE_LINEAGE = {
+  async listLiveDocumentIdsForTurn(): Promise<DocumentId[]> {
+    return [];
+  },
+  async listEditedDocumentIdsForTurn(): Promise<{ documentId: DocumentId; scope: "live" }[]> {
+    return [];
+  },
+  async listFolderTargetsForTurn() {
+    return [];
+  },
+  async placesOf() {
+    return new Map();
+  },
+  async listTreeEntriesForTurn() {
+    return [];
+  },
+};
 
-function inMemoryStore(journal: InMemoryJournal) {
+/** Ordinals per document and chat, for this composition's life. */
+function inMemoryWriteOrdinals(): WriteOrdinals {
+  const next = new Map<string, number>();
   return {
-    latestUpdate: (docId: string) => journal.latestUpdate(docId),
-    latestUpdateSeq: (docId: string) => journal.latestUpdateSeq(docId),
+    async reserveWriteOrdinal(documentId, threadId) {
+      const key = `${documentId}\0${threadId}`;
+      const ordinal = (next.get(key) ?? 0) + 1;
+      next.set(key, ordinal);
+      return ordinal;
+    },
   };
 }
 

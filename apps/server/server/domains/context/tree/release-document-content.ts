@@ -1,6 +1,6 @@
 /**
- * Releases purged documents' content, the one way a document ends for good: its Yjs journal and
- * everything that was only about its text and history. The `documents` row stays, marked
+ * Releases purged documents' content, the one way a document ends for good: its rooms' snapshots
+ * and everything that was only about its text and history. The `documents` row stays, marked
  * `content_purged_at` and stripped of its bytes, so a link bound to it still resolves to "gone".
  * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts;
  * the caller deletes the returned storage objects after the commit.
@@ -12,10 +12,11 @@ import {
   agentEditWidCounters,
   documentBlockRooms,
   documentEdits,
+  documentForks,
   documentLinks,
   documentPreviousLocations,
+  documentSnapshots,
   documents,
-  documentYjsHeads,
   observationFrontiers,
   threadDocuments,
   threadShownLinks,
@@ -39,8 +40,9 @@ export async function releaseDocumentContent(
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
-  // The head's foreign keys take its checkpoints and updates with it.
-  await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
+  // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
+  await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
+  await tx.delete(documentSnapshots).where(inArray(documentSnapshots.roomKey, list.map(liveRoom)));
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
   // Observation frontiers have no document foreign key; their room key is the only ownership.

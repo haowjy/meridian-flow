@@ -19,7 +19,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("project bootstrap readiness (postgres)", () => {});
 } else {
   describe("project bootstrap readiness (postgres)", async () => {
-    const { Hocuspocus } = await import("@hocuspocus/server");
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
@@ -53,12 +52,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
       });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        onStoreDocument: ({ documentName, document }) =>
-          collab.storeHocuspocusDocument(documentName, document),
-      });
-      collab.bindHocuspocus(hocuspocus);
       return collab;
     }
 

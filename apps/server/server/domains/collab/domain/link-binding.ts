@@ -30,7 +30,7 @@ import {
   rebuildOccurrences,
 } from "@meridian/agent-edit/integration";
 import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
-import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { classifyFiletype, type TrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { codeFileBlock, type MarkupCodec, type PMNode } from "@meridian/markup";
 import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
@@ -69,7 +69,7 @@ export interface BoundWrite {
   /** Source Markdown, for provenance and diagnostics only; never reparsed. */
   readonly markdown: string;
   /** Code files bind to one code block; the engine refuses content of the other shape. */
-  readonly schemaType: YjsTrackedSchemaType;
+  readonly schemaType: TrackedSchemaType;
   readonly [boundBrand]: true;
 }
 
@@ -169,7 +169,7 @@ function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   };
 }
 
-function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
+function schemaTypeOf(filetype: string | null): TrackedSchemaType {
   const classification = classifyFiletype(filetype);
   if (classification.kind === "tracked") return classification.schemaType;
   if (classification.kind === "unknown") return "document";

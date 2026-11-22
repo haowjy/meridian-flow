@@ -71,7 +71,7 @@ Every event passes the allowlist in `safe-event.ts` before the one output, `Even
 
 The writer's browser tab.
 
-Holds the HTTP client, the thread socket and the Yjs socket.
+Holds the HTTP client, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [browser](system.md#browser)

@@ -226,14 +226,11 @@ overrides:
   '@tanstack/history': 1.162.5
 
 patchedDependencies:
-  '@hocuspocus/provider@4.8.0': d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b
   '@tanstack/history@1.162.5': ceec3e99176130659ca755f9461bd5c1061c277e2f71df680afa6c94fd02d108
   '@tiptap/core@3.34.0': 77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9
-  '@tiptap/y-tiptap@3.3.0': ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba
   decode-named-character-reference@1.3.0: 5b39cd8ff81f7eddeb30f5c2fb0aac770c535cd92dfa25c5de946ecb405af3b7
   micromark@4.0.3: 7b4dfcf2ce5cf526243b71e9c731ad52c9ee0a566616973a29bad7b97e07fbe6
   prosemirror-view@1.42.9: 069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e
-  yjs@13.6.33: 609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789
 
 importers:
 
@@ -305,9 +302,6 @@ importers:
       ws:
         specifier: ^8.23.0
         version: 8.23.0
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
 
   apps/app:
     dependencies:
@@ -585,9 +579,6 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1169.0
         version: 3.1169.0
-      '@hocuspocus/server':
-        specifier: 4.8.0
-        version: 4.8.0(srvx@1.0.8)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@meridian-flow/mars-schema':
         specifier: 0.35.0
         version: 0.35.0
@@ -618,9 +609,6 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
-      '@meridian/suggestions':
-        specifier: workspace:*
-        version: link:../../packages/suggestions
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
@@ -630,9 +618,6 @@ importers:
       '@t3-oss/env-core':
         specifier: ^0.13.11
         version: 0.13.11(typescript@7.0.2)(valibot@1.4.1(typescript@7.0.2))(zod@4.6.7)
-      '@tiptap/y-tiptap':
-        specifier: 3.3.0
-        version: 3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@workos/authkit-session':
         specifier: ^0.9.1
         version: 0.9.1(@workos-inc/node@12.3.0)(typescript@7.0.2)
@@ -660,9 +645,6 @@ importers:
       htmlparser2:
         specifier: ^12.0.0
         version: 12.0.0
-      lib0:
-        specifier: ^0.2.120
-        version: 0.2.120
       loro-crdt:
         specifier: 'catalog:'
         version: 1.18.0
@@ -720,22 +702,13 @@ importers:
       unpdf:
         specifier: ^2.2.0
         version: 2.2.0
-      y-protocols:
-        specifier: ^1.0.7
-        version: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@hocuspocus/provider':
-        specifier: 4.8.0
-        version: 4.8.0(patch_hash=d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@types/busboy':
         specifier: ^1.5.5
         version: 1.5.5
@@ -842,15 +815,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../prosemirror-schema
-      '@meridian/suggestions':
-        specifier: workspace:*
-        version: link:../suggestions
       '@sanity/diff-match-patch':
         specifier: ^3.2.1
         version: 3.2.1
-      '@tiptap/y-tiptap':
-        specifier: 3.3.0
-        version: 3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       loro-crdt:
         specifier: 'catalog:'
         version: 1.18.0
@@ -863,9 +830,6 @@ importers:
       prosemirror-transform:
         specifier: ^1.12.5
         version: 1.12.5
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -938,9 +902,6 @@ importers:
       postgres:
         specifier: 'catalog:'
         version: 4.1.1
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
     devDependencies:
       drizzle-kit:
         specifier: 'catalog:'
@@ -1052,9 +1013,6 @@ importers:
       unified:
         specifier: ^11.0.5
         version: 11.0.5
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -1074,9 +1032,6 @@ importers:
       loro-crdt:
         specifier: 'catalog:'
         version: 1.18.0
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -1087,18 +1042,12 @@ importers:
 
   packages/prosemirror-schema:
     dependencies:
-      lib0:
-        specifier: ^0.2.120
-        version: 0.2.120
       prosemirror-model:
         specifier: ^1.25.13
         version: 1.25.13
       prosemirror-schema-basic:
         specifier: ^1.2.5
         version: 1.2.5
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -1106,31 +1055,6 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.0))
-
-  packages/suggestions:
-    dependencies:
-      prosemirror-changeset:
-        specifier: ^2.4.6
-        version: 2.4.6
-      prosemirror-model:
-        specifier: ^1.25.13
-        version: 1.25.13
-      prosemirror-state:
-        specifier: ^1.4.4
-        version: 1.4.4
-      prosemirror-transform:
-        specifier: ^1.12.5
-        version: 1.12.5
-    devDependencies:
-      '@meridian/prosemirror-schema':
-        specifier: workspace:*
-        version: link:../prosemirror-schema
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/thread-client:
     dependencies:
@@ -1147,25 +1071,6 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.0))
-
-  packages/yjs-inspect:
-    dependencies:
-      lib0:
-        specifier: ^0.2.120
-        version: 0.2.120
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
-    devDependencies:
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.0))
-      y-protocols:
-        specifier: ^1.0.7
-        version: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
 
   tools/mf:
     dependencies:
@@ -2344,22 +2249,6 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
-  '@hocuspocus/common@4.8.0':
-    resolution: {integrity: sha512-UI8Vye3mds2aMUHaWfwkDq0+257JUpvKa0nyAOjXWLfyhYHsAq8eku+ynZc/PaShyOci/VD54cW/rLQJGHHPKg==}
-
-  '@hocuspocus/provider@4.8.0':
-    resolution: {integrity: sha512-WUwwu3W55n0fkMF1uYhx4WXlRjJ/t7OjsxiuzTMMQGDvvZrZA37CAysdqc7JXLVmN6A5IIWadE921pxN9/JotA==}
-    peerDependencies:
-      y-protocols: ^1.0.6
-      yjs: ^13.6.8
-
-  '@hocuspocus/server@4.8.0':
-    resolution: {integrity: sha512-P8U4I4R4Ft+B37d4CFs4tG8oPJ3rnJJiFx3CXBJpKSIrXTz5YDldRmv7eGqmUq4QRSoWR6FjN4DUIX1QO0PccA==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      y-protocols: ^1.0.6
-      yjs: ^13.6.8
-
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
@@ -2567,9 +2456,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@lifeomic/attempt@3.1.0':
-    resolution: {integrity: sha512-QZqem4QuAnAyzfz+Gj5/+SLxqwCAw2qmt7732ZXodr6VDWGeYLG6w1i/vYLa55JQM9wRuBKLmXmiZ2P0LtE5rw==}
 
   '@lingui/babel-plugin-extract-messages@6.4.0':
     resolution: {integrity: sha512-b9NatQFU1h0muPCC0QGdSVKE/OEdR4w9FQrKAOFYwH0eF7pD2ArafqyqG6xsw2E+7w4PlZQjzOhihQMxI8a6sA==}
@@ -4124,15 +4010,6 @@ packages:
       '@tiptap/core': 3.34.0
       '@tiptap/pm': 3.34.0
 
-  '@tiptap/y-tiptap@3.3.0':
-    resolution: {integrity: sha512-TLblfhvXCJK2bnow8nBdILh350UcxoGR8Wy3JoC/CPAhjLxdqSmv2dqs/lPA8JhiE+FxZDG9cDmcXbZV1yidbQ==}
-    peerDependencies:
-      prosemirror-model: ^1.7.1
-      prosemirror-state: ^1.2.3
-      prosemirror-view: ^1.9.10
-      y-protocols: ^1.0.1
-      yjs: ^13.6.13
-
   '@tokenizer/inflate@0.6.0':
     resolution: {integrity: sha512-+0RDxhBkyT9xMnGdJAwmats9yxRLR8ypJrQgrnLqOu4Gv/aHlnxYgdGVy2QTwvBl6IF/w2Hr+ZNirH+iMUbVZA==}
     engines: {node: '>=18'}
@@ -4585,9 +4462,6 @@ packages:
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
-
-  async-mutex@0.5.0:
-    resolution: {integrity: sha512-1A94B18jkJ3DYq284ohPxoXbfTA5HsQ7/Mf4DEhcyLx3Bz27Rh59iScbB6EPiP+B+joue6YCxcMXSbFC1tZKwA==}
 
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
@@ -5565,9 +5439,6 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
-  isomorphic.js@0.2.5:
-    resolution: {integrity: sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==}
-
   jest-get-type@29.6.3:
     resolution: {integrity: sha512-zrteXnqYxfQh7l5FHyL38jL39di8H8rHoecLH3JNxH3BwOrBsNeabdap5e0I23lD4HHI8W5VFBZqG4Eaq5LNcw==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
@@ -5651,10 +5522,6 @@ packages:
   khroma@2.1.0:
     resolution: {integrity: sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw==}
 
-  kleur@4.1.5:
-    resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
-    engines: {node: '>=6'}
-
   layout-base@1.0.2:
     resolution: {integrity: sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg==}
 
@@ -5723,11 +5590,6 @@ packages:
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
     engines: {node: '>=6'}
-
-  lib0@0.2.120:
-    resolution: {integrity: sha512-/a2eRImR8sZbmMVKe2we1/KukDQkuPyPf8yol6epvCu2PH6hurjcRI3mdGFFAi0uGoRJGyns99JquZgxwW1tQg==}
-    engines: {node: '>=16'}
-    hasBin: true
 
   libheif-js@1.23.5:
     resolution: {integrity: sha512-umXZPthnWZtF3iG/5mQG+AZ2V6i0UeYpo3z2CkggTEgL8dKmIIwJT6TDuAMuabXa1yTW8uJ1ZAgR+CxNTklYYw==}
@@ -7129,12 +6991,6 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
-  y-protocols@1.0.7:
-    resolution: {integrity: sha512-YSVsLoXxO67J6eE/nV4AtFtT3QEotZf5sK5BHxFBXso7VDUT3Tx07IfA6hsu5Q5OmBdMkQVmFZ9QOA7fikWvnw==}
-    engines: {node: '>=16.0.0', npm: '>=8.0.0'}
-    peerDependencies:
-      yjs: ^13.0.0
-
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
@@ -7163,10 +7019,6 @@ packages:
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
-
-  yjs@13.6.33:
-    resolution: {integrity: sha512-q/UYvr1gOk4XII+Cu1CW2dINjYqJJFifTzogEaIARznrvX7uOlHsdTEXcnOBMuIsrCGEEKdNxi74kyMLZlKVfw==}
-    engines: {node: '>=16.0.0', npm: '>=8.0.0'}
 
   yoctocolors@2.1.2:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
@@ -8183,30 +8035,6 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@hocuspocus/common@4.8.0':
-    dependencies:
-      lib0: 0.2.120
-
-  '@hocuspocus/provider@4.8.0(patch_hash=d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))':
-    dependencies:
-      '@hocuspocus/common': 4.8.0
-      '@lifeomic/attempt': 3.1.0
-      lib0: 0.2.120
-      y-protocols: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      yjs: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
-
-  '@hocuspocus/server@4.8.0(srvx@1.0.8)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))':
-    dependencies:
-      '@hocuspocus/common': 4.8.0
-      async-mutex: 0.5.0
-      crossws: 0.4.17(srvx@1.0.8)
-      kleur: 4.1.5
-      lib0: 0.2.120
-      y-protocols: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      yjs: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
-    transitivePeerDependencies:
-      - srvx
-
   '@iconify/types@2.0.0': {}
 
   '@iconify/utils@3.1.3':
@@ -8367,8 +8195,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@lifeomic/attempt@3.1.0': {}
 
   '@lingui/babel-plugin-extract-messages@6.4.0':
     dependencies:
@@ -10032,16 +9858,6 @@ snapshots:
       '@tiptap/core': 3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0)
       '@tiptap/pm': 3.34.0
 
-  '@tiptap/y-tiptap@3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))':
-    dependencies:
-      lib0: 0.2.120
-      prosemirror-model: 1.25.13
-      prosemirror-state: 1.4.4
-      prosemirror-transform: 1.12.5
-      prosemirror-view: 1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e)
-      y-protocols: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      yjs: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
-
   '@tokenizer/inflate@0.6.0(supports-color@7.2.0)':
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
@@ -10453,10 +10269,6 @@ snapshots:
       tslib: 2.8.1
 
   assertion-error@2.0.1: {}
-
-  async-mutex@0.5.0:
-    dependencies:
-      tslib: 2.8.1
 
   babel-dead-code-elimination@1.0.12(supports-color@7.2.0):
     dependencies:
@@ -11465,8 +11277,6 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isomorphic.js@0.2.5: {}
-
   jest-get-type@29.6.3: {}
 
   jest-validate@29.7.0:
@@ -11560,8 +11370,6 @@ snapshots:
 
   khroma@2.1.0: {}
 
-  kleur@4.1.5: {}
-
   layout-base@1.0.2: {}
 
   layout-base@2.0.1: {}
@@ -11614,10 +11422,6 @@ snapshots:
       lefthook-windows-x64: 2.2.2
 
   leven@3.1.0: {}
-
-  lib0@0.2.120:
-    dependencies:
-      isomorphic.js: 0.2.5
 
   libheif-js@1.23.5: {}
 
@@ -13409,11 +13213,6 @@ snapshots:
 
   xmlchars@2.2.0: {}
 
-  y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)):
-    dependencies:
-      lib0: 0.2.120
-      yjs: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
-
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
@@ -13435,10 +13234,6 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
-
-  yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789):
-    dependencies:
-      lib0: 0.2.120
 
   yoctocolors@2.1.2: {}
 

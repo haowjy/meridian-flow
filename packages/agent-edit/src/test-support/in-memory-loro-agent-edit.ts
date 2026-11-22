@@ -23,12 +23,12 @@ import type {
   LoroDocumentEdits,
 } from "../ports/document-rooms.js";
 import { agentEditRooms } from "../ports/document-rooms.js";
-import { editHandle } from "../ports/update-journal.js";
+import { editHandle } from "../ports/write-ordinals.js";
 
 export interface InMemoryLoroHost {
   rooms: MemoryDocumentRooms;
   agentRooms: AgentEditRooms;
-  journal: { reserveWriteOrdinal(documentId: string, threadId: string): Promise<number> };
+  ordinals: { reserveWriteOrdinal(documentId: string, threadId: string): Promise<number> };
   documentEdits: LoroDocumentEdits;
   records: AgentWriteRecord[];
   /** Run `work` as one command: its saves land, and import into the room, when it resolves. */
@@ -154,7 +154,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
   return {
     rooms,
     agentRooms,
-    journal: {
+    ordinals: {
       async reserveWriteOrdinal(documentId, threadId) {
         const key = `${documentId}\u0000${threadId}`;
         const next = (ordinals.get(key) ?? 0) + 1;

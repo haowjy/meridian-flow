@@ -49,7 +49,7 @@ const WORK_PURGE_BATCH_LIMIT = 100;
  * stands fails the deferred foreign key). What stands is deleted first, since a `purge` names a
  * delete in force. Returns the documents to release.
  */
-function purgeSources(writer: TreeWriter<LoroDoc>, sources: ReadonlySet<string>): DocumentId[] {
+function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): DocumentId[] {
   const inSources = () =>
     [...writer.view(LIVE).nodes.values()].filter((node) => sources.has(node.source));
   const standing = inSources().filter((node) => !node.trashed && !node.purged);

@@ -3,7 +3,7 @@
  * how a window of base tokens is rebuilt from one side's hunks, and the special cases where two
  * overlapping changes are really one (a shared insertion, the same edit made twice, a mark merge, a
  * cut-and-paste that the other side edited at its source). Tokens, hunks and base positions only;
- * no blocks and no Yjs.
+ * no blocks and no CRDT.
  */
 import { Mark } from "prosemirror-model";
 import type { Hunk } from "../diff/hunks.js";

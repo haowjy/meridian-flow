@@ -1,6 +1,6 @@
 /**
  * What one change of an AI edit is in a text now: does it `stand` (the text holds it and it can be
- * taken out cleanly). A read of the edit's recorded content against the text; nothing follows Yjs
+ * taken out cleanly). A read of the edit's recorded content against the text; nothing follows CRDT
  * item ids. The Live turn inverse uses it. See `content-merge.md`.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";

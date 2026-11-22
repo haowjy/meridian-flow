@@ -35,11 +35,6 @@ export interface LiveDocumentSessionRegistry {
    */
   openRoomVersion(documentId: DocumentId): Uint8Array | null;
   /**
-   * `openRoomVersion` of every live session in this tab with typing the server hasn't
-   * acknowledged: what a press must wait for. An acknowledged session's state is stored already.
-   */
-  unsentRoomVersions(): Map<DocumentId, Uint8Array>;
-  /**
    * Settles once the server holds the typing in this tab's live session of the document; at once
    * when the tab holds none or it is not connected.
    */

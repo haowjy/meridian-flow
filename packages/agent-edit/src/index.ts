@@ -1,42 +1,10 @@
 // Deep public facade for the agent editing core.
-import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
-
-export type AgentEditCoreOptions = CreateWriteToolOptions;
-
-export type AgentEditCore = ReturnType<typeof createWriteTool>;
-
-export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
-  return createWriteTool(options);
-}
-
 export { splitDocumentFile } from "./document-address.js";
-export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
-export { fullHashForBlockId, getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
+export { fullHashForBlockId } from "./model/block-hash.js";
 export { bodyRange, destinationFreeBlocks, grepBlockText } from "./model/grep-text.js";
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";
 export { markdownPlainText, markdownTextView } from "./model/markdown-text-view.js";
-export type { SchemaRepairPath } from "./model/schema-repair.js";
-export {
-  countSchemaRepair,
-  isSchemaRepairUpdate,
-  schemaRepairCounts,
-} from "./model/schema-repair.js";
-export {
-  dropDraft,
-  dropResolvedMarks,
-  forgetVerdicts,
-  type PressRecord,
-  pressStored,
-  resolvedElsewhere,
-  resolveScope,
-  resolveStored,
-  storedPendingChanges,
-  storedPendingTurns,
-  suggestionAuthors,
-  suggestionVerdicts,
-  type WrittenVerdict,
-} from "./model/stored-suggestions.js";
 export {
   markdownSections,
   normalizeRequestedSlug,

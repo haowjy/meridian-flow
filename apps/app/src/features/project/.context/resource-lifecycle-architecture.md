@@ -2,7 +2,7 @@
 
 A project's documents are a list of records the browser writes and replays (see
 [context CONTEXT.md](../context/.context/CONTEXT.md), Tree ownership), and each document's text is
-a Yjs session persisted into this browser. This page says what makes a document leave the screen
+a Loro session persisted into this browser. This page says what makes a document leave the screen
 and what makes its local copy go. The two are different: closing a view is reversible, deleting
 a copy is not.
 

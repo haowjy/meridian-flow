@@ -8,7 +8,7 @@ import {
   createAgentEditCodecFactory,
   createLoroEditCore,
   createReplyMutations,
-  createStaticLoroDocumentLinks,
+  createStaticDocumentLinks,
   type ObservationFrontier,
   ReadCommandSchema,
   renderAgentEditResult,
@@ -32,7 +32,7 @@ const core = createLoroEditCore({
   journal: host.journal,
   schema,
   codec: createAgentEditCodecFactory(mdxCodec({ schema })),
-  links: createStaticLoroDocumentLinks(undefined, { preloaded: true }),
+  links: createStaticDocumentLinks(undefined, { preloaded: true }),
   documentEdits: host.documentEdits,
 });
 const paragraph = (id: string, text: string) =>

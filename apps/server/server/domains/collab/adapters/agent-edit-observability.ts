@@ -1,43 +1,13 @@
 /** Event-sink adapters for agent-edit diagnostics and lifecycle observability. */
 import type {
-  createAgentEditCore,
   LinkSpliceFallbackDetail,
+  LoroEditCoreOptions,
   ObservationFailedDetail,
   UnexpectedWriteErrorDetail,
 } from "@meridian/agent-edit/integration";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
-
-/**
- * A delivery outage of committed rows to an open live room: a warning when it begins, and
- * notice of how it ended (the room caught up, or unloaded so a load reads the journal).
- */
-export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDeliveryDiagnostics {
-  return {
-    failed({ documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.room_delivery",
-        name: "delivery.failing",
-        correlation: { documentId },
-        payload: unknownToEventPayload(cause),
-      });
-    },
-    recovered({ documentId, attempts, outcome }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "info",
-        source: "collab.room_delivery",
-        name: "delivery.recovered",
-        correlation: { documentId },
-        payload: { attempts, outcome },
-      });
-    },
-  };
-}
 
 export function createDocumentProjectionDiagnostics(
   eventSink?: EventSink,
@@ -119,7 +89,7 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
 export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
 }): Pick<
-  Parameters<typeof createAgentEditCore>[0],
+  LoroEditCoreOptions,
   "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 > {
   return {
@@ -135,7 +105,7 @@ export function createAgentEditObservabilityOptions(input: {
  */
 function observationFailedObserver(
   eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onObservationFailed"]> {
+): NonNullable<LoroEditCoreOptions["onObservationFailed"]> {
   return (event: ObservationFailedDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {
@@ -155,7 +125,7 @@ function observationFailedObserver(
  */
 function linkSpliceFallbackObserver(
   eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"]> {
+): NonNullable<LoroEditCoreOptions["onLinkSpliceFallback"]> {
   return (event: LinkSpliceFallbackDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {
@@ -170,7 +140,7 @@ function linkSpliceFallbackObserver(
 
 function unexpectedWriteErrorObserver(
   eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"]> {
+): NonNullable<LoroEditCoreOptions["onUnexpectedWriteError"]> {
   return (event: UnexpectedWriteErrorDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {

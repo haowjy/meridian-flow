@@ -150,8 +150,8 @@ export function moveTableRow(direction: -1 | 1): Command {
 
     if (!dispatch) return true;
     // A move, not a rebuilt table: the selected rows are deleted and inserted at their new
-    // place, so the Yjs binding sees which rows moved and the rows they pass keep their
-    // elements (and a collaborator's typing in them).
+    // place, so the Loro binding sees which rows moved and the rows they pass keep their
+    // blocks (and a collaborator's typing in them).
     const rowStart = (index: number) => {
       let pos = selection.tablePos + 1;
       for (let i = 0; i < index; i++) pos += selection.table.child(i).nodeSize;

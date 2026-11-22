@@ -30,7 +30,7 @@
  *
  * The face is a one-way derivation of the current selection, with no memory and
  * no test of how the caret got there, so it converges after one render whatever
- * put it in — a keystroke, a command, a peer's write mapped through Yjs, a
+ * put it in — a keystroke, a command, a peer's write mapped through the Loro binding, a
  * pointer answered at a boundary. This file used to claim a pointer could not
  * produce that caret. It could. Where an outside press may land is
  * `landing/press.ts`, and it is not what makes this file safe.

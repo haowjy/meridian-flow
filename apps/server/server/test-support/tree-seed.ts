@@ -59,7 +59,7 @@ function segmentsOf(path: string): string[] {
 
 /** Folders along `dir` in the view: the ones that exist are reused, the rest made. */
 function ensureDir(
-  writer: TreeWriter<LoroDoc>,
+  writer: TreeWriter,
   view: View,
   actor: string,
   sourceId: string,
@@ -86,7 +86,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
   async function submitIn<T>(
     sourceId: string,
     options: SeedOptions,
-    make: (writer: TreeWriter<LoroDoc>, view: View, actor: string) => T,
+    make: (writer: TreeWriter, view: View, actor: string) => T,
   ): Promise<T> {
     const store = options.store ?? defaultStore;
     const { result } = await store.submit({

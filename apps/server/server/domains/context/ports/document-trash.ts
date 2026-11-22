@@ -20,7 +20,7 @@ export type DocumentTrash = {
   ): Promise<ReadonlySet<DocumentId>>;
   /** The server's facts of the project's Trash entries, newest first: documents on their own and deleted folders. */
   list(projectId: ProjectId): Promise<readonly TrashEntryFacts[]>;
-  /** Reads one restorable removal and its text, serialized from its frozen Yjs. */
+  /** Reads one restorable removal and its text, serialized from its retained room. */
   read(projectId: ProjectId, documentId: DocumentId): Promise<DocumentTrashEntry | null>;
   /** Whether a missing trash entry belonged here and has since been permanently purged. */
   wasPurged(projectId: ProjectId, documentId: DocumentId): Promise<boolean>;

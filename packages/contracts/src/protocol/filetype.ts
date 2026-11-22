@@ -16,8 +16,8 @@ import { z } from "zod";
 import { readSegment } from "./entry-segment.js";
 import type { DocumentFileType } from "./http-types.js";
 
-/** ProseMirror schema backing a Yjs-tracked document. */
-export type YjsTrackedSchemaType = "document" | "code";
+/** ProseMirror schema backing a tracked document. */
+export type TrackedSchemaType = "document" | "code";
 
 /**
  * Identifies the viewer/editor surface for a file.
@@ -52,7 +52,7 @@ export type Filetype =
   | "binary";
 
 export type FiletypeDisposition =
-  | { kind: "tracked"; schemaType: YjsTrackedSchemaType }
+  | { kind: "tracked"; schemaType: TrackedSchemaType }
   | { kind: "binary"; fileType: DocumentFileType }
   | { kind: "custom"; fileType: DocumentFileType };
 
@@ -207,7 +207,7 @@ export function filetypeForMimeType(mimeType: string): Filetype {
 /**
  * Derive a {@link Filetype} only when a MIME type is in the canonical registry.
  *
- * This answers which Yjs viewer/editor surface applies — not the persisted
+ * This answers which viewer/editor surface applies — not the persisted
  * {@link DocumentFileType} storage class. Registry entries are limited to MIME
  * types with a distinct editor surface (for example PNG/JPEG/SVG); generic
  * `image/*` types such as WebP are intentionally absent. Use
@@ -225,13 +225,13 @@ export function filetypeForKnownMimeType(mimeType: string): Filetype | null {
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /**
- * Derive the persisted/document DTO storage class from Yjs filetype plus MIME
+ * Derive the persisted/document DTO storage class from the filetype plus MIME
  * evidence.
  *
  * Write boundaries call this once and persist `documents.fileType`. Read paths
  * trust that column — they do not re-derive storage class from MIME.
  *
- * When `filetype` is `null` (non-Yjs-tracked uploads), MIME is the only
+ * When `filetype` is `null` (untracked uploads), MIME is the only
  * evidence: any `image/*` → `"image"`, `application/pdf` → `"pdf"`, DOCX MIME
  * → `"docx"`, otherwise `"binary"`. A DOCX is a binary `Filetype` with no
  * Meridian viewer/editor surface.

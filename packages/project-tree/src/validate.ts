@@ -8,7 +8,7 @@ const MAX_CASCADE = 100_000;
 const MAX_ALIASES = 1_000;
 const BASE = ["id", "node", "actor", "draft", "type", "undoes"];
 /** What only the server writes, on any kind: a copy's `carries`, an applied copy's other two fields, and a restored copy's source. */
-export const SERVER_BASE = ["carries", "appliedBy", "fromDraft", "restores", "restoredBy"];
+const SERVER_BASE = ["carries", "appliedBy", "fromDraft", "restores", "restoredBy"];
 /** The five kinds a client may write, with every field a client may set on each. */
 const FIELDS = new Map<string, readonly string[]>([
   ["create", [...BASE, "kind", "name", "parent", "source", "rank", "filetype", "provisional"]],
@@ -18,7 +18,7 @@ const FIELDS = new Map<string, readonly string[]>([
   ["restore", BASE],
 ]);
 /** What the server adds: a file's blob, a document's aliases and properties mark, and `purge`, which names the Trash entry it empties. */
-export const SERVER_FIELDS = new Map<string, readonly string[]>([
+const SERVER_FIELDS = new Map<string, readonly string[]>([
   ["create", ["aliases", "hasProperties", "blob"]],
   ["purge", [...BASE, "delete", "nodes"]],
 ]);
@@ -49,7 +49,7 @@ function isRank(value: unknown): value is string {
  * Builds the record a decoded value stands for, or says why there is none. The copy is made
  * from the value's own fields, each checked, so nothing a prototype, a getter or a field this
  * function does not name could carry into the replay. One reader for every client and the
- * server: who may write a kind or a field is the guard's (`clientMayWrite`), never the reader's.
+ * server.
  */
 function read(value: unknown): ReadRecord {
   const fail = (why: string): ReadRecord => ({ ok: false, why });

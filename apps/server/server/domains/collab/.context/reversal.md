@@ -3,27 +3,20 @@
 Reversal reads what an edit recorded and writes a merge, for card actions and the model's
 Undo/Revert alike. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
 model writes the edit again (the writer asks it to). An inverse is an ordinary
-immutable journal edit; it never rewrites a target row or marks it reversed.
+recorded edit; it never rewrites a target row or marks it reversed.
 
 ## An AI edit is text
 
-The card's state and Undo read what an edit recorded, never Yjs item ids. Each AI write into the
+The card's state and Undo read what an edit recorded, never CRDT item ids. Each AI write into the
 manuscript records its `delta` (the blocks it changed, before and after:
 `document_edit_parts.delta`). A change of the edit is one of the differences its delta cuts
 (`content-merge/stands.ts`). It **stands** in a text when the text holds it and merges it out
-cleanly (`changeStateIn`). The Live inverse and a press's Undo write only a change that stands;
-the card's offer uses that same test for Live text.
+cleanly (`changeStateIn`). The Live inverse writes only a change that stands; the card's offer uses that same test.
 
-A drafted write (Draft mode, or a named Work) leaves the Work's suggestions in Live, not text the
-manuscript holds. The card's Undo handles a document that still holds the turn's suggestions in a
-separate path: `suggestion-turn-undo.ts` finds them with `storedPendingTurns` and rejects them with
-`resolveStored(..., "reject", { turn })`, without a `stands` check; text the writer typed beside
-them stays. Documents where the turn left no pending suggestion (it wrote Live there, or its
-suggestions were applied or discarded) go to the Live inverse: one operation takes a change out of
-Live, `takeOut`, the merge of its inverse. The card's Undo plans (`prepare` in
+Phase 1 has no text drafts, so every AI write is Live text. The card's Undo takes a change out of
+Live with one operation, `takeOut`, the merge of its inverse. It plans (`prepare` in
 `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps
-before it leave. An applied suggestion is Live text no `delta` of the turn describes, so the Live
-inverse finds nothing of it standing and leaves it.
+before it leave.
 
 A step records one receipt of kind `undo` that names the parts it took, so the card says
 "Undone". The model's `undo` and `revert` of a part in Live are the same step the card's Undo of
@@ -33,16 +26,12 @@ revert reads back like any other edit.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> suggested: the AI's drafted write lands as the Work's suggestions
   [*] --> live: the AI's write lands in the manuscript
-  suggested --> applied: Apply (accept)
-  suggested --> out: the card's Undo (reject), or Discard
-  out --> suggested: Undo of that Discard
   live --> out: the card's Undo, the model's undo or revert
 ```
 
 No code steps this machine: each change's state is read from the document on every read, so it
-cannot go stale. An applied change is plain Live text; the card's Undo leaves it.
+cannot go stale.
 
 ## Commands and policy
 
@@ -114,9 +103,8 @@ or current text. Undo refuses `cant_undo_changed` only when nothing of a text-on
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port; its excerpt of each edit is
 read from the part's `delta` (`deltaExcerpt`), and its state from the text as for any write
-(`changed` or `live`), or `undone` when an undo receipt names the part. Live edits run on Loro
-rooms, where no Work's suggestions sit, so the listing has no `applied`, `discarded` or `pending`
-state while drafts are off. Model actions
+(`changed` or `live`), or `undone` when an undo receipt names the part. With no text drafts in
+phase 1, the listing has no `applied`, `discarded` or `pending` state. Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
@@ -144,12 +132,10 @@ the tree Undo takes the document back whole (`createdDocuments`).
 A reversal's result names a document in Trash by where it last stood.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target. Every part is Live's
-(`document_edit_parts.origin` is `live`): a drafted write's suggestions are Live text with marks,
-and their Undo is the rejection above. Text targets authorize live.
+(`document_edit_parts.origin` is `live`). Text targets authorize live.
 
 Card authorization and change-viewer discovery share immutable edit and
-origin targets with inverse admission; mutation and draft transport
-journals are never authorization lineage. Card inverse rows are writer rows
+origin targets with inverse admission; room batches are never authorization lineage. Card inverse rows are writer rows
 with no turn. A model write carries a
 `ResponseAuthorship`: `response_id` keeps provider authorship. The command's id
 (`document_edits.command_id`) joins the text and tree receipts of one call.
@@ -236,9 +222,7 @@ of one edit. Under them each step plans again on the committed text: the step re
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.
 
-The card's chip exposes and the press handles the two cases in `suggestion-turn-undo.ts`: pending
-suggestions use the `storedPendingTurns` scan, while Live text uses the `prepare` plan and its
-`stands` check. The cost is one read of each document's blocks and about 2.5 ms per change, one
+The card's chip and its Undo use the `prepare` plan and its `stands` check. The cost is one read of each document's blocks and about 2.5 ms per change, one
 document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
 the same reads.
 

@@ -65,8 +65,11 @@ Every `DocumentSession` subscribes to `change_event`.
 
 ## Dev-only wire observation
 
-Only the thread socket is tapped (`ThreadWireTap`). The Loro room socket has no tap yet: the
-old Yjs inspector read Yjs frames, and its Loro replacement is left for 1e.
+Both sockets are tapped in dev: the thread socket (`ThreadWireTap`) and the Loro room socket
+(`LoroWireTap` in `wire-tap.ts`, fed by `loro-room-transport.ts`: every message it sends or
+decodes, and each socket open and close). The debug overlay maps them to `wire.thread` and
+`wire.loro` records (`features/debug/trace/`), metadata only: a frame's class, bytes, batch id and
+channel, never its updates.
 
 Thread protocol, cursor and deadline contracts belong to the
 [shared thread client](../../../../../../packages/thread-client/.context/CONTEXT.md).

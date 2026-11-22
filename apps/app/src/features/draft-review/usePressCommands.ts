@@ -31,7 +31,6 @@ import {
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
-  useLiveDocumentSessionRegistry,
   useOptionalContextRemovalCoordinator,
   useOptionalPresentedDocuments,
   useOptionalTreeLists,
@@ -80,7 +79,6 @@ export function usePressCommands({
 }) {
   const owner = useDraftCommandOwner();
   const driver = useCommandDriver();
-  const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
   const removal = useOptionalContextRemovalCoordinator();
   const presented = useOptionalPresentedDocuments();
@@ -266,12 +264,6 @@ export function usePressCommands({
       );
       const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
       try {
-        // Every room with unsent typing, not only the pressed rows: a press finds documents the
-        // list hasn't.
-        const open = [...registry.unsentRoomVersions()].map(([documentId, vector]) => ({
-          documentId,
-          vector: btoa(String.fromCharCode(...vector)),
-        }));
         // A read already out answers from before the press: it must not bring the rows back.
         await queryClient.cancelQueries({
           queryKey: projectQueryKeys.drafts(projectId, draftId),
@@ -285,7 +277,6 @@ export function usePressCommands({
           verdict,
           items: items === "all" ? "all" : [...items],
           ...(listed?.saw ? { saw: listed.saw } : {}),
-          ...(open.length ? { seen: open } : {}),
         });
         if (!record) return "told";
         const settled = await live.whenSettled(record.id);
@@ -460,7 +451,6 @@ export function usePressCommands({
   }, [
     owner,
     driver,
-    registry,
     treeLists,
     removal,
     presented,

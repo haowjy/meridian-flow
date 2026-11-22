@@ -1,7 +1,8 @@
 # Model revert by identity
 
-Checks `write {command: "revert", edit: "e1"}`. Revert follows Yjs item
-identity: it deletes what the edit inserted and restores what it deleted. Each
+Checks `write {command: "revert", edit: "e1"}`. Revert reads the edit's
+recorded `delta`: it takes out what the edit inserted and restores what it deleted, where that
+change still stands. Each
 part reverts or skips independently. Skipped parts use their immutable
 1-based number and reason, and the result does not quote before, after, or
 current text.
@@ -29,8 +30,7 @@ the first write result rather than assuming `e1`:
 ./mf thread send "$T" revert --mock "$REVERT" --json
 ```
 
-In Draft mode, a read and write in the same chat target the Work's view: its write lands as the
-Work's suggestions in Live, and a later read shows them (`version: draft`). Browser cases use real
+Phase 1 has no text drafts: in Draft mode too, a write lands in Live. Browser cases use real
 typing instead of a mocked writer edit.
 
 ## Cases
@@ -63,10 +63,8 @@ older as reverted.
 In direct mode, edit a live file and delete it in the same chat. `undo` with
 `count: 2` restores the file and reverses its earlier text edit atomically.
 
-To check destination routing, make a live edit, switch to Draft, and run Undo:
-the manuscript changes and the Work's suggestions do not, with `version: live`. Make
-a Draft edit, switch to auto-apply, and run Undo: the Work's suggestions are taken back and
-the manuscript's own text does not change. Move the chat to another Work; Undo still lands in the
+To check routing, make an edit, switch the chat's write mode, and run Undo: the
+manuscript's change is taken back, with `version: live`. Move the chat to another Work; Undo still lands in the
 Work that owns the edit. Archive that Work; its rebound chat offers no command
 and Undo returns `nothing_to_undo`.
 

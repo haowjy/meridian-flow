@@ -20,7 +20,7 @@ They need:
 
 ## Product purpose
 
-Meridian Flow combines a serial-writing project, collaborative rich-text document runtime, and agentic thread runtime. The app is where a writer drafts, reviews context, asks for help, and returns quickly to the manuscript. The server owns canonical Yjs persistence, thread orchestration, billing gates, package/agent definitions, and provider adapters.
+Meridian Flow combines a serial-writing project, collaborative rich-text document runtime, and agentic thread runtime. The app is where a writer drafts, reviews context, asks for help, and returns quickly to the manuscript. The server owns canonical document storage, thread orchestration, billing gates, package/agent definitions, and provider adapters.
 
 Success looks like a writer who trusts the tool with a large active serial because it keeps their chapters, continuity context, and AI work organized without getting between them and the next scene.
 

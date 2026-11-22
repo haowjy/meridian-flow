@@ -1,6 +1,6 @@
 /**
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
- * the change shows at once from the replay and Yjs carries it to the server. No action is refused:
+ * the change shows at once from the replay and the Loro room carries it to the server. No action is refused:
  * a node or parent the
  * copy lacks is made as asked and the replay places it or skips it. A change to a Work that was
  * closed is sent like any other; the server stamps it `dropped` ("Work was closed"), every replay
@@ -53,7 +53,7 @@ export class TreeActions {
 
   /** The writer on the copy as it stands. */
   private writable(): {
-    writer: TreeWriter<LoroDoc>;
+    writer: TreeWriter;
     session: TreeListSession;
     view: View;
     replay: () => TreeProjection;

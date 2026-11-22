@@ -18,7 +18,7 @@
  *   would report the grabbed block deleted every time.
  *
  * Nothing here touches the document. The transactions carry meta only, so no
- * step reaches Yjs and no undo entry appears for picking a paragraph up.
+ * step reaches the room and no undo entry appears for picking a paragraph up.
  */
 
 import { extentOf, nestNodes } from "@meridian/prosemirror-schema";
@@ -35,7 +35,7 @@ export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {
   /**
-   * The block under the pointer, held by Yjs identity rather than by position:
+   * The block under the pointer, held by block id rather than by position:
    * a remote write replaces the whole document, so the mapping calls every
    * position deleted, and the seam a deleted block leaves behind is where its
    * replacement now starts.
@@ -74,7 +74,7 @@ export function endBlockDrag(editor: Editor): void {
 /**
  * Where the held block is now, or null when no gesture has one.
  *
- * Resolved on read rather than in the plugin's `apply`: the Yjs binding this
+ * Resolved on read rather than in the plugin's `apply`: the Loro binding this
  * asks is the one belonging to the state in hand, and inside `apply` the
  * binding may still be describing the document the transaction replaced.
  */

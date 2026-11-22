@@ -104,7 +104,7 @@ describe("durable document derivations", () => {
   const seeder = treeSeeder(db);
   let fail = false;
   /** A live edit of the tree (move, rename, delete) through the list store, as a person's would be. */
-  async function liveEdit(edit: (writer: TreeWriter<LoroDoc>) => unknown) {
+  async function liveEdit(edit: (writer: TreeWriter) => unknown) {
     await seeder.store.submit({
       lists: [await treeListOfSource(db, sourceId)],
       make: ([{ writer }]) => edit(writer),

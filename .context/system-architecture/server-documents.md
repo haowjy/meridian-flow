@@ -31,14 +31,13 @@ flowchart LR
 
 ## collab
 
-Live documents: Loro rooms, their history, receipts and the inverses Undo applies; until the cutover's last step, Hocuspocus, the Yjs journal, drafts and the press too.
+Live documents: Loro rooms, their history, receipts and the inverses Undo applies, and the press of a Work's tree draft.
 
 Holds each document's Live text in a Loro room stored as `document_snapshots` rows (`DocumentRooms`), serves it on `/ws/loro` with presence, and cuts old history once a room's rows pass about 5 MB. Every read, write, seed, copy and derivation goes through the room. A model's write commits its batch and receipt in its command's transaction; a tab's batch is acked at once and stored within seconds, and after a server restart the tab resends what the room lost. Phase 1 lands every agent write live.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/collab`
 - Docs: [CONTEXT](../../apps/server/server/domains/collab/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/collab/AGENTS.md)
-- Machines: [collab](../../apps/server/server/domains/collab/.context/state-machines.md)
 - Breaks: In the import cycle, which the root CONTEXT.md rules out.
 
 ## context
@@ -95,7 +94,7 @@ The group of `import`, `export`, `file-intake` and `storage`.
 
 The writer's browser tab.
 
-Holds the HTTP client, the thread socket and the Yjs socket.
+Holds the HTTP client, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [browser](system.md#browser)

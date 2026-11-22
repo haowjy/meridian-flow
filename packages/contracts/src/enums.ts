@@ -58,9 +58,6 @@ export type SubscriptionPlan = z.infer<typeof SubscriptionPlan>;
 export const SubscriptionStatus = z.enum(["active", "past_due", "cancelled", "trialing"]);
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatus>;
 
-export const YjsOriginType = z.enum(["user", "agent", "system", "import"]);
-export type YjsOriginType = z.infer<typeof YjsOriginType>;
-
 export const ExecutionSide = z.enum(["provider", "local", "client"]);
 export type ExecutionSide = z.infer<typeof ExecutionSide>;
 

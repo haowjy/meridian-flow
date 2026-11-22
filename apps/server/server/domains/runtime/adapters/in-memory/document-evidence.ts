@@ -59,7 +59,6 @@ export function createInMemoryDocumentEvidence(deps: {
           blockId,
           room: frontier.room,
           snapshot: frontier.snapshot.slice(),
-          ...(frontier.position === undefined ? {} : { position: frontier.position }),
           recordedSeq: ++frontierSeq,
         });
       for (const showing of evidence.shown) {
@@ -104,7 +103,6 @@ export function createInMemoryDocumentEvidence(deps: {
         ? {
             room,
             snapshot: latest.snapshot.slice(),
-            ...(latest.position === undefined ? {} : { position: latest.position }),
           }
         : null;
     },

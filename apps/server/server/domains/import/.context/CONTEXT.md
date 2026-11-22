@@ -148,9 +148,9 @@ import, check organizing and the lease token, acquire the project lifecycle gate
 liveness, then run the writes in that same transaction. Do not add token arguments to upload
 mutations or open a second Context transaction. It is not an upload capability.
 
-**The text waits in the journal.** A batch of at most 500 nodes or 16 MiB writes each document's
-first Yjs state under the id its create will have (`encodeSeed`, `installSeeds`): a head with no
-`documents` row, which nothing reads because no record names it. What else the batch worked out,
+**The text waits in its rows.** A batch of at most 500 nodes or 16 MiB writes each document's
+first state under the id its create will have (`encodeSeed`, `installSeeds`): `document_snapshots`
+rows with no `documents` row, which nothing reads because no record names it. What else the batch worked out,
 the document's properties and aliases and the links it made to documents that do not exist yet
 (their random ids are inside the stored text, so they cannot be worked out twice), goes to
 `import_entries.ahead` in the same transaction as the entries' `received -> prepared`.

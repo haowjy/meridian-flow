@@ -1,46 +1,25 @@
 # Draft review runtime
 
-A Work's draft is that Work's suggestion marks (`{id, work}`) in each Live document
-(`packages/suggestions`). Review reads them from the editor that shows the document and acts on
-them in two ways:
+Phase 1 of the move to Loro has no text drafts: a Work's draft is its tree records (a document or
+folder it created, renamed, moved or deleted), and every text write lands Live. Text drafts come
+back in phase 2 as fork rooms of the document, and with them per-change review in the editor.
 
-- **One change** (a card's ✓ or ×, a stepper's Apply or Discard) is an editor transaction on the
-  Live document (`acceptSuggestion` / `rejectSuggestion`), one entry on that editor's history:
-  Ctrl+Z takes it back.
-- **A document, a folder, a selection or the whole Work** is a press: one server command over the
-  text and tree halves (`usePressCommands`, `POST /api/projects/:id/press`, kinds `press` and
-  `unpress`). The server answers per item what it took.
-
-Both feed the same rows, counts, notices and Undo. There are no draft rooms: a review's editor is
-the Live editor, opened in the Work's view (`runtime.workView`).
+A document, a folder, a selection or the whole Work is pressed: one server command over the items'
+tree changes (`usePressCommands`, `POST /api/projects/:id/press`, kinds `press` and `unpress`). The
+server answers per item what it took.
 
 ## What the review reads
 
-`useOpenReviewChanges` reads the open document's changes from its host editor
-(`useSuggestionRead`, `useSuggestionChanges`, `host-editor.ts`). A change is one run of one suggestion id;
-its byline is the suggestion's author. The Changes list, the chat strip and a document's band read
-the owner's draft list (`useOwnerDrafts`), which the server derives from the marks and the Work's
-tree records; a row with text is listed whole (its count is `textChanges`), and a move or a delete
-is its tree line (`tree-line.ts`), listed before the text.
+The Changes list, the chat strip and a document's band read the owner's draft list
+(`useOwnerDrafts`), which the server derives from the Work's tree records. A move or a delete is
+its tree line (`tree-line.ts`); a document the Work created is one whole-item change
+(`useOpenReviewChanges`).
 
 The list is re-read when the server wakes the owner (`useProjectWake`), and in each of the
 account's tabs when a press or its Undo settles (`press-commands.ts`); both read the same
 things (`refreshDraftReads`). A pressed row leaves the
 list while the press is in flight (`DraftCommandOwner.hold`) and comes back with a pill if the
 press fails. Items never end on their own: a row leaves when a read no longer lists it.
-
-The open document's list follows the editor's document as a transition (`useEditorDoc`): it
-redraws a frame after each keystroke, and a change that reads the same keeps its row object, so
-typing never waits on the band, the bar or the Changes list.
-
-A Work's rows come from the server once it derives the document, a two-second debounce after
-each write: a suggestion row is listed while the Work has changes in the document, with their
-count (`textChanges`). While the document is open, its rows follow this tab's editor instead
-(`usePublishChangeCounts`, `client/query/tab-change-counts.ts`, the same `pendingChanges` rule
-the server counts by): the tab's own Apply, Discard, Undo and typing change the count at once,
-the last change applied drops the row, and an Undo lists it again from the row last seen. A pin's
-end check (`verifyPin`) reads the rows the same way, so the Live/Draft label follows too. Rows
-with more than suggestions (a tree change, a whole item) stay the server's.
 
 ## Account command lifetime
 
@@ -49,33 +28,29 @@ surfaces, and outlives them:
 
 - `hold(itemKeys, applying)` marks items in flight, which hides their rows and leaves their review.
 - `presses` holds every press this tab can still take back (`PressEntries`,
-  [state-machines.md](state-machines.md)): one entry in the history of each open editor of its
-  documents. Ctrl+Z there, or its row's or notice's Undo, sends the press's `unpress`.
+  [state-machines.md](state-machines.md)). The sidebar's Undo step, or its row's or notice's
+  Undo, sends the press's `unpress`.
 - `notices` (`DraftNotices`) holds one notice per draft.
 
 A press is sent through the command driver (`client/query/press-commands.ts`, lane
 `press:<owner>`), which resends it under the same id until the server answers. A press that
 fails shows a brief pill (`notifyFailure`), never a line in the row or bar pressed. An archived
-Work's or a trashed chat's suggestions take every press and every keystroke: nothing in the review
-reads the owner's lifecycle.
+Work's or a trashed chat's draft takes every press: nothing in the review reads the owner's
+lifecycle.
 
 ## Discard
 
 Every Discard of a document, a folder, a selection or the Work is one press with
-`verdict: "discard"`: it rejects the Work's suggestions there and discards the Work's tree changes
+`verdict: "discard"`: it discards the Work's tree changes there
 (a document or folder the Work created goes to Trash, an ordinary deleted document there). Trash
 has no entry for the rest. Its Undo is the press's `unpress`, as Apply's is (`PressEntries`): the
-notice's Undo, the sidebar's Undo step or Ctrl+Z in an open editor of its documents, once between
-them, in the tab that pressed. Undo puts a created document back where it was before the press:
+notice's Undo or the sidebar's Undo step, once between them, in the tab that pressed. Undo puts a created document back where it was before the press:
 pending in the Work, out of Trash and Live. Trash's Restore brings it into Live instead; whichever
-comes first, the other has nothing left to do. The editor's Redo presses again, and it goes back to
-Trash. An Apply's Undo takes a created document out of Live too: if main shows it, main reopens it on
+comes first, the other has nothing left to do. An Apply's Undo takes a created document out of Live too: if main shows it, main reopens it on
 its review item (`unpress` in `usePressCommands`), read before the Undo is sent, since main
 unmounts the document as soon as Live loses it
 ([press](../../../../../server/server/domains/collab/.context/press.md#discard-and-what-goes-to-trash)).
-After a reload nothing offers the Undo, and the writer's own typing in the Work's view that it
-rejected is gone. A Discard of
-one change in the editor is an editor transaction, undone with Ctrl+Z.
+After a reload nothing offers the Undo.
 
 ### Notices
 
@@ -92,13 +67,12 @@ with Undo. Focus stays on the surface pressed: each surface wraps its notice and
 ## Tree lines
 
 An item with a draft tree record (a creation, move or delete) is pressed with its tree half: a
-row's ✓ or × on a tree line alone sends `half: "tree"` and leaves the text. A delete supersedes
-the text rows. A document that exists only in the Work is pending as its drafted create; its
-text is plain Live text, so Apply makes the create live and Discard removes it.
+row's ✓ or × on a tree line sends `half: "tree"`. A document that exists only in the Work is
+pending as its drafted create; its text is plain Live text, so Apply makes the create live and
+Discard removes it.
 
 **A chat card's Undo** is the server's `reverse_turn` command: it takes back its own reply's
-changes, rejecting the suggestions the turn left (`suggestion-turn-undo.ts`). The card holds no
-Apply entry.
+changes. The card holds no Apply entry.
 
 ## Not covered yet
 
@@ -108,11 +82,3 @@ Apply entry.
   makes main follow its document when the document leaves Live.
 - After a Discard's Undo, main stays where the Discard sent it; the created document is pending
   in Changes.
-
-- The review never reads as failed: an editor that never syncs (a refused room, lost access)
-  leaves the band and sheet loading; nothing says "Changes couldn't load" or offers Retry.
-- An inline Apply or Discard is a local edit of the tab's Y.Doc, so it can't fail as a press can
-  (a press that fails shows "Couldn't apply" and its rows come back). If the tab's copy is later
-  dropped unsent (the room refused), the resolve is lost silently: the dropped-copy check
-  (`dropWords` in `document-session-registry-implementation.ts`) speaks only for lost words, and a
-  resolve adds none.

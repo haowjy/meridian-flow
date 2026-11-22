@@ -110,11 +110,15 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     },
     async sync(room, version) {
       const { docs } = load(room);
-      const update = docs.exportSince(decodeRoomVersion(version));
-      return {
+      const since = decodeRoomVersion(version);
+      const update = docs.exportSince(since);
+      const sync = {
         version: encodeRoomVersion(docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
+        oldestLacking: docs.oldestLacking(since),
       };
+      for (const vector of since.values()) vector.free();
+      return sync;
     },
     async write(room, batch, origin) {
       return importInto(load(room), batch, origin);

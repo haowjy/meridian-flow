@@ -15,7 +15,7 @@ import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js
 
 /**
  * The cut the review rows were drawn from: for each list the Work's records are in, the list's
- * journal id and its Yjs state vector (base64) as the draft list read them. Records admitted
+ * id and its Loro version vector (base64) as the draft list read them. Records admitted
  * after it are ones the writer had not seen; they stay pending. A cut of another list (one
  * rebuilt under a new id) is no cut, and a scope left out is the server's own cut.
  */

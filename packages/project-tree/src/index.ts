@@ -1,12 +1,4 @@
-export {
-  type Admission,
-  admit,
-  type Connection,
-  CopyFault,
-  clientMayWrite,
-  guard,
-  MAX_RECORDS,
-} from "./admission.js";
+export { type Admission, admit, type Connection } from "./admission.js";
 export {
   type ApplyResult,
   applyDraft,
@@ -29,7 +21,7 @@ export {
   type RecordSettled,
   settledRecords,
 } from "./drafted-fate.js";
-export { type ListDoc, listOf, type TreeDoc } from "./list-doc.js";
+export { type ListDoc, listOf } from "./list-doc.js";
 export { shownName } from "./names.js";
 export {
   type Actor,
@@ -44,10 +36,8 @@ export {
   type PurgeRecord,
   type RenameRecord,
   type RestoreRecord,
-  recordsOf,
   type Settlement,
   type SettleRecord,
-  settleLogOf,
   sourceIdOf,
   sourceRoot,
   type TreeRecord,

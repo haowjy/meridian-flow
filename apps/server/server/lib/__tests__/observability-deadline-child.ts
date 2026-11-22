@@ -24,7 +24,7 @@ registerProcessShutdownCallback(async () => {
   await new Promise(() => undefined);
 });
 registerProcessShutdownCallback(() => {
-  record("yjs-drain-start");
+  record("rooms-drain-start");
 });
 
 installObservabilityShutdownHooks({ deadlineMs: Number(process.env.SHUTDOWN_DEADLINE_MS) });

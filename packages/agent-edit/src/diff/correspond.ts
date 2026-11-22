@@ -2,7 +2,7 @@
  * Block correspondence: for two versions of a sequence of blocks (top-level blocks, a quote's
  * paragraphs, a table's rows, the atoms of a paragraph), which old block each new block is.
  *
- * Two ways to answer. The content merge, the Yjs writer and review ask by id (`byId`): blocks carry a
+ * Two ways to answer. The content merge, the room writer and review ask by id (`byId`): blocks carry a
  * permanent `id`, so a block is the block with the same id, whatever was done to its text. The rest
  * ask without: the model's write (its Markdown has no ids) and a block with no id. That is guess
  * mode: an unmade pairing costs the writer a deleted and an inserted block, and a wrong one costs a
@@ -527,7 +527,7 @@ function findPieces(
 
 /**
  * In guess mode a unit's pair is its first old block and its first new block; every other block of
- * the unit is a piece of that one. Yjs keeps the first block's identity through a split and a join.
+ * the unit is a piece of that one. The first block keeps its identity through a split and a join.
  * A pair made by id stays as it is (`final` lists its old blocks): the id
  * says which block is which, so a piece before it does not take its place.
  */

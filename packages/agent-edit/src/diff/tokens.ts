@@ -410,7 +410,7 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
 
 /**
  * Diff at word granularity over the review's own segments, as `[op, text]` runs. The AI write lowering
- * and the Yjs writer both read it, so one edit has one set of unchanged words; the write then refines
+ * and the room writer both read it, so one edit has one set of unchanged words; the write then refines
  * a changed run that only gained characters by character (`retainShared`).
  */
 export function wordDiff(a: string, b: string): Array<[number, string]> {

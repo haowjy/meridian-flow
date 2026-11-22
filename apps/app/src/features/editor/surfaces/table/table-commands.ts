@@ -273,7 +273,7 @@ export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
  * What a table menu acts on, held rather than read back from the selection.
  *
  * A menu outlives the arrangement that opened it, and that arrangement is the
- * one thing a remote write cannot carry: y-prosemirror restores the writer's
+ * one thing a remote write cannot carry: the Loro binding restores the writer's
  * place as a caret, so the rectangle a writer swept has stopped being selected
  * by the time they reach "Merge cells". A target names its cells in terms only
  * their disappearance can change (`core/editor/anchors.ts`), and the selection
@@ -316,7 +316,7 @@ function targetSelection(state: EditorState, target: TableMenuTarget): Selection
 
   const $anchor = resolveHeldCell(state, target.anchor);
   const $head = resolveHeldCell(state, target.head);
-  // A rectangle is two cells of ONE table. Yjs replaces the element behind a
+  // A rectangle is two cells of ONE table. The binding replaces the node behind a
   // cell that really moved, so a pair that both resolve has not crossed into
   // another table — this is what says so rather than assuming it.
   if (!$anchor || !$head || $anchor.start(-1) !== $head.start(-1)) return null;

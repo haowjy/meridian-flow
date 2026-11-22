@@ -16,7 +16,6 @@
 import type { CatalogDocument, LinkView } from "@meridian/contracts";
 import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
-import type * as Y from "yjs";
 
 export type { HolderLinkScope };
 
@@ -46,9 +45,7 @@ export interface ScopePrepareRequest {
   refs?: readonly string[];
   addresses?: readonly string[];
   folderAddresses?: readonly string[];
-  /** Refs, asset ids and ahead addresses are extracted from these (stored-link extraction). */
-  docs?: readonly Y.Doc[];
-  /** Nodes already carrying stored attrs (copies, host-bound content): extracted like `docs`. */
+  /** Nodes already carrying stored attrs (a document's blocks, copies, host-bound content): their refs, asset ids and ahead addresses load. */
   stored?: readonly PMNode[];
   /**
    * Freshly parsed nodes about to be bound: their written addresses resolve

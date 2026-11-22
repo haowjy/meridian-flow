@@ -119,7 +119,7 @@ function textLayoutAttributes() {
 
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
-// These renames are required for Yjs CRDT compatibility — node type names
+// These renames are required for the shared schema — node type names
 // must match exactly between the server schema and TipTap's schema.
 
 export const MeridianStrong = Bold.extend({
@@ -146,8 +146,8 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     headingLevel: {
       /**
-       * Gives every paragraph under the selection this level, keeping each block and its Yjs
-       * element; a level they all already have, or null, returns them to body text.
+       * Gives every paragraph under the selection this level, keeping each block and its
+       * text; a level they all already have, or null, returns them to body text.
        */
       toggleHeadingLevel: (attributes: { level: HeadingLevel | null }) => ReturnType;
     };
@@ -192,7 +192,7 @@ export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
 
 /**
  * A heading is a paragraph with a `level` (null is body text). One node name
- * means retyping a block edits its Yjs element in place instead of rebuilding
+ * means retyping a block edits its block in place instead of rebuilding
  * it, so a peer's concurrent typing, authorship and anchors in it survive.
  */
 export const MeridianParagraph = Paragraph.extend({
@@ -824,7 +824,7 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
   atom: true,
   defining: true,
   // Not draggable: PM default DnD reorders in place, which re-binds block hashes
-  // (y-prosemirror reconciles by slot). Figure drag-to-place must be reimplemented
+  // (the binding replaces the whole document). Figure drag-to-place must be reimplemented
   // as delete+insert — see .context/TODO.md.
 
   addOptions() {

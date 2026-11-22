@@ -117,6 +117,8 @@ type Admission = {
   readOnlyWhy?: ClosedOwnerWhy;
   target: FileTarget;
   accessKeys: string[];
+  /** The project the document is in; null for an account's document. */
+  projectId: string | null;
 };
 
 export function createLoroGateway(services: LoroGatewayServices) {
@@ -227,6 +229,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
         : {}),
       target,
       accessKeys: accessKeys(found.facts, documentId),
+      projectId: found.facts.owner.kind === "project" ? found.facts.owner.projectId : null,
     };
   }
 
@@ -305,11 +308,19 @@ export function createLoroGateway(services: LoroGatewayServices) {
       level: "info",
       source: "collab.rooms",
       name: "room.join",
-      correlation: { documentId: room.documentId },
+      correlation: {
+        documentId: room.documentId,
+        ...(admission.projectId ? { projectId: admission.projectId } : {}),
+      },
       payload: {
         room: room.kind,
         permission: admission.permission,
         sentBytes: sync.update?.byteLength ?? 0,
+        // How far behind the joining copy is: what the history cutoff (7 days) is tuned on.
+        daysBehind:
+          sync.oldestLacking === null
+            ? 0
+            : Math.max(0, Math.round((Date.now() / 1000 - sync.oldestLacking) / 864) / 100),
       },
     });
   }

@@ -17,8 +17,8 @@ import type {
   PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import { VersionVector } from "loro-crdt";
 import { createError } from "nitro/h3";
-import * as Y from "yjs";
 import { z } from "zod";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentDraftOrigin } from "../domains/collab/domain/ports/work-draft-pending-store.js";
@@ -82,14 +82,14 @@ async function draftOfProject(
 
 // --- Request bodies ----------------------------------------------------------------------------
 
-/** A state vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
+/** A tree list's Loro version vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
 const VectorBody = z.base64().transform((value, context) => {
   const bytes = new Uint8Array(Buffer.from(value, "base64"));
   try {
-    Y.decodeStateVector(bytes);
+    VersionVector.decode(bytes).free();
     return bytes;
   } catch {
-    context.addIssue({ code: "custom", message: "Invalid state vector" });
+    context.addIssue({ code: "custom", message: "Invalid version vector" });
     return z.NEVER;
   }
 });
@@ -111,10 +111,6 @@ const PressBody = z.strictObject({
       .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
   ]),
   saw: SawBody.optional(),
-  seen: z
-    .array(z.strictObject({ documentId: z.string().uuid(), vector: VectorBody }))
-    .max(64)
-    .optional(),
 });
 const PressUndoBody = z.strictObject({
   commandId: CommandIdSchema,

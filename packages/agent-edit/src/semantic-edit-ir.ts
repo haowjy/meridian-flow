@@ -25,7 +25,7 @@ export type SemanticEditIRV1 = {
 };
 
 /**
- * Validate the complete resolver declaration before any lowering mutates a PM or Yjs document.
+ * Validate the complete resolver declaration before any lowering mutates a PM or Loro document.
  * This is deliberately strict: missing output, overlap, a split surrogate, or an unbound source
  * rejects rather than silently becoming fresh authorship.
  */

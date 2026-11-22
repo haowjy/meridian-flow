@@ -23,6 +23,7 @@ import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/cl
 import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import { deleteStaleYjsCopies } from "@/core/stale-yjs-copies";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
@@ -41,6 +42,8 @@ import { loadAccountSettingsWithDeadline } from "./authenticated-account-setting
 if (DEBUG_FEATURE_ALLOWED) {
   installTraceCapture();
 }
+
+if (typeof indexedDB !== "undefined") void deleteStaleYjsCopies(indexedDB);
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from
