@@ -1,14 +1,15 @@
 import {
   commentVisibility,
   type DocChange,
-  type DocKey,
   emptyParagraphId,
   type RoomDocs,
   replaceText,
+  STRUCTURE_KEY,
   shownUnits,
   structureValues,
   TEXT_KEY,
   textUnits,
+  visibleComments,
 } from "@meridian/document-model";
 import type { Cursor } from "loro-crdt";
 import type { Node, ResolvedPos, Slice } from "prosemirror-model";
@@ -21,7 +22,7 @@ import {
   TextSelection,
   type Transaction,
 } from "prosemirror-state";
-import { inlineOf, readProseMirror, writeProseMirror } from "./codec.js";
+import { inlineOf, type ProseMirrorSince, readProseMirror, writeProseMirror } from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
@@ -55,9 +56,11 @@ export const REMOTE_META = "remote";
  *
  * Local: a transaction that is one text replace inside one textblock (typing, Backspace, IME
  * commits) splices that block's text doc directly; any other change writes the document through
- * `writeDocument`, which pairs blocks by id and writes only what differs. Remote: a batch imported
- * through `importRemoteUpdate` re-reads the docs and replaces only the range that differs, with the
- * selection carried as Loro cursors taken before the import.
+ * `writeDocument`, which pairs blocks by id and compares only the blocks the transaction made new
+ * (ProseMirror shares every node a transaction left alone). Remote: a batch imported through
+ * `importRemoteUpdate` re-reads only the docs it changed, keeps every other node as it is, and
+ * replaces only the range that differs, with the selection carried as Loro cursors taken before
+ * the import.
  */
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs } = options;
@@ -71,7 +74,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
         const message = options.messageOf?.(tr);
         const changes =
           typingWrite(docs, oldState, newState, tr, origin, message) ??
-          writeProseMirror(docs, newState.doc, { origin, message });
+          writeProseMirror(docs, newState.doc, { origin, message, previous: oldState.doc });
         if (changes.length > 0) options.onLocalWrite?.(changes, tr);
         return value;
       },
@@ -79,12 +82,17 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
     view(view) {
       const hold = attachCompositionHold(docs, view);
       let cursors: SelectionCursors | null = null;
+      // The comments the editor's document shows bodies of: a batch that adds or removes a body
+      // changes how every block's text reads.
+      let comments = visibleComments(docs);
       const unlisten = listenToImports(docs, {
         before: () => {
           cursors = takeCursors(docs, view.state);
         },
         after: (changed) => {
-          const tr = remoteTransaction(docs, view.state, cursors, changed);
+          const since = { doc: view.state.doc, comments, changed };
+          if (changed.has(STRUCTURE_KEY)) comments = visibleComments(docs);
+          const tr = remoteTransaction(docs, view.state, cursors, since);
           cursors = null;
           if (tr) view.dispatch(tr);
         },
@@ -210,9 +218,9 @@ function remoteTransaction(
   docs: RoomDocs,
   state: EditorState,
   cursors: SelectionCursors | null,
-  _changed: ReadonlySet<DocKey>,
+  since: ProseMirrorSince,
 ): Transaction | null {
-  const next = readProseMirror(docs, state.schema);
+  const next = readProseMirror(docs, state.schema, since);
   const start = state.doc.content.findDiffStart(next.content);
   if (start === null) return null;
   const end = state.doc.content.findDiffEnd(next.content) as { a: number; b: number };

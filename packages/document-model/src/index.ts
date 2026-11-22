@@ -15,6 +15,7 @@ export {
   isDerivedEmpty,
   normalizeInline,
   normalizeMarks,
+  type ReadSince,
   readBlocks,
   readDocument,
   readInline,
@@ -22,6 +23,7 @@ export {
   structureValues,
   type TextUnit,
   textUnits,
+  visibleComments,
 } from "./read.js";
 export {
   CorruptDocBytesError,

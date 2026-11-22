@@ -88,8 +88,6 @@ export type DocumentSessionSnapshot = {
   access: DocumentSessionAccess | null;
   /** Why a read-only room is read-only, when its owner is closed. */
   closedWhy: ClosedOwnerWhy | null;
-  /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
-  reasonPending: boolean;
   localPersistenceSynced: boolean;
   /** The document has reached this session from the server once; stays true offline. */
   contentHeld: boolean;
@@ -208,7 +206,6 @@ export class DocumentSession {
   private transportState: DocumentSessionConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
-  private reasonPending = false;
   /** What the server is known to hold, across connections: the copy's `server` meta. */
   private readonly server: RoomVersion = new Map();
   private holdsUndeliverable = false;
@@ -476,10 +473,9 @@ export class DocumentSession {
         if (historyCutOff(state)) this.holdsUndeliverable = this.computeUndeliverable();
         this.recomputeStatus();
       }),
-      provider.subscribeAccess((access, closedWhy, reasonPending) => {
+      provider.subscribeAccess((access, closedWhy) => {
         this.access = access;
         this.closedWhy = closedWhy;
-        this.reasonPending = reasonPending;
         this.holdsUndeliverable = access === "read" && this.computeUndeliverable();
         this.recomputeStatus();
         this.emit();
@@ -670,7 +666,6 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       closedWhy: this.closedWhy,
-      reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
       contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,

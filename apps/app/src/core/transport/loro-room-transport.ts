@@ -12,6 +12,7 @@
  */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
+  decodeLoroJoinExtra,
   encodeLoroJoinAuth,
   LORO_JOIN_ERROR,
   LORO_ROOM_ERROR,
@@ -83,11 +84,7 @@ export type LoroRoomTransport = {
   readonly whenSynced: Promise<void>;
   subscribeStatus(listener: (state: DocumentSessionConnectionState) => void): () => void;
   subscribeAccess(
-    listener: (
-      access: DocumentSessionAccess,
-      closedWhy: ClosedOwnerWhy | null,
-      reasonPending: boolean,
-    ) => void,
+    listener: (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void,
   ): () => void;
   /** True while connected, joined, and every batch sent on this connection is acknowledged. */
   subscribeServerAcknowledgement(listener: (acknowledged: boolean) => void): () => void;
@@ -167,7 +164,7 @@ export function createLoroRoomTransport({
   const roomId = loroRoomName(room);
   const statusListeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const accessListeners = new Set<
-    (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null, pending: boolean) => void
+    (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void
   >();
   const ackListeners = new Set<(acknowledged: boolean) => void>();
   const barriers = new Set<{
@@ -208,7 +205,7 @@ export function createLoroRoomTransport({
   };
   const emitAccess = (next: DocumentSessionAccess, why: ClosedOwnerWhy | null) => {
     access = { access: next, why };
-    for (const listener of accessListeners) listener(next, why, false);
+    for (const listener of accessListeners) listener(next, why);
   };
   const settleBarriers = () => {
     for (const barrier of [...barriers])
@@ -285,7 +282,9 @@ export function createLoroRoomTransport({
         attempt = 0;
         server.clear();
         mergeVersion(server, decodeRoomVersion(message.version));
-        emitAccess(message.permission === "write" ? "edit" : "read", access?.why ?? null);
+        const { readOnlyWhy } = decodeLoroJoinExtra(message.extra);
+        if (message.permission === "write") emitAccess("edit", null);
+        else emitAccess("read", readOnlyWhy ?? null);
         if (presence) {
           write({
             type: MessageType.JoinRequest,
@@ -462,7 +461,7 @@ export function createLoroRoomTransport({
     },
     subscribeAccess(listener) {
       accessListeners.add(listener);
-      if (access) listener(access.access, access.why, false);
+      if (access) listener(access.access, access.why);
       return () => accessListeners.delete(listener);
     },
     subscribeServerAcknowledgement(listener) {

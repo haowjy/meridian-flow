@@ -20,7 +20,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
   delta raw to decide what a document shows. Every text write goes through `replaceText`, which
   addresses shown units; the unstored empty paragraph is `derivedEmptyParent` / `isDerivedEmpty`
-  for every writer.
+  for every writer, and only when it is its container's one block (`storedOf`).
+- `writeDocument`'s `previous` and `readDocument`'s `since` make a write or a read cost what
+  changed: a block that is the same object as in `previous` (under the same parent) is not
+  compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
+  only with what the docs read as now; with neither, both work on the whole document.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
   shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's

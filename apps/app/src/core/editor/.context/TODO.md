@@ -30,12 +30,40 @@ decoration (flat model design, section 7).
 - The Loro room socket has no `./mf` wire tap; the old Yjs inspector read Yjs frames.
 - Old `meridian:document:` y-indexeddb copies stay in browsers; nothing reads or deletes them.
 - `tab-change-counts` has no publisher while drafts are off.
-- Enter and Backspace across blocks cost about 25–40 ms at 500 paragraphs (7–9 ms on Yjs): any
-  change that is not one text replace writes the whole document (`writeDocument` in
-  `@meridian/document-model`), and every remote batch re-reads it (`readProseMirror`, about 11 ms
-  at 500 paragraphs). Write and read only the blocks the transaction or batch touched.
-- `RoomError` `server-error` (1b) rejoins; the Join `extra`'s `readOnlyWhy` is not read yet: the
-  read-only reason shows only after a revoke names it.
+- `RoomError` `server-error` (1b) rejoins.
+
+## Undo of dependent steps
+
+Ctrl+Z twice can bring text back twice. Press Enter in a paragraph, Backspace to join it back,
+paste into it (each its own step), then Ctrl+Z twice: the paste goes, then the paragraph's end
+shows both still joined and as its own paragraph again. Bold, then unbold, then Ctrl+Z twice
+leaves the text bold.
+
+The cause is the Undo rule (design §2, §6, `invertChange`). An inverse is the diff from a
+change's `after` back to its `before`, computed on a fork at `after` and imported as concurrent
+ops. Text an inverse puts back is new characters, so an earlier step's inverse, which names the
+characters its change wrote, no longer finds them (the join's copied tail, which the paste moved
+and the paste's inverse rewrote); and two inverses of one range merge as concurrent edits (the
+bold). Within one step a doc's consecutive changes are merged (`extend` in
+`editor-history.ts`), so a quick burst no longer hits it. A fix inverts against the document as it
+is now: positional inverses carried through the edits made since, as Loro's `UndoManager` keeps
+them, instead of inverses by character id at the change's own frontier.
+
+The same rule makes Ctrl+Z of a 20-paragraph paste cost about 50 ms at 500 paragraphs: it forks
+every doc the step changed (21 here), where the binding's own read of the result is a few
+milliseconds.
+
+## What an Enter or a mark toggle costs outside the binding
+
+The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800
+blocks in node). In the dev build an Enter still takes about 20–25 ms to the DOM and a mark toggle
+about 18 ms, at 150 and at 500 paragraphs alike. A mark toggle's profile: about 3 ms in
+ProseMirror's dispatch, about 16 ms in a synchronous render of `DocumentToolbar`, most of it
+React's dev-build component timing (`startProfilerTimer`). An Enter adds about 2 ms in
+`fixBlockIds` (`extensions/block-id/`), which maps every block of the old document through the
+transaction and so grows with it, and about 7 ms of native layout when ProseMirror puts the
+selection into the DOM. Measure a production build before changing any of them; the fixer could
+look only at blocks that are not the same node in both documents, as the binding does.
 
 ## Composition undo grouping
 

@@ -1,6 +1,7 @@
 import {
   COMMENT_MARK,
   COMMENT_STYLE_PREFIX,
+  type DocKey,
   type InlineItem,
   type Marks,
   markNameOf,
@@ -116,6 +117,15 @@ export function inlineOf(node: Node | Fragment): InlineItem[] {
 }
 
 /**
+ * The block a node stands for, and back. Nodes and blocks are immutable, so a node seen before
+ * gives the same block object and a block read before gives the same node: a write skips the
+ * blocks a transaction left alone, and a read keeps the editor's nodes for the blocks a batch left
+ * alone, both by identity.
+ */
+const blockOfNode = new WeakMap<Node, ShapeBlock>();
+const nodeOfBlock = new WeakMap<ShapeBlock, Node>();
+
+/**
  * A ProseMirror document as the shape's blocks. Every block must carry a unique `id`: the editor's
  * block-id fixer gives a split or a paste theirs in the same transaction, before the binding sees
  * it, and the binding never invents one (it would pair with nothing the editor holds).
@@ -129,17 +139,29 @@ export function blocksOf(doc: Node): ShapeBlock[] {
 }
 
 function blockOf(node: Node): ShapeBlock {
+  const known = blockOfNode.get(node);
+  if (known) return known;
   const id = node.attrs.id;
   if (typeof id !== "string" || id.length === 0)
     throw new Error(`a ${node.type.name} block has no id`);
   const attrs = storedAttrs(node.attrs);
+  let block: ShapeBlock;
   if (node.isTextblock)
-    return { kind: "text", id, node: node.type.name, attrs, inline: inlineOf(node) };
-  const children: ShapeBlock[] = [];
-  node.forEach((child) => {
-    children.push(blockOf(child));
-  });
-  return { kind: "container", id, node: node.type.name, attrs, children };
+    block = { kind: "text", id, node: node.type.name, attrs, inline: inlineOf(node) };
+  else {
+    const children: ShapeBlock[] = [];
+    node.forEach((child) => {
+      children.push(blockOf(child));
+    });
+    block = { kind: "container", id, node: node.type.name, attrs, children };
+  }
+  pair(node, block);
+  return block;
+}
+
+function pair(node: Node, block: ShapeBlock) {
+  blockOfNode.set(node, block);
+  nodeOfBlock.set(block, node);
 }
 
 /** The ProseMirror document the shape's blocks stand for, in `schema`. */
@@ -151,14 +173,19 @@ export function docOf(schema: Schema, blocks: readonly ShapeBlock[]): Node {
 }
 
 export function nodeOf(schema: Schema, block: ShapeBlock): Node {
+  const known = nodeOfBlock.get(block);
+  if (known?.type.schema === schema) return known;
   const type = schema.nodes[block.node];
   const attrs = { ...block.attrs, id: block.id };
-  if (block.kind === "container")
-    return type.create(
-      attrs,
-      block.children.map((child) => nodeOf(schema, child)),
-    );
-  return type.create(attrs, inlineNodes(schema, block.inline));
+  const node =
+    block.kind === "container"
+      ? type.create(
+          attrs,
+          block.children.map((child) => nodeOf(schema, child)),
+        )
+      : type.create(attrs, inlineNodes(schema, block.inline));
+  pair(node, block);
+  return node;
 }
 
 export function inlineNodes(schema: Schema, items: readonly InlineItem[]): Fragment {
@@ -172,12 +199,42 @@ export function inlineNodes(schema: Schema, items: readonly InlineItem[]): Fragm
   return Fragment.fromArray(nodes);
 }
 
-/** What the editor shows for these docs: the normalized read, as a ProseMirror document. */
-export function readProseMirror(docs: RoomDocs, schema: Schema): Node {
-  return docOf(schema, readDocument(docs));
+/**
+ * What these docs read as before, for a read that re-reads only what changed: the editor's
+ * document then, the comments it showed bodies of (`visibleComments` taken then), and every doc
+ * key that changed since.
+ */
+export interface ProseMirrorSince {
+  doc: Node;
+  comments: ReadonlySet<string>;
+  changed: ReadonlySet<DocKey>;
 }
 
-/** Write a ProseMirror document into the docs: `writeDocument` on its blocks. */
-export function writeProseMirror(docs: RoomDocs, doc: Node, options?: WriteOptions) {
-  return writeDocument(docs, blocksOf(doc), options);
+/**
+ * What the editor shows for these docs: the normalized read, as a ProseMirror document. With
+ * `since`, only what changed is read again, and every block that reads as it did is the node
+ * `since.doc` already holds.
+ */
+export function readProseMirror(docs: RoomDocs, schema: Schema, since?: ProseMirrorSince): Node {
+  const blocks = readDocument(
+    docs,
+    since && { blocks: blocksOf(since.doc), comments: since.comments, changed: since.changed },
+  );
+  return docOf(schema, blocks);
+}
+
+/**
+ * Write a ProseMirror document into the docs: `writeDocument` on its blocks. With `previous` (the
+ * document the docs read as now), the blocks `doc` shares with it are not compared again.
+ */
+export function writeProseMirror(
+  docs: RoomDocs,
+  doc: Node,
+  options: Omit<WriteOptions, "previous"> & { previous?: Node } = {},
+) {
+  const { previous, ...rest } = options;
+  return writeDocument(docs, blocksOf(doc), {
+    ...rest,
+    previous: previous && blocksOf(previous),
+  });
 }

@@ -123,7 +123,9 @@ identity in anchors or holds.
   either side (the binding's `onLocalWrite`); Undo inverts the newest step at its own frontiers
   (`invertChange` in `@meridian/document-model`) and publishes the inverses as one local batch,
   so it takes back the writer's change and leaves a peer's or the model's alone. Redo inverts
-  the inverse. Keystrokes closer than `GROUP_MS` join one step. A step closes on
+  the inverse. Keystrokes closer than `GROUP_MS` join one step, and within a step a doc's
+  changes with nothing between them become one change: two inverses of one doc, each forked at
+  its own `after`, merge as concurrent edits and leave text or marks behind. A step closes on
   `endUndoStep(state)` (image upload, link actions, `@` references, reference drops, a block
   drop call it before their edit) and on any document-changing transaction marked
   `addToHistory: false`; meta-only transactions are not boundaries. Undo puts back the caret
