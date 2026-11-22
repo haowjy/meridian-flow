@@ -7,13 +7,14 @@
  * give back the document exactly, and at the end the copies must read alike. Exits non-zero on the
  * first failure, printing the block that differs.
  */
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import {
   encodeEnvelope,
-  encodeRoomVersion,
   freshPeerId,
+  inText,
   RoomDocs,
   setCommentBody,
-  TEXT_KEY,
   visibleComments,
 } from "@meridian/document-model";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -30,6 +31,26 @@ import {
   UndoHistory,
   writeProseMirror,
 } from "../../src/index.js";
+
+// HANDLES=1: every Loro handle the probe makes must be freed by the end (document-model's
+// handles.ts). Loro registers each handle for finalization and unregisters it on `free()`, so what
+// is still registered at exit was never freed.
+const unfreed = new Map<object, string>();
+if (process.env.HANDLES) {
+  const { register, unregister } = FinalizationRegistry.prototype;
+  FinalizationRegistry.prototype.register = function (target, held, token) {
+    // wasm-bindgen's own closure wrappers (the callbacks handed to Loro) are not handles.
+    if (token && target.constructor.name !== "Function") {
+      const frame = (new Error().stack ?? "").split("\n").find((l) => l.includes("/src/") && !l.includes("handles.ts"));
+      unfreed.set(token, `${target.constructor.name} ${frame?.trim() ?? ""}`);
+    }
+    return register.call(this, target, held, token);
+  };
+  FinalizationRegistry.prototype.unregister = function (token) {
+    unfreed.delete(token as object);
+    return unregister.call(this, token);
+  };
+}
 
 const schema = buildDocumentSchema();
 const shape = shapeSchemaOf(schema);
@@ -77,7 +98,7 @@ function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
 }
 
 const sync = (from: Editor, to: Editor) => {
-  const batch = from.docs.exportSince(to.docs.version());
+  const batch = from.docs.exportSince(to.docs.encodedVersion());
   if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch));
 };
 
@@ -288,8 +309,17 @@ function run(seed: number): string | null {
   // All the text in a copy's text docs, shown or hidden: a hidden block's doc keeps its text.
   const words = (e: Editor) => {
     let all = "";
-    for (const doc of e.docs.texts.values()) all += ` ${doc.getText(TEXT_KEY).toString()} `;
+    for (const doc of e.docs.texts.values()) all += ` ${inText(doc, (text) => text.toString())} `;
     return all;
+  };
+  // A word an editor's own Undo or Redo took out of its docs is no longer one it typed that
+  // must survive: it may live on only in a copy the other editor made (a Join copies text), and
+  // that editor's Undo of the copy takes it away.
+  const stepHistory = (e: Editor, direction: "undo" | "redo") => {
+    const ran = runHistory(e, direction);
+    const now = words(e);
+    for (const word of typed[e.name as "A" | "B"]) if (!now.includes(word)) typed[e.name as "A" | "B"].delete(word);
+    return ran;
   };
   // An Undo keeps every word the other editor typed (it may hide the block they are in). A word
   // may be glued to its neighbour (the Join of a split drops the space at the cut), so it is
@@ -297,10 +327,11 @@ function run(seed: number): string | null {
   const undoKeeps = (e: Editor, when: string) => {
     const other = typed[e.name === "A" ? "B" : "A"];
     const before = words(e);
-    runHistory(e, "undo");
+    stepHistory(e, "undo");
     const after = words(e);
     for (const word of other)
-      if (before.includes(word) && !after.includes(word)) return `${when}: ${e.name}'s Undo took ${word}`;
+      if (before.includes(word) && !after.includes(word))
+        return `${when}: ${e.name}'s Undo took ${word}`;
     return null;
   };
   // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
@@ -314,10 +345,10 @@ function run(seed: number): string | null {
     for (let i = 0; i < k; i++) {
       const bad = differs(e, `${when}, Undo ${i}`);
       if (bad) return bad;
-      if (runHistory(e, "undo")) ran++;
+      if (stepHistory(e, "undo")) ran++;
     }
     for (let i = 0; e.history.canRedo(); i++) {
-      if (!runHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
+      if (!stepHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
       const bad = differs(e, `${when}, Redo ${i}`);
       if (bad) return bad;
     }
@@ -353,10 +384,10 @@ function run(seed: number): string | null {
         continue;
       }
       if (!tr?.docChanged) continue;
-      const version = encodeRoomVersion(e.docs.version()).join();
+      const version = e.docs.encodedVersion().join();
       e.view.dispatch(fixIds(tr));
       // An edit the docs already read as (a cell emptied again) writes nothing and is no step.
-      if (encodeRoomVersion(e.docs.version()).join() !== version) {
+      if (e.docs.encodedVersion().join() !== version) {
         names.push(name);
         if (!open) steps++;
         open = true;
@@ -376,11 +407,11 @@ function run(seed: number): string | null {
       return `${when} [${names}]: ${what} gave ${block(got)}\n  want ${block(want)}`;
     };
     for (let i = 0; i < steps; i++)
-      if (!runHistory(e, "undo")) return `${when} [${names}]: Undo ${i} found nothing`;
+      if (!stepHistory(e, "undo")) return `${when} [${names}]: Undo ${i} found nothing`;
     const undone = compare(start, `${steps} Undos`);
     if (undone) return undone;
     for (let i = 0; i < steps; i++)
-      if (!runHistory(e, "redo")) return `${when} [${names}]: Redo ${i} found nothing`;
+      if (!stepHistory(e, "redo")) return `${when} [${names}]: Redo ${i} found nothing`;
     return compare(end, `${steps} Redos`);
   };
 
@@ -400,7 +431,7 @@ function run(seed: number): string | null {
         if (bad) return bad;
       } else if (roll < 0.22) {
         name = "redo";
-        runHistory(who, "redo");
+        stepHistory(who, "redo");
       } else if (roll < 0.25) {
         name = "chain";
         const bad = chain(who, `step ${step} (chain)`);
@@ -647,6 +678,16 @@ function racedRemovals(): string[] {
   return failures;
 }
 
+// WASM memory only grows: a copy of Loro's that frees every handle stops growing once the probe's
+// largest document has fit, a leak grows with every seed.
+const wasmMemory = (
+  createRequire(import.meta.url)(
+    join(dirname(createRequire(import.meta.url).resolve("loro-crdt")), "loro_wasm.js"),
+  ) as { __wasm: { memory: WebAssembly.Memory } }
+).__wasm.memory;
+const wasmBytes = () => wasmMemory.buffer.byteLength;
+const memEvery = Number(process.env.MEM_EVERY ?? 0) || Number.POSITIVE_INFINITY;
+
 let failed = 0;
 for (const failure of racedRemovals()) {
   failed++;
@@ -658,6 +699,18 @@ for (let seed = first; seed < first + seeds; seed++) {
     failed++;
     process.stderr.write(`FAIL seed ${seed}: ${failure}\n`);
   }
+  if (seed % memEvery === 0) {
+    const { rss } = process.memoryUsage();
+    process.stderr.write(
+      `[mem] seed ${seed}: WASM ${(wasmBytes() / 2 ** 20).toFixed(0)} MB, process ${(rss / 2 ** 20).toFixed(0)} MB\n`,
+    );
+  }
+}
+if (process.env.HANDLES && unfreed.size > 0) {
+  failed++;
+  const groups = new Map<string, number>();
+  for (const where of unfreed.values()) groups.set(where, (groups.get(where) ?? 0) + 1);
+  for (const [where, n] of groups) process.stderr.write(`FAIL unfreed handles: ${n} × ${where}\n`);
 }
 process.stdout.write(
   failed ? `${failed} failed\n` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}\n`,

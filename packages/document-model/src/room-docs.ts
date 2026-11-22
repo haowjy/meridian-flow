@@ -6,6 +6,7 @@ import {
   VersionVector,
 } from "loro-crdt";
 import { decodeEnvelope, type Envelope, encodeEnvelope } from "./envelope.js";
+import { freeVersion, grew, inVersion } from "./handles.js";
 import type { PeerId } from "./peer.js";
 import {
   type BlockId,
@@ -52,6 +53,7 @@ export class HistoryCutoffError extends Error {
   }
 }
 
+/** The metadata of `bytes`, which the caller frees with `freeMeta`. */
 function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): ImportBlobMetadata {
   let meta: ImportBlobMetadata;
   try {
@@ -64,6 +66,11 @@ function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): ImportBl
   return meta;
 }
 
+function freeMeta(meta: ImportBlobMetadata): void {
+  meta.partialStartVersionVector.free();
+  meta.partialEndVersionVector.free();
+}
+
 /**
  * Throws `HistoryCutoffError` if `doc` would refuse `bytes` for depending on history below its
  * shallow cutoff. The metadata clears every update that starts at or after the cutoff, or brings
@@ -74,9 +81,8 @@ function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): ImportBl
  */
 function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: ImportBlobMetadata) {
   if (!doc.isShallow()) return;
-  const have = doc.oplogVersion();
-  const brings = [...meta.partialEndVersionVector.toJSON()].some(
-    ([peer, end]) => (have.get(peer) ?? 0) < end,
+  const brings = inVersion(doc, (have) =>
+    [...meta.partialEndVersionVector.toJSON()].some(([peer, end]) => (have.get(peer) ?? 0) < end),
   );
   if (!brings) return;
   const since = doc.shallowSinceVV();
@@ -88,6 +94,7 @@ function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: ImportB
         id.counter < (since.get(id.peer) ?? 0) &&
         !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
     );
+  since.free();
   if (!belowCutoff) return;
   const trial = doc.fork();
   try {
@@ -145,7 +152,7 @@ export class RoomDocs {
     snapshots: Envelope,
     live: RoomDocs | null = null,
   ): RoomDocs {
-    for (const [key, bytes] of snapshots) checkBytes(key, bytes, true);
+    for (const [key, bytes] of snapshots) freeMeta(checkBytes(key, bytes, true));
     const bytes = snapshots.get(STRUCTURE_KEY);
     const structure = bytes
       ? LoroDoc.fromSnapshot(bytes)
@@ -297,7 +304,7 @@ export class RoomDocs {
     yield* this.texts;
   }
 
-  /** The room version: each owned doc's oplog version vector. */
+  /** The room version: each owned doc's oplog version vector. The caller frees them (`freeVersion`). */
   version(): Map<DocKey, VersionVector> {
     const out = new Map<DocKey, VersionVector>();
     for (const [key, doc] of this.owned()) out.set(key, doc.oplogVersion());
@@ -312,18 +319,43 @@ export class RoomDocs {
    * room imports into its own fork of Live's doc (`importBatch`).
    */
   shownVersion(): Map<DocKey, VersionVector> {
-    const out = new Map<DocKey, VersionVector>();
-    for (const [key, doc] of this.live?.texts ?? []) out.set(key, doc.oplogVersion());
-    for (const [key, vv] of this.version()) out.set(key, vv);
+    const out = this.version();
+    for (const [key, doc] of this.live?.texts ?? [])
+      if (!out.has(key)) out.set(key, doc.oplogVersion());
     return out;
   }
 
-  /** The update of every owned doc that has ops beyond `since` (all of a doc it lacks). */
-  exportSince(since: ReadonlyMap<DocKey, VersionVector> = new Map()): Map<DocKey, Uint8Array> {
+  /** `encodeRoomVersion(version())`, with the vectors freed. */
+  encodedVersion(): Uint8Array {
+    return encodeAndFree(this.version());
+  }
+
+  /** `encodeRoomVersion(shownVersion())`, with the vectors freed. */
+  encodedShownVersion(): Uint8Array {
+    return encodeAndFree(this.shownVersion());
+  }
+
+  /**
+   * The update of every owned doc that has ops beyond `since` (all of a doc it lacks): a map of
+   * version vectors the caller frees, or a version as `encodedVersion()` gives it.
+   */
+  exportSince(
+    since: ReadonlyMap<DocKey, VersionVector> | Uint8Array = new Map(),
+  ): Map<DocKey, Uint8Array> {
+    if (!(since instanceof Uint8Array)) return this.exportAfter(since);
+    const decoded = decodeRoomVersion(since);
+    try {
+      return this.exportAfter(decoded);
+    } finally {
+      freeVersion(decoded);
+    }
+  }
+
+  private exportAfter(since: ReadonlyMap<DocKey, VersionVector>): Map<DocKey, Uint8Array> {
     const out = new Map<DocKey, Uint8Array>();
     for (const [key, doc] of this.owned()) {
       const from = since.get(key);
-      const order = from ? doc.oplogVersion().compare(from) : 1;
+      const order = from ? inVersion(doc, (have) => have.compare(from)) : 1;
       if (order === 0 || order === -1) continue;
       out.set(key, doc.export(from ? { mode: "update", from } : { mode: "update" }));
     }
@@ -355,8 +387,12 @@ export class RoomDocs {
     this.alive();
     for (const [key, bytes] of batch) {
       const meta = checkBytes(key, bytes, false);
-      const target = this.doc(key) ?? this.live?.textOf(key);
-      if (target) checkCutoff(key, target, bytes, meta);
+      try {
+        const target = this.doc(key) ?? this.live?.textOf(key);
+        if (target) checkCutoff(key, target, bytes, meta);
+      } finally {
+        freeMeta(meta);
+      }
     }
     const changed: DocKey[] = [];
     let pending = false;
@@ -367,10 +403,9 @@ export class RoomDocs {
         doc = this.adopt(base ? base.fork() : new LoroDoc());
         this.texts.set(key, doc);
       }
-      const before = doc.oplogVersion();
-      const status = doc.import(bytes);
-      if (status.pending) pending = true;
-      if (doc.oplogVersion().compare(before) !== 0) changed.push(key);
+      const status = grew(doc, () => doc.import(bytes));
+      if (status.value.pending) pending = true;
+      if (status.grew) changed.push(key);
     }
     return { changed, pending };
   }
@@ -385,9 +420,10 @@ export class RoomDocs {
     if (!live) return [];
     const changed: DocKey[] = [];
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
-      const before = into.oplogVersion();
-      into.import(from.export({ mode: "update", from: before }));
-      if (into.oplogVersion().compare(before) !== 0) changed.push(key);
+      const pulled = grew(into, (before) =>
+        into.import(from.export({ mode: "update", from: before })),
+      );
+      if (pulled.grew) changed.push(key);
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
     for (const [id, doc] of this.texts) {
@@ -414,6 +450,14 @@ export class RoomDocs {
   private adopt(doc: LoroDoc): LoroDoc {
     doc.setPeerId(this.peer);
     return configureDoc(doc, this.shape);
+  }
+}
+
+function encodeAndFree(version: Map<DocKey, VersionVector>): Uint8Array {
+  try {
+    return encodeRoomVersion(version);
+  } finally {
+    freeVersion(version);
   }
 }
 

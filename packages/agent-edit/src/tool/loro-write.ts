@@ -5,7 +5,6 @@ import { loroRoomName } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
   encodeEnvelope,
-  encodeRoomVersion,
   freshServerPeerId,
   RoomDocs,
   writeDocument,
@@ -241,7 +240,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   function revision(copy: LoroDocument, scope: CommandLinks["scope"]): string {
     return options.links.revision(
-      { version: encodeRoomVersion(copy.docs.version()), blocks: blocksOf(copy) },
+      { version: copy.docs.encodedVersion(), blocks: blocksOf(copy) },
       scope,
     );
   }
@@ -673,7 +672,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
     const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
     const textBefore = blocksOf(copy);
-    const since = read.docs.shownVersion();
+    const since = read.docs.encodedShownVersion();
     planDoc.write = { message: commitMessageOf(actor) };
     let changed: string[] = [];
     let deleted: string[] = [];

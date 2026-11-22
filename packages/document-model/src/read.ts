@@ -1,4 +1,5 @@
 import type { Delta, LoroDoc } from "loro-crdt";
+import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
@@ -17,7 +18,6 @@ import {
   STRUCTURE_KEY,
   sameValue,
   storedAttrs,
-  TEXT_KEY,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
 
@@ -210,8 +210,9 @@ const sameSet = <T>(a: ReadonlySet<T>, b: ReadonlySet<T>) =>
 /** The comments this reader sees a body of (Live's `comments`, or a draft's override of it). */
 export function visibleComments(docs: RoomDocs): Set<string> {
   const { structure } = docs;
-  const keys = new Set(structure.getMap("comments").keys());
-  if (docs.draft) for (const key of structure.getMap(overrideMap("comments")).keys()) keys.add(key);
+  const keys = new Set(inMap(structure, "comments", (map) => map.keys()));
+  if (docs.draft)
+    for (const key of inMap(structure, overrideMap("comments"), (map) => map.keys())) keys.add(key);
   const visible = commentVisibility(structureValues(docs));
   return new Set([...keys].filter(visible));
 }
@@ -231,10 +232,11 @@ export function commentVisibility(
 
 /** `StructureView.value` read key by key from the doc, for a write that reads a few keys. */
 export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
+  const get = (name: string, key: string) => inMap(docs.structure, name, (map) => map.get(key));
   return {
     value(name, key) {
-      const override = docs.draft ? docs.structure.getMap(overrideMap(name)).get(key) : undefined;
-      return override === undefined ? docs.structure.getMap(name).get(key) : override;
+      const override = docs.draft ? get(overrideMap(name), key) : undefined;
+      return override === undefined ? get(name, key) : override;
     },
   };
 }
@@ -244,15 +246,7 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
  * (design §1, "Removed blocks"). Read key by key, for a write or a read that checks a few blocks.
  */
 export function revivedBlock(docs: RoomDocs, id: BlockId): boolean {
-  // Runs per keystroke: free the map handles rather than wait for GC.
-  const read = (name: string) => {
-    const map = docs.structure.getMap(name);
-    try {
-      return map.get(id);
-    } finally {
-      map.free();
-    }
-  };
+  const read = (name: string) => inMap(docs.structure, name, (map) => map.get(id));
   const override = docs.draft ? read(overrideMap("order")) : undefined;
   const order = override === undefined ? read("order") : override;
   return order !== undefined && typeof order !== "string";
@@ -356,7 +350,7 @@ export function textUnits(
   if (!doc) return [];
   const units: TextUnit[] = [];
   let pos = 0;
-  for (const part of doc.getText(TEXT_KEY).toDelta() as Delta<string>[]) {
+  for (const part of inText(doc, (text) => text.toDelta()) as Delta<string>[]) {
     if (part.insert === undefined) continue;
     const stored = part.attributes ?? {};
     const style = inlineStyle(stored[INLINE_STYLE]);

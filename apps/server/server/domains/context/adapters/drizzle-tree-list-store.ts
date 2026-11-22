@@ -1,9 +1,14 @@
 import type { Database } from "@meridian/database";
 import { documentSnapshots, drafts, type StoredFrontiers } from "@meridian/database/schema";
-import { freshServerPeerId } from "@meridian/document-model";
+import {
+  atVersion,
+  encodedVersionOf,
+  freshServerPeerId,
+  updateSince,
+} from "@meridian/document-model";
 import { admit, listOf, readRecords, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { LoroDoc, VersionVector } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { holdsFrontiers, writeSnapshots } from "../../../shared/document-snapshots.js";
 import { draftOwnerSql, type OwnerLocks } from "../../../shared/draft-owner.js";
@@ -84,8 +89,6 @@ function inOneTransaction<T>(
   });
   return result as T;
 }
-
-const sameVersion = (a: VersionVector, b: VersionVector) => a.compare(b) === 0;
 
 /**
  * A copy of the list as `snapshot` holds it, writing as a fresh server peer: the server's writers
@@ -271,12 +274,12 @@ export function createDrizzleTreeListStore(deps: {
     list: TreeList,
     copy: Copy,
     listId: string,
-    before: VersionVector,
+    before: Uint8Array,
     created: readonly TreeRecord[],
     claimed: readonly TreeRecord[],
   ): Promise<CommittedTreeUpdate> {
     await claimNodeIds(tx, listId, claimed);
-    const update = copy.doc.export({ mode: "update", from: before });
+    const update = updateSince(copy.doc, before);
     await writeSnapshots(tx, [{ roomKey: roomKeyOf(listId), docKey: LIST_DOC, doc: copy.doc }]);
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
@@ -329,10 +332,12 @@ export function createDrizzleTreeListStore(deps: {
     readSince: async ({ listId, version }) => {
       const copy = copyOf(await storedSnapshot(db as DrizzleDb, listId));
       try {
-        const from = version.length > 0 ? VersionVector.decode(version) : undefined;
         return {
-          update: copy.doc.export(from ? { mode: "update", from } : { mode: "update" }),
-          version: copy.doc.oplogVersion().encode(),
+          update:
+            version.length > 0
+              ? updateSince(copy.doc, version)
+              : copy.doc.export({ mode: "update" }),
+          version: encodedVersionOf(copy.doc),
         };
       } finally {
         copy.doc.free();
@@ -345,9 +350,9 @@ export function createDrizzleTreeListStore(deps: {
         const connection = await readConnection(tx, list, accountId);
         // The project or account is gone or no longer the account's: nothing to admit to.
         if (!connection) throw new Error("The account cannot write this list");
-        const before = copy.doc.oplogVersion();
+        const before = encodedVersionOf(copy.doc);
         const admitted = admit(copy.writer, update, connection);
-        if (sameVersion(copy.doc.oplogVersion(), before)) return { committed: null };
+        if (atVersion(copy.doc, before)) return { committed: null };
         copy.pending = owner;
         // A dropped record is in no view: no claim, no row change. A create whose node id is another's
         // fails its claim alone, and the rest of the update stands.
@@ -361,7 +366,7 @@ export function createDrizzleTreeListStore(deps: {
     submit: ({ lists, make }) =>
       withLists(lists, async (tx, held, owner) => {
         const marks = held.map(({ copy }) => ({
-          before: copy.doc.oplogVersion(),
+          before: encodedVersionOf(copy.doc),
           ops: listOf(copy.doc).recordCount(),
         }));
         const writers = held.map(({ copy, listId }) => ({ writer: copy.writer, list: listId }));
@@ -379,7 +384,7 @@ export function createDrizzleTreeListStore(deps: {
         });
         // Settlements gain nothing in the records: the version is what says a copy changed.
         const changes = gained.filter(
-          ({ held: each, before }) => !sameVersion(each.copy.doc.oplogVersion(), before),
+          ({ held: each, before }) => !atVersion(each.copy.doc, before),
         );
         // Marked in this tick, before the first await: a read in this process then reloads
         // instead of seeing a copy ahead of the stored list.

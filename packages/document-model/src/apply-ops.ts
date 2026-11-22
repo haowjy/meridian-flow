@@ -1,3 +1,4 @@
+import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
@@ -9,7 +10,6 @@ import {
   type NodeRule,
   type ShapeBlock,
   storedAttrs,
-  TEXT_KEY,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
 import { replaceText } from "./text.js";
@@ -152,12 +152,13 @@ export function applyOps(
     writer.keep(op.block);
     const { doc, before: start } = docs.writableText(op.block);
     const rules = { rule: ruleOf(op.block) as NodeRule, shape, visibleComment };
-    const text = doc.getText(TEXT_KEY);
     for (const { from, to, mark, value } of op.formats) {
       const units = shownUnits(doc, rules.rule, shape);
       const range = { start: units[from].pos, end: units[to - 1].pos + 1 };
-      if (value === null || value === undefined) text.unmark(range, mark);
-      else text.mark(range, mark, value as never);
+      inText(doc, (text) => {
+        if (value === null || value === undefined) text.unmark(range, mark);
+        else text.mark(range, mark, value as never);
+      });
     }
     // Right to left, so earlier offsets stay where they were planned.
     for (const { from, to, content } of [...op.splices].reverse())
@@ -179,10 +180,12 @@ export function applyOps(
     const unit = shownUnits(doc, ruleOf(op.block) as NodeRule, shape)[op.unit];
     const inline = unit.inline as { node: string; attrs: Attrs };
     const attrs = storedAttrs({ ...inline.attrs, ...op.attrs });
-    doc.getText(TEXT_KEY).mark({ start: unit.pos, end: unit.pos + 1 }, INLINE_STYLE, {
-      type: inline.node,
-      attrs,
-    } as never);
+    inText(doc, (text) =>
+      text.mark({ start: unit.pos, end: unit.pos + 1 }, INLINE_STYLE, {
+        type: inline.node,
+        attrs,
+      } as never),
+    );
     doc.commit({ message: options.message, origin: options.origin });
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }

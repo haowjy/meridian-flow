@@ -3,7 +3,8 @@ import {
   decodeEnvelope,
   decodeRoomVersion,
   encodeEnvelope,
-  encodeRoomVersion,
+  freeVersion,
+  scoped,
 } from "@meridian/document-model";
 import { decodeImportBlobMeta, VersionVector } from "loro-crdt";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
@@ -24,7 +25,7 @@ const LIST_DOC = "s";
 type Room = {
   listeners: Set<(batch: Uint8Array) => void>;
   /** The stored version the room's sockets were sent through; null before the first read. */
-  sent: VersionVector | null;
+  sent: Uint8Array | null;
   catching: Promise<void> | null;
   /** A commit arrived while a catch-up was reading: read again. */
   stale: boolean;
@@ -50,9 +51,9 @@ export function createTreeRooms(services: TreeRoomServices) {
           room.stale = false;
           const read = await store.readSince({
             listId,
-            version: room.sent?.encode() ?? new Uint8Array(),
+            version: room.sent ?? new Uint8Array(),
           });
-          room.sent = VersionVector.decode(read.version);
+          room.sent = read.version;
           if (read.update.byteLength === 0) continue;
           const batch = encodeEnvelope(new Map([[LIST_DOC, read.update]]));
           for (const listener of room.listeners) listener(batch);
@@ -91,14 +92,16 @@ export function createTreeRooms(services: TreeRoomServices) {
       listId: string,
       clientVersion: Uint8Array,
     ): Promise<{ version: Uint8Array; update: Uint8Array | null }> {
-      const known = decodeRoomVersion(clientVersion).get(LIST_DOC);
+      const held = decodeRoomVersion(clientVersion);
+      const known = held.get(LIST_DOC);
       const read = await store.readSince({ listId, version: known?.encode() ?? new Uint8Array() });
-      const version = VersionVector.decode(read.version);
       const room = rooms.get(listId);
-      if (room) room.sent ??= version;
-      const behind = !known || known.compare(version) !== 0;
+      if (room) room.sent ??= read.version;
+      const behind =
+        !known || scoped(VersionVector.decode(read.version), (at) => known.compare(at) !== 0);
+      freeVersion(held);
       return {
-        version: encodeRoomVersion(new Map([[LIST_DOC, version]])),
+        version: encodeEnvelope(new Map([[LIST_DOC, read.version]])),
         update: behind ? encodeEnvelope(new Map([[LIST_DOC, read.update]])) : null,
       };
     },
@@ -111,7 +114,9 @@ export function createTreeRooms(services: TreeRoomServices) {
       const update = decodeEnvelope(batch).get(LIST_DOC);
       if (!update) return;
       try {
-        decodeImportBlobMeta(update, true);
+        const meta = decodeImportBlobMeta(update, true);
+        meta.partialStartVersionVector.free();
+        meta.partialEndVersionVector.free();
       } catch (error) {
         throw new CorruptDocBytesError(LIST_DOC, `not Loro bytes (${String(error)})`);
       }

@@ -2,8 +2,10 @@
  * Which tree lists a Work's tree spans. A Work's drafted records are in the list of the source
  * they were made in: its project's list, or the account's for `user://`.
  */
+
 import type { DraftId } from "@meridian/contracts";
 import type { TreeSaw } from "@meridian/contracts/drafts";
+import { encodedVersionOf } from "@meridian/document-model";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -87,7 +89,7 @@ export async function treeCutOf(
           (lists[at] as TreeList).kind,
           {
             list: end.list,
-            vector: Buffer.from(end.writer.doc.oplogVersion().encode()).toString("base64"),
+            vector: Buffer.from(encodedVersionOf(end.writer.doc)).toString("base64"),
           },
         ]),
       ),

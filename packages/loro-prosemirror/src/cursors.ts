@@ -1,18 +1,23 @@
 import {
+  inText,
   type NodeRule,
   type RoomDocs,
+  scoped,
   shownUnits,
-  TEXT_KEY,
   textUnits,
 } from "@meridian/document-model";
-import type { Cursor } from "loro-crdt";
+import { Cursor } from "loro-crdt";
 import type { Node, ResolvedPos } from "prosemirror-model";
 import type { EditorState } from "prosemirror-state";
 
-/** A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits. */
+/**
+ * A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits.
+ * The cursor is its encoded bytes, a plain value: Loro's `Cursor` is a WASM handle, made and freed
+ * around each use.
+ */
 export interface DocCursor {
   block: string;
-  cursor: Cursor;
+  cursor: Uint8Array;
   /** The cursor holds the unit before a caret, which is one past it. */
   after: boolean;
 }
@@ -34,7 +39,10 @@ export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
   const units = shownUnits(doc, rule, docs.shape);
   const offset = $pos.parentOffset;
   const unit = units[offset > 0 ? offset - 1 : offset];
-  const cursor = doc.getText(TEXT_KEY).getCursor(unit ? unit.pos : 0);
+  const cursor = inText(doc, (text) => {
+    const made = text.getCursor(unit ? unit.pos : 0);
+    return made && scoped(made, (each) => each.encode());
+  });
   return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
 }
 
@@ -66,14 +74,16 @@ export function textblockOf(doc: Node, id: string): { node: Node; start: number 
  */
 export function offsetOfCursor(docs: RoomDocs, rule: NodeRule, at: DocCursor): number | null {
   const text = docs.textOf(at.block);
-  const position = text?.getCursorPos(at.cursor);
+  const position = text && scoped(Cursor.decode(at.cursor), (cursor) => text.getCursorPos(cursor));
   if (!text || !position) return null;
+  const moved = position.update !== undefined;
+  position.update?.free();
   let shown = 0;
   for (const unit of textUnits(text, rule, docs.shape)) {
     if (unit.pos >= position.offset) break;
     if (!unit.hidden) shown++;
   }
-  return shown + (at.after && position.update === undefined ? 1 : 0);
+  return shown + (at.after && !moved ? 1 : 0);
 }
 
 /** The editor position a cursor stands at now, if its block still shows. */

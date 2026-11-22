@@ -15,6 +15,12 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `forkAt`: it works after the history cutoff and frees like any copy. Export its writes with
   `view.exportSince(docs.shownVersion())`; the view's own `version()` ships a block it forked from
   Live with that block's whole history.
+- Every container, version vector and cursor Loro returns is a WASM handle that no garbage
+  collector frees: use it inside `scoped`, `inText`, `inMap` or `inVersion` (`handles.ts`) and never
+  keep one past its call. Hold a version as bytes (`RoomDocs.encodedVersion()`, `encodedVersionOf`),
+  not as `version()`'s vectors, which the caller must `freeVersion`; `DocCursor` holds a cursor's
+  bytes. Run the two-editors probe with `HANDLES=1` after touching code that makes handles: it
+  names any left unfreed.
 - Every reader goes through the read normalizer (`readDocument`, `readInline`, `StructureView`,
   `textUnits`), and every writer compares against it, so a merged state the schema forbids reads
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's

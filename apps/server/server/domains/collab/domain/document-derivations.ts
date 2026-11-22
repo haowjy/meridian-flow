@@ -9,7 +9,6 @@ import {
   toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { encodeRoomVersion } from "@meridian/document-model";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { StoredLinkOccurrence } from "@meridian/markup/stored-links";
 import type { Schema } from "prosemirror-model";
@@ -103,7 +102,7 @@ export async function deriveDocument(
     const cut = await input.store.capture(documentId);
     if (!cut) return { status: "missing" };
     try {
-      const version = encodeRoomVersion(cut.doc.docs.version());
+      const version = cut.doc.docs.encodedVersion();
       const outputs = await deriveDocumentOutputs(cut, input.readCut);
       if (await input.store.certify(cut, outputs, at)) {
         // Also when the cut was already certified: a failed earlier registration retries here.

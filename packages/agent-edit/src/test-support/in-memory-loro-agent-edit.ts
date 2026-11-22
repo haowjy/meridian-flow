@@ -96,7 +96,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       peer: options.asClient ? freshPeerId() : freshServerPeerId(),
     });
     try {
-      const since = docs.shownVersion();
+      const since = docs.encodedShownVersion();
       const next = want(blocksIn(docs));
       writeDocument(docs, blocksOf(schema.topNodeType.create(null, next)), {
         ...(options.message ? { message: options.message } : {}),

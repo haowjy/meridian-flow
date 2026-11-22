@@ -9,6 +9,11 @@ mapping or `UndoHistory` changes:
 pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/two-editors.probe.ts [seeds] [steps] [first seed] [peer salt]
 ```
 
+`HANDLES=1` fails the run if any Loro handle the probe made was never freed (`document-model`'s
+`handles.ts`: each container, version vector and cursor is WASM memory no GC frees), naming the
+code that made it. `MEM_EVERY=25` prints the WASM memory every 25 seeds; it only grows, so with
+every handle freed it stops once the largest document fits.
+
 A seed replays exactly: the edits, both copies' peer ids and the writer's order keys all come from it
 (Loro orders concurrent ops by peer id, so a failure can depend on them). `first seed` runs seeds
 from there up, so `… 1 400 85` reruns seed 85 alone; a different `peer salt` gives the same seed

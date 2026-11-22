@@ -8,7 +8,6 @@ import type { RoomDocs } from "@meridian/document-model";
 import { cursorAt, type DocCursor, loroSyncKey } from "@meridian/loro-prosemirror";
 import type { Node } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
-import { Cursor } from "loro-crdt";
 
 /** The copy an editor state is bound to, if any. */
 export function docsOf(state: EditorState): RoomDocs | null {
@@ -41,7 +40,7 @@ export type EncodedPoint = { block: string; cursor: string; after: boolean };
 
 export function encodePoint(point: DocCursor): EncodedPoint {
   let binary = "";
-  for (const byte of point.cursor.encode()) binary += String.fromCharCode(byte);
+  for (const byte of point.cursor) binary += String.fromCharCode(byte);
   return { block: point.block, cursor: btoa(binary), after: point.after };
 }
 
@@ -52,7 +51,7 @@ export function decodePoint(value: unknown): DocCursor | null {
   try {
     return {
       block,
-      cursor: Cursor.decode(Uint8Array.from(atob(cursor), (c) => c.charCodeAt(0))),
+      cursor: Uint8Array.from(atob(cursor), (c) => c.charCodeAt(0)),
       after: after === true,
     };
   } catch {

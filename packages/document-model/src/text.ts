@@ -1,4 +1,5 @@
 import type { Delta, LoroDoc, LoroText } from "loro-crdt";
+import { inText } from "./handles.js";
 import { normalizeMarks, shownUnits, type TextUnit, textUnits } from "./read.js";
 import {
   INLINE_STYLE,
@@ -7,7 +8,6 @@ import {
   SENTINEL,
   type ShapeSchema,
   sameValue,
-  TEXT_KEY,
 } from "./shape.js";
 
 /** What a text write needs to know to read a unit the way readers do. */
@@ -62,21 +62,22 @@ export function replaceUnits(
   to: number,
   wanted: readonly WantedUnit[],
 ): void {
-  const text = doc.getText(TEXT_KEY);
-  let shown = shownUnits(doc, rules.rule, rules.shape);
-  const removed = shown.slice(from, to).map((unit) => unit.pos);
-  for (let end = removed.length; end > 0; ) {
-    let start = end - 1;
-    while (start > 0 && removed[start - 1] === removed[start] - 1) start--;
-    text.delete(removed[start], removed[end - 1] - removed[start] + 1);
-    end = start;
-  }
-  if (wanted.length === 0) return;
-  if (removed.length > 0) shown = shownUnits(doc, rules.rule, rules.shape);
-  const at = from < shown.length ? shown[from].pos : text.length;
-  text.insert(at, wanted.map((unit) => unit.ch).join(""));
-  const inserted = textUnits(doc, rules.rule, rules.shape).slice(at, at + wanted.length);
-  patchStyles(text, inserted, wanted, rules);
+  inText(doc, (text) => {
+    let shown = shownUnits(doc, rules.rule, rules.shape);
+    const removed = shown.slice(from, to).map((unit) => unit.pos);
+    for (let end = removed.length; end > 0; ) {
+      let start = end - 1;
+      while (start > 0 && removed[start - 1] === removed[start] - 1) start--;
+      text.delete(removed[start], removed[end - 1] - removed[start] + 1);
+      end = start;
+    }
+    if (wanted.length === 0) return;
+    if (removed.length > 0) shown = shownUnits(doc, rules.rule, rules.shape);
+    const at = from < shown.length ? shown[from].pos : text.length;
+    text.insert(at, wanted.map((unit) => unit.ch).join(""));
+    const inserted = textUnits(doc, rules.rule, rules.shape).slice(at, at + wanted.length);
+    patchStyles(text, inserted, wanted, rules);
+  });
 }
 
 /**

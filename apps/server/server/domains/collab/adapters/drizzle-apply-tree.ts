@@ -11,6 +11,7 @@
 import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
+import { encodedVersionOf } from "@meridian/document-model";
 import {
   applyDraft,
   covers,
@@ -145,7 +146,7 @@ export function createApplyTreeOperations(input: {
           const { copies } = applied;
           rows.push({
             scope: list.kind,
-            mark: writer.doc.oplogVersion().encode(),
+            mark: encodedVersionOf(writer.doc),
             created: copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
             nodes: [...new Set(copies.map((copy) => copy.node))],
           });

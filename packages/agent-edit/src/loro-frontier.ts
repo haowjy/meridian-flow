@@ -4,8 +4,10 @@ import {
   type DocKey,
   decodeEnvelope,
   encodeEnvelope,
+  inVersion,
   type RoomDocs,
   STRUCTURE_KEY,
+  scoped,
 } from "@meridian/document-model";
 import {
   decodeFrontiers,
@@ -42,7 +44,8 @@ function shownDoc(docs: RoomDocs, key: DocKey): LoroDoc | undefined {
 
 type Vector = Map<PeerID, number>;
 
-const vectorOf = (doc: LoroDoc, at: Frontiers): Vector => doc.frontiersToVV(at).toJSON();
+const vectorOf = (doc: LoroDoc, at: Frontiers): Vector =>
+  scoped(doc.frontiersToVV(at), (vector) => vector.toJSON());
 
 function merged(into: Vector, from: Vector): Vector {
   for (const [peer, end] of from) if ((into.get(peer) ?? 0) < end) into.set(peer, end);
@@ -55,15 +58,18 @@ function merged(into: Vector, from: Vector): Vector {
  * the cutoff sometimes answers instead of throwing, loro#1294).
  */
 function usableIn(doc: LoroDoc, at: Frontiers): boolean {
-  const have = doc.oplogVersion();
-  if (at.some((id) => (have.get(id.peer) ?? 0) <= id.counter)) return false;
+  if (inVersion(doc, (have) => at.some((id) => (have.get(id.peer) ?? 0) <= id.counter)))
+    return false;
   if (!doc.isShallow()) return true;
-  const since = doc.shallowSinceVV();
   const roots = doc.shallowSinceFrontiers();
-  return !at.some(
-    (id) =>
-      id.counter < (since.get(id.peer) ?? 0) &&
-      !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
+  return scoped(
+    doc.shallowSinceVV(),
+    (since) =>
+      !at.some(
+        (id) =>
+          id.counter < (since.get(id.peer) ?? 0) &&
+          !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
+      ),
   );
 }
 
@@ -86,14 +92,19 @@ export function planningFrontiers(
   }
   for (const batch of own)
     for (const [key, bytes] of decodeEnvelope(batch)) {
-      const end = decodeImportBlobMeta(bytes, false).partialEndVersionVector.toJSON();
+      const meta = decodeImportBlobMeta(bytes, false);
+      meta.partialStartVersionVector.free();
+      const end = scoped(meta.partialEndVersionVector, (vector) => vector.toJSON());
       vectors.set(key, merged(vectors.get(key) ?? new Map(), end));
     }
   const out = new Map<DocKey, Frontiers>();
   for (const [key, vector] of vectors) {
     const doc = shownDoc(docs, key);
     if (!doc) return null;
-    out.set(key, doc.vvToFrontiers(VersionVector.parseJSON(vector)));
+    out.set(
+      key,
+      scoped(VersionVector.parseJSON(vector), (at) => doc.vvToFrontiers(at)),
+    );
   }
   return out;
 }

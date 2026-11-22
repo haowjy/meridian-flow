@@ -4,7 +4,7 @@ import {
   type RoomDocs,
   STRUCTURE_KEY,
 } from "@meridian/document-model";
-import { type Cursor, type LoroDoc, UndoManager } from "loro-crdt";
+import { Cursor, type LoroDoc, UndoManager } from "loro-crdt";
 import type { EditorState } from "prosemirror-state";
 import { type SelectionCursors, selectionCursors } from "./cursors.js";
 
@@ -54,7 +54,9 @@ export class UndoHistory {
   /** What a commit pushed now is tagged with: the step being written, undone or redone. */
   private tag: { step: number; selection: SelectionCursors } | null = null;
   /** The cursors each selection end came back with from the items popped in a run. */
-  private readonly popped = new Map<End, Cursor>();
+  private readonly popped = new Map<End, Uint8Array>();
+  /** The cursors the last push handed to Loro: still ours to free. */
+  private pushed: Cursor[] = [];
   private ids = 0;
   private readonly stopWatching: () => void;
 
@@ -134,6 +136,7 @@ export class UndoHistory {
 
   destroy(): void {
     this.stopWatching();
+    this.freePushed();
     for (const { manager } of this.watched.values()) manager.free();
     this.watched.clear();
     this.undoSteps.length = 0;
@@ -186,6 +189,11 @@ export class UndoHistory {
     return { anchor: end("anchor"), head: end("head") };
   }
 
+  private freePushed(): void {
+    for (const cursor of this.pushed) cursor.free();
+    this.pushed = [];
+  }
+
   private clearRedo(): void {
     if (this.redoSteps.length === 0) return;
     this.redoSteps.length = 0;
@@ -213,15 +221,19 @@ export class UndoHistory {
           const at = tag?.selection[name];
           if (at?.block !== key) continue;
           ends.push(name);
-          cursors.push(at.cursor);
+          cursors.push(Cursor.decode(at.cursor));
         }
+        // Loro copies these once this callback returns, so the next push frees them.
+        this.freePushed();
+        this.pushed = cursors;
         return { value: tag ? ({ step: tag.step, ends } satisfies Tag) : null, cursors };
       },
       onPop: (_isUndo, { value, cursors }) => {
         const ends = (value as Tag | null)?.ends ?? [];
-        ends.forEach((name, i) => {
-          const cursor = cursors[i];
-          if (cursor) this.popped.set(name, cursor);
+        cursors.forEach((cursor, i) => {
+          const name = ends[i];
+          if (name) this.popped.set(name, cursor.encode());
+          cursor.free();
         });
       },
     });

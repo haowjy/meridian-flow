@@ -1,4 +1,5 @@
 import type { LoroDoc } from "loro-crdt";
+import { inMap, inText, inVersion } from "./handles.js";
 import { compareOrder } from "./order-key.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -9,7 +10,6 @@ import {
   type ShapeSchema,
   STRUCTURE_MAPS,
   type StructureMap,
-  TEXT_KEY,
 } from "./shape.js";
 
 type MapValues = Readonly<Record<string, unknown>>;
@@ -59,26 +59,13 @@ function editedSince(docs: RoomDocs, key: DocKey, removal: Removal): boolean {
   return beyond && textHash(textOf(doc)) !== (read?.text ?? EMPTY_TEXT);
 }
 
-// A read makes these per text doc under a removed block: free each handle rather than wait for GC,
-// which lets WASM memory grow far faster than the JS heap shows.
-
 /** A doc's oplog version as `{ peer: counter }`. */
 function versionOf(doc: LoroDoc): Record<string, number> {
-  const vector = doc.oplogVersion();
-  try {
-    return Object.fromEntries(vector.toJSON());
-  } finally {
-    vector.free();
-  }
+  return inVersion(doc, (vector) => Object.fromEntries(vector.toJSON()));
 }
 
 function textOf(doc: LoroDoc): string {
-  const text = doc.getText(TEXT_KEY);
-  try {
-    return text.toString();
-  } finally {
-    text.free();
-  }
+  return inText(doc, (text) => text.toString());
 }
 
 /** cyrb53: a 53-bit string hash, the same on every peer. */
@@ -127,7 +114,7 @@ export class StructureView {
   constructor(docs: RoomDocs) {
     const { structure: doc, draft, shape } = docs;
     this.draft = draft;
-    const read = (name: string) => doc.getMap(name).toJSON() as MapValues;
+    const read = (name: string) => inMap(doc, name, (map) => map.toJSON() as MapValues);
     this.base = Object.fromEntries(STRUCTURE_MAPS.map((n) => [n, read(n)])) as Record<
       StructureMap,
       MapValues

@@ -32,6 +32,10 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   write into the copy that no Ctrl+Z should take back commits under `UNTRACKED_ORIGIN`, or it
   becomes an item that blocks the steps below it on that doc. `destroy()` the history before
   freeing the docs: each manager is WASM memory.
+- When a peer's batch hides the block under the writer's caret, the plugin parks it: the caret
+  moves to the end of the block before, and the next typed text (`handleTextInput`) is written into
+  the hidden block's text doc, which brings it back (design §1, "Removed blocks"). That write is the
+  only way the binding shows a removed block; the read normalizer's revival does the rest.
 - Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
   docs still alive.
 

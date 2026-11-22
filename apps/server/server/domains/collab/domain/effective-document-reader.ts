@@ -9,7 +9,6 @@ import {
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { encodeRoomVersion } from "@meridian/document-model";
 import { settledAheads } from "@meridian/markup/links";
 import type { Schema } from "prosemirror-model";
 import { Ok, type Result } from "../../../shared/result.js";
@@ -71,7 +70,7 @@ export function createEffectiveDocumentReader(input: {
     return Ok(await input.documents.readRoom(room, (doc) => read(doc, draft)));
   }
 
-  const versionOf = (doc: LoroDocument) => encodeRoomVersion(doc.docs.shownVersion());
+  const versionOf = (doc: LoroDocument) => doc.docs.encodedShownVersion();
 
   return {
     async readEffectiveRevision(command) {

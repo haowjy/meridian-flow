@@ -23,8 +23,8 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import {
   encodeEnvelope,
-  encodeRoomVersion,
   freshServerPeerId,
+  inVersion,
   RoomDocs,
   type WriteOptions,
 } from "@meridian/document-model";
@@ -228,7 +228,7 @@ export function createMarkdownDocumentEngine<Tx>(
     const links = await spelling(documentId, blocks, view);
     return {
       content: serializeForSchema(blocks, schemaType, links),
-      revision: cutRevision({ version: encodeRoomVersion(doc.docs.shownVersion()), blocks }, links),
+      revision: cutRevision({ version: doc.docs.encodedShownVersion(), blocks }, links),
     };
   }
 
@@ -298,7 +298,7 @@ export function createMarkdownDocumentEngine<Tx>(
       const room = liveRoom(input.documentId);
       const docs = await deps.rooms.read(room);
       try {
-        const before = docs.version();
+        const before = docs.encodedVersion();
         const doc = new LoroDocument(docs, deps.schema, writeOptionsOf(input.origin));
         const changed = await change(doc);
         if (!changed.ok) return changed;
@@ -492,7 +492,7 @@ export function createMarkdownDocumentEngine<Tx>(
 
 /** Whether a copy holds any state: a document no write has reached has no rows and no ops. */
 function hasState(docs: RoomDocs): boolean {
-  return [...docs.version().values()].some((vv) => vv.toJSON().size > 0);
+  return [...docs.owned()].some(([, doc]) => inVersion(doc, (vv) => vv.toJSON().size > 0));
 }
 
 /** An agent's write carries its turn as the commit message: who changed what reads it (design §5). */

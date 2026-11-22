@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { inMap, inText, scoped } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
@@ -21,7 +22,6 @@ import {
   type StructureMap,
   sameValue,
   storedAttrs,
-  TEXT_KEY,
 } from "./shape.js";
 import { type Removal, StructureView, type TextRead, textRead } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
@@ -38,7 +38,7 @@ export interface DocChange {
 export function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
   return before.length === 0
     ? doc.export({ mode: "update" })
-    : doc.export({ mode: "update", from: doc.frontiersToVV(before) });
+    : scoped(doc.frontiersToVV(before), (from) => doc.export({ mode: "update", from }));
 }
 
 export interface WriteOptions {
@@ -71,15 +71,15 @@ export class StructureWriter {
     const { structure, draft } = this.docs;
     const base = this.view.baseValue(name, key);
     if (!draft) {
-      if (!sameValue(base, value)) structure.getMap(name).set(key, value as never);
+      if (!sameValue(base, value)) inMap(structure, name, (map) => map.set(key, value as never));
       return;
     }
-    const overrides = structure.getMap(overrideMap(name));
     const override = this.view.override(name, key);
     const baseRead = name === "attrs" ? (base ?? null) : base;
     if (sameValue(baseRead, value)) {
-      if (override !== undefined) overrides.delete(key);
-    } else if (!sameValue(override, value)) overrides.set(key, value as never);
+      if (override !== undefined) inMap(structure, overrideMap(name), (map) => map.delete(key));
+    } else if (!sameValue(override, value))
+      inMap(structure, overrideMap(name), (map) => map.set(key, value as never));
   }
 
   /**
@@ -146,12 +146,14 @@ export class StructureWriter {
     if (!this.docs.draft) return;
     const { structure } = this.docs;
     const after = new StructureView(this.docs);
-    const orders = structure.getMap(overrideMap("order"));
-    for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
-    const comments = structure.getMap(overrideMap("comments"));
-    for (const key of after.overrideKeys("comments"))
-      if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
-        comments.delete(key);
+    inMap(structure, overrideMap("order"), (orders) => {
+      for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
+    });
+    inMap(structure, overrideMap("comments"), (comments) => {
+      for (const key of after.overrideKeys("comments"))
+        if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
+          comments.delete(key);
+    });
   }
 }
 
@@ -191,7 +193,7 @@ export function setCommentBody(
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
-  if (body === null && !docs.draft) docs.structure.getMap("comments").delete(comment);
+  if (body === null && !docs.draft) inMap(docs.structure, "comments", (map) => map.delete(comment));
   else writer.set("comments", comment, body);
   return commitStructure(docs, before, options);
 }
@@ -365,7 +367,7 @@ export function writeText(
     splice.index + splice.remove,
     wanted.slice(splice.index, splice.index + splice.insert),
   );
-  patchStyles(doc.getText(TEXT_KEY), shownUnits(doc, rules.rule, rules.shape), wanted, rules);
+  inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), wanted, rules));
   doc.commit({ message: options.message, origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
