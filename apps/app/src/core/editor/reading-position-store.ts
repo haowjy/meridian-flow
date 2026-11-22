@@ -1,31 +1,21 @@
-/** Account-stamped device memory of places per Yjs room (a document's Live and Draft views are two), bounded by LRU. */
+/** Account-stamped device memory of places per document room, bounded by LRU. */
 
-import * as Y from "yjs";
 import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
+import { decodePoint, type EncodedPoint } from "./loro-points";
 
-export const READING_POSITION_STORAGE_KEY = "meridian:reading-position:v1";
+export const READING_POSITION_STORAGE_KEY = "meridian:reading-position:v2";
 export const READING_POSITION_LIMIT = 300;
-export type ReadingAnchor = number[];
+/** A Loro point as `encodePoint` writes it. */
+export type ReadingAnchor = EncodedPoint;
 export type ReadingPosition = {
-  viewport: { block: ReadingAnchor; text: ReadingAnchor | null; offset: number };
+  /** `block` is the id of the block the reading line is in. */
+  viewport: { block: string; text: ReadingAnchor | null; offset: number };
   selection: { anchor: ReadingAnchor; head: ReadingAnchor; node: boolean };
 };
 type Entry = { roomKey: string; place: ReadingPosition; updatedAt: number; accessedAt: number };
 
 function validAnchor(value: unknown): value is ReadingAnchor {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.length > 256 ||
-    !value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-  )
-    return false;
-  try {
-    Y.decodeRelativePosition(Uint8Array.from(value));
-    return true;
-  } catch {
-    return false;
-  }
+  return decodePoint(value) !== null;
 }
 function validPlace(value: unknown): value is ReadingPosition {
   if (!isRecord(value)) return false;
@@ -33,7 +23,7 @@ function validPlace(value: unknown): value is ReadingPosition {
   return Boolean(
     isRecord(viewport) &&
       isRecord(selection) &&
-      validAnchor(viewport.block) &&
+      typeof viewport.block === "string" &&
       (viewport.text === null || validAnchor(viewport.text)) &&
       typeof viewport.offset === "number" &&
       viewport.offset >= 0 &&

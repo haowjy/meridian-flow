@@ -34,15 +34,6 @@ export class DraftCommandOwner {
   readonly presses = new Set<PressEntries>();
   /** One notice per draft owner, outliving the surface that made it. */
   readonly notices = new DraftNotices();
-  /** An Apply made before a session of its documents opened joins that session's history. */
-  private readonly stopRejoining: () => void;
-
-  constructor(registry: { observeHistories(observer: () => void): () => void }) {
-    this.stopRejoining = registry.observeHistories(() => {
-      for (const press of this.presses) press.enter();
-    });
-  }
-
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -73,9 +64,7 @@ export class DraftCommandOwner {
   }
 
   close() {
-    this.stopRejoining();
     this.notices.close();
-    // Their entries sit on sessions that outlive this owner.
     for (const press of this.presses.values()) press.end();
   }
 }

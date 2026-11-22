@@ -1,13 +1,8 @@
-import {
-  createAgentEditCodecFactory,
-  overwriteWithAssigned,
-  yProsemirrorModel,
-} from "@meridian/agent-edit/integration";
 import { agentsFileOf } from "@meridian/contracts/agents";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { newBlockId } from "@meridian/prosemirror-schema";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { roomContent, roomSchema } from "@/core/editor/room-content";
 import { loadMars } from "@/lib/mars-schema";
 
 /**
@@ -51,17 +46,13 @@ export async function writeFirstText(
   try {
     const session = registry.get(lease);
     await session.whenLocalPersistenceSynced();
-    if (session.document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).length > 0) return;
-    const schema = buildDocumentSchema();
-    const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
-    overwriteWithAssigned({
-      doc: session.document,
-      model: yProsemirrorModel(schema),
-      codec: codec.forScope(UNSCOPED_DOCUMENT_LINKS),
-      documentId,
-      content: text,
-      blocks: [schema.nodes.code_block.create({ language: "source" }, schema.text(text))],
-    });
+    if (roomContent(session.docs).textContent.length > 0) return;
+    const schema = roomSchema();
+    session.writeDocument(
+      schema.nodes.doc.create(null, [
+        schema.nodes.code_block.create({ id: newBlockId(), language: "source" }, schema.text(text)),
+      ]),
+    );
   } finally {
     registry.release(owner);
   }

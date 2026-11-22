@@ -1,22 +1,20 @@
 /**
  * editor config — assembles the TipTap editor option set for a document session.
  *
- * Wires the Meridian node/mark extensions, collaboration (Yjs `Y.Doc` +
- * awareness/caret) and code-highlight extensions into a `createEditorConfig`
+ * Wires the Meridian node/mark extensions, collaboration (the Loro binding on the session's
+ * copy, peer carets) and code-highlight extensions into a `createEditorConfig`
  * factory, plus the `EditorUser` type and a sample document. Owns editor wiring,
  * not the session lifecycle (see `document-session.ts`).
  */
 
 import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { DocChange, RoomDocs } from "@meridian/document-model";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
-import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
-import type * as Y from "yjs";
-import type { AgentNameStore } from "./agent-name-store";
 import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
@@ -24,7 +22,8 @@ import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
-import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
+import { CommentMark } from "./extensions/CommentMark";
+import { LoroSyncExtension } from "./extensions/loro-sync";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
   MeridianCode,
@@ -46,11 +45,9 @@ import {
 } from "./extensions/meridian-extensions";
 import { NestingExtension } from "./extensions/nesting";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
-import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
-import { SuggestionModeExtension } from "./extensions/suggestion-mode";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
@@ -60,9 +57,8 @@ import { LandingExtension } from "./landing/LandingExtension";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
+import { roomContent } from "./room-content";
 import { sanitizePastedHTML } from "./sanitize-paste";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-import type { SessionMarkerStore } from "./session-marker-store";
 import { editorSuggestionHost } from "./suggestion-host";
 import { UploadPresenceExtension } from "./upload-presence";
 
@@ -81,8 +77,14 @@ export type AssetRenderContext = {
   owner?: string;
 };
 
+/** The copy an editor shows and writes: its docs, and the one path its writes leave by. */
+export type EditorCopy = {
+  docs: RoomDocs;
+  publish: (changes: readonly DocChange[]) => void;
+};
+
 export type CreateEditorExtensionsOptions = {
-  document: Y.Doc;
+  copy: EditorCopy;
   /** The document's undo, owned by its session; this editor attaches while mounted. */
   history: DocumentHistory;
   schemaType?: YjsTrackedSchemaType;
@@ -105,10 +107,6 @@ export type CreateEditorExtensionsOptions = {
   assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
-  /** Live-session sidecar. */
-  markerStore?: SessionMarkerStore;
-  /** Writer-facing thread names for agent-authored session marks. */
-  agentNames?: AgentNameStore;
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
@@ -179,25 +177,18 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   LinkSurfaceExtension, // L-F links (M7)
 ];
 
-/**
- * Caret colour fallback. The composition path resolves its token before
- * publishing awareness because y-prosemirror accepts concrete colors only.
- */
-const FALLBACK_CARET_COLOR = COLLABORATION_CURSOR_COLORS[4];
-
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(peers: PeerAwareness): string {
   const taken = new Set<string>();
   for (const [clientID, state] of peers.getStates()) {
-    if (clientID !== peers.clientID && state.user?.color) {
-      taken.add(state.user.color as string);
-    }
+    const color = (state.user as { color?: unknown } | undefined)?.color;
+    if (clientID !== peers.clientID && typeof color === "string") taken.add(color);
   }
   const palette = COLLABORATION_CURSOR_COLORS.map(resolveCollaborationColor);
   return palette.find((color) => !taken.has(color)) ?? palette[0];
 }
 
-const STARTER_KIT_YJS_SAFETY_OPTIONS = {
+const STARTER_KIT_COLLAB_SAFETY_OPTIONS = {
   // Off for a different reason than the rest of this list: the stock
   // dropcursor computes its own landing. `LandingExtension` draws the one
   // caret (jade, matching the block drag's drop line) from the plan it lands.
@@ -207,7 +198,7 @@ const STARTER_KIT_YJS_SAFETY_OPTIONS = {
   // BELOW a trailing table (a click below it, ArrowDown out of its last cell,
   // Ctrl/Cmd+End) — without it a writer can reach the document end
   // and never type again (the trailing-table trap). The rest of this list is
-  // off for Yjs or schema-parity reasons; gapcursor never was, it had been
+  // off for collaboration or schema-parity reasons; gapcursor never was, it had been
   // swept up with them.
   link: false,
   listKeymap: false,
@@ -217,7 +208,7 @@ const STARTER_KIT_YJS_SAFETY_OPTIONS = {
 } as const;
 
 const DOCUMENT_STARTER_KIT_OPTIONS = {
-  ...STARTER_KIT_YJS_SAFETY_OPTIONS,
+  ...STARTER_KIT_COLLAB_SAFETY_OPTIONS,
   // Schema names diverge from the server for these built-ins, so Meridian
   // installs snake_case/parity wrappers below instead. A quote is not a node:
   // `NestingExtension` owns it.
@@ -271,53 +262,29 @@ const CodeDocument = Node.create({
 });
 
 function createCollaborationExtensions({
-  document,
+  copy,
   history,
   presence,
   user,
   showCollaborationDecorations = true,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "document" | "history" | "presence" | "user" | "showCollaborationDecorations"
+  "copy" | "history" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
-  const published = {
-    accountId: user?.accountId ?? "",
-    color: pickCursorColor(presence.peers),
-  };
-
-  const collaboration = [
-    Collaboration.configure({
-      document,
-      // Passing the concrete Y.XmlFragment keeps the shared type name at the
-      // server contract value (`prosemirror`).
-      fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-      // The session's manager, not one this editor would build and lose when it unmounts.
-      yUndoOptions: { undoManager: history.manager },
-    }),
-  ];
-
-  if (!showCollaborationDecorations) return collaboration;
-
+  const sync = LoroSyncExtension.configure({ copy, history });
+  if (!showCollaborationDecorations) return [sync];
   return [
-    ...collaboration,
-    // The presence owner's provider, never the bare Awareness: the caret and
-    // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
-    // and a raw write made while the writer is hidden behind inline review is
-    // dropped, then overwritten by the snapshot the review restores.
+    sync,
     PeerCarets.configure({
-      provider: presence.caretProvider,
-      user: published,
-      selectionRender: (cursorUser) => ({
-        nodeName: "span",
-        class: "meridian-collab-selection",
-        style: `--caret-color: ${String(cursorUser.color ?? FALLBACK_CARET_COLOR)}`,
-      }),
+      docs: copy.docs,
+      presence,
+      user: { accountId: user?.accountId ?? "", color: pickCursorColor(presence.peers) },
     }),
   ];
 }
 
 export function createEditorExtensions({
-  document,
+  copy,
   history,
   schemaType = "document",
   filetype,
@@ -325,15 +292,13 @@ export function createEditorExtensions({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  markerStore,
-  agentNames,
   slashCommands,
   atReferences,
   referenceDrop,
   wikilinkPaste,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
-    document,
+    copy,
     history,
     presence,
     user,
@@ -351,13 +316,12 @@ export function createEditorExtensions({
       wikilinkPaste,
     }),
     ...collaboration,
-    // Mounted history depends on collaboration's UndoManager, so its key bindings
-    // mount with collaboration rather than in the standalone set.
+    // Mounted history records the binding's writes, so its key bindings mount with it
+    // rather than in the standalone set.
     UndoRedoKeymapExtension.configure({ history }),
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
-    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
   ];
 }
 
@@ -404,7 +368,7 @@ export function createStandaloneEditorExtensions({
     MeridianLink,
     BlockIdExtension,
     NestingExtension,
-    SuggestionModeExtension,
+    CommentMark,
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianParagraph,
@@ -444,7 +408,6 @@ export function createStandaloneEditorExtensions({
     // Below the autoformat, which owns the delimiters this deliberately does
     // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
-    LiveRangeNavigationExtension,
     PassageHighlightExtension,
     // The one door a picture comes in through — picker, drop, pasted file,
     // pasted address — and the owner of the clipboard's asset translation,
@@ -467,7 +430,7 @@ export function createStandaloneEditorExtensions({
 }
 
 export function createEditorConfig({
-  document,
+  copy,
   history,
   schemaType,
   filetype,
@@ -475,8 +438,6 @@ export function createEditorConfig({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  markerStore,
-  agentNames,
   slashCommands,
   atReferences,
   referenceDrop,
@@ -499,7 +460,7 @@ export function createEditorConfig({
   return {
     extensions: [
       ...createEditorExtensions({
-        document,
+        copy,
         history,
         schemaType: resolvedSchemaType,
         filetype,
@@ -507,8 +468,6 @@ export function createEditorConfig({
         user,
         assetRenderContext,
         showCollaborationDecorations,
-        markerStore,
-        agentNames,
         slashCommands,
         atReferences,
         referenceDrop,
@@ -516,6 +475,8 @@ export function createEditorConfig({
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
+    // The binding's rule: the editor starts as the docs read.
+    content: roomContent(copy.docs).toJSON(),
     editable,
     autofocus,
     editorProps: sanitizedEditorProps,

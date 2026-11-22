@@ -7,7 +7,6 @@ import { Extension, InputRule } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { getEditorChrome } from "../../chrome/ChromeKernelExtension";
-import { suggestionView, transactionView } from "../suggestion-mode/SuggestionModeExtension";
 import {
   indent,
   type ListKindName,
@@ -65,12 +64,11 @@ function listInputRule(find: RegExp, kind: ListKindName): InputRule {
     find,
     handler: ({ state, range, match }) => {
       // Typed in an item of this kind already, a marker is just text.
-      if (selectionListKind(selectedSequence(state.selection, suggestionView(state))) === kind)
-        return null;
+      if (selectionListKind(selectedSequence(state.selection)) === kind) return null;
       const tr = state.tr.delete(range.from, range.to);
       setList(tr, kind);
       const start = kind === "ordered" ? Number(match[1]) : 1;
-      const sequence = selectedSequence(tr.selection, transactionView(tr));
+      const sequence = selectedSequence(tr.selection);
       const at = sequence.from;
       const own = sequence.facts[at].steps.at(-1);
       // Typed after a list of the same kind, the block joins it and the number is not kept.
@@ -102,7 +100,7 @@ function taskInputRule(): InputRule {
   return new InputRule({
     find: /^\[([ xX])\]\s$/,
     handler: ({ state, range, match }) => {
-      const sequence = selectedSequence(state.selection, suggestionView(state));
+      const sequence = selectedSequence(state.selection);
       const facts = sequence.facts[sequence.from];
       const own = facts.steps.at(-1);
       if (own?.type !== "list" || !own.startsItem) return null;
@@ -167,8 +165,7 @@ export const NestingExtension = Extension.create({
       toggleListKind:
         (kind) =>
         ({ tr, dispatch }) => {
-          const active =
-            selectionListKind(selectedSequence(tr.selection, transactionView(tr))) === kind;
+          const active = selectionListKind(selectedSequence(tr.selection)) === kind;
           const changed = active ? unsetList(tr) : setList(tr, kind);
           if (dispatch && changed) dispatch(tr);
           return changed;
@@ -176,7 +173,7 @@ export const NestingExtension = Extension.create({
       toggleTaskList:
         () =>
         ({ tr, dispatch }) => {
-          const active = selectionIsTaskList(selectedSequence(tr.selection, transactionView(tr)));
+          const active = selectionIsTaskList(selectedSequence(tr.selection));
           const changed = active ? unsetList(tr) : setTaskList(tr);
           if (dispatch && changed) dispatch(tr);
           return changed;
@@ -198,7 +195,7 @@ export const NestingExtension = Extension.create({
       toggleQuote:
         () =>
         ({ tr, dispatch }) => {
-          const quoted = selectionIsQuoted(selectedSequence(tr.selection, transactionView(tr)));
+          const quoted = selectionIsQuoted(selectedSequence(tr.selection));
           const changed = quoted ? unquote(tr) : quote(tr);
           if (dispatch && changed) dispatch(tr);
           return changed;

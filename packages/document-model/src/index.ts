@@ -1,5 +1,6 @@
 export { type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
+export { changedKeys, changeUpdate, type Inverse, invertChange } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,

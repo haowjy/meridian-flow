@@ -924,8 +924,8 @@ msgid "Agents not saved"
 msgstr "Agents not saved"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "AI assistant"
-msgstr "AI assistant"
+#~ msgid "AI assistant"
+#~ msgstr "AI assistant"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
@@ -1372,8 +1372,8 @@ msgid "Changed {count} Work"
 msgstr "Changed {count} Work"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Changed {relativeTime}"
-msgstr "Changed {relativeTime}"
+#~ msgid "Changed {relativeTime}"
+#~ msgstr "Changed {relativeTime}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {what}"
@@ -1646,8 +1646,8 @@ msgid "Collaborative document editor"
 msgstr "Collaborative document editor"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Collaborator"
-msgstr "Collaborator"
+#~ msgid "Collaborator"
+#~ msgstr "Collaborator"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
@@ -1757,7 +1757,6 @@ msgstr "Conversation compacted automatically"
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 #: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
@@ -1780,7 +1779,6 @@ msgid "Copied from {source} into"
 msgstr "Copied from {source} into"
 
 #: src/features/chat/AssistantTurnActions.tsx
-#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Copy"
@@ -1894,8 +1892,8 @@ msgid "Couldn't copy"
 msgstr "Couldn't copy"
 
 #: src/features/editor/RescuedText.tsx
-msgid "Couldn't copy. Select the text to copy it."
-msgstr "Couldn't copy. Select the text to copy it."
+#~ msgid "Couldn't copy. Select the text to copy it."
+#~ msgstr "Couldn't copy. Select the text to copy it."
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -2120,8 +2118,8 @@ msgid "Couldn't read report from {line}"
 msgstr "Couldn't read report from {line}"
 
 #: src/features/draft-review/press-history.ts
-msgid "Couldn't redo"
-msgstr "Couldn't redo"
+#~ msgid "Couldn't redo"
+#~ msgstr "Couldn't redo"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -2526,12 +2524,12 @@ msgid "Destination deleted"
 msgstr "Destination deleted"
 
 #: src/features/editor/SchemaNotices.tsx
-msgid "Details"
-msgstr "Details"
+#~ msgid "Details"
+#~ msgstr "Details"
 
 #: src/features/editor/SchemaNotices.tsx
-msgid "Details about removed text"
-msgstr "Details about removed text"
+#~ msgid "Details about removed text"
+#~ msgstr "Details about removed text"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2603,7 +2601,6 @@ msgstr "Discarding"
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/editor/RescuedText.tsx
 #: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
@@ -2998,8 +2995,8 @@ msgid "Fork from here"
 msgstr "Fork from here"
 
 #: src/features/draft-review/useSuggestionChanges.ts
-msgid "Formatting"
-msgstr "Formatting"
+#~ msgid "Formatting"
+#~ msgstr "Formatting"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
@@ -4325,8 +4322,8 @@ msgid "Open chats"
 msgstr "Open chats"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Open conversation"
-msgstr "Open conversation"
+#~ msgid "Open conversation"
+#~ msgstr "Open conversation"
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open documents"
@@ -5386,8 +5383,8 @@ msgid "Some of these items are no longer there"
 msgstr "Some of these items are no longer there"
 
 #: src/features/editor/SchemaNotices.tsx
-msgid "Some text was removed"
-msgstr "Some text was removed"
+#~ msgid "Some text was removed"
+#~ msgstr "Some text was removed"
 
 #: src/core/editor/extensions/peer-carets.ts
 msgid "Someone"
@@ -5931,8 +5928,8 @@ msgid "This part of the message can’t hold mentions"
 msgstr "This part of the message can’t hold mentions"
 
 #: src/features/editor/RescuedText.tsx
-msgid "This passage couldn't be recovered."
-msgstr "This passage couldn't be recovered."
+#~ msgid "This passage couldn't be recovered."
+#~ msgstr "This passage couldn't be recovered."
 
 #: src/features/connections/AddConnectionForm.tsx
 msgid "This project"
@@ -5979,8 +5976,8 @@ msgid "This switch already happened."
 msgstr "This switch already happened."
 
 #: src/features/editor/SchemaNotices.tsx
-msgid "This version of Meridian can't display it."
-msgstr "This version of Meridian can't display it."
+#~ msgid "This version of Meridian can't display it."
+#~ msgstr "This version of Meridian can't display it."
 
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."

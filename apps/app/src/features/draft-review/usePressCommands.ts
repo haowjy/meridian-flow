@@ -190,9 +190,8 @@ export function usePressCommands({
     };
 
     /**
-     * A press in the history of every editor open on its documents and on the sidebar's stack
-     * (`PressEntries`): Ctrl+Z in either, or its notice's Undo, takes back the press once; an
-     * editor's Redo presses again. `dropped`: it was taken back, and its notice goes with it.
+     * A press on the sidebar's stack (`PressEntries`): the sidebar's Ctrl+Z, or its notice's Undo,
+     * takes back the press once. `dropped`: it was taken back, and its notice goes with it.
      */
     const remember = (verdict: Verdict, pressed: Pressed, dropped: () => void): PressEntries => {
       const taken: PressItem[] = pressed.result.items.map((item) =>
@@ -200,7 +199,7 @@ export function usePressCommands({
       );
       const { seat, place } = seatOf(
         taken.map(({ node }) => node),
-        async () => (await entries.undo(null)).kind !== "failed",
+        async () => (await entries.undo()).kind !== "failed",
       );
       place(pressed.placement);
       const port: PressPort = {
@@ -217,19 +216,10 @@ export function usePressCommands({
               openReviewFile(file, draftId);
           return { kind: "answered", unpressId: commandId, took: true };
         },
-        redo: async () => {
-          if (!driver) return "failed";
-          const again = await press(verdict, taken, driver);
-          if (again === "told") return null;
-          if (again === "failed") return "failed";
-          place(again.placement);
-          return { commandId: again.commandId };
-        },
       };
       const entries: PressEntries = new PressEntries(
         pressed.commandId,
         port,
-        () => taken.map(({ node }) => registry.history(node)),
         {
           push: seat.push,
           drop: () => {
@@ -278,7 +268,7 @@ export function usePressCommands({
       try {
         // Every room with unsent typing, not only the pressed rows: a press finds documents the
         // list hasn't.
-        const open = [...registry.unsentStateVectors()].map(([documentId, vector]) => ({
+        const open = [...registry.unsentRoomVersions()].map(([documentId, vector]) => ({
           documentId,
           vector: btoa(String.fromCharCode(...vector)),
         }));
@@ -389,7 +379,7 @@ export function usePressCommands({
             covers: changed,
             handle: {
               undo: async () => ({
-                answer: (await step.undo(null)).kind === "failed" ? "failed" : "ok",
+                answer: (await step.undo()).kind === "failed" ? "failed" : "ok",
               }),
               end: () => {},
             },

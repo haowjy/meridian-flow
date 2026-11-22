@@ -12,13 +12,25 @@ import {
   type TreeRecord,
   type View,
 } from "@meridian/project-tree";
+import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { connectTreeList, type ListSyncState } from "@meridian/tree-list-sync";
 import type * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { buildSameOriginWsUrl } from "../transport/dev-transport";
-import { CollabSchemaWebSocket } from "../transport/hocuspocus-document-transport";
+import { TappedWebSocket } from "../transport/tapped-websocket";
 import { treeListCopyPrefix } from "./copy-names";
 import { StoredListCopy } from "./stored-copy";
+
+// The dev build taps the socket's frames for `./mf`; production removes the tap.
+const ListWebSocket =
+  import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1" ? TappedWebSocket : WebSocket;
+
+/** The list's socket names the schema it speaks, so a stale tab is told to reload. */
+class CollabSchemaWebSocket extends ListWebSocket {
+  constructor(url: string | URL) {
+    super(url, [formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION)]);
+  }
+}
 
 /**
  * - `waiting`: the server's list has not been read in this session ("waiting for the list"): an

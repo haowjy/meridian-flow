@@ -43,7 +43,7 @@ export function DocumentChanges({
         touch={touch}
         onSelect={(change) => {
           onFocused?.();
-          view.focus(change, { scroll: true });
+          view.focus(change);
         }}
       />
       {view.status === "loading" ? null : stateLine()}

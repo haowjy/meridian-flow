@@ -2,7 +2,6 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession } from "./document-session";
-import type { DocumentHistory } from "./editor-history";
 
 export type RetainedLiveDocumentReference = Readonly<{
   projectId: ProjectId;
@@ -31,27 +30,20 @@ export interface LiveDocumentSessionRegistry {
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   /**
-   * The Yjs state vector of the document's live session in this tab, typing the server hasn't
-   * acknowledged included; null when this tab holds no such session.
+   * The room version (`encodeRoomVersion`) of the document's live session in this tab, typing the
+   * server hasn't acknowledged included; null when this tab holds no such session.
    */
-  openStateVector(documentId: DocumentId): Uint8Array | null;
+  openRoomVersion(documentId: DocumentId): Uint8Array | null;
   /**
-   * `openStateVector` of every live session in this tab with typing the server hasn't
+   * `openRoomVersion` of every live session in this tab with typing the server hasn't
    * acknowledged: what a press must wait for. An acknowledged session's state is stored already.
    */
-  unsentStateVectors(): Map<DocumentId, Uint8Array>;
+  unsentRoomVersions(): Map<DocumentId, Uint8Array>;
   /**
    * Settles once the server holds the typing in this tab's live session of the document; at once
    * when the tab holds none or it is not connected.
    */
   whenLiveHeld(documentId: DocumentId): Promise<void>;
-  /**
-   * The writer's Undo of a document's session in this tab, shown or kept for its undo, by the
-   * document's id. Null when the tab holds none.
-   */
-  history(roomKey: string): DocumentHistory | null;
-  /** Calls `observer` each time a session opens in this tab, with a new `history`. */
-  observeHistories(observer: () => void): () => void;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

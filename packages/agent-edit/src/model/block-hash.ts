@@ -81,6 +81,11 @@ export function fullHashForItemId(id: BlockItemId): string {
 }
 
 /** Reverse lookup from an agent-visible hash to a live block in this local Y.Doc. */
+/** A Loro block's full hash: a hash of its `id`, which is its identity on every peer (design §5). */
+export function fullHashForBlockId(id: string): string {
+  return `${fnv1a64Hex(id)}${fnv1a64Hex(`${id}\u0000`)}`;
+}
+
 export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
   const normalized = hash.trim().toLowerCase();
   if (normalized.length === 0) return { ok: false, reason: "not_found" };

@@ -69,7 +69,7 @@ export function useEntryList({
   const removal = useOptionalContextRemovalCoordinator();
   const registry = useOptionalLiveDocumentSessionRegistry();
   const stateVectorOf = useCallback(
-    (documentId: string) => registry?.openStateVector(documentId as DocumentId) ?? null,
+    (documentId: string) => registry?.openRoomVersion(documentId as DocumentId) ?? null,
     [registry],
   );
   const { restoreInto } = useDocumentTrashRestore();

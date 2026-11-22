@@ -14,12 +14,14 @@ import type { Cursor } from "loro-crdt";
 import type { Node, ResolvedPos, Slice } from "prosemirror-model";
 import {
   type EditorState,
+  NodeSelection,
   Plugin,
   PluginKey,
+  Selection,
   TextSelection,
   type Transaction,
 } from "prosemirror-state";
-import { inlineOf, readProseMirror, shapeSchemaOf, writeProseMirror } from "./codec.js";
+import { inlineOf, readProseMirror, writeProseMirror } from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
@@ -151,7 +153,8 @@ function sameAttrs(a: Node, b: Node): boolean {
   return true;
 }
 
-interface DocCursor {
+/** A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits. */
+export interface DocCursor {
   block: string;
   cursor: Cursor;
   /** The cursor holds the unit before a caret, which is one past it. */
@@ -162,27 +165,47 @@ interface SelectionCursors {
   head: DocCursor | null;
 }
 
-/** The selection's ends as cursors in their blocks' text docs, taken while editor and docs agree. */
-function takeCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
-  const one = ($pos: ResolvedPos): DocCursor | null => {
-    const block = $pos.parent;
-    const id = block.attrs.id;
-    if (!block.isTextblock || typeof id !== "string") return null;
-    const doc = docs.textOf(id);
-    const rule = shapeSchemaOf(state.schema).node(block.type.name);
-    if (!doc || !rule) return null;
-    const units = shownUnits(doc, rule, docs.shape);
-    const offset = $pos.parentOffset;
-    const after = offset > 0;
-    const unit = units[after ? offset - 1 : offset];
-    const cursor = doc.getText(TEXT_KEY).getCursor(unit ? unit.pos : 0);
-    return cursor ? { block: id, cursor, after: after && unit !== undefined } : null;
-  };
-  const { selection } = state;
-  return { anchor: one(selection.$anchor), head: one(selection.$head) };
+/** The cursor at `$pos`, when it is inside a textblock the docs hold. */
+export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
+  const block = $pos.parent;
+  const id = block.attrs.id;
+  if (!block.isTextblock || typeof id !== "string") return null;
+  const doc = docs.textOf(id);
+  const rule = docs.shape.node(block.type.name);
+  if (!doc || !rule) return null;
+  const units = shownUnits(doc, rule, docs.shape);
+  const offset = $pos.parentOffset;
+  const unit = units[offset > 0 ? offset - 1 : offset];
+  const cursor = doc.getText(TEXT_KEY).getCursor(unit ? unit.pos : 0);
+  return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
 }
 
-/** The transaction that brings the editor to the docs after an import, or null if nothing shows. */
+/** The selection's ends as cursors in their blocks' text docs, taken while editor and docs agree. */
+function takeCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
+  const { selection } = state;
+  return { anchor: cursorAt(docs, selection.$anchor), head: cursorAt(docs, selection.$head) };
+}
+
+/** Where the textblock `id` starts in `doc`, and the block. */
+function textblockOf(doc: Node, id: string): { node: Node; start: number } | null {
+  let found: { node: Node; start: number } | null = null;
+  doc.descendants((child, pos) => {
+    if (found) return false;
+    if (child.isTextblock && child.attrs.id === id) {
+      found = { node: child, start: pos + 1 };
+      return false;
+    }
+    return !child.isTextblock;
+  });
+  return found;
+}
+
+/**
+ * The transaction that brings the editor to the docs after an import, or null if nothing shows.
+ * The selection follows its cursors. A selected node that still stands stays selected. A caret
+ * whose block a peer removed goes to that block's neighbour, the end of the one before it where
+ * there is one: typing composed into the removed block stays in its text doc, hidden with it.
+ */
 function remoteTransaction(
   docs: RoomDocs,
   state: EditorState,
@@ -202,37 +225,39 @@ function remoteTransaction(
   let tr = state.tr.replace(start, endA, next.slice(start, endB));
   if (!tr.doc.eq(next)) tr = state.tr.replaceWith(0, state.doc.content.size, next.content);
   tr.setMeta(loroSyncKey, REMOTE_META).setMeta("addToHistory", false);
+  const { selection } = state;
+  if (selection instanceof NodeSelection && tr.selection instanceof NodeSelection) return tr;
   const anchor = cursors?.anchor ? resolveCursor(docs, tr.doc, cursors.anchor) : null;
   const head = cursors?.head ? resolveCursor(docs, tr.doc, cursors.head) : null;
-  if (anchor !== null && head !== null) tr.setSelection(TextSelection.create(tr.doc, anchor, head));
+  if (anchor !== null && head !== null) {
+    tr.setSelection(TextSelection.create(tr.doc, anchor, head));
+    return tr;
+  }
+  const gone = cursors?.head ?? cursors?.anchor;
+  const was = gone && textblockOf(state.doc, gone.block);
+  if (gone && was && !textblockOf(tr.doc, gone.block)) {
+    const at = tr.mapping.map(was.start - 1, -1);
+    tr.setSelection(Selection.near(tr.doc.resolve(Math.min(at, tr.doc.content.size)), -1));
+  }
   return tr;
 }
 
-/** The editor position a cursor stands at now, if its block still shows. */
-function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number | null {
+/**
+ * The editor position a cursor stands at now, if its block still shows. A cursor whose held unit
+ * was deleted stands where the unit was, so the caret that followed the unit is there too.
+ */
+export function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number | null {
   const text = docs.textOf(at.block);
-  if (!text) return null;
-  let start = -1;
-  let node: Node | null = null;
-  doc.descendants((child, pos) => {
-    if (start >= 0) return false;
-    if (child.isTextblock && child.attrs.id === at.block) {
-      start = pos + 1;
-      node = child;
-    }
-    return !child.isTextblock;
-  });
-  const found = node as Node | null;
-  if (start < 0 || !found) return null;
+  const found = text && textblockOf(doc, at.block);
+  const rule = found && docs.shape.node(found.node.type.name);
+  if (!text || !found || !rule) return null;
   const position = text.getCursorPos(at.cursor);
   if (!position) return null;
-  const rule = docs.shape.node(found.type.name);
-  if (!rule) return null;
-  const units = textUnits(text, rule, docs.shape);
   let shown = 0;
-  for (const unit of units) {
+  for (const unit of textUnits(text, rule, docs.shape)) {
     if (unit.pos >= position.offset) break;
     if (!unit.hidden) shown++;
   }
-  return start + Math.min(shown + (at.after ? 1 : 0), found.content.size);
+  const held = at.after && position.update === undefined;
+  return found.start + Math.min(shown + (held ? 1 : 0), found.node.content.size);
 }

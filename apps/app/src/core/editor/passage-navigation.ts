@@ -2,24 +2,21 @@
  * Open a document and land on the passage a search result promised.
  *
  * Retain the session, wait for this
- * document's Yjs sync, then resolve against live state — because an anchor is
+ * document's first sync, then resolve against live state — because an anchor is
  * only meaningful once the document the writer is looking at is the document
  * the anchor was made against. Opening is deliberately not part of it: a
  * search row is a document door first, and the door opens whether or not the
  * passage inside it can still be found.
  *
  * A search hit carries a block hash and the term that matched.
- * The hash is Yjs-durable at block granularity — it derives from the block's
- * immutable item id, so it survives every edit inside the block and dangles
- * only when the block itself goes. The term is what turns "a block" into "the
+ * The hash derives from the block's `id`, so it survives every edit inside the
+ * block and dangles only when the block itself goes. The term is what turns "a block" into "the
  * passage": finding the block is not the same as the passage still being
  * there, and only the term can tell the two apart.
  *
  * The ladder lives in `passage-resolution.ts`. This module owns the timing.
  */
 
-import { lookupBlockHash } from "@meridian/agent-edit";
-import * as Y from "yjs";
 import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
 import {
   showPassageInTarget,
@@ -27,7 +24,6 @@ import {
   whenLiveEditor,
 } from "./live-range-navigation-runtime";
 import { claimDocumentTarget } from "./reading-position-navigation";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 /** A block hash plus the term that matched inside it. */
 export type PassageAnchor = { blockHash: string; term: string };
@@ -80,8 +76,7 @@ export async function navigateToPassage(input: {
       do {
         // Re-derived every attempt, against the live document: the editor may
         // still be mounting, and the block may go while we wait for it.
-        const block = blockRangeForHash(session.document, input.anchor.blockHash);
-        const landing = show(target, { block, term: input.anchor.term });
+        const landing = show(target, input.anchor);
         if (targetSignal.aborted) break;
         if (landing) return { kind: landing.outcome };
         await waitForLiveRangeRetry(targetSignal);
@@ -91,24 +86,4 @@ export async function navigateToPassage(input: {
   } finally {
     releaseTarget();
   }
-}
-
-/**
- * The live span of the block a hash names, or null when it names none. An
- * ambiguous prefix counts as none: two candidate blocks cannot promise one
- * passage, and picking either is the guess this feature refuses to make.
- */
-export function blockRangeForHash(
-  doc: Y.Doc,
-  hash: string,
-): { start: Y.RelativePosition; end: Y.RelativePosition } | null {
-  const lookup = lookupBlockHash(doc, hash);
-  if (!lookup.ok) return null;
-  const root = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const index = root.toArray().indexOf(lookup.block);
-  if (index < 0) return null;
-  return {
-    start: Y.createRelativePositionFromTypeIndex(root, index),
-    end: Y.createRelativePositionFromTypeIndex(root, index + 1),
-  };
 }

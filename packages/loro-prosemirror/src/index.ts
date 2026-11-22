@@ -20,9 +20,12 @@ export {
   notifyChanged,
 } from "./composition-hold.js";
 export {
+  cursorAt,
+  type DocCursor,
   type LoroSyncOptions,
   type LoroSyncState,
   loroSyncKey,
   loroSyncPlugin,
   REMOTE_META,
+  resolveCursor,
 } from "./sync-plugin.js";

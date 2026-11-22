@@ -302,9 +302,6 @@ importers:
 
   apps/app:
     dependencies:
-      '@hocuspocus/provider':
-        specifier: 4.8.0
-        version: 4.8.0(patch_hash=d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@lingui/core':
         specifier: ^6.12.0
         version: 6.12.0(@babel/core@8.1.2)(babel-plugin-macros@3.1.0)
@@ -329,6 +326,12 @@ importers:
       '@meridian/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
+      '@meridian/document-model':
+        specifier: workspace:*
+        version: link:../../packages/document-model
+      '@meridian/loro-prosemirror':
+        specifier: workspace:*
+        version: link:../../packages/loro-prosemirror
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
@@ -338,9 +341,6 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
-      '@meridian/suggestions':
-        specifier: workspace:*
-        version: link:../../packages/suggestions
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
@@ -380,12 +380,6 @@ importers:
       '@tiptap/extension-code-block-lowlight':
         specifier: 3.34.0
         version: 3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/extension-code-block@3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)(highlight.js@11.11.1)(lowlight@3.3.0)
-      '@tiptap/extension-collaboration':
-        specifier: ^3.34.0
-        version: 3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)(@tiptap/y-tiptap@3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      '@tiptap/extension-collaboration-caret':
-        specifier: ^3.34.0
-        version: 3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)(@tiptap/y-tiptap@3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))
       '@tiptap/extension-hard-break':
         specifier: ^3.34.0
         version: 3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))
@@ -437,9 +431,6 @@ importers:
       '@tiptap/suggestion':
         specifier: 3.34.0
         version: 3.34.0(@floating-ui/dom@1.7.6)(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)
-      '@tiptap/y-tiptap':
-        specifier: 3.3.0
-        version: 3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@workos/authkit-session':
         specifier: ^0.9.1
         version: 0.9.1(@workos-inc/node@12.3.0)(typescript@7.0.2)
@@ -455,9 +446,12 @@ importers:
       dompurify:
         specifier: 3.4.18
         version: 3.4.18
-      lib0:
-        specifier: ^0.2.120
-        version: 0.2.120
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.18.0
+      loro-protocol:
+        specifier: 'catalog:'
+        version: 0.3.0
       lowlight:
         specifier: 3.3.0
         version: 3.3.0
@@ -515,9 +509,6 @@ importers:
       y-indexeddb:
         specifier: 9.0.12
         version: 9.0.12(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      y-protocols:
-        specifier: ^1.0.7
-        version: 1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       yjs:
         specifier: 13.6.33
         version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
@@ -3989,21 +3980,6 @@ packages:
     resolution: {integrity: sha512-+97O+ao+wnKGMy13q7T+JUFDWsbPYvAzfPHMqo+vTMFGphiAVHnmXTQZ+4rx7V2KnWSYY1IvSpFVORb7n1sbWQ==}
     peerDependencies:
       '@tiptap/core': 3.34.0
-
-  '@tiptap/extension-collaboration-caret@3.34.0':
-    resolution: {integrity: sha512-8s5/JI+9/Xn/UZNIcsbdLmOTSlAIlIkw0w/FJy6V4z0DQGNarBJ0lZYn6Ctf9He1V24jwGZSCiM0NcDtX+qpFA==}
-    peerDependencies:
-      '@tiptap/core': 3.34.0
-      '@tiptap/pm': 3.34.0
-      '@tiptap/y-tiptap': ^3.0.7
-
-  '@tiptap/extension-collaboration@3.34.0':
-    resolution: {integrity: sha512-z4Cv6oi7d1QwUkbVAGOz+CMYG/JmIUac302S1ofrkWRvX9RLXOuh9bIsb1sxM6bMNXwotPoRi+dUDrqW22RnmA==}
-    peerDependencies:
-      '@tiptap/core': 3.34.0
-      '@tiptap/pm': 3.34.0
-      '@tiptap/y-tiptap': ^3.0.7
-      yjs: ^13
 
   '@tiptap/extension-document@3.34.0':
     resolution: {integrity: sha512-Mvs7AUGJkUWI4HfsCNvWQF2f4YdVqR1UHKYnkFdxCifuGPwFBc8bT7rNMT6NBFjRZADbf4HrE/UIQqVQA5Gfyw==}
@@ -9897,19 +9873,6 @@ snapshots:
   '@tiptap/extension-code@3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))':
     dependencies:
       '@tiptap/core': 3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0)
-
-  '@tiptap/extension-collaboration-caret@3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)(@tiptap/y-tiptap@3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))':
-    dependencies:
-      '@tiptap/core': 3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0)
-      '@tiptap/pm': 3.34.0
-      '@tiptap/y-tiptap': 3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-
-  '@tiptap/extension-collaboration@3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))(@tiptap/pm@3.34.0)(@tiptap/y-tiptap@3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))':
-    dependencies:
-      '@tiptap/core': 3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0)
-      '@tiptap/pm': 3.34.0
-      '@tiptap/y-tiptap': 3.3.0(patch_hash=ac2379ae4b7fc02c2dba7ffa6591cc38719672fc35829e9381983b1e4a24a1ba)(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9(patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e))(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
-      yjs: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
 
   '@tiptap/extension-document@3.34.0(@tiptap/core@3.34.0(patch_hash=77b5685168fe306707a78967a93cf47d9ffcc27115b4553d1c6d982a9820d7e9)(@tiptap/pm@3.34.0))':
     dependencies:
