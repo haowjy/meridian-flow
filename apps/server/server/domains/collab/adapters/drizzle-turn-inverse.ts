@@ -460,7 +460,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       actionId: step.actionId,
       receipts: [
         {
-          update: batch,
           origin: { kind: "live" },
           targets: back.taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
           delta: query.model ? captureDelta(before, blocksIn(docs)) : null,

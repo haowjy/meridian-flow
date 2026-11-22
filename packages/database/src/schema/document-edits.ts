@@ -22,7 +22,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { createdAt, idColumn } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
@@ -75,7 +75,6 @@ export const documentEditParts = pgTable(
       .notNull()
       .references(() => documentEdits.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
-    update: byteaColumn("update").notNull(),
     targets: jsonb("targets")
       .$type<{ editId: string; ordinal: number }[]>()
       .notNull()

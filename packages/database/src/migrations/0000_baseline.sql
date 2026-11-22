@@ -595,7 +595,6 @@ CREATE TABLE "document_edit_parts" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"edit_id" uuid NOT NULL,
 	"ordinal" integer NOT NULL,
-	"update" "bytea" NOT NULL,
 	"targets" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"delta" jsonb,
 	"origin" jsonb NOT NULL,

@@ -38,8 +38,8 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
       },
       transaction: db,
       origin: "server:agent",
-      recordWrite: async (tx, record, batch) => {
-        await recordWrite(tx, record, batch);
+      recordWrite: async (tx, record) => {
+        await recordWrite(tx, record);
       },
     }),
     async authorOfTurn(turnId) {
@@ -53,8 +53,8 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
   };
 }
 
-/** One write's receipt: an edit of kind `write` and its one part, the batch and its delta. */
-function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, batch: Uint8Array) {
+/** One write's receipt: an edit of kind `write` and its one part, its delta. */
+function recordWrite(tx: DrizzleDb, record: AgentWriteRecord) {
   const { actor } = record;
   return recordDocumentEdit(tx, {
     documentId: record.documentId as DocumentId,
@@ -67,7 +67,6 @@ function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, batch: Uint8Array)
     actorUserId: actor.kind === "human" ? (actor.userId as UserId) : null,
     receipts: [
       {
-        update: batch,
         origin: { kind: "live" },
         delta: record.delta,
       },

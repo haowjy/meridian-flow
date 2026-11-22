@@ -5843,12 +5843,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "update": {
-          "name": "update",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
         "targets": {
           "name": "targets",
           "type": "jsonb",

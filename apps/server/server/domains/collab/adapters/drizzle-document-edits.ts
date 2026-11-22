@@ -28,8 +28,6 @@ export interface ReceiptWrite {
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
   receipts: {
-    /** The batch the part committed. */
-    update: Uint8Array;
     origin: EditOrigin;
     targets?: EditTarget[];
     delta?: StoredDelta | null;
@@ -79,7 +77,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,
       ordinal,
-      update: Buffer.from(p.update),
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,

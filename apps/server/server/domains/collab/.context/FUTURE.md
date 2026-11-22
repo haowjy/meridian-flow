@@ -10,12 +10,6 @@ and write it onto the document as it stands, aligned so unchanged text keeps its
 tabs, offline copies and the AI merge into it like any edit. A version older than the cutoff needs
 a stored snapshot of its own, which nothing keeps yet.
 
-## Edit bytes stay on parts
-
-`document_edit_parts.update` keeps each AI write's batch beside its `delta`, though no reader takes
-the bytes since the Loro move: undo and revert read the `delta`. Drop the column, or give it its
-reader, when phase 2 decides what a fork's Apply replays.
-
 ## Large-history recovery
 
 Measure idle recovery query plans with settled history before adding a partial

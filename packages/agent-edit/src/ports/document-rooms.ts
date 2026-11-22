@@ -83,8 +83,8 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /** Store a write's record in `tx`, beside its batch (`batch`, the envelope `save` committed). */
-  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
+  /** Store a write's record in `tx`, beside its committed batch. */
+  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -99,7 +99,7 @@ export function agentEditRooms<Tx>(
     async save(room, batch, record) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record, batch);
+      if (record) await host.recordWrite(tx, record);
     },
   };
 }
