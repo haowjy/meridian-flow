@@ -12,6 +12,7 @@ import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
   AgentEditModel,
+  CanonicalBlockIdentity,
   ContentLineage,
   EditOp,
   EditOpsResult,
@@ -20,6 +21,7 @@ import type {
 import {
   blockHashesForDoc,
   blockIdentityForItem,
+  blockItemIdKey,
   fullHashForItemId,
   getBlockHash,
   getBlockItemId,
@@ -32,6 +34,8 @@ import { readRepairedRoot } from "./schema-repair.js";
 
 export type YProsemirrorDocumentModel = AgentEditModel & {
   schema: Schema;
+  /** Full immutable identity used by provenance. */
+  getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
 };
 
 export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
@@ -132,7 +136,7 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
   const hashes = uniqueHashesForBlocks(elements);
   return elements.map((element, index) => ({
     ref: toRef(element),
-    id: getBlockItemId(element),
+    key: blockItemIdKey(getBlockItemId(element)),
     hash: hashes[index],
     fullHash: fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(element))),
     // The model reads and writes Markdown, which has no ids, so its view of a block has none: a

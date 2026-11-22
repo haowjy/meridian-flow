@@ -13,7 +13,7 @@ import {
 } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
-import { blockIdentityForItem, uniqueHashesForIds } from "../model/block-hash.js";
+import { blockIdentityForItem, itemIdOfKey, uniqueHashesForIds } from "../model/block-hash.js";
 import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type {
@@ -301,7 +301,7 @@ function shownInFull(
   const shown = new Set<string>();
   if (shownHashes.size === 0) return shown;
   for (const block of project()) {
-    if (shownHashes.has(block.hash)) shown.add(frontierBlockId(block.id));
+    if (shownHashes.has(block.hash)) shown.add(block.key);
   }
   return shown;
 }
@@ -311,7 +311,7 @@ function hashMap(
   present: readonly ProjectedBlock[],
   removed: readonly { clientID: number; clock: number }[],
 ): Map<string, string> {
-  const ids = [...present.map((block) => block.id), ...removed];
+  const ids = [...present.map((block) => itemIdOfKey(block.key)), ...removed];
   const identities = ids.map((id) => blockIdentityForItem(doc, id));
   const hashes = uniqueHashesForIds(identities);
   return new Map(ids.map((id, index) => [frontierBlockId(id), hashes[index]]));

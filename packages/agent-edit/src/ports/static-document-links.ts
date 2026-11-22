@@ -27,6 +27,7 @@ import {
 import { storedLinkKeys } from "@meridian/markup/stored-links";
 import * as Y from "yjs";
 import type { DocumentLinksPort } from "./document-links.js";
+import type { LoroLinksPort } from "./document-rooms.js";
 
 export interface StaticCatalogDocument extends CatalogDocument {
   /** An image the shipped `asset:` rule may claim. */
@@ -293,11 +294,26 @@ function catalogTree(
  * FNV-1a, because this package also runs in the browser.
  */
 function staticRevision(doc: Y.Doc, scope: HolderLinkScope, catalog: StaticDocumentCatalog) {
+  return cutRevision(Y.encodeSnapshot(Y.snapshot(doc)), scope, catalog);
+}
+
+/** `createStaticDocumentLinks` for the Loro core: the revision names a cut by its room version. */
+export function createStaticLoroDocumentLinks(
+  catalog: StaticDocumentCatalog = { projectId: "static", documents: [] },
+  options: StaticDocumentLinksOptions = {},
+): LoroLinksPort & { minted: string[]; misses: string[] } {
+  return {
+    ...createStaticDocumentLinks(catalog, options),
+    revision: (cut, scope) => cutRevision(cut.version, scope, catalog),
+  };
+}
+
+function cutRevision(state: Uint8Array, scope: HolderLinkScope, catalog: StaticDocumentCatalog) {
   let hash = 0x811c9dc5;
   const feed = (bytes: Uint8Array) => {
     for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
   };
-  feed(Y.encodeSnapshot(Y.snapshot(doc)));
+  feed(state);
   feed(
     new TextEncoder().encode(
       JSON.stringify([

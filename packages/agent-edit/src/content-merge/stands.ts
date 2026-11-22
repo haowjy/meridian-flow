@@ -154,3 +154,25 @@ function stateIn(schema: Schema, change: EditChange, at: Window | null): ChangeS
     ? "stands"
     : "altered";
 }
+
+/**
+ * `text` with every change of `parts` that stands in it taken out, in order, and the parts that had
+ * one: an Undo of an AI write (or a press) by content, read against each part's recorded delta.
+ */
+export function takeBack<P extends { delta: StoredDelta | null }>(
+  schema: Schema,
+  text: readonly PMNode[],
+  parts: readonly P[],
+): { text: readonly PMNode[]; taken: P[] } {
+  let blocks = text;
+  const taken: P[] = [];
+  for (const part of parts) {
+    if (!part.delta) continue;
+    for (const change of editChanges(schema, readDelta(schema, part.delta))) {
+      if (changeStateIn(schema, change, blocks) !== "stands") continue;
+      blocks = takeOut(schema, change, blocks);
+      if (!taken.includes(part)) taken.push(part);
+    }
+  }
+  return { text: blocks, taken };
+}

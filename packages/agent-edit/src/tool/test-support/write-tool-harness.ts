@@ -6,6 +6,7 @@ import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { createAgentEditCodecFactory } from "../../codec-adapter.js";
 import { createAgentEditCore } from "../../index.js";
+import type { YProsemirrorDocumentModel } from "../../model/y-prosemirror.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
@@ -16,7 +17,6 @@ import {
   SavePreconditionRefused,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
-import type { AgentEditModel } from "../../ports/model.js";
 import { createStaticDocumentLinks } from "../../ports/static-document-links.js";
 import type { JournalBatchAppendEntry, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
@@ -35,7 +35,7 @@ export function harness(
   options: {
     onUnexpectedWriteError?: Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal;
-    model?: AgentEditModel;
+    model?: YProsemirrorDocumentModel;
     links?: DocumentLinksPort;
     onLinkSpliceFallback?: Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"];
   } = {},

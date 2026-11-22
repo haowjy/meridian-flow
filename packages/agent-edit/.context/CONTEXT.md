@@ -108,6 +108,33 @@ there are overwritten. That is also what the fallback still loses: a block with 
 whose writer edit came after the read. The concurrent listing can't name who made an edit since
 a collected read either (it needs the read's document), so it says `unknown`.
 
+## The Loro core
+
+`tool/loro-write.ts` (`createLoroEditCore`) runs `read` and `write` on a room's Loro docs
+(`AgentEditRooms.readRoom`, one `RoomDocs` per call, freed at the call's end). What differs from
+the Yjs core:
+
+- **Block identity is the block id.** Hashes are `fullHashForBlockId(id)`'s unique prefixes, and
+  `ProjectedBlock.key` / `BlockSnapshot.key` carry the id (the Yjs model fills them with its item
+  id), so echo, receipts and links share one path for both cores.
+- **Planning is a view.** The read's frontier is a per-doc map (`loro-frontier.ts`,
+  `encodeFrontierMap`), the reply's own batches merged in by their end version; the write plans
+  on `docs.at(frontiers)`, exports one batch (`exportSince(shownVersion())`) with the commit
+  message `turn:<turnId>` and saves it through `rooms.save` with an `AgentWriteRecord` whose
+  `delta` (`captureDelta`) is what Undo takes back by content (`takeBack`). A frontier below the
+  history cutoff falls back to the transcript as above (`transcriptMerge`).
+- **Who changed what** (`tool/loro-observation.ts`) comes from the docs that changed since the
+  recorded frontier and their commit messages: `turn:<id>` is a chat (`authorOfTurn`), the
+  reader's own turn is skipped, and no message is the user. A structure change credits every
+  author of the structure doc since the read with every structural change: coarse, never wrong
+  about who touched the document.
+- Lineage is empty (no semantic IR scope), and a block deleted since a read that fell back to
+  the transcript answers `not_found` with the current text, not `block_gone`.
+
+The Yjs-only code (`frontier.ts`, `yjs-mutation.ts`, `heldBlocks`, `undo/receipt.ts`, the
+journal-row provenance) goes when the server's host moves; until then it is what production
+runs. Probe: [loro-write](qa/loro-write.md).
+
 ## What an Undo reads
 
 No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,

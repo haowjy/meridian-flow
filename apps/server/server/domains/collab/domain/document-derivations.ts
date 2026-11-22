@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
-  blockItemIdKey,
   fragmentOf,
   storedPendingChanges,
   type YProsemirrorDocumentModel,
@@ -164,7 +163,7 @@ export function createCutReader(deps: {
     const read = grepBlocksOf(doc, model, codec.markup, verbatim);
     return {
       blocks: read.map(({ block, destinationFree, text }) => ({
-        id: blockItemIdKey(block.id),
+        id: block.key,
         text,
         contentHash: sha256(destinationFree),
       })),

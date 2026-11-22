@@ -14,6 +14,7 @@ import type { Block } from "../codec-types.js";
 import { createPlanningView, frontierSnapshot } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
+import { blockItemIdKey } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
@@ -571,8 +572,10 @@ export function createWriteCommands(deps: {
     const touchedBlocks = options.model
       .getBlocks(toDocHandle(planDoc))
       .filter((_, index) => touchedHashes.has(blockIds[index]))
-      .map((block) => options.model.getCanonicalBlockIdentity(block));
-    const deletedBlocks = planned.filter((block) => deletedHashes.has(block.hash));
+      .map((block) => blockItemIdKey(options.model.getCanonicalBlockIdentity(block)));
+    const deletedBlocks = planned
+      .filter((block) => deletedHashes.has(block.hash))
+      .map((block) => block.key);
     // The echo shows the write merged into the room, the writer's surviving words included.
     if (planDoc !== room.doc) Y.applyUpdate(room.doc, update);
     const copied = edit.copy
@@ -614,7 +617,7 @@ export function createWriteCommands(deps: {
       writeId: identity.handle,
       awarenessDegraded: Boolean(saved.awarenessDegraded),
     };
-    const ownRemoved = new Set(deletedBlocks.map((block) => `${block.clientID}:${block.clock}`));
+    const ownRemoved = new Set(deletedBlocks);
     try {
       const echoProjected = options.model.projectBlocks(toDocHandle(room.doc));
       return await withEvidence(
