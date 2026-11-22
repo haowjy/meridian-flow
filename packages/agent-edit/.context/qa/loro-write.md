@@ -23,8 +23,11 @@ What it covers:
   listed as removed.
 - A write into an emptied document (the unstored `/empty` paragraph) lands, and `create` writes a
   new document.
+- After the writer's turn Undo restores text the chat last saw replaced, an exact `find` of the
+  restored text lands, though the chat's view still holds its own words there.
 - A read whose frontiers are below the history cutoff (the host's `compact`) plans on the
   transcript: a paragraph rewritten as read keeps the writer's deletion made since.
 
 The scenarios fail on the old code paths they guard: planning on the room copy instead of the view
-breaks the first, and skipping the transcript merge breaks the last.
+breaks the first, skipping the transcript merge breaks the cutoff scenario, and resolving a `find`
+only on the view breaks the Undo one.

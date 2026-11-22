@@ -247,5 +247,39 @@ check(
   { ch3, text: text(write6) },
 );
 
+// 7. The writer's turn Undo brings back text the chat last saw replaced: an exact find of that text
+// lands, though the chat's view still holds its own words there.
+await host.seed("ch4", [paragraph("r1", "Base alpha."), paragraph("r2", "Base beta.")]);
+const c4 = chat("thread-4", "t4");
+c4.request();
+c4.record(await core.read({ ...file("ch4") } as never, c4.context()));
+c4.request();
+const write7 = c4.record(
+  await run(() =>
+    core.write(
+      { command: "replace", ...file("ch4"), find: "Base beta.", content: "AI beta." } as never,
+      c4.context(),
+    ),
+  ),
+);
+check(!write7.isError, "the chat's first write lands", text(write7));
+await host.undoTurn("ch4", "t4");
+check(texts(await host.live("ch4"))[1] === "Base beta.", "turn Undo restores the text", await host.live("ch4"));
+c4.request();
+const write8 = c4.record(
+  await run(() =>
+    core.write(
+      { command: "replace", ...file("ch4"), find: "Base beta.", content: "Draft beta." } as never,
+      c4.context(),
+    ),
+  ),
+);
+const ch4 = texts(await host.live("ch4"));
+check(
+  !write8.isError && ch4.join("|") === "Base alpha.|Draft beta.",
+  "an exact find of text restored since the chat's read lands",
+  { ch4, text: text(write8) },
+);
+
 await host.close();
 process.stdout.write(`ok: ${checks} checks\n`);
