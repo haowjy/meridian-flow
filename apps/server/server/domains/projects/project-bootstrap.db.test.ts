@@ -5,7 +5,7 @@
  * - the default project, Manuscript, first chapter, and locked No Work bootstrap shape
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -36,12 +36,6 @@ else
       db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "no-work-bootstrap"));
     });
-    // A domain's rooms save on a debounce: close them before the next test's transaction opens,
-    // or a late save lands in it.
-    const domains: ReturnType<typeof createCollabDomain>[] = [];
-    afterEach(async () => {
-      await Promise.all(domains.splice(0).map((domain) => domain.dispose()));
-    });
     function collab() {
       const domain = createCollabDomain({
         ...testLinkDeps(db),
@@ -50,7 +44,6 @@ else
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
       });
-      domains.push(domain);
       return domain;
     }
     it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {

@@ -25,12 +25,10 @@ import { testLinkDeps } from "./test-support/document-link-scopes.js";
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (postgres)", () => {
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 4 });
-  const domains: ReturnType<typeof createCollabDomain>[] = [];
   let user: string;
   let projectId: string;
   let sourceId: string;
   afterAll(async () => {
-    for (const domain of domains.splice(0)) await domain.dispose();
     await deleteDrizzleRows(db, [users]);
     await db.close();
   });
@@ -52,7 +50,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       fileAccess: createAllowAllFileAccess(),
       workProjectionMutation: createTestWorkProjectionMutation(db),
     });
-    domains.push(collab);
     const single = randomUUID() as DocumentId;
     const batch = [randomUUID(), randomUUID()] as DocumentId[];
     const seed = treeSeeder(db);

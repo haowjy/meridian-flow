@@ -20,6 +20,7 @@ import {
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   holdsFrontiers,
@@ -94,6 +95,8 @@ interface Loaded {
   /** When the first unsaved batch arrived; 0 when nothing is unsaved. */
   firstDirtyAt: number;
   saveTimer: ReturnType<typeof setTimeout> | null;
+  /** Ends the room's pending save in `processDetachedWork`, which shutdown and DB tests drain. */
+  settleSave: (() => void) | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
   lastUsed: number;
   snapshotBytes: number;
@@ -234,6 +237,7 @@ export function createPostgresDocumentRooms(input: {
         dirty: new Set(docs.forward()),
         firstDirtyAt: 0,
         saveTimer: null,
+        settleSave: null,
         idleTimer: null,
         lastUsed: Date.now(),
         snapshotBytes: rows.reduce((sum, row) => sum + row.snapshot.byteLength, 0),
@@ -318,6 +322,13 @@ export function createPostgresDocumentRooms(input: {
   }
 
   function schedule(loaded: Loaded) {
+    if (!loaded.settleSave)
+      void processDetachedWork.track(
+        new Promise<void>((resolve) => {
+          loaded.settleSave = resolve;
+        }),
+        `document room save ${loaded.name}`,
+      );
     const now = Date.now();
     if (loaded.firstDirtyAt === 0) loaded.firstDirtyAt = now;
     if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
@@ -390,7 +401,22 @@ export function createPostgresDocumentRooms(input: {
     return run;
   }
 
+  /** Whatever ended a save or dropped the room's dirty docs: nothing is waiting any more. */
+  function settleIfIdle(loaded: Loaded) {
+    if (loaded.saveTimer || (loaded.dirty.size > 0 && !loaded.docs.isFreed)) return;
+    loaded.settleSave?.();
+    loaded.settleSave = null;
+  }
+
   async function saveNow(loaded: Loaded, reason: string) {
+    try {
+      await saveUnlessIdle(loaded, reason);
+    } finally {
+      settleIfIdle(loaded);
+    }
+  }
+
+  async function saveUnlessIdle(loaded: Loaded, reason: string) {
     if (loaded.docs.isFreed) return;
     if (reason === "debounce" && loaded.dirty.size === 0) return;
     if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
@@ -756,6 +782,7 @@ export function createPostgresDocumentRooms(input: {
         loaded.firstDirtyAt = 0;
         if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
         loaded.docs.free();
+        settleIfIdle(loaded);
       }
       await currentDrizzleDb(db).execute(sql`
         delete from document_snapshots s

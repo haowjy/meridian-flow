@@ -105,7 +105,7 @@ import {
 } from "./domain/turn-reversal-service.js";
 import { createWorkCreates } from "./domain/work-creates.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
-import { createPostgresDocumentRooms } from "./rooms/postgres-document-rooms.js";
+import { createPostgresDocumentRooms, type RoomBounds } from "./rooms/postgres-document-rooms.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
@@ -117,6 +117,8 @@ type CollabDomainDeps = {
   aheadRefs: AheadRefRegistrar;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
+  /** Overrides of the rooms' debounce, idle and size bounds; a DB suite shortens the debounce. */
+  roomBounds?: Partial<RoomBounds>;
   notices?: NoticePort;
   workProjectionMutation: WorkProjectionMutation;
   /**
@@ -159,6 +161,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink ?? createNoopEventSink(),
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
     onLiveSaved: (documentId) => liveAdvanced(documentId as DocumentId),
+    bounds: deps.roomBounds,
   });
   const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>
     isInDrizzleTransaction()
