@@ -59,6 +59,8 @@ export type { SchemaFence } from "./schema-fence";
 
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
+/** How long the server's mark waits for typing to pause before it is stored. */
+const NOTE_SERVER_MS = 1_000;
 /** The log is folded into snapshots after this many appended batches. */
 const COMPACT_EVERY = 200;
 
@@ -194,6 +196,12 @@ export class DocumentSession {
   private transportInitialSyncComplete = false;
   private contentHeld = false;
   private transportAcknowledged = false;
+  /**
+   * Whether the copy holds ops the server lacks; null until read. Kept as an edge, not recomputed
+   * per keystroke: comparing the room's versions costs a pass over every block's doc.
+   */
+  private unsent: boolean | null = null;
+  private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private emittedKey = "";
@@ -293,6 +301,7 @@ export class DocumentSession {
   }
 
   private publishBatch(batch: Uint8Array): void {
+    this.unsent = true;
     this.append(batch);
     this.contentChanged();
     if (this.inert) return;
@@ -397,7 +406,10 @@ export class DocumentSession {
       return;
     const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
-      if (event.data?.batch instanceof Uint8Array) this.importRemote(event.data.batch, false);
+      if (!(event.data?.batch instanceof Uint8Array)) return;
+      // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
+      this.unsent = null;
+      this.importRemote(event.data.batch, false);
     };
     this.tabs = tabs;
   }
@@ -462,7 +474,6 @@ export class DocumentSession {
           this.raiseSchemaFence({ reason: "client-superseded" });
         }
         if (historyCutOff(state)) this.holdsUndeliverable = this.computeUndeliverable();
-        this.noteServer();
         this.recomputeStatus();
       }),
       provider.subscribeAccess((access, closedWhy, reasonPending) => {
@@ -475,7 +486,11 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        if (acknowledged) this.noteServer();
+        // Joined, with everything this connection sent acknowledged: the Join sent all the copy held.
+        if (acknowledged) {
+          this.unsent = false;
+          this.noteServerSoon();
+        }
         this.recomputeStatus();
       }),
     );
@@ -484,10 +499,20 @@ export class DocumentSession {
     this.emit();
   }
 
-  /** Record what the server holds in the copy, for a later tab or reload. */
+  /**
+   * Record what the server holds in the copy, for a later tab or reload, once typing pauses: a
+   * mark that trails the server only offers words it has, never loses one.
+   */
+  private noteServerSoon(): void {
+    if (this.noteServerTimer !== undefined) return;
+    this.noteServerTimer = setTimeout(() => this.noteServer(), NOTE_SERVER_MS);
+  }
+
   private noteServer(): void {
+    clearTimeout(this.noteServerTimer);
+    this.noteServerTimer = undefined;
     const provider = this.transportProvider;
-    if (!provider) return;
+    if (!provider || this.docs.isFreed) return;
     const known = provider.serverVersion();
     if (versionCovers(this.server, known)) return;
     mergeVersion(this.server, known);
@@ -518,6 +543,7 @@ export class DocumentSession {
     this.transportAttachmentPending = false;
     const previous = this.transportProvider;
     if (this.destroyed || !previous) return this.detaching ?? Promise.resolve();
+    this.noteServer();
     for (const stop of this.unsubscribers.splice(0)) stop();
     if (!this.presenceHeldForTransport) {
       this.presenceHeldForTransport = true;
@@ -597,8 +623,11 @@ export class DocumentSession {
 
   /** Whether the copy holds ops the server is not known to have. */
   hasUnacknowledgedEdits(): boolean {
-    const server = this.transportProvider?.serverVersion() ?? this.server;
-    return !versionCovers(server, this.docs.version());
+    if (this.unsent === null) {
+      const server = this.transportProvider?.serverVersion() ?? this.server;
+      this.unsent = !versionCovers(server, this.docs.version());
+    }
+    return this.unsent;
   }
 
   /**
@@ -788,6 +817,7 @@ export class DocumentSession {
       window.removeEventListener("pagehide", this.onPageHide);
       window.removeEventListener("pageshow", this.onPageShow);
     }
+    this.noteServer();
     for (const stop of this.unsubscribers.splice(0)) stop();
     this.transportProvider?.destroy();
     this.transportProvider = null;

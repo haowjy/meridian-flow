@@ -175,8 +175,14 @@ export class DocumentHistory {
     return false;
   }
 
+  private shown = "";
+
+  /** Tells listeners and editors when Undo or Redo becomes available or not: not per keystroke. */
   private changed(): void {
     if (!this.active) return;
+    const shown = `${this.canUndo()}|${this.canRedo()}`;
+    if (shown === this.shown) return;
+    this.shown = shown;
     for (const listener of this.listeners) listener();
     for (const editor of this.editors)
       if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
