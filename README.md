@@ -16,7 +16,6 @@ For setup, see [DEVELOPMENT.md](DEVELOPMENT.md). For product context, see [PRODU
 | `@meridian/agent-edit` | Yjs editing core for the model's document `read` and `write`: reply-scoped save buffering, write handles and undo. |
 | `@meridian/thread-client` | Framework-free chat core shared by the app and `./mf`: the thread socket, turn reduction, run state and the transcript view model. |
 | `@meridian/project-tree` | The project tree as an append-only list of records in a Yjs document, replayed into a tree; the server and the browser share it. |
-| `@meridian/tree-list-sync` | How a client keeps its copy of a project's tree list the server's, over the Yjs socket. |
 | `@meridian/yjs-inspect` | Turns binary Hocuspocus/Yjs messages into metadata-only summaries, never text. |
 
 Domain runtime lives in `apps/server/server/domains/`, not in package route handlers. See [AGENTS.md](AGENTS.md) for the active layout rules.

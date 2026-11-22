@@ -14,6 +14,9 @@ The Join exchange, which the server's handler speaks too (local-first design §4
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
+The server does not relay presence yet: it drops every ephemeral-store frame, so a remote caret
+shows only once the relay lands.
+
 A room without presence (a tree list) passes no store and joins no presence channel. `onJoined`
 sees each `JoinResponseOk`'s `extra` before anything is sent and may ask to rejoin: a tree copy of
 another list is replaced under the Join, so the Join's version must be taken again.
@@ -61,8 +64,7 @@ Every `DocumentSession` subscribes to `change_event`.
 
 ## Dev-only wire observation
 
-The thread socket (`ThreadWireTap`) and the tree list's Yjs socket (`TappedWebSocket`, until the
-tree list moves to Loro) are tapped. The Loro room socket has no tap yet: the
+Only the thread socket is tapped (`ThreadWireTap`). The Loro room socket has no tap yet: the
 old Yjs inspector read Yjs frames, and its Loro replacement is left for 1e.
 
 Thread protocol, cursor and deadline contracts belong to the

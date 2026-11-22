@@ -13,7 +13,7 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 - Pass a contracts JSON decoder on HTTP reads that feed a success claim; never assert an
   unknown body into success.
 - Workspace imports: `@meridian/contracts` and `@meridian/thread-client`, and for `doc` the
-  tree-list and document-room clients (`project-tree`, `tree-list-sync`, `agent-edit`, `markup`,
+  tree-list and document-room clients (`project-tree`, `agent-edit`, `markup`,
   `prosemirror-schema`): a tree change has no route, so `./mf` writes the list as the browser
   does. From
   `tools/dev`, only the Portless route contract: `portless-prefix.ts`,

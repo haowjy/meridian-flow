@@ -17,7 +17,6 @@ flowchart TB
   suggestions["suggestions<br/><small>a Work's draft as marks in Live</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
-  tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
   loro-prosemirror["loro-prosemirror<br/><small>the editor bound to a Loro document</small>"]:::package
   document-model["document-model<br/><small>a document as Loro docs, and its rooms</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
@@ -43,8 +42,6 @@ flowchart TB
   app -->|"debug overlay reads sync with"| yjs-inspect
   server -->|"writes and replays the project tree with"| project-tree
   app -->|"delivers commands with"| command-driver
-  app -->|"syncs the tree's list with"| tree-list-sync
-  tree-list-sync -->|"reads the list's records with"| project-tree
   loro-prosemirror -->|"reads and writes the document shape with"| document-model
   agent-edit -->|"will plan and save on Loro rooms with"| document-model
   document-model -->|"names rooms with"| contracts
@@ -196,16 +193,6 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 - Paths: `packages/thread-client/src`
 - Docs: [CONTEXT](../../packages/thread-client/.context/CONTEXT.md), [AGENTS](../../packages/thread-client/AGENTS.md)
 - Machines: [thread-client](../../packages/thread-client/.context/state-machines.md)
-
-## tree-list-sync
-
-How a client keeps its copy of the project tree's list the server's: the connection to the list's room, sending in parts of at most an eighth of an admission, and the rebuild after a whole refusal.
-
-Owns no storage and no tabs: the browser's copy comes in through `ListCopy`. The server's room cuts what it sends with the same function.
-
-- Kind: package
-- Paths: `packages/tree-list-sync/src`
-- Docs: [CONTEXT](../../packages/tree-list-sync/.context/CONTEXT.md), [AGENTS](../../packages/tree-list-sync/AGENTS.md)
 
 ## loro-prosemirror
 

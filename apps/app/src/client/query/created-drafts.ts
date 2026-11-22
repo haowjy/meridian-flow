@@ -9,8 +9,8 @@ import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
+import type { LoroDoc } from "loro-crdt";
 import { useCallback, useMemo } from "react";
-import type * as Y from "yjs";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import {
   useAccountId,
@@ -69,7 +69,7 @@ export function useCreatedDrafts(
 const NONE: readonly DraftItem[] = [];
 
 /** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
-function createdDocuments(doc: Y.Doc, draftId: string): string[] {
+function createdDocuments(doc: LoroDoc, draftId: string): string[] {
   const created = pendingCreates(pendingRecords(doc, draftId), "document");
   if (created.size === 0) return [];
   const { nodes } = replayView(doc, { draft: draftId });

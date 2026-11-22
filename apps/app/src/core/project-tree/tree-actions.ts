@@ -10,6 +10,7 @@
  * looking at: live, or on Draft the Work's tree, whose records carry the Work's `draft`. Each
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).
  */
+
 import {
   childrenOf,
   isSourceRoot,
@@ -22,6 +23,7 @@ import {
   TreeWriter,
   type View,
 } from "@meridian/project-tree";
+import type { LoroDoc } from "loro-crdt";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   type ClosedOwners,
@@ -51,7 +53,7 @@ export class TreeActions {
 
   /** The writer on the copy as it stands. */
   private writable(): {
-    writer: TreeWriter;
+    writer: TreeWriter<LoroDoc>;
     session: TreeListSession;
     view: View;
     replay: () => TreeProjection;
