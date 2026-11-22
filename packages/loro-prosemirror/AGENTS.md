@@ -9,9 +9,10 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   every read or write the binding makes while blocks are kept passes them (`kept`).
 - Import a peer's batch with `importRemoteUpdate`, never `RoomDocs.importBatch` or `doc.import`.
   It holds the batch while an editor on the room is composing (an import mid-composition doubles
-  or drops the composed text), forwards a Live batch into the room's open drafts, and answers a
-  removal the batch brings that did not read this copy's typing (`answerRemovals`) before any
-  editor reads it; the caller's `publish` sends that restore.
+  or drops the composed text), and forwards a Live batch into the room's open drafts. The import
+  answers a removal the batch brings that did not read this copy's typing before any editor reads
+  it; the caller's `publish` sends that restore, and a draft's forward restore goes out through
+  the `publish` its editor registered (`listenToImports`).
 - Every block the editor hands the binding has a unique `id`. The app's block-id fixer gives a
   split or a paste its ids inside the same transaction; the binding throws on a missing or
   duplicate id rather than inventing one.

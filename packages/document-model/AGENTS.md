@@ -37,9 +37,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
   block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
   record) and its ancestors show. A removed block comes back only by a write of its key:
-  `restore`, Undo's replay, or rule 1, `answerRemovals(docs, before)`, which every copy that imports
-  (each tab, the server's room) runs after an import that changed the structure and before any
-  reader. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
+  `restore`, Undo's replay, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
+  import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
+  holder sends and saves it like a local write (`encodeChanges`). They are the only ways ops enter
+  a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
   every Undo history. Never move the record into a second map: an Undo can then delete it while
   another peer's removal stands.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same

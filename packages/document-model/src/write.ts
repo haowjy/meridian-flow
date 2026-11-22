@@ -1,5 +1,6 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
-import { inMap, inText, scoped } from "./handles.js";
+import { encodeEnvelope } from "./envelope.js";
+import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
@@ -34,8 +35,19 @@ export interface DocChange {
   after: Frontiers;
 }
 
-/** A doc's update from `before` on: the ops one change wrote, to publish. */
-export function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
+/**
+ * The batch that sends `changes`: per doc, the update from its first change's `before` on (a doc
+ * a transaction wrote twice sends once).
+ */
+export function encodeChanges(changes: readonly DocChange[]): Uint8Array {
+  const entries = new Map<DocKey, Uint8Array>();
+  for (const change of changes)
+    if (!entries.has(change.key)) entries.set(change.key, changeUpdate(change.doc, change.before));
+  return encodeEnvelope(entries);
+}
+
+/** A doc's update from `before` on: the ops one change wrote. */
+function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
   if (before.length === 0) return doc.export({ mode: "update" });
   const from = doc.frontiersToVV(before);
   try {

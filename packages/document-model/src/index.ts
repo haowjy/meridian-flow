@@ -25,7 +25,6 @@ export {
   visibleComments,
 } from "./read.js";
 export {
-  answerRemovals,
   removedOnPath,
   restampRemovals,
   restore,
@@ -34,6 +33,7 @@ export {
 export {
   CorruptDocBytesError,
   HistoryCutoffError,
+  type Imported,
   RoomDocs,
   RoomDocsFreedError,
 } from "./room-docs.js";
@@ -85,9 +85,9 @@ export {
   withVector,
 } from "./version.js";
 export {
-  changeUpdate,
   commitStructure,
   type DocChange,
+  encodeChanges,
   StructureWriter,
   setCommentBody,
   type WriteOptions,

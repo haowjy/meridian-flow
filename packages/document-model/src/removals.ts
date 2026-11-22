@@ -34,10 +34,9 @@ export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange | nul
 /**
  * Rule 1 of "Removed blocks" (design §1): of the removals the ops since `before` brought (an
  * import's, `before` taken just ahead of it), restore each whose record did not count an op, by
- * any peer, that this copy holds in a text doc under the block. Run it after every import that
- * changed the structure and before any reader, on every copy that imports: each tab and the
- * server's room copy. A draft's fork answers only the removals in its own overrides. Returns the
- * change to publish.
+ * any peer, that this copy holds in a text doc under the block. `RoomDocs.importBatch` and
+ * `forward` run it on every import, before anything reads the copy. A draft's fork answers only
+ * the removals in its own overrides. Returns the change to publish.
  */
 export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | null {
   const removed = removedSince(docs, before);

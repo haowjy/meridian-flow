@@ -2,11 +2,10 @@ import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts
 import type { Frontiers } from "loro-crdt";
 import { decodeEnvelope, encodeEnvelope } from "../envelope.js";
 import { freshServerPeerId } from "../peer.js";
-import { answerRemovals } from "../removals.js";
-import { RoomDocs } from "../room-docs.js";
-import { type DocKey, type ShapeSchema, STRUCTURE_KEY } from "../shape.js";
+import { type Imported, RoomDocs } from "../room-docs.js";
+import type { DocKey, ShapeSchema } from "../shape.js";
 import { decodeRoomVersion, encodeRoomVersion } from "../version.js";
-import { changeUpdate } from "../write.js";
+import { encodeChanges } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
 
 /** A `document_snapshots` row as the in-memory adapter keeps it. */
@@ -57,8 +56,7 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     const live = room.kind === "fork" ? load(liveRoomOf(room)).docs : null;
     const rows = new Map([...(stored.get(name) ?? [])].map(([key, row]) => [key, row.snapshot]));
     const docs = RoomDocs.load(shape, freshServerPeerId(), rows, live);
-    docs.forward();
-    const loaded = { room, docs, dirty: new Set<DocKey>() };
+    const loaded = { room, docs, dirty: new Set(docs.forward().changed) };
     loadedRooms.set(name, loaded);
     return loaded;
   };
@@ -68,23 +66,25 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       (l) => l.room.kind === "fork" && l.room.documentId === documentId,
     );
 
-  // As the Postgres adapter: a removal the batch brought that did not read text the room holds
-  // comes back as the room's own write (design §1, rule 1).
-  const importInto = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {
-    const before = loaded.docs.structure.frontiers();
-    const { changed, pending } = loaded.docs.importBatch(decodeEnvelope(batch));
-    for (const key of changed) loaded.dirty.add(key);
+  const relay = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {
     for (const listener of listeners.get(loroRoomName(loaded.room)) ?? [])
       listener({ room: loaded.room, batch, origin });
+  };
+
+  // As the Postgres adapter: what an import changed is saved and sent, and a restore the room's
+  // copy wrote on it (design §1, rule 1) goes out after the batch as the room's own.
+  const landed = (loaded: Loaded, { changed, restore }: Imported) => {
+    for (const key of changed) loaded.dirty.add(key);
+    if (restore) relay(loaded, encodeChanges([restore]), "server:restore");
+  };
+
+  const importInto = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {
+    const imported = loaded.docs.importBatch(decodeEnvelope(batch));
+    relay(loaded, batch, origin);
+    landed(loaded, imported);
     if (loaded.room.kind === "live")
-      for (const fork of forks(loaded.room.documentId))
-        for (const key of fork.docs.forward()) fork.dirty.add(key);
-    const restored = changed.includes(STRUCTURE_KEY) && answerRemovals(loaded.docs, before);
-    if (restored) {
-      const update = changeUpdate(restored.doc, restored.before);
-      importInto(loaded, encodeEnvelope(new Map([[STRUCTURE_KEY, update]])), "server:restore");
-    }
-    return { pending };
+      for (const fork of forks(loaded.room.documentId)) landed(fork, fork.docs.forward());
+    return { pending: imported.pending };
   };
 
   const save = (loaded: Loaded, keys: Iterable<DocKey>, into = stored) => {

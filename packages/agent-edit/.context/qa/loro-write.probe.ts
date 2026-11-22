@@ -281,5 +281,33 @@ check(
   { ch4, text: text(write8) },
 );
 
+// 8. The writer types in a paragraph after the chat read it, and the chat removes it as it read it.
+// The removal did not read the typing, so the room's copy brings the paragraph back (design §1,
+// "Removed blocks", rule 1), and the receipt does not call it removed.
+await host.seed("ch5", [paragraph("s1", "Keep."), paragraph("s2", "Target")]);
+const c5 = chat("thread-5", "t5");
+c5.request();
+const read8 = c5.record(await core.read({ ...file("ch5") } as never, c5.context()));
+const target = read8.result.blocks?.[0]?.items[1]?.hash;
+await host.writerEdit("ch5", (blocks) =>
+  blocks.map((block) => (block.attrs.id === "s2" ? paragraph("s2", "Target typed") : block)),
+);
+c5.request();
+const write9 = c5.record(
+  await run(() => core.write({ command: "remove", ...file("ch5"), in: target } as never, c5.context())),
+);
+const ch5 = texts(await host.live("ch5"));
+const receipt = text(write9);
+check(
+  !write9.isError && ch5.join("|") === "Keep.|Target typed",
+  "a removal that did not read the writer's typing comes back in the room",
+  { ch5, text: receipt },
+);
+check(
+  !/removed:/.test(receipt),
+  "the receipt does not list the paragraph as removed",
+  receipt,
+);
+
 await host.close();
 process.stdout.write(`ok: ${checks} checks\n`);

@@ -27,7 +27,11 @@ What it covers:
   restored text lands, though the chat's view still holds its own words there.
 - A read whose frontiers are below the history cutoff (the host's `compact`) plans on the
   transcript: a paragraph rewritten as read keeps the writer's deletion made since.
+- The writer types in a paragraph after the chat read it, and the chat removes it as read: the
+  removal did not read the typing, so the paragraph comes back (design §1, "Removed blocks"), and
+  the receipt does not list it as removed.
 
 The scenarios fail on the old code paths they guard: planning on the room copy instead of the view
-breaks the first, skipping the transcript merge breaks the cutoff scenario, and resolving a `find`
-only on the view breaks the Undo one.
+breaks the first, skipping the transcript merge breaks the cutoff scenario, resolving a `find`
+only on the view breaks the Undo one, and importing the write into the room copy without answering its
+removals breaks the last.

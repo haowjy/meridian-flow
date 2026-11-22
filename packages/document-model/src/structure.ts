@@ -1,4 +1,3 @@
-import type { LoroDoc } from "loro-crdt";
 import { inMap } from "./handles.js";
 import { compareOrder } from "./order-key.js";
 import type { PeerId } from "./peer.js";

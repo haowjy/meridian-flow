@@ -144,7 +144,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       // The comments the editor's document shows bodies of: a batch that adds or removes a body
       // changes how every block's text reads.
       let comments = visibleComments(docs);
-      const unlisten = listenToImports(docs, {
+      const unlisten = listenToImports(docs, (changes) => options.onLocalWrite?.(changes), {
         before: () => {
           cursors = selectionCursors(docs, view.state);
           const { parent } = view.state.selection.$head;
