@@ -186,6 +186,15 @@ In dev, the repository `logs/` tree is generated observability output, not sourc
 
 Editing `nitro.config.ts` under a running `nitro dev` drops the server's listener: the process stays alive and every route answers 502 until `pnpm dev:restart`.
 
+## Production build
+
+`loro-crdt` is traced whole (`traceDeps: ["loro-crdt*"]` in `nitro.config.ts`): its Node build requires a
+WASM snippet by a `String.raw` path the tracer cannot follow, so a file-by-file trace boots into
+`Cannot find module './snippets/…/inline0.js'` (`pnpm smoke:prod-boot` catches it). That ships all five
+builds, about 22 MB of `.output`, where the server loads only `nodejs/` (about 4 MB). A
+`traceOpts.hooks.tracedFiles` hook that deletes the other builds' entries did not shrink the output on
+nitro 3.0.261103-rc, so the 18 MB stays until nitro can narrow a package's trace.
+
 ## Route conventions
 
 ### Request IDs
