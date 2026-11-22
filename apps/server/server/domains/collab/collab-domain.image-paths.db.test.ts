@@ -1,14 +1,12 @@
 /**
- * Document-link scopes across doors: images in search, draft review, Apply and live reversal, and a reply's own create spelled alike by every reader and by a cold undo in the draft it changed.
+ * Document-link scopes across doors: images in search, draft review, Apply and live reversal.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one captured link scope per search operation
  */
 
 import { createDb } from "@meridian/database";
-import { modelResponses } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
@@ -28,14 +26,11 @@ import {
   PROJECT_ID,
   SOURCE_ID,
   THREAD_ID,
-  TURN_2_ID,
   TURN_ID,
   USER_ID,
   WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/work-draft-fixture.js";
-
-const documentSchema = buildDocumentSchema();
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -43,8 +38,6 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
-  const identity = (responseId: string) => ({ modelResponseId: responseId });
-
   describe("collab image paths (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
@@ -206,290 +199,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         address: "manuscript://cover.png",
       });
     });
-
-    it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
-      // All effective rendering doors share the real tree-backed scope.
-      const links = createTestDocumentLinkScopes(db);
-      const start = () => {
-        const started = createTestCollab(links);
-        started.bindHocuspocus(hocuspocus as never);
-        return started;
-      };
-      let collab = start();
-      await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
-      const CREATED_ID = "00000000-0000-4000-8000-000000000714";
-      const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
-      // The Work's draft created this chapter: a create in its draft view, as ContextFS
-      // leaves a model's create in a draft-mode Work.
-      const draft = { id: WORK_DRAFT_ID };
-      await seeder.document(SOURCE_ID, "created", {
-        id: CREATED_ID,
-        view: { draft: draft.id },
-        actor: `agent:${THREAD_ID}/${TURN_ID}`,
-      });
-      await db.insert(modelResponses).values({
-        id: RESPONSE_ID as never,
-        turnId: TURN_ID as never,
-        sequence: 0,
-        provider: "mock",
-        model: "mock",
-        requestMessageCount: 0,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-      // The host's create materializes the document before the model's command runs.
-      await collab.ensureDocumentAuthority(CREATED_ID as never);
-      const granted = testFileGrant(DRAFT_DESTINATION, DOC_ID);
-      const grant = grantInProject(granted, PROJECT_ID, USER_ID);
-      const ctx = { sessionId: "session-create", threadId: THREAD_ID, turnId: TURN_ID, grant };
-      const core = collab.agentEdit();
-      const modelEdits = collab.modelEdits();
-      await expect(
-        modelWrite(
-          modelEdits,
-          { command: "create", file: "created", documentId: CREATED_ID, content: "New." },
-          {
-            ...ctx,
-            grant: {
-              ...grant,
-              facts: {
-                ...grant.facts,
-                target: { kind: "document", documentId: CREATED_ID as never },
-              },
-            },
-            responseIdentity: identity(RESPONSE_ID),
-          },
-          { accountId: USER_ID, projectId: PROJECT_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-      // A write into a document only the Work has spells in the Work's tree, so its receipt is
-      // the Work's read.
-      const wrote = (await modelWrite(
-        modelEdits,
-        {
-          command: "insert",
-          file: "created",
-          documentId: CREATED_ID,
-          content: "See [hold](chapter).",
-        },
-        {
-          ...ctx,
-          grant: {
-            ...grant,
-            facts: {
-              ...grant.facts,
-              target: { kind: "document", documentId: CREATED_ID as never },
-            },
-          },
-          responseIdentity: identity(RESPONSE_ID),
-        },
-        { accountId: USER_ID, projectId: PROJECT_ID },
-      )) as { status: string; revision?: string };
-      const createdView = {
-        documentId: CREATED_ID as never,
-        threadId: THREAD_ID as never,
-        destination: "draft" as const,
-        draft: WORK_DRAFT_ID,
-      };
-      const createdMd = await collab.readEffectiveMarkdown(createdView);
-      expect.soft(createdMd.ok && createdMd.value.revision, "Work-only write").toBe(wrote.revision);
-      expect.soft(createdMd.ok && createdMd.value.content).toContain("[hold](chapter)");
-      const link = documentSchema.node("paragraph", null, [
-        documentSchema.text("See created", [
-          documentSchema.marks.link.create({
-            ref: `doc:${CREATED_ID}`,
-            href: "manuscript://stale-created",
-          }),
-        ]),
-      ]);
-      await expect(
-        modelWrite(
-          modelEdits,
-          {
-            command: "copy",
-            from: { path: "created" },
-            file: "chapter",
-            documentId: DOC_ID,
-            overwrite: true,
-          },
-          {
-            ...ctx,
-            responseIdentity: identity(RESPONSE_ID),
-            copiedNodes: [link],
-          },
-          { accountId: USER_ID, projectId: PROJECT_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-
-      const spelled = "[See created](created)";
-      const view = {
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        destination: "draft" as const,
-        draft: WORK_DRAFT_ID,
-      };
-      const read = await core.read(
-        { file: "chapter", documentId: DOC_ID },
-        { ...ctx, responseIdentity: identity(RESPONSE_ID) },
-      );
-      const markdown = await collab.readEffectiveMarkdown(view);
-      const hashlines = await collab.readEffectiveHashlines(view);
-      const search = await new ContextFS({
-        placement: { kind: "live" },
-        holder: { projectId: PROJECT_ID },
-        scheme: "manuscript",
-        links,
-        store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        writes,
-        actor: `user:${USER_ID}`,
-        threadView: {
-          threadId: THREAD_ID,
-          draftOwner: {
-            owner: { kind: "work", workId: WORK_ID as never },
-            draftId: WORK_DRAFT_ID,
-            handle: "w1",
-          },
-          writeMode: "draft",
-        },
-        documentSync: collab,
-      }).grep(
-        grepQuery("See created", {
-          destination: { kind: "draft", draftId: view.draft, ownerHandle: "w1" },
-        }),
-      );
-      if (!markdown.ok || !hashlines.ok || !search.ok) {
-        throw new Error(JSON.stringify({ markdown, hashlines, search }));
-      }
-      const hit = search.value.files.find((each) => each.documentId === DOC_ID);
-      expect.soft(JSON.stringify(read.result), "model read").toContain(spelled);
-      expect.soft(markdown.value.content, "effective Markdown").toContain(spelled);
-      expect
-        .soft(hashlines.value.blocks.map((block) => block.body).join("\n"), "effective hashlines")
-        .toContain(spelled);
-      expect.soft(JSON.stringify(hit?.matches), "search").toContain(spelled);
-      expect.soft(read.revision).toMatch(/^y2:/);
-      expect
-        .soft([markdown.value.revision, hashlines.value.revision, hit?.revision], "one view")
-        .toEqual([read.revision, read.revision, read.revision]);
-
-      // Written again; a fresh process undoes that write in the draft it landed in, so its
-      // echo spells there and its token is the draft read's.
-      await expect(
-        modelWrite(
-          modelEdits,
-          { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
-          { ...ctx, turnId: TURN_2_ID },
-          { accountId: USER_ID, projectId: PROJECT_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "committed" });
-      const draftRead = {
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        destination: "draft" as const,
-        draft: WORK_DRAFT_ID,
-      };
-      // Read back (pulling the thread's peer) before the process goes away.
-      const before = await collab.readEffectiveHashlines(draftRead);
-      expect(before.ok && before.value.blocks.map((block) => block.body).join("\n")).toContain(
-        "Suffix.",
-      );
-      await collab.documentDerivations.stop();
-      await collab.dispose();
-      collab = start();
-      const undone = await modelWrite(
-        collab.modelEdits(),
-        { command: "undo", file: "chapter", documentId: DOC_ID },
-        { ...ctx, turnId: TURN_2_ID },
-        { accountId: USER_ID, projectId: PROJECT_ID },
-      );
-      const after = await collab.readEffectiveHashlines(draftRead);
-      if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("success");
-      expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
-      expect.soft(after.value.blocks.map((block) => block.body).join("\n")).toContain(spelled);
-      expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
-
-      // The same comparison in live. A create is a row, not a reply's in-memory set: a live
-      // create is visible in every view at once, and the draft's own create is "in a
-      // draft" in both views, spelled at its path only where its draft can read it.
-      const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
-      const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
-      await seeder.document(SOURCE_ID, "live-created", { id: LIVE_CREATED_ID });
-      // The host's create materializes the document before the model's command runs.
-      await collab.ensureDocumentAuthority(LIVE_CREATED_ID as never);
-      await db.insert(modelResponses).values({
-        id: LIVE_RESPONSE_ID as never,
-        turnId: TURN_ID as never,
-        sequence: 1,
-        provider: "mock",
-        model: "mock",
-        requestMessageCount: 0,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-      await expect(
-        modelWrite(
-          collab.modelEdits(),
-          {
-            command: "create",
-            file: "live-created",
-            documentId: LIVE_CREATED_ID,
-            content: "Live.",
-          },
-          {
-            ...ctx,
-            grant: {
-              ...grant,
-              destination: { kind: "live" },
-              facts: {
-                ...grant.facts,
-                target: { kind: "document", documentId: LIVE_CREATED_ID as never },
-              },
-            },
-            responseIdentity: identity(LIVE_RESPONSE_ID),
-          },
-          { accountId: USER_ID, projectId: PROJECT_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-      await links.within(
-        { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
-        async () => {
-          const live = { kind: "live" } as const;
-          const drafted = { kind: "draft", draftId: draft.id } as const;
-          await links.prepare({
-            holders: [live, drafted].map((view) => ({ documentId: DOC_ID, view })),
-            refs: [`doc:${LIVE_CREATED_ID}`, `doc:${CREATED_ID}`],
-          });
-          const [inLive, inDraft] = [live, drafted].map((view) =>
-            links.holder({ documentId: DOC_ID, view }),
-          );
-          const liveCreate = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale" };
-          const draftCreate = { ref: `doc:${CREATED_ID}`, href: "manuscript://stale-created" };
-          expect.soft(inLive?.spellLink(liveCreate).href, "live create, live").toBe("live-created");
-          expect
-            .soft(inDraft?.resolve(liveCreate), "live create, draft")
-            .toMatchObject({ kind: "document", inDraft: false });
-          expect
-            .soft(inLive?.resolve(draftCreate), "draft create, live")
-            .toMatchObject({ kind: "gone" });
-          expect
-            .soft(inDraft?.resolve(draftCreate), "drafted create, its draft")
-            .toMatchObject({ kind: "document", inDraft: true });
-          expect
-            .soft(inDraft?.spellLink(draftCreate).href, "drafted create spelled in its draft")
-            .toBe("created");
-        },
-      );
-    });
   });
-}
-async function _expectMarkdown(
-  collab: {
-    readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
-  },
-  documentId: string,
-  expected: string,
-) {
-  const read = await collab.readAsMarkdown(documentId);
-  expect(read.ok ? read.value : "").toContain(expected);
 }

@@ -9,7 +9,11 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { encodeRoomVersion, readDocument } from "@meridian/document-model";
+import type { DocumentRooms } from "@meridian/document-model/rooms";
+import { nodeOf } from "@meridian/loro-prosemirror";
 import { settledAheads } from "@meridian/markup/links";
+import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -21,7 +25,13 @@ import type {
 } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { DraftViews } from "./agent-edit-runtime.js";
-import { documentRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
+import {
+  cutRevision,
+  documentRevision,
+  inView,
+  readHashlines,
+  viewRevision,
+} from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { BlockText } from "./ports/block-text.js";
@@ -35,6 +45,9 @@ type EffectiveReadInput = {
 export function createEffectiveDocumentReader(input: {
   blockText: BlockText;
   agentEdit: AgentEditRouter;
+  /** Live's text, which the model's tools read: a Live revision is the Loro core's. */
+  rooms: DocumentRooms<unknown>;
+  schema: Schema;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   /** Live's view. */
   model: YProsemirrorDocumentModel;
@@ -83,8 +96,29 @@ export function createEffectiveDocumentReader(input: {
     }
   }
 
+  /** The revision the Loro core gives a read of Live (`revision` in `tool/loro-write.ts`). */
+  async function liveRevision(command: EffectiveReadInput): Promise<string> {
+    const docs = await input.rooms.read({ kind: "live", documentId: command.documentId });
+    try {
+      const blocks = readDocument(docs).map((block) => nodeOf(input.schema, block));
+      const holder = { documentId: command.documentId, view: await viewOf(command) };
+      await input.links.prepare({ holders: [holder], stored: blocks });
+      return cutRevision(
+        { version: encodeRoomVersion(docs.version()), blocks },
+        input.links.holder(holder),
+      );
+    } finally {
+      docs.free();
+    }
+  }
+
   return {
     async readEffectiveRevision(command) {
+      if (command.destination !== "draft")
+        return liveRevision(command).catch((cause) => {
+          if (isDocumentNotFoundError(cause)) return null;
+          throw cause;
+        });
       try {
         const result = await readEffective(command, async (handle, _model, view) => {
           const doc = unwrapDoc(handle);

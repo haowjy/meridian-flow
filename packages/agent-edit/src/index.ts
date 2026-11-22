@@ -36,7 +36,6 @@ export {
   suggestionAuthors,
   suggestionVerdicts,
   type WrittenVerdict,
-  writeVerdict,
 } from "./model/stored-suggestions.js";
 export {
   markdownSections,

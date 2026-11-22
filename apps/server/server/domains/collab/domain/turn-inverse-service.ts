@@ -2,14 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
-import { readBlocks } from "@meridian/agent-edit/diff";
-import {
-  type CapturedPart,
-  type EditKind,
-  type EditTarget,
-  editHandle,
-  fragmentOf,
-} from "@meridian/agent-edit/integration";
+import { type EditKind, type EditTarget, editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
@@ -19,17 +12,16 @@ import type {
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import type { Node as PMNode } from "prosemirror-model";
-import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { InverseDestination, InverseStep } from "./inverse-stream.js";
-import { inverseSchema, takeBack } from "./inverse-text.js";
+import { takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-/** A stored edit part without its update bytes: `partUpdates` reads those for the few it lists. */
-export type StoredInversePart = Omit<CapturedPart, "update"> & {
+/** A stored edit part, without its update bytes. */
+export type StoredInversePart = {
   id: number;
   editId: string;
   ordinal: number;
@@ -75,9 +67,8 @@ export type TurnInverseQuery = {
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
-  live: Y.Doc;
-  /** The live room `live` was captured from, by its authority; null when it has none yet. */
-  liveRoom: string | null;
+  /** Live's blocks as the capture read them, in `inverseSchema`. */
+  live: readonly PMNode[];
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   /** The card's Undo deletes this created document, leaving its text intact. */
@@ -127,16 +118,13 @@ export interface TurnInverseStore {
     handles: string[];
     /** Parts each step of `sequence` took, in order: a step the committed text left nothing for took none. */
     taken: number[];
+    /** The batches the steps committed, in order. */
     updates: Uint8Array[];
     /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;
     /** Text parts committed, by document. */
     reversed: ReadonlyMap<DocumentId, number>;
-    /** Live around a lone document's model Undo, for the model's echo. */
-    cut?: { before: Uint8Array; after: Uint8Array };
   }>;
-  /** The stored update bytes of the parts `ids` names. */
-  partUpdates(ids: readonly number[]): Promise<ReadonlyMap<number, Uint8Array>>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
@@ -184,9 +172,7 @@ async function prepare(
       .sort((a, b) => b.at - a.at);
     const steps: InverseStep[] = [];
     // The text each step is judged on is what the steps before it leave, as its commit will find it.
-    let manuscript: readonly PMNode[] = originals.length
-      ? readBlocks(fragmentOf(document.live), inverseSchema)
-      : [];
+    let manuscript: readonly PMNode[] = document.live;
     for (const { at, parts } of originals) {
       const entry = {
         id: parts[0]?.editId ?? "",

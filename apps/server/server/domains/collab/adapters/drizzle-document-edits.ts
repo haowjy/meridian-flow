@@ -97,6 +97,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
     })),
   );
   for (const seq of new Set(input.receipts.map((p) => p.origin.seq))) {
+    if (seq === undefined) continue;
     await db
       .update(documentYjsUpdates)
       .set({ editId: edit.id })

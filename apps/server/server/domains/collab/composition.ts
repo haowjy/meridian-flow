@@ -80,6 +80,7 @@ import {
   createDeferredLiveProjectionCoordinator,
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
+import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
@@ -245,9 +246,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
   });
-  const modelDocumentEdits = createModelDocumentEdits({ service: () => turnInverse });
+  const loroHost = createLoroAgentEditHost({ db: deps.db, rooms });
   const runtime = createAgentEditRuntime({
-    documentEdits: modelDocumentEdits,
+    loro: {
+      rooms: loroHost.rooms,
+      documentEdits: createModelDocumentEdits({ service: () => turnInverse }),
+      authorOfTurn: loroHost.authorOfTurn,
+    },
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
@@ -275,6 +280,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({
+    liveCore: runtime.liveCore,
     liveUtilityCore: runtime.liveUtilityCore,
     draftView: runtime.draftView,
   });
@@ -283,7 +289,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    liveCore: runtime.liveUtilityCore,
+    liveCore: runtime.liveCore,
     draftView: runtime.draftView,
     drafts: workDrafts,
     fileAccess: deps.fileAccess,
@@ -329,7 +335,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const turnInverse = createDrizzleTurnInverseService({
     db: deps.db,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
+    rooms,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
@@ -373,6 +379,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createEffectiveDocumentReader({
       blockText: createDrizzleBlockText(deps.db),
       agentEdit,
+      rooms,
+      schema: buildDocumentSchema(),
       documents: runtime.markdownDocuments,
       model: runtime.model,
       draftView: runtime.draftView,

@@ -1,19 +1,17 @@
 /**
- * Revision identity across live rooms, Work peers, response settlement and rebinding.
+ * Revision identity of the Live room across writer edits, tree moves, response settlement and deleted documents.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/wiki/architecture/collaboration/draft-store-concurrency.md)
  */
 
-import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
-import type { WorkId } from "@meridian/contracts/runtime";
+import { renderAgentEditResult } from "@meridian/agent-edit/integration";
 import type { Database } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import {
   drizzleFileAccess,
   grantInProject,
@@ -49,6 +47,7 @@ import {
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
+import { writeLiveMarkdown, writerEdit } from "./test-support/live-room-text.js";
 
 /** A live edit of the tree (rename, delete), as a person's would be. */
 async function liveEdit(db: Database, edit: (writer: TreeWriter<LoroDoc>) => unknown) {
@@ -81,19 +80,7 @@ async function fixture(
     .update(schema.threads)
     .set({ aiWriteMode: mode })
     .where(eq(schema.threads.id, THREAD_ID));
-  await f.persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-  await f.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-    const before = Y.encodeStateVector(doc);
-    f.model.insertBlocks(
-      toDocHandle(doc),
-      null,
-      f.markupCodec.parse("Opening paragraph.\n\nSurvivor."),
-    );
-    await f.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
-  });
+  await writeLiveMarkdown(f.rooms, ALPHA_ID, "Opening paragraph.\n\nSurvivor.");
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
   const effective = scopeEffectiveReader(
@@ -101,6 +88,8 @@ async function fixture(
       blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
       resolveFiletype: async () => null,
       agentEdit: f.collab.agentEdit(),
+      rooms: f.rooms,
+      schema: buildDocumentSchema(),
       documents: f.runtime.markdownDocuments,
       model: f.runtime.model,
       draftView: f.runtime.draftView,
@@ -155,19 +144,8 @@ async function fixture(
     );
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
-  async function writerDelete() {
-    // This is the room owned by Hocuspocus, not the delayed markdown projection.
-    const doc = f.hocuspocus.documents.get(ALPHA_ID);
-    if (!doc) throw new Error("Fixture live room missing");
-    const before = Y.encodeStateVector(doc);
-    const block = f.model.getBlocks(toDocHandle(doc))[0];
-    if (!block) throw new Error("Fixture writer paragraph missing");
-    f.model.deleteBlock(toDocHandle(doc), block);
-    await f.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
-  }
+  /** The writer deletes the first paragraph in the Live room. */
+  const writerDelete = () => writerEdit(f.rooms, ALPHA_ID, (blocks) => blocks.slice(1));
   async function stage(responseId: string) {
     await db.insert(schema.modelResponses).values({
       id: responseId as never,
@@ -207,20 +185,18 @@ describe("document revisions (postgres and collab)", () => {
   });
   afterAll(() => closeDatabase(db));
 
-  for (const mode of ["direct", "draft"] as const) {
-    it(`a write's receipt and the next read equal current in ${mode}; the earlier read does not`, async () => {
-      const f = await fixture(db, harnesses, mode);
-      const before = await f.read();
-      const written = await f.stage("00000000-0000-4000-8000-000000000892");
-      const afterRead = await f.read("00000000-0000-4000-8000-000000000892");
-      const revision = written.revision;
-      expect(revision).toBe(afterRead.revision);
-      expect(revision).toBe(await f.current());
-      expect(before.revision).not.toBe(revision);
-    });
-  }
+  it("a write's receipt and the next read equal current; the earlier read does not", async () => {
+    const f = await fixture(db, harnesses, "direct");
+    const before = await f.read();
+    const written = await f.stage("00000000-0000-4000-8000-000000000892");
+    const afterRead = await f.read("00000000-0000-4000-8000-000000000892");
+    const revision = written.revision;
+    expect(revision).toBe(afterRead.revision);
+    expect(revision).toBe(await f.current());
+    expect(before.revision).not.toBe(revision);
+  });
 
-  it("a pure writer deletion in the Hocuspocus room invalidates a live read", async () => {
+  it("a pure writer deletion in the Live room invalidates a live read", async () => {
     const f = await fixture(db, harnesses, "direct");
     const before = await f.read();
     await f.writerDelete();
@@ -231,20 +207,14 @@ describe("document revisions (postgres and collab)", () => {
     const f = await fixture(db, harnesses, "direct", {
       links: createTestDocumentLinkScopes(db, {}),
     });
-    const doc = f.hocuspocus.documents.get(ALPHA_ID);
-    if (!doc) throw new Error("Fixture live room missing");
-    const before = Y.encodeStateVector(doc);
     const documentSchema = buildDocumentSchema();
     const link = documentSchema.marks.link.create({ href: "beta.md", ref: `doc:${BETA_ID}` });
-    f.model.insertBlocks(toDocHandle(doc), null, {
-      blocks: [documentSchema.node("paragraph", null, [documentSchema.text("Beta", [link])])],
-    });
-    await f.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
+    await writerEdit(f.rooms, ALPHA_ID, (blocks) => [
+      documentSchema.node("paragraph", null, [documentSchema.text("Beta", [link])]),
+      ...blocks,
+    ]);
     const shown = await f.current();
-    expect(shown).toMatch(/^y2:/);
+    expect(shown).toMatch(/^l1:/);
     expect(await f.current()).toBe(shown);
     // The model's read and the revision-only path agree under real scopes, or
     // compaction would never elide a copy.
@@ -255,58 +225,12 @@ describe("document revisions (postgres and collab)", () => {
     const moved = await f.current();
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
-
-    // A drafted view follows live locations for documents it did not create.
-    const view = {
-      documentId: ALPHA_ID,
-      threadId: THREAD_ID,
-      destination: "draft" as const,
-      draft: WORK_DRAFT_ID,
-    };
-    const markdown = await f.effective.readEffectiveMarkdown(view);
-    const hashlines = await f.effective.readEffectiveHashlines(view);
-    const revision = await f.effective.readEffectiveRevision(view);
-    if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
-    expect
-      .soft(hashlines.value.blocks.map((block) => block.body).join("\n"), "hashlines")
-      .toContain("[Beta](gamma)");
-    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma)");
-    expect
-      .soft([markdown.value.revision, revision], "one view")
-      .toEqual([hashlines.value.revision, hashlines.value.revision]);
-  });
-
-  it("resolves a new Work source after rebind when its text differs", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await f.read();
-    await f.stage("00000000-0000-4000-8000-000000000894");
-    const before = await f.read();
-    const workB = "00000000-0000-4000-8000-000000000890" as WorkId;
-    await db.insert(schema.works).values({
-      id: workB,
-      projectId: PROJECT_ID,
-      createdByUserId: USER_ID,
-      name: "Other draft",
-      handle: "w2",
-      draftId: "otherdraftw2",
-    });
-    await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
-    expect(await f.current()).not.toBe(before.revision);
-    // The thread's grants now name Work B, whose draft holds nothing yet: the read is live (S1).
-    const rebound = {
-      kind: "draft",
-      draftId: "otherdraftw2",
-      owner: { kind: "work", workId: workB },
-      ownerHandle: "other-draft",
-    } as const;
-    expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
     const f = await fixture(db, harnesses, "direct");
-    expect((await f.read()).revision).toMatch(/^y2:/);
+    expect((await f.read()).revision).toMatch(/^l1:/);
     await liveEdit(db, (writer) => writer.delete(LIVE, "system", ALPHA_ID));
-    expect(f.hocuspocus.documents.has(ALPHA_ID)).toBe(true);
     expect(await f.current()).toBeNull();
   });
 });

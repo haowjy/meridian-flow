@@ -1,13 +1,11 @@
 /** One step of an inverse, shared by the model's undo and revert, and the turn card. */
 
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import type * as Y from "yjs";
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
 /** Where an inverse writes: Live, as the capture found it. */
 export type InverseDestination = {
   kind: "live";
-  view: Y.Doc;
   /** A live file owned by an archived or deleted Work is not writable: why, else null. */
   closed: ClosedOwnerWhy | null;
   removed: boolean;

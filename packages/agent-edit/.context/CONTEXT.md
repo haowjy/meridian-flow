@@ -16,7 +16,7 @@ directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
 Several files read Yjs struct internals, among them `frontier.ts`, `model/block-hash.ts`,
 `undo/receipt.ts` and `diff/`, which is why `yjs` is exactly pinned in
 `package.json`; check them all when the pin changes. `src/yjs-mutation.ts` holds the
-mutation mechanics. Keep version-sensitive
+item-range mechanics `undo/receipt.ts` and `diff/` share. Keep version-sensitive
 reconstruction here rather than in app or undo copies. Hosts choose operations,
 supply identity mapping and own transactions; the adapter copies an item's own
 content, never its descendants.
@@ -131,17 +131,21 @@ the Yjs core:
 - Lineage is empty (no semantic IR scope), and a block deleted since a read that fell back to
   the transcript answers `not_found` with the current text, not `block_gone`.
 
-The Yjs-only code (`frontier.ts`, `yjs-mutation.ts`, `heldBlocks`, `undo/receipt.ts`, the
-journal-row provenance) goes when the server's host moves; until then it is what production
-runs. Probe: [loro-write](qa/loro-write.md).
+The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
+this core for every Live chat: `recordWrite` gets the batch and writes the receipt in the
+commit's transaction, and the model's `undo` and `revert` go through `LoroDocumentEdits`, whose
+inverse returns the batches it committed so the reply's frontier covers them. The Yjs-only code
+(`frontier.ts`, `yjs-mutation.ts`, `heldBlocks`, `undo/receipt.ts`, the journal-row provenance)
+still serves Work-draft views, the Markdown engine and presses; it goes when they move (phase
+1e). Probe: [loro-write](qa/loro-write.md).
 
 ## What an Undo reads
 
 No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,
 before and after), and Undo, revert and the card's state read that against the text as it is now
-([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands)). The receipt's `effect` still names the
-items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), which the model's
-inverse reads; `heldDeletes` keeps a delete the room had already made out of it.
+([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands)). A Loro receipt's `effect` is
+empty; the model's inverse picks the parts that changed text by their `delta`. A Yjs write's
+receipt still names the items it inserted and deleted (`captureEditParts`, in `undo/receipt.ts`).
 
 A block write keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the

@@ -75,9 +75,12 @@ function statusLine(result: AgentEditResultV1): string {
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
-    facts.push(
-      total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
-    );
+    // An edits read lists the chat's edits, not the document's blocks.
+    if (result.read.format === "edits") facts.push("format: edits");
+    else
+      facts.push(
+        total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
+      );
     if (result.read.version)
       facts.push(
         `version: ${writeVersion({ destination: result.read.version, draftWork: result.read.draftWork })}`,

@@ -12,9 +12,13 @@
  */
 import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
-import type { AgentEditCodecFactory, AgentEditModel } from "@meridian/agent-edit/integration";
-import { spelledLinks } from "@meridian/markup/links";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
+import type {
+  AgentEditCodecFactory,
+  AgentEditModel,
+  DocumentCut,
+} from "@meridian/agent-edit/integration";
+import { spelledLinks, walkLinkOccurrences } from "@meridian/markup/links";
+import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { HashlineRead } from "../contracts.js";
@@ -22,10 +26,35 @@ import { grepBlocksOf } from "./grep-blocks.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
 
 export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
+  return `y2:${digest(
+    Y.encodeSnapshot(Y.snapshot(doc)),
+    extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+    scope,
+  )}`;
+}
+
+/**
+ * The same token for a cut of a document on Loro: `l1:` + sha256 over its room version, the
+ * holder's URI and the spelling of its blocks' links.
+ */
+export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
+  const occurrences = walkLinkOccurrences(cut.blocks).map((occurrence) => ({
+    kind: occurrence.kind,
+    ref: occurrence.attrs.ref,
+    href: occurrence.attrs.href,
+  }));
+  return `l1:${digest(cut.version, occurrences, scope)}`;
+}
+
+function digest(
+  state: Uint8Array,
+  occurrences: readonly StoredLinkOccurrence[],
+  scope: HolderLinkScope,
+): string {
   const triples = new Set<string>();
-  for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))) {
+  for (const occurrence of occurrences) {
     const asset = occurrence.kind !== "link" && occurrence.href.startsWith("asset:");
-    // A no-ref link spells its stored bytes, which the snapshot already covers.
+    // A no-ref link spells its stored bytes, which the state already covers.
     if (occurrence.ref === null && !asset) continue;
     const spelled =
       occurrence.kind === "link"
@@ -33,13 +62,13 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
         : scope.spellSource({ src: occurrence.href, ref: occurrence.ref });
     triples.add(JSON.stringify([occurrence.ref, occurrence.href, spelled.href]));
   }
-  return `y2:${createHash("sha256")
-    .update(Y.encodeSnapshot(Y.snapshot(doc)))
+  return createHash("sha256")
+    .update(state)
     .update(Uint8Array.of(0))
     .update(scope.holder.uri ?? "", "utf8")
     .update(Uint8Array.of(0))
     .update(JSON.stringify([...triples].sort()), "utf8")
-    .digest("base64url")}`;
+    .digest("base64url");
 }
 
 /** A revision as `draft`'s view reads it; Live's (`null`) stays as it is. */

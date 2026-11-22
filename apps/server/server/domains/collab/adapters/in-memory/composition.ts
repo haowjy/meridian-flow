@@ -2,14 +2,16 @@
 
 import type {
   AgentEditCodecFactory,
+  LoroDocumentEdits,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import { toDocHandle } from "@meridian/agent-edit/integration";
+import { agentEditRooms, toDocHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createMemoryDocumentRooms } from "@meridian/document-model/rooms";
 import { shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../../shared/result.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
@@ -72,7 +74,20 @@ export function createInMemoryCollabDomain(
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const links = createStaticDocumentLinkScopes();
+  const rooms = memoryServerRooms();
   const runtime = createAgentEditRuntime({
+    loro: {
+      rooms: agentEditRooms(rooms, {
+        roomFor: async (documentId) => ({ kind: "live", documentId }),
+        // The memory rooms run each commit as its own transaction.
+        transaction: () => null as unknown as DrizzleDb,
+        origin: "server:agent",
+        // Nothing in memory keeps an edit history.
+        recordWrite: async () => {},
+      }),
+      documentEdits: NO_EDIT_HISTORY,
+      authorOfTurn: async () => null,
+    },
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     inTransaction: () => false,
@@ -100,6 +115,7 @@ export function createInMemoryCollabDomain(
     boundary: createInMemoryDraftWriteBoundary(),
   });
   const agentEdit = createAgentEditRouter({
+    liveCore: runtime.liveCore,
     liveUtilityCore: runtime.liveUtilityCore,
     draftView: runtime.draftView,
   });
@@ -125,7 +141,7 @@ export function createInMemoryCollabDomain(
     importBinder: runtime.importBinder,
     lifecycle: { dispose: async () => {} },
     transport: {
-      rooms: memoryServerRooms(),
+      rooms,
       documentSchemaVersion: async () => null,
       onRoomsEnded: () => () => undefined,
       bindHocuspocus: hocuspocusBinding.bind,
@@ -350,6 +366,11 @@ function inMemoryStore(journal: InMemoryJournal) {
 }
 
 /** The in-memory rooms behind the server's door: each commit or seed is its own transaction. */
+const NO_EDIT_HISTORY: LoroDocumentEdits = {
+  read: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
+  execute: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
+};
+
 function memoryServerRooms(): ServerDocumentRooms {
   const memory = createMemoryDocumentRooms(shapeSchemaOf(buildDocumentSchema()));
   return {
