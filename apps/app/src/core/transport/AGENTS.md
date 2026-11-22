@@ -1,6 +1,6 @@
 # core/transport — Client transport seams
 
-Browser transport for collaborative documents (`loro-document-transport.ts`, on
+Browser transport for collaborative documents (`loro-room-transport.ts`, on
 `loro-protocol` over `/ws/loro`) and thread socket adapters. The thread socket client lives
 in `@meridian/thread-client`.
 

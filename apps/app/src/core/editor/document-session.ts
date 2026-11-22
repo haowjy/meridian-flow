@@ -2,7 +2,7 @@
  * document-session — owns the lifecycle of one document's Live copy in this tab.
  *
  * A copy is a `RoomDocs` (the structure doc and a text doc per block, design §1), its IndexedDB
- * store (`local-copy-store.ts`), the room transport (`loro-document-transport.ts`), presence on
+ * store (`local-copy-store.ts`), the room transport (`loro-room-transport.ts`), presence on
  * the room's ephemeral store, and the writer's Undo. Every local write reaches the copy through
  * one path, `publish`: stored, sent to the other tabs of this browser, then to the server.
  * Every peer's batch reaches it through `importRemote`, which goes through the binding's
@@ -40,11 +40,11 @@ import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { requireReload } from "@/client/release/release";
 import {
-  type LoroDocumentTransport,
+  type LoroRoomTransport,
   mergeVersion,
   type RoomVersion,
   versionCovers,
-} from "@/core/transport/loro-document-transport";
+} from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
 import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
 import {
@@ -137,7 +137,7 @@ export function historyCutOff(state: DocumentSessionConnectionState | null | und
   return state?.kind === "terminal" && state.reason === "history-cutoff";
 }
 
-export type DocumentSessionTransportProvider = LoroDocumentTransport;
+export type DocumentSessionTransportProvider = LoroRoomTransport;
 
 export type DocumentSessionTransportFactory = (opts: {
   room: DocumentRoom;

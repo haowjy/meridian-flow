@@ -1,5 +1,5 @@
 /**
- * The document transport on `loro-protocol` (design §4 and §6): one socket per room, a Join that
+ * The room transport on `loro-protocol`, for a document's room and a tree list's (design §4 and §6): one socket per room, a Join that
  * exchanges versions, local batches sent as `DocUpdate`s and acknowledged one `Ack` each, peers'
  * batches handed to the session (which imports them through the composition guard), and presence
  * on the room's ephemeral store.
@@ -12,11 +12,11 @@
  */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
-  type DocumentRoom,
   encodeLoroJoinAuth,
   LORO_JOIN_ERROR,
   LORO_ROOM_ERROR,
   LORO_WS_PATH,
+  type LoroRoom,
   loroRoomErrorOf,
   loroRoomName,
   WS_CLOSE,
@@ -55,15 +55,21 @@ export type TransportedCopy = {
   importRemote(batch: Uint8Array): void;
 };
 
-export type LoroDocumentTransportOptions = {
-  room: DocumentRoom;
+export type LoroRoomTransportOptions = {
+  room: LoroRoom;
   peer: string;
   copy: TransportedCopy;
-  presence: EphemeralStore;
+  /** The room's presence; a room without one (a tree list) joins no presence channel. */
+  presence?: EphemeralStore;
+  /**
+   * Called with each `JoinResponseOk`'s `extra` before anything is sent. `"rejoin"` closes the
+   * socket and joins again: the copy changed under the Join (a tree copy of another list).
+   */
+  onJoined?: (extra: Uint8Array | undefined) => "rejoin" | undefined;
   connectivityHints?: ConnectivityHintsPort;
 };
 
-export type LoroDocumentTransport = {
+export type LoroRoomTransport = {
   /** Send a local batch; it is acknowledged once the room imported it. */
   send(batch: Uint8Array): void;
   /**
@@ -150,13 +156,14 @@ function batchEnd(batch: Envelope): RoomVersion {
   return out;
 }
 
-export function createLoroDocumentTransport({
+export function createLoroRoomTransport({
   room,
   peer,
   copy,
   presence,
+  onJoined,
   connectivityHints,
-}: LoroDocumentTransportOptions): LoroDocumentTransport {
+}: LoroRoomTransportOptions): LoroRoomTransport {
   const roomId = loroRoomName(room);
   const statusListeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const accessListeners = new Set<
@@ -264,26 +271,32 @@ export function createLoroDocumentTransport({
   const onMessage = (message: ProtocolMessage) => {
     if (message.roomId !== roomId) return;
     if (message.crdt === CrdtType.LoroEphemeralStore) {
-      if (message.type === MessageType.DocUpdate)
+      if (presence && message.type === MessageType.DocUpdate)
         for (const update of message.updates) presence.apply(update);
       return;
     }
     switch (message.type) {
       case MessageType.JoinResponseOk: {
+        if (onJoined?.(message.extra) === "rejoin") {
+          socket?.close(1000, "rejoin");
+          return;
+        }
         joined = true;
         attempt = 0;
         server.clear();
         mergeVersion(server, decodeRoomVersion(message.version));
         emitAccess(message.permission === "write" ? "edit" : "read", access?.why ?? null);
-        write({
-          type: MessageType.JoinRequest,
-          crdt: CrdtType.LoroEphemeralStore,
-          roomId,
-          auth: new Uint8Array(),
-          version: new Uint8Array(),
-        });
-        const local = presence.encodeAll();
-        if (local.length > 0) sendBatch(CrdtType.LoroEphemeralStore, local);
+        if (presence) {
+          write({
+            type: MessageType.JoinRequest,
+            crdt: CrdtType.LoroEphemeralStore,
+            roomId,
+            auth: new Uint8Array(),
+            version: new Uint8Array(),
+          });
+          const local = presence.encodeAll();
+          if (local.length > 0) sendBatch(CrdtType.LoroEphemeralStore, local);
+        }
         const lacking = copy.exportSince(server);
         if (lacking) sendDoc(lacking);
         if (!synced) {
@@ -423,7 +436,7 @@ export function createLoroDocumentTransport({
     if (hint === "retry-now" && !socket && !destroyed) connect();
     if (hint === "suspect-offline" && socket) socket.close(1000, "browser_offline");
   });
-  const unsubscribePresence = presence.subscribeLocalUpdates((bytes) => {
+  const unsubscribePresence = presence?.subscribeLocalUpdates((bytes) => {
     if (joined) sendBatch(CrdtType.LoroEphemeralStore, bytes);
   });
 
@@ -462,7 +475,7 @@ export function createLoroDocumentTransport({
       destroyed = true;
       clearTimeout(retryTimer);
       unsubscribeHints?.();
-      unsubscribePresence();
+      unsubscribePresence?.();
       const ws = socket;
       socket = null;
       if (ws?.readyState === WebSocket.OPEN)

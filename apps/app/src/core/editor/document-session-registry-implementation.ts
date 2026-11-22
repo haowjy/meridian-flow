@@ -1,7 +1,7 @@
 /** Account-scoped owner of live document sessions. Acquisition is lease-required. */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { createLoroDocumentTransport } from "@/core/transport/loro-document-transport";
+import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import { DocumentSession, type DocumentSessionAccess, historyCutOff } from "./document-session";
 import type {
@@ -70,7 +70,7 @@ export class DocumentSessionRegistry {
 
   constructor(
     private readonly accountId: AccountId,
-    private readonly transportFactory: DocumentSessionTransportFactory = createLoroDocumentTransport,
+    private readonly transportFactory: DocumentSessionTransportFactory = createLoroRoomTransport,
     private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
   ) {

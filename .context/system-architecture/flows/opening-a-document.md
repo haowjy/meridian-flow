@@ -31,7 +31,7 @@ sequenceDiagram
 1. **Open.** [project](../app.md#project) places the document: a click in the sidebar opens it in main, a pick from a chat's side pane opens it beside the chat ([pane rules](../../../apps/app/src/features/project/.context/pane-state-machine.md)). It describes it (`features/project/context/open-project-document.ts`) and mounts `ContextDocumentHost` through `DocumentHost`.
 2. **Bind.** [editor](../app-documents.md#editor) asks [core-editor](../app-core.md#core-editor) for a document session from the session registry.
 3. **Place.** [core-tree-list](../app-core.md#core-tree-list) holds the browser's copy of the project's list. The tab's name, path and type are the replay's for the document's id, so a rename elsewhere shows at once; an address the copy cannot place yet waits for the list to sync.
-4. **Connect.** The session asks [core-transport](../app-core.md#core-transport) to join the room (`loro-document-transport.ts`).
+4. **Connect.** The session asks [core-transport](../app-core.md#core-transport) to join the room (`loro-room-transport.ts`).
 5. **Upgrade.** The transport opens a WebSocket at `/ws/loro` and sends a `JoinRequest` with its room version (the server side is moving there from `/ws/yjs` in phase 1b) ([routes](../server.md#routes), `routes/ws/yjs.ts`), sending the `wos-session` cookie and the client's schema version.
 6. **Admit.** The route hands the connection to `lib/yjs-ws-handler.ts` (in [lib](../server.md#lib)), which checks the session and the schema version.
 7. **Ask policy.** `onConnect` calls `fileAccess.authorize` for an `edit` grant on the document; a denied edit with read access gives a read-only connection, anything else is refused ([file-policy](../server-documents.md#file-policy)).
