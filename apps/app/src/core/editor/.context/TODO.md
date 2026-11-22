@@ -32,6 +32,17 @@ decoration (flat model design, section 7).
 - `tab-change-counts` has no publisher while drafts are off.
 - `RoomError` `server-error` (1b) rejoins.
 
+## Undo of dependent steps
+
+Each change is inverted on a fork at its own `after` (`invertChange`), so undoing two steps of
+one text doc in turn makes two inverses that merge as concurrent edits. Two cases fail: bold,
+then unbold, then Ctrl+Z twice leaves the text bold; and Enter, then Backspace to join, then a
+paste in the joined block, each its own step, undone in turn, leaves the tail
+(`"alpha beta gamma.beta gamma."`). Steps of one burst no longer hit this, because a doc's
+consecutive changes in a step are merged (`extend` in `editor-history.ts`). The fix is the Undo
+rule itself (design §2, §6): an inverse that also builds on the inverses already applied to its
+doc, without taking back a peer's ops in between.
+
 ## Composition undo grouping
 
 Delayed IME composition can create separate undo entries for provisional and

@@ -88,7 +88,7 @@ export class DocumentHistory {
     const now = Date.now();
     const last = this.undoSteps.at(-1);
     if (last && !this.closed && now - last.at < GROUP_MS) {
-      last.changes.push(...changes);
+      for (const change of changes) extend(last.changes, change);
       last.at = now;
     } else {
       const { selection } = before;
@@ -195,6 +195,20 @@ export class DocumentHistory {
       if (editor !== source && !editor.isDestroyed && !editor.view.composing)
         editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
+}
+
+/**
+ * Adds a write's change of one doc to a step. When it starts where the step's last change of that
+ * doc ended, the two become one change: each change is inverted on its own fork at its own `after`,
+ * so two inverses of one doc would merge as concurrent edits and leave text or marks behind (a join
+ * after a split brought back its tail twice). A change with a peer's ops between keeps its own entry.
+ */
+function extend(changes: DocChange[], change: DocChange): void {
+  const at = changes.findLastIndex((earlier) => earlier.key === change.key);
+  const earlier = changes[at];
+  if (earlier && change.doc.cmpFrontiers(earlier.after, change.before) === 0)
+    changes[at] = { ...earlier, after: change.after };
+  else changes.push(change);
 }
 
 /**
