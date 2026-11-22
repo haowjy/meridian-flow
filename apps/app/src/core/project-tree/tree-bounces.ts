@@ -25,6 +25,7 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
   let settles = 0;
   let seen = new Set<string>();
   let read = false;
+  let stopped = false;
   const check = () => {
     if (!read) return;
     const now = session.getSnapshot().doc;
@@ -44,12 +45,17 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
     for (const { record } of arrived) seen.add(record.id);
     if (arrived.length > 0) say(session, arrived);
   };
-  const stop = session.subscribe(check);
+  const unsubscribe = session.subscribe(check);
   void session.loaded.then(() => {
+    // The session may have closed, freeing its doc, before its local copy finished loading.
+    if (stopped) return;
     read = true;
     check();
   });
-  return stop;
+  return () => {
+    stopped = true;
+    unsubscribe();
+  };
 }
 
 function say(session: TreeListSession, arrived: readonly DroppedRecord[]): void {
