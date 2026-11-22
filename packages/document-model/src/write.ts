@@ -1,26 +1,20 @@
-import type { Delta, Frontiers, LoroDoc } from "loro-crdt";
+import type { Frontiers, LoroDoc } from "loro-crdt";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
-  emptyParagraphId,
+  isDerivedEmpty,
   normalizeInline,
-  normalizeMarks,
   readInline,
-  type TextUnit,
-  textUnits,
+  shownUnits,
 } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
   type CommentBody,
   type DocKey,
-  INLINE_STYLE,
   type InlineItem,
-  type NodeRule,
   overrideMap,
-  SENTINEL,
   type ShapeBlock,
-  type ShapeSchema,
   STRUCTURE_KEY,
   type StructureMap,
   sameValue,
@@ -28,6 +22,7 @@ import {
   TEXT_KEY,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
+import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -77,14 +72,20 @@ export class StructureWriter {
     this.set("order", id, null);
   }
 
-  /** Every key of a new or changed block but its order. */
+  /**
+   * Every key of a new or changed block but its order. A parent the read moved to the document
+   * to break a cycle is left as stored when the write keeps it there, so writing back an unchanged
+   * read writes nothing (and in a draft makes no override the writer never made).
+   */
   block(
     id: BlockId,
     parent: BlockId | null,
     node: string,
     attrs: Readonly<Record<string, unknown>>,
   ) {
-    this.set("parent", id, parent);
+    const read = this.view.parent(id);
+    if (!(read === parent && read !== this.view.value("parent", id)))
+      this.set("parent", id, parent);
     this.set("node", id, node);
     const stored = storedAttrs(attrs);
     for (const name of new Set([...Object.keys(this.view.attrs(id)), ...Object.keys(stored)]))
@@ -94,6 +95,8 @@ export class StructureWriter {
   /**
    * In a draft, delete the `d.order` of a block whose override puts it in the same place among its
    * siblings as Live's key would (dragged away and back), and every `d.comments` equal to Live's.
+   * Run before the write's removals, as the gate's model does: a sibling the write removes still
+   * counts, so Reset of that removal leaves the block where the draft moved it.
    */
   dropMatchingOverrides(ids: Iterable<BlockId>) {
     if (!this.docs.draft) return;
@@ -144,7 +147,8 @@ export function setCommentBody(
  * reconcile: changed values are set, only blocks whose relative order changed are re-keyed, shown
  * blocks that left are tombstoned, and a textblock's text doc gets a splice and a style patch.
  * Because the comparison is against the normalized read, a broken cycle, a hidden container or a
- * filled empty cell writes nothing by itself. Returns the docs it changed, committed.
+ * filled empty cell writes nothing by itself, and after the write the docs read as `blocks`.
+ * Returns the docs it changed, committed.
  */
 export function writeDocument(
   docs: RoomDocs,
@@ -161,11 +165,10 @@ export function writeDocument(
   const written = new Set<BlockId>();
 
   const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
-    const stored = list.filter((block) => !isUnstoredEmpty(block, parent));
+    const stored = list.filter((block) => !isDerivedEmpty(block, parent));
     const current = new Map(
       stored.map((block) => {
-        const order =
-          view.value("parent", block.id) === parent ? view.value("order", block.id) : undefined;
+        const order = view.parent(block.id) === parent ? view.order(block.id) : undefined;
         return [block.id, typeof order === "string" ? order : undefined] as const;
       }),
     );
@@ -183,27 +186,23 @@ export function writeDocument(
       else {
         const rule = shape.node(block.node);
         if (!rule) throw new Error(`unknown node ${block.node}`);
-        const change = writeText(docs, block.id, block.inline, rule, visibleComment, options);
+        const change = writeText(
+          docs,
+          block.id,
+          block.inline,
+          { rule, shape, visibleComment },
+          options,
+        );
         if (change) changes.push(change);
       }
     }
   };
   walk(blocks, null);
-  for (const id of view.shown) if (!written.has(id)) writer.remove(id);
   writer.dropMatchingOverrides(written);
+  for (const id of view.shown) if (!written.has(id)) writer.remove(id);
   const structure = commitStructure(docs, before, options);
   if (structure) changes.unshift(structure);
   return changes;
-}
-
-/** The empty paragraph a reader shows in an empty cell or document, before anything is typed into it. */
-function isUnstoredEmpty(block: ShapeBlock, parent: BlockId | null): boolean {
-  return (
-    block.kind === "text" &&
-    block.node === "paragraph" &&
-    block.inline.length === 0 &&
-    block.id === emptyParagraphId(parent)
-  );
 }
 
 export function commitStructure(
@@ -221,41 +220,37 @@ export function commitStructure(
 /**
  * Bring block `id`'s text doc to `inline` if its normalized read differs; returns the change. A
  * new block's doc is created at its first content, and a draft forks Live's doc at its first write
- * (the change's `before` is then the frontier it forked at).
+ * (the change's `before` is then the frontier it forked at). The text gets one splice (common
+ * prefix and suffix of the shown text) and the units outside it a style patch.
  */
 export function writeText(
   docs: RoomDocs,
   id: BlockId,
   inline: readonly InlineItem[],
-  rule: NodeRule,
-  visibleComment: (comment: string) => boolean,
+  rules: TextRules,
   options: WriteOptions,
 ): DocChange | null {
-  const wanted = normalizeInline(inline);
-  if (sameValue(readInline(docs.textOf(id), rule, docs.shape, visibleComment), wanted)) return null;
+  const wantedItems = normalizeInline(inline);
+  const current = readInline(docs.textOf(id), rules.rule, rules.shape, rules.visibleComment);
+  if (sameValue(current, wantedItems)) return null;
   const { doc, before } = docs.writableText(id);
-  updateText(doc, wanted, rule, docs.shape, visibleComment);
+  const wanted = wantedUnits(wantedItems);
+  const shown = shownUnits(doc, rules.rule, rules.shape);
+  const splice = spliceOf(
+    shown.map((unit) => unit.ch).join(""),
+    wanted.map((unit) => unit.ch).join(""),
+  );
+  replaceUnits(
+    doc,
+    rules,
+    splice.index,
+    splice.index + splice.remove,
+    wanted.slice(splice.index, splice.index + splice.insert),
+  );
+  patchStyles(doc.getText(TEXT_KEY), shownUnits(doc, rules.rule, rules.shape), wanted, rules);
   doc.commit({ message: options.message, origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
-}
-
-/** The units `items` stand for, each with the style object it is stored with. */
-function wantedUnits(
-  items: readonly InlineItem[],
-): { ch: string; style: Record<string, unknown> }[] {
-  const out: { ch: string; style: Record<string, unknown> }[] = [];
-  for (const item of items) {
-    if (item.kind === "inline")
-      out.push({
-        ch: SENTINEL,
-        style: { ...item.marks, [INLINE_STYLE]: { type: item.node, attrs: item.attrs } },
-      });
-    else
-      for (let i = 0; i < item.text.length; i++)
-        out.push({ ch: item.text[i], style: { ...item.marks } });
-  }
-  return out;
 }
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */
@@ -278,83 +273,3 @@ function spliceOf(a: string, b: string): { index: number; remove: number; insert
 
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
 const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
-
-/**
- * Splice the visible text to the wanted text, then patch styles unit by unit where the normalized
- * marks differ. Units the reader hides (an inline node the block's type does not allow, a style the
- * normalizer drops) are left alone, so a write-back never deletes what it could not see.
- */
-function updateText(
-  doc: LoroDoc,
-  items: readonly InlineItem[],
-  rule: NodeRule,
-  shape: ShapeSchema,
-  visibleComment: (comment: string) => boolean,
-) {
-  const text = doc.getText(TEXT_KEY);
-  const wanted = wantedUnits(items);
-  let units = textUnits(doc, rule, shape);
-  let visible = units.filter((unit) => !unit.hidden);
-  const splice = spliceOf(
-    visible.map((unit) => unit.ch).join(""),
-    wanted.map((unit) => unit.ch).join(""),
-  );
-  const removed = visible.slice(splice.index, splice.index + splice.remove).map((unit) => unit.pos);
-  for (let end = removed.length; end > 0; ) {
-    let start = end - 1;
-    while (start > 0 && removed[start - 1] === removed[start] - 1) start--;
-    text.delete(removed[start], removed[end - 1] - removed[start] + 1);
-    end = start;
-  }
-  if (splice.insert > 0) {
-    units = textUnits(doc, rule, shape);
-    visible = units.filter((unit) => !unit.hidden);
-    const at = splice.index < visible.length ? visible[splice.index].pos : units.length;
-    const delta: Delta<string>[] = at > 0 ? [{ retain: at }] : [];
-    for (const unit of wanted.slice(splice.index, splice.index + splice.insert)) {
-      const last = delta.at(-1);
-      if (last?.insert !== undefined && sameValue(last.attributes ?? {}, unit.style))
-        last.insert += unit.ch;
-      else delta.push({ insert: unit.ch, attributes: unit.style } as Delta<string>);
-    }
-    text.applyDelta(delta);
-  }
-  units = textUnits(doc, rule, shape);
-  const styles: Delta<string>[] = [];
-  let next = 0;
-  for (const unit of units) {
-    let patch: Record<string, unknown> | null = null;
-    if (!unit.hidden) {
-      const want = wanted[next++];
-      if (want?.ch !== unit.ch)
-        throw new Error("text differs from the wanted text after its splice");
-      patch = stylePatch(unit, want.style, rule, shape, visibleComment);
-    }
-    const last = styles.at(-1);
-    if (last && sameValue(last.attributes ?? null, patch)) (last as { retain: number }).retain += 1;
-    else styles.push((patch ? { retain: 1, attributes: patch } : { retain: 1 }) as Delta<string>);
-  }
-  while (styles.length > 0 && !styles.at(-1)?.attributes) styles.pop();
-  if (styles.length > 0) text.applyDelta(styles);
-}
-
-function stylePatch(
-  unit: TextUnit,
-  want: Record<string, unknown>,
-  rule: NodeRule,
-  shape: ShapeSchema,
-  visibleComment: (comment: string) => boolean,
-): Record<string, unknown> | null {
-  const shown: Record<string, unknown> = {
-    ...normalizeMarks(unit.stored, rule, shape, visibleComment),
-  };
-  if (unit.ch === SENTINEL && unit.stored[INLINE_STYLE] !== undefined) {
-    const inline = unit.stored[INLINE_STYLE] as { type: string; attrs?: Record<string, unknown> };
-    shown[INLINE_STYLE] = { type: inline.type, attrs: storedAttrs(inline.attrs ?? {}) };
-  }
-  const patch: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(want))
-    if (!sameValue(shown[key], value)) patch[key] = value;
-  for (const key of Object.keys(shown)) if (!(key in want)) patch[key] = null;
-  return Object.keys(patch).length > 0 ? patch : null;
-}

@@ -11,9 +11,13 @@
 import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
 import type { DocumentId, DraftId } from "../ids.js";
-import type { TreeListRef } from "./yjs-ws.js";
 
 export const LORO_WS_PATH = "/ws/loro";
+
+/** A tree list is one project's or one account's (`user://`). */
+export type TreeListRef =
+  | { kind: "project"; projectId: string }
+  | { kind: "account"; userId: string };
 
 /**
  * A Loro room. `live` and `fork` rooms hold a document's docs (a structure doc and a text doc per
@@ -62,10 +66,18 @@ export function liveRoomOf(room: DocumentRoom): DocumentRoom {
 }
 
 /**
+ * Peer ids below this are the server's own writers; a client's are at or above it, up to 2^64
+ * (design §4). A reader tells the server's ops from a client's by the id alone.
+ */
+export const SERVER_PEER_LIMIT = 1n << 48n;
+export const PEER_ID_LIMIT = 1n << 64n;
+
+/**
  * `JoinRequest.auth`: what the server needs to admit this copy to the room beyond the socket's
  * session (the sign-in cookie authenticates the socket once, at upgrade). `schema` is the
  * client's collab schema version (`major.minor.patch`), checked against the document's; `peer`
- * is the Loro peer id this copy writes under in this room (a u64 as a decimal string).
+ * is the Loro peer id this copy writes under in this room: a u64 as a decimal string, in the
+ * client range (`SERVER_PEER_LIMIT` and up), so a client's ops never read as the server's.
  */
 export interface LoroJoinAuth {
   schema: string;
@@ -75,14 +87,21 @@ export interface LoroJoinAuth {
 const joinAuthSchema = z.object({
   v: z.literal(1),
   schema: z.string().regex(/^\d{1,3}\.\d{1,3}\.\d{1,3}$/),
-  peer: z.string().regex(/^\d{1,20}$/),
+  peer: z
+    .string()
+    .regex(/^\d{1,20}$/)
+    .refine((peer) => BigInt(peer) >= SERVER_PEER_LIMIT && BigInt(peer) < PEER_ID_LIMIT),
 });
 
 export function encodeLoroJoinAuth(auth: LoroJoinAuth): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({ v: 1, ...auth }));
 }
 
-/** Null for a payload that is not one: the server answers with `LORO_JOIN_ERROR.BAD_AUTH`. */
+/**
+ * Null for a payload that is not one, or whose peer is outside the client range: the server
+ * answers with `LORO_JOIN_ERROR.BAD_AUTH`. Join is where the server may refuse; a frame's content
+ * never is.
+ */
 export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
   let value: unknown;
   try {

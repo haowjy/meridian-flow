@@ -13,9 +13,12 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   duplicate id rather than inventing one.
 - Two comments on the same text are two style keys, `comment_<id>`; `marksOf` orders marks the
   same on every peer.
-- Typing (one text replace inside one textblock) splices the block's text doc directly; any other
-  change goes through `writeDocument`. Keep the fast path free of style ops while typing inside a
-  mark.
+- Typing (one replace of inline content inside one textblock) goes through `replaceText` on that
+  block's text doc alone; any other change goes through `writeDocument`. `replaceText` writes a
+  style op only where Loro's stored style differs from the editor's, so typing inside a mark is
+  one op.
+- Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
+  docs still alive.
 
 Not yet mounted: phase 1c adds the app's mount, Ctrl+Z on `onLocalWrite`'s doc changes, cursors
 in the UI and the caret rule for a block a peer removed. Probe:

@@ -86,6 +86,7 @@ export function notifyChanged(docs: RoomDocs, changed: Iterable<DocKey>) {
 }
 
 function apply(hold: Hold, docs: RoomDocs, batch: Envelope) {
+  for (const draft of hold.drafts) if (draft.isFreed) hold.drafts.delete(draft);
   const targets = docs.live ? [docs] : [docs, ...hold.drafts];
   for (const target of targets)
     for (const listener of hold.listeners.get(target) ?? []) listener.before();
@@ -138,7 +139,8 @@ export function listenToImports(docs: RoomDocs, listener: EditorListener): () =>
 /**
  * Bind `view` to the room's hold. The release waits for ProseMirror to read the composition's last
  * DOM change into its state: it runs from a timer after `compositionend`, and again from every
- * view update, and only when no view on the room is composing.
+ * view update, and only when no view on the room is composing. `destroy` releases what the room
+ * still holds into docs that are alive, and drops a batch held for docs already freed.
  */
 export function attachCompositionHold(docs: RoomDocs, view: EditorView) {
   const hold = holdFor(docs);
@@ -167,6 +169,6 @@ export function attachCompositionHold(docs: RoomDocs, view: EditorView) {
 function release(hold: Hold) {
   while (hold.queued.length > 0 && !composing(hold)) {
     const next = hold.queued.shift();
-    if (next) apply(hold, next.docs, next.batch);
+    if (next && !next.docs.isFreed) apply(hold, next.docs, next.batch);
   }
 }

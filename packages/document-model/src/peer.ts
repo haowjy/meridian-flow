@@ -1,3 +1,4 @@
+import { PEER_ID_LIMIT, SERVER_PEER_LIMIT } from "@meridian/contracts/protocol";
 import type { PeerID } from "loro-crdt";
 
 /**
@@ -8,10 +9,9 @@ import type { PeerID } from "loro-crdt";
  *
  * The server's writers take ids below `SERVER_PEER_LIMIT` and clients take ids at or above it, so
  * a reader can tell the server's own ops from a client's by the id alone (on `main`, the "client
- * id below 1,000" rule of the tree list).
+ * id below 1,000" rule of the tree list). The limits live in `@meridian/contracts/protocol`, which
+ * refuses a Join whose peer is outside the client range.
  */
-export const SERVER_PEER_LIMIT = 1n << 48n;
-const PEER_SPACE = 1n << 64n;
 
 export type PeerId = PeerID;
 
@@ -23,7 +23,7 @@ function randomBelow(limit: bigint, crypto: Crypto): bigint {
 
 /** A fresh peer id for a client session (a browser tab's copy of a room). */
 export function freshPeerId(crypto: Crypto = globalThis.crypto): PeerId {
-  const peer = SERVER_PEER_LIMIT + randomBelow(PEER_SPACE - SERVER_PEER_LIMIT, crypto);
+  const peer = SERVER_PEER_LIMIT + randomBelow(PEER_ID_LIMIT - SERVER_PEER_LIMIT, crypto);
   return peer.toString() as PeerId;
 }
 

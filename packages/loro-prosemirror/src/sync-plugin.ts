@@ -1,15 +1,17 @@
 import {
+  commentVisibility,
   type DocChange,
   type DocKey,
   emptyParagraphId,
-  markNameOf,
   type RoomDocs,
-  sameValue,
+  replaceText,
+  shownUnits,
+  structureValues,
   TEXT_KEY,
   textUnits,
 } from "@meridian/document-model";
 import type { Cursor } from "loro-crdt";
-import type { Node, ResolvedPos } from "prosemirror-model";
+import type { Node, ResolvedPos, Slice } from "prosemirror-model";
 import {
   type EditorState,
   Plugin,
@@ -17,7 +19,7 @@ import {
   TextSelection,
   type Transaction,
 } from "prosemirror-state";
-import { readProseMirror, shapeSchemaOf, storedMarks, writeProseMirror } from "./codec.js";
+import { inlineOf, readProseMirror, shapeSchemaOf, writeProseMirror } from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
@@ -44,6 +46,10 @@ export const REMOTE_META = "remote";
  * The binding's ProseMirror plugin (design §6). The editor's state must start as the docs read
  * (`readProseMirror`); from then on, between transactions, the editor's document is what the docs
  * read as.
+ *
+ * Teardown order: destroy the `EditorView` before freeing its `RoomDocs`. Destroying the view
+ * releases batches held for a composition into docs still alive; a batch held for docs already
+ * freed is dropped.
  *
  * Local: a transaction that is one text replace inside one textblock (typing, Backspace, IME
  * commits) splices that block's text doc directly; any other change writes the document through
@@ -93,10 +99,9 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
 }
 
 /**
- * The text fast path: one replace step of plain text inside one textblock whose text doc holds
- * exactly the editor's units. One splice of one `LoroText`, then clearing any style the insert
- * took from a neighbour the editor's text does not carry. Returns null to fall back to the full
- * write.
+ * The text fast path: one replace step of inline content inside one textblock, written with
+ * `replaceText` into that block's text doc alone (so typing inside bold is one op). Returns null to
+ * fall back to the full write.
  */
 function typingWrite(
   docs: RoomDocs,
@@ -109,20 +114,16 @@ function typingWrite(
   if (tr.steps.length !== 1) return null;
   const step = tr.steps[0].toJSON() as { stepType?: string; from?: number; to?: number };
   if (step.stepType !== "replace" || step.from === undefined || step.to === undefined) return null;
-  const slice = (
-    tr.steps[0] as unknown as {
-      slice: { openStart: number; openEnd: number; content: { content: readonly Node[] } };
-    }
-  ).slice;
+  const slice = (tr.steps[0] as unknown as { slice: Slice }).slice;
   if (slice.openStart !== 0 || slice.openEnd !== 0) return null;
-  const inserted = slice.content.content;
-  if (inserted.some((node) => !node.isText)) return null;
   const $from = oldState.doc.resolve(step.from);
   const $after = newState.doc.resolve(step.from);
   const block = $from.parent;
   const id = block.attrs.id;
+  const rule = docs.shape.node(block.type.name);
   if (
     !block.isTextblock ||
+    !rule ||
     typeof id !== "string" ||
     id.endsWith(emptyParagraphId("")) ||
     step.to > $from.end() ||
@@ -132,38 +133,15 @@ function typingWrite(
     !sameAttrs($after.parent, block)
   )
     return null;
-  const existing = docs.textOf(id);
-  const length = existing ? existing.getText(TEXT_KEY).length : 0;
-  if (length !== block.content.size) return null;
   const { doc, before } = docs.writableText(id);
-  const text = doc.getText(TEXT_KEY);
   const from = $from.parentOffset;
-  const to = from + step.to - step.from;
-  if (to > from) text.delete(from, to - from);
-  // Loro styles an insert with a mark that covers both sides of it, or that ends beside it and
-  // expands that way; mark and unmark only where that differs from the editor's text, so typing
-  // inside bold writes no style op.
-  const left = storedMarks($from.nodeBefore?.marks ?? []);
-  const right = storedMarks(oldState.doc.resolve(step.to).nodeAfter?.marks ?? []);
-  const expand = (key: string) => docs.shape.styles[markNameOf(key)]?.expand ?? "none";
-  const inherited = (key: string) =>
-    key in left && (key in right || expand(key) === "after" || expand(key) === "both")
-      ? left[key]
-      : key in right && (expand(key) === "before" || expand(key) === "both")
-        ? right[key]
-        : undefined;
-  let at = from;
-  for (const node of inserted) {
-    const marks = storedMarks(node.marks);
-    const length = node.text?.length ?? 0;
-    text.insert(at, node.text ?? "");
-    const range = { start: at, end: at + length };
-    for (const [key, value] of Object.entries(marks))
-      if (!sameValue(inherited(key), value)) text.mark(range, key, value as never);
-    for (const key of new Set([...Object.keys(left), ...Object.keys(right)]))
-      if (!(key in marks) && inherited(key) !== undefined) text.unmark(range, key);
-    at += length;
-  }
+  replaceText(
+    doc,
+    { rule, shape: docs.shape, visibleComment: commentVisibility(structureValues(docs)) },
+    from,
+    from + step.to - step.from,
+    inlineOf(slice.content),
+  );
   doc.commit({ origin, message });
   return [{ key: id, doc, before, after: doc.frontiers() }];
 }
@@ -193,7 +171,7 @@ function takeCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
     const doc = docs.textOf(id);
     const rule = shapeSchemaOf(state.schema).node(block.type.name);
     if (!doc || !rule) return null;
-    const units = textUnits(doc, rule, docs.shape).filter((unit) => !unit.hidden);
+    const units = shownUnits(doc, rule, docs.shape);
     const offset = $pos.parentOffset;
     const after = offset > 0;
     const unit = units[after ? offset - 1 : offset];

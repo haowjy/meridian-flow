@@ -9,6 +9,7 @@ import {
   type Marks,
   markNameOf,
   type NodeRule,
+  overrideMap,
   SENTINEL,
   type ShapeBlock,
   type ShapeSchema,
@@ -31,6 +32,37 @@ const emptyParagraph = (parent: BlockId | null): ShapeBlock => ({
   attrs: {},
   inline: [],
 });
+
+/**
+ * The unstored empty paragraph rule, for writers: if `id` is the empty paragraph this read shows
+ * in an empty fillable container (or document), the parent it shows in (null: the document);
+ * otherwise undefined. A writer that puts anything into it (text, attributes) stores it first,
+ * under this parent, with this id; a block placed after it is placed first.
+ */
+export function derivedEmptyParent(
+  view: StructureView,
+  shape: ShapeSchema,
+  id: BlockId,
+): BlockId | null | undefined {
+  const suffix = emptyParagraphId(null);
+  if (!id.endsWith(suffix) || view.shown.has(id)) return undefined;
+  const parent = id.length === suffix.length ? null : id.slice(0, -suffix.length);
+  if (parent !== null && !view.shown.has(parent)) return undefined;
+  const node = parent === null ? shape.root : view.node(parent);
+  if (node === undefined || !shape.node(node)?.fillable) return undefined;
+  return view.children(parent).length === 0 ? parent : undefined;
+}
+
+/** Whether `block`, written under `parent`, is the derived empty paragraph still holding nothing. */
+export function isDerivedEmpty(block: ShapeBlock, parent: BlockId | null): boolean {
+  return (
+    block.kind === "text" &&
+    block.id === emptyParagraphId(parent) &&
+    block.node === "paragraph" &&
+    block.inline.length === 0 &&
+    Object.keys(storedAttrs(block.attrs)).length === 0
+  );
+}
 
 /**
  * The read normalizer (design §1): what every reader shows, identically and without writing an op.
@@ -73,11 +105,26 @@ export function readBlocks(docs: RoomDocs, view: StructureView): ShapeBlock[] {
   return blocks;
 }
 
-/** Whether this reader sees comment `id`'s body: Live's `comments`, or a draft's override of it. */
-export function commentVisibility(view: StructureView): (comment: string) => boolean {
+/**
+ * Whether this reader sees comment `id`'s body: Live's `comments`, or a draft's override of it.
+ * `values` is a `StructureView`, or `structureValues` where a read of every map costs too much.
+ */
+export function commentVisibility(
+  values: Pick<StructureView, "value">,
+): (comment: string) => boolean {
   return (comment) => {
-    const body = view.value("comments", comment);
+    const body = values.value("comments", comment);
     return body !== undefined && body !== null;
+  };
+}
+
+/** `StructureView.value` read key by key from the doc, for a write that reads a few keys. */
+export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
+  return {
+    value(name, key) {
+      const override = docs.draft ? docs.structure.getMap(overrideMap(name)).get(key) : undefined;
+      return override === undefined ? docs.structure.getMap(name).get(key) : override;
+    },
   };
 }
 
@@ -88,19 +135,18 @@ export function readInline(
   shape: ShapeSchema,
   visibleComment: (comment: string) => boolean,
 ): InlineItem[] {
-  if (!doc) return [];
   const out: InlineItem[] = [];
-  for (const part of doc.getText(TEXT_KEY).toDelta() as Delta<string>[]) {
-    if (part.insert === undefined) continue;
-    const stored = part.attributes ?? {};
-    const marks = normalizeMarks(stored, rule, shape, visibleComment);
-    const inline = inlineStyle(stored[INLINE_STYLE]);
-    for (const piece of inline ? [...splitSentinels(part.insert)] : [part.insert]) {
-      if (piece === SENTINEL && inline) {
-        if (!rule.allowsInline(inline.node) || !shape.node(inline.node)) continue;
-        out.push({ kind: "inline", node: inline.node, attrs: inline.attrs, marks });
-      } else pushText(out, piece, marks);
+  let stored: TextUnit["stored"] | null = null;
+  let marks: Marks = {};
+  for (const unit of textUnits(doc, rule, shape)) {
+    if (unit.hidden) continue;
+    if (unit.stored !== stored) {
+      stored = unit.stored;
+      marks = normalizeMarks(stored, rule, shape, visibleComment);
     }
+    if (unit.inline)
+      out.push({ kind: "inline", node: unit.inline.node, attrs: unit.inline.attrs, marks });
+    else pushText(out, unit.ch, marks);
   }
   return out;
 }
@@ -137,21 +183,9 @@ function inlineStyle(value: unknown): { node: string; attrs: Attrs } | null {
   };
 }
 
-/** Text split so each U+FFFC is its own piece. */
-function* splitSentinels(text: string): Iterable<string> {
-  let start = 0;
-  for (let i = 0; i < text.length; i++)
-    if (text[i] === SENTINEL) {
-      if (i > start) yield text.slice(start, i);
-      yield SENTINEL;
-      start = i + 1;
-    }
-  if (start < text.length) yield text.slice(start);
-}
-
 function pushText(out: InlineItem[], text: string, marks: Marks) {
   const last = out.at(-1);
-  if (last?.kind === "text" && sameValue(last.marks, marks)) {
+  if (last?.kind === "text" && (last.marks === marks || sameValue(last.marks, marks))) {
     out[out.length - 1] = { kind: "text", text: last.text + text, marks };
   } else out.push({ kind: "text", text, marks });
 }
@@ -180,8 +214,9 @@ export interface TextUnit {
 }
 
 /**
- * Every unit of a text doc, with the same hidden rule as `readInline`. Positions a reader counts
- * (the editor's offsets, agent-edit's units) are indexes among the units that are not hidden.
+ * Every unit of a text doc, and the one rule for which a reader hides: `readInline` reads these,
+ * and every writer addresses text through them. Positions a reader counts (the editor's offsets,
+ * agent-edit's units) are indexes among the units that are not hidden (`shownUnits`).
  */
 export function textUnits(
   doc: LoroDoc | undefined,
@@ -210,4 +245,13 @@ export function textUnits(
     }
   }
   return units;
+}
+
+/** The units a reader shows, in order: index `n` is the reader's offset `n`. */
+export function shownUnits(
+  doc: LoroDoc | undefined,
+  rule: NodeRule,
+  shape: ShapeSchema,
+): TextUnit[] {
+  return textUnits(doc, rule, shape).filter((unit) => !unit.hidden);
 }

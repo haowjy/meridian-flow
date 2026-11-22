@@ -98,8 +98,8 @@ export function marksOf(schema: Schema, marks: Marks): readonly Mark[] {
   return Mark.setFrom(out);
 }
 
-/** A textblock's inline content as the shape stores it. */
-export function inlineOf(node: Node): InlineItem[] {
+/** A textblock's inline content (or a fragment of it) as the shape stores it. */
+export function inlineOf(node: Node | Fragment): InlineItem[] {
   const out: InlineItem[] = [];
   node.forEach((child) => {
     if (child.isText)

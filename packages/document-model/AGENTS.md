@@ -9,14 +9,19 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   docs it wrote; it reads Live's text for every other block. Never write a base map from a fork:
   `StructureWriter` is the one writer of structure values.
 - Every `LoroDoc` is WASM memory no garbage collector frees. Whoever creates a `RoomDocs`
-  (`create`, `load`, `draftOf`, `fork`, `DocumentRooms.read`) calls `free()` on it. Make a
-  `forkAt` view or checkout inside a `try` that frees it.
+  (`create`, `load`, `draftOf`, `fork`, `at`, `DocumentRooms.read`) calls `free()` on it; any use
+  after that throws `RoomDocsFreedError`. In the browser, destroy the `EditorView` first, then free
+  its docs. A planning view at a read's frontiers is `docs.at(docs.frontiers())`, not a raw
+  `forkAt`: it works after the history cutoff and frees like any copy.
 - Every reader goes through the read normalizer (`readDocument`, `readInline`, `StructureView`,
   `textUnits`), and every writer compares against it, so a merged state the schema forbids reads
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
-  delta raw to decide what a document shows.
+  delta raw to decide what a document shows. Every text write goes through `replaceText`, which
+  addresses shown units; the unstored empty paragraph is `derivedEmptyParent` / `isDerivedEmpty`
+  for every writer.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
-  shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one.
+  shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
+  `importBatch` and `load` check every entry before touching any doc (`CorruptDocBytesError`).
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s

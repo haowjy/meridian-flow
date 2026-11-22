@@ -55,7 +55,8 @@ export interface DocumentRooms<Tx> {
    * forks, and saved on the debounce (2 s after the last batch, 10 s after the first). Resolves
    * once imported, which is when the socket acks it; `pending` says some ops wait on others not yet
    * seen, and the batch is acked either way. Rejects only for bytes that do not decode or fail
-   * Loro's checksum (`LORO_ROOM_ERROR.CORRUPT_UPDATE`) or depend on history below the cutoff.
+   * Loro's checksum (`EnvelopeError`, `CorruptDocBytesError`: `LORO_ROOM_ERROR.CORRUPT_UPDATE`),
+   * and then imports none of the batch, or depend on history below the cutoff.
    */
   write(room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin): Promise<{ pending: boolean }>;
 
@@ -64,6 +65,11 @@ export interface DocumentRooms<Tx> {
    * written in `tx`, and the batch is imported into the room after `tx` commits, as `write` does.
    * Every doc a command touches is in its snapshot rows before it acknowledges, so its write
    * survives a crash right after.
+   *
+   * Every save merges first: it imports the stored row of each doc it writes, if newer, before
+   * exporting the snapshot (design §4). A debounced save already running when a command commits
+   * would otherwise overwrite the command's row with an older snapshot; a deploy overlap is the
+   * other case. So this is every save's rule, not only a deploy's.
    */
   commit(tx: Tx, room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin): Promise<void>;
 

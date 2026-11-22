@@ -1,21 +1,18 @@
-import type { Delta, LoroDoc, LoroText } from "loro-crdt";
 import { keyBetween, orderKeys } from "./order-key.js";
-import { commentVisibility, textUnits } from "./read.js";
+import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
   type BlockId,
   INLINE_STYLE,
   type InlineItem,
-  type Marks,
   type NodeRule,
-  SENTINEL,
   type ShapeBlock,
-  type ShapeSchema,
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
+import { replaceText } from "./text.js";
 import {
   commitStructure,
   type DocChange,
@@ -38,7 +35,10 @@ export type ShapeOp =
       /** A style key (`strong`, `comment_<id>`) set to `value`, or cleared with null. */
       formats: readonly { from: number; to: number; mark: string; value: unknown }[];
     }
-  /** `blocks` go under `parent` (null: the document), after its shown child `after` (null: first). */
+  /**
+   * `blocks` go under `parent` (null: the document), after its shown child `after` (null: first).
+   * Inserts after the same anchor land in op order, each after the previous one's blocks.
+   */
   | { kind: "insert"; parent: BlockId | null; after: BlockId | null; blocks: readonly ShapeBlock[] }
   /** The block goes, with every block shown under it. */
   | { kind: "delete"; block: BlockId }
@@ -54,6 +54,10 @@ export type ApplyOpsResult =
  * touched under `options.message`. Every op is checked against the docs before anything changes,
  * so a write that does not fit leaves them alone. Text and attributes go first, then inserts,
  * then deletes, as the Yjs `applyOps` did.
+ *
+ * The unstored empty paragraph a reader sees in an empty document or cell (`derivedEmptyParent`)
+ * is addressable like any block: a text or attribute op stores it first, an insert after it goes
+ * first, and deleting it writes nothing (the container shows it again).
  */
 export function applyOps(
   docs: RoomDocs,
@@ -63,8 +67,15 @@ export function applyOps(
   const { shape } = docs;
   const view = new StructureView(docs.structure, docs.draft, shape);
   const visibleComment = commentVisibility(view);
+  const derived = (id: BlockId | null) =>
+    id === null ? undefined : derivedEmptyParent(view, shape, id);
   const ruleOf = (id: BlockId) =>
-    view.shown.has(id) ? shape.node(view.node(id) as string) : undefined;
+    view.shown.has(id)
+      ? shape.node(view.node(id) as string)
+      : derived(id) !== undefined
+        ? shape.node("paragraph")
+        : undefined;
+  const textOf = (id: BlockId) => (view.shown.has(id) ? docs.textOf(id) : undefined);
   for (const op of ops) {
     const problem = check(op);
     if (problem)
@@ -78,7 +89,11 @@ export function applyOps(
     if (op.kind === "insert") {
       if (op.parent !== null && !ruleOf(op.parent)) return `no shown block ${op.parent}`;
       if (op.parent !== null && ruleOf(op.parent)?.textblock) return "a textblock holds no blocks";
-      if (op.after !== null && !view.children(op.parent).includes(op.after))
+      if (
+        op.after !== null &&
+        !view.children(op.parent).includes(op.after) &&
+        derived(op.after) !== op.parent
+      )
         return `${op.after} is not a shown child of ${op.parent ?? "the document"}`;
       return undefined;
     }
@@ -87,11 +102,11 @@ export function applyOps(
     if (op.kind === "delete") return undefined;
     if (op.kind === "attrs") {
       if (op.unit === undefined) return undefined;
-      const units = rule.textblock ? shownUnits(docs.textOf(op.block), rule, shape) : [];
+      const units = rule.textblock ? shownUnits(textOf(op.block), rule, shape) : [];
       return units[op.unit]?.inline ? undefined : `no inline node at unit ${op.unit}`;
     }
     if (!rule.textblock) return `${op.block} is not a textblock`;
-    const size = shownUnits(docs.textOf(op.block), rule, shape).length;
+    const size = shownUnits(textOf(op.block), rule, shape).length;
     let cursor = 0;
     for (const { from, to } of op.splices) {
       if (from < cursor || to < from || to > size)
@@ -115,38 +130,47 @@ export function applyOps(
   const of = <K extends ShapeOp["kind"]>(kind: K) =>
     ops.filter((op): op is Extract<ShapeOp, { kind: K }> => op.kind === kind);
 
+  const random = options.random ?? Math.random;
+  /** Order keys this call gave, so a later op places after a block an earlier one stored. */
+  const placed = new Map<BlockId, string>();
+  const stored = new Set<BlockId>();
+  const store = (id: BlockId) => {
+    const parent = derived(id);
+    if (parent === undefined || stored.has(id)) return;
+    stored.add(id);
+    const key = keyBetween(null, null, random);
+    placed.set(id, key);
+    writer.set("order", id, key);
+    writer.block(id, parent, "paragraph", {});
+    // A text doc left from when this paragraph was last stored would show again: empty it.
+    const rule = shape.node("paragraph") as NodeRule;
+    record(writeText(docs, id, [], { rule, shape, visibleComment }, options));
+  };
+
   for (const op of of("text")) {
+    store(op.block);
     const { doc, before: start } = docs.writableText(op.block);
-    const rule = ruleOf(op.block) as NodeRule;
+    const rules = { rule: ruleOf(op.block) as NodeRule, shape, visibleComment };
     const text = doc.getText(TEXT_KEY);
     for (const { from, to, mark, value } of op.formats) {
-      const units = shownUnits(doc, rule, shape);
+      const units = shownUnits(doc, rules.rule, shape);
       const range = { start: units[from].pos, end: units[to - 1].pos + 1 };
       if (value === null || value === undefined) text.unmark(range, mark);
       else text.mark(range, mark, value as never);
     }
     // Right to left, so earlier offsets stay where they were planned.
-    for (const { from, to, content } of [...op.splices].reverse()) {
-      const units = shownUnits(doc, rule, shape);
-      const removed = units.slice(from, to).map((unit) => unit.pos);
-      for (let end = removed.length; end > 0; ) {
-        let first = end - 1;
-        while (first > 0 && removed[first - 1] === removed[first] - 1) first--;
-        text.delete(removed[first], removed[end - 1] - removed[first] + 1);
-        end = first;
-      }
-      const after = shownUnits(doc, rule, shape);
-      const at = from < after.length ? after[from].pos : rawLength(doc);
-      insertItems(text, at, content);
-    }
+    for (const { from, to, content } of [...op.splices].reverse())
+      replaceText(doc, rules, from, to, content);
     doc.commit({ message: options.message, origin: options.origin });
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 
   for (const op of of("attrs")) {
     if (op.unit === undefined) {
+      store(op.block);
       const merged = { ...view.attrs(op.block), ...op.attrs };
-      writer.block(op.block, view.parent(op.block) ?? null, view.node(op.block) as string, merged);
+      const parent = view.shown.has(op.block) ? (view.parent(op.block) ?? null) : derived(op.block);
+      writer.block(op.block, parent ?? null, view.node(op.block) ?? "paragraph", merged);
       continue;
     }
     const { doc, before: start } = docs.writableText(op.block);
@@ -161,17 +185,26 @@ export function applyOps(
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 
-  const random = options.random ?? Math.random;
+  /** The last block inserted after each anchor (`parent`, `after`), for chaining. */
+  const chained = new Map<string, BlockId>();
   for (const op of of("insert")) {
+    const anchor =
+      op.after !== null && derived(op.after) === op.parent && !stored.has(op.after)
+        ? null
+        : op.after;
     const siblings = view.children(op.parent);
-    const lower = op.after === null ? null : (view.order(op.after) as string);
-    const nextId = op.after === null ? siblings[0] : siblings[siblings.indexOf(op.after) + 1];
+    const nextId = anchor === null ? siblings[0] : siblings[siblings.indexOf(anchor) + 1];
     const upper = nextId === undefined ? null : (view.order(nextId) as string);
-    let key = lower;
+    const chain = `${op.parent ?? ""}\u0000${anchor ?? ""}`;
+    const last = chained.get(chain) ?? anchor;
+    let key = last === null ? null : (placed.get(last) ?? (view.order(last) as string));
     for (const block of op.blocks) {
       key = keyBetween(key, upper, random);
+      placed.set(block.id, key);
       insertBlock(block, op.parent, key);
     }
+    const end = op.blocks.at(-1);
+    if (end) chained.set(chain, end.id);
   }
   function insertBlock(block: ShapeBlock, parent: BlockId | null, key: string) {
     writer.set("order", block.id, key);
@@ -188,10 +221,11 @@ export function applyOps(
     }
     const rule = shape.node(block.node);
     if (!rule) throw new Error(`unknown node ${block.node}`);
-    record(writeText(docs, block.id, block.inline, rule, visibleComment, options));
+    record(writeText(docs, block.id, block.inline, { rule, shape, visibleComment }, options));
   }
 
   for (const op of of("delete")) {
+    if (!view.shown.has(op.block)) continue;
     const remove = (id: BlockId) => {
       writer.remove(id);
       for (const child of view.children(id)) remove(child);
@@ -201,53 +235,4 @@ export function applyOps(
 
   const structure = commitStructure(docs, before, options);
   return { ok: true, changes: [...(structure ? [structure] : []), ...changes.values()] };
-}
-
-/** The units a reader shows, with their raw positions in the text. */
-function shownUnits(doc: LoroDoc | undefined, rule: NodeRule, shape: ShapeSchema) {
-  return textUnits(doc, rule, shape).filter((unit) => !unit.hidden);
-}
-
-function rawLength(doc: LoroDoc): number {
-  return doc.getText(TEXT_KEY).length;
-}
-
-/**
- * Insert `items` at raw position `at`, then clear any style the insert took from a neighbour
- * (an expanding mark at its edge) that the items do not carry.
- */
-function insertItems(text: LoroText, at: number, items: readonly InlineItem[]) {
-  const delta: Delta<string>[] = at > 0 ? [{ retain: at }] : [];
-  const wanted: Marks[] = [];
-  for (const item of items) {
-    if (item.kind === "inline") {
-      delta.push({
-        insert: SENTINEL,
-        attributes: { ...item.marks, [INLINE_STYLE]: { type: item.node, attrs: item.attrs } },
-      } as Delta<string>);
-      wanted.push({ ...item.marks, [INLINE_STYLE]: { type: item.node, attrs: item.attrs } });
-    } else if (item.text.length > 0) {
-      delta.push({ insert: item.text, attributes: { ...item.marks } } as Delta<string>);
-      for (let i = 0; i < item.text.length; i++) wanted.push(item.marks);
-    }
-  }
-  if (wanted.length === 0) return;
-  text.applyDelta(delta);
-  const stray = new Map<string, number[]>();
-  let pos = 0;
-  for (const part of text.toDelta() as Delta<string>[]) {
-    const length = part.insert?.length ?? 0;
-    for (let i = 0; i < length; i++, pos++) {
-      if (pos < at || pos >= at + wanted.length) continue;
-      for (const key of Object.keys(part.attributes ?? {}))
-        if (!(key in wanted[pos - at])) stray.set(key, [...(stray.get(key) ?? []), pos]);
-    }
-  }
-  for (const [key, positions] of stray)
-    for (let i = 0; i < positions.length; ) {
-      let j = i;
-      while (j + 1 < positions.length && positions[j + 1] === positions[j] + 1) j++;
-      text.unmark({ start: positions[i], end: positions[j] + 1 }, key);
-      i = j + 1;
-    }
 }

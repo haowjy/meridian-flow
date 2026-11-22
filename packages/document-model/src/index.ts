@@ -6,20 +6,29 @@ export {
   freshServerPeerId,
   isServerPeer,
   type PeerId,
-  SERVER_PEER_LIMIT,
 } from "./peer.js";
 export {
   commentVisibility,
+  derivedEmptyParent,
   emptyParagraphId,
+  isDerivedEmpty,
   normalizeInline,
   normalizeMarks,
   readBlocks,
   readDocument,
   readInline,
+  shownUnits,
+  structureValues,
   type TextUnit,
   textUnits,
 } from "./read.js";
-export { decodeRoomVersion, encodeRoomVersion, RoomDocs } from "./room-docs.js";
+export {
+  CorruptDocBytesError,
+  decodeRoomVersion,
+  encodeRoomVersion,
+  RoomDocs,
+  RoomDocsFreedError,
+} from "./room-docs.js";
 export {
   type Attrs,
   type BlockId,
@@ -46,6 +55,7 @@ export {
   TEXT_KEY,
 } from "./shape.js";
 export { StructureView } from "./structure.js";
+export { replaceText, type TextRules } from "./text.js";
 export {
   commitStructure,
   type DocChange,

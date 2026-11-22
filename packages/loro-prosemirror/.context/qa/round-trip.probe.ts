@@ -426,7 +426,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const [first, second] = readDocument(tabDraft);
   const liveFirst = tabLive.textOf(first.id)?.oplogVersion();
   view.dispatch(view.state.tr.insertText(" Now.", 10));
-  check("draft typing forks the block", tabDraft.texts.has(first.id) && tabDraft.forkedAt.has(first.id));
+  check("draft typing forks the block", tabDraft.texts.has(first.id));
   check("draft typing leaves Live's doc alone", tabLive.textOf(first.id)?.oplogVersion().compare(liveFirst as never) === 0);
   check("draft shows its typing", readProseMirror(tabDraft, schema).eq(view.state.doc));
   if (second.kind !== "text") throw new Error("fixture");

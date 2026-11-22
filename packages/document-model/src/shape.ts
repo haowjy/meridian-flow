@@ -17,7 +17,7 @@ export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 /** The text doc's one container. */
 export const TEXT_KEY = "t";
 
-/** An inline node is one U+FFFC carrying the `inline` style, written in the same insert. */
+/** An inline node is one U+FFFC carrying the `inline` style, written in the same commit. */
 export const SENTINEL = "￼";
 export const INLINE_STYLE = "inline";
 
