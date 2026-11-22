@@ -11,12 +11,6 @@ import {
 } from "./shape.js";
 import type { DocChange } from "./write.js";
 
-/** An inverse written into one doc: its change record (for Redo) and the update to send. */
-export interface Inverse {
-  change: DocChange;
-  bytes: Uint8Array;
-}
-
 /**
  * The one Undo rule (design §2, §6): the change `before → after` of one doc is inverted at its own
  * frontier, so it takes back that change and nothing a peer wrote since.
@@ -27,9 +21,10 @@ export interface Inverse {
  * structure's value maps are set back key by key, under the copy's own peer, except a key written
  * since the change, which keeps its newer value. A draft inverts only its overrides.
  *
- * Returns null when the inverse changes nothing (the change was already taken back).
+ * Returns the inverse as a change of its own, to publish and for Redo to invert; null when it
+ * changes nothing (the change was already taken back).
  */
-export function invertChange(docs: RoomDocs, change: DocChange): Inverse | null {
+export function invertChange(docs: RoomDocs, change: DocChange): DocChange | null {
   const before = change.doc.frontiers();
   const from = change.doc.oplogVersion();
   if (change.key === STRUCTURE_KEY) invertMaps(docs, change);
@@ -46,10 +41,7 @@ export function invertChange(docs: RoomDocs, change: DocChange): Inverse | null 
     }
   }
   if (change.doc.oplogVersion().compare(from) === 0) return null;
-  return {
-    change: { key: change.key, doc: change.doc, before, after: change.doc.frontiers() },
-    bytes: change.doc.export({ mode: "update", from }),
-  };
+  return { key: change.key, doc: change.doc, before, after: change.doc.frontiers() };
 }
 
 function invertMaps(docs: RoomDocs, change: DocChange) {

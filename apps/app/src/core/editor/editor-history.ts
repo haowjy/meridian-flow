@@ -6,12 +6,7 @@
  * inverse. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
  * editor attaches while it shows the document.
  */
-import {
-  type DocChange,
-  type Inverse,
-  invertChange,
-  type RoomDocs,
-} from "@meridian/document-model";
+import { type DocChange, invertChange, type RoomDocs } from "@meridian/document-model";
 import { loroSyncKey, notifyChanged } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
@@ -56,7 +51,7 @@ export class DocumentHistory {
   constructor(
     private readonly docs: RoomDocs,
     /** Sends an Undo's or Redo's inverses as one local batch. */
-    private readonly publish: (inverses: readonly Inverse[]) => void,
+    private readonly publish: (inverses: readonly DocChange[]) => void,
   ) {
     byDocs.set(docs, this);
   }
@@ -143,7 +138,7 @@ export class DocumentHistory {
     const to = direction === "undo" ? this.redoSteps : this.undoSteps;
     this.closed = true;
     for (let step = from.pop(); step; step = from.pop()) {
-      const inverses: Inverse[] = [];
+      const inverses: DocChange[] = [];
       for (const change of [...step.changes].reverse()) {
         const inverse = invertChange(this.docs, change);
         if (inverse) inverses.push(inverse);
@@ -152,11 +147,11 @@ export class DocumentHistory {
       this.publish(inverses);
       notifyChanged(
         this.docs,
-        inverses.map((inverse) => inverse.change.key),
+        inverses.map((inverse) => inverse.key),
       );
       const selection = editor.isDestroyed ? null : editor.state.selection;
       to.push({
-        changes: inverses.map((inverse) => inverse.change),
+        changes: inverses,
         anchor: selection ? pointOf(editor.state.doc, selection.anchor) : step.anchor,
         head: selection ? pointOf(editor.state.doc, selection.head) : step.head,
         at: 0,

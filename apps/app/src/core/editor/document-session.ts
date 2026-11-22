@@ -31,7 +31,6 @@ import {
   encodeEnvelope,
   encodeRoomVersion,
   freshPeerId,
-  type Inverse,
   RoomDocs,
 } from "@meridian/document-model";
 import { importRemoteUpdate, notifyChanged, writeProseMirror } from "@meridian/loro-prosemirror";
@@ -242,7 +241,7 @@ export class DocumentSession {
     this.room = { kind: "live", documentId: roomKey };
     this.documentId = roomKey;
     this.docs = RoomDocs.create(documentShape(), this.peer);
-    this.history = new DocumentHistory(this.docs, (inverses) => this.publishInverses(inverses));
+    this.history = new DocumentHistory(this.docs, (inverses) => this.publish(inverses));
     this.persistSchemaFence = persistSchemaFence;
     this.localPresence = createLocalPresence(this.peer);
     if (typeof window !== "undefined") {
@@ -291,12 +290,6 @@ export class DocumentSession {
       this.docs,
       changes.map((change) => change.key),
     );
-  }
-
-  private publishInverses(inverses: readonly Inverse[]): void {
-    const entries = new Map<DocKey, Uint8Array>();
-    for (const inverse of inverses) entries.set(inverse.change.key, inverse.bytes);
-    this.publishBatch(encodeEnvelope(entries));
   }
 
   private publishBatch(batch: Uint8Array): void {
