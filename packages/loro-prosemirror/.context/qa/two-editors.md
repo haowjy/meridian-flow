@@ -6,8 +6,13 @@ the binding's write or read path, `writeDocument`, `readDocument`, the codec's n
 mapping or `UndoHistory` changes:
 
 ```sh
-pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/two-editors.probe.ts [seeds] [steps]
+pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/two-editors.probe.ts [seeds] [steps] [first seed] [peer salt]
 ```
+
+A seed replays exactly: the edits, both copies' peer ids and the writer's order keys all come from it
+(Loro orders concurrent ops by peer id, so a failure can depend on them). `first seed` runs seeds
+from there up, so `… 1 400 85` reruns seed 85 alone; a different `peer salt` gives the same seed
+other peer ids, to look for the ids a failure needs.
 
 Defaults are 20 seeds of 400 steps (about 30 seconds). It prints `ok: …` or each failed case or
 seed with the block the editor shows beside the one the docs read, and exits non-zero.
@@ -25,7 +30,10 @@ block it should have written (`writeDocument`'s `previous`) and a read that kept
 have re-read (`readDocument`'s `since`). For Undo it checks three more things:
 
 - an Undo keeps every word the other editor typed (each editor types words of its own, `qA3`,
-  and they are looked for in every text doc, shown or hidden);
+  and they are looked for in the text of every doc, shown or hidden). Enter and paste cut a block
+  between words, never inside one: a split word could be joined back from copies by the other
+  editor's Join, and that editor's Undo of the Join would look like it took the word (seed 85
+  failed this way with peer salt 19; a raced case now runs it);
 - a burst of edits with no batch between, most a step of their own and some joining the step
   before, undone step by step gives back the document from before the burst exactly, and redone
   gives back the one after it; between the edits a write no Ctrl+Z takes back (a comment body

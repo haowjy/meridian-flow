@@ -35,6 +35,10 @@ const schema = buildDocumentSchema();
 const shape = shapeSchemaOf(schema);
 const seeds = Number(process.argv[2] ?? 20);
 const steps = Number(process.argv[3] ?? 400);
+/** Seeds run from `first` up, so one failing seed reruns alone: `… 1 400 85`. */
+const first = Number(process.argv[4] ?? 1);
+/** Another set of peer ids for the same seeds, to find the ids a failure depends on. */
+const salt = Number(process.argv[5] ?? 0);
 
 type Editor = {
   name: string;
@@ -121,8 +125,19 @@ function run(seed: number): string | null {
       schema.text("word ".repeat(1 + Math.floor(rand() * 4)).trim()),
     );
   const owned: RoomDocs[] = [];
+  // Peer ids come from the seed and `salt` (a stream of their own, so they leave the edits alone):
+  // Loro orders concurrent ops by peer id, so a failure that depends on them must come back.
+  let peers = seed * 7919 + salt * 104729;
+  // The writer picks new order keys with Math.random: seed it too, so a seed replays exactly.
+  let keys = peers ^ 0x5bd1e995;
+  Math.random = () => {
+    keys = (keys * 1103515245 + 12345) & 0x7fffffff;
+    return keys / 0x7fffffff;
+  };
   const copy = () => {
-    const docs = RoomDocs.create(shape, freshPeerId());
+    peers = (peers * 1103515245 + 12345) & 0x7fffffff;
+    const peer = ((1n << 48n) + BigInt(peers) * 521n).toString();
+    const docs = RoomDocs.create(shape, peer as ReturnType<typeof freshPeerId>);
     owned.push(docs);
     return docs;
   };
@@ -155,6 +170,15 @@ function run(seed: number): string | null {
     return out;
   };
   const inside = (t: Place) => t.pos + 1 + Math.floor(rand() * (t.node.content.size + 1));
+  // A place inside `t` that cuts no typed word: the words each editor types sit between spaces,
+  // and a split in one would let a Join of the halves make the word again from copies, so an
+  // Undo of that Join would look like it took the word.
+  const between = (t: Place) => {
+    const text = t.node.textBetween(0, t.node.content.size, undefined, "\ufffc");
+    let at = Math.floor(rand() * (text.length + 1));
+    while (at > 0 && at < text.length && text[at - 1] !== " " && text[at] !== " ") at--;
+    return t.pos + 1 + at;
+  };
 
   const seedDocs = copy();
   writeProseMirror(seedDocs, schema.topNodeType.create(null, Array.from({ length: 8 }, para)));
@@ -179,7 +203,7 @@ function run(seed: number): string | null {
     },
     split: ({ view: { state: s } }) => {
       const t = pick(textblocks(s.doc));
-      return t.node.type.name === "paragraph" ? s.tr.split(inside(t)) : null;
+      return t.node.type.name === "paragraph" ? s.tr.split(between(t)) : null;
     },
     join: ({ view: { state: s } }) => {
       const t = tops(s.doc);
@@ -188,7 +212,7 @@ function run(seed: number): string | null {
     paste: ({ view: { state: s } }) => {
       const t = pick(textblocks(s.doc));
       if (t.node.type.name !== "paragraph") return null;
-      const at = inside(t);
+      const at = between(t);
       return s.tr.replace(at, at, new Slice(Fragment.fromArray([para(), para(), para()]), 1, 1));
     },
     mark: ({ view: { state: s } }) => {
@@ -259,20 +283,22 @@ function run(seed: number): string | null {
     },
   };
 
-  // Every word in a copy's text docs, shown or hidden: a hidden block's doc keeps its text.
+  // All the text in a copy's text docs, shown or hidden: a hidden block's doc keeps its text.
   const words = (e: Editor) => {
     let all = "";
     for (const doc of e.docs.texts.values()) all += ` ${doc.getText(TEXT_KEY).toString()} `;
-    return new Set(all.split(/[^a-zA-Z0-9]+/));
+    return all;
   };
-  // An Undo keeps every word the other editor typed (it may hide the block they are in).
+  // An Undo keeps every word the other editor typed (it may hide the block they are in). A word
+  // may be glued to its neighbour (the Join of a split drops the space at the cut), so it is
+  // looked for inside the text, not as a word of its own.
   const undoKeeps = (e: Editor, when: string) => {
     const other = typed[e.name === "A" ? "B" : "A"];
     const before = words(e);
     runHistory(e, "undo");
     const after = words(e);
-    for (const word of before)
-      if (other.has(word) && !after.has(word)) return `${when}: ${e.name}'s Undo took ${word}`;
+    for (const word of other)
+      if (before.includes(word) && !after.includes(word)) return `${when}: ${e.name}'s Undo took ${word}`;
     return null;
   };
   // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
@@ -540,6 +566,25 @@ function racedRemovals(): string[] {
       return settle(r, "typing in a cell brings its removed table back", showsAll("Cell [in-cell]three.", "Cell one."));
     },
   };
+  // Seed 85's failure: A's Enter cuts a word typed in one block, B joins the halves back (a copy of
+  // A's half is B's text now), and B's Undo of the join gives the halves back. Both stay on screen;
+  // the word is not whole again, which the random check once read as B's Undo taking it.
+  cases["an Undo of a join of a split word keeps both halves"] = (r) => {
+    caret(r.a, "x", 0);
+    type(r.a, "qA163");
+    sync(r.a, r.b);
+    const at = posOf(r.a, "x") + 1 + 2;
+    r.a.view.dispatch(
+      r.a.view.state.tr.split(at, 1, [{ type: schema.nodes.paragraph, attrs: { id: "x2" } }]),
+    );
+    r.a.history.endStep();
+    sync(r.a, r.b);
+    r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x2")));
+    r.b.history.endStep();
+    if (!shown(r.b).includes("qA163")) return `join case: the join did not make the word: ${shown(r.b)}`;
+    runHistory(r.b, "undo");
+    return settle(r, "an Undo of a join of a split word keeps both halves", showsAll("qA|163"));
+  };
   const failures: string[] = [];
   for (const [name, run] of Object.entries(cases)) {
     const r = room();
@@ -558,7 +603,7 @@ for (const failure of racedRemovals()) {
   failed++;
   process.stderr.write(`FAIL raced removal: ${failure}\n`);
 }
-for (let seed = 1; seed <= seeds; seed++) {
+for (let seed = first; seed < first + seeds; seed++) {
   const failure = run(seed);
   if (failure) {
     failed++;
@@ -566,6 +611,6 @@ for (let seed = 1; seed <= seeds; seed++) {
   }
 }
 process.stdout.write(
-  failed ? `${failed} failed\n` : `ok: raced removals, ${seeds} seeds × ${steps} steps\n`,
+  failed ? `${failed} failed\n` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}\n`,
 );
 process.exitCode = failed ? 1 : 0;
