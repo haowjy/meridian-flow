@@ -133,7 +133,9 @@ identity in anchors or holds.
   `UNTRACKED_ORIGIN`, as `session.writeDocument` does; meta-only transactions are not
   boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
   carries through its inverse (a deleted selection comes back over the restored text); Redo puts
-  back the one Undo was pressed from. Destroying an editor only detaches it: the history lasts
+  back the one Undo was pressed from. Ctrl+Z of a value (a heading level, an image width) puts the
+  step's old value back even over a peer's later write of it: that is Loro's map undo, chosen with
+  the manager (design §6), not a bug to guard. Destroying an editor only detaches it: the history lasts
   as long as the session, so a tab's undo survives its editor; the session frees its managers
   before its docs. Reload resets it. With drafts off, a press Apply has no Undo entry.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
