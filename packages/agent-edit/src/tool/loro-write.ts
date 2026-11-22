@@ -516,14 +516,16 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         };
         let planDoc = planned.doc;
         let { assigner, resolved } = await resolveOn(planDoc);
-        // A find names text, not blocks: when what it matched in the view is gone from the room,
-        // it matches the room as it is now.
+        // A find names text, not blocks: when the view doesn't hold it (the writer typed or
+        // restored it since), or what it matched there is gone from the room, it matches the room
+        // as it is now.
         if (
-          resolved.ok &&
           planDoc !== copy &&
-          missingTarget(resolved.edits, copy) &&
           "find" in command &&
-          command.in === undefined
+          command.find !== undefined &&
+          (resolved.ok
+            ? command.in === undefined && missingTarget(resolved.edits, copy)
+            : resolved.error.code === "not_found")
         ) {
           planDoc = copy;
           ({ assigner, resolved } = await resolveOn(planDoc));
