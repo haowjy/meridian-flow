@@ -2,9 +2,9 @@
  * Releases purged documents' content, the one way a document ends for good: its rooms' snapshots
  * and everything that was only about its text and history. The `documents` row stays, marked
  * `content_purged_at` and stripped of its bytes, so a link bound to it still resolves to "gone".
- * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts.
- * A snapshot write for a purged document writes nothing, so a save waiting on those locks cannot
- * bring the content back; the loaded rooms end after the commit, and the caller deletes the
+ * Runs in the caller's transaction, which has closed their drafts. It takes the documents' locks
+ * itself: a snapshot write reads `content_purged_at` under the same lock and writes nothing for a
+ * purged document, so a save waiting on those locks cannot bring the content back; the loaded rooms end after the commit, and the caller deletes the
  * returned storage objects then too.
  */
 
@@ -25,6 +25,7 @@ import {
   userRecentDocuments,
 } from "@meridian/database/schema";
 import { and, inArray, isNull } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { liveRoom } from "../../collab/index.js";
 
@@ -38,6 +39,7 @@ export async function releaseDocumentContent(
 ): Promise<Released> {
   if (documentIds.length === 0) return { documentIds: [], storageUrls: [] };
   const tx = currentDrizzleDb(db);
+  for (const id of [...new Set(documentIds)].sort()) await lockDocumentMutation(tx, id);
   const held = await tx
     .select({ id: documents.id, storageUrl: documents.storageUrl })
     .from(documents)
