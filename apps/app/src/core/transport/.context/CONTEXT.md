@@ -14,6 +14,9 @@ The Join exchange, which the server's handler speaks too (local-first design §4
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
+The server does not relay presence yet: it drops every ephemeral-store frame, so a remote caret
+shows only once the relay lands.
+
 A room without presence (a tree list) passes no store and joins no presence channel. `onJoined`
 sees each `JoinResponseOk`'s `extra` before anything is sent and may ask to rejoin: a tree copy of
 another list is replaced under the Join, so the Join's version must be taken again.

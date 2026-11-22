@@ -413,6 +413,9 @@ export function createLoroGateway(services: LoroGatewayServices) {
   }
 
   async function handle(connection: LoroGatewayConnection, message: ProtocolMessage) {
+    // Presence (%EPH) is not relayed yet. Its Join and updates share the document's room id, so
+    // handling them below would refuse the client's document room or write presence into it.
+    if (message.crdt === CrdtType.LoroEphemeralStore) return;
     switch (message.type) {
       case MessageType.JoinRequest:
         return join(connection, message);
