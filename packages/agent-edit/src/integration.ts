@@ -78,6 +78,12 @@ export type {
   DocumentLinksPort,
   LinkPrepareRequest,
 } from "./ports/document-links.js";
+export {
+  type AgentEditRooms,
+  type AgentEditRoomsHost,
+  type AgentRoomRead,
+  agentEditRooms,
+} from "./ports/document-rooms.js";
 export type {
   AgentEditModel,
   CanonicalBlockIdentity,

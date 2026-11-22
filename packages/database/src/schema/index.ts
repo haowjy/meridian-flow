@@ -4,6 +4,7 @@ export * from "./billing";
 export * from "./content";
 export * from "./drafts";
 export * from "./imports";
+export * from "./loro";
 export * from "./mcp";
 export * from "./model-evidence";
 export * from "./recent-documents";
@@ -22,6 +23,7 @@ import * as content from "./content";
 import * as documentEdits from "./document-edits";
 import * as drafts from "./drafts";
 import * as imports from "./imports";
+import * as loro from "./loro";
 import * as mcp from "./mcp";
 import * as modelEvidence from "./model-evidence";
 import * as recentDocuments from "./recent-documents";
@@ -50,6 +52,7 @@ export const schema = {
   ...user,
   ...waitlist,
   ...yjs,
+  ...loro,
   ...documentEdits,
   ...modelEvidence,
 };

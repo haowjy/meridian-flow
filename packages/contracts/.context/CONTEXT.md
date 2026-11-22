@@ -15,7 +15,9 @@ Compilers, invocation patches and provider mappings project
 `src/agents/execution-knobs.ts` and must not redeclare its value sets.
 
 Every close pair a classifier uses lives in `WS_CLOSE`; transport-local lifecycle closes
-stay with their emitting transport.
+stay with their emitting transport. On the Loro socket one connection carries several rooms, so a
+refusal for one room is a `loro-protocol` frame, not a close: `LORO_JOIN_ERROR` at Join and
+`LORO_ROOM_ERROR` after (`protocol/loro-ws.ts`).
 
 ## Boundary shape
 

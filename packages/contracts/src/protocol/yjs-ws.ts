@@ -6,15 +6,11 @@
 import { z } from "zod";
 import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId } from "../runtime/index.js";
+import type { TreeListRef } from "./loro-ws.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
 
 export const YJS_TREE_ROOM_PREFIX = "tree:";
-
-/** A tree list is one project's or one account's (`user://`). */
-export type TreeListRef =
-  | { kind: "project"; projectId: string }
-  | { kind: "account"; userId: string };
 
 export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }

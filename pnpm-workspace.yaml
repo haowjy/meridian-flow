@@ -17,6 +17,8 @@ catalog:
   '@vitejs/plugin-react': ^6.3.0
   drizzle-kit: ^0.31.11
   drizzle-orm: ^0.45.4
+  loro-crdt: 1.18.0
+  loro-protocol: 0.3.0
   nitro: 3.0.261103-rc
   postgres: 4.1.1
   react: ^19.3.1

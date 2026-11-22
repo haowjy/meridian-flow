@@ -641,6 +641,22 @@ CREATE TABLE "imports" (
 	"final_sweep_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "document_forks" (
+	"draft_id" text NOT NULL,
+	"document_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")
+);
+--> statement-breakpoint
+CREATE TABLE "document_snapshots" (
+	"room_key" text NOT NULL,
+	"doc_key" text NOT NULL,
+	"snapshot" "bytea" NOT NULL,
+	"frontiers" jsonb NOT NULL,
+	"saved_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_snapshots_room_key_doc_key_pk" PRIMARY KEY("room_key","doc_key")
+);
+--> statement-breakpoint
 CREATE TABLE "mcp_calls" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"thread_id" uuid NOT NULL,
@@ -1057,6 +1073,8 @@ ALTER TABLE "drafts" ADD CONSTRAINT "drafts_project_id_projects_id_fk" FOREIGN K
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_calls" ADD CONSTRAINT "mcp_calls_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1185,6 +1203,7 @@ CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","c
 CREATE INDEX "imports_user_open" ON "imports" USING btree ("user_id") WHERE "imports"."acknowledged_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "imports_organize_claim" ON "imports" USING btree ("state","lease_until") WHERE "imports"."state" = 'organizing';--> statement-breakpoint
 CREATE INDEX "imports_upload_expiry" ON "imports" USING btree ("last_activity_at") WHERE "imports"."state" = 'uploading';--> statement-breakpoint
+CREATE INDEX "document_forks_document" ON "document_forks" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "mcp_calls_thread_turn" ON "mcp_calls" USING btree ("thread_id","turn_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "mcp_connections_account_name" ON "mcp_connections" USING btree ("account_id","name") WHERE "mcp_connections"."project_id" IS NULL AND "mcp_connections"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "mcp_connections_project_name" ON "mcp_connections" USING btree ("project_id","name") WHERE "mcp_connections"."project_id" IS NOT NULL AND "mcp_connections"."deleted_at" IS NULL;--> statement-breakpoint

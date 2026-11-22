@@ -36,9 +36,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@meridian-flow/runtime": "catalog:",
     "@ag-ui/core": "1.0.4",
+    "@meridian-flow/runtime": "catalog:",
     "@noble/hashes": "2.4.0",
+    "loro-protocol": "catalog:",
     "zod": "^4.6.7"
   },
   "devDependencies": {

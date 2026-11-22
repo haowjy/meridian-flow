@@ -1,0 +1,17 @@
+{
+  "name": "@meridian/document-model",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/document-model/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/document-model",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

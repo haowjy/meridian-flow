@@ -1,0 +1,25 @@
+{
+  "name": "@meridian/loro-prosemirror",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@meridian/document-model": "workspace:*",
+    "loro-crdt": "catalog:",
+    "prosemirror-model": "^1.25.13",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "1.42.9"
+  },
+  "devDependencies": {
+    "@meridian/markup": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
+    "loro-protocol": "catalog:",
+    "typescript": "catalog:"
+  }
+}
