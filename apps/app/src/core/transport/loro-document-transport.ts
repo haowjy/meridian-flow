@@ -343,9 +343,12 @@ export function createLoroDocumentTransport({
         if (known === LORO_ROOM_ERROR.DOCUMENT_DELETED)
           return end(resetState(WS_CLOSE.DOCUMENT_DELETED.reason));
         if (message.code === RoomErrorCode.RejoinSuggested) {
-          // An access change: read-only at once, and the rejoin's admission decides.
-          const why = message.message.split(":")[1] as ClosedOwnerWhy | undefined;
-          emitAccess("read", why ?? null);
+          // An access change shows read-only at once; the rejoin's admission decides. Any other
+          // rejoin (a server error) resends what was not acked.
+          if (known === LORO_ROOM_ERROR.ACCESS_CHANGED) {
+            const why = message.message.split(":")[1] as ClosedOwnerWhy | undefined;
+            emitAccess("read", why ?? null);
+          }
           socket?.close(1000, "rejoin");
           return;
         }
