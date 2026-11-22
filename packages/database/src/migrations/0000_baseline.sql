@@ -656,6 +656,8 @@ CREATE TABLE "document_snapshots" (
 	"snapshot" "bytea" NOT NULL,
 	"frontiers" jsonb NOT NULL,
 	"saved_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"history_mark" jsonb NOT NULL,
+	"history_mark_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_snapshots_room_key_doc_key_pk" PRIMARY KEY("room_key","doc_key")
 );
 --> statement-breakpoint

@@ -54,8 +54,8 @@ export const staleForSweep = or(
  * The documents of a project and an account that can hold any of `drafts`' suggestions, read in
  * the caller's transaction: every row whose cut is current and lists one of them in
  * `pending_changes`, and every row a reader may not trust (`staleForReaders`), which the caller
- * reads from the room. Exact for every committed write, since each live write moves its
- * document's head (`allocateAdmission`): what the derivation hasn't caught up on is stale.
+ * reads from the room. Exact for every committed write, since each save of the Live room moves its
+ * document's `content_seq`: what the derivation hasn't caught up on is stale.
  */
 export async function documentsHolding(
   db: Database,

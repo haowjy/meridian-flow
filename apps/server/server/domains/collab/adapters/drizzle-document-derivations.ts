@@ -1,4 +1,4 @@
-/** Journal-locked cuts and compare-and-set writes of document derived outputs. */
+/** Lock-scoped cuts of the Live room and compare-and-set writes of document derived outputs. */
 import type { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -53,9 +53,8 @@ export async function captureDocumentDerivation(
     .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(eq(documents.id, documentId))
     .limit(1);
-  // An already-staged push must still settle after a soft deletion. A document no save has
-  // reached holds no text to derive.
-  if (!row || row.contentSeq === 0n) return null;
+  // An already-staged push must still settle after a soft deletion.
+  if (!row) return null;
   const address = await lastAddress(documentId);
   if (row.inLive && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
@@ -291,7 +290,6 @@ export function createDrizzleDocumentDerivationStore(
         .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
-            gt(documents.contentSeq, 0n),
             livingDocumentSql(documents.id),
             staleForSweep,
             page?.only ? eq(documents.id, page.only) : undefined,

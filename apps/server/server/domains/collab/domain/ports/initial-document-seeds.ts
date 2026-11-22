@@ -7,12 +7,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 
 export interface InitialDocumentSeeds {
   /**
-   * Deletes the journals of documents that never got a `documents` row (an import that was
-   * stopped or abandoned wrote their first states ahead of their creates). A document that has
-   * a row is left alone: its row's delete takes its journal.
-   */
-  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
-  /**
    * Under the document's mutation lock, after proving its row is living, installs the head
    * and the seed checkpoint. Returns true only when this call installed the first state;
    * never writes over an existing checkpoint or update. Throws `DocumentNotFoundError` with its

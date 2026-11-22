@@ -1,11 +1,14 @@
+import { LoroDocument, loroModel, toLoroHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
 import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
+import { encodeEnvelope } from "@meridian/document-model";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
+import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import {
   contextPortForThread,
@@ -61,9 +64,10 @@ export interface ScenarioWriter {
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
-   * The writer types in the document's live room: `edit` changes a copy of the room, and its
-   * update goes through the room's durable admission, as a tab's does.
+   * The writer types in the document's live room: a tab's copy appends `blocks` and sends the
+   * difference through the room's write, as a socket's batch does.
    */
+  editLive(documentId: DocumentId, blocks: (schema: Schema) => readonly PMNode[]): Promise<void>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -292,6 +296,23 @@ export function draftTreeCommands(
         origin: human(),
       });
       if (!written.ok) throw new Error(JSON.stringify(written.error));
+    },
+    async editLive(documentId, blocks) {
+      const { rooms } = ports().documentSync;
+      const room = { kind: "live", documentId } as const;
+      const schema = buildDocumentSchema();
+      const tab = await rooms.read(room);
+      try {
+        const before = tab.version();
+        const model = loroModel(schema);
+        const doc = toLoroHandle(new LoroDocument(tab, schema));
+        model.insertBlocks(doc, model.getBlocks(doc).at(-1) ?? null, {
+          blocks: [...blocks(schema)],
+        });
+        await rooms.write(room, encodeEnvelope(tab.exportSince(before)), `test:tab:${userId}`);
+      } finally {
+        tab.free();
+      }
     },
   };
 

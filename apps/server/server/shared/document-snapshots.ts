@@ -15,7 +15,9 @@ export async function writeSnapshots(tx: DrizzleDb, rows: readonly SnapshotRow[]
       roomKey,
       docKey,
       snapshot: Buffer.from(snapshot.buffer, snapshot.byteOffset, snapshot.byteLength),
-      frontiers: doc.frontiers().map(({ peer, counter }) => ({ peer, counter })),
+      frontiers: storedFrontiers(doc),
+      // Kept by every later save: only a compaction moves the mark.
+      historyMark: storedFrontiers(doc),
     };
   });
   await tx
@@ -32,6 +34,13 @@ export async function writeSnapshots(tx: DrizzleDb, rows: readonly SnapshotRow[]
   return values.reduce((sum, value) => sum + value.snapshot.byteLength, 0);
 }
 
+export const storedFrontiers = (doc: LoroDoc): StoredFrontiers =>
+  doc.frontiers().map(({ peer, counter }) => ({ peer, counter }));
+
+/** A stored frontier as Loro takes it. */
+export const loroFrontiers = (frontiers: StoredFrontiers) =>
+  frontiers.map(({ peer, counter }) => ({ peer: peer as PeerID, counter }));
+
 /**
  * Whether `doc` has every op `frontiers` names. `frontiersToVV` throws for an id the doc lacks
  * (loro-crdt 1.18, though its changelog says it returns undefined).
@@ -39,11 +48,7 @@ export async function writeSnapshots(tx: DrizzleDb, rows: readonly SnapshotRow[]
 export function holdsFrontiers(doc: LoroDoc | undefined, frontiers: StoredFrontiers): boolean {
   if (!doc) return false;
   try {
-    return (
-      doc.frontiersToVV(
-        frontiers.map(({ peer, counter }) => ({ peer: peer as PeerID, counter })),
-      ) !== undefined
-    );
+    return doc.frontiersToVV(loroFrontiers(frontiers)) !== undefined;
   } catch {
     return false;
   }

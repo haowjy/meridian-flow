@@ -16,10 +16,9 @@ import {
   works,
 } from "@meridian/database/schema";
 import { LIVE } from "@meridian/project-tree";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
+import type { Schema } from "prosemirror-model";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
@@ -300,17 +299,17 @@ if (!RUN) {
         // The client mints the ahead ref as the writer types; the server has never seen it.
         const link =
           (aheadId: string, href = KAEL) =>
-          (doc: Y.Doc) => {
-            const paragraph = new Y.XmlElement("paragraph");
-            const text = new Y.XmlText();
-            text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
-            paragraph.insert(0, [text]);
-            doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-          };
+          (schema: Schema) =>
+            schema.nodes.paragraph.create(
+              null,
+              schema.text("Kael", [
+                schema.marks.link.create({ href, ref: `ahead:${aheadId}`, title: null }),
+              ]),
+            );
         // The document's derivation registers the links it finds, after the writer's update.
         const derive = () => runtime.ports.documentSync.documentDerivations.derive(chapter);
         const typed = crypto.randomUUID();
-        await scenario.writer.editLive(chapter, link(typed));
+        await scenario.writer.editLive(chapter, (schema) => [link(typed)(schema)]);
         await derive();
         expect
           .soft(await registryRow(typed), "after the debounce, registered and unbound")
@@ -319,10 +318,10 @@ if (!RUN) {
         // A ref that can never register (its Work doesn't exist) never keeps the valid one
         // beside it from registering.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
-        await scenario.writer.editLive(chapter, (doc) => {
-          link(beside)(doc);
-          link(ghost, "scratch://@w98/notes")(doc);
-        });
+        await scenario.writer.editLive(chapter, (schema) => [
+          link(beside)(schema),
+          link(ghost, "scratch://@w98/notes")(schema),
+        ]);
         await derive();
         expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);
         expect

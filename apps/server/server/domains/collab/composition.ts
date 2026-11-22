@@ -461,7 +461,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
-      discardUnbornDocuments: persistence.seeds.discardUnbornDocuments,
+      discardUnbornDocuments: rooms.discardUnborn,
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,

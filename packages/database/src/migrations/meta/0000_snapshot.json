@@ -6551,6 +6551,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "history_mark": {
+          "name": "history_mark",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "history_mark_at": {
+          "name": "history_mark_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {},

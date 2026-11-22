@@ -25,6 +25,13 @@ export const documentSnapshots = pgTable(
     snapshot: byteaColumn("snapshot").notNull(),
     frontiers: jsonb("frontiers").$type<StoredFrontiers>().notNull(),
     savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Where a compaction may cut this doc's history: its frontiers at `history_mark_at`, set when
+     * the row is made and again by each compaction. Loro changes carry no time, so this is how the
+     * server knows the doc's frontier as of seven days ago (design §4, "History cutoff").
+     */
+    historyMark: jsonb("history_mark").$type<StoredFrontiers>().notNull(),
+    historyMarkAt: timestamp("history_mark_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.roomKey, table.docKey] })],
 );

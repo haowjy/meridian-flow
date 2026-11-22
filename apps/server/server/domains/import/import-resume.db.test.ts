@@ -3,7 +3,7 @@
  * Protects:
  * - A pass interrupted after its batches wrote their texts resumes without writing a text twice,
  *   including the image folder no import entry stands for, and without a document existing
- *   before the reveal: the texts wait in the journal under the ids the creates will name.
+ *   before the reveal: the texts wait in their Live rooms' rows under the ids the creates will name.
  * - Retry revives an import that used up its tries.
  * - A failed pass is not reclaimed at once.
  * - After reveal, the Markdown document and the image are live and the document has block rows.
@@ -18,14 +18,14 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   documentBlockRooms,
   documentBlocks,
+  documentSnapshots,
   documents,
-  documentYjsHeads,
   imports,
   projects,
   treeNodes,
   users,
 } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { processDetachedWork } from "../../shared/detached-work.js";
@@ -53,6 +53,12 @@ const PNG = Buffer.from(
 
 describe.runIf(enabled)("import resume", () => {
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
+  /** The Live rooms that hold a stored text. */
+  const waitingTexts = () =>
+    db
+      .selectDistinct({ room: documentSnapshots.roomKey })
+      .from(documentSnapshots)
+      .where(like(documentSnapshots.roomKey, "live:%"));
   afterAll(async () => {
     await deleteDrizzleRows(db, [imports, users]);
     await db.close();
@@ -156,14 +162,10 @@ describe.runIf(enabled)("import resume", () => {
       state: "failed",
       reason: "organize_failed",
     });
-    // The text waits in the journal; no document or node exists yet.
+    // The text waits in its room's rows; no document or node exists yet.
     expect(await db.select().from(documents)).toEqual([]);
     expect(await db.select().from(treeNodes)).toEqual([]);
-    const waiting = await db
-      .select({ id: documentYjsHeads.documentId })
-      .from(documentYjsHeads)
-      .where(eq(documentYjsHeads.kind, "document"));
-    expect(waiting).toHaveLength(1);
+    expect(await waitingTexts()).toHaveLength(1);
 
     await service.retry(input.importId, projectId);
     expect(await organizer.runPass(signal)).toBe(1);
@@ -259,14 +261,13 @@ describe.runIf(enabled)("import resume", () => {
       { kind: "bytes", entryId: 0, bytes: Buffer.from("# Note") },
     ]);
     await organizer.runPass(new AbortController().signal);
-    const written = () =>
-      db.select().from(documentYjsHeads).where(eq(documentYjsHeads.kind, "document"));
+    const written = waitingTexts;
     expect(await written()).toHaveLength(1);
 
     await service.stop(input.importId, projectId);
     await sweepImportObjects(repository, objects, {
       importId: input.importId,
-      journals: {
+      texts: {
         discardUnborn: (ids) => ports.documentSync.discardUnbornDocuments(ids as never),
       },
     });

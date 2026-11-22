@@ -237,8 +237,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
-      // The host's create materializes the document before the model's command runs.
-      await collab.ensureDocumentAuthority(CREATED_ID as never);
       const granted = testFileGrant(DRAFT_DESTINATION, DOC_ID);
       const grant = grantInProject(granted, PROJECT_ID, USER_ID);
       const ctx = { sessionId: "session-create", threadId: THREAD_ID, turnId: TURN_ID, grant };
@@ -415,8 +413,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
       await seeder.document(SOURCE_ID, "live-created", { id: LIVE_CREATED_ID });
-      // The host's create materializes the document before the model's command runs.
-      await collab.ensureDocumentAuthority(LIVE_CREATED_ID as never);
       await db.insert(modelResponses).values({
         id: LIVE_RESPONSE_ID as never,
         turnId: TURN_ID as never,

@@ -318,8 +318,8 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<void, SyncError>>;
-  /** Deletes the journals of documents that never got a row (an import that ended early). */
-  discardUnbornDocuments: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardUnbornDocuments"];
+  /** Deletes the stored text of documents that never got a row (an import that ended early). */
+  discardUnbornDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
