@@ -49,6 +49,10 @@ bold). Within one step a doc's consecutive changes are merged (`extend` in
 is now: positional inverses carried through the edits made since, as Loro's `UndoManager` keeps
 them, instead of inverses by character id at the change's own frontier.
 
+The same rule makes Ctrl+Z of a 20-paragraph paste cost about 50 ms at 500 paragraphs: it forks
+every doc the step changed (21 here), where the binding's own read of the result is a few
+milliseconds.
+
 ## What an Enter or a mark toggle costs outside the binding
 
 The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800
