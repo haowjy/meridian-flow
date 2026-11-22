@@ -10,5 +10,6 @@ export {
 } from "../tool/test-support/assertions.js";
 export { harness as createWriteToolHarness } from "../tool/test-support/write-tool-harness.js";
 export { InMemoryAgentEditJournal } from "./in-memory-agent-edit.js";
+export { createInMemoryLoroHost, type InMemoryLoroHost } from "./in-memory-loro-agent-edit.js";
 export { suggestRewrite } from "./suggested-rewrite.js";
 export { applyTextEdit } from "./text-edit.js";

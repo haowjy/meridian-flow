@@ -21,6 +21,12 @@ export function blockItemIdKey(id: BlockItemId): string {
   return `${id.clientID}:${id.clock}`;
 }
 
+/** The item id a Yjs block's `ProjectedBlock.key` names. */
+export function itemIdOfKey(key: string): BlockItemId {
+  const [clientID, clock] = key.split(":").map(Number);
+  return { clientID, clock };
+}
+
 /** Bind one document copy to its Work draft's immutable block-address context. */
 export function bindBlockOrigins(doc: Y.Doc, origins: BlockOriginMap): void {
   originsByDocument.set(doc, new Map(origins));
@@ -118,12 +124,22 @@ export function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[]
  * among them. Blocks that no longer exist have ids but no element.
  */
 export function uniqueHashesForIds(ids: readonly BlockItemId[]): string[] {
-  if (ids.length === 0) return [];
-  const byFullHash = ids
-    .map((id, i) => ({ i, fullHash: fullHashForItemId(id) }))
+  return uniqueHashPrefixes(ids.map(fullHashForItemId));
+}
+
+/** A Loro block's full hash: a hash of its `id`, which is its identity on every peer (design §5). */
+export function fullHashForBlockId(id: string): string {
+  return `${fnv1a64Hex(id)}${fnv1a64Hex(`${id}\u0000`)}`;
+}
+
+/** Each full hash's shortest prefix, at least the default width, unique among `fullHashes`. */
+export function uniqueHashPrefixes(fullHashes: readonly string[]): string[] {
+  if (fullHashes.length === 0) return [];
+  const byFullHash = fullHashes
+    .map((fullHash, i) => ({ i, fullHash }))
     .sort((a, b) => (a.fullHash < b.fullHash ? -1 : a.fullHash > b.fullHash ? 1 : 0));
 
-  const hashes: string[] = new Array(ids.length);
+  const hashes: string[] = new Array(fullHashes.length);
   for (let sortedIndex = 0; sortedIndex < byFullHash.length; sortedIndex += 1) {
     const current = byFullHash[sortedIndex];
     const previous = byFullHash[sortedIndex - 1];

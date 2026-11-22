@@ -88,21 +88,19 @@ export function createDocumentEditCommands(deps: { options: CreateWriteToolOptio
       });
       const beforeBlocks = snapshotBlocks(toDocHandle(before), deps.options.model, links.codec);
       const afterBlocks = snapshotBlocks(toDocHandle(after), deps.options.model, links.codec);
-      const blockId = (block: { clientID: number; clock: number }) =>
-        `${block.clientID}:${block.clock}`;
-      const beforeById = new Map(beforeBlocks.map((block) => [blockId(block), block.body]));
-      const afterIds = new Set(afterBlocks.map(blockId));
-      const deletedBlocks = beforeBlocks.filter((block) => !afterIds.has(blockId(block)));
-      ownRemoved = new Set(deletedBlocks.map(blockId));
+      const beforeById = new Map(beforeBlocks.map((block) => [block.key, block.body]));
+      const afterIds = new Set(afterBlocks.map((block) => block.key));
+      const deletedBlocks = beforeBlocks.filter((block) => !afterIds.has(block.key));
+      ownRemoved = new Set(deletedBlocks.map((block) => block.key));
       const receipt = renderReceipt(
         {
           commandName: command.command,
           writeId: result.writeId ?? "",
           durableWriteId: result.actionId,
-          touchedBlocks: afterBlocks.filter(
-            (block) => beforeById.get(blockId(block)) !== block.body,
-          ),
-          deletedBlocks,
+          touchedBlocks: afterBlocks
+            .filter((block) => beforeById.get(block.key) !== block.body)
+            .map((block) => block.key),
+          deletedBlocks: deletedBlocks.map((block) => block.key),
         },
         beforeBlocks,
         afterBlocks,

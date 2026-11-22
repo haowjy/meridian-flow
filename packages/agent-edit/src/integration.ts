@@ -39,6 +39,7 @@ export type { ShownLink } from "./links/correspondence.js";
 export type { OccurrenceAttrs } from "./links/occurrences.js";
 export { rebuildOccurrences, sameAttrs } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";
+export { decodeFrontierMap, encodeFrontierMap } from "./loro-frontier.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export {
   type BlockOriginMap,
@@ -47,6 +48,8 @@ export {
   getBlockItemId,
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
+export type { LoroDocument, LoroDocumentModel } from "./model/loro-model.js";
+export { loroModel } from "./model/loro-model.js";
 export { suggestingModel } from "./model/suggesting-model.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
@@ -78,6 +81,12 @@ export type {
   DocumentLinksPort,
   LinkPrepareRequest,
 } from "./ports/document-links.js";
+export type {
+  AgentWriteRecord,
+  DocumentCut,
+  LoroDocumentEdits,
+  LoroLinksPort,
+} from "./ports/document-rooms.js";
 export {
   type AgentEditRooms,
   type AgentEditRoomsHost,
@@ -95,6 +104,7 @@ export type {
 } from "./ports/static-document-links.js";
 export {
   createStaticDocumentLinks,
+  createStaticLoroDocumentLinks,
   type StaticDocumentLinksOptions,
 } from "./ports/static-document-links.js";
 export type {
@@ -128,6 +138,12 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
+export {
+  commitMessageOf,
+  createLoroEditCore,
+  type LoroEditCore,
+  type LoroEditCoreOptions,
+} from "./tool/loro-write.js";
 export type { ShownBlock } from "./tool/read-view.js";
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";

@@ -1,7 +1,12 @@
 # @meridian/agent-edit
 
-Reusable Yjs editing core for the model's document `read` and `write`,
-write handles and the receipts their Undo reads. A write commits at its tool call; the host
+Editing core for the model's document `read` and `write`,
+write handles and the receipts their Undo reads. Two cores live side by side while the
+Loro move lands: the Yjs core (`createWriteCore`, what the server and browser run today) and
+the Loro core (`createLoroEditCore`, design §5), which replaces it when the server's host moves
+onto `DocumentRooms`. A change to shared code (`apply/`, `content-merge/`, the ports) must keep
+both building; don't extend the Yjs-only files (`frontier.ts`, `yjs-mutation.ts`, `undo/`) with
+anything the Loro core would need: see [the Loro core](.context/CONTEXT.md#the-loro-core). A write commits at its tool call; the host
 runs it as one command. Hosts supply
 the journal, coordinator, lifecycle, link and model ports; this package owns no
 Postgres, routes, auth or Project/Work concepts.

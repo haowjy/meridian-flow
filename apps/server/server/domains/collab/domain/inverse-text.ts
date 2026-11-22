@@ -4,11 +4,9 @@
  * ids: a checkpoint drops the content of deleted items.
  */
 import {
-  changeStateIn,
-  editChanges,
   readDelta,
   type StoredDelta,
-  takeOut,
+  takeBack as takeBackChanges,
 } from "@meridian/agent-edit/content-merge";
 import { DIFF_DELETE, DIFF_INSERT, wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -23,17 +21,8 @@ export function takeBack<P extends { delta: StoredDelta | null }>(
   live: readonly PMNode[],
   parts: readonly P[],
 ): { live: readonly PMNode[]; taken: P[] } {
-  let blocks = live;
-  const taken: P[] = [];
-  for (const part of parts) {
-    if (!part.delta) continue;
-    for (const change of editChanges(inverseSchema, readDelta(inverseSchema, part.delta))) {
-      if (changeStateIn(inverseSchema, change, blocks) !== "stands") continue;
-      blocks = takeOut(inverseSchema, change, blocks);
-      if (!taken.includes(part)) taken.push(part);
-    }
-  }
-  return { live: blocks, taken };
+  const { text, taken } = takeBackChanges(inverseSchema, live, parts);
+  return { live: text, taken };
 }
 
 /**

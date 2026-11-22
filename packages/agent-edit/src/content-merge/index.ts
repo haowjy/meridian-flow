@@ -8,5 +8,6 @@ export {
   editChanges,
   readDelta,
   type StoredDelta,
+  takeBack,
   takeOut,
 } from "./stands.js";

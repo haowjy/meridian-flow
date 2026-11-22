@@ -15,9 +15,9 @@ import {
   fullHashForItemId,
   getBlockItemId,
   getTopLevelXmlBlocks,
+  itemIdOfKey,
 } from "../model/block-hash.js";
-import { fragmentOf } from "../model/y-prosemirror.js";
-import type { AgentEditModel } from "../ports/model.js";
+import { fragmentOf, type YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 
 /** One block a result showed the model in full, in the view it was read in; later showings last. */
 export interface ShownBlock {
@@ -38,7 +38,7 @@ export function readMergedContent(input: {
   room: Y.Doc;
   snapshot: Y.Snapshot;
   shown: readonly ShownBlock[];
-  model: AgentEditModel;
+  model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   /** The model's command, resolved on a document: its edits, or null when it doesn't resolve. */
   plan: (doc: DocHandle) => readonly ResolvedEdit[] | null;
@@ -49,7 +49,7 @@ export function readMergedContent(input: {
   if (bodies.size === 0) return null;
 
   const live = model.projectBlocks(toDocHandle(room)).map((block) => ({
-    key: blockItemIdKey(blockIdentityForItem(room, block.id)),
+    key: blockItemIdKey(blockIdentityForItem(room, itemIdOfKey(block.key))),
     node: block.node,
   }));
   const schema = live[0]?.node.type.schema;
@@ -104,7 +104,11 @@ export function readMergedContent(input: {
     const ours = model
       .projectBlocks(handle)
       .map((block) =>
-        keyed(schema, block.node, blockItemIdKey(blockIdentityForItem(read, block.id))),
+        keyed(
+          schema,
+          block.node,
+          blockItemIdKey(blockIdentityForItem(read, itemIdOfKey(block.key))),
+        ),
       );
     const merged = contentMerge(
       schema,

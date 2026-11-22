@@ -11,6 +11,7 @@ import {
   blockItemIdKey,
   fullHashForItemId,
   getBlockItemId,
+  itemIdOfKey,
   lookupBlockHash,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
@@ -76,7 +77,7 @@ describe("projected block alignment", () => {
 
     expect(blocks.map((block) => block.node.textContent)).toEqual(["alpha", "beta", "gamma"]);
     expect(blocks.map((block) => block.hash)).toEqual(blockHashesForDoc(doc));
-    expect(blocks.map((block) => block.id)).toEqual(
+    expect(blocks.map((block) => itemIdOfKey(block.key))).toEqual(
       doc
         .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
         .toArray()

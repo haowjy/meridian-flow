@@ -76,9 +76,6 @@ export interface DocumentModel {
   /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockRef): string;
 
-  /** Full immutable identity used by provenance. */
-  getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
-
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];
 
@@ -158,8 +155,8 @@ export interface AgentEditModel extends DocumentModel {
 /** One top-level block, aligned across its handle, identity, display hash and node. */
 export interface ProjectedBlock {
   ref: BlockRef;
-  /** The block's own CRDT item id (what `getCanonicalBlockIdentity` returns). */
-  id: CanonicalBlockIdentity;
+  /** The block's identity in its document, for pairing cuts: its Loro `id`, or a Yjs item id key. */
+  key: string;
   /** Display hash, unique among the projected blocks and origin-aware. */
   hash: string;
   /** Immutable full hash behind `hash`, origin-aware; what a held hash prefix resolves against. */

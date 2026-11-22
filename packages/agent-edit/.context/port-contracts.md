@@ -33,6 +33,14 @@ The host does not fence a WebSocket transport from this port: nothing applies to
 room inside a transaction. See the [WebSocket concurrency
 contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md).
 
+## `AgentEditRooms` (Loro core)
+
+`save(room, batch, record)` runs inside the host's command: `commit` the batch, then
+`recordWrite` the record in the same transaction, so a write and its Undo record land or fail
+together. The record's `delta` is the write's before and after text by block; turn Undo and
+`revert` take it back by content (`takeBack`), never by replaying ops, so the writer's later edits
+stay. `readRoom` returns a copy the core frees; it holds none between calls.
+
 ## `AgentEditCodec`
 
 The immutable block-origin map travels with every room copy, snapshot planning view
@@ -56,10 +64,10 @@ copy, never a shared document. The resolver projects once, first; its scopes, ha
 and anchors index that repaired list, and a whole-document write takes its scope
 from it, never from a count taken earlier.
 
-`id` is the local CRDT item, used for mutation and provenance. `hash` and `fullHash`
-come from the block's origin identity, which differs from `id` for a Work-draft block
-seeded from live, so hash lookup matches `fullHash` and never rebuilds a hash from
-`id`.
+`key` names the block in this document: the local Yjs item (`clientID:clock`) on the Yjs model,
+used for mutation and provenance; the block id on Loro. On Yjs, `hash` and `fullHash` come from
+the block's origin identity, which differs from `key` for a Work-draft block seeded from live, so
+hash lookup matches `fullHash` and never rebuilds a hash from `key`.
 
 ## `AgentEditCore`
 

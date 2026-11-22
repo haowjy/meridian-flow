@@ -152,10 +152,12 @@ describe("mutation and echo composition", () => {
     const echo = computeEcho({
       before,
       after: snapshotBlocks(local, baseModel, codec),
-      agentTouchedBlocks: snapshotBlocks(local, baseModel, codec).filter((block) =>
-        result.changedBlocks.includes(block.hash),
-      ),
-      agentDeletedBlocks: before.filter((block) => result.deletedBlocks.includes(block.hash)),
+      agentTouchedBlocks: snapshotBlocks(local, baseModel, codec)
+        .filter((block) => result.changedBlocks.includes(block.hash))
+        .map((block) => block.key),
+      agentDeletedBlocks: before
+        .filter((block) => result.deletedBlocks.includes(block.hash))
+        .map((block) => block.key),
     });
     expect(echo).toEqual([
       { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
@@ -192,8 +194,10 @@ describe("computeEcho", () => {
     const echo = computeEcho({
       before,
       after,
-      agentTouchedBlocks: before.filter((block) => ["B", "D"].includes(block.hash)),
-      agentDeletedBlocks: before.filter((block) => block.hash === "X"),
+      agentTouchedBlocks: before
+        .filter((block) => ["B", "D"].includes(block.hash))
+        .map((block) => block.key),
+      agentDeletedBlocks: before.filter((block) => block.hash === "X").map((block) => block.key),
     });
     const lines = echo.flatMap((hunk) => hunk.blocks);
 
@@ -213,8 +217,7 @@ describe("computeEcho", () => {
 function block(hash: string, body: string) {
   return {
     hash,
-    clientID: 1,
-    clock: Number.parseInt(hash, 36),
+    key: `1:${Number.parseInt(hash, 36)}`,
     body,
     serialized: `${hash}|${body}`,
     node: schema.nodes.paragraph.create(null, body ? schema.text(body) : null),

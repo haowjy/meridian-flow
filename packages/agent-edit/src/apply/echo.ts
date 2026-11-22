@@ -2,15 +2,14 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocHandle } from "../handles.js";
-import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
 import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
   hash: string;
-  clientID: number;
-  clock: number;
+  /** The block's identity in its document (`ProjectedBlock.key`). */
+  key: string;
   /** Canonical hashless block body. */
   body: string;
   serialized: string;
@@ -20,8 +19,8 @@ export interface BlockSnapshot {
 export interface EchoInput {
   before: readonly BlockSnapshot[];
   after: readonly BlockSnapshot[];
-  agentTouchedBlocks: readonly BlockItemId[];
-  agentDeletedBlocks: readonly BlockItemId[];
+  agentTouchedBlocks: readonly string[];
+  agentDeletedBlocks: readonly string[];
 }
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
@@ -42,9 +41,9 @@ export function snapshotProjected(
     projected.map((block) => block.node),
     projected.map((block) => block.hash),
   );
-  return projected.map(({ id, hash, node }, index) => ({
+  return projected.map(({ key, hash, node }, index) => ({
     hash,
-    ...id,
+    key,
     node,
     body: bodies[index],
     serialized: toHashline(hash, bodies[index]),
@@ -169,6 +168,6 @@ function truncateWords(text: string, maxWords = 8): string {
   return text.slice(0, end);
 }
 
-function blockIdentity(block: BlockItemId): string {
-  return `${block.clientID}:${block.clock}`;
+function blockIdentity(block: { key: string } | string): string {
+  return typeof block === "string" ? block : block.key;
 }
