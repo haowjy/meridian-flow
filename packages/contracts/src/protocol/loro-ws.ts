@@ -10,6 +10,7 @@
 
 import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId, DraftId } from "../ids.js";
 
 export const LORO_WS_PATH = "/ws/loro";
@@ -159,7 +160,44 @@ export const LORO_ROOM_ERROR = {
    * the 7-day cutoff). Its typing cannot land; the tab shows "Couldn't save".
    */
   HISTORY_CUTOFF: { code: RoomErrorCode.Evicted, reason: "history-cutoff" },
+  /**
+   * The server failed to import the batch for a reason of its own (the database down while the
+   * room loads). Nothing of the batch was acked: rejoin, and the Join exchange resends it.
+   */
+  SERVER_ERROR: { code: RoomErrorCode.RejoinSuggested, reason: "server-error" },
 } as const;
+
+/** `RoomError.message` for an access change: `access-changed`, or with the closed owner named. */
+export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
+  const { reason } = LORO_ROOM_ERROR.ACCESS_CHANGED;
+  return why ? `${reason}:${why}` : reason;
+}
+
+/**
+ * `JoinResponseOk.extra` of a `read` Join: why the copy may only read, when a closed owner is the
+ * reason (a Work archived or deleted, a frozen chat). Empty otherwise.
+ */
+export function encodeLoroJoinExtra(extra: { readOnlyWhy?: ClosedOwnerWhy }): Uint8Array {
+  return extra.readOnlyWhy
+    ? new TextEncoder().encode(JSON.stringify({ readOnlyWhy: extra.readOnlyWhy }))
+    : new Uint8Array();
+}
+
+const joinExtraSchema = z.object({ readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional() });
+
+export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): {
+  readOnlyWhy?: ClosedOwnerWhy;
+} {
+  if (!bytes || bytes.byteLength === 0) return {};
+  try {
+    const parsed = joinExtraSchema.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
+    return parsed.success && parsed.data.readOnlyWhy
+      ? { readOnlyWhy: parsed.data.readOnlyWhy }
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 export type LoroRoomErrorReason = (typeof LORO_ROOM_ERROR)[keyof typeof LORO_ROOM_ERROR]["reason"];
 

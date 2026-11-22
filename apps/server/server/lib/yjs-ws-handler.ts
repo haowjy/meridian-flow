@@ -44,10 +44,10 @@ import {
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
 import {
-  createYjsRoomAccessIndex,
-  type YjsRoomAccessIndex,
-  type YjsRoomRegistration,
-} from "./yjs-room-access.js";
+  createRoomAccessIndex as createYjsRoomAccessIndex,
+  type RoomAccessIndex as YjsRoomAccessIndex,
+  type RoomRegistration as YjsRoomRegistration,
+} from "./room-access.js";
 import {
   createTreeRooms,
   SERVER_ERROR_CLOSE,

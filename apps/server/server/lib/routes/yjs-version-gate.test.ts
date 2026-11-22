@@ -13,7 +13,7 @@ import {
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
 import { createInMemoryEventSink } from "../../domains/observability/index.js";
-import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
+import { createRoomAccessIndex as createYjsRoomAccessIndex } from "../room-access.js";
 import { createHocuspocus } from "../yjs-ws-handler.js";
 
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";

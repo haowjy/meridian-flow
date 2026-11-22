@@ -67,6 +67,14 @@ export default defineConfig(({ command, mode }) => {
           router: (req: IncomingMessage) =>
             resolveApiDevOriginForAppHost(req.headers.host ?? "", apiDevOrigin),
         },
+        "/ws/loro": {
+          target: apiDevOrigin,
+          changeOrigin: true,
+          ws: true,
+          agent: portlessHttpsAgent,
+          router: (req: IncomingMessage) =>
+            resolveApiDevOriginForAppHost(req.headers.host ?? "", apiDevOrigin),
+        },
       },
     },
     resolve: {

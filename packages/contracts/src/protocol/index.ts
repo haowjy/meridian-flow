@@ -63,6 +63,7 @@ export * from "./file-access.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
 export * from "./image-proxy.js";
+export * from "./loro-frames.js";
 export * from "./loro-ws.js";
 export * from "./paths.js";
 export * from "./recent-documents.js";

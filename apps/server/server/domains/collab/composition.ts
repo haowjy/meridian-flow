@@ -2,8 +2,14 @@
 
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { draftTreeNodes } from "@meridian/database/schema";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { documents as documentsTable, draftTreeNodes } from "@meridian/database/schema";
+import { shapeSchemaOf } from "@meridian/loro-prosemirror";
+import {
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+  packCollabSchemaVersion,
+  unpackCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
@@ -25,7 +31,7 @@ import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
-import { type EventSink, emitEvent } from "../observability/index.js";
+import { createNoopEventSink, type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditObservabilityOptions,
@@ -109,6 +115,7 @@ import {
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeRemovedDocumentRooms } from "./hocuspocus-rooms.js";
+import { createPostgresDocumentRooms } from "./rooms/postgres-document-rooms.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
@@ -156,6 +163,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.liveTextHints?.hint(documentId);
   };
   const persistence = createDrizzleCollabPersistence(deps.db, liveAdvanced);
+  const rooms = createPostgresDocumentRooms({
+    db: deps.db,
+    shape: shapeSchemaOf(buildDocumentSchema()),
+    eventSink: deps.eventSink ?? createNoopEventSink(),
+    schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+  });
+  const roomsEnded = new Set<(documentIds: readonly DocumentId[]) => void>();
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
@@ -420,9 +434,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       dispose: async () => {
         deps.liveTextHints?.stop();
         liveCoordinator.stop();
+        await rooms.close();
       },
     },
     transport: {
+      rooms,
+      async documentSchemaVersion(documentId) {
+        const [row] = await currentDrizzleDb(deps.db)
+          .select({ version: documentsTable.schemaVersion })
+          .from(documentsTable)
+          .where(eq(documentsTable.id, documentId));
+        return row ? unpackCollabSchemaVersion(row.version) : null;
+      },
+      onRoomsEnded(listener) {
+        roomsEnded.add(listener);
+        return () => roomsEnded.delete(listener);
+      },
       bindHocuspocus: hocuspocusBinding.bind,
       headSchemaVersion: persistence.journal.headSchemaVersion,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
@@ -505,12 +532,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         },
       }),
       documentPurgeDisposal: createDrizzleDocumentPurgeDisposal(deps.db, {
-        closeRemovedRooms: (documentIds) =>
-          closeRemovedDocumentRooms(
+        closeRemovedRooms: async (documentIds) => {
+          await closeRemovedDocumentRooms(
             hocuspocusBinding.current(),
             documentIds,
             removalRecords.lookup,
-          ),
+          );
+          // A Work Restore that committed since makes the document living again: only a
+          // removal that still stands ends its rooms. A failed read counts as standing.
+          const standing = await removalRecords
+            .lookup(documentIds as DocumentId[])
+            .catch(() => new Map(documentIds.map((id) => [id, null])));
+          const ended = documentIds.filter((id) => standing.has(id));
+          if (ended.length > 0) for (const listener of roomsEnded) listener(ended);
+        },
       }),
     },
     documentCreation,

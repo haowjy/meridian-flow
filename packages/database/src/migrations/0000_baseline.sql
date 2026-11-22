@@ -440,6 +440,7 @@ CREATE TABLE "documents" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"content_purged_at" timestamp with time zone,
 	"in_no_view_since" timestamp with time zone,
+	"schema_version" integer DEFAULT 3003000 NOT NULL,
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
 	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0),
 	CONSTRAINT "documents_one_owner" CHECK (num_nonnulls("documents"."project_id", "documents"."user_id") = 1)

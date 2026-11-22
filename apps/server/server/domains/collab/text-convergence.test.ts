@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import { createYjsRoomAccessIndex } from "../../lib/yjs-room-access.js";
+import { createRoomAccessIndex as createYjsRoomAccessIndex } from "../../lib/room-access.js";
 import { admitWriterSync, createHocuspocus } from "../../lib/yjs-ws-handler.js";
 import { createAllowAllFileAccess, createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createInMemoryEventSink } from "../observability/index.js";

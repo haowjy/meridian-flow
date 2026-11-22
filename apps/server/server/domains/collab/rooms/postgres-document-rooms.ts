@@ -1,6 +1,6 @@
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentSnapshots, type StoredFrontiers } from "@meridian/database/schema";
+import { documentSnapshots, documents, type StoredFrontiers } from "@meridian/database/schema";
 import {
   type DocKey,
   decodeEnvelope,
@@ -12,7 +12,7 @@ import {
   type ShapeSchema,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -97,9 +97,11 @@ export function createPostgresDocumentRooms(input: {
   db: Database;
   shape: ShapeSchema;
   eventSink: EventSink;
+  /** The packed collab schema this server writes: a save raises `documents.schema_version` to it. */
+  schemaVersion: number;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
-  const { db, shape, eventSink } = input;
+  const { db, shape, eventSink, schemaVersion } = input;
   const bounds = { ...DEFAULT_ROOM_BOUNDS, ...input.bounds };
   const rooms = new Map<string, Loaded>();
   const loading = new Map<string, Promise<Loaded>>();
@@ -183,7 +185,8 @@ export function createPostgresDocumentRooms(input: {
     const inFlight = loading.get(name);
     if (inFlight) return inFlight;
     const started = (async () => {
-      if (existing?.unloading) await existing.unloading.catch(() => undefined);
+      // A failed unload leaves the room loaded; whoever asked for the unload hears the failure.
+      if (existing?.unloading) await Promise.allSettled([existing.unloading]);
       const again = rooms.get(name);
       if (again && !again.unloading) return again;
       const live = room.kind === "fork" ? (await load(liveRoomOf(room))).docs : null;
@@ -325,9 +328,14 @@ export function createPostgresDocumentRooms(input: {
     return { changed, delta: encodeEnvelope(docs.exportSince(before)) };
   }
 
-  async function writeRows(tx: DrizzleDb, name: string, docs: RoomDocs, keys: Iterable<DocKey>) {
+  async function writeRows(
+    tx: DrizzleDb,
+    room: DocumentRoom,
+    docs: RoomDocs,
+    keys: Iterable<DocKey>,
+  ) {
     const values = [...docs.snapshots(keys)].map(([docKey, snapshot]) => ({
-      roomKey: name,
+      roomKey: loroRoomName(room),
       docKey,
       snapshot: Buffer.from(snapshot.buffer, snapshot.byteOffset, snapshot.byteLength),
       frontiers: storedFrontiers(docs.doc(docKey)?.frontiers() ?? []),
@@ -344,6 +352,10 @@ export function createPostgresDocumentRooms(input: {
           savedAt: sql`now()`,
         },
       });
+    await tx
+      .update(documents)
+      .set({ schemaVersion })
+      .where(and(eq(documents.id, room.documentId), lt(documents.schemaVersion, schemaVersion)));
     return {
       bytes: values.reduce((sum, value) => sum + value.snapshot.byteLength, 0),
       docs: values.length,
@@ -353,7 +365,8 @@ export function createPostgresDocumentRooms(input: {
   /** One save of a loaded room's unsaved docs, queued behind the room's other saves. */
   function save(loaded: Loaded, reason: string): Promise<void> {
     const run = loaded.queue.then(() => saveNow(loaded, reason));
-    loaded.queue = run.catch(() => undefined);
+    // The next save waits for this one to settle; this one's caller hears its failure.
+    loaded.queue = Promise.allSettled([run]).then(() => undefined);
     return run;
   }
 
@@ -385,7 +398,7 @@ export function createPostgresDocumentRooms(input: {
           loaded.firstDirtyAt = 0;
           if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
           loaded.saveTimer = null;
-          written = await writeRows(tx, loaded.name, loaded.docs, keys);
+          written = await writeRows(tx, loaded.room, loaded.docs, keys);
         }),
       );
     } catch (cause) {
@@ -507,7 +520,7 @@ export function createPostgresDocumentRooms(input: {
         const copy = await copyInTransaction(tx, room, freshServerPeerId());
         try {
           const { changed } = copy.importBatch(entries);
-          await writeRows(tx, loroRoomName(room), copy, changed);
+          await writeRows(tx, room, copy, changed);
         } finally {
           copy.free();
         }
@@ -526,7 +539,7 @@ export function createPostgresDocumentRooms(input: {
         await lockRoom(tx, room);
         const docs = RoomDocs.load(shape, freshServerPeerId(), entries);
         try {
-          await writeRows(tx, name, docs, entries.keys());
+          await writeRows(tx, room, docs, entries.keys());
         } finally {
           docs.free();
         }
@@ -565,7 +578,7 @@ export function createPostgresDocumentRooms(input: {
 
     async close() {
       closed = true;
-      await Promise.all([...loading.values()].map((p) => p.catch(() => undefined)));
+      await Promise.allSettled([...loading.values()]);
       const live = [...rooms.values()].filter((r) => r.room.kind === "live");
       await Promise.all(live.map((r) => unloadRoom(r.room)));
       await Promise.all([...rooms.values()].map((r) => unloadRoom(r.room)));

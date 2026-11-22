@@ -1,22 +1,22 @@
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 
 /**
- * Live Yjs connections by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
+ * Joined rooms by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
  * of its own files, its scratch and the documents only it has, and no manuscript, kb or user
  * room. A room is named by document, not by owner, so room names can't answer this.
  */
 
-/** One admitted connection; `revoke` closes it so the client reconnects. */
-export type YjsRoomRegistration = { revoke(why?: ClosedOwnerWhy): void };
+/** One admitted room of a socket; `revoke` ends it so the client rejoins. */
+export type RoomRegistration = { revoke(why?: ClosedOwnerWhy): void };
 
-export type YjsRoomAccessIndex = ReturnType<typeof createYjsRoomAccessIndex>;
+export type RoomAccessIndex = ReturnType<typeof createRoomAccessIndex>;
 
-export function createYjsRoomAccessIndex() {
-  const byOwner = new Map<string, Set<YjsRoomRegistration>>();
-  const ownersOf = new Map<YjsRoomRegistration, readonly string[]>();
+export function createRoomAccessIndex() {
+  const byOwner = new Map<string, Set<RoomRegistration>>();
+  const ownersOf = new Map<RoomRegistration, readonly string[]>();
 
-  function unregister(registration: YjsRoomRegistration): void {
+  function unregister(registration: RoomRegistration): void {
     for (const ownerKey of ownersOf.get(registration) ?? []) {
       const registrations = byOwner.get(ownerKey);
       registrations?.delete(registration);
@@ -26,7 +26,7 @@ export function createYjsRoomAccessIndex() {
   }
 
   return {
-    register(registration: YjsRoomRegistration, ownerKeys: readonly string[]): void {
+    register(registration: RoomRegistration, ownerKeys: readonly string[]): void {
       unregister(registration);
       ownersOf.set(registration, ownerKeys);
       for (const ownerKey of ownerKeys) {

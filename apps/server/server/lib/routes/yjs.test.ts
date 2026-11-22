@@ -15,7 +15,7 @@ import {
   type FileGrant,
   isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
-import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
+import { createRoomAccessIndex as createYjsRoomAccessIndex } from "../room-access.js";
 import { admitWriterSync, createHocuspocus, createYjsGateway } from "../yjs-ws-handler.js";
 
 const payload = new Uint8Array([1, 2, 3]);
