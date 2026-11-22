@@ -5,12 +5,10 @@
  * (`after`), and text a peer types at the caret lands after it.
  */
 import type { RoomDocs } from "@meridian/document-model";
-import { cursorAt, type DocCursor, loroSyncKey, resolveCursor } from "@meridian/loro-prosemirror";
+import { cursorAt, type DocCursor, loroSyncKey } from "@meridian/loro-prosemirror";
 import type { Node } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import { Cursor } from "loro-crdt";
-
-export type LoroPoint = DocCursor;
 
 /** The copy an editor state is bound to, if any. */
 export function docsOf(state: EditorState): RoomDocs | null {
@@ -19,14 +17,9 @@ export function docsOf(state: EditorState): RoomDocs | null {
 }
 
 /** The point at `pos`, when `pos` is inside a stored textblock. */
-export function pointAt(docs: RoomDocs, doc: Node, pos: number): LoroPoint | null {
+export function pointAt(docs: RoomDocs, doc: Node, pos: number): DocCursor | null {
   if (pos < 0 || pos > doc.content.size) return null;
   return cursorAt(docs, doc.resolve(pos));
-}
-
-/** Where a point stands in `doc` now, or null when its block no longer shows. */
-export function resolvePoint(docs: RoomDocs, doc: Node, point: LoroPoint): number | null {
-  return resolveCursor(docs, doc, point);
 }
 
 /** The block whose `id` is `id`, at any depth, and where it starts. */
@@ -46,13 +39,13 @@ export function findBlock(doc: Node, id: string): { node: Node; pos: number } | 
 /** A point as plain JSON, for presence and device storage. */
 export type EncodedPoint = { block: string; cursor: string; after: boolean };
 
-export function encodePoint(point: LoroPoint): EncodedPoint {
+export function encodePoint(point: DocCursor): EncodedPoint {
   let binary = "";
   for (const byte of point.cursor.encode()) binary += String.fromCharCode(byte);
   return { block: point.block, cursor: btoa(binary), after: point.after };
 }
 
-export function decodePoint(value: unknown): LoroPoint | null {
+export function decodePoint(value: unknown): DocCursor | null {
   if (typeof value !== "object" || value === null) return null;
   const { block, cursor, after } = value as Record<string, unknown>;
   if (typeof block !== "string" || typeof cursor !== "string") return null;

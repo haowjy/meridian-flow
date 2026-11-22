@@ -202,6 +202,11 @@ export class UndoHistory {
       // inverse, so a selection over deleted text covers the text the Undo puts back.
       onPush: () => {
         const tag = this.tag;
+        // A commit with no step's tag and not UNTRACKED_ORIGIN would sit on top of this doc's
+        // undo stack and make Ctrl+Z skip everything older on it. Always a missing origin.
+        if (!tag && process.env.NODE_ENV !== "production") {
+          throw new Error("Local commit without a history step tag or UNTRACKED_ORIGIN");
+        }
         const ends: End[] = [];
         const cursors: Cursor[] = [];
         for (const name of ["anchor", "head"] as const) {

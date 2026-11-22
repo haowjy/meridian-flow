@@ -1,16 +1,21 @@
 /** Resolves stable editor anchors across document changes. */
 
-import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
+import {
+  type DocCursor,
+  loroSyncKey,
+  REMOTE_META,
+  resolveCursor,
+} from "@meridian/loro-prosemirror";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
-import { docsOf, findBlock, type LoroPoint, pointAt, resolvePoint } from "./loro-points";
+import { docsOf, findBlock, pointAt } from "./loro-points";
 
 export type AnchorRange = { from: number; to: number };
 
 /** A range that survives what ProseMirror's own mapping cannot. */
 export type EditorAnchor = AnchorRange & {
-  relative: { start: LoroPoint; end: LoroPoint } | null;
+  relative: { start: DocCursor; end: DocCursor } | null;
 };
 
 /**
@@ -31,12 +36,12 @@ export function anchorRange(state: EditorState, range: AnchorRange): EditorAncho
 
 function resolveRelative(
   state: EditorState,
-  relative: { start: LoroPoint; end: LoroPoint },
+  relative: { start: DocCursor; end: DocCursor },
 ): AnchorRange | null {
   const docs = docsOf(state);
   if (!docs) return null;
-  const from = resolvePoint(docs, state.doc, relative.start);
-  const to = resolvePoint(docs, state.doc, relative.end);
+  const from = resolveCursor(docs, state.doc, relative.start);
+  const to = resolveCursor(docs, state.doc, relative.end);
   if (from === null || to === null || to < from) return null;
   return { from, to };
 }

@@ -4,10 +4,11 @@
  * it, anyone's.
  */
 import type { RoomDocs } from "@meridian/document-model";
+import { resolveCursor } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { NodeSelection, Selection, TextSelection } from "@tiptap/pm/state";
-import { decodePoint, docsOf, encodePoint, findBlock, pointAt, resolvePoint } from "./loro-points";
+import { decodePoint, docsOf, encodePoint, findBlock, pointAt } from "./loro-points";
 import type { ReadingAnchor, ReadingPosition } from "./reading-position-store";
 
 function anchor(docs: RoomDocs, doc: Node, pos: number): ReadingAnchor | null {
@@ -17,7 +18,7 @@ function anchor(docs: RoomDocs, doc: Node, pos: number): ReadingAnchor | null {
 
 function resolve(docs: RoomDocs, doc: Node, value: ReadingAnchor): number | null {
   const point = decodePoint(value);
-  return point && resolvePoint(docs, doc, point);
+  return point && resolveCursor(docs, doc, point);
 }
 
 /** The first block with an id at or inside `node`: a table or a quote is found by its first. */
