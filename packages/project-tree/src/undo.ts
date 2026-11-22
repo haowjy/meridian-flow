@@ -1,4 +1,3 @@
-import type { LoroDoc } from "loro-crdt";
 import type { Actor, TreeRecord, TreeRecordInput } from "./record.js";
 import {
   type Change,

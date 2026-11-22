@@ -23,7 +23,6 @@ import {
   TreeWriter,
   type View,
 } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   type ClosedOwners,

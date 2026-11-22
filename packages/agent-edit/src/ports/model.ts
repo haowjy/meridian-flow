@@ -5,17 +5,6 @@ import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 
-export interface CanonicalBlockIdentity {
-  clientID: number;
-  clock: number;
-}
-
-export interface ContentLineage {
-  clientID: number;
-  clock: number;
-  length: number;
-}
-
 /**
  * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
  * `content` may hold inline atoms (a line break, an image); one that lands inside a run of
@@ -60,7 +49,7 @@ export type EditOp =
       unit?: number;
     };
 
-export type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
+type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
 
 /**
  * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.
@@ -91,25 +80,8 @@ export interface DocumentModel {
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
 
-  /**
-   * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
-   * the model's view; an inline atom is a unit with no identity.
-   */
-  textblockLineage(
-    block: BlockRef,
-    path: readonly number[],
-    from: number,
-    to: number,
-  ): ContentLineage[];
-
-  /** Immutable CRDT identities of the visible text under the node at `path` under `block`. */
-  nodeLineage(block: BlockRef, path: readonly number[]): ContentLineage[];
-
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
-
-  /** Encode the document's room version (sync cursor). */
-  encodeVersion(doc: DocHandle): Uint8Array;
 
   /**
    * Insert new blocks after a reference block.

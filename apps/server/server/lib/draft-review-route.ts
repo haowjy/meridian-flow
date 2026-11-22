@@ -105,7 +105,7 @@ const PressBody = z.strictObject({
   items: z.union([
     z.literal("all"),
     z
-      .array(z.strictObject({ node: z.string().uuid(), half: z.literal("tree").optional() }))
+      .array(z.strictObject({ node: z.string().uuid() }))
       .min(1)
       .max(2000)
       .refine((items) => new Set(items.map((item) => item.node)).size === items.length),

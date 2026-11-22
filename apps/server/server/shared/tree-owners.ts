@@ -97,7 +97,7 @@ export type ClosedSource = { why: ClosedOwnerWhy };
  * What a source takes, judged under the owners' locks: `closed` (an archived or deleted Work, a
  * chat in Trash), `gone` (its `context_sources` row was purged), or neither (null).
  */
-export type SourceFate = ({ kind: "closed" } & ClosedSource) | { kind: "gone" };
+type SourceFate = ({ kind: "closed" } & ClosedSource) | { kind: "gone" };
 
 export type TreeJudge = {
   /** The fate of a source, or null while it takes changes. A source the locks missed is `gone` here and in `assertLocked`. */

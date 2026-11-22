@@ -30,7 +30,6 @@ import {
 } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { generateNKeysBetween } from "fractional-indexing";
-import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { DocumentCreationMetadata } from "../../document-metadata.js";

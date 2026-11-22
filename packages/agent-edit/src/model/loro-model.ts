@@ -6,7 +6,6 @@ import {
   type BlockId,
   COMMENT_MARK,
   COMMENT_STYLE_PREFIX,
-  encodeRoomVersion,
   type RoomDocs,
   readDocument,
   type ShapeBlock,
@@ -135,15 +134,8 @@ export function loroModel(schema: Schema): LoroDocumentModel {
 
     getText: (ref) => nodeFor(blockOf(ref)).textContent,
 
-    // Loro keeps no per-character item lineage for a write to certify against: the write's record
-    // is its `delta`, and its ops depend on the frontiers the model read (design §5).
-    nodeLineage: () => [],
-    textblockLineage: () => [],
-
     // Each write commits as it applies; there is no transaction to open around it.
     transact: (_doc, fn) => fn(),
-
-    encodeVersion: (doc) => encodeRoomVersion(loroDocumentOf(doc).docs.version()),
 
     insertBlocks(doc, after, parsed) {
       const document = loroDocumentOf(doc);

@@ -24,12 +24,7 @@ import { and, eq } from "drizzle-orm";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import {
-  NO_OWNERS,
-  type TreeJudge,
-  type TreeOwners,
-  withTreeOwners,
-} from "../../../shared/tree-owners.js";
+import { NO_OWNERS, type TreeOwners, withTreeOwners } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -163,7 +158,7 @@ export function createDrizzlePress(
             const trashed: string[] = [];
             if (request.verdict === "apply") {
               const listOf = await treeHalf.lockItems(nodes);
-              const facts = draftId
+              const landed = draftId
                 ? await treeHalf.apply({
                     draftId,
                     userId: envelope.accountId as UserId,
@@ -177,7 +172,7 @@ export function createDrizzlePress(
                     judge,
                   })
                 : null;
-              for (const [node, one] of facts ?? []) if (one.landed) tree.add(node);
+              for (const node of landed ?? []) tree.add(node);
               judge.assertLocked();
             } else {
               await lockDocuments(nodes);
@@ -232,15 +227,14 @@ export function createDrizzlePress(
     const tx = () => currentDrizzleDb(db);
     const stored = await storedPress(envelope, pressId);
     const pressed = stored?.result;
-    const answer = (text: string[], tree: string[]): PressUndoResult => ({
+    const answer = (tree: string[]): PressUndoResult => ({
       status: "unpressed",
       commandId: envelope.commandId,
       pressCommandId: pressId,
-      text: text.sort(),
       tree: tree.sort(),
     });
     // Another account's press, an unknown id, or one the day-30 purge took: nothing to take back.
-    if (!stored || !pressed) return runDocumentCommand(db, envelope, async () => answer([], []));
+    if (!stored || !pressed) return runDocumentCommand(db, envelope, async () => answer([]));
     const lists = listsOf(envelope);
     const trees = await tx()
       .select()
@@ -305,7 +299,7 @@ export function createDrizzlePress(
               pressedAt: stored.pressedAt,
               documentIds: [],
             });
-            return answer([], [...tree]);
+            return answer([...tree]);
           },
           { requireActive: false },
         ),

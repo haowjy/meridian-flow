@@ -20,7 +20,7 @@ import { takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-export type EditKind = "write" | "undo" | "revert";
+type EditKind = "write" | "undo" | "revert";
 /** A part an undo or revert part takes back. */
 export type EditTarget = { editId: string; ordinal: number };
 

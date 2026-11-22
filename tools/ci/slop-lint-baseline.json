@@ -258,11 +258,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/shared/keyed-mutex.ts",
-        "line": "void run.catch(() => {});",
-        "count": 1
-      },
-      {
         "path": "packages/markup/src/escape.ts",
         "line": "} catch {",
         "count": 1

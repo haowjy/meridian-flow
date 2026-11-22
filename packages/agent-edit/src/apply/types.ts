@@ -2,17 +2,6 @@ import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 import type { EditOp } from "../ports/model.js";
 
-/** The text an `ops` edit puts in, in order: its output for the semantic IR. */
-export function opsOutput(ops: readonly EditOp[]): string {
-  let output = "";
-  for (const op of ops)
-    if (op.kind === "text")
-      for (const splice of op.splices)
-        output += splice.content.textBetween(0, splice.content.size, "");
-    else if (op.kind === "insert") for (const node of op.nodes) output += node.textContent;
-  return output;
-}
-
 /**
  * Resolver → apply seam. Block references are live objects from one local document;
  * a ResolvedEdit must never escape the call that created it or cross process/doc boundaries.

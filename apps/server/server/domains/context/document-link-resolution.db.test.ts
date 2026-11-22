@@ -20,7 +20,6 @@ import {
 } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type DocumentLinkRouteDeps,

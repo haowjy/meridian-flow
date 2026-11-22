@@ -26,7 +26,6 @@ import {
   type View,
 } from "@meridian/project-tree";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   answerOf,

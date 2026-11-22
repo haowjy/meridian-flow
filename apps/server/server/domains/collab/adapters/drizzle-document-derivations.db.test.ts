@@ -36,7 +36,6 @@ import {
   packCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";

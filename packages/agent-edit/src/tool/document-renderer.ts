@@ -30,7 +30,7 @@ export type ReadBlockSelection =
     }
   | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
 
-export interface DocumentRenderer {
+interface DocumentRenderer {
   selectReadBlocks(
     doc: DocHandle,
     command: ReadCommand,

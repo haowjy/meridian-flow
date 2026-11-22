@@ -106,7 +106,7 @@ export interface LoroEditCore {
 type Address = Extract<ReturnType<typeof parseFileAddress>, { ok: true }>;
 
 /** The commit message a write's ops carry: who the concurrent-change report names (design §5). */
-export function commitMessageOf(actor: MutationActor): string | undefined {
+function commitMessageOf(actor: MutationActor): string | undefined {
   return actor.kind === "agent" ? `turn:${actor.turnId}` : undefined;
 }
 

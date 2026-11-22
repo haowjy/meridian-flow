@@ -6,7 +6,6 @@
  */
 
 import type { TreeWriter } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 
 /**
  * A list is one project's, or one account's (`user://`). Its id is the owner's `tree_list_id`, a

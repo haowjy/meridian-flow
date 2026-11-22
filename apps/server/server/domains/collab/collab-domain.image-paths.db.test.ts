@@ -7,7 +7,6 @@
 
 import { createDb } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
 import { grepQuery } from "../../test-support/grep-query.js";

@@ -17,7 +17,7 @@ export interface EditDelta {
 }
 
 /** One change of an edit, cut down to its changed blocks and one unchanged block each side. */
-export interface EditChange {
+interface EditChange {
   before: readonly PMNode[];
   after: readonly PMNode[];
 }

@@ -50,7 +50,7 @@ import {
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
 
-export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
+type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
 type MarkdownWriteHook = (event: { documentId: DocumentId; threadId?: ThreadId }) => Promise<void>;
 

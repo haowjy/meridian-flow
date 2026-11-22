@@ -55,7 +55,6 @@ export {
 } from "./ports/document-rooms.js";
 export type {
   AgentEditModel,
-  CanonicalBlockIdentity,
   DocumentModel,
 } from "./ports/model.js";
 export type {
@@ -68,24 +67,7 @@ export {
 } from "./ports/static-document-links.js";
 export type { WriteOrdinals } from "./ports/write-ordinals.js";
 export { editHandle, parseEditHandle } from "./ports/write-ordinals.js";
-export type {
-  MappedContinuation,
-  PmSourceContinuation,
-  ProseMirrorLoweringResult,
-} from "./prosemirror-lowering.js";
 export {
-  lowerProseMirrorTransform,
-  propagateContinuations,
-  validateLoweredTargetPartition,
-} from "./prosemirror-lowering.js";
-export type {
-  SemanticEditIRV1,
-  SemanticOutputRun,
-  Utf16Span,
-} from "./semantic-edit-ir.js";
-export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export {
-  commitMessageOf,
   createLoroEditCore,
   type LoroEditCore,
   type LoroEditCoreOptions,

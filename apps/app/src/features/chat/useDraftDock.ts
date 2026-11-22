@@ -7,11 +7,7 @@ import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
-import {
-  listedItemChanges,
-  type ReviewChange,
-  targetOfChanges,
-} from "@/features/draft-review/review-model";
+import { listedItemChanges, type ReviewChange } from "@/features/draft-review/review-model";
 import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useItemLauncher } from "@/features/project/review-launch";
@@ -133,23 +129,13 @@ export function useDraftDock({
 
   const applicable = actionableFiles.filter((file) => hasApply(file.row.item));
 
-  const discardItems = (files: readonly DockFile[]) => {
-    return files.map((file) => ({
-      item: { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
-      target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
-    }));
-  };
+  const refsOf = (files: readonly DockFile[]) =>
+    files.map((file) => ({ documentId: file.row.documentId, itemKey: file.row.item.itemKey }));
   /** Sends the strip's command. */
   const send = useCallback(
     (mode: "apply" | "discard", only?: DockFile) => {
       const files = only ? [only] : mode === "apply" ? applicable : actionableFiles;
-      const items =
-        mode === "discard"
-          ? discardItems(files)
-          : files.map((file) => ({
-              item: { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
-              target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
-            }));
+      const items = refsOf(files);
       if (items.length === 0) return;
       // An Apply is one command over every file; a Discard is one notice with one Undo.
       void (mode === "apply" ? runner.applyMany(items) : runner.discardMany(items));

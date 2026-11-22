@@ -3,7 +3,7 @@
 import type { DraftItem } from "@meridian/contracts/drafts";
 import type { DraftChangesView } from "./draft-changes";
 import type { DraftItemRef } from "./draft-review-session";
-import { listedItemChanges, targetOfChanges } from "./review-model";
+import { listedItemChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
 import type { WorkDraftCommands } from "./usePressCommands";
 
@@ -34,11 +34,11 @@ export function useDraftView(
     focused: null,
     canApply: (!!item && hasTreeLine(item)) || item?.isNew === true,
     locked: controller.dispositionLocked || !enabled,
-    apply: async (change) => {
-      await controller.commandChange("apply", ref, targetOfChanges([change]));
+    apply: async () => {
+      await controller.commandChange("apply", ref);
     },
-    discard: async (change) => {
-      await controller.commandChange("discard", ref, targetOfChanges([change]));
+    discard: async () => {
+      await controller.commandChange("discard", ref);
     },
   };
 }

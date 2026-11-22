@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   drizzleFileAccess,

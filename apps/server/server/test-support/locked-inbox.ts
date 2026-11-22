@@ -7,7 +7,6 @@
 import type { Database } from "@meridian/database";
 import { createDrizzleInbox } from "../domains/runtime/adapters/drizzle-inbox.js";
 import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
-import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createQuietDrizzleJournalWriter } from "./journal-writer.js";
 
 export function createLockedDrizzleInbox(db: Database) {

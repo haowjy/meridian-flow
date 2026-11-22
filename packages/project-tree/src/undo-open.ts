@@ -1,4 +1,3 @@
-import type { LoroDoc } from "loro-crdt";
 import type { Actor } from "./record.js";
 import { undoChange as undo, type undoChange as undoChangeIn } from "./undo.js";
 import type { View } from "./view.js";

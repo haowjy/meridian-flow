@@ -40,7 +40,6 @@ import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
 import type { DraftItemRef } from "./draft-review-session";
 import { PressEntries, type PressPort, type Seat } from "./press-history";
-import type { ChangeTarget } from "./review-model";
 
 type Verdict = "apply" | "discard";
 /**
@@ -54,8 +53,8 @@ type Pressed = { commandId: string; result: PressResult; placement: Placement };
  * `submitCommand` has told the writer already.
  */
 type Unpressed = "failed" | "told";
-/** A node the press takes: whole, or only its tree change (a review's tree line). */
-type PressItem = { node: string; half?: "tree" };
+/** A node the press takes. */
+type PressItem = { node: string };
 const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
 
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
@@ -192,9 +191,7 @@ export function usePressCommands({
      * takes back the press once. `dropped`: it was taken back, and its notice goes with it.
      */
     const remember = (verdict: Verdict, pressed: Pressed, dropped: () => void): PressEntries => {
-      const taken: PressItem[] = pressed.result.items.map((item) =>
-        item.text ? { node: item.node } : { node: item.node, half: "tree" },
-      );
+      const taken = whole(pressed.result.items.map((item) => item.node));
       const { seat, place } = seatOf(
         taken.map(({ node }) => node),
         async () => (await entries.undo()).kind !== "failed",
@@ -248,8 +245,7 @@ export function usePressCommands({
       const nodes =
         items === "all" ? rows().map((item) => item.documentId) : items.map((item) => item.node);
       const gone = (item: DraftItem) =>
-        items === "all" ||
-        items.some(({ node, half }) => node === item.documentId && half !== "tree");
+        items === "all" || items.some(({ node }) => node === item.documentId);
       const rowKeys = rows().flatMap((item) =>
         nodes.includes(item.documentId) ? [item.itemKey] : [],
       );
@@ -382,21 +378,15 @@ export function usePressCommands({
       return { sent: true, outcome };
     };
 
-    /** A target of a tree line alone takes the node's tree change and leaves its text pending. */
-    const itemOf = (documentId: string, target?: ChangeTarget): PressItem =>
-      target?.kind === "tree" ? { node: documentId, half: "tree" } : { node: documentId };
-    const startItem = (verdict: Verdict, item: DraftItemRef, target?: ChangeTarget) =>
-      run(verdict, [itemOf(item.documentId, target)], { documentId: item.documentId });
+    const startItem = (verdict: Verdict, item: DraftItemRef) =>
+      run(verdict, whole([item.documentId]), { documentId: item.documentId });
     const many = (
       verdict: Verdict,
-      items: readonly { item: DraftItemRef; target: ChangeTarget }[],
+      items: readonly DraftItemRef[],
       folders: readonly string[] = [],
     ) => {
-      const sent = [
-        ...whole(folders),
-        ...items.map(({ item, target }) => itemOf(item.documentId, target)),
-      ];
-      return run(verdict, sent, { documentId: items[0]?.item.documentId ?? null }).outcome.then(
+      const sent = whole([...folders, ...items.map((item) => item.documentId)]);
+      return run(verdict, sent, { documentId: items[0]?.documentId ?? null }).outcome.then(
         (outcome) => items.map(() => outcome),
       );
     };
@@ -424,23 +414,15 @@ export function usePressCommands({
       threadId,
       owner,
       dispositionLocked: locked,
-      /**
-       * One change in the text is the editor's (`useSuggestionChanges`); a list's row is the
-       * document, and a tree line its tree change alone.
-       */
-      commandChange: (verdict: Verdict, item: DraftItemRef, target: ChangeTarget) =>
-        startItem(verdict, item, target).outcome,
+      commandChange: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item).outcome,
       startItem: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item),
       apply: (documentId: string, itemKey: string) =>
         startItem("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>
         startItem("discard", { documentId, itemKey }).outcome,
-      applyMany: (
-        items: readonly { item: DraftItemRef; target: ChangeTarget }[],
-        folders: readonly string[] = [],
-      ) => many("apply", items, folders),
-      discardMany: (items: readonly { item: DraftItemRef; target: ChangeTarget }[]) =>
-        many("discard", items),
+      applyMany: (items: readonly DraftItemRef[], folders: readonly string[] = []) =>
+        many("apply", items, folders),
+      discardMany: (items: readonly DraftItemRef[]) => many("discard", items),
       discardSelection,
       discardAll: (
         items: readonly DraftItemRef[],

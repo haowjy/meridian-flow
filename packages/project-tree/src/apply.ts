@@ -19,7 +19,7 @@ import {
 } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, type TakenBack, takeBackAll } from "./undo.js";
-import { readStored, writable } from "./validate.js";
+import { writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 

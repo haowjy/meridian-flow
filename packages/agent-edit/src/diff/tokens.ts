@@ -339,7 +339,7 @@ export function diffKeys(a: readonly string[], b: readonly string[]): Array<[num
 }
 
 /** A string as the word, space and punctuation segments the review tokenizer uses; they concatenate back to it. */
-export const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
+const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
 
 const wordKeys = new WeakMap<PMNode, string[]>();
 /** A block's words in order (a non-text block is one pseudo-word: its key). */

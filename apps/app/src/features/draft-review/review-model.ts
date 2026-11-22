@@ -72,14 +72,3 @@ export const changeTone = (change: Pick<ReviewChange, "excerpt">): "add" | "remo
 
 export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: ReviewFocus | null) =>
   changes.find((change) => change.id === focus?.id) ?? null;
-
-/**
- * What a press of a review row takes: the item's whole draft (`draft`), or only its tree line, the
- * item's move or delete (`tree`). One change in the text is the editor's (`useSuggestionChanges`).
- */
-export type ChangeTarget = { kind: "draft" } | { kind: "tree" };
-export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
-  return changes.length > 0 && changes.every((change) => change.tree)
-    ? { kind: "tree" }
-    : { kind: "draft" };
-}

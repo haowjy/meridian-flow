@@ -18,7 +18,6 @@ import {
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { treeListOfSource } from "../domains/context/adapters/tree-list-facts.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
