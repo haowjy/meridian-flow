@@ -27,11 +27,15 @@ import {
   changeUpdate,
   type DocChange,
   type DocKey,
+  type DocVersion,
   decodeRoomVersion,
   encodeEnvelope,
   encodeRoomVersion,
   freshPeerId,
+  mergeVersion,
   RoomDocs,
+  type RoomVersion,
+  versionCovers,
 } from "@meridian/document-model";
 import {
   importRemoteUpdate,
@@ -43,12 +47,7 @@ import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { requireReload } from "@/client/release/release";
-import {
-  type LoroRoomTransport,
-  mergeVersion,
-  type RoomVersion,
-  versionCovers,
-} from "@/core/transport/loro-room-transport";
+import type { LoroRoomTransport } from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
 import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
 import {
@@ -212,7 +211,7 @@ export class DocumentSession {
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
   /** What the server is known to hold, across connections: the copy's `server` meta. */
-  private readonly server: RoomVersion = new Map();
+  private readonly server = new Map<DocKey, DocVersion>();
   private holdsUndeliverable = false;
   /** Replaced by another session: nothing more goes to the server or to other tabs. */
   private inert = false;

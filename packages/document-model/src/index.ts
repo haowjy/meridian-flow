@@ -25,8 +25,6 @@ export {
 } from "./read.js";
 export {
   CorruptDocBytesError,
-  decodeRoomVersion,
-  encodeRoomVersion,
   HistoryCutoffError,
   RoomDocs,
   RoomDocsFreedError,
@@ -58,6 +56,21 @@ export {
 } from "./shape.js";
 export { StructureView } from "./structure.js";
 export { replaceText, type TextRules } from "./text.js";
+export {
+  type DocVersion,
+  decodeDocVersion,
+  decodeRoomVersion,
+  docCovers,
+  docVersion,
+  encodeDocVersion,
+  encodeRoomVersion,
+  mergeVersion,
+  plainVersion,
+  type RoomVersion,
+  updateEnd,
+  versionCovers,
+  withVector,
+} from "./version.js";
 export {
   changeUpdate,
   commitStructure,

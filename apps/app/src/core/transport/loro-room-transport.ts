@@ -22,10 +22,20 @@ import {
   loroRoomName,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
-import type { DocKey, Envelope } from "@meridian/document-model";
-import { decodeEnvelope, decodeRoomVersion, encodeRoomVersion } from "@meridian/document-model";
+import {
+  type DocKey,
+  type DocVersion,
+  decodeEnvelope,
+  decodeRoomVersion,
+  type Envelope,
+  encodeRoomVersion,
+  mergeVersion,
+  type RoomVersion,
+  updateEnd,
+  versionCovers,
+} from "@meridian/document-model";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaVersion } from "@meridian/prosemirror-schema";
-import { decodeImportBlobMeta, type EphemeralStore, VersionVector } from "loro-crdt";
+import type { EphemeralStore } from "loro-crdt";
 import {
   bytesToHex,
   CrdtType,
@@ -44,8 +54,6 @@ import type {
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import { notifyLoroMessage, notifyLoroSocketClose, notifyLoroSocketOpen } from "./wire-tap";
-
-export type RoomVersion = Map<DocKey, VersionVector>;
 
 /** What the transport needs from the copy it carries. */
 export type TransportedCopy = {
@@ -116,42 +124,12 @@ function randomBatchId() {
   return bytesToHex(bytes);
 }
 
-/** `into` takes, per doc and peer, the larger counter of the two. */
-export function mergeVersion(into: RoomVersion, from: ReadonlyMap<DocKey, VersionVector>) {
-  for (const [key, vv] of from) {
-    const have = into.get(key);
-    if (!have) {
-      into.set(key, VersionVector.decode(vv.encode()));
-      continue;
-    }
-    const merged = new Map(have.toJSON());
-    for (const [peer, counter] of vv.toJSON())
-      if ((merged.get(peer) ?? 0) < counter) merged.set(peer, counter);
-    into.set(key, new VersionVector(merged));
-  }
-}
-
-/** Whether `have` covers every op of `want`. */
-export function versionCovers(
-  have: ReadonlyMap<DocKey, VersionVector>,
-  want: ReadonlyMap<DocKey, VersionVector>,
-): boolean {
-  for (const [key, vv] of want) {
-    const own = have.get(key)?.toJSON();
-    for (const [peer, counter] of vv.toJSON()) if ((own?.get(peer) ?? 0) < counter) return false;
-  }
-  return true;
-}
-
 /** A message as one frame. `encode` allocates the frame's own buffer, so it is never shared. */
 const frame = (message: ProtocolMessage) => encode(message) as Uint8Array<ArrayBuffer>;
 
 /** Each doc's version once an envelope's updates are imported, from their metadata. */
 function batchEnd(batch: Envelope): RoomVersion {
-  const out: RoomVersion = new Map();
-  for (const [key, bytes] of batch)
-    out.set(key, decodeImportBlobMeta(bytes, false).partialEndVersionVector);
-  return out;
+  return new Map([...batch].map(([key, bytes]) => [key, updateEnd(bytes)]));
 }
 
 export function createLoroRoomTransport({
@@ -182,7 +160,7 @@ export function createLoroRoomTransport({
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Batches sent on this connection and not yet acked, with each doc's version once imported. */
   const unacked = new Map<string, RoomVersion>();
-  const server: RoomVersion = new Map();
+  const server = new Map<DocKey, DocVersion>();
   /** Fragments of a server batch being reassembled, by batch id. */
   const fragments = new Map<string, { count: number; parts: Uint8Array[] }>();
   let resolveSynced!: () => void;

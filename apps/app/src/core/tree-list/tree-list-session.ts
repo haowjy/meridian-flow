@@ -8,12 +8,15 @@
 import { decodeLoroJoinExtra, loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
+  docCovers,
+  docVersion,
   encodeEnvelope,
   freshPeerId,
   STRUCTURE_KEY,
+  withVector,
 } from "@meridian/document-model";
 import { LIVE, replayView, type TreeProjection, type View } from "@meridian/project-tree";
-import { LoroDoc, VersionVector } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import type { DocumentSessionConnectionState } from "../editor/document-session";
 import { LocalCopyStore } from "../editor/local-copy-store";
 import { createLoroRoomTransport, type LoroRoomTransport } from "../transport/loro-room-transport";
@@ -200,7 +203,7 @@ export class TreeListSession {
   private onJoined = (extra: Uint8Array | undefined): "rejoin" | undefined => {
     const named = decodeLoroJoinExtra(extra).list ?? null;
     if (named === null || named === this.listId) return undefined;
-    const fresh = this.listId === null && this.current.doc.oplogVersion().length() === 0;
+    const fresh = this.listId === null && this.current.doc.oplogFrontiers().length === 0;
     this.listId = named;
     void this.store?.putMeta(LIST_META, named).catch(noop);
     if (fresh) return undefined;
@@ -219,13 +222,13 @@ export class TreeListSession {
       room: { kind: "tree", list: this.list },
       peer: this.current.doc.peerIdStr,
       copy: {
-        version: () => new Map([[LIST, this.current.doc.oplogVersion()]]),
+        version: () => new Map([[LIST, docVersion(this.current.doc)]]),
         exportSince: (since) => {
           const doc = this.current.doc;
-          const from = since.get(LIST) ?? new VersionVector(null);
-          const order = doc.oplogVersion().compare(from);
-          if (order === 0 || order === -1) return null;
-          return encodeEnvelope(new Map([[LIST, doc.export({ mode: "update", from })]]));
+          const from = since.get(LIST) ?? new Map();
+          if (docCovers(from, docVersion(doc))) return null;
+          const update = withVector(from, (vector) => doc.export({ mode: "update", from: vector }));
+          return encodeEnvelope(new Map([[LIST, update]]));
         },
         importRemote: (batch) => this.importBatch(batch, true),
       },

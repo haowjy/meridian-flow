@@ -17,11 +17,12 @@ import {
   encodeEnvelope,
   freshPeerId,
   RoomDocs,
+  type RoomVersion,
+  versionCovers,
 } from "@meridian/document-model";
 import { shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { VersionVector } from "loro-crdt";
 import { CliError } from "../../core/cli-error";
 import { LoroSocket } from "../../core/loro-socket";
 import type { Session } from "../../core/session";
@@ -77,16 +78,9 @@ export async function writeMarkdown(
 }
 
 /** Waits until the copy holds every op of the room version the Join answered with. */
-async function caughtUp(docs: RoomDocs, server: ReadonlyMap<string, VersionVector>) {
+async function caughtUp(docs: RoomDocs, server: RoomVersion) {
   const deadline = Date.now() + SYNC_TIMEOUT_MS;
-  const holds = () => {
-    const have = docs.version();
-    return [...server].every(([key, vector]) => {
-      const order = have.get(key)?.compare(vector);
-      return vector.toJSON().size === 0 || order === 0 || order === 1;
-    });
-  };
-  while (!holds()) {
+  while (!versionCovers(docs.version(), server)) {
     if (Date.now() > deadline)
       throw new CliError("unavailable", `The document's room did not sync in ${SYNC_TIMEOUT_MS}ms`);
     await new Promise((done) => setTimeout(done, 20));
