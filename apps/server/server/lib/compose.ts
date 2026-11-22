@@ -663,8 +663,6 @@ export async function createProductionAppPorts(input: {
   // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
   const treeLists = createDrizzleTreeListStore({
     db,
-    // Collab is composed below, before anything can submit or admit a record.
-    seedWorkCreates: (created) => documentSync.seedWorkCreates(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
     liveChangedUnder: (draftIds) => workProjectionMutation.liveChangedUnder(draftIds),
     fileAccessChanges,

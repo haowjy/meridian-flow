@@ -1,40 +1,39 @@
 /**
  * The model-facing view revision: what a reader was shown, as an opaque token.
  *
- * `y2:` + sha256 over the Yjs snapshot (content, tombstones and formatting),
- * the holder's URI, and how every ref-bearing link and `asset:` source spells
- * in this view. A tree-only move changes the spelling and so the token, though
- * the holder's bytes did not change. It walks Yjs, never a ProseMirror
- * projection, and is computed in the same synchronous block as the render or
- * apply it identifies. It is a freshness signal, never a write refusal. A Work's
- * read appends the Work's key: every Work reads the one Live document through its own
- * view, so the same bytes read differently.
+ * `l1:` + sha256 over the cut's room version (every doc's version vector, so any op changes it),
+ * the holder's URI, and how every ref-bearing link and `asset:` source spells in this view. A
+ * tree-only move changes the spelling and so the token, though the room did not change. It is
+ * computed in the same synchronous block as the render it identifies, and is a freshness signal,
+ * never a write refusal. A Work's read appends the Work's key (`viewRevision`).
  */
 import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
-import type { AgentEditCodecFactory, AgentEditModel } from "@meridian/agent-edit/integration";
-import { spelledLinks } from "@meridian/markup/links";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
+import type {
+  AgentEditCodecFactory,
+  AgentEditModel,
+  DocHandle,
+  DocumentCut,
+} from "@meridian/agent-edit/integration";
+import { spelledLinks, walkLinkOccurrences } from "@meridian/markup/links";
 import type { HashlineRead } from "../contracts.js";
 import { grepBlocksOf } from "./grep-blocks.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
 
-export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
+export function documentRevision(cut: DocumentCut, scope: HolderLinkScope): string {
   const triples = new Set<string>();
-  for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))) {
-    const asset = occurrence.kind !== "link" && occurrence.href.startsWith("asset:");
-    // A no-ref link spells its stored bytes, which the snapshot already covers.
-    if (occurrence.ref === null && !asset) continue;
+  for (const { kind, attrs } of walkLinkOccurrences(cut.blocks)) {
+    const asset = kind !== "link" && attrs.href.startsWith("asset:");
+    // A no-ref link spells its stored bytes, which the version already covers.
+    if (attrs.ref === null && !asset) continue;
     const spelled =
-      occurrence.kind === "link"
-        ? scope.spellLink({ href: occurrence.href, ref: occurrence.ref })
-        : scope.spellSource({ src: occurrence.href, ref: occurrence.ref });
-    triples.add(JSON.stringify([occurrence.ref, occurrence.href, spelled.href]));
+      kind === "link"
+        ? scope.spellLink({ href: attrs.href, ref: attrs.ref })
+        : scope.spellSource({ src: attrs.href, ref: attrs.ref });
+    triples.add(JSON.stringify([attrs.ref, attrs.href, spelled.href]));
   }
-  return `y2:${createHash("sha256")
-    .update(Y.encodeSnapshot(Y.snapshot(doc)))
+  return `l1:${createHash("sha256")
+    .update(cut.version)
     .update(Uint8Array.of(0))
     .update(scope.holder.uri ?? "", "utf8")
     .update(Uint8Array.of(0))
@@ -59,7 +58,8 @@ export function inView<T extends { revision: string | null }>(read: T, draft: st
  * `verbatim` is a code file, whose grep text is its code node's text.
  */
 export function readHashlines(
-  doc: Y.Doc,
+  doc: DocHandle,
+  version: Uint8Array,
   scope: HolderLinkScope,
   model: AgentEditModel,
   codecs: AgentEditCodecFactory,
@@ -79,17 +79,11 @@ export function readHashlines(
       verbatim,
       links: spelledLinks([block.node], scope),
     })),
-    revision: documentRevision(doc, scope),
+    revision: documentRevision(
+      { version, blocks: grepBlocks.map(({ block }) => block.node) },
+      scope,
+    ),
     holder: { uri: scope.holder.uri, view: scope.holder.view },
     locate: (block, range) => bodyRange(codecs.markup, block.destinationFree, block.body, range),
   };
-}
-
-/** Render and identify one synchronous view of a document. */
-export function versioned<T>(
-  doc: Y.Doc,
-  scope: HolderLinkScope,
-  serialize: (doc: Y.Doc) => T,
-): { content: T; revision: string } {
-  return { content: serialize(doc), revision: documentRevision(doc, scope) };
 }

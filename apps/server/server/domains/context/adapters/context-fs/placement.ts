@@ -78,7 +78,6 @@ export interface CreatePlacementDeps {
   store: ContextDocumentStore;
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces">;
   liveCreate: LiveCreate;
   scheme: ContextScheme;
@@ -104,7 +103,6 @@ async function existingTracked(
   const leaf = entrySegment(renderFilename(at.name, at.extension), at.suffix);
   const existing = await deps.tree.find(target, at.dir, leaf, options?.into);
   if (existing?.kind !== "document") return null;
-  await deps.documentSync.ensureDocumentAuthority(existing.id as DocumentId);
   return { documentId: existing.id, path: existing.path };
 }
 

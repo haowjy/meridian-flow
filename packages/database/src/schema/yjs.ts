@@ -202,7 +202,8 @@ export const documentBlockRooms = pgTable(
       .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
-    cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
+    /** The document's `content_seq` the derivation read. */
+    cutContentSeq: bigint("cut_content_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
   },

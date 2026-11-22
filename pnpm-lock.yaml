@@ -1160,9 +1160,6 @@ importers:
 
   tools/mf:
     dependencies:
-      '@hocuspocus/provider':
-        specifier: 4.8.0
-        version: 4.8.0(patch_hash=d4e96a8f832d6220da23cfb6fea13d009c9ea825cb4270f7cddf8b6860a8603b)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)))(yjs@13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789))
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -1172,6 +1169,9 @@ importers:
       '@meridian/document-model':
         specifier: workspace:*
         version: link:../../packages/document-model
+      '@meridian/loro-prosemirror':
+        specifier: workspace:*
+        version: link:../../packages/loro-prosemirror
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
@@ -1193,9 +1193,6 @@ importers:
       ws:
         specifier: ^8.23.0
         version: 8.23.0
-      yjs:
-        specifier: 13.6.33
-        version: 13.6.33(patch_hash=609158af3359bd7313e7adc3520a44c7964b92bf8574a456140748e0ff930789)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

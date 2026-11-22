@@ -1,5 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
+import { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents as documentsTable, draftTreeNodes } from "@meridian/database/schema";
@@ -14,6 +15,7 @@ import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
+  type DrizzleDb,
   deferUntilDrizzleCommit,
   isInDrizzleTransaction,
   runAfterDrizzleCommit,
@@ -36,7 +38,6 @@ import type { WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditObservabilityOptions,
   createDocumentProjectionDiagnostics,
-  createMarkdownSerializationAnomalyObserver,
   createReversalNoticeDiagnostics,
   createRoomDeliveryDiagnostics,
 } from "./adapters/agent-edit-observability.js";
@@ -72,7 +73,6 @@ import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
-import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
 import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal.js";
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
@@ -81,7 +81,6 @@ import {
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
-import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRouter } from "./domain/agent-edit-router.js";
@@ -106,12 +105,12 @@ import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
-import { createSuggestionTurnUndo } from "./domain/suggestion-turn-undo.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
+import { createWorkCreates } from "./domain/work-creates.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeRemovedDocumentRooms } from "./hocuspocus-rooms.js";
@@ -163,12 +162,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.liveTextHints?.hint(documentId);
   };
   const persistence = createDrizzleCollabPersistence(deps.db, liveAdvanced);
+  const schema = buildDocumentSchema();
   const rooms = createPostgresDocumentRooms({
     db: deps.db,
-    shape: shapeSchemaOf(buildDocumentSchema()),
+    shape: shapeSchemaOf(schema),
     eventSink: deps.eventSink ?? createNoopEventSink(),
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+    onLiveSaved: (documentId) => liveAdvanced(documentId as DocumentId),
   });
+  const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>
+    isInDrizzleTransaction()
+      ? work(currentDrizzleDb(deps.db))
+      : runInDrizzleTransaction(deps.db, () => work(currentDrizzleDb(deps.db)));
+  const readLive = async (documentId: DocumentId) =>
+    new LoroDocument(await rooms.read({ kind: "live", documentId }), schema);
   const roomsEnded = new Set<(documentIds: readonly DocumentId[]) => void>();
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
@@ -201,18 +208,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const derivationStore = createDrizzleDocumentDerivationStore(
     deps.db,
     documentLastAddress,
+    readLive,
     deps.aheadRegistrations
       ? {
           registry: deps.aheadRegistrations,
           ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
         }
       : undefined,
-    deps.workProjectionMutation,
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
     readCut: createCutReader({
-      runtime: () => runtime,
+      schema,
+      codec: () => runtime.codec,
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     outsideTransaction: runOutsideDrizzleTransaction,
@@ -249,7 +257,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
       hocuspocus: hocuspocusBinding.require,
       journal: persistence.journal,
@@ -260,16 +267,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    initialDocumentSeeds: persistence.seeds,
-    deferUntilCommit: deferUntilDrizzleCommit,
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(deps.db), documentId),
+    rooms,
+    transaction: roomTransaction,
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
     inTransaction: isInDrizzleTransaction,
-    observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
@@ -372,47 +378,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const effectiveReader = scopeEffectiveReader(
     createEffectiveDocumentReader({
       blockText: createDrizzleBlockText(deps.db),
-      agentEdit,
       documents: runtime.markdownDocuments,
-      model: runtime.model,
-      draftView: runtime.draftView,
+      schema,
       codec: runtime.codec,
       links: deps.links,
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
-    createDrizzleWorkCreates(deps.db, { documents: runtime.markdownDocuments }),
+    createWorkCreates({ documents: runtime.markdownDocuments }),
   );
-
-  const checkpoints = createCheckpointService({
-    coordinator: liveCoordinator,
-    store: persistence.store,
-    journal: persistence.journal,
-    markdownDocuments: runtime.markdownDocuments,
-  });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const usage = createUsageEvents(deps.db, deps.eventSink);
-  // A card's Undo rejects the turn's suggestions; the Live inverse takes the rest.
-  const suggestionTurnUndo = createSuggestionTurnUndo({
-    schema: buildDocumentSchema(),
-    listTurnDocuments: lineageStore.listEditedDocumentIdsForTurn,
-    resolveDocumentUri: documentUriResolver,
-    changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
-    reverseLiveTurn: turnInverse.reverseTurn,
-    fileAccess: deps.fileAccess,
-    enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
-    confirmGrants: async () => {
-      await lockSeamWorks(deps.db, []);
-    },
-    withLiveDocument: runtime.markdownDocuments.withLiveDocument,
-    liveTurnChip: turnInverse.getDocumentAndTreeChip,
-    turnUndone: usage.turnUndone,
-  });
-  const turnUndo = {
-    ...turnInverse,
-    reverseTurn: suggestionTurnUndo.reverseTurn,
-    getDocumentAndTreeChip: suggestionTurnUndo.chip,
-  };
+  const turnUndo = turnInverse;
   const lineage = createTurnLiveLineageReadModel({
     store: lineageStore,
     receiptStore: turnUndo,
@@ -481,9 +458,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reversal: turnReversal,
     documents: {
       readForExport: runtime.markdownDocuments.readForExport,
-      ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
-      readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       discardUnbornDocuments: persistence.seeds.discardUnbornDocuments,
@@ -491,8 +466,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       mergeCodeText: runtime.markdownDocuments.mergeCodeText,
-      withLiveDocument: runtime.markdownDocuments.withLiveDocument,
-      writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
@@ -502,7 +475,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       refreshDocumentProjection: projectionRefresher.refresh,
     },
     lineage,
-    checkpoints,
     attribution: createDocumentAttribution({ latestUpdate: persistence.store.latestUpdate }),
     effectiveReader,
     drafts: {

@@ -10,10 +10,13 @@ import {
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
   PROSEMIRROR_FRAGMENT_NAME,
+  packCollabSchemaVersion,
   withBlockIds,
 } from "@meridian/prosemirror-schema";
 import { updateYFragment } from "@tiptap/y-tiptap";
@@ -70,6 +73,7 @@ export const {
   runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
+const { createPostgresDocumentRooms } = await import("../rooms/postgres-document-rooms.js");
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
@@ -297,12 +301,17 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
   const modelDocumentEdits = createModelDocumentEdits({ service: () => turnInverse });
+  const rooms = createPostgresDocumentRooms({
+    db,
+    shape: shapeSchemaOf(buildDocumentSchema()),
+    eventSink,
+    schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+  });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
-    coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
       hocuspocus: () => hocuspocus as never,
       journal: persistence.journal,
@@ -313,8 +322,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    initialDocumentSeeds: persistence.seeds,
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
+    rooms,
+    transaction: (work) =>
+      isInDrizzleTransaction()
+        ? work(currentDrizzleDb(db))
+        : runInDrizzleTransaction(db, () => work(currentDrizzleDb(db))),
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
@@ -507,6 +520,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       liveCoordinator.stop();
+      await rooms.close();
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;

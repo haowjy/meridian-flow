@@ -1,77 +1,61 @@
 /**
- * Server-side full-document markdown SET/read engine for collab documents.
+ * The server's Markdown door to a document's text (design §4): every read, whole-document write,
+ * seed and code merge outside the model's own tools goes through `DocumentRooms`, reading a copy
+ * of the room and committing what changed on it as one batch.
  *
- * This intentionally stays out of `@meridian/agent-edit`: full-document SET is a
- * Meridian server persistence/read-model concern, built only by orchestrating the
- * package codec/model, Yjs fragment helper, journal, and document coordinator.
+ * This stays out of `@meridian/agent-edit`: full-document SET is a server persistence concern,
+ * built by orchestrating the package's codec and model with the room door.
  */
 
-import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  isDocumentNotFoundError,
-  type MutationActor,
+  LoroDocument,
+  loroModel,
   overwriteWithAssigned,
-  renderAgentEditResult,
-  toDocHandle,
-  type UpdateJournal,
-  type UpdateMeta,
-  type WriteOutcome,
-  type YProsemirrorDocumentModel,
+  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type DocumentRoom,
+  type YjsTrackedSchemaType,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
+import {
+  encodeEnvelope,
+  encodeRoomVersion,
+  freshServerPeerId,
+  RoomDocs,
+  type WriteOptions,
+} from "@meridian/document-model";
+import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
+import { shapeSchemaOf } from "@meridian/loro-prosemirror";
+import type { DocumentLinkScope, MarkupCodec, PMNode } from "@meridian/markup";
+import { isEmptyDocument } from "@meridian/prosemirror-schema";
+import type { Schema } from "prosemirror-model";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
-  HeldLiveDocument,
-  HeldWriteExpectation,
-  HeldWriteStaged,
-  PersistedUpdate,
   SyncError,
   UpdateOrigin,
 } from "../contracts.js";
 import { mergeCodeText } from "./code-merge.js";
-import { documentAuthority } from "./document-handle.js";
-import { versioned } from "./document-revision.js";
+import { documentRevision } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
-import { storedDocument } from "./stored-document.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
-export type MarkdownSetResult = {
-  documentId: DocumentId;
-  markdown: string;
-  updateSeq: number;
-  updateData: Uint8Array;
-  meta: UpdateMeta;
-};
-
 type MarkdownWriteHook = (event: { documentId: DocumentId; threadId?: ThreadId }) => Promise<void>;
 
-export type MarkdownSerializationAnomaly = {
-  documentId: DocumentId;
-  schemaVersion: typeof COLLAB_SCHEMA_VERSION;
-  deletedNodeTypes: string[];
-  deletedClockCount: number;
-};
-
-export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializationAnomaly) => void;
-
-type MarkdownDocumentEngineDeps = {
+type MarkdownDocumentEngineDeps<Tx> = {
+  schema: Schema;
   codec: MarkupCodec;
   exportCodec: MarkupCodec;
   /**
@@ -80,147 +64,100 @@ type MarkdownDocumentEngineDeps = {
    * scope doors (`document-link-scope-doors.ts`) open it.
    */
   links: DocumentLinkScopes;
-  model: YProsemirrorDocumentModel;
-  journal: UpdateJournal;
-  coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "deliver">;
-  initialDocumentSeeds: InitialDocumentSeeds;
-  metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
-  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
-  /** Takes the document's durable mutation lock in the open transaction, held to its end. */
-  lockDocument?(documentId: DocumentId): Promise<void>;
+  rooms: DocumentRooms<Tx>;
+  /** Runs `work` in the caller's transaction, or in one of its own outside any. */
+  transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
+  /** Takes the document's mutation lock in the open transaction, held to its end. */
+  lockDocument(documentId: DocumentId): Promise<void>;
   afterWrite?: MarkdownWriteHook;
-  /**
-   * A whole-document write recorded as an actor's mutation (thread undo,
-   * receipts): agent-edit's `create` applies the bound nodes as its ordinary
-   * overwrite, or, bound fresh, into an empty document only.
-   */
-  identityPreservingWrite(input: {
-    documentId: DocumentId;
-    content: BoundWrite;
-    actor: MutationActor;
-  }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
-  observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
-
-/**
- * When a write's projection hook runs: with the write, or once the caller's transaction
- * commits (see `replaceLiveDocumentMarkdown`).
- */
-type WriteHook = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
 
 class MergeChangesNothing extends Error {}
 
-/** Stages a change on a copy of the live document, under its lock. */
-type DraftMutation = (
-  draft: Y.Doc,
-  yjsOrigin: TransactionOrigin,
-) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
+/** A change made on a copy of the room: `doc` is the copy as the model reads and writes it. */
+type DocumentChange = (doc: LoroDocument) => Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
-  /** `view` is the version `doc` is: a Work draft's links spell in its draft's view. */
-  serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
   /**
-   * `view` is the version `doc` is: a Work draft's links spell in its draft's view. `model` reads
-   * the content (in suggestion mode, a Work's view of Live); the engine's own model by default.
+   * A copy of `room` as agent-edit's model reads it, for `read` to use and drop: it is freed when
+   * `read` settles, so nothing may keep it.
    */
+  readRoom<T>(room: DocumentRoom, read: (doc: LoroDocument) => Promise<T>): Promise<T>;
+  /** The Live document's top-level blocks; null when no write has reached it yet. */
+  currentBlocks(documentId: DocumentId): Promise<PMNode[] | null>;
+  /** `view` is the version `doc` is: a Work draft's links spell in its draft's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
-    doc: Y.Doc,
+    doc: LoroDocument,
     view: LinkView,
-    model?: YProsemirrorDocumentModel,
   ): Promise<{ content: string; revision: string }>;
-  /**
-   * The markdown of a document's stored state, whatever its lifecycle (a trashed document keeps
-   * its state until purge); empty when it holds none. Reads the journal, never a live room.
-   */
-  readFrozenMarkdown(documentId: DocumentId): Promise<string>;
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<{ content: string; revision: string }, SyncError>>;
-  restoreFromYDoc(
-    documentId: DocumentId,
-    snapshot: Y.Doc,
-    origin: RuntimeOrigin,
-  ): Promise<Result<MarkdownSetResult, SyncError>>;
   readForExport(
     documentId: string,
     scope: (links: HolderLinkScope) => DocumentLinkScope,
   ): Promise<Result<string, SyncError>>;
+  /** The markdown of the document's text, whatever its lifecycle; empty when it holds none. */
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  /**
-   * Whole-document writes take a write a `LinkBinder` bound before the
-   * caller's transaction (contract §6.2); none of them parses Markdown. Each
-   * applies only to the holder it was bound for, as the whole-document
-   * overwrite of what the document holds. A fresh write that finds content
-   * it never saw is `stale_document`.
-   */
-  setMarkdown(input: {
-    documentId: DocumentId;
-    content: BoundWrite;
-    origin: RuntimeOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<MarkdownSetResult, SyncError>>;
-  /**
-   * Gives a document with no state its authority, seeded empty (a create, or the repair of an
-   * old anomaly); a no-op when any checkpoint or update exists.
-   */
-  ensureDocumentAuthority(documentId: DocumentId): Promise<void>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
     content: BoundWrite,
     origin: DocumentSeedOrigin,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  ): Promise<Result<void, SyncError>>;
   /**
-   * The first state of fresh bound content, built in memory with no database or document in
-   * reach: a bulk create encodes it before its transaction and installs it inside.
+   * The first state of fresh bound content (an envelope of snapshots), built in memory with no
+   * database or room in reach: a bulk create encodes it before its transaction and installs it
+   * inside.
    */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /**
    * Installs the first states of documents the caller's transaction just created, from
-   * `encodeSeed` (null for a document with no text): a bulk create's content, in a fixed
-   * number of statements. Rooms hear of it after commit. It derives nothing: the caller
-   * refreshes the projections once its transaction commits.
+   * `encodeSeed` (null for a document with no text, which needs no row). Rooms hear of it after
+   * commit. It derives nothing: the caller refreshes the projections once its transaction commits.
    */
   installSeeds(
     seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
   ): Promise<void>;
+  /**
+   * Whole-document writes take a write a `LinkBinder` bound before the caller's transaction
+   * (contract §6.2); none of them parses Markdown. Each applies only to the holder it was bound
+   * for, as the whole-document overwrite of what the document holds, aligned so the blocks it
+   * leaves as they were keep their ids. A fresh write that finds content it never saw is
+   * `stale_document`.
+   */
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  /** A document a Work created takes its content, written like a seed whatever it holds. */
+  writeCreatedContent(input: {
+    documentId: DocumentId;
+    content: BoundWrite;
+    origin: DocumentWriteOrigin;
+  }): Promise<void>;
   mergeCodeText(input: {
     documentId: DocumentId;
     base: string;
     target: string;
     origin: DocumentWriteOrigin;
   }): Promise<Result<{ text: string; clashes: number; changed: boolean }, SyncError>>;
-  withLiveDocument<T>(
-    documentId: string,
-    operation: (held: HeldLiveDocument) => Promise<T>,
-  ): Promise<T>;
-  /** A change made by code on the live document, under its lock, journaled like any write. */
-  changeLiveDocument(input: {
-    documentId: DocumentId;
-    origin: DocumentWriteOrigin;
-    mutate(doc: Y.Doc, yjsOrigin: TransactionOrigin): void;
-  }): Promise<void>;
-  writeDocumentHeld(input: {
-    held: HeldLiveDocument;
-    content: BoundWrite;
-    expected: HeldWriteExpectation;
-    origin: DocumentWriteOrigin | DocumentSeedOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
 
-export function createMarkdownDocumentEngine(
-  deps: MarkdownDocumentEngineDeps,
+export function createMarkdownDocumentEngine<Tx>(
+  deps: MarkdownDocumentEngineDeps<Tx>,
 ): MarkdownDocumentEngine {
   const agentEditCodecs = createAgentEditCodecFactory(deps.codec);
+  const model = loroModel(deps.schema);
+  const shape = shapeSchemaOf(deps.schema);
+  const liveRoom = (documentId: string): DocumentRoom => ({
+    kind: "live",
+    documentId: documentId as DocumentId,
+  });
 
   async function documentFormat(
     documentId: DocumentId,
@@ -237,72 +174,65 @@ export function createMarkdownDocumentEngine(
     });
   }
 
+  /** The document's top-level blocks as every reader sees them, without ids. */
+  const blocksOf = (doc: LoroDocument): PMNode[] =>
+    model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+
   function serializeForSchema(
-    documentId: DocumentId,
-    doc: Y.Doc,
+    blocks: readonly PMNode[],
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
     codec: MarkupCodec = deps.codec,
-    model: YProsemirrorDocumentModel = deps.model,
   ): string {
-    return projectBlocks(
-      documentId,
-      doc,
-      (blocks) => {
-        if (blocks.length === 0) return "";
-        if (schemaType === "code") return blocks[0]?.textContent ?? "";
-        return codec.serialize(blocks, links);
-      },
-      model,
-    );
+    if (isEmptyDocument(blocks)) return "";
+    if (schemaType === "code") return blocks[0]?.textContent ?? "";
+    return codec.serialize([...blocks], links);
   }
 
   /**
-   * Load what `docs` (and `stored` nodes: a bound write's) name, then spell
-   * as this document in `view` (default live).
+   * Load what `blocks` (and `stored` nodes: a bound write's) name, then spell as this document in
+   * `view` (default live).
    */
   async function spelling(
     documentId: DocumentId,
-    docs: readonly Y.Doc[],
+    blocks: readonly PMNode[],
     view: LinkView = LIVE_VIEW,
-    stored: ParsedContent["blocks"] = [],
+    stored: readonly PMNode[] = [],
   ): Promise<HolderLinkScope> {
-    await deps.links.prepare({ holders: [{ documentId, view }], docs, stored });
+    await deps.links.prepare({
+      holders: [{ documentId, view }],
+      stored: [...blocks, ...stored],
+    });
     return deps.links.holder({ documentId, view });
   }
 
-  /**
-   * Projection cannot mutate its input, by construction: it always runs against
-   * a private clone, and `read` sees the blocks before that clone is destroyed.
-   */
-  function projectBlocks<T>(
-    documentId: DocumentId,
-    doc: Y.Doc,
-    read: (blocks: ParsedContent["blocks"]) => T,
-    model: YProsemirrorDocumentModel = deps.model,
-  ): T {
-    const state = Y.encodeStateAsUpdate(doc);
-    const nodeSpans = xmlNodeSpans(state);
-    const clone = new Y.Doc({ gc: false });
-    Y.applyUpdate(clone, state);
-    const repairUpdates: Uint8Array[] = [];
-    const observeRepair = (update: Uint8Array) => repairUpdates.push(update);
-    clone.on("update", observeRepair);
-
+  async function readRoom<T>(
+    room: DocumentRoom,
+    read: (doc: LoroDocument) => Promise<T>,
+  ): Promise<T> {
+    const docs = await deps.rooms.read(room);
     try {
-      return read(model.projectBlocks(toDocHandle(clone)).map((block) => block.node));
+      return await read(new LoroDocument(docs, deps.schema));
     } finally {
-      clone.off("update", observeRepair);
-      const anomaly = serializationAnomaly(repairUpdates, nodeSpans);
-      clone.destroy();
-      if (anomaly) {
-        deps.observeSerializationAnomaly?.({
-          documentId,
-          schemaVersion: COLLAB_SCHEMA_VERSION,
-          ...anomaly,
-        });
-      }
+      docs.free();
     }
+  }
+
+  async function versionedRead(
+    documentId: DocumentId,
+    doc: LoroDocument,
+    view: LinkView,
+    schemaType: YjsTrackedSchemaType,
+  ) {
+    const blocks = blocksOf(doc);
+    const links = await spelling(documentId, blocks, view);
+    return {
+      content: serializeForSchema(blocks, schemaType, links),
+      revision: documentRevision(
+        { version: encodeRoomVersion(doc.docs.shownVersion()), blocks },
+        links,
+      ),
+    };
   }
 
   /** A bound write for this holder, of the shape this document stores (one code block for code files). */
@@ -324,29 +254,26 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * Overwrite `draft`, a copy of the live document taken under its lock, with
-   * the bound nodes: agent-edit's whole-document correspondence, so blocks
-   * left as they were keep their items. A writer's save outside a thread
-   * carries no certified facts.
+   * Overwrite `doc` with the bound nodes: agent-edit's whole-document correspondence, so blocks
+   * left as they were keep their ids.
    */
-  async function overwriteDraft(
+  async function overwrite(
     documentId: DocumentId,
-    draft: Y.Doc,
+    doc: LoroDocument,
     content: Pick<BoundWrite, "fresh" | "blocks" | "markdown">,
-    yjsOrigin: TransactionOrigin,
   ): Promise<Result<void, SyncError>> {
-    if (content.fresh && deps.model.getBlocks(toDocHandle(draft)).length > 0) {
+    const current = blocksOf(doc);
+    if (content.fresh && !isEmptyDocument(current)) {
       return Err({ code: "stale_document", documentId });
     }
-    const links = await spelling(documentId, [draft], LIVE_VIEW, [...content.blocks]);
+    const links = await spelling(documentId, current, LIVE_VIEW, content.blocks);
     const written = overwriteWithAssigned({
-      doc: draft,
-      model: deps.model,
+      doc: toLoroHandle(doc),
+      model,
       codec: agentEditCodecs.forScope(links),
       documentId,
       content: content.markdown,
       blocks: content.blocks,
-      origin: yjsOrigin,
     });
     if (!written.ok) {
       return Err({
@@ -359,298 +286,174 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * Stage `mutate` on a copy of the live document, serialize, then admit it to the
-   * journal and apply it to `liveDoc` once the caller's transaction commits (at once outside
-   * one). `hook` says when `afterWrite` runs: `now` (the caller runs it), or `after-commit`
-   * with the apply, for a held write that an abort must leave unprojected.
+   * Make `change` on a copy of the Live room under the document's lock, and commit what it
+   * changed as one batch in the caller's transaction (its own outside one): its snapshot rows are
+   * written there, so the write survives a crash right after, and the room imports the batch
+   * once it commits.
    */
-  async function replaceLiveDocumentMarkdown(
-    documentId: DocumentId,
-    liveDoc: Y.Doc,
-    mutate: DraftMutation,
-    origin: RuntimeOrigin,
-    schemaType: YjsTrackedSchemaType,
-    hook: WriteHook = { kind: "now" },
-  ): Promise<Result<MarkdownSetResult, SyncError>> {
-    // This copy stages the change so serialization and journal admission
-    // both complete before the live document is mutated.
-    const draft = new Y.Doc({ gc: false });
-    Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
-    const beforeVector = Y.encodeStateVector(draft);
-    const yjsOrigin = yjsTransactionOrigin(origin);
-    const mutated = await mutate(draft, yjsOrigin);
-    if (!mutated.ok) {
-      draft.destroy();
-      return mutated;
-    }
-    const update = Y.encodeStateAsUpdate(draft, beforeVector);
-    const links = await spelling(documentId, [draft]);
-    // Serialize before admission: content the codec can't spell must fail
-    // while the journal and live document are still untouched.
-    const markdown = serializeForSchema(documentId, draft, schemaType, links);
-    const meta = deps.metaForOrigin(origin);
-    const seq = await deps.journal.append(documentId, update, meta, documentAuthority(liveDoc));
-    // Inside a transaction `liveDoc` takes the row only once the root commits, never
-    // before (LOCK-WS): a door acquired in the transaction handed out a private copy, and
-    // one acquired before it (a held write) handed out the open room itself, whose
-    // holder keeps the mutex through the commit so `deliver` couldn't run here.
-    const apply = async () => {
-      Y.applyUpdate(liveDoc, update, yjsOrigin);
-      if (hook.kind === "after-commit")
-        await deps.afterWrite?.({ documentId, threadId: hook.threadId });
-    };
-    if (!deps.deferUntilCommit?.(apply)) await apply();
-    return Ok({
-      documentId,
-      markdown,
-      updateSeq: seq,
-      updateData: update,
-      meta: { ...meta, seq },
+  async function changeDocument(
+    input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
+    change: DocumentChange,
+    format: { schemaType: YjsTrackedSchemaType },
+  ): Promise<Result<{ markdown: string }, SyncError>> {
+    const result = await deps.transaction(async (tx) => {
+      await deps.lockDocument(input.documentId);
+      const room = liveRoom(input.documentId);
+      const docs = await deps.rooms.read(room);
+      try {
+        const before = docs.version();
+        const doc = new LoroDocument(docs, deps.schema, writeOptionsOf(input.origin));
+        const changed = await change(doc);
+        if (!changed.ok) return changed;
+        const update = docs.exportSince(before);
+        if (update.size > 0)
+          await deps.rooms.commit(tx, room, encodeEnvelope(update), roomOriginOf(input.origin));
+        const blocks = blocksOf(doc);
+        const links = await spelling(input.documentId, blocks);
+        return Ok({ markdown: serializeForSchema(blocks, format.schemaType, links) });
+      } finally {
+        docs.free();
+      }
     });
+    if (result.ok)
+      await deps.afterWrite?.({ documentId: input.documentId, threadId: input.threadId });
+    return result;
   }
 
-  async function setMarkdown(input: {
-    documentId: DocumentId;
-    content: BoundWrite;
-    origin: RuntimeOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<MarkdownSetResult, SyncError>> {
-    const resolvedFormat = await documentFormat(input.documentId);
-    if (!resolvedFormat.ok) return resolvedFormat;
-    const format = resolvedFormat.value;
-    const content = checkBound(input.documentId, input.content, format, "write");
-    if (!content.ok) return content;
-    return changeDocument(
-      input,
-      (draft, yjsOrigin) => overwriteDraft(input.documentId, draft, content.value, yjsOrigin),
-      format,
+  async function readVersionedMarkdown(
+    documentId: string,
+  ): Promise<Result<{ content: string; revision: string }, SyncError>> {
+    const id = documentId as DocumentId;
+    const format = await documentFormat(id);
+    if (!format.ok) return format;
+    return Ok(
+      await readRoom(liveRoom(id), (doc) =>
+        versionedRead(id, doc, LIVE_VIEW, format.value.schemaType),
+      ),
     );
   }
 
-  async function changeDocument(
-    input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
-    mutate: DraftMutation,
-    format: { schemaType: YjsTrackedSchemaType },
-    /** The change reads the live text: take the document's lock before reading it. */
-    readsLive = false,
-  ): Promise<Result<MarkdownSetResult, SyncError>> {
+  /** A document with fresh bound content as its only state, as a seed's envelope of snapshots. */
+  function seedOf(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array {
+    const docs = RoomDocs.create(shape, freshServerPeerId());
     try {
-      await ensureDocumentAuthority(input.documentId);
-      if (readsLive) await deps.lockDocument?.(input.documentId);
-      const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
-        replaceLiveDocumentMarkdown(
-          input.documentId,
-          liveDoc,
-          mutate,
-          input.origin,
-          format.schemaType,
-        ),
-      );
-      if (result.ok) {
-        await deps.afterWrite?.({
-          documentId: result.value.documentId,
-          threadId: input.threadId,
-        });
-      }
-      return result;
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) {
-        return Err({ code: "not_found", documentId: input.documentId });
-      }
-      throw cause;
-    }
-  }
-
-  /**
-   * Seeds an empty document when none has state, else does nothing; the unlocked read skips
-   * the write transaction for the common case. Nothing else holds the text: it is an empty
-   * document, not the empty paragraph a parse would give. Rooms recover after the boundary
-   * that makes the state durable.
-   */
-  async function ensureDocumentAuthority(documentId: DocumentId): Promise<void> {
-    if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
-    const doc = new Y.Doc({ gc: false });
-    try {
-      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
-        documentId,
-        Y.encodeStateAsUpdate(doc),
-      );
-      if (!seeded) return;
+      const doc = new LoroDocument(docs, deps.schema, writeOptionsOf(origin));
+      if (content.blocks.length > 0)
+        model.insertBlocks(toLoroHandle(doc), null, { blocks: [...content.blocks] });
+      return encodeEnvelope(docs.snapshots());
     } finally {
-      doc.destroy();
-    }
-    const deliver = () => deps.coordinator.deliver(documentId);
-    if (!deps.deferUntilCommit?.(deliver)) await deliver();
-  }
-
-  /** What a document with no text starts from: no structs, the placeholder a first checkpoint replaces. */
-  function emptySeedState(): Uint8Array {
-    const doc = new Y.Doc({ gc: false });
-    try {
-      return Y.encodeStateAsUpdate(doc);
-    } finally {
-      doc.destroy();
+      docs.free();
     }
   }
 
-  /** A document holding fresh bound content as its first state, written with the seed's origin. */
-  function seedDocOf(content: BoundWrite, origin: DocumentSeedOrigin): Y.Doc {
-    const doc = new Y.Doc({ gc: false });
-    doc.transact(() => {
-      deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...content.blocks] });
-    }, yjsTransactionOrigin(origin));
-    return doc;
-  }
+  return {
+    readRoom,
 
-  async function installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean> {
-    const seeded = await deps.initialDocumentSeeds.seedInitialDocument(documentId, state);
-    const deliver = () => deps.coordinator.deliver(documentId);
-    // An enclosing aggregate may still roll back after the checkpoint is written. Deliver to the
-    // rooms only after that durable boundary.
-    if (!deps.deferUntilCommit?.(deliver)) await deliver();
-    return seeded;
-  }
+    currentBlocks: (documentId) =>
+      readRoom(liveRoom(documentId), async (doc) => (hasState(doc.docs) ? blocksOf(doc) : null)),
 
-  const engine: MarkdownDocumentEngine = {
-    async serializeDocument(documentId, doc, view) {
+    async serializeVersionedDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      const links = await spelling(documentId, [doc], view);
-      return serializeForSchema(documentId, doc, format.value.schemaType, links);
-    },
-
-    async readFrozenMarkdown(documentId) {
-      const snapshot = await deps.journal.read(documentId);
-      if (!snapshot.checkpoint && snapshot.updates.length === 0) return "";
-      const doc = storedDocument(snapshot);
-      try {
-        return await engine.serializeDocument(documentId, doc, LIVE_VIEW);
-      } finally {
-        doc.destroy();
-      }
-    },
-
-    async serializeVersionedDocument(documentId, doc, view, model) {
-      const format = await documentFormat(documentId);
-      if (!format.ok) throwSyncError(format.error);
-      const links = await spelling(documentId, [doc], view);
-      return versioned(doc, links, (doc) =>
-        serializeForSchema(documentId, doc, format.value.schemaType, links, deps.codec, model),
-      );
-    },
-
-    async restoreFromYDoc(documentId, snapshot, origin) {
-      const format = await documentFormat(documentId);
-      if (!format.ok) return format;
-      // Restore the snapshot's nodes as projected: a Markdown round trip would
-      // drop every attribute the codec does not spell.
-      const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
-      const links = await spelling(documentId, [snapshot]);
-      const markdown = serializeForSchema(documentId, snapshot, format.value.schemaType, links);
-      // A forward write onto what the document holds now, aligned so unchanged text keeps its
-      // items: a tab or the AI that wrote against the old text merges into the restored text
-      // like any concurrent edit. Installing the snapshot's bytes instead would leave every
-      // copy made since unable to merge.
-      return changeDocument(
-        { documentId, origin },
-        (draft, yjsOrigin) =>
-          overwriteDraft(documentId, draft, { fresh: false, blocks, markdown }, yjsOrigin),
-        format.value,
-      );
+      return versionedRead(documentId, doc, view, format.value.schemaType);
     },
 
     async readForExport(documentId, scope) {
-      try {
-        const typedDocumentId = documentId as DocumentId;
-        await ensureDocumentAuthority(typedDocumentId);
-        const format = await documentFormat(typedDocumentId);
-        if (!format.ok) return format;
-        return Ok(
-          await deps.coordinator.withDocument(documentId, async (doc) => {
-            const links = await spelling(typedDocumentId, [doc]);
-            return serializeForSchema(
-              typedDocumentId,
-              doc,
-              format.value.schemaType,
-              scope(links),
-              deps.exportCodec,
-            );
-          }),
-        );
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-        throw cause;
-      }
+      const id = documentId as DocumentId;
+      const format = await documentFormat(id);
+      if (!format.ok) return format;
+      return Ok(
+        await readRoom(liveRoom(id), async (doc) => {
+          const blocks = blocksOf(doc);
+          const links = await spelling(id, blocks);
+          return serializeForSchema(
+            blocks,
+            format.value.schemaType,
+            scope(links),
+            deps.exportCodec,
+          );
+        }),
+      );
     },
 
     async readAsMarkdown(documentId) {
-      const read = await engine.readVersionedMarkdown(documentId);
+      const read = await readVersionedMarkdown(documentId);
       return read.ok ? Ok(read.value.content) : read;
     },
 
-    async readVersionedMarkdown(documentId) {
-      try {
-        await ensureDocumentAuthority(documentId as DocumentId);
-        const format = await documentFormat(documentId as DocumentId);
-        if (!format.ok) return format;
-        const markdown = await deps.coordinator.withDocument(documentId, async (doc) => {
-          const links = await spelling(documentId as DocumentId, [doc]);
-          return versioned(doc, links, (doc) =>
-            serializeForSchema(documentId as DocumentId, doc, format.value.schemaType, links),
-          );
-        });
-        return Ok(markdown);
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-        throw cause;
-      }
-    },
-
-    setMarkdown,
-
-    ensureDocumentAuthority,
+    readVersionedMarkdown,
 
     async seedFromMarkdown(documentId, content, origin) {
-      const typedDocumentId = documentId as DocumentId;
-      const format = await documentFormat(typedDocumentId);
+      const id = documentId as DocumentId;
+      const format = await documentFormat(id);
       if (!format.ok) return format;
-      const bound = checkBound(typedDocumentId, content, format.value, "seed");
+      const bound = checkBound(id, content, format.value, "seed");
       if (!bound.ok) return bound;
       if (!bound.value.fresh) {
         throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
-      const seededDoc = seedDocOf(bound.value, origin);
-      const seeded = await installSeed(typedDocumentId, Y.encodeStateAsUpdate(seededDoc));
-      if (seeded) {
-        await deps.afterWrite?.({ documentId: typedDocumentId });
-      }
-      return Ok(null);
+      const seeded = await deps.transaction(async (tx) => {
+        await deps.lockDocument(id);
+        const room = liveRoom(id);
+        const docs = await deps.rooms.read(room);
+        const held = hasState(docs);
+        docs.free();
+        if (held) return false;
+        await deps.rooms.seed(tx, room, seedOf(bound.value, origin));
+        return true;
+      });
+      if (seeded) await deps.afterWrite?.({ documentId: id });
+      return Ok(undefined);
     },
 
-    encodeSeed(content, origin) {
-      const doc = seedDocOf(content, origin);
-      try {
-        return Y.encodeStateAsUpdate(doc);
-      } finally {
-        doc.destroy();
-      }
-    },
+    encodeSeed: seedOf,
 
     async installSeeds(seeds) {
-      const empty = emptySeedState();
-      await deps.initialDocumentSeeds.seedInitialDocuments(
-        seeds.map(({ documentId, state }) => ({ documentId, state: state ?? empty })),
+      const states = seeds.filter(
+        (seed): seed is { documentId: DocumentId; state: Uint8Array } => seed.state !== null,
       );
-      const deliver = async () => {
-        await Promise.all(seeds.map(({ documentId }) => deps.coordinator.deliver(documentId)));
-      };
-      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+      if (states.length === 0) return;
+      await deps.transaction(async (tx) => {
+        for (const { documentId, state } of states)
+          await deps.rooms.seed(tx, liveRoom(documentId), state);
+      });
     },
 
     async writeDocument(input) {
-      const result = await identityPreservingSet(input);
-      if (!result.ok) throwSyncError(result.error);
-      return documentWriteResult(result.value, input.origin);
+      const format = await documentFormat(input.documentId);
+      if (!format.ok) throwSyncError(format.error);
+      const content = checkBound(input.documentId, input.content, format.value, "write");
+      if (!content.ok) throwSyncError(content.error);
+      const written = await changeDocument(
+        input,
+        (doc) => overwrite(input.documentId, doc, content.value),
+        format.value,
+      );
+      if (!written.ok) throwSyncError(written.error);
+      const { origin } = input;
+      return {
+        documentId: input.documentId,
+        markdown: written.value.markdown,
+        originType: origin.type,
+        actorTurnId: origin.type === "agent" ? origin.actorTurnId : null,
+        actorUserId: origin.type === "user" ? origin.actorUserId : null,
+      };
+    },
+
+    async writeCreatedContent(input) {
+      const format = await documentFormat(input.documentId);
+      if (!format.ok) throwSyncError(format.error);
+      const written = await changeDocument(
+        input,
+        (doc) =>
+          overwrite(input.documentId, doc, {
+            fresh: false,
+            blocks: input.content.blocks,
+            markdown: input.content.markdown,
+          }),
+        format.value,
+      );
+      if (!written.ok) throwSyncError(written.error);
     },
 
     async mergeCodeText({ documentId, base, target, origin }) {
@@ -663,25 +466,23 @@ export function createMarkdownDocumentEngine(
       try {
         const written = await changeDocument(
           { documentId, origin },
-          (draft, yjsOrigin) => {
-            const block = projectBlocks(documentId, draft, (blocks) => blocks[0]);
+          async (doc) => {
+            const [block] = blocksOf(doc);
             const live = block?.textContent ?? "";
             result = mergeCodeText({ base, live, target });
             const merged = result.text;
-            // Raised before anything is staged or admitted: nothing to write, nothing to announce.
+            // Raised before anything is committed: nothing to write, nothing to announce.
             if (merged === live) throw new MergeChangesNothing();
             const next = block
               ? block.type.create(block.attrs, merged ? block.type.schema.text(merged) : undefined)
               : undefined;
-            return overwriteDraft(
-              documentId,
-              draft,
-              { fresh: false, blocks: next ? [next] : [], markdown: merged },
-              yjsOrigin,
-            );
+            return overwrite(documentId, doc, {
+              fresh: false,
+              blocks: next ? [next] : [],
+              markdown: merged,
+            });
           },
           format.value,
-          true,
         );
         return written.ok ? Ok({ ...result, changed: true }) : written;
       } catch (cause) {
@@ -689,240 +490,38 @@ export function createMarkdownDocumentEngine(
         throw cause;
       }
     },
-
-    async withLiveDocument(documentId, operation) {
-      await ensureDocumentAuthority(documentId as DocumentId);
-      return deps.coordinator.withDocument(documentId, (doc) =>
-        operation({ documentId: documentId as DocumentId, doc }),
-      );
-    },
-
-    writeDocumentHeld,
-    async changeLiveDocument({ documentId, origin, mutate }) {
-      const format = await documentFormat(documentId);
-      if (!format.ok) throwSyncError(format.error);
-      const result = await changeDocument(
-        { documentId, origin },
-        (doc, yjsOrigin) => {
-          doc.transact(() => mutate(doc, yjsOrigin), yjsOrigin);
-          return Ok(undefined);
-        },
-        format.value,
-        true,
-      );
-      if (!result.ok) throwSyncError(result.error);
-    },
-  };
-  return engine;
-
-  /**
-   * A revealed document's first content (§6.3 B3): the ordinary whole-document overwrite,
-   * applied under the caller's held lease, accepting only creation-bound content for the
-   * expected address, journaled in the caller's transaction and delivered to the open room after commit.
-   */
-  async function writeDocumentHeld(input: {
-    held: HeldLiveDocument;
-    content: BoundWrite;
-    expected: HeldWriteExpectation;
-    origin: DocumentWriteOrigin | DocumentSeedOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<HeldWriteStaged, SyncError>> {
-    const { held } = input;
-    const format = await documentFormat(held.documentId);
-    if (!format.ok) return format;
-    const content = checkBound(held.documentId, input.content, format.value, {
-      reveal: input.expected,
-    });
-    if (!content.ok) return content;
-    const written = await replaceLiveDocumentMarkdown(
-      held.documentId,
-      held.doc,
-      (draft, yjsOrigin) => overwriteDraft(held.documentId, draft, content.value, yjsOrigin),
-      input.origin,
-      format.value.schemaType,
-      { kind: "after-commit", threadId: input.threadId },
-    );
-    return written.ok
-      ? Ok({ markdown: written.value.markdown, updateSeq: written.value.updateSeq })
-      : written;
-  }
-
-  async function identityPreservingSet(input: {
-    documentId: DocumentId;
-    content: BoundWrite;
-    origin: DocumentWriteOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<MarkdownSetResult, SyncError>> {
-    const format = await documentFormat(input.documentId);
-    if (!format.ok) return format;
-    if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
-    const shaped = checkBound(input.documentId, input.content, format.value, "write");
-    if (!shaped.ok) return shaped;
-    await ensureDocumentAuthority(input.documentId);
-    const actor = mutationActor(input.origin, input.threadId);
-    const outcome = await deps.identityPreservingWrite({
-      documentId: input.documentId,
-      content: input.content,
-      actor,
-    });
-    if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
-    // Inside the caller's transaction the door reads a private copy holding this transaction's
-    // rows, the save's own state; the open room takes them only once the root commits.
-    const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      serializeForSchema(
-        input.documentId,
-        doc,
-        format.value.schemaType,
-        await spelling(input.documentId, [doc]),
-      ),
-    );
-    const snapshot = await deps.journal.read(input.documentId);
-    const latest = snapshot.updates.at(-1);
-    await deps.afterWrite?.({ documentId: input.documentId, threadId: input.threadId });
-    return Ok({
-      documentId: input.documentId,
-      markdown,
-      updateSeq: latest?.seq ?? 0,
-      updateData: latest?.update ?? new Uint8Array(),
-      meta: latest?.meta ?? deps.metaForOrigin(input.origin),
-    });
-  }
-}
-
-type ClockRange = {
-  client: number;
-  clockFrom: number;
-  clockTo: number;
-};
-
-type XmlNodeSpan = ClockRange & {
-  nodeType: string;
-};
-
-function xmlNodeSpans(update: Uint8Array): XmlNodeSpan[] {
-  return Y.decodeUpdate(update).structs.flatMap((struct) => {
-    if (!(struct instanceof Y.Item) || !(struct.content instanceof Y.ContentType)) return [];
-    const node = struct.content.type;
-    if (!(node instanceof Y.XmlElement)) return [];
-    return [
-      {
-        client: struct.id.client,
-        clockFrom: struct.id.clock,
-        clockTo: struct.id.clock + struct.length,
-        nodeType: node.nodeName,
-      },
-    ];
-  });
-}
-
-function serializationAnomaly(
-  updates: Uint8Array[],
-  nodeSpans: XmlNodeSpan[],
-): { deletedNodeTypes: string[]; deletedClockCount: number } | null {
-  if (updates.length === 0) return null;
-  const ranges = mergeClockRanges(
-    updates.flatMap((update) =>
-      Array.from(Y.decodeUpdate(update).ds.clients, ([client, clientRanges]) =>
-        clientRanges.map(({ clock, len }) => ({
-          client,
-          clockFrom: clock,
-          clockTo: clock + len,
-        })),
-      ).flat(),
-    ),
-  );
-  const deletedNodeTypes = new Set<string>();
-  for (const node of nodeSpans) {
-    if (
-      ranges.some(
-        (range) =>
-          range.client === node.client &&
-          range.clockFrom < node.clockTo &&
-          node.clockFrom < range.clockTo,
-      )
-    ) {
-      deletedNodeTypes.add(node.nodeType);
-    }
-  }
-  return {
-    deletedNodeTypes: [...deletedNodeTypes].sort(),
-    deletedClockCount: ranges.reduce((count, range) => count + range.clockTo - range.clockFrom, 0),
   };
 }
 
-function mergeClockRanges(ranges: ClockRange[]): ClockRange[] {
-  const sorted = [...ranges].sort(
-    (left, right) => left.client - right.client || left.clockFrom - right.clockFrom,
-  );
-  const merged: ClockRange[] = [];
-  for (const range of sorted) {
-    const previous = merged.at(-1);
-    if (
-      previous !== undefined &&
-      previous.client === range.client &&
-      range.clockFrom <= previous.clockTo
-    ) {
-      previous.clockTo = Math.max(previous.clockTo, range.clockTo);
-    } else {
-      merged.push({ ...range });
-    }
-  }
-  return merged;
+/** Whether a copy holds any state: a document no write has reached has no rows and no ops. */
+function hasState(docs: RoomDocs): boolean {
+  return [...docs.version().values()].some((vv) => vv.toJSON().size > 0);
+}
+
+/** An agent's write carries its turn as the commit message: who changed what reads it (design §5). */
+function writeOptionsOf(origin: RuntimeOrigin): WriteOptions {
+  return origin.type === "agent" ? { message: `turn:${origin.actorTurnId}` } : {};
+}
+
+function roomOriginOf(origin: RuntimeOrigin): RoomOrigin {
+  return origin.type === "agent" ? `server:turn:${origin.actorTurnId}` : `server:${origin.type}`;
 }
 
 /**
  * How a bound write may be applied: `write` to the document it was bound for; `seed` to
  * that document, to the document being created (its creator checks the address) or as
- * fixed static content; `reveal` only creation-bound content for exactly the expected
- * address, onto exactly the expected (revealed) document (contract §6.3 B3).
+ * fixed static content.
  */
-type HolderUse = "seed" | "write" | { reveal: HeldWriteExpectation };
+type HolderUse = "seed" | "write";
 
 /** A bound write certifies one holder; applying it to another document is a bug. */
 function assertHolder(documentId: DocumentId, content: BoundWrite, use: HolderUse): void {
   const { holder } = content;
-  if (typeof use === "object") {
-    if (
-      documentId !== use.reveal.documentId ||
-      holder.kind !== "new" ||
-      holder.uri !== use.reveal.uri
-    ) {
-      throw new Error(`Content bound for another holder cannot become ${use.reveal.uri}`);
-    }
-    return;
-  }
   if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {
     throw new Error(
       `Content bound for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,
     );
   }
-}
-
-export class DocumentMutationRejectedError extends Error {
-  readonly status: WriteOutcome["status"];
-
-  constructor(outcome: WriteOutcome) {
-    super(renderAgentEditResult(outcome.result));
-    this.name = "DocumentMutationRejectedError";
-    this.status = outcome.status;
-  }
-}
-
-function mutationActor(origin: DocumentWriteOrigin, threadId?: ThreadId): MutationActor {
-  if (origin.type === "user") {
-    return {
-      kind: "human",
-      userId: origin.actorUserId,
-      ...(threadId ? { threadId } : {}),
-    };
-  }
-  if (!threadId) throw new Error("Agent document writes require a threadId");
-  return {
-    kind: "agent",
-    turnId: origin.actorTurnId,
-    threadId,
-    responseId: origin.actorTurnId,
-  };
 }
 
 export function syncErrorMessage(error: SyncError): string {
@@ -931,8 +530,6 @@ export function syncErrorMessage(error: SyncError): string {
       return `Document not found: ${error.documentId}`;
     case "stale_document":
       return `Document changed under the write: ${error.documentId}`;
-    case "checkpoint_not_found":
-      return `Checkpoint not found: ${error.checkpointId}`;
     case "corrupt_state":
       return error.message;
   }
@@ -950,23 +547,4 @@ export class DocumentSyncError extends Error {
 
 function throwSyncError(error: SyncError): never {
   throw new DocumentSyncError(error);
-}
-
-function documentWriteResult(
-  result: MarkdownSetResult,
-  origin: DocumentWriteOrigin,
-): DocumentWriteResult {
-  return {
-    documentId: result.documentId,
-    markdown: result.markdown,
-    updateSeq: result.updateSeq,
-    updateData: Buffer.from(result.updateData),
-    originType: origin.type,
-    actorTurnId: origin.type === "agent" ? origin.actorTurnId : null,
-    actorUserId: origin.type === "user" ? origin.actorUserId : null,
-  };
-}
-
-function yjsTransactionOrigin(origin: RuntimeOrigin): TransactionOrigin {
-  return { source: "local", context: { origin } };
 }

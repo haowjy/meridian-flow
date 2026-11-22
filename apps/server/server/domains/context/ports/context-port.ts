@@ -88,7 +88,6 @@ export interface ContextWriteResult {
   uri: string;
   documentId?: string;
   markdown?: string;
-  updateSeq?: number;
 }
 
 /** A binary write's outcome: where it landed, as the adapter's placement decided (§2.3). */

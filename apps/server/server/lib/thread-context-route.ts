@@ -111,6 +111,5 @@ export async function writeThreadContextDocument(
     documentId: result.value.documentId,
     uri: result.value.uri,
     markdown: result.value.markdown ?? input.markdown,
-    updateSeq: result.value.updateSeq ?? 0,
   };
 }

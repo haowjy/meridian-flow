@@ -1,10 +1,9 @@
 // Whole-document overwrite: the correspondence a `create` with overwrite=true resolves, also
 // applied directly to a host's document for a bound write that is not an actor's mutation.
-import type * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
-import { type DocHandle, toDocHandle } from "../handles.js";
+import type { DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
   documentRevision,
@@ -49,7 +48,7 @@ export function resolveOverwrite(
  * they were keep their items. An empty document takes the nodes as an insertion.
  */
 export function overwriteWithAssigned(input: {
-  doc: Y.Doc;
+  doc: DocHandle;
   model: AgentEditModel;
   codec: AgentEditCodec;
   documentId: string;
@@ -58,12 +57,16 @@ export function overwriteWithAssigned(input: {
   blocks: readonly Block[];
   origin?: ApplyTransactionOrigin;
 }): { ok: true } | { ok: false; code: string; message: string } {
-  const handle = toDocHandle(input.doc);
+  const handle = input.doc;
   if (input.model.getBlocks(handle).length === 0) {
     if (input.blocks.length > 0) {
-      input.doc.transact(() => {
-        input.model.insertBlocks(handle, null, { blocks: [...input.blocks] });
-      }, input.origin);
+      input.model.transact(
+        handle,
+        () => {
+          input.model.insertBlocks(handle, null, { blocks: [...input.blocks] });
+        },
+        input.origin,
+      );
     }
     return { ok: true };
   }

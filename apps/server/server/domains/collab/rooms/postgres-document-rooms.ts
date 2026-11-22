@@ -1,3 +1,4 @@
+import type { DocumentId } from "@meridian/contracts";
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentSnapshots, documents, type StoredFrontiers } from "@meridian/database/schema";
@@ -12,7 +13,7 @@ import {
   type ShapeSchema,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { holdsFrontiers, writeSnapshots } from "../../../shared/document-snapshots.js";
@@ -100,6 +101,8 @@ export function createPostgresDocumentRooms(input: {
   eventSink: EventSink;
   /** The packed collab schema this server writes: a save raises `documents.schema_version` to it. */
   schemaVersion: number;
+  /** A save of a Live room's rows committed: its text moved for everyone who derives from it. */
+  onLiveSaved?(documentId: DocumentId): void;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
   const { db, shape, eventSink, schemaVersion } = input;
@@ -343,8 +346,13 @@ export function createPostgresDocumentRooms(input: {
     const bytes = await writeSnapshots(tx, rows);
     await tx
       .update(documents)
-      .set({ schemaVersion })
-      .where(and(eq(documents.id, room.documentId), lt(documents.schemaVersion, schemaVersion)));
+      .set({
+        schemaVersion: sql`greatest(${documents.schemaVersion}, ${schemaVersion})`,
+        // Live's saves move the document's content: its derivations are stale from here.
+        ...(room.kind === "live" ? { contentSeq: sql`${documents.contentSeq} + 1` } : {}),
+      })
+      .where(eq(documents.id, room.documentId));
+    if (room.kind === "live") deferUntilDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
     return { bytes, docs: rows.length };
   }
 

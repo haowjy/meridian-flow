@@ -1,25 +1,27 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
+import type { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { DraftPending } from "@meridian/suggestions";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 7;
+export const DOCUMENT_EXTRACTOR_VERSION = 8;
 export type DerivationWatermark = {
-  admissionSequence: bigint;
+  /** `documents.content_seq` when the cut was read. */
+  contentSeq: bigint;
   locationVersion: bigint;
   extractorVersion: number;
 };
 export type DocumentDerivationCut = {
   documentId: DocumentId;
   watermark: DerivationWatermark;
-  state: Uint8Array;
+  /** A copy of the Live room as the cut read it; whoever captured the cut frees it. */
+  doc: LoroDocument;
   holderUri: string | null;
 };
 /** One top-level block of the cut, in the shape the store keeps it. */
 export type DerivedBlock = {
-  /** "<clientID>:<clock>" of the block's own Yjs item. */
+  /** The block's id. */
   id: string;
   /** What `grep` matches (`grepBlockText`). */
   text: string;
@@ -30,8 +32,6 @@ export type DocumentDerivationOutputs = {
   /** In document order. */
   blocks: DerivedBlock[];
   wordCount: number;
-  /** By Work (`draftOwnerKey`), what its suggestions in the cut are: `blocks` is not its view. */
-  pendingChanges: Record<string, DraftPending>;
   /** Sum of the blocks' text bytes. */
   documentBytes: number;
   /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */
@@ -60,9 +60,8 @@ export type DocumentDerivationStore = {
   recoverAheads(after?: string): Promise<{ registered: number; next: string | null }>;
 };
 export type DocumentDerivationResult =
-  | { status: "derived"; stateVector: Uint8Array }
-  | { status: "missing" }
-  | { status: "deferred" };
+  /** `version`: the room version the derivation read (`encodeRoomVersion`). */
+  { status: "derived"; version: Uint8Array } | { status: "missing" } | { status: "deferred" };
 
 export type DocumentDerivationService = {
   derive(documentId: DocumentId, at?: Date): Promise<DocumentDerivationResult>;

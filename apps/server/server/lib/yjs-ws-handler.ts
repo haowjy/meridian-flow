@@ -304,9 +304,6 @@ async function classifyYjsConnectionAdmission(input: {
     refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
   }
   const admitted = found;
-  // The room's explicit touch: a living document missing its authority is seeded empty
-  // before the room loads.
-  await services.documentSync.ensureDocumentAuthority(documentId);
   const headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
     return {

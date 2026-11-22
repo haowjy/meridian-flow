@@ -1,12 +1,11 @@
 /**
  * One Agents level's package files, in the documents that hold them. A read is one snapshot of
- * the tree and of what each document has admitted, so the files are a state the level was in; it
- * reads the level's folder only, and the text only of documents whose content moved since the
- * last read.
+ * the tree; it reads the level's folder only, and the text only of documents whose saved content
+ * moved since the last read.
  */
 
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { documentYjsHeads } from "@meridian/database/schema";
+import { documents } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import {
   assertOutsideCommandTransaction,
@@ -29,23 +28,20 @@ export function createAgentLevelFiles(
 
   async function versionsOf(ids: string[]): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
-    const heads = await currentDrizzleDb(deps.db)
-      .select({
-        id: documentYjsHeads.documentId,
-        authority: documentYjsHeads.authorityId,
-        // Every admitted update moves this; `latestUpdateSeq` waits for the next checkpoint.
-        admitted: documentYjsHeads.nextAdmissionSequence,
-      })
-      .from(documentYjsHeads)
-      .where(inArray(documentYjsHeads.documentId, ids));
-    return new Map(heads.map((head) => [head.id, `${head.authority}:${head.admitted}`]));
+    // Every save of the document's Live room moves its `content_seq`.
+    const rows = await currentDrizzleDb(deps.db)
+      .select({ id: documents.id, seq: documents.contentSeq })
+      .from(documents)
+      .where(inArray(documents.id, ids as DocumentId[]));
+    return new Map(rows.map((row) => [row.id, String(row.seq)]));
   }
 
-  /** The text the journal holds, which a snapshot reads as of its own cut, never a warm room. */
+  /** The document's text, read again only when a save moved it since the cached read. */
   async function storedText(document: ContextDocument, version: string | undefined) {
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
-    const text = await deps.documentSync.readFrozenMarkdown(document.id as DocumentId);
+    const read = await deps.documentSync.readAsMarkdown(document.id);
+    const text = read.ok ? read.value : "";
     if (version !== undefined) {
       texts.delete(document.id);
       texts.set(document.id, { version, text });

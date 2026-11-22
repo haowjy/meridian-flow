@@ -2,13 +2,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  documentBlockRooms,
-  documentBlocks,
-  documents,
-  documentYjsHeads,
-  treeNodes,
-} from "@meridian/database";
+import { documentBlockRooms, documentBlocks, documents, treeNodes } from "@meridian/database";
 import { and, eq, inArray, isNull, lte, ne, not, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
@@ -23,11 +17,11 @@ export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVers
 );
 
 /**
- * Both predicates need `documentBlockRooms` left-joined to `documents`, `documentYjsHeads` and
- * `treeNodes`. `cutBehind`: the room's cut differs from the document's head or location.
+ * Both predicates need `documentBlockRooms` left-joined to `documents` and `treeNodes`.
+ * `cutBehind`: the derivation's cut differs from the document's saved content or location.
  */
 const cutBehind = [
-  ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
+  ne(documentBlockRooms.cutContentSeq, documents.contentSeq),
   sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,
 ];
 const otherExtractor = ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION);
@@ -72,7 +66,6 @@ export async function documentsHolding(
   return currentDrizzleDb(db)
     .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
     .from(documents)
-    .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
     .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
     .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(
@@ -111,7 +104,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
         })
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(
           and(
@@ -128,7 +120,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .select({ id: documentBlockRooms.documentId, words: documentBlockRooms.wordCount })
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(current(ids));
       return new Map(rows.map((row) => [row.id, row.words]));

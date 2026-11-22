@@ -33,7 +33,7 @@ class DocumentCreationFault extends Error {
 export interface LiveCreateDeps {
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority" | "seedFromMarkdown">;
+  documentSync: Pick<MarkdownDocumentStore, "seedFromMarkdown">;
   documentCreation: DocumentCreationAggregate;
   boundWrites: BoundWrites;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
@@ -122,10 +122,7 @@ export class LiveCreate {
           return made.value.id as DocumentId;
         },
         initializeContent: async (documentId) => {
-          if (!content) {
-            await this.deps.documentSync.ensureDocumentAuthority(documentId);
-            return "";
-          }
+          if (!content) return "";
           const provenance = options?.origin;
           const origin: DocumentSeedOrigin =
             provenance?.type === "import"

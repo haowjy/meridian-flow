@@ -252,6 +252,11 @@ export const documents = pgTable(
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+    /**
+     * Counts the saves of the document's Live room (its `document_snapshots` rows): a derivation
+     * certifies the count it read, and is stale once a save moves it.
+     */
+    contentSeq: bigint("content_seq", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     check(

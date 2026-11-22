@@ -4323,6 +4323,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 3003000
+        },
+        "content_seq": {
+          "name": "content_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
         }
       },
       "indexes": {
@@ -9148,8 +9155,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "cut_admission_seq": {
-          "name": "cut_admission_seq",
+        "cut_content_seq": {
+          "name": "cut_content_seq",
           "type": "bigint",
           "primaryKey": false,
           "notNull": true

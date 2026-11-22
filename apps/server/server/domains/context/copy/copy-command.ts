@@ -1,5 +1,6 @@
 import type { DraftId } from "@meridian/contracts";
 import type { ContextCommandDraft } from "../ports/context-command-transaction.js";
+
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -48,8 +49,9 @@ import type {
   CopyContextEntryCreated,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { decodeRoomVersion } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
-import { decodeStateVector } from "yjs";
+import type { VersionVector } from "loro-crdt";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -96,7 +98,7 @@ export interface CopySourceHandoff {
   /** The device-minted identity for this root's copy; descendants are server-minted. */
   copyId?: string;
   /**
-   * The client's own Yjs state vector, when it holds this document open. Only a file source
+   * The client's own room version (`encodeRoomVersion`), when it holds this document open. Only a file source
    * carries one; the cut compared against it is the view's room.
    */
   stateVector?: Uint8Array;
@@ -405,7 +407,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   ): Promise<Result<PreparedDocument, ContextError>> {
     const draft = source.view.kind === "draft" ? source.view : null;
     const documentId = file.documentId as DocumentId;
-    const client = clientVector ? decodeStateVector(clientVector) : null;
+    const client = clientVector ? decodeRoomVersion(clientVector) : null;
     const deadline = Date.now() + SOURCE_CATCH_UP_MS;
     for (;;) {
       const read = await deps.documentSync.readEffectiveBlocks(
@@ -662,10 +664,13 @@ function trimTrailingSlash(uri: string): string {
 }
 
 /** Whether the client's vector names updates this cut does not hold. */
-function behind(client: ReadonlyMap<number, number>, server: Uint8Array): boolean {
-  const held = decodeStateVector(server);
-  for (const [clientId, clock] of client) {
-    if (clock > (held.get(clientId) ?? 0)) return true;
+/** Whether the client's copy holds an op the server's cut lacks, in any doc of the room. */
+function behind(client: ReadonlyMap<string, VersionVector>, server: Uint8Array): boolean {
+  const held = decodeRoomVersion(server);
+  for (const [key, vector] of client) {
+    if (vector.toJSON().size === 0) continue;
+    const order = held.get(key)?.compare(vector);
+    if (order === undefined || order < 0) return true;
   }
   return false;
 }

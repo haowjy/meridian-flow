@@ -105,16 +105,9 @@ export type PgTreeListStore = TreeListStore & {
 };
 
 /** A text document a create in a Work's version made: it needs that Work's text draft. */
-export type DraftedDocument = { documentId: DocumentId; draftId: DraftId };
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
-  /**
-   * Makes the Live room of each drafted document in the admitting transaction, under the list's
-   * key, so the document opens in its Work as soon as its create is admitted. Collab's
-   * (`seedWorkCreates`); a composition without collab makes rows only.
-   */
-  seedWorkCreates?: (created: readonly DraftedDocument[]) => Promise<void>;
   /**
    * A Work's or lineage's review count follows its draft's rows, which a tree commit may change
    * outside any Work lock: the Works boundary recounts them once the commit lands.
@@ -311,12 +304,6 @@ export function createDrizzleTreeListStore(deps: {
       });
     }
     await testHook("treeList.afterRows");
-    const drafted = made.flatMap((record) =>
-      record.kind === "document" && record.draft !== null
-        ? [{ documentId: record.node as DocumentId, draftId: record.draft as DraftId }]
-        : [],
-    );
-    if (drafted.length > 0) await deps.seedWorkCreates?.(drafted);
     const committed = { listId, update };
     const owner = copy.pending;
     runAfterDrizzleCommit(async () => {

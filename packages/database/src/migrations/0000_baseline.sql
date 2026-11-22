@@ -441,6 +441,7 @@ CREATE TABLE "documents" (
 	"content_purged_at" timestamp with time zone,
 	"in_no_view_since" timestamp with time zone,
 	"schema_version" integer DEFAULT 3003000 NOT NULL,
+	"content_seq" bigint DEFAULT 0 NOT NULL,
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
 	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0),
 	CONSTRAINT "documents_one_owner" CHECK (num_nonnulls("documents"."project_id", "documents"."user_id") = 1)
@@ -919,7 +920,7 @@ CREATE TABLE "document_block_rooms" (
 	"word_count" integer NOT NULL,
 	"pending_changes" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"document_hash" "bytea" NOT NULL,
-	"cut_admission_seq" bigint NOT NULL,
+	"cut_content_seq" bigint NOT NULL,
 	"cut_location_version" bigint NOT NULL,
 	"extractor_version" integer NOT NULL
 );
