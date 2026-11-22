@@ -2,9 +2,10 @@
  * Releases purged documents' content, the one way a document ends for good: its rooms' snapshots
  * and everything that was only about its text and history. The `documents` row stays, marked
  * `content_purged_at` and stripped of its bytes, so a link bound to it still resolves to "gone".
- * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts;
- * the documents' loaded rooms end first, so a save waiting on those locks finds nothing to write;
- * the caller deletes the returned storage objects after the commit.
+ * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts.
+ * A snapshot write for a purged document writes nothing, so a save waiting on those locks cannot
+ * bring the content back; the loaded rooms end after the commit, and the caller deletes the
+ * returned storage objects then too.
  */
 
 import type { DocumentId } from "@meridian/contracts";
@@ -24,14 +25,14 @@ import {
   userRecentDocuments,
 } from "@meridian/database/schema";
 import { and, inArray, isNull } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { liveRoom } from "../../collab/index.js";
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 export async function releaseDocumentContent(
   db: Database,
-  /** Collab's `endDocumentRooms`: the loaded rooms end unsaved, so nothing saves the text back. */
+  /** Collab's `endDocumentRooms`, run after the commit: the loaded rooms end unsaved. */
   endRooms: (documentIds: readonly DocumentId[]) => Promise<void>,
   documentIds: readonly DocumentId[],
 ): Promise<Released> {
@@ -43,7 +44,7 @@ export async function releaseDocumentContent(
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
-  await endRooms(list);
+  deferUntilDrizzleCommit(() => endRooms(list));
   // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx.delete(documentSnapshots).where(inArray(documentSnapshots.roomKey, list.map(liveRoom)));

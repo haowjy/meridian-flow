@@ -50,8 +50,11 @@ One window (`deletionPurgeCutoff`) for both kinds.
   Work's transaction: it deletes what stands, then appends a `purge` record per Trash entry the
   sources hold (`projects/adapters/drizzle-work-purge.ts`), then releases the documents.
 - **Release** (`release-document-content.ts`, the one way a document ends): the journal, derived rows and drafts go; the
-  `documents` row stays, marked `content_purged_at`, so a bound link resolves to "gone". Storage
-  objects are deleted after the commit.
+  `documents` row stays, marked `content_purged_at`, so a bound link resolves to "gone". The
+  documents' loaded rooms end and storage objects are deleted after the commit. A purged document
+  holds no content: every snapshot write (`writeRows` in the collab rooms) runs under the
+  document's lock and writes nothing once `content_purged_at` is set, so a save, socket batch or
+  AI commit that was waiting on the purge cannot bring the rows back.
 
 ## Import
 

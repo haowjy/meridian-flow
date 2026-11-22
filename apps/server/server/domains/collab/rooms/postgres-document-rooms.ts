@@ -76,12 +76,11 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   close(): Promise<void>;
   /**
    * Ends the documents' loaded rooms, Live and forks, without saving: timers stop, unsaved
-   * batches are dropped and the docs are freed, so no save can run for them afterwards. A caller
-   * that deletes the documents' rows calls it inside the transaction that holds their locks (a
-   * save already waiting on one of them then finds its room gone). It also deletes the Live rows
-   * of documents that never got a `documents` row (an import that stopped wrote their first states
-   * ahead of their creates); a document with a row keeps its rows here: its row's delete, or
-   * the caller, takes them.
+   * batches are dropped and the docs are freed. A purge calls it after its transaction commits
+   * (a rollback leaves the rooms as they were); until then a save writes nothing for a purged
+   * document (`writeRows`). It also deletes the Live rows of documents that never got a
+   * `documents` row (an import that stopped wrote their first states ahead of their creates); a
+   * document with a row keeps its rows here: its row's delete, or the purge, takes them.
    */
   end(documentIds: readonly DocumentId[]): Promise<void>;
 }
@@ -102,6 +101,8 @@ interface Loaded {
   snapshotBytes: number;
   /** Saves and the unload run one at a time, in this order. */
   queue: Promise<void>;
+  /** Saves queued or running; the tracked save settles only when none is left. */
+  saving: number;
   /** Set once an unload starts; a load of the same room waits for it. */
   unloading: Promise<void> | null;
 }
@@ -242,6 +243,7 @@ export function createPostgresDocumentRooms(input: {
         lastUsed: Date.now(),
         snapshotBytes: rows.reduce((sum, row) => sum + row.snapshot.byteLength, 0),
         queue: Promise.resolve(),
+        saving: 0,
         unloading: null,
       };
       rooms.set(name, loaded);
@@ -375,6 +377,13 @@ export function createPostgresDocumentRooms(input: {
     docs: RoomDocs,
     keys: Iterable<DocKey>,
   ) {
+    // A purged document holds no content: every write to its rows runs under its lock, which the
+    // purge held, so this read decides whether the write comes before or after the purge.
+    const [row] = await tx
+      .select({ purgedAt: documents.contentPurgedAt })
+      .from(documents)
+      .where(eq(documents.id, room.documentId));
+    if (row?.purgedAt) return { bytes: 0, docs: 0 };
     const rows = [...keys].flatMap((docKey) => {
       const doc = docs.doc(docKey);
       return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
@@ -395,25 +404,22 @@ export function createPostgresDocumentRooms(input: {
 
   /** One save of a loaded room's unsaved docs, queued behind the room's other saves. */
   function save(loaded: Loaded, reason: string): Promise<void> {
-    const run = loaded.queue.then(() => saveNow(loaded, reason));
+    loaded.saving++;
+    const run = loaded.queue.then(() => saveUnlessIdle(loaded, reason));
     // The next save waits for this one to settle; this one's caller hears its failure.
-    loaded.queue = Promise.allSettled([run]).then(() => undefined);
+    loaded.queue = Promise.allSettled([run]).then(() => {
+      loaded.saving--;
+      settleIfIdle(loaded);
+    });
     return run;
   }
 
   /** Whatever ended a save or dropped the room's dirty docs: nothing is waiting any more. */
   function settleIfIdle(loaded: Loaded) {
-    if (loaded.saveTimer || (loaded.dirty.size > 0 && !loaded.docs.isFreed)) return;
+    if (loaded.saving > 0 || loaded.saveTimer || (loaded.dirty.size > 0 && !loaded.docs.isFreed))
+      return;
     loaded.settleSave?.();
     loaded.settleSave = null;
-  }
-
-  async function saveNow(loaded: Loaded, reason: string) {
-    try {
-      await saveUnlessIdle(loaded, reason);
-    } finally {
-      settleIfIdle(loaded);
-    }
   }
 
   async function saveUnlessIdle(loaded: Loaded, reason: string) {
@@ -781,6 +787,8 @@ export function createPostgresDocumentRooms(input: {
         loaded.dirty = new Set();
         loaded.firstDirtyAt = 0;
         if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+        // A save already running finishes with the docs it started on.
+        await loaded.queue;
         loaded.docs.free();
         settleIfIdle(loaded);
       }
