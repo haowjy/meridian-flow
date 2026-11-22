@@ -492,7 +492,7 @@ export function createMarkdownDocumentEngine<Tx>(
 
 /** Whether a copy holds any state: a document no write has reached has no rows and no ops. */
 function hasState(docs: RoomDocs): boolean {
-  return [...docs.version().values()].some((vv) => vv.toJSON().size > 0);
+  return [...docs.owned()].some(([, doc]) => doc.oplogFrontiers().length > 0);
 }
 
 /** An agent's write carries its turn as the commit message: who changed what reads it (design §5). */

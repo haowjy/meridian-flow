@@ -35,9 +35,13 @@ export interface DocChange {
 
 /** A doc's update from `before` on: the ops one change wrote, to publish. */
 export function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
-  return before.length === 0
-    ? doc.export({ mode: "update" })
-    : doc.export({ mode: "update", from: doc.frontiersToVV(before) });
+  if (before.length === 0) return doc.export({ mode: "update" });
+  const from = doc.frontiersToVV(before);
+  try {
+    return doc.export({ mode: "update", from });
+  } finally {
+    from.free();
+  }
 }
 
 export interface WriteOptions {

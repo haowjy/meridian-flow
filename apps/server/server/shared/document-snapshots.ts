@@ -48,7 +48,9 @@ export const loroFrontiers = (frontiers: StoredFrontiers) =>
 export function holdsFrontiers(doc: LoroDoc | undefined, frontiers: StoredFrontiers): boolean {
   if (!doc) return false;
   try {
-    return doc.frontiersToVV(loroFrontiers(frontiers)) !== undefined;
+    const vector = doc.frontiersToVV(loroFrontiers(frontiers));
+    vector?.free();
+    return vector !== undefined;
   } catch {
     return false;
   }

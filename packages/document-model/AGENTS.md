@@ -28,7 +28,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
   only with what the docs read as now; with neither, both work on the whole document.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
-  shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
+  shape with version vectors (`encodeRoomVersion`). In code a version is plain peer counters
+  (`DocVersion`, `RoomVersion`, `version.ts`), never a Loro `VersionVector`: a vector is WASM
+  memory too, and versions are read on every batch, so one that escapes leaks per keystroke for
+  the life of a tab or the server. A function that needs a vector makes it with `withVector` or
+  reads one out with `plainVersion`, which free it. Import and acknowledge a batch as one:
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.

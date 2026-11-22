@@ -5,10 +5,14 @@
  */
 import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
 import {
+  type DocVersion,
   decodeEnvelope,
   decodeRoomVersion,
+  docCovers,
+  docVersion,
   encodeEnvelope,
   freshPeerId,
+  withVector,
 } from "@meridian/document-model";
 import {
   type CreateRecord,
@@ -20,7 +24,7 @@ import {
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import { LoroDoc, type VersionVector } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import { CliError } from "../../core/cli-error";
 import { LoroSocket } from "../../core/loro-socket";
 import type { Session } from "../../core/session";
@@ -30,7 +34,7 @@ const SYNC_TIMEOUT_MS = 15_000;
 /** The list's one doc in its room's envelope. */
 const LIST_DOC = "s";
 
-type Connection = { doc: LoroDoc; socket: LoroSocket; room: string; sent: VersionVector };
+type Connection = { doc: LoroDoc; socket: LoroSocket; room: string; sent: DocVersion };
 
 /** A fresh copy of the list, joined to its room and holding everything the server stores. */
 async function connect(session: Session, list: TreeListRef): Promise<Connection> {
@@ -50,7 +54,7 @@ async function connect(session: Session, list: TreeListRef): Promise<Connection>
     });
     const served = decodeRoomVersion(answer.version).get(LIST_DOC);
     const deadline = Date.now() + SYNC_TIMEOUT_MS;
-    while (served && doc.oplogVersion().compare(served) === -1) {
+    while (served && !docCovers(docVersion(doc), served)) {
       if (Date.now() > deadline)
         throw new CliError(
           "unavailable",
@@ -58,7 +62,7 @@ async function connect(session: Session, list: TreeListRef): Promise<Connection>
         );
       await new Promise((done) => setTimeout(done, 20));
     }
-    return { doc, socket, room, sent: doc.oplogVersion() };
+    return { doc, socket, room, sent: docVersion(doc) };
   } catch (error) {
     socket.close();
     doc.free();
@@ -98,8 +102,8 @@ export class TreeList {
   async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
     const { main } = this;
     const records = [...make(new TreeWriter(main.doc))];
-    const update = main.doc.export({ mode: "update", from: main.sent });
-    main.sent = main.doc.oplogVersion();
+    const update = withVector(main.sent, (from) => main.doc.export({ mode: "update", from }));
+    main.sent = docVersion(main.doc);
     await main.socket.send(main.room, encodeEnvelope(new Map([[LIST_DOC, update]])));
     const check = await connect(this.session, this.list);
     try {

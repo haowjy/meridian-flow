@@ -690,14 +690,11 @@ export function createPostgresDocumentRooms(input: {
 
     async sync(room, version) {
       const loaded = await load(room);
-      const since = decodeRoomVersion(version);
-      const update = loaded.docs.exportSince(since);
-      const sync = {
+      const update = loaded.docs.exportSince(decodeRoomVersion(version));
+      return {
         version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
       };
-      for (const vector of since.values()) vector.free();
-      return sync;
     },
 
     async write(room, batch, origin) {

@@ -159,7 +159,7 @@ function parseRoomVersion(raw: unknown, kind: "file" | "folder"): Uint8Array | u
   const bytes = typeof raw === "string" ? Uint8Array.from(Buffer.from(raw, "base64")) : null;
   try {
     if (!bytes || bytes.length === 0) throw new Error("empty");
-    for (const vector of decodeRoomVersion(bytes).values()) vector.free();
+    decodeRoomVersion(bytes);
     return bytes;
   } catch {
     throw createError({
