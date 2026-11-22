@@ -93,7 +93,7 @@ const cases: ModelEditCase[] = [
       const found = await documentsNamed(h, `${tag}-new`);
       assert.equal(found.length, 1);
       assert.equal(found[0]?.deleted, false);
-      assert.deepEqual((await h.liveText(found[0]?.id as string)).includes("Fresh."), true);
+      assert.deepEqual((await h.liveParagraphs(found[0]?.id as string)).includes("Fresh."), true);
     },
   ),
   killed(

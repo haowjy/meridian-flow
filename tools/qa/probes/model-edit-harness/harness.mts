@@ -247,10 +247,6 @@ export async function waitForAssistantTurn(
   }
 }
 
-/** The paragraphs of a document's `prosemirror` text, as its XML string holds them. */
-const paragraphs = (xml: string) =>
-  [...xml.matchAll(/<paragraph(?: [^>]*)?>(.*?)<\/paragraph>/g)].map((m) => m[1] as string);
-
 /** One result block's outcome in a word: what the model was shown the call did. */
 function resultLabel(content: { result?: Record<string, unknown>; content?: unknown }): string {
   const result = content.result ?? {};
@@ -312,7 +308,7 @@ export async function state(h: Harness, threadId: string, documentId: string) {
     from turn_blocks b join turns t on t.id=b.turn_id
     where t.thread_id=${threadId} and b.block_type='tool_result' order by t.position, b.sequence`;
   return {
-    doc: paragraphs(await h.liveText(documentId)),
+    doc: await h.liveParagraphs(documentId),
     turns: (
       await h.raw<{ status: string }[]>`
         select status from turns where thread_id=${threadId} and role='assistant' order by position`

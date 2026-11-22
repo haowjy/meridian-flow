@@ -8,9 +8,23 @@ import { resolve } from "node:path";
 import { type DraftId, newDraftId } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
+import {
+  encodeEnvelope,
+  freshPeerId,
+  RoomDocs,
+  readDocument,
+  writeDocument,
+} from "@meridian/document-model";
+import { blocksOf, nodeOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
+import {
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+  packCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import postgres from "postgres";
-import * as Y from "yjs";
-import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
+import { createPostgresDocumentRooms } from "../../../../apps/server/server/domains/collab/rooms/postgres-document-rooms.ts";
+import { createNoopEventSink } from "../../../../apps/server/server/domains/observability/index.ts";
+import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { treeSeeder } from "../../../../apps/server/server/test-support/tree-seed.ts";
 import type { View } from "../../../../packages/project-tree/src/index.ts";
 import {
@@ -21,8 +35,6 @@ import {
 } from "../../../dev/lib/dev-db.ts";
 import { resolveCurrentRepoRoot } from "../../../dev/lib/dev-env.ts";
 import { runMigrations } from "../../../dev/lib/migration-runner.ts";
-
-export { Y };
 
 /** Every scratch database this harness creates or accepts starts with this prefix. */
 const SCRATCH_PREFIX = "lfd_probe_";
@@ -77,7 +89,26 @@ export async function openHarness(url: string) {
   await raw`insert into context_sources(id,project_id,slug,scope) values (${ids.source},${ids.project},'probe','project')`;
 
   const seeds = treeSeeder(db);
-  const persistence = createDrizzleCollabPersistence(db);
+  const schema = buildDocumentSchema();
+  const shape = shapeSchemaOf(schema);
+  // Read and written only inside transactions: the room is then built from the stored rows, so
+  // it sees what the child process committed, and nothing stays loaded here.
+  const rooms = createPostgresDocumentRooms({
+    db,
+    shape,
+    eventSink: createNoopEventSink(),
+    schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+  });
+  const live = (documentId: string) => ({ kind: "live", documentId }) as const;
+  const storedLive = <T,>(documentId: string, use: (docs: RoomDocs) => T | Promise<T>) =>
+    runInDrizzleTransaction(db, async () => {
+      const docs = await rooms.read(live(documentId), { peer: freshPeerId() });
+      try {
+        return await use(docs);
+      } finally {
+        docs.free();
+      }
+    });
 
   let documents = 0;
   return {
@@ -85,7 +116,6 @@ export async function openHarness(url: string) {
     db,
     raw,
     ids,
-    persistence,
 
     /** A fresh Work with its active draft, and a thread bound to it. */
     async seedWork(label: string) {
@@ -104,7 +134,7 @@ export async function openHarness(url: string) {
       return { workId, draftId, threadId, turnId, handle };
     },
 
-    /** A live document holding one paragraph of `text`; the caller owns the returned doc. */
+    /** A live document holding one paragraph of `text`. */
     async seedDocument(
       label: string,
       text = "Base",
@@ -114,46 +144,46 @@ export async function openHarness(url: string) {
       documents += 1;
       const documentId = randomUUID() as DocumentId;
       await seeds.document(ids.source, `${label}-${documents}.md`, { id: documentId, ...seed });
-      const live = paragraphDoc(text);
-      await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(live));
-      return { documentId, live };
-    },
-
-    /** The live document's text as its journal holds it. */
-    async liveText(documentId: string): Promise<string> {
-      const doc = await liveDoc(documentId);
+      const docs = RoomDocs.create(shape, freshPeerId());
       try {
-        return doc.getXmlFragment("prosemirror").toString();
+        const paragraph = schema.nodes.paragraph.create({ id: "p" }, schema.text(text));
+        writeDocument(docs, blocksOf(schema.topNodeType.create(null, [paragraph])));
+        await rooms.seed(db, live(documentId), encodeEnvelope(docs.snapshots()));
       } finally {
-        doc.destroy();
+        docs.free();
       }
+      return { documentId };
     },
 
-    liveDoc,
+    /** The text of each top-level block of the live document, as its stored rows hold it. */
+    liveParagraphs: (documentId: string): Promise<string[]> =>
+      storedLive(documentId, (docs) =>
+        readDocument(docs).map((block) => nodeOf(schema, block).textContent),
+      ),
+
+    /** The writer types `suffix` at the end of block `index`, committed as a client's batch. */
+    writerTypes: (documentId: string, index: number, suffix: string) =>
+      storedLive(documentId, async (docs) => {
+        const since = docs.shownVersion();
+        const blocks = readDocument(docs).map((block) => nodeOf(schema, block));
+        const target = blocks[index];
+        if (!target) throw new Error(`the document has no block ${index}`);
+        blocks[index] = target.type.create(target.attrs, schema.text(target.textContent + suffix));
+        writeDocument(docs, blocksOf(schema.topNodeType.create(null, blocks)));
+        await rooms.commit(
+          db,
+          live(documentId),
+          encodeEnvelope(docs.exportSince(since)),
+          "socket:writer",
+        );
+      }),
 
     async close() {
+      await rooms.close();
       await db.close();
       await raw.end();
     },
   };
-
-  async function liveDoc(documentId: string): Promise<Y.Doc> {
-    const snapshot = await persistence.journal.read(documentId);
-    const doc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
-  }
-}
-
-/** A collab document holding one paragraph of `text`. */
-function paragraphDoc(text: string): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  const paragraph = new Y.XmlElement("paragraph");
-  paragraph.setAttribute("id", "p");
-  paragraph.insert(0, [new Y.XmlText(text)]);
-  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
-  return doc;
 }
 
 /** A one-shot gate: `wait` resolves once `open` is called. */
