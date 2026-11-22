@@ -1,15 +1,17 @@
 import {
+  type BlockId,
   commentVisibility,
   type DocChange,
   emptyParagraphId,
   type RoomDocs,
+  removedOnPath,
   replaceText,
-  revivedBlock,
+  restore,
   STRUCTURE_KEY,
   structureValues,
   visibleComments,
 } from "@meridian/document-model";
-import { Fragment, type Node, type Slice } from "prosemirror-model";
+import type { Node, Slice } from "prosemirror-model";
 import {
   type EditorState,
   NodeSelection,
@@ -21,14 +23,7 @@ import {
 } from "prosemirror-state";
 import { inlineOf, type ProseMirrorSince, readProseMirror, writeProseMirror } from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
-import {
-  type DocCursor,
-  offsetOfCursor,
-  resolveCursor,
-  type SelectionCursors,
-  selectionCursors,
-  textblockOf,
-} from "./cursors.js";
+import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
@@ -51,26 +46,24 @@ export interface LoroSyncOptions {
 
 export interface LoroSyncState {
   docs: RoomDocs;
-}
-
-/** The caret of a writer whose block a peer's removal just hid, left at the end of the block before. */
-interface Parked {
-  block: string;
-  /** The hidden block's node type, to read its text. */
-  node: string;
-  /** Where the caret stood in the hidden block. */
-  at: DocCursor;
-  /** Where the editor's caret is now, which the typing must still find it at. */
-  head: number;
+  /**
+   * Removed blocks the editor still shows because the selection's head is in them (design §1,
+   * "The caret rule"): a peer removed them, and the writer has not acted in them or moved away.
+   */
+  kept: ReadonlySet<BlockId>;
 }
 
 /** Meta on the transactions the binding dispatches itself (a peer's batch): never written back. */
 export const REMOTE_META = "remote";
+/** Meta on a remote transaction: the blocks its read kept. */
+const KEPT_META = "loro-kept";
+const NONE: ReadonlySet<BlockId> = new Set();
 
 /**
  * The binding's ProseMirror plugin (design §6). The editor's state must start as the docs read
- * (`readProseMirror`); from then on, between transactions, the editor's document is what the docs
- * read as.
+ * (`readProseMirror`); from then on, between transactions, the editor's document is the docs'
+ * read plus the blocks it keeps (`LoroSyncState.kept`, read with `readProseMirror`'s `kept`), and
+ * every read and write the binding makes passes them.
  *
  * Teardown order: destroy the `EditorView` before freeing its `RoomDocs`. Destroying the view
  * releases batches held for a composition into docs still alive; a batch held for docs already
@@ -83,93 +76,100 @@ export const REMOTE_META = "remote";
  * `importRemoteUpdate` re-reads only the docs it changed, keeps every other node as it is, and
  * replaces only the range that differs, with the selection carried as Loro cursors taken before
  * the import.
+ *
+ * The caret rule (design §1): when a peer's batch removes the block holding the selection's head,
+ * or a block above it, the editor keeps every removed block on that path. A local transaction
+ * with a step in a kept block restores them all before it writes; any other write leaves them
+ * removed. The head leaving a kept block ends it, and the block goes from the screen.
  */
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs, history } = options;
   const tracked = options.origin ?? "editor";
-  let parked: Parked | null = null;
   return new Plugin<LoroSyncState>({
     key: loroSyncKey,
-    props: {
-      // The writer's next keys after a peer removed their block go into that block, which they
-      // bring back (design §1, "Removed blocks"), until the caret moves.
-      handleTextInput(view, from, to, text) {
-        const at = parked;
-        if (!at || from !== to || from !== at.head || !view.state.selection.empty) return false;
-        const rule = docs.shape.node(at.node);
-        const offset = rule ? offsetOfCursor(docs, rule, at.at) : null;
-        if (!rule || offset === null) return false;
-        parked = null;
-        history?.beforeWrite(view.state);
-        const { doc, before } = docs.writableText(at.block);
-        replaceText(
-          doc,
-          { rule, shape: docs.shape, visibleComment: commentVisibility(structureValues(docs)) },
-          offset,
-          offset,
-          inlineOf(Fragment.from(view.state.schema.text(text))),
-        );
-        doc.commit({ origin: tracked });
-        const changes = [{ key: at.block, doc, before, after: doc.frontiers() }];
-        history?.record(changes);
-        options.onLocalWrite?.(changes);
-        const since = {
-          doc: view.state.doc,
-          comments: visibleComments(docs),
-          changed: new Set([at.block]),
-        };
-        const next = remoteTransaction(docs, view.state, null, since);
-        const shown = next && textblockOf(next.tr.doc, at.block);
-        if (next && shown)
-          view.dispatch(
-            next.tr.setSelection(
-              TextSelection.create(next.tr.doc, shown.start + offset + text.length),
-            ),
-          );
-        return true;
+    state: {
+      init: () => ({ docs, kept: NONE }),
+      apply(tr, value, oldState, newState) {
+        if (tr.getMeta(loroSyncKey) === REMOTE_META) {
+          const kept = tr.getMeta(KEPT_META) as ReadonlySet<BlockId> | undefined;
+          return kept === undefined || kept === value.kept ? value : { docs, kept };
+        }
+        let { kept } = value;
+        if (tr.docChanged) {
+          if (kept.size > 0 && touchesKept(tr, kept)) {
+            // The writer acts in a block a peer removed: it comes back first, and is then an
+            // ordinary block (design §1, rule 2).
+            const restored = restore(docs, kept);
+            if (restored) options.onLocalWrite?.([restored]);
+            kept = NONE;
+          }
+          const message = options.messageOf?.(tr);
+          const recorded = tr.getMeta("addToHistory") !== false;
+          if (recorded) history?.beforeWrite(oldState);
+          else history?.endStep();
+          const origin = recorded ? tracked : UNTRACKED_ORIGIN;
+          const changes =
+            typingWrite(docs, oldState, newState, tr, origin, message) ??
+            writeProseMirror(docs, newState.doc, {
+              origin,
+              message,
+              previous: oldState.doc,
+              kept,
+            });
+          if (recorded) history?.record(changes);
+          if (changes.length > 0) options.onLocalWrite?.(changes);
+        }
+        if (kept.size > 0) kept = holding(newState, kept);
+        return kept === value.kept ? value : { docs, kept };
       },
     },
-    state: {
-      init: () => ({ docs }),
-      apply(tr, value, oldState, newState) {
-        if (tr.getMeta(loroSyncKey) !== REMOTE_META && (tr.docChanged || tr.selectionSet))
-          parked = null;
-        if (!tr.docChanged || tr.getMeta(loroSyncKey) === REMOTE_META) return value;
-        const message = options.messageOf?.(tr);
-        const recorded = tr.getMeta("addToHistory") !== false;
-        if (recorded) history?.beforeWrite(oldState);
-        else history?.endStep();
-        const origin = recorded ? tracked : UNTRACKED_ORIGIN;
-        const changes =
-          typingWrite(docs, oldState, newState, tr, origin, message) ??
-          writeProseMirror(docs, newState.doc, { origin, message, previous: oldState.doc });
-        if (recorded) history?.record(changes);
-        if (changes.length > 0) options.onLocalWrite?.(changes);
-        return value;
-      },
+    // The selection left a kept block: read without it, so it goes from the screen.
+    appendTransaction(trs, oldState, newState) {
+      if (trs.every((tr) => tr.getMeta(loroSyncKey) === REMOTE_META)) return null;
+      const was = loroSyncKey.getState(oldState)?.kept ?? NONE;
+      const kept = loroSyncKey.getState(newState)?.kept ?? NONE;
+      if (kept.size >= was.size) return null;
+      const since = {
+        doc: newState.doc,
+        comments: visibleComments(docs),
+        changed: new Set([STRUCTURE_KEY]),
+      };
+      const tr = remoteTransaction(docs, newState, selectionCursors(docs, newState), since, kept);
+      return tr?.setMeta(KEPT_META, kept) ?? null;
     },
     view(view) {
       const hold = attachCompositionHold(docs, view);
       let cursors: SelectionCursors | null = null;
+      let head: BlockId | null = null;
       // The comments the editor's document shows bodies of: a batch that adds or removes a body
       // changes how every block's text reads.
       let comments = visibleComments(docs);
       const unlisten = listenToImports(docs, {
         before: () => {
           cursors = selectionCursors(docs, view.state);
+          const { parent } = view.state.selection.$head;
+          head = parent.isTextblock && typeof parent.attrs.id === "string" ? parent.attrs.id : null;
         },
-        after: (changed) => {
+        after: (changed, remote) => {
           const since = { doc: view.state.doc, comments, changed };
-          if (changed.has(STRUCTURE_KEY)) comments = visibleComments(docs);
-          const next = remoteTransaction(docs, view.state, cursors, since);
-          cursors = null;
-          if (next) view.dispatch(next.tr);
-          // A peer's batch that moves the caret on (or removes the block again) ends the parking.
-          if (next?.parked) parked = next.parked;
-          else if (parked && next) {
-            parked.head = next.tr.mapping.map(parked.head);
-            if (view.state.selection.head !== parked.head) parked = null;
+          const was = loroSyncKey.getState(view.state)?.kept ?? NONE;
+          let kept = was;
+          if (changed.has(STRUCTURE_KEY)) {
+            comments = visibleComments(docs);
+            // A peer's removal on the head's path is kept; a local write (an Undo, a command)
+            // keeps nothing new, and what it brought back is no longer kept.
+            const path = head === null ? [] : removedOnPath(docs, head);
+            const now = remote ? path : path.filter((id) => was.has(id));
+            if (now.length !== was.size || now.some((id) => !was.has(id)))
+              kept = now.length > 0 ? new Set(now) : NONE;
           }
+          const tr =
+            remoteTransaction(docs, view.state, cursors, since, kept) ??
+            (kept === was
+              ? null
+              : view.state.tr.setMeta(loroSyncKey, REMOTE_META).setMeta("addToHistory", false));
+          cursors = null;
+          if (tr) view.dispatch(tr.setMeta(KEPT_META, kept));
         },
       });
       return {
@@ -181,6 +181,39 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       };
     },
   });
+}
+
+/** The kept blocks the selection's head is still in. */
+function holding(state: EditorState, kept: ReadonlySet<BlockId>): ReadonlySet<BlockId> {
+  const { $head } = state.selection;
+  const path = new Set<unknown>();
+  for (let depth = 1; depth <= $head.depth; depth++) path.add($head.node(depth).attrs.id);
+  const still = [...kept].filter((id) => path.has(id));
+  return still.length === kept.size ? kept : still.length > 0 ? new Set(still) : NONE;
+}
+
+/** Whether a step of `tr` changes anything inside a kept block. */
+function touchesKept(tr: Transaction, kept: ReadonlySet<BlockId>): boolean {
+  return tr.steps.some((step, i) => {
+    const range = rangeOf(step);
+    if (!range) return false;
+    let hit = false;
+    tr.docs[i].descendants((node, pos) => {
+      if (hit) return false;
+      if (kept.has(node.attrs.id)) {
+        hit = range.from < pos + node.nodeSize && range.to > pos;
+        return false;
+      }
+      return !node.isTextblock;
+    });
+    return hit;
+  });
+}
+
+function rangeOf(step: Transaction["steps"][number]): { from: number; to: number } | null {
+  const { from, to, pos } = step.toJSON() as { from?: number; to?: number; pos?: number };
+  if (from !== undefined && to !== undefined) return { from, to };
+  return pos === undefined ? null : { from: pos, to: pos + 1 };
 }
 
 /**
@@ -218,9 +251,6 @@ function typingWrite(
     !sameAttrs($after.parent, block)
   )
     return null;
-  // A write into a block shown by revival stores its key, which the full write does.
-  for (let depth = 1; depth <= $from.depth; depth++)
-    if (revivedBlock(docs, $from.node(depth).attrs.id)) return null;
   const { doc, before } = docs.writableText(id);
   const from = $from.parentOffset;
   replaceText(
@@ -240,20 +270,19 @@ function sameAttrs(a: Node, b: Node): boolean {
 }
 
 /**
- * The transaction that brings the editor to the docs after an import, or null if nothing shows.
- * The selection follows its cursors. A selected node that still stands stays selected. A caret
- * whose block a peer removed goes to that block's neighbour, the end of the one before it where
- * there is one, and is `parked`: the writer's next typed text goes into the removed block and
- * brings it back. A block the writer typed into before the removal arrived does not go: the
- * removal did not read that typing, so the block reads as revived (design §1, "Removed blocks").
+ * The transaction that brings the editor to the docs after an import (with the blocks it keeps),
+ * or null if nothing shows. The selection follows its cursors. A selected node that still stands
+ * stays selected. A caret whose block went goes to that block's neighbour, the end of the one
+ * before it where there is one.
  */
 function remoteTransaction(
   docs: RoomDocs,
   state: EditorState,
   cursors: SelectionCursors | null,
   since: ProseMirrorSince,
-): { tr: Transaction; parked: Parked | null } | null {
-  const next = readProseMirror(docs, state.schema, since);
+  kept: ReadonlySet<BlockId>,
+): Transaction | null {
+  const next = readProseMirror(docs, state.schema, since, kept);
   const start = state.doc.content.findDiffStart(next.content);
   if (start === null) return null;
   const end = state.doc.content.findDiffEnd(next.content) as { a: number; b: number };
@@ -267,26 +296,18 @@ function remoteTransaction(
   if (!tr.doc.eq(next)) tr = state.tr.replaceWith(0, state.doc.content.size, next.content);
   tr.setMeta(loroSyncKey, REMOTE_META).setMeta("addToHistory", false);
   const { selection } = state;
-  if (selection instanceof NodeSelection && tr.selection instanceof NodeSelection)
-    return { tr, parked: null };
+  if (selection instanceof NodeSelection && tr.selection instanceof NodeSelection) return tr;
   const anchor = cursors?.anchor ? resolveCursor(docs, tr.doc, cursors.anchor) : null;
   const head = cursors?.head ? resolveCursor(docs, tr.doc, cursors.head) : null;
   if (anchor !== null && head !== null) {
     tr.setSelection(TextSelection.create(tr.doc, anchor, head));
-    return { tr, parked: null };
+    return tr;
   }
   const gone = cursors?.head ?? cursors?.anchor;
   const was = gone && textblockOf(state.doc, gone.block);
   if (gone && was && !textblockOf(tr.doc, gone.block)) {
     const at = tr.mapping.map(was.start - 1, -1);
     tr.setSelection(Selection.near(tr.doc.resolve(Math.min(at, tr.doc.content.size)), -1));
-    const alone = selection.empty && cursors?.anchor?.block === gone.block;
-    return {
-      tr,
-      parked: alone
-        ? { block: gone.block, node: was.node.type.name, at: gone, head: tr.selection.head }
-        : null,
-    };
   }
-  return { tr, parked: null };
+  return tr;
 }

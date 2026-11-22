@@ -1,5 +1,5 @@
 import type { LoroDoc } from "loro-crdt";
-import { inMap, inText, inVersion } from "./handles.js";
+import { inMap, inVersion } from "./handles.js";
 import { compareOrder } from "./order-key.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -12,77 +12,58 @@ import {
   type StructureMap,
 } from "./shape.js";
 
+const NONE: ReadonlySet<BlockId> = new Set();
+
 type MapValues = Readonly<Record<string, unknown>>;
 
+/** A text doc's version as `{ peer: counter }`: what a removal records it read of the doc. */
+export type ReadVersion = Readonly<Record<string, number>>;
+
 /**
- * A removed block's `order` (design §1, "Removed blocks"): the key it had, and for every text doc
- * under it (itself included) what the removal read: the doc's version as `{ peer: counter }` and
- * a hash of its text. A doc with no entry was read empty.
+ * A removed block's `order` (design §1, "Removed blocks"), stored as JSON text: the key the block
+ * had, and for every text doc under it (itself included) the version the removal read. A doc
+ * with no entry was read empty.
  */
 export interface Removal {
   at: string;
-  seen: Readonly<Record<DocKey, TextRead>>;
-}
-
-export interface TextRead {
-  version: Readonly<Record<string, number>>;
-  text: number;
-}
-
-function removalOf(value: unknown): Removal | null {
-  if (value === null || typeof value !== "object") return null;
-  const { at, seen } = value as Partial<Removal>;
-  return typeof at === "string" && seen && typeof seen === "object" ? { at, seen } : null;
-}
-
-/** What a removal records of a text doc as it reads now. */
-export function textRead(doc: LoroDoc): TextRead {
-  return {
-    version: versionOf(doc),
-    text: textHash(textOf(doc)),
-  };
+  seen: Readonly<Record<DocKey, ReadVersion>>;
 }
 
 /**
- * Whether `key`'s text reads differently from what `removal` read. The version is checked first,
- * so a doc nobody edited since costs no read of its text; a Ctrl+Z and Redo that give back the
- * text the removal read leave the block removed.
+ * Whether an `order` value is a key, so the block is in place. Anything else is a removal: a
+ * record, or an older build's `null`. A key is base-62 and never starts with `{`, so no read
+ * parses a record to tell.
  */
-function editedSince(docs: RoomDocs, key: DocKey, removal: Removal): boolean {
-  const doc = docs.textOf(key);
-  if (!doc) return false;
-  const read = removal.seen[key];
-  const version = read?.version ?? {};
-  let beyond = false;
-  for (const [peer, counter] of Object.entries(versionOf(doc)))
-    if (counter > (version[peer] ?? 0)) beyond = true;
-  return beyond && textHash(textOf(doc)) !== (read?.text ?? EMPTY_TEXT);
+export function isOrderKey(value: unknown): value is string {
+  return typeof value === "string" && !value.startsWith("{");
 }
 
-/** A doc's oplog version as `{ peer: counter }`. */
-function versionOf(doc: LoroDoc): Record<string, number> {
+/** The record an `order` value holds, or null: a key, or a removal written without one. */
+export function removalOf(value: unknown): Removal | null {
+  if (typeof value !== "string" || isOrderKey(value)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  const { at, seen } = (parsed ?? {}) as Partial<Removal>;
+  return isOrderKey(at) && seen !== null && typeof seen === "object" ? { at, seen } : null;
+}
+
+export const encodeRemoval = (removal: Removal): string => JSON.stringify(removal);
+
+/** What a removal records of a text doc: its oplog version. */
+export function readVersionOf(doc: LoroDoc): ReadVersion {
   return inVersion(doc, (vector) => Object.fromEntries(vector.toJSON()));
 }
 
-function textOf(doc: LoroDoc): string {
-  return inText(doc, (text) => text.toString());
+/** Whether `doc` holds an op, by any peer, that a removal which read `seen` of it did not count. */
+export function holdsUnread(doc: LoroDoc, seen: ReadVersion | undefined): boolean {
+  return inVersion(doc, (vector) =>
+    [...vector.toJSON()].some(([peer, counter]) => counter > (seen?.[peer] ?? 0)),
+  );
 }
-
-/** cyrb53: a 53-bit string hash, the same on every peer. */
-function textHash(text: string): number {
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
-}
-
-const EMPTY_TEXT = textHash("");
 
 /**
  * One read of a structure doc (design §1): the effective value of every key (a fork's override
@@ -90,11 +71,11 @@ const EMPTY_TEXT = textHash("");
  * a reader pays one pass over the maps rather than a WASM call per key; a write must not use it
  * after it changes the doc.
  *
- * A block shows when its `order` is set, its parent is the document or a shown block, and, for a
- * required container that cannot be filled (a table, a row), it has a shown child it accepts. A
- * removed block (`order` a `Removal`) reads as set at its old key while a text doc under it reads
- * differently from what the removal read (`revived`). A cycle (concurrent moves of a cell and a
- * `jsx_container`) reads with its smallest id as a child of the document, on every peer alike.
+ * A block shows when its `order` is a key, its parent is the document or a shown block, and, for a
+ * required container that cannot be filled (a table, a row), it has a shown child it accepts; no
+ * text doc decides it. `kept` names removed blocks to read as set at their record's key though
+ * they are removed: the editor's caret rule (design §1). A cycle (concurrent moves of a cell and
+ * a `jsx_container`) reads with its smallest id as a child of the document, on every peer alike.
  */
 export class StructureView {
   readonly draft: boolean;
@@ -106,12 +87,13 @@ export class StructureView {
   private readonly orders = new Map<BlockId, string>();
   private below: Map<BlockId, BlockId[]> | undefined;
   readonly shown = new Set<BlockId>();
-  /** Removed blocks that read as set again: text under them changed since their removal read it. */
-  readonly revived = new Set<BlockId>();
   /** Every block id the structure names, shown or not. */
   readonly ids: readonly BlockId[];
 
-  constructor(docs: RoomDocs) {
+  constructor(
+    docs: RoomDocs,
+    readonly kept: ReadonlySet<BlockId> = NONE,
+  ) {
     const { structure: doc, draft, shape } = docs;
     this.draft = draft;
     const read = (name: string) => inMap(doc, name, (map) => map.toJSON() as MapValues);
@@ -145,7 +127,7 @@ export class StructureView {
       attrs[key.slice(slash + 1)] = value;
     }
     this.breakCycles();
-    this.computeOrders(docs);
+    this.computeOrders();
     this.computeShown(shape);
   }
 
@@ -173,7 +155,7 @@ export class StructureView {
     return typeof node === "string" ? node : undefined;
   }
 
-  /** The key a reader sorts by: the stored one, a revived block's old one; null when removed. */
+  /** The key a reader sorts by: the stored one, a kept block's old one; null when removed. */
   order(id: BlockId): string | null | undefined {
     const order = this.orders.get(id);
     if (order !== undefined) return order;
@@ -248,32 +230,13 @@ export class StructureView {
     }
   }
 
-  /**
-   * Every block's key as read. A removed block revives when a text doc now under it (its own, or
-   * a block's below it) reads differently from what the removal read: typing that raced the
-   * removal. Each doc is checked against every removed block above it, so a container revives
-   * with the text typed into it.
-   */
-  private computeOrders(docs: RoomDocs) {
-    const removals = new Map<BlockId, Removal>();
+  private computeOrders() {
     for (const id of this.ids) {
       const order = this.value("order", id);
-      if (typeof order === "string") this.orders.set(id, order);
-      else {
+      if (isOrderKey(order)) this.orders.set(id, order);
+      else if (this.kept.has(id)) {
         const removal = removalOf(order);
-        if (removal) removals.set(id, removal);
-      }
-    }
-    if (removals.size === 0) return;
-    for (const key of this.ids) {
-      let at: BlockId | null | undefined = key;
-      while (typeof at === "string") {
-        const removal = removals.get(at);
-        if (removal && !this.revived.has(at) && editedSince(docs, key, removal)) {
-          this.revived.add(at);
-          this.orders.set(at, removal.at);
-        }
-        at = this.parentOf.get(at);
+        if (removal) this.orders.set(id, removal.at);
       }
     }
   }

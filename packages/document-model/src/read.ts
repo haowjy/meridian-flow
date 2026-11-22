@@ -107,13 +107,20 @@ export interface ReadSince {
  * `since`'s own object (so a caller can tell unchanged blocks by identity): a batch that touched
  * only text docs re-reads those blocks' text and no structure; one that touched the structure
  * reads the structure and the text docs in `changed`. The result is the same as a full read.
+ *
+ * `kept` names removed blocks to show at their record's key though they are removed (the
+ * editor's caret rule, design §1); `since.blocks` must then be the read with the same `kept`.
  */
-export function readDocument(docs: RoomDocs, since?: ReadSince): ShapeBlock[] {
+export function readDocument(
+  docs: RoomDocs,
+  since?: ReadSince,
+  kept?: ReadonlySet<BlockId>,
+): ShapeBlock[] {
   if (since && !since.changed.has(STRUCTURE_KEY)) {
     const texts = readTexts(docs, since);
     if (texts) return texts;
   }
-  return readBlocks(docs, new StructureView(docs), since);
+  return readBlocks(docs, new StructureView(docs, kept), since);
 }
 
 function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): ShapeBlock[] {
@@ -154,33 +161,24 @@ function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): Sha
 /**
  * The read after a batch that changed text docs only: the blocks named in `changed` read again,
  * the rest as they were. Null when a changed key is an empty paragraph's id, whose read depends
- * on whether the structure stores it, or a block that did not show or showed by revival, whose
- * edit may show or hide it (and the removed blocks above it).
+ * on whether the structure stores it.
  */
 function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] | null {
   for (const key of since.changed) if (key.endsWith(emptyParagraphId(null))) return null;
   const visibleComment = commentVisibility(structureValues(docs));
-  let found = 0;
-  let revived = false;
-  const path: BlockId[] = [];
   const again = (block: ShapeBlock): ShapeBlock => {
     if (block.kind === "text") {
       if (!since.changed.has(block.id)) return block;
-      found++;
-      if ([...path, block.id].some((id) => revivedBlock(docs, id))) revived = true;
       const rule = docs.shape.node(block.node) as NodeRule;
       return {
         ...block,
         inline: readInline(docs.textOf(block.id), rule, docs.shape, visibleComment),
       };
     }
-    path.push(block.id);
     const children = block.children.map(again);
-    path.pop();
     return sameList(block.children, children) ? block : { ...block, children };
   };
-  const blocks = since.blocks.map(again);
-  return found === since.changed.size && !revived ? blocks : null;
+  return since.blocks.map(again);
 }
 
 /** The unstored empty paragraph of `parent`: the one read before, if it showed one then. */
@@ -239,17 +237,6 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
       return override === undefined ? get(name, key) : override;
     },
   };
-}
-
-/**
- * Whether shown block `id` shows only because it was revived: its stored `order` is a removal
- * (design §1, "Removed blocks"). Read key by key, for a write or a read that checks a few blocks.
- */
-export function revivedBlock(docs: RoomDocs, id: BlockId): boolean {
-  const read = (name: string) => inMap(docs.structure, name, (map) => map.get(id));
-  const override = docs.draft ? read(overrideMap("order")) : undefined;
-  const order = override === undefined ? read("order") : override;
-  return order !== undefined && typeof order !== "string";
 }
 
 /** A textblock's text doc, normalized. A block with no text doc yet reads as empty. */

@@ -25,5 +25,10 @@ and prints one line per check:
 | The fork keeps its own paragraph and imports Live's typing after the cut | A forwarded fork cut at Live's marks still takes Live's batches (review B5) |
 | A tab whose base is below the cut is refused | `HistoryCutoffError`, which the socket answers with `history-cutoff` |
 | A tab joined after the cut writes | Nothing else is refused |
+| The room brings the paragraph back | On the cut rows, the AI's text lands (`commit`) while a tab that never received it deletes the paragraph (`write`): the room's copy holds the one write the removal did not read and restores it (design §1, "Removed blocks", rule 1) |
+| The room sends its restore to every socket | A batch with origin `server:restore` |
+| The restore is saved | It reads back after an unload |
+| A removal that read the AI's text stands | A second delete, made after the restore, is not answered |
 
-Run it when `collab/rooms/` or `shared/document-snapshots.ts` changes.
+Run it when `collab/rooms/`, `shared/document-snapshots.ts` or the removal rule
+(`document-model`'s `removals.ts`) changes.

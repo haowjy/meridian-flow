@@ -149,7 +149,6 @@ export function applyOps(
 
   for (const op of of("text")) {
     store(op.block);
-    writer.keep(op.block);
     const { doc, before: start } = docs.writableText(op.block);
     const rules = { rule: ruleOf(op.block) as NodeRule, shape, visibleComment };
     for (const { from, to, mark, value } of op.formats) {
@@ -168,7 +167,6 @@ export function applyOps(
   }
 
   for (const op of of("attrs")) {
-    writer.keep(op.block);
     if (op.unit === undefined) {
       store(op.block);
       const merged = { ...view.attrs(op.block), ...op.attrs };

@@ -2,19 +2,19 @@ import {
   type DocChange,
   type DocKey,
   type RoomDocs,
+  restampRemovals,
   STRUCTURE_KEY,
+  UNTRACKED_ORIGIN,
 } from "@meridian/document-model";
 import { Cursor, type LoroDoc, UndoManager } from "loro-crdt";
 import type { EditorState } from "prosemirror-state";
 import { type SelectionCursors, selectionCursors } from "./cursors.js";
 
 /**
- * The commit origin of a local write no Ctrl+Z takes back: a transaction marked
- * `addToHistory: false`, or a write made outside the editor. Every local writer of a copy with
- * an `UndoHistory` that isn't the editor's own tracked write commits under it, or its commit
- * lands in the Undo stack of the doc it wrote.
+ * Every local writer of a copy with an `UndoHistory` that isn't the editor's own tracked write
+ * commits under `UNTRACKED_ORIGIN`, or its commit lands in the Undo stack of the doc it wrote.
  */
-export const UNTRACKED_ORIGIN = "untracked";
+export { UNTRACKED_ORIGIN };
 
 /** Writes closer than this join one step. */
 const GROUP_MS = 500;
@@ -171,6 +171,11 @@ export class UndoHistory {
       }
       this.tag = null;
       if (changes.length === 0) continue;
+      // A removal the run replayed says what the first removal read: read it again now, and send
+      // it with the run, or a peer could answer the old record first.
+      const structure = changes.find((change) => change.key === STRUCTURE_KEY);
+      if (structure && restampRemovals(this.docs, structure.before))
+        structure.after = this.docs.structure.frontiers();
       const selection = this.restored(step.selection);
       step.selection = now;
       to.push(step);

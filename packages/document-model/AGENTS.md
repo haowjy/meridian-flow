@@ -33,11 +33,16 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   changed: a block that is the same object as in `previous` (under the same parent) is not
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
   only with what the docs read as now; with neither, both work on the whole document.
-- A removal is a `Removal` in `order[id]` (`StructureWriter.remove`, on the topmost removed block
-  only), recording what it read of every text doc under the block. Text that reads differently
-  since revives the block (`StructureView.revived`), so a text edit can show or hide a removed
-  block: a shortcut that skips the structure for a text change must check `revivedBlock` first,
-  and a write into a revived block stores its key (`StructureWriter.keep`).
+- A removal is a record in `order[id]`, JSON text of `{ at, seen }`: the key the block had and the
+  version (`{ peer: counter }`) the remover read of every text doc under it. `StructureWriter.remove`
+  is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
+  block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
+  record) and its ancestors show. A removed block comes back only by a write of its key:
+  `restore`, Undo's replay, or rule 1, `answerRemovals(docs, before)`, which every copy that imports
+  (each tab, the server's room) runs after an import that changed the structure and before any
+  reader. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
+  every Undo history. Never move the record into a second map: an Undo can then delete it while
+  another peer's removal stands.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
   shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's

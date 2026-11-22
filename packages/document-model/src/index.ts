@@ -27,13 +27,19 @@ export {
   type ReadSince,
   readDocument,
   readInline,
-  revivedBlock,
   shownUnits,
   structureValues,
   type TextUnit,
   textUnits,
   visibleComments,
 } from "./read.js";
+export {
+  answerRemovals,
+  removedOnPath,
+  restampRemovals,
+  restore,
+  UNTRACKED_ORIGIN,
+} from "./removals.js";
 export {
   CorruptDocBytesError,
   decodeRoomVersion,
@@ -67,7 +73,13 @@ export {
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";
-export { StructureView } from "./structure.js";
+export {
+  isOrderKey,
+  type ReadVersion,
+  type Removal,
+  removalOf,
+  StructureView,
+} from "./structure.js";
 export { replaceText, type TextRules } from "./text.js";
 export {
   changeUpdate,

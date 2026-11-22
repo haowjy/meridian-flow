@@ -3,8 +3,10 @@ import type { Frontiers } from "loro-crdt";
 import { decodeEnvelope, encodeEnvelope } from "../envelope.js";
 import { freeVersion } from "../handles.js";
 import { freshServerPeerId } from "../peer.js";
+import { answerRemovals } from "../removals.js";
 import { decodeRoomVersion, RoomDocs } from "../room-docs.js";
-import type { DocKey, ShapeSchema } from "../shape.js";
+import { type DocKey, type ShapeSchema, STRUCTURE_KEY } from "../shape.js";
+import { changeUpdate } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
 
 /** A `document_snapshots` row as the in-memory adapter keeps it. */
@@ -66,7 +68,10 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       (l) => l.room.kind === "fork" && l.room.documentId === documentId,
     );
 
+  // As the Postgres adapter: a removal the batch brought that did not read text the room holds
+  // comes back as the room's own write (design §1, rule 1).
   const importInto = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {
+    const before = loaded.docs.structure.frontiers();
     const { changed, pending } = loaded.docs.importBatch(decodeEnvelope(batch));
     for (const key of changed) loaded.dirty.add(key);
     for (const listener of listeners.get(loroRoomName(loaded.room)) ?? [])
@@ -74,6 +79,11 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     if (loaded.room.kind === "live")
       for (const fork of forks(loaded.room.documentId))
         for (const key of fork.docs.forward()) fork.dirty.add(key);
+    const restored = changed.includes(STRUCTURE_KEY) && answerRemovals(loaded.docs, before);
+    if (restored) {
+      const update = changeUpdate(restored.doc, restored.before);
+      importInto(loaded, encodeEnvelope(new Map([[STRUCTURE_KEY, update]])), "server:restore");
+    }
     return { pending };
   };
 

@@ -5,7 +5,6 @@ import {
   commentVisibility,
   normalizeInline,
   readInline,
-  revivedBlock,
   shownUnits,
   storedOf,
   structureValues,
@@ -23,7 +22,7 @@ import {
   sameValue,
   storedAttrs,
 } from "./shape.js";
-import { type Removal, StructureView, type TextRead, textRead } from "./structure.js";
+import { encodeRemoval, type ReadVersion, readVersionOf, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
@@ -53,6 +52,11 @@ export interface WriteOptions {
    * known to read as written and is not compared again, so a write costs what it changed.
    */
   previous?: readonly ShapeBlock[];
+  /**
+   * Removed blocks the caller's document still shows (the editor's caret rule, design §1): the
+   * write reads the docs as `readDocument` does with them, so it leaves them as they are.
+   */
+  kept?: ReadonlySet<BlockId>;
 }
 
 /**
@@ -83,30 +87,18 @@ export class StructureWriter {
   }
 
   /**
-   * Remove a block (what is under it hides with it): `order` becomes a
-   * `Removal` holding what it read of every text doc under it, so text edited concurrently brings
-   * the block back (design §1, "Removed blocks").
+   * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
+   * and what this copy read of every text doc under it, so a write the removal did not read can
+   * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
+   * they remove. `at` is given when a removal is written again (`restampRemovals`).
    */
-  remove(id: BlockId): void {
-    const seen: Record<DocKey, TextRead> = {};
+  remove(id: BlockId, at = this.view.order(id) as string): void {
+    const seen: Record<DocKey, ReadVersion> = {};
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
-      if (doc) seen[key] = textRead(doc);
+      if (doc) seen[key] = readVersionOf(doc);
     }
-    const removal: Removal = { at: this.view.order(id) as string, seen };
-    this.set("order", id, removal);
-  }
-
-  /**
-   * Store the key of `id` and of every block above it that shows only because it was revived.
-   * A write into a revived block (its text, attributes or children) restores it, so the write
-   * cannot hide it again (the writer deleting the text that revived it, or moving it out).
-   */
-  keep(id: BlockId): void {
-    for (let at: BlockId | null | undefined = id; at && this.view.revived.has(at); ) {
-      this.set("order", at, this.view.order(at));
-      at = this.view.parent(at);
-    }
+    this.set("order", id, encodeRemoval({ at, seen }));
   }
 
   /**
@@ -145,7 +137,7 @@ export class StructureWriter {
   dropMatchingOverrides(ids: Iterable<BlockId>) {
     if (!this.docs.draft) return;
     const { structure } = this.docs;
-    const after = new StructureView(this.docs);
+    const after = new StructureView(this.docs, this.view.kept);
     inMap(structure, overrideMap("order"), (orders) => {
       for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
     });
@@ -221,7 +213,7 @@ export function writeDocument(
   let view: StructureView | undefined;
   let writer: StructureWriter | undefined;
   const read = () => {
-    view ??= new StructureView(docs);
+    view ??= new StructureView(docs, options.kept);
     return view;
   };
   const structure = () => {
@@ -256,7 +248,9 @@ export function writeDocument(
           return [block.id, typeof order === "string" ? order : undefined] as const;
         }),
       );
-      for (const [id, key] of orderKeys(ids, current, random)) structure().set("order", id, key);
+      // A key as read is left as stored: a kept block's is the key its record holds.
+      for (const [id, key] of orderKeys(ids, current, random))
+        if (key !== current.get(id)) structure().set("order", id, key);
     }
     for (const block of stored) {
       const moved =
@@ -270,7 +264,6 @@ export function writeDocument(
         continue;
       }
       take(block.id);
-      if (revivedBlock(docs, block.id)) structure().keep(block.id);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
         structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);

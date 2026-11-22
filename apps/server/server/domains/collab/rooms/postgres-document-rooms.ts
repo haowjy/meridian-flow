@@ -8,17 +8,21 @@ import {
   type StoredFrontiers,
 } from "@meridian/database/schema";
 import {
+  answerRemovals,
+  changeUpdate,
   type DocKey,
   decodeEnvelope,
   decodeRoomVersion,
+  type Envelope,
   encodeEnvelope,
   freshServerPeerId,
   RoomDocs,
   type ShapeSchema,
+  STRUCTURE_KEY,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
-import type { LoroDoc, PeerID } from "loro-crdt";
+import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { processDetachedWork } from "../../../shared/detached-work.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -313,6 +317,34 @@ export function createPostgresDocumentRooms(input: {
       for (const fork of forksOf(loaded.room.documentId)) markDirty(fork, fork.docs.forward());
   }
 
+  /** Imports a batch into a loaded room, as `imported` says, and answers the removals it brought. */
+  function importInto(loaded: Loaded, entries: Envelope, batch: Uint8Array, origin: RoomOrigin) {
+    const before = loaded.docs.structure.frontiers();
+    const result = loaded.docs.importBatch(entries);
+    imported(loaded, result.changed, batch, origin);
+    answer(loaded, before, result.changed);
+    return result;
+  }
+
+  /**
+   * Rule 1 of "Removed blocks" (design §1) on the room's copy: a removal the import since `before`
+   * brought that did not read text the room holds comes back, as the room's own write, saved and
+   * sent to every socket. The room is the one copy that holds an AI write or a press when a tab's
+   * removal of the block arrives.
+   */
+  function answer(loaded: Loaded, before: Frontiers, changed: readonly DocKey[]) {
+    if (!changed.includes(STRUCTURE_KEY)) return;
+    const restored = answerRemovals(loaded.docs, before);
+    if (!restored) return;
+    const update = changeUpdate(restored.doc, restored.before);
+    imported(
+      loaded,
+      [STRUCTURE_KEY],
+      encodeEnvelope(new Map([[STRUCTURE_KEY, update]])),
+      "server:restore",
+    );
+  }
+
   function markDirty(loaded: Loaded, keys: Iterable<DocKey>) {
     let any = false;
     for (const key of keys) {
@@ -437,12 +469,14 @@ export function createPostgresDocumentRooms(input: {
           await lockRoom(tx, loaded.room);
           // The room ended while this save waited for the lock.
           if (loaded.docs.isFreed) return;
+          const before = loaded.docs.structure.frontiers();
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
             merged = true;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
             imported(loaded, merge.changed, merge.delta, "server:merge");
+            answer(loaded, before, merge.changed);
           }
           // Taken here, after the merge and right before the export, so a batch landing during
           // the awaits above is in this save and one landing after it stays dirty for the next.
@@ -700,9 +734,7 @@ export function createPostgresDocumentRooms(input: {
     },
 
     async write(room, batch, origin) {
-      const loaded = await load(room);
-      const { changed, pending } = loaded.docs.importBatch(decodeEnvelope(batch));
-      imported(loaded, changed, batch, origin);
+      const { pending } = importInto(await load(room), decodeEnvelope(batch), batch, origin);
       return { pending };
     },
 
@@ -720,7 +752,7 @@ export function createPostgresDocumentRooms(input: {
         const land = () => {
           const loaded = rooms.get(loroRoomName(room));
           if (!loaded || loaded.unloading) return emitTo(room, batch, origin);
-          imported(loaded, loaded.docs.importBatch(decodeEnvelope(batch)).changed, batch, origin);
+          importInto(loaded, decodeEnvelope(batch), batch, origin);
         };
         deferUntilDrizzleCommit(land);
       }),
@@ -739,7 +771,7 @@ export function createPostgresDocumentRooms(input: {
         const land = () => {
           const loaded = rooms.get(name);
           if (!loaded || loaded.unloading) return emitTo(room, snapshots, "server:seed");
-          imported(loaded, loaded.docs.importBatch(entries).changed, snapshots, "server:seed");
+          importInto(loaded, entries, snapshots, "server:seed");
         };
         deferUntilDrizzleCommit(land);
       }),

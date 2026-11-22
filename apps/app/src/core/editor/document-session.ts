@@ -321,7 +321,7 @@ export class DocumentSession {
   private importRemote(batch: Uint8Array, store = true): void {
     if (this.destroyed || this.docs.isFreed) return;
     try {
-      importRemoteUpdate(this.docs, batch);
+      importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes));
     } catch (error) {
       reportError(error);
       return;

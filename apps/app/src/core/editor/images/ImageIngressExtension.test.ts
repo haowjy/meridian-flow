@@ -475,10 +475,13 @@ describe("a new picture lands where the writer asked for it", () => {
 
     const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
 
-    // The collaborator takes the whole table away. There is no cell to land in,
-    // and landing anywhere else would be a picture the writer never asked for.
+    // The collaborator takes the whole table away, and the writer's caret leaves
+    // it, so it goes from this screen too (while the caret rests in it, the
+    // editor keeps it). There is no cell to land in, and landing anywhere else
+    // would be a picture the writer never asked for.
     peer.view.dispatch(peer.state.tr.delete(table.pos, table.pos + table.node.nodeSize));
     sync();
+    editor.commands.setTextSelection(2);
     await settle();
 
     chooseFile(imageFile("portrait.png"));

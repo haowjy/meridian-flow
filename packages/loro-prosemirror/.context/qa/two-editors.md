@@ -22,19 +22,29 @@ other peer ids, to look for the ids a failure needs.
 Defaults are 20 seeds of 400 steps (about 30 seconds). It prints `ok: …` or each failed case or
 seed with the block the editor shows beside the one the docs read, and exits non-zero.
 
-Before the seeds it runs the raced removals: A removes a block while B types into it and the
-batches cross (the phase 1 gate's lost `[remo`). B's typing must show on both screens, whether it
-lands before the removal reaches B or straddles it; B's Ctrl+Z of that typing lets the removal
-stand; a removal that read the typing stands, as does a second removal of a revived block; typing
-into a cell of a removed table brings the whole table back; and the usual online case, where the
-removal reaches B between two keys: B's next keys go into the removed block and bring it back (also
-when the removal had read B's first keys), B's Ctrl+Z of them lets the removal stand, and a caret
-that moved on types where it is. The probe feeds each key through the plugin's `handleTextInput`
-first, as ProseMirror does.
+Before the seeds it runs the raced removals (design §1, "Removed blocks"): A removes a block while
+B types into it and the batches cross (the phase 1 gate's lost `[remo`). B's typing must show on
+both screens, whether it lands before the removal reaches B or straddles it; B's Ctrl+Z of that
+typing keeps the block, without the typing (the restore is nobody's Undo step); a removal that read
+the typing stands, as does a second removal of a restored block; typing into a cell of a removed
+table brings the whole table back. Then the caret rule, where the removal reaches B between two
+keys: B's screen keeps the block while the caret rests in it, and the next key, an IME commit, a
+paste, a Backspace or an Enter brings it back (also when the removal read B's first keys, in a cell
+of a removed table, and under two removals on the caret's path, a paragraph by A and its table by
+a third editor); the caret leaving takes it off the screen; an untracked write elsewhere (an
+attribute and a move of a sibling, as an upload or a chip respelled does) leaves it removed in the
+docs and kept on B's screen. Undo: a Redo of a delete after the peer typed stands and an Undo after
+it brings the block back, Redo items under a re-stamped removal survive, B's Ctrl+Z in a block a
+removal read followed by a batch removing something else leaves the block removed, and an agent's
+text op or delete op (`applyOps` on a server copy) inside a container B's typing brought back keeps
+it, through B's Ctrl+Z.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
-equals a full read of its docs (`readProseMirror` without `since`), and after a final exchange
-both copies read alike. That is the binding's invariant, so it catches a write that skipped a
+equals a full read of its docs plus the blocks it keeps (`readProseMirror` without `since`), and
+after a final exchange both copies read alike and no removal stands that did not read an editor's
+typing in the block (each editor's counter after its last forward write into a text doc, against
+the record's `seen`). Batches go whole or one doc at a time (the structure before its text or
+after), and a random click moves the caret off a kept block. That is the binding's invariant, so it catches a write that skipped a
 block it should have written (`writeDocument`'s `previous`) and a read that kept a node it should
 have re-read (`readDocument`'s `since`). For Undo it checks three more things:
 
@@ -43,7 +53,8 @@ have re-read (`readDocument`'s `since`). For Undo it checks three more things:
   between words, never inside one: a split word could be joined back from copies by the other
   editor's Join, and that editor's Undo of the Join would look like it took the word (seed 85
   failed this way with peer salt 19; a raced case now runs it);
-- a burst of edits with no batch between, most a step of their own and some joining the step
+- a burst of edits with no batch between (and the chain below), started with the caret off any
+  kept block, so the editor shows the docs' read, most a step of their own and some joining the step
   before, undone step by step gives back the document from before the burst exactly, and redone
   gives back the one after it; between the edits a write no Ctrl+Z takes back (a comment body
   under `UNTRACKED_ORIGIN`) lands and must stay out of every step;
@@ -59,7 +70,7 @@ mark, and a comment's body set or deleted outside the editor (`setCommentBody` u
 `UNTRACKED_ORIGIN`, then `notifyChanged`).
 
 The burst check fails on Undo by character id at the change's own frontier (the rule before
-1f): 9 of 10 seeds at 400 steps. Not covered: drafts (off until phase 2), IME composition (the
-browser matrix), the selection Undo puts back (the app sets it; checked by hand in the browser).
+1f): 9 of 10 seeds at 400 steps. Not covered: drafts (off until phase 2), a real IME composition (the
+browser matrix; the raced cases dispatch the commit's transaction), the selection Undo puts back (the app sets it; checked by hand in the browser).
 The block-id fixer here gives a fresh id to any taken one; the app's keeps the id on the half that
 was there.
