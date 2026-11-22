@@ -21,8 +21,3 @@ text. The inverse's part records its `delta` (collab's
   the live-doc side already uses the neutral `AgentEditModel` seam.
 - Freeze a public `DocumentPort`/`HistoryPort` after a second implementation
   reveals stable contracts.
-
-## Lineage
-
-`lineage/` and the semantic IR in the resolver still run, but the Loro core passes empty lineage, so
-no write scopes by it. Wire it to block ids or delete it.

@@ -1,6 +1,5 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
-import { Mapping, ReplaceAroundStep, ReplaceStep, type Transform } from "prosemirror-transform";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -177,46 +176,6 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
     if (!child.isText) atoms.push(child);
   });
   return atoms[ordinal] ?? null;
-}
-
-/** The ranges of `tr`'s start document its steps deleted, sorted and joined. */
-function _removedRanges(tr: Transform): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-  tr.mapping.maps.forEach((map, index) => {
-    // Back through the steps before it; built only for a step that deletes (an unmark maps nothing).
-    let back: Mapping | null = null;
-    map.forEach((from, to) => {
-      if (to <= from) return;
-      back ??= new Mapping(tr.mapping.maps.slice(0, index)).invert();
-      ranges.push([back.map(from, 1), back.map(to, -1)]);
-    });
-  });
-  ranges.sort((a, b) => a[0] - b[0]);
-  const removed: Array<[number, number]> = [];
-  for (const [from, to] of ranges) {
-    const last = removed.at(-1);
-    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
-    else removed.push([from, to]);
-  }
-  return removed;
-}
-
-/** Where in `tr`'s final document each node a step put in starts: the fillers of emptied parents. */
-function _fillers(tr: Transform): Set<number> {
-  const at = new Set<number>();
-  tr.steps.forEach((step, index) => {
-    if (step instanceof ReplaceAroundStep) throw new Error("A resolve moved content it kept");
-    if (!(step instanceof ReplaceStep) || step.slice.size === 0) return;
-    if (step.slice.openStart > 0 || step.slice.openEnd > 0)
-      throw new Error("A resolve's step put in part of a node");
-    const later = tr.mapping.slice(index + 1);
-    let pos = step.from;
-    step.slice.content.forEach((node) => {
-      at.add(later.map(pos, 1));
-      pos += node.nodeSize;
-    });
-  });
-  return at;
 }
 
 function lowerTextblock(

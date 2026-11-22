@@ -23,7 +23,7 @@ export type ResolvedEdit = {
       after?: BlockRef;
       /** Ordered insertions sharing an old anchor chain through their newly inserted tail. */
       insertionRun?: object;
-      /** Provenance text for the semantic IR; it never drives the insert. */
+      /** The inserted source text; it names the empty-content refusal and never drives the insert. */
       newText: string;
       /**
        * The nodes inserted, exactly as resolved (parsed, reconstructed or copied).

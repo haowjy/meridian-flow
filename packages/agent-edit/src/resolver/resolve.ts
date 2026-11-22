@@ -35,7 +35,7 @@ export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
-  /** Already-parsed content, with the original source retained in `content` for semantic IR. */
+  /** Already-parsed content, with the original source retained in `content`. */
   parsedContent?: ParsedContent;
   /**
    * Blocks copied from another document. They take the place of
@@ -367,7 +367,7 @@ function normalizeParams(
   ctx: ConcreteResolveContext,
   params: ResolveWriteParams,
 ): NormalizedParams {
-  // Copied blocks are described by their markup only for the semantic IR.
+  // Copied blocks stand in `content` as their markup.
   const content = params.blocks
     ? serializeReplacementBlocks(ctx, [...params.blocks])
     : (params.content ?? "");

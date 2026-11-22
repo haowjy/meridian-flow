@@ -59,7 +59,6 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   reader's own turn is skipped, and no message is the user. A structure change credits every
   author of the structure doc since the read with every structural change: coarse, never wrong
   about who touched the document.
-- Lineage is empty: no semantic IR scope.
 - Write handles (`e<N>`) come from the host's `WriteOrdinals` (`ports/write-ordinals.ts`), one
   counter per chat and document.
 
