@@ -38,7 +38,7 @@ function removalOf(value: unknown): Removal | null {
 /** What a removal records of a text doc as it reads now. */
 export function textRead(doc: LoroDoc): TextRead {
   return {
-    version: Object.fromEntries(doc.oplogVersion().toJSON()),
+    version: versionOf(doc),
     text: textHash(doc.getText(TEXT_KEY).toString()),
   };
 }
@@ -54,9 +54,19 @@ function editedSince(docs: RoomDocs, key: DocKey, removal: Removal): boolean {
   const read = removal.seen[key];
   const version = read?.version ?? {};
   let beyond = false;
-  for (const [peer, counter] of doc.oplogVersion().toJSON())
+  for (const [peer, counter] of Object.entries(versionOf(doc)))
     if (counter > (version[peer] ?? 0)) beyond = true;
   return beyond && textHash(doc.getText(TEXT_KEY).toString()) !== (read?.text ?? EMPTY_TEXT);
+}
+
+/** A doc's oplog version as `{ peer: counter }`. Frees the vector: a read makes one per removed doc. */
+function versionOf(doc: LoroDoc): Record<string, number> {
+  const vector = doc.oplogVersion();
+  try {
+    return Object.fromEntries(vector.toJSON());
+  } finally {
+    vector.free();
+  }
 }
 
 /** cyrb53: a 53-bit string hash, the same on every peer. */
