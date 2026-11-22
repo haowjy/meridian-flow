@@ -50,7 +50,7 @@ export function installTreeListDebugHook(
   };
   const read = (kind: "project" | "account", id: string) => {
     const { session } = handleOf(kind, id);
-    const { doc, status, role } = session.getSnapshot();
+    const { doc, status } = session.getSnapshot();
     const live = replayView(doc, LIVE);
     const rows = [...projectedRows(live).values()].map((row) => ({
       id: row.id,
@@ -60,8 +60,7 @@ export function installTreeListDebugHook(
     }));
     return {
       status,
-      role,
-      clientId: doc.clientID,
+      peer: doc.peerIdStr,
       records: listRecords(doc).length,
       /** The records the server dropped (their Work was closed), with its reason. */
       dropped: live.dropped.map(({ record, reason }) => ({

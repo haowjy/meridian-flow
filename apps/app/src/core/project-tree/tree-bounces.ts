@@ -11,17 +11,17 @@ import {
   droppedRecords,
   isSourceRoot,
   LIVE,
-  settleLogOf,
+  listOf,
   shownName,
   sourceIdOf,
   type TreeProjection,
 } from "@meridian/project-tree";
-import type * as Y from "yjs";
+import type { LoroDoc } from "loro-crdt";
 import type { TreeListSession } from "../tree-list/tree-list-session";
 import { addBounces, type Bounce, type Was } from "./tree-undo";
 
 export function watchBounces(session: TreeListSession, actor: string): () => void {
-  let doc: Y.Doc | null = null;
+  let doc: LoroDoc | null = null;
   let settles = 0;
   let seen = new Set<string>();
   let read = false;
@@ -29,7 +29,7 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
     if (!read) return;
     const now = session.getSnapshot().doc;
     // A stamp is a settlement: nothing to read until the settle log grows.
-    const length = settleLogOf(now).length;
+    const length = listOf(now).settleCount();
     if (now === doc && length === settles) return;
     const fresh = now !== doc;
     doc = now;

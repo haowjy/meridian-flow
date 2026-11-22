@@ -1,7 +1,6 @@
-/** Installs dev-only client trace capture before either socket transport is created. */
+/** Installs dev-only client trace capture before the thread socket is created. */
 
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { setYjsWireTap } from "@/core/transport/tapped-websocket";
 import { setThreadWireTap } from "@/core/transport/wire-tap";
 
 import { meridianTraceAPI } from "./agent-trace-api";
@@ -11,11 +10,9 @@ import {
   type ThreadWireTapState,
 } from "./thread-wire-tap";
 import { appendTraceEvent, noteTapError } from "./trace-store";
-import { createYjsWireTap, createYjsWireTapState, type YjsWireTapState } from "./yjs-wire-tap";
 
 type HotData = {
   threadWireTapState?: ThreadWireTapState;
-  yjsWireTapState?: YjsWireTapState;
 };
 
 export function installTraceCapture(): void {
@@ -25,12 +22,9 @@ export function installTraceCapture(): void {
 
   const hotData = import.meta.hot?.data as HotData | undefined;
   const threadState = hotData?.threadWireTapState ?? createThreadWireTapState();
-  const yjsState = hotData?.yjsWireTapState ?? createYjsWireTapState();
   if (hotData) {
     hotData.threadWireTapState = threadState;
-    hotData.yjsWireTapState = yjsState;
   }
 
   setThreadWireTap(createThreadWireTap(appendTraceEvent, noteTapError, threadState));
-  setYjsWireTap(createYjsWireTap(appendTraceEvent, noteTapError, yjsState));
 }
