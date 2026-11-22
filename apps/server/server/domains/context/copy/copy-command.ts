@@ -49,9 +49,8 @@ import type {
   CopyContextEntryCreated,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { decodeRoomVersion } from "@meridian/document-model";
+import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
-import type { VersionVector } from "loro-crdt";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -663,16 +662,9 @@ function trimTrailingSlash(uri: string): string {
   return uri.endsWith("/") ? uri.slice(0, -1) : uri;
 }
 
-/** Whether the client's vector names updates this cut does not hold. */
 /** Whether the client's copy holds an op the server's cut lacks, in any doc of the room. */
-function behind(client: ReadonlyMap<string, VersionVector>, server: Uint8Array): boolean {
-  const held = decodeRoomVersion(server);
-  for (const [key, vector] of client) {
-    if (vector.toJSON().size === 0) continue;
-    const order = held.get(key)?.compare(vector);
-    if (order === undefined || order < 0) return true;
-  }
-  return false;
+function behind(client: RoomVersion, server: Uint8Array): boolean {
+  return !versionCovers(decodeRoomVersion(server), client);
 }
 
 /**

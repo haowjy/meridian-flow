@@ -1,5 +1,5 @@
 import type { LoroDoc } from "loro-crdt";
-import { inMap, inVersion } from "./handles.js";
+import { inMap } from "./handles.js";
 import { compareOrder } from "./order-key.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -11,6 +11,7 @@ import {
   STRUCTURE_MAPS,
   type StructureMap,
 } from "./shape.js";
+import { docVersion } from "./version.js";
 
 const NONE: ReadonlySet<BlockId> = new Set();
 
@@ -55,14 +56,12 @@ export const encodeRemoval = (removal: Removal): string => JSON.stringify(remova
 
 /** What a removal records of a text doc: its oplog version. */
 export function readVersionOf(doc: LoroDoc): ReadVersion {
-  return inVersion(doc, (vector) => Object.fromEntries(vector.toJSON()));
+  return Object.fromEntries(docVersion(doc));
 }
 
 /** Whether `doc` holds an op, by any peer, that a removal which read `seen` of it did not count. */
 export function holdsUnread(doc: LoroDoc, seen: ReadVersion | undefined): boolean {
-  return inVersion(doc, (vector) =>
-    [...vector.toJSON()].some(([peer, counter]) => counter > (seen?.[peer] ?? 0)),
-  );
+  return [...docVersion(doc)].some(([peer, counter]) => counter > (seen?.[peer] ?? 0));
 }
 
 /**

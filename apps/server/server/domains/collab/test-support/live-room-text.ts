@@ -48,7 +48,7 @@ export async function writerEdit(
   const room = live(documentId);
   const docs = await rooms.read(room, { peer: freshPeerId() });
   try {
-    const since = docs.encodedShownVersion();
+    const since = docs.shownVersion();
     const current = readDocument(docs).map((block) => nodeOf(schema, block));
     const next = withBlockIds(schema.topNodeType.create(null, [...want(current)]));
     writeDocument(docs, blocksOf(next));

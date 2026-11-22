@@ -1,10 +1,13 @@
 import type { Database } from "@meridian/database";
 import { documentSnapshots, drafts, type StoredFrontiers } from "@meridian/database/schema";
 import {
-  atVersion,
-  encodedVersionOf,
+  type DocVersion,
+  decodeDocVersion,
+  docCovers,
+  docVersion,
+  encodeDocVersion,
   freshServerPeerId,
-  updateSince,
+  withVector,
 } from "@meridian/document-model";
 import { admit, listOf, readRecords, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -89,6 +92,9 @@ function inOneTransaction<T>(
   });
   return result as T;
 }
+
+/** A copy only gains ops, so it is unchanged since `before` while `before` covers it. */
+const unchanged = (doc: LoroDoc, before: DocVersion) => docCovers(before, docVersion(doc));
 
 /**
  * A copy of the list as `snapshot` holds it, writing as a fresh server peer: the server's writers
@@ -274,12 +280,12 @@ export function createDrizzleTreeListStore(deps: {
     list: TreeList,
     copy: Copy,
     listId: string,
-    before: Uint8Array,
+    before: DocVersion,
     created: readonly TreeRecord[],
     claimed: readonly TreeRecord[],
   ): Promise<CommittedTreeUpdate> {
     await claimNodeIds(tx, listId, claimed);
-    const update = updateSince(copy.doc, before);
+    const update = withVector(before, (from) => copy.doc.export({ mode: "update", from }));
     await writeSnapshots(tx, [{ roomKey: roomKeyOf(listId), docKey: LIST_DOC, doc: copy.doc }]);
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
@@ -335,9 +341,11 @@ export function createDrizzleTreeListStore(deps: {
         return {
           update:
             version.length > 0
-              ? updateSince(copy.doc, version)
+              ? withVector(decodeDocVersion(version), (from) =>
+                  copy.doc.export({ mode: "update", from }),
+                )
               : copy.doc.export({ mode: "update" }),
-          version: encodedVersionOf(copy.doc),
+          version: encodeDocVersion(docVersion(copy.doc)),
         };
       } finally {
         copy.doc.free();
@@ -350,9 +358,9 @@ export function createDrizzleTreeListStore(deps: {
         const connection = await readConnection(tx, list, accountId);
         // The project or account is gone or no longer the account's: nothing to admit to.
         if (!connection) throw new Error("The account cannot write this list");
-        const before = encodedVersionOf(copy.doc);
+        const before = docVersion(copy.doc);
         const admitted = admit(copy.writer, update, connection);
-        if (atVersion(copy.doc, before)) return { committed: null };
+        if (unchanged(copy.doc, before)) return { committed: null };
         copy.pending = owner;
         // A dropped record is in no view: no claim, no row change. A create whose node id is another's
         // fails its claim alone, and the rest of the update stands.
@@ -366,7 +374,7 @@ export function createDrizzleTreeListStore(deps: {
     submit: ({ lists, make }) =>
       withLists(lists, async (tx, held, owner) => {
         const marks = held.map(({ copy }) => ({
-          before: encodedVersionOf(copy.doc),
+          before: docVersion(copy.doc),
           ops: listOf(copy.doc).recordCount(),
         }));
         const writers = held.map(({ copy, listId }) => ({ writer: copy.writer, list: listId }));
@@ -384,7 +392,7 @@ export function createDrizzleTreeListStore(deps: {
         });
         // Settlements gain nothing in the records: the version is what says a copy changed.
         const changes = gained.filter(
-          ({ held: each, before }) => !atVersion(each.copy.doc, before),
+          ({ held: each, before }) => !unchanged(each.copy.doc, before),
         );
         // Marked in this tick, before the first await: a read in this process then reloads
         // instead of seeing a copy ahead of the stored list.

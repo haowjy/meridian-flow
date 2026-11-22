@@ -233,13 +233,13 @@ export function recordsAdmittedAfter(doc: LoroDoc, saw: Uint8Array): Set<string>
 /** Whether the copy `doc` holds has everything a copy at version `saw` held. */
 export function covers(doc: LoroDoc, saw: Uint8Array): boolean {
   const own = doc.oplogVersion();
+  const have = own.toJSON();
+  own.free();
   const at = VersionVector.decode(saw);
   try {
-    const have = own.toJSON();
     for (const [peer, counter] of at.toJSON()) if ((have.get(peer) ?? 0) < counter) return false;
     return true;
   } finally {
-    own.free();
     at.free();
   }
 }

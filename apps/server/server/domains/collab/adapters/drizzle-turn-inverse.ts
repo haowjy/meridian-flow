@@ -427,7 +427,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const before = blocksIn(docs);
     const back = takeBack(before, step.parts);
     if (!back.taken.length) return { handle: "", parts: 0 };
-    const since = docs.encodedShownVersion();
+    const since = docs.shownVersion();
     // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
     const message = query.model && query.turnId ? `turn:${query.turnId}` : undefined;
     writeDocument(docs, blocksOf(inverseSchema.topNodeType.create(null, [...back.live])), {

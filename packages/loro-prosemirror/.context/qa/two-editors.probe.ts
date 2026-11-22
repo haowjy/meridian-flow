@@ -17,7 +17,8 @@ import {
   encodeEnvelope,
   freshPeerId,
   inText,
-  inVersion,
+  docVersion,
+  encodeRoomVersion,
   removalOf,
   RoomDocs,
   STRUCTURE_KEY,
@@ -91,7 +92,7 @@ function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
     onLocalWrite: (changes) => {
       for (const { key, doc } of changes)
         if (key !== STRUCTURE_KEY)
-          typed.set(key, inVersion(doc, (vector) => vector.get(docs.peer) ?? 0));
+          typed.set(key, docVersion(doc).get(docs.peer) ?? 0);
     },
   });
   const view = {
@@ -123,7 +124,7 @@ function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
  * importing is sent by its next sync.
  */
 const sync = (from: Editor, to: Editor, keys?: readonly DocKey[]) => {
-  const batch = from.docs.exportSince(to.docs.encodedVersion());
+  const batch = from.docs.exportSince(to.docs.version());
   if (keys) for (const key of batch.keys()) if (!keys.includes(key)) batch.delete(key);
   if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {});
 };
@@ -429,10 +430,10 @@ function run(seed: number): string | null {
         continue;
       }
       if (!tr?.docChanged) continue;
-      const version = e.docs.encodedVersion().join();
+      const version = encodeRoomVersion(e.docs.version()).join();
       e.view.dispatch(fixIds(tr));
       // An edit the docs already read as (a cell emptied again) writes nothing and is no step.
-      if (e.docs.encodedVersion().join() !== version) {
+      if (encodeRoomVersion(e.docs.version()).join() !== version) {
         names.push(name);
         if (!open) steps++;
         open = true;
@@ -631,7 +632,7 @@ function racedRemovals(): string[] {
   };
   /** Send `from`'s docs (from an agent's copy, or an editor's) to `to`. */
   const send = (from: RoomDocs, to: Editor) => {
-    const batch = from.exportSince(to.docs.encodedVersion());
+    const batch = from.exportSince(to.docs.version());
     if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {});
   };
   const text = (doc: Node) => doc.textBetween(0, doc.content.size, "|");

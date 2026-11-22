@@ -5,6 +5,7 @@ import { loroRoomName } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
   encodeEnvelope,
+  encodeRoomVersion,
   freshServerPeerId,
   RoomDocs,
   writeDocument,
@@ -240,7 +241,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   function revision(copy: LoroDocument, scope: CommandLinks["scope"]): string {
     return options.links.revision(
-      { version: copy.docs.encodedVersion(), blocks: blocksOf(copy) },
+      { version: encodeRoomVersion(copy.docs.version()), blocks: blocksOf(copy) },
       scope,
     );
   }
@@ -515,14 +516,16 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         };
         let planDoc = planned.doc;
         let { assigner, resolved } = await resolveOn(planDoc);
-        // A find names text, not blocks: when what it matched in the view is gone from the room,
-        // it matches the room as it is now.
+        // A find names text, not blocks: when the view doesn't hold it (the writer typed or
+        // restored it since), or what it matched there is gone from the room, it matches the room
+        // as it is now.
         if (
-          resolved.ok &&
           planDoc !== copy &&
-          missingTarget(resolved.edits, copy) &&
           "find" in command &&
-          command.in === undefined
+          command.find !== undefined &&
+          (resolved.ok
+            ? command.in === undefined && missingTarget(resolved.edits, copy)
+            : resolved.error.code === "not_found")
         ) {
           planDoc = copy;
           ({ assigner, resolved } = await resolveOn(planDoc));
@@ -672,7 +675,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
     const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
     const textBefore = blocksOf(copy);
-    const since = read.docs.encodedShownVersion();
+    const since = read.docs.shownVersion();
     planDoc.write = { message: commitMessageOf(actor) };
     let changed: string[] = [];
     let deleted: string[] = [];

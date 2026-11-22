@@ -15,12 +15,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `forkAt`: it works after the history cutoff and frees like any copy. Export its writes with
   `view.exportSince(docs.shownVersion())`; the view's own `version()` ships a block it forked from
   Live with that block's whole history.
-- Every container, version vector and cursor Loro returns is a WASM handle that no garbage
-  collector frees: use it inside `scoped`, `inText`, `inMap` or `inVersion` (`handles.ts`) and never
-  keep one past its call. Hold a version as bytes (`RoomDocs.encodedVersion()`, `encodedVersionOf`),
-  not as `version()`'s vectors, which the caller must `freeVersion`; `DocCursor` holds a cursor's
-  bytes. Run the two-editors probe with `HANDLES=1` after touching code that makes handles: it
-  names any left unfreed.
+- Every container and cursor Loro returns is a WASM handle that no garbage collector frees: use it
+  inside `scoped`, `inText` or `inMap` (`handles.ts`) and never keep one past its call; `DocCursor`
+  holds a cursor's bytes. Versions are plain values (`version.ts`, below). Run the two-editors probe
+  with `HANDLES=1` after touching code that makes handles: it names any left unfreed.
 - Every reader goes through the read normalizer (`readDocument`, `readInline`, `StructureView`,
   `textUnits`), and every writer compares against it, so a merged state the schema forbids reads
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
@@ -44,7 +42,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   every Undo history. Never move the record into a second map: an Undo can then delete it while
   another peer's removal stands.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
-  shape with version vectors (`encodeRoomVersion`). Import and acknowledge a batch as one:
+  shape with version vectors (`encodeRoomVersion`). In code a version is plain peer counters
+  (`DocVersion`, `RoomVersion`, `version.ts`), never a Loro `VersionVector`: a vector is WASM
+  memory too, and versions are read on every batch, so one that escapes leaks per keystroke for
+  the life of a tab or the server. A function that needs a vector makes it with `withVector` or
+  reads one out with `plainVersion`, which free it. Import and acknowledge a batch as one:
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.

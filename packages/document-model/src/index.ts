@@ -1,15 +1,6 @@
 export { type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
-export {
-  atVersion,
-  encodedVersionOf,
-  freeVersion,
-  inMap,
-  inText,
-  inVersion,
-  scoped,
-  updateSince,
-} from "./handles.js";
+export { inMap, inText, scoped } from "./handles.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,
@@ -42,8 +33,6 @@ export {
 } from "./removals.js";
 export {
   CorruptDocBytesError,
-  decodeRoomVersion,
-  encodeRoomVersion,
   HistoryCutoffError,
   RoomDocs,
   RoomDocsFreedError,
@@ -81,6 +70,21 @@ export {
   StructureView,
 } from "./structure.js";
 export { replaceText, type TextRules } from "./text.js";
+export {
+  type DocVersion,
+  decodeDocVersion,
+  decodeRoomVersion,
+  docCovers,
+  docVersion,
+  encodeDocVersion,
+  encodeRoomVersion,
+  mergeVersion,
+  plainVersion,
+  type RoomVersion,
+  updateEnd,
+  versionCovers,
+  withVector,
+} from "./version.js";
 export {
   changeUpdate,
   commitStructure,

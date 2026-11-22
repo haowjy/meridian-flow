@@ -6,7 +6,10 @@ import { TreeListSession } from "./tree-list-session";
 export type TreeListHandle = { readonly session: TreeListSession; release(): void };
 
 export class TreeListRegistry {
-  private readonly sessions = new Map<string, { session: TreeListSession; holds: number }>();
+  private readonly sessions = new Map<
+    string,
+    { session: TreeListSession; unwatch: () => void; holds: number }
+  >();
   private closed = false;
 
   constructor(private readonly accountId: string) {}
@@ -18,8 +21,8 @@ export class TreeListRegistry {
     let entry = this.sessions.get(key);
     if (!entry) {
       const session = new TreeListSession(this.accountId, list);
-      watchBounces(session, `user:${this.accountId}`);
-      entry = { session, holds: 0 };
+      const unwatch = watchBounces(session, `user:${this.accountId}`);
+      entry = { session, unwatch, holds: 0 };
       this.sessions.set(key, entry);
     }
     entry.holds += 1;
@@ -32,6 +35,7 @@ export class TreeListRegistry {
         released = true;
         held.holds -= 1;
         if (held.holds === 0) {
+          held.unwatch();
           held.session.close();
           this.sessions.delete(key);
         }
@@ -47,7 +51,10 @@ export class TreeListRegistry {
   /** The account is signing out or closing: every session ends. */
   close() {
     this.closed = true;
-    for (const { session } of this.sessions.values()) session.close();
+    for (const { session, unwatch } of this.sessions.values()) {
+      unwatch();
+      session.close();
+    }
     this.sessions.clear();
   }
 }

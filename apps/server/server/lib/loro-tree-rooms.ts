@@ -1,12 +1,14 @@
 import {
   CorruptDocBytesError,
+  decodeDocVersion,
   decodeEnvelope,
   decodeRoomVersion,
+  docCovers,
+  encodeDocVersion,
   encodeEnvelope,
-  freeVersion,
-  scoped,
+  encodeRoomVersion,
 } from "@meridian/document-model";
-import { decodeImportBlobMeta, VersionVector } from "loro-crdt";
+import { decodeImportBlobMeta } from "loro-crdt";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import { createDetachedWorkTracker } from "../shared/detached-work.js";
@@ -24,7 +26,7 @@ const LIST_DOC = "s";
 
 type Room = {
   listeners: Set<(batch: Uint8Array) => void>;
-  /** The stored version the room's sockets were sent through; null before the first read. */
+  /** The stored version the room's sockets were sent through, encoded; null before the first read. */
   sent: Uint8Array | null;
   catching: Promise<void> | null;
   /** A commit arrived while a catch-up was reading: read again. */
@@ -49,10 +51,7 @@ export function createTreeRooms(services: TreeRoomServices) {
       try {
         while (room.stale) {
           room.stale = false;
-          const read = await store.readSince({
-            listId,
-            version: room.sent ?? new Uint8Array(),
-          });
+          const read = await store.readSince({ listId, version: room.sent ?? new Uint8Array() });
           room.sent = read.version;
           if (read.update.byteLength === 0) continue;
           const batch = encodeEnvelope(new Map([[LIST_DOC, read.update]]));
@@ -92,16 +91,17 @@ export function createTreeRooms(services: TreeRoomServices) {
       listId: string,
       clientVersion: Uint8Array,
     ): Promise<{ version: Uint8Array; update: Uint8Array | null }> {
-      const held = decodeRoomVersion(clientVersion);
-      const known = held.get(LIST_DOC);
-      const read = await store.readSince({ listId, version: known?.encode() ?? new Uint8Array() });
+      const known = decodeRoomVersion(clientVersion).get(LIST_DOC);
+      const read = await store.readSince({
+        listId,
+        version: known ? encodeDocVersion(known) : new Uint8Array(),
+      });
+      const version = decodeDocVersion(read.version);
       const room = rooms.get(listId);
       if (room) room.sent ??= read.version;
-      const behind =
-        !known || scoped(VersionVector.decode(read.version), (at) => known.compare(at) !== 0);
-      freeVersion(held);
+      const behind = !known || !docCovers(known, version) || !docCovers(version, known);
       return {
-        version: encodeEnvelope(new Map([[LIST_DOC, read.version]])),
+        version: encodeRoomVersion(new Map([[LIST_DOC, version]])),
         update: behind ? encodeEnvelope(new Map([[LIST_DOC, read.update]])) : null,
       };
     },

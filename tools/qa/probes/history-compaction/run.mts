@@ -190,9 +190,9 @@ try {
   const origins: string[] = [];
   const stop = rooms.subscribe(live, (batch) => origins.push(batch.origin));
   const tab = await rooms.read(live, { peer: freshPeerId() });
-  const tabBase = tab.encodedVersion();
+  const tabBase = tab.version();
   const agent = await rooms.read(live, { peer: freshServerPeerId() });
-  const agentBase = agent.encodedVersion();
+  const agentBase = agent.version();
   const target = readDocument(agent).at(-1);
   const content = [{ kind: "text" as const, text: "The AI adds this. ", marks: {} }];
   const ai = applyOps(

@@ -48,6 +48,9 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   exports one batch (`exportSince(shownVersion())`) with the commit message `turn:<turnId>` and
   saves it through `rooms.save` with an `AgentWriteRecord` whose `delta` (`captureDelta`) is what
   Undo takes back by content (`takeBack`).
+- **A `find` names text, not blocks.** It matches the view first; when the view doesn't hold it
+  (the writer typed or restored it since, a turn Undo included) or what it matched is gone from the
+  room, it matches the room as it is now. Text the room plainly holds is never `not_found`.
 - **A frontier below the history cutoff** falls back to the transcript (`transcriptMerge`): each
   block a stored result showed in full (`{hash, body}`, latest showing wins) is the base, the
   model's command applied to it is ours, the room now is theirs, and the three-way content merge

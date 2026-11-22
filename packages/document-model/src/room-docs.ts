@@ -1,12 +1,5 @@
-import {
-  decodeImportBlobMeta,
-  type Frontiers,
-  type ImportBlobMetadata,
-  LoroDoc,
-  VersionVector,
-} from "loro-crdt";
-import { decodeEnvelope, type Envelope, encodeEnvelope } from "./envelope.js";
-import { freeVersion, grew, inVersion } from "./handles.js";
+import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
+import type { Envelope } from "./envelope.js";
 import type { PeerId } from "./peer.js";
 import {
   type BlockId,
@@ -15,6 +8,14 @@ import {
   type ShapeSchema,
   STRUCTURE_KEY,
 } from "./shape.js";
+import {
+  type DocVersion,
+  docCovers,
+  docVersion,
+  plainVersion,
+  type RoomVersion,
+  withVector,
+} from "./version.js";
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
 export class RoomDocsFreedError extends Error {
@@ -53,22 +54,20 @@ export class HistoryCutoffError extends Error {
   }
 }
 
-/** The metadata of `bytes`, which the caller frees with `freeMeta`. */
-function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): ImportBlobMetadata {
-  let meta: ImportBlobMetadata;
+type BytesMeta = { startFrontiers: Frontiers; end: DocVersion };
+
+function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): BytesMeta {
+  let meta: ReturnType<typeof decodeImportBlobMeta>;
   try {
     meta = decodeImportBlobMeta(bytes, true);
   } catch (error) {
     throw new CorruptDocBytesError(key, `not Loro bytes, or a failed checksum (${String(error)})`);
   }
+  meta.partialStartVersionVector.free();
+  const end = plainVersion(meta.partialEndVersionVector);
   if (snapshot && meta.mode !== "snapshot" && meta.mode !== "shallow-snapshot")
     throw new CorruptDocBytesError(key, `a snapshot row holds a Loro ${meta.mode}`);
-  return meta;
-}
-
-function freeMeta(meta: ImportBlobMetadata): void {
-  meta.partialStartVersionVector.free();
-  meta.partialEndVersionVector.free();
+  return { startFrontiers: meta.startFrontiers, end };
 }
 
 /**
@@ -79,13 +78,10 @@ function freeMeta(meta: ImportBlobMetadata): void {
  * sends from an old version); the metadata cannot tell that from a stale tab's offline typing, so
  * only that case is settled by importing into a fork.
  */
-function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: ImportBlobMetadata) {
+function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: BytesMeta) {
   if (!doc.isShallow()) return;
-  const brings = inVersion(doc, (have) =>
-    [...meta.partialEndVersionVector.toJSON()].some(([peer, end]) => (have.get(peer) ?? 0) < end),
-  );
-  if (!brings) return;
-  const since = doc.shallowSinceVV();
+  if (docCovers(docVersion(doc), meta.end)) return;
+  const since = plainVersion(doc.shallowSinceVV());
   const roots = doc.shallowSinceFrontiers();
   const belowCutoff =
     meta.startFrontiers.length === 0 ||
@@ -94,7 +90,6 @@ function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: ImportB
         id.counter < (since.get(id.peer) ?? 0) &&
         !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
     );
-  since.free();
   if (!belowCutoff) return;
   const trial = doc.fork();
   try {
@@ -152,7 +147,7 @@ export class RoomDocs {
     snapshots: Envelope,
     live: RoomDocs | null = null,
   ): RoomDocs {
-    for (const [key, bytes] of snapshots) freeMeta(checkBytes(key, bytes, true));
+    for (const [key, bytes] of snapshots) checkBytes(key, bytes, true);
     const bytes = snapshots.get(STRUCTURE_KEY);
     const structure = bytes
       ? LoroDoc.fromSnapshot(bytes)
@@ -304,10 +299,10 @@ export class RoomDocs {
     yield* this.texts;
   }
 
-  /** The room version: each owned doc's oplog version vector. The caller frees them (`freeVersion`). */
-  version(): Map<DocKey, VersionVector> {
-    const out = new Map<DocKey, VersionVector>();
-    for (const [key, doc] of this.owned()) out.set(key, doc.oplogVersion());
+  /** The room version: each owned doc's oplog version. */
+  version(): Map<DocKey, DocVersion> {
+    const out = new Map<DocKey, DocVersion>();
+    for (const [key, doc] of this.owned()) out.set(key, docVersion(doc));
     return out;
   }
 
@@ -318,46 +313,24 @@ export class RoomDocs {
    * design §5): a block the view forked from Live then ships only its new ops, which the draft
    * room imports into its own fork of Live's doc (`importBatch`).
    */
-  shownVersion(): Map<DocKey, VersionVector> {
-    const out = this.version();
-    for (const [key, doc] of this.live?.texts ?? [])
-      if (!out.has(key)) out.set(key, doc.oplogVersion());
+  shownVersion(): Map<DocKey, DocVersion> {
+    const out = new Map<DocKey, DocVersion>();
+    for (const [key, doc] of this.live?.texts ?? []) out.set(key, docVersion(doc));
+    for (const [key, doc] of this.owned()) out.set(key, docVersion(doc));
     return out;
   }
 
-  /** `encodeRoomVersion(version())`, with the vectors freed. */
-  encodedVersion(): Uint8Array {
-    return encodeAndFree(this.version());
-  }
-
-  /** `encodeRoomVersion(shownVersion())`, with the vectors freed. */
-  encodedShownVersion(): Uint8Array {
-    return encodeAndFree(this.shownVersion());
-  }
-
-  /**
-   * The update of every owned doc that has ops beyond `since` (all of a doc it lacks): a map of
-   * version vectors the caller frees, or a version as `encodedVersion()` gives it.
-   */
-  exportSince(
-    since: ReadonlyMap<DocKey, VersionVector> | Uint8Array = new Map(),
-  ): Map<DocKey, Uint8Array> {
-    if (!(since instanceof Uint8Array)) return this.exportAfter(since);
-    const decoded = decodeRoomVersion(since);
-    try {
-      return this.exportAfter(decoded);
-    } finally {
-      freeVersion(decoded);
-    }
-  }
-
-  private exportAfter(since: ReadonlyMap<DocKey, VersionVector>): Map<DocKey, Uint8Array> {
+  /** The update of every owned doc that has ops beyond `since` (all of a doc it lacks). */
+  exportSince(since: RoomVersion = new Map()): Map<DocKey, Uint8Array> {
     const out = new Map<DocKey, Uint8Array>();
     for (const [key, doc] of this.owned()) {
       const from = since.get(key);
-      const order = from ? inVersion(doc, (have) => have.compare(from)) : 1;
-      if (order === 0 || order === -1) continue;
-      out.set(key, doc.export(from ? { mode: "update", from } : { mode: "update" }));
+      if (!from) out.set(key, doc.export({ mode: "update" }));
+      else if (!docCovers(from, docVersion(doc)))
+        out.set(
+          key,
+          withVector(from, (vector) => doc.export({ mode: "update", from: vector })),
+        );
     }
     return out;
   }
@@ -387,12 +360,8 @@ export class RoomDocs {
     this.alive();
     for (const [key, bytes] of batch) {
       const meta = checkBytes(key, bytes, false);
-      try {
-        const target = this.doc(key) ?? this.live?.textOf(key);
-        if (target) checkCutoff(key, target, bytes, meta);
-      } finally {
-        freeMeta(meta);
-      }
+      const target = this.doc(key) ?? this.live?.textOf(key);
+      if (target) checkCutoff(key, target, bytes, meta);
     }
     const changed: DocKey[] = [];
     let pending = false;
@@ -403,9 +372,10 @@ export class RoomDocs {
         doc = this.adopt(base ? base.fork() : new LoroDoc());
         this.texts.set(key, doc);
       }
-      const status = grew(doc, () => doc.import(bytes));
-      if (status.value.pending) pending = true;
-      if (status.grew) changed.push(key);
+      const before = doc.oplogFrontiers();
+      const status = doc.import(bytes);
+      if (status.pending) pending = true;
+      if (!sameFrontiers(doc.oplogFrontiers(), before)) changed.push(key);
     }
     return { changed, pending };
   }
@@ -420,10 +390,12 @@ export class RoomDocs {
     if (!live) return [];
     const changed: DocKey[] = [];
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
-      const pulled = grew(into, (before) =>
-        into.import(from.export({ mode: "update", from: before })),
+      const before = into.oplogFrontiers();
+      const update = withVector(docVersion(into), (vector) =>
+        from.export({ mode: "update", from: vector }),
       );
-      if (pulled.grew) changed.push(key);
+      into.import(update);
+      if (!sameFrontiers(into.oplogFrontiers(), before)) changed.push(key);
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
     for (const [id, doc] of this.texts) {
@@ -453,20 +425,10 @@ export class RoomDocs {
   }
 }
 
-function encodeAndFree(version: Map<DocKey, VersionVector>): Uint8Array {
-  try {
-    return encodeRoomVersion(version);
-  } finally {
-    freeVersion(version);
-  }
-}
-
-/** A room version as `JoinRequest`/`JoinResponseOk` carry it: an envelope of encoded vectors. */
-export function encodeRoomVersion(version: ReadonlyMap<DocKey, VersionVector>): Uint8Array {
-  return encodeEnvelope(new Map([...version].map(([key, vv]) => [key, vv.encode()])));
-}
-
-export function decodeRoomVersion(bytes: Uint8Array): Map<DocKey, VersionVector> {
-  if (bytes.length === 0) return new Map();
-  return new Map([...decodeEnvelope(bytes)].map(([key, vv]) => [key, VersionVector.decode(vv)]));
+/** Oplog frontiers move exactly when the oplog gains ops; comparing them needs no version handle. */
+function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
+  return (
+    a.length === b.length &&
+    a.every((id) => b.some((other) => other.peer === id.peer && other.counter === id.counter))
+  );
 }

@@ -5,21 +5,25 @@
  * edit) is dropped silently.
  */
 import {
-  type DocKey,
+  type DocVersion,
   decodeEnvelope,
   decodeRoomVersion,
   freshPeerId,
   RoomDocs,
+  type RoomVersion,
   STRUCTURE_KEY,
+  withVector,
 } from "@meridian/document-model";
-import type { LoroDoc, VersionVector } from "loro-crdt";
+import type { LoroDoc } from "loro-crdt";
 import { type LoadedCopy, SERVER_META } from "./local-copy-store";
 import { documentShape } from "./room-content";
 
 type JsonOp = { content?: { type?: string; text?: unknown } };
 
-function docHasWordsBeyond(doc: LoroDoc, since: VersionVector | undefined): boolean {
-  const json = doc.exportJsonUpdates(since);
+function docHasWordsBeyond(doc: LoroDoc, since: DocVersion | undefined): boolean {
+  const json = since
+    ? withVector(since, (vector) => doc.exportJsonUpdates(vector))
+    : doc.exportJsonUpdates();
   for (const change of json.changes)
     for (const op of change.ops as JsonOp[])
       if (
@@ -31,7 +35,7 @@ function docHasWordsBeyond(doc: LoroDoc, since: VersionVector | undefined): bool
   return false;
 }
 
-export function wordsBeyond(docs: RoomDocs, server: ReadonlyMap<DocKey, VersionVector>): boolean {
+export function wordsBeyond(docs: RoomDocs, server: RoomVersion): boolean {
   for (const [key, doc] of docs.owned())
     if (key !== STRUCTURE_KEY && docHasWordsBeyond(doc, server.get(key))) return true;
   return false;
@@ -42,10 +46,7 @@ export function wordsBeyond(docs: RoomDocs, server: ReadonlyMap<DocKey, VersionV
  * of what the server holds. A copy with no record offers everything it holds. A copy that won't
  * load holds nothing anyone can read.
  */
-export function storedWordsBeyond(
-  loaded: LoadedCopy,
-  server?: ReadonlyMap<DocKey, VersionVector>,
-): boolean {
+export function storedWordsBeyond(loaded: LoadedCopy, server?: RoomVersion): boolean {
   const docs = RoomDocs.create(documentShape(), freshPeerId());
   try {
     if (loaded.snapshots.size > 0) docs.importBatch(loaded.snapshots);

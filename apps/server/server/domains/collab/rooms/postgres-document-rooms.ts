@@ -15,6 +15,7 @@ import {
   decodeRoomVersion,
   type Envelope,
   encodeEnvelope,
+  encodeRoomVersion,
   freshServerPeerId,
   RoomDocs,
   type ShapeSchema,
@@ -396,7 +397,7 @@ export function createPostgresDocumentRooms(input: {
       .map((row) => row.docKey);
     if (lacking.length === 0) return null;
     const rows = await readRows(tx, name, lacking);
-    const before = docs.encodedVersion();
+    const before = docs.version();
     const { changed } = docs.importBatch(new Map(rows.map((row) => [row.docKey, row.snapshot])));
     if (changed.length === 0) return null;
     return { changed, delta: encodeEnvelope(docs.exportSince(before)) };
@@ -723,14 +724,11 @@ export function createPostgresDocumentRooms(input: {
 
     async sync(room, version) {
       const loaded = await load(room);
-      const since = decodeRoomVersion(version);
-      const update = loaded.docs.exportSince(since);
-      const sync = {
-        version: loaded.docs.encodedVersion(),
+      const update = loaded.docs.exportSince(decodeRoomVersion(version));
+      return {
+        version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
       };
-      for (const vector of since.values()) vector.free();
-      return sync;
     },
 
     async write(room, batch, origin) {

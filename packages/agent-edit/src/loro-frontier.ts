@@ -2,21 +2,22 @@
 // the room copy it rendered from, and a write plans on a view of the room at them.
 import {
   type DocKey,
+  type DocVersion,
   decodeEnvelope,
+  docVersion,
   encodeEnvelope,
-  inVersion,
+  plainVersion,
   type RoomDocs,
   STRUCTURE_KEY,
-  scoped,
+  updateEnd,
+  withVector,
 } from "@meridian/document-model";
 import {
   decodeFrontiers,
-  decodeImportBlobMeta,
   encodeFrontiers,
   type Frontiers,
   type LoroDoc,
   type PeerID,
-  VersionVector,
 } from "loro-crdt";
 
 export type FrontierMap = ReadonlyMap<DocKey, Frontiers>;
@@ -45,9 +46,9 @@ function shownDoc(docs: RoomDocs, key: DocKey): LoroDoc | undefined {
 type Vector = Map<PeerID, number>;
 
 const vectorOf = (doc: LoroDoc, at: Frontiers): Vector =>
-  scoped(doc.frontiersToVV(at), (vector) => vector.toJSON());
+  new Map(plainVersion(doc.frontiersToVV(at)));
 
-function merged(into: Vector, from: Vector): Vector {
+function merged(into: Vector, from: DocVersion): Vector {
   for (const [peer, end] of from) if ((into.get(peer) ?? 0) < end) into.set(peer, end);
   return into;
 }
@@ -58,18 +59,15 @@ function merged(into: Vector, from: Vector): Vector {
  * the cutoff sometimes answers instead of throwing, loro#1294).
  */
 function usableIn(doc: LoroDoc, at: Frontiers): boolean {
-  if (inVersion(doc, (have) => at.some((id) => (have.get(id.peer) ?? 0) <= id.counter)))
-    return false;
+  const have = docVersion(doc);
+  if (at.some((id) => (have.get(id.peer) ?? 0) <= id.counter)) return false;
   if (!doc.isShallow()) return true;
+  const since = plainVersion(doc.shallowSinceVV());
   const roots = doc.shallowSinceFrontiers();
-  return scoped(
-    doc.shallowSinceVV(),
-    (since) =>
-      !at.some(
-        (id) =>
-          id.counter < (since.get(id.peer) ?? 0) &&
-          !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
-      ),
+  return !at.some(
+    (id) =>
+      id.counter < (since.get(id.peer) ?? 0) &&
+      !roots.some((root) => root.peer === id.peer && root.counter === id.counter),
   );
 }
 
@@ -92,10 +90,7 @@ export function planningFrontiers(
   }
   for (const batch of own)
     for (const [key, bytes] of decodeEnvelope(batch)) {
-      const meta = decodeImportBlobMeta(bytes, false);
-      meta.partialStartVersionVector.free();
-      const end = scoped(meta.partialEndVersionVector, (vector) => vector.toJSON());
-      vectors.set(key, merged(vectors.get(key) ?? new Map(), end));
+      vectors.set(key, merged(vectors.get(key) ?? new Map(), updateEnd(bytes)));
     }
   const out = new Map<DocKey, Frontiers>();
   for (const [key, vector] of vectors) {
@@ -103,7 +98,7 @@ export function planningFrontiers(
     if (!doc) return null;
     out.set(
       key,
-      scoped(VersionVector.parseJSON(vector), (at) => doc.vvToFrontiers(at)),
+      withVector(vector, (vv) => doc.vvToFrontiers(vv)),
     );
   }
   return out;

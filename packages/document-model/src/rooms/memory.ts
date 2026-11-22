@@ -1,11 +1,11 @@
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import type { Frontiers } from "loro-crdt";
 import { decodeEnvelope, encodeEnvelope } from "../envelope.js";
-import { freeVersion } from "../handles.js";
 import { freshServerPeerId } from "../peer.js";
 import { answerRemovals } from "../removals.js";
-import { decodeRoomVersion, RoomDocs } from "../room-docs.js";
+import { RoomDocs } from "../room-docs.js";
 import { type DocKey, type ShapeSchema, STRUCTURE_KEY } from "../shape.js";
+import { decodeRoomVersion, encodeRoomVersion } from "../version.js";
 import { changeUpdate } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
 
@@ -121,14 +121,11 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     },
     async sync(room, version) {
       const { docs } = load(room);
-      const since = decodeRoomVersion(version);
-      const update = docs.exportSince(since);
-      const sync = {
-        version: docs.encodedVersion(),
+      const update = docs.exportSince(decodeRoomVersion(version));
+      return {
+        version: encodeRoomVersion(docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
       };
-      freeVersion(since);
-      return sync;
     },
     async write(room, batch, origin) {
       return importInto(load(room), batch, origin);
