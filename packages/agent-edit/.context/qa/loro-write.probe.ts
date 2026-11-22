@@ -70,7 +70,7 @@ function chat(threadId: string, turnId: string) {
 const host = createInMemoryLoroHost(schema);
 const core = createLoroEditCore({
   rooms: host.agentRooms,
-  journal: host.journal,
+  ordinals: host.ordinals,
   schema,
   codec,
   links: createStaticDocumentLinks(undefined, { preloaded: true }),
