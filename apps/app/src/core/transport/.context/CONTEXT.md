@@ -14,6 +14,10 @@ The Join exchange, which the server's handler speaks too (local-first design §4
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
+A room without presence (a tree list) passes no store and joins no presence channel. `onJoined`
+sees each `JoinResponseOk`'s `extra` before anything is sent and may ask to rejoin: a tree copy of
+another list is replaced under the Join, so the Join's version must be taken again.
+
 Every client `DocUpdate` is acknowledged by one `Ack` naming its batch id; server
 `DocUpdate`s are not. The transport keeps, per unacknowledged batch, the room version the
 batch ends at (read from the update metadata), and merges it into the server version on its
