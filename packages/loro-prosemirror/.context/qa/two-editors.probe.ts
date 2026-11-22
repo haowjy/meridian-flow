@@ -42,6 +42,7 @@ const salt = Number(process.argv[5] ?? 0);
 
 type Editor = {
   name: string;
+  plugin: ReturnType<typeof loroSyncPlugin>;
   docs: RoomDocs;
   history: UndoHistory;
   view: { state: EditorState; dispatch(tr: Transaction): void };
@@ -64,6 +65,7 @@ function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
   const handle = plugin.spec.view?.(view as never) ?? {};
   return {
     name,
+    plugin,
     docs,
     history,
     view,
@@ -499,8 +501,14 @@ function racedRemovals(): string[] {
     e.view.dispatch(state.tr.delete(at, at + (state.doc.nodeAt(at) as Node).nodeSize));
     e.history.endStep();
   };
+  // A key as ProseMirror takes it: the plugin may handle the input (typing into the block a
+  // peer removed under the caret), else it is a transaction.
   const type = (e: Editor, text: string) => {
-    for (const ch of text) e.view.dispatch(e.view.state.tr.insertText(ch));
+    for (const ch of text) {
+      const { from, to } = e.view.state.selection;
+      if (!e.plugin.props.handleTextInput?.(e.view as never, from, to, ch, () => e.view.state.tr))
+        e.view.dispatch(e.view.state.tr.insertText(ch));
+    }
     e.history.endStep();
   };
   const shown = (e: Editor) => e.view.state.doc.textBetween(0, e.view.state.doc.content.size, "|");
@@ -584,6 +592,47 @@ function racedRemovals(): string[] {
     if (!shown(r.b).includes("qA163")) return `join case: the join did not make the word: ${shown(r.b)}`;
     runHistory(r.b, "undo");
     return settle(r, "an Undo of a join of a split word keeps both halves", showsAll("qA|163"));
+  };
+  // The usual online case (a phase 1 prober's 120 ms typing): the removal reaches B between two of
+  // its keys, so the caret's block is hidden under it. B's next keys go into that block and bring
+  // it back with everything typed in it, until the caret moves.
+  cases["typing after the removal arrived"] = (r) => {
+    caret(r.b, "x", 14);
+    remove(r.a, "x");
+    sync(r.a, r.b);
+    if (shown(r.b).includes("Delete-target")) return "arrival case: B still shows the block";
+    type(r.b, "[second]");
+    return settle(r, "typing after the removal arrived", showsAll("Delete-target [second]before"));
+  };
+  cases["a removal that read the first keys, then the rest"] = (r) => {
+    caret(r.b, "x", 14);
+    type(r.b, "[sec");
+    sync(r.b, r.a);
+    remove(r.a, "x");
+    sync(r.a, r.b);
+    if (shown(r.b).includes("Delete-target")) return "read case: B still shows the block";
+    type(r.b, "ond]");
+    return settle(r, "a removal that read the first keys, then the rest", showsAll("Delete-target [second]before"));
+  };
+  cases["Ctrl+Z of typing into a removed block lets the removal stand"] = (r) => {
+    caret(r.b, "x", 14);
+    remove(r.a, "x");
+    sync(r.a, r.b);
+    type(r.b, "[second]");
+    runHistory(r.b, "undo");
+    return settle(r, "Ctrl+Z of typing into a removed block", showsNone("Delete-target", "[second]"));
+  };
+  cases["a caret that moved on types where it is"] = (r) => {
+    caret(r.b, "x", 14);
+    remove(r.a, "x");
+    sync(r.a, r.b);
+    caret(r.b, "a", 2);
+    type(r.b, "[moved]");
+    return settle(r, "a caret that moved on types where it is", (text) =>
+      text.includes("Fi[moved]rst.") && !text.includes("Delete-target")
+        ? null
+        : `shows "${text}", wanted the typing in the first block and the removal standing`,
+    );
   };
   const failures: string[] = [];
   for (const [name, run] of Object.entries(cases)) {

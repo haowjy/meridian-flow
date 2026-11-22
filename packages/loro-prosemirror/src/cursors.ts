@@ -1,4 +1,10 @@
-import { type RoomDocs, shownUnits, TEXT_KEY, textUnits } from "@meridian/document-model";
+import {
+  type NodeRule,
+  type RoomDocs,
+  shownUnits,
+  TEXT_KEY,
+  textUnits,
+} from "@meridian/document-model";
 import type { Cursor } from "loro-crdt";
 import type { Node, ResolvedPos } from "prosemirror-model";
 import type { EditorState } from "prosemirror-state";
@@ -53,21 +59,27 @@ export function textblockOf(doc: Node, id: string): { node: Node; start: number 
 }
 
 /**
- * The editor position a cursor stands at now, if its block still shows. A cursor whose held unit
- * was deleted stands where the unit was, so the caret that followed the unit is there too.
+ * How many shown units come before a cursor in its block's text now, counting the unit it holds
+ * when the caret followed it; null if the block has no text doc or the cursor is gone. A cursor
+ * whose held unit was deleted stands where the unit was, so the caret that followed the unit is
+ * there too.
  */
-export function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number | null {
+export function offsetOfCursor(docs: RoomDocs, rule: NodeRule, at: DocCursor): number | null {
   const text = docs.textOf(at.block);
-  const found = text && textblockOf(doc, at.block);
-  const rule = found && docs.shape.node(found.node.type.name);
-  if (!text || !found || !rule) return null;
-  const position = text.getCursorPos(at.cursor);
-  if (!position) return null;
+  const position = text?.getCursorPos(at.cursor);
+  if (!text || !position) return null;
   let shown = 0;
   for (const unit of textUnits(text, rule, docs.shape)) {
     if (unit.pos >= position.offset) break;
     if (!unit.hidden) shown++;
   }
-  const held = at.after && position.update === undefined;
-  return found.start + Math.min(shown + (held ? 1 : 0), found.node.content.size);
+  return shown + (at.after && position.update === undefined ? 1 : 0);
+}
+
+/** The editor position a cursor stands at now, if its block still shows. */
+export function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number | null {
+  const found = textblockOf(doc, at.block);
+  const rule = found && docs.shape.node(found.node.type.name);
+  const offset = rule ? offsetOfCursor(docs, rule, at) : null;
+  return found && offset !== null ? found.start + Math.min(offset, found.node.content.size) : null;
 }

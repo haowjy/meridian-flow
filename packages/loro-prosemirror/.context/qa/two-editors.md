@@ -20,8 +20,12 @@ seed with the block the editor shows beside the one the docs read, and exits non
 Before the seeds it runs the raced removals: A removes a block while B types into it and the
 batches cross (the phase 1 gate's lost `[remo`). B's typing must show on both screens, whether it
 lands before the removal reaches B or straddles it; B's Ctrl+Z of that typing lets the removal
-stand; a removal that read the typing stands, as does a second removal of a revived block; and
-typing into a cell of a removed table brings the whole table back.
+stand; a removal that read the typing stands, as does a second removal of a revived block; typing
+into a cell of a removed table brings the whole table back; and the usual online case, where the
+removal reaches B between two keys: B's next keys go into the removed block and bring it back (also
+when the removal had read B's first keys), B's Ctrl+Z of them lets the removal stand, and a caret
+that moved on types where it is. The probe feeds each key through the plugin's `handleTextInput`
+first, as ProseMirror does.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs (`readProseMirror` without `since`), and after a final exchange
