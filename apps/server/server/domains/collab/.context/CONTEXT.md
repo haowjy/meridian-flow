@@ -166,7 +166,7 @@ A room's history is its docs' Loro oplogs. History is compacted by age on unload
 "History cutoff"): a room past about 5 MB has each doc cut to its frontier as of 7 days ago
 (`history_mark`), and a client update that depends on history below the cut is refused
 (`HistoryCutoffError`, `RoomError` `history-cutoff`). A write whose recorded frontier is below the
-cut plans on the transcript instead ([agent-edit](../../../../../packages/agent-edit/.context/CONTEXT.md#the-edit-core)).
+cut plans on the transcript instead ([agent-edit](../../../../../../packages/agent-edit/.context/CONTEXT.md#the-edit-core)).
 
 `domain/document-derivations.ts` is the sole pipeline from a document's text to stored text:
 block rows, the order and counts on the room row, `documents.size_bytes` and

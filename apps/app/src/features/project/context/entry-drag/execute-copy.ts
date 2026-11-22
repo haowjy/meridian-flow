@@ -1,7 +1,7 @@
 /**
  * Copying planned rows. A Copy stays a server route (the server seeds each copy's text from its
  * source): the browser makes the copies' ids and the command's id, and the copies arrive through
- * the list like anyone's records. Each open document sends the state vector its tab holds, so the
+ * the list like anyone's records. Each open document sends the room version its tab holds, so the
  * server never copies less than this tab saw: it waits for typing still on its way, and while it
  * has not arrived the same Copy is sent again under the same id. An error is a typed answer to the
  * request, so it is the caller's to show.

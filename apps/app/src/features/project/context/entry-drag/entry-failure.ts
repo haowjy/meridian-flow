@@ -36,7 +36,7 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-/** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
+/** What a Copy needs beyond a Move: the room version of a document's open session in this tab. */
 export type CopyContext = EntryContext & {
   roomVersionOf: RoomVersionOf;
 };

@@ -67,8 +67,8 @@ export async function treeListsOfNodes(
 }
 
 /**
- * The cut a review list is drawn at: each of the draft's lists, its journal id and state vector
- * at the journal's head. Read before the rows, at READ COMMITTED: the copy is never ahead of what
+ * The cut a review list is drawn at: each of the draft's lists, its id and version vector
+ * as the list stands. Read before the rows, at READ COMMITTED: the copy is never ahead of what
  * committed and rows read after it are at least as new, so the only error is a record the cut
  * misses, which stays pending. A REPEATABLE READ snapshot would let the copy run ahead of rows.
  */

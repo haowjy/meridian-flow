@@ -15,7 +15,7 @@ create by `documentFilenameAt`; every later naming path follows the stored kind 
 the project tree's `shownName` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
 states the kind in its create record. A prose document or a stored file at an Agent path is read
 as a problem, not as an Agent (`adapters/agent-level-files.ts`, whose text cache is keyed on the
-head's admission sequence: every admitted update moves it, a checkpoint need not come first); Copy keeps the source's kind, so a
+document's `content_seq`: every save of its Live room moves it); Copy keeps the source's kind, so a
 prose document copied there reads as unavailable until phase 3 converts it.
 
 ## URI and ownership
@@ -293,8 +293,7 @@ one source's tree contributes.
   authority and draft through admission, then appends the bound blocks to that draft through
   the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
   (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
-  (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
-  seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
+  (`createDocumentsAtomically`) persists the identities, `installSeeds` writes the seeds' Live rows (`encodeSeed`'s states), and every arrival settles once, so ahead refs pointing at a copy's new address
   settle. Projections and link rows are derived after the transaction commits, four documents at a
   time (`refreshDocumentProjection`), and the answer does not wait for them: a successful answer
   means the rows are committed, not derived. A derivation that fails is logged and the stale sweep
@@ -313,9 +312,9 @@ one source's tree contributes.
   What is still an error and stores nothing: `invalid_operation` for the source root or a
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
-  path or state vector, and a vector sent for a folder, which the route refuses before the domain
+  path or room version, and a version sent for a folder, which the route refuses before the domain
   runs. A draft view names its Work and no chat: the server reads the document through that Work's
-  view of Live (Live with the Work's suggestions taken); a Work outside the project is refused
+  view of Live (Live, until phase 2 brings the Work's text drafts); a Work outside the project is refused
   as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
   documents the Work places in it, a document only the Work has included, and a node the Work
   does not place is left out as purged. The one name outcome left to the address-model
@@ -398,8 +397,7 @@ a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A draft's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
 capture each other's waiting refs; a soft-deleted Work keeps its identity and
-its files until the purge, so refs to its address bind while it is deleted. Refs in a Work's suggestions, or in a
-document only a Work has, register globally and best effort: an agent's mint at its write, and
+its files until the purge, so refs to its address bind while it is deleted. Refs in a document only a Work has, register globally and best effort: an agent's mint at its write, and
 a link the writer types when the document's derivation runs (`registerUnregistered`, any
 document a view still shows); a failed registration never fails the write. The context link-scope adapter must receive the same scope instance as
 collab, whose [document authority notes](../../collab/.context/document-authority-and-schema.md)

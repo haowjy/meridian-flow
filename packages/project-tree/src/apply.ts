@@ -251,7 +251,7 @@ const whyNotInView = (reason: SkipReason): LeftWhy =>
  * It never refuses: what cannot land is in `left` with a `why` and stays pending.
  *
  * A record cannot land when the Work's view skips it (a move that would put a folder inside
- * itself, a node that is gone), when it was admitted after `saw` (the list's state vector at the
+ * itself, a node that is gone), when it was admitted after `saw` (the list's version vector at the
  * press: the writer had not seen it), or when it stands on one of those. A move or rename of a
  * node in Trash in live and in the Work's view is not applied and is not `left`: it waits in the
  * Work until the node is restored. A move or rename of a node the Work's view brings back from Trash

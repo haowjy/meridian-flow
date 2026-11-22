@@ -1,6 +1,6 @@
 # Server: documents
 
-The domains that hold a writer's text and decide who may change it. When the model writes, the call resolves the path to a document in `context` (1), asks `file-policy` whether this chat may edit it (2), writes through `collab` under that grant (3), `collab` stores the edit in the document's Loro room with the call's command (4) and pushes it to the browsers that have the document open (5). A writer opening a document connects to `collab` over `/ws/loro` (the browser's Yjs socket until it moves); the same `file-policy` check admits the connection. Back to the [server](server.md).
+The domains that hold a writer's text and decide who may change it. When the model writes, the call resolves the path to a document in `context` (1), asks `file-policy` whether this chat may edit it (2), writes through `collab` under that grant (3), `collab` stores the edit in the document's Loro room with the call's command (4) and pushes it to the browsers that have the document open (5). A writer opening a document connects to `collab` over `/ws/loro`; the same `file-policy` check admits the connection. Back to the [server](server.md).
 
 ```mermaid
 flowchart LR

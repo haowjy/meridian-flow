@@ -120,7 +120,7 @@ export type Settlement =
 
 /**
  * A settlement is a record too, appended and never changed. A record's state is its last
- * settlement in list order, so the list holds no deletions and a state vector names a point in
+ * settlement in list order, so the list holds no deletions and a version vector names a point in
  * it exactly. `pending` puts a drafted record back, as an Undo of an Apply does. A Discard is
  * final: restoring one appends new pending copies, never a `pending` settlement.
  */

@@ -166,7 +166,7 @@ export const commands = pgTable(
 
 /**
  * The tree half of a press Apply: one row per list the command settled records in, with the
- * list's state vector right after (its Undo is allowed only while the list still has it).
+ * list's version vector right after (its Undo is allowed only while the list still has it).
  */
 export const applyCommandTrees = pgTable(
   "apply_command_trees",
