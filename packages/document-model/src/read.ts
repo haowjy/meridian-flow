@@ -244,7 +244,17 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
  * (design §1, "Removed blocks"). Read key by key, for a write or a read that checks a few blocks.
  */
 export function revivedBlock(docs: RoomDocs, id: BlockId): boolean {
-  const order = structureValues(docs).value("order", id);
+  // Runs per keystroke: free the map handles rather than wait for GC.
+  const read = (name: string) => {
+    const map = docs.structure.getMap(name);
+    try {
+      return map.get(id);
+    } finally {
+      map.free();
+    }
+  };
+  const override = docs.draft ? read(overrideMap("order")) : undefined;
+  const order = override === undefined ? read("order") : override;
   return order !== undefined && typeof order !== "string";
 }
 

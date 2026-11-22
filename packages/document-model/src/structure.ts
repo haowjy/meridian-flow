@@ -39,7 +39,7 @@ function removalOf(value: unknown): Removal | null {
 export function textRead(doc: LoroDoc): TextRead {
   return {
     version: versionOf(doc),
-    text: textHash(doc.getText(TEXT_KEY).toString()),
+    text: textHash(textOf(doc)),
   };
 }
 
@@ -56,16 +56,28 @@ function editedSince(docs: RoomDocs, key: DocKey, removal: Removal): boolean {
   let beyond = false;
   for (const [peer, counter] of Object.entries(versionOf(doc)))
     if (counter > (version[peer] ?? 0)) beyond = true;
-  return beyond && textHash(doc.getText(TEXT_KEY).toString()) !== (read?.text ?? EMPTY_TEXT);
+  return beyond && textHash(textOf(doc)) !== (read?.text ?? EMPTY_TEXT);
 }
 
-/** A doc's oplog version as `{ peer: counter }`. Frees the vector: a read makes one per removed doc. */
+// A read makes these per text doc under a removed block: free each handle rather than wait for GC,
+// which lets WASM memory grow far faster than the JS heap shows.
+
+/** A doc's oplog version as `{ peer: counter }`. */
 function versionOf(doc: LoroDoc): Record<string, number> {
   const vector = doc.oplogVersion();
   try {
     return Object.fromEntries(vector.toJSON());
   } finally {
     vector.free();
+  }
+}
+
+function textOf(doc: LoroDoc): string {
+  const text = doc.getText(TEXT_KEY);
+  try {
+    return text.toString();
+  } finally {
+    text.free();
   }
 }
 
