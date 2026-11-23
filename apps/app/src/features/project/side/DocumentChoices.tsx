@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type Ref, useState } from "react";
+import { type ReactNode, type Ref, useState } from "react";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
@@ -11,7 +11,6 @@ import { twinSuffix } from "@/core/project-tree/tree-view";
 import { fileKindIcon } from "../context/context-file-icon";
 import { fileSuggestion, matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
 import { SideExplorer } from "./SideExplorer";
-import { useSideItem } from "./SideView";
 
 const RECENT_LIMIT = 6;
 const FIND_LIMIT = 12;
@@ -23,23 +22,28 @@ function parentFolder(path: string | undefined): string | undefined {
 }
 
 /**
- * The documents that can sit beside a chat, as one list: search, the documents open in main's
- * tabs, recently opened ones, then the file explorer. A document that can't open in the editor
+ * The documents to pick from, as one list: search, the documents open in main's tabs, recently
+ * opened ones, then the file explorer. Beside a chat it picks what sits beside; Review changes
+ * picks another file to compare against, with its other choices as `lead`. A document that can't open in the editor
  * can't sit beside: search, tabs and recents leave it out and the explorer lists it
  * disabled; each source says whether its document is editable. It renders in the side's dropdown and in the side's empty pane alike. Recents are only
  * offered here; nothing derives the side from them. `choose` writes the current document.
  */
 export function DocumentChoices({
   projectId,
+  current,
   choose,
+  lead,
   searchRef,
 }: {
   projectId: string;
+  /** The document the list marks as picked. */
+  current: string | null;
   choose: (documentId: string) => void;
+  /** Sections above the documents, which a search hides. */
+  lead?: ReactNode;
   searchRef?: Ref<HTMLInputElement>;
 }) {
-  const shown = useSideItem().item;
-  const current = shown?.kind === "document" ? shown.documentId : null;
   const { lanes } = useLiveTabs();
   const openTabs = lanes.document.tabs;
   const recent = useRecentDocuments(projectId);
@@ -115,6 +119,7 @@ export function DocumentChoices({
           </PickerSection>
         ) : (
           <>
+            {lead}
             {tabs.length > 0 ? (
               <PickerSection>
                 {tabs.map(({ document }) =>

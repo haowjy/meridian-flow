@@ -885,6 +885,10 @@ msgstr "Adding {name} to {area}"
 msgid "Address"
 msgstr "Address"
 
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "against {name}"
+msgstr "against {name}"
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr "Agent"
@@ -999,6 +1003,14 @@ msgstr "An Agent named {name} is already here."
 #: src/features/draft-review/stayed-words.ts
 msgid "Another Apply or Discard"
 msgstr "Another Apply or Discard"
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another draft"
+msgstr "another draft"
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another file"
+msgstr "another file"
 
 #: src/features/import/import-presentation.ts
 msgid "Another import in this project is organizing."
@@ -1669,6 +1681,10 @@ msgstr "Compaction queued"
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Compaction stopped"
 msgstr "Compaction stopped"
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "Compare with"
+msgstr "Compare with"
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
@@ -3341,6 +3357,7 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewTargetPicker.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -5564,6 +5581,10 @@ msgstr "Table placement"
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Tabs"
 msgstr "Tabs"
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Take"
+msgstr "Take"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"

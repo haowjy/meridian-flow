@@ -103,6 +103,18 @@
   --review-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
+/* Against another draft: a quiet word, not a glyph. */
+.meridian-editor .ProseMirror .meridian-review-take {
+  width: auto;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.meridian-editor .ProseMirror .meridian-review-take::before {
+  content: none;
+}
+
 .meridian-editor .ProseMirror .meridian-review-act:hover {
   background: var(--color-ink-fill);
   color: var(--color-foreground);

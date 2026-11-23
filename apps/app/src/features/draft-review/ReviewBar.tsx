@@ -1,10 +1,12 @@
 /**
- * Review changes' controls (design §6, item 3), on the review line above the toolbar: Inline or
- * Side by side where the pane fits two columns, the chapter's Discard · Apply, the stepper, and
- * Close, with the stepper between the chapter's × and Close. The stepper walks this chapter's changes, then the
- * draft's next changed chapter in the Changes list's order, wrapping at the ends; ‹ into the
- * previous chapter lands on its last change. Only the stepper crosses chapters, and it replaces
- * the review's history entry as it does.
+ * Review changes' controls (design §6, item 3), on the review line above the toolbar: what it
+ * compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two columns,
+ * against Live the chapter's Discard · Apply, the stepper, and Close, with the stepper between the
+ * chapter's × and Close. Against Live the stepper walks this chapter's changes, then the draft's
+ * next changed chapter in the Changes list's order, wrapping at the ends; ‹ into the previous
+ * chapter lands on its last change. Only the stepper crosses chapters, and it replaces the
+ * review's history entry as it does. Against another draft or file it walks this chapter's
+ * differences.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -17,6 +19,7 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { useOptionalDraftReview } from "./DraftReviewProvider";
 import { ReviewActions } from "./ReviewActions";
 import { ReviewStepper } from "./ReviewStepper";
+import { ReviewTargetPicker } from "./ReviewTargetPicker";
 import {
   setReviewLayout,
   useChosenReviewLayout,
@@ -42,12 +45,13 @@ export function ReviewBar() {
   const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
   // The draft deleted the chapter: its Discard brings it back.
   const deleted = files.find((file) => file.documentId === mode.documentId)?.item.tree?.deleted;
+  const live = mode.target === "live";
+  const changed = live ? files.filter((file) => file.item.pending && file.contextLocation) : [];
 
   const step = (direction: 1 | -1) => {
     const next = focused + direction;
     if (next >= 0 && next < rows.length) return mode.focus(rows[next].id);
     // Past this chapter's last change: the draft's next changed chapter, wrapping.
-    const changed = files.filter((file) => file.item.pending && file.contextLocation);
     const here = changed.findIndex((file) => file.documentId === mode.documentId);
     const file = changed.at((here + direction + changed.length) % changed.length);
     if (!file?.contextLocation || file.documentId === mode.documentId) {
@@ -76,6 +80,7 @@ export function ReviewBar() {
       data-draft-review-controls
       className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5"
     >
+      <ReviewTargetPicker mode={mode} />
       {wide ? (
         <IconButton
           size="xs"
@@ -87,22 +92,24 @@ export function ReviewBar() {
           <Columns2 aria-hidden />
         </IconButton>
       ) : null}
-      <ReviewActions
-        scope="document"
-        labels={{
-          discard: deleted ? t`Restore this chapter` : t`Discard this chapter`,
-          apply: t`Apply this chapter`,
-        }}
-        words={deleted ? { discard: t`Restore` } : undefined}
-        touch={touch}
-        disabled={locked}
-        onDiscard={() => pressChapter("discard")}
-        onApply={() => pressChapter("apply")}
-      />
+      {live ? (
+        <ReviewActions
+          scope="document"
+          labels={{
+            discard: deleted ? t`Restore this chapter` : t`Discard this chapter`,
+            apply: t`Apply this chapter`,
+          }}
+          words={deleted ? { discard: t`Restore` } : undefined}
+          touch={touch}
+          disabled={locked}
+          onDiscard={() => pressChapter("discard")}
+          onApply={() => pressChapter("apply")}
+        />
+      ) : null}
       <span data-review-secondary className="contents">
         <ReviewStepper
           count={rows.length}
-          crosses={files.filter((file) => file.item.pending).length > 1}
+          crosses={changed.length > 1}
           focusedIndex={focused}
           disabled={rows.length === 0}
           onStep={step}

@@ -18,8 +18,8 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   replace. Esc is one handler per host (`ReviewEscapeScope`) at page scope, after any menu, dialog
   or field that handles it.
 - **The controls** (`ReviewBar`) take the review line above the toolbar, so the formatting
-  controls stay whole: the layout toggle, the chapter's `Discard` · `Apply` (named "this chapter"
-  for assistive tech), the stepper and Close. A pane under 720px offers Inline only and an icon
+  controls stay whole: the target picker (`against Live ▾`), the layout toggle, against Live the
+  chapter's `Discard` · `Apply` (named "this chapter" for assistive tech), the stepper and Close. A pane under 720px offers Inline only and an icon
   Close; a line too narrow gives up in steps (`fitReviewLine`,
   [the identity bar](../../project/context/.context/document-identity-bar.md)).
 - **The rows** are the editor's: `ReviewChangesExtension` (`core/editor/extensions/review-changes`)
@@ -30,6 +30,14 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   row both columns, an empty cell where one side has nothing.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
   focus moves to the next row.
+- **Against another draft or file** (`ReviewTargetPicker`, `useReviewReference`): the page holds
+  the other room open for as long as it compares (another draft's fork of this document; the other
+  file as this draft shows it) and reads rows of one paragraph each: aligned by block id against a
+  draft (`draftDifferenceRows`), by the longest common run of equal paragraphs against a file
+  (`fileDifferenceRows`). Against a draft each row offers `Take` (`takeRow`), an edit in this
+  editor that Ctrl+Z takes back; a paragraph only the other draft has comes in with a fresh id.
+  Against a file there are no actions. No press, so nothing closes the review and the stepper
+  stays in this chapter.
 - **Every press is a Ctrl+Z step** in each editor open on its documents, pushed as it is made in
   `usePressCommands.run`, the one path every press takes (margin, bar, tree row, Changes rows):
   `EditorPressStep`. Its Undo waits for the press's answer, then sends the press's Undo; Redo
@@ -38,8 +46,10 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
 - **Pressing the last change closes the review** at once. A read that comes back empty closes
   it only once the draft's list agrees (`ReviewMode.listed`): a fork still syncing reads empty
   before the list does.
-- **The stepper crosses chapters**: past either end it opens the next or previous chapter with
-  changes, ‹ at its last change.
+- **The stepper crosses chapters** against Live: past either end it opens the next or previous
+  chapter with changes, ‹ at its last change. It counts this chapter's changes, not the draft's:
+  a total needs the draft's list to carry each document's change count, which the server would
+  count when the fork room saves (`changedBlocks` rows with a text paragraph).
 - **A plain draft** shows "Review N changes" (`ReviewChangesButton`), counted by the same extension
   in count mode, which paints nothing.
 
@@ -58,6 +68,21 @@ The Changes list, the chat strip and a page read the owner's draft list (`useOwn
 re-read when the server wakes the owner (`useProjectWake`) and in each of the account's tabs when a
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
 (`DraftCommandOwner.hold`) and comes back with a pill if the press fails.
+
+**An Undo that leaves some of a press in place** (`PressUndoResult.stayed`: someone wrote over
+it since) keeps those rows, in Review changes and the Changes list, marked `Kept` with who wrote
+over it (`stayed-words.ts`), and the editor shows the same quiet mark Ctrl+Z's do
+(`DocumentHistory.showStayed`).
+
+## A Work's drafts
+
+A Work holds several drafts; a chat writes into its thread's (`Thread.draftId`). The version chip's
+menu lists them (`work-draft-menu.tsx`) with `+ New draft` and `Delete draft`, each a command of
+`client/query/draft-commands.ts` laid over the server's list until a read has it. The draft the
+shell shows is remembered per tab (`useShownWorkDraft`); Delete goes back to Live and its Undo
+changes nothing on screen. With several drafts the Changes list has a heading per draft and its
+`Discard all` · `Apply all` presses the Work; the chat's draft dock lists its own draft's files
+with the same rows (`DraftFileRow`) and presses that draft.
 
 ## Account command lifetime
 
@@ -79,7 +104,5 @@ changes.
 
 ## Not covered yet
 
-- The draft switcher's drafts, New draft, Delete draft, and a Draft chat's turn cards (2d).
-- The target picker offers Live only.
-- A press Undo's changes it left (`PressUndoResult.stayed`) get no mark yet; Ctrl+Z's do
-  (`showKept`). Changes to comment bodies are not reviewed.
+- A Draft chat's turn cards (edited-chapter link, `Restore before`).
+- The stepper's total for the whole draft (above). Changes to comment bodies are not reviewed.

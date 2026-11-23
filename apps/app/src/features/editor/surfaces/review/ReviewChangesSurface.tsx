@@ -1,7 +1,8 @@
 /**
  * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
- * presses a change from its margin pair, moves the focus to the next change after a press, and
- * closes Review changes when the chapter has none left (design §6, item 5).
+ * presses a change from its margin pair (or takes another draft's paragraph), moves the focus to
+ * the next change after a press, and closes Review changes against Live when the chapter has none
+ * left (design §6, item 5).
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
@@ -10,6 +11,7 @@ import {
   type ReviewChangesConfig,
   type ReviewVerdict,
   setReviewChanges,
+  takeRow,
 } from "@/core/editor/extensions/review-changes/ReviewChangesExtension";
 import type { ReviewRow } from "@/core/editor/extensions/review-changes/review-rows";
 import { useOptionalDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -19,6 +21,7 @@ import {
   useReviewMode,
   useReviewSurface,
 } from "@/features/draft-review/review-mode";
+import { useReviewReference } from "@/features/draft-review/use-review-reference";
 
 /** The editor's width at which Review changes offers two columns. */
 const SIDE_BY_SIDE_MIN_PX = 720;
@@ -36,10 +39,13 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const page = useDraftPage();
   const documentId = page?.documentId ?? null;
   const changeId = mode?.changeId ?? null;
-  // A plain draft page reads the rows for its header's count; Review changes against Live paints
-  // them. Another draft or file has no Apply or Discard.
+  // A plain draft page reads the rows against Live for its header's count; Review changes paints
+  // them against its target.
   const active = page !== null;
-  const reviewing = mode !== null && mode.target === "live";
+  const reviewing = mode !== null;
+  const reference = useReviewReference(mode);
+  const against = reference?.kind ?? "live";
+  const referenceDocs = reference && reference.kind !== "live" ? reference.docs : null;
 
   // Nothing to review closes onto the plain draft, once the list agrees the copy is not still
   // syncing the draft's changes in.
@@ -76,10 +82,15 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     };
     const config: ReviewChangesConfig = {
       layout: reviewing ? layout : "count",
+      against,
+      reference: referenceDocs,
       focus: changeId,
       hidden: pressed,
-      labels: { apply: t`Apply`, discard: t`Discard`, restore: t`Restore` },
+      labels: { apply: t`Apply`, discard: t`Discard`, restore: t`Restore`, take: t`Take` },
       press,
+      take: (row) => {
+        if (!editor.isDestroyed) takeRow(editor.view, row);
+      },
       focusRow: (row) => latest.current.mode?.focus(row.id),
       onRows: (all) => {
         rows.current = all;
@@ -99,11 +110,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       const { mode } = latest.current;
       const left = shown(rows.current ?? []);
       closeIfEmpty();
-      if (
-        mode?.target === "live" &&
-        left.length > 0 &&
-        !left.some((row) => row.id === mode.changeId)
-      ) {
+      if (mode && left.length > 0 && !left.some((row) => row.id === mode.changeId)) {
         const landing = surface?.takeLanding() === "last" ? left.at(-1) : left[0];
         if (landing) mode.focus(landing.id);
       }
@@ -113,7 +120,18 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       surface?.publishRows(shown(rows.current));
       settle();
     }
-  }, [active, reviewing, documentId, editor, layout, changeId, pressed, surface]);
+  }, [
+    active,
+    reviewing,
+    against,
+    referenceDocs,
+    documentId,
+    editor,
+    layout,
+    changeId,
+    pressed,
+    surface,
+  ]);
 
   useEffect(() => {
     if (!active || editor.isDestroyed) return;

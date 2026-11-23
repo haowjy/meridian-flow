@@ -51,7 +51,7 @@ import { useItemLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
-import { useOptionalMainItem } from "../../views";
+import { useOptionalMainItem, useShownDraft } from "../../views";
 import { AgentsSource } from "./AgentsSource";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
@@ -220,7 +220,9 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: ListChecks,
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, changes, changesCommands, activeDocumentId, onPicked } = useWriteSources();
+      const { projectId, chatThreadId, changes, changesCommands, activeDocumentId, onPicked } =
+        useWriteSources();
+      const shownDraft = useShownDraft(projectId, chatThreadId);
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
@@ -228,7 +230,11 @@ const SOURCES: Record<SourceKey, Source> = {
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
-          isOpen={(file) => file.documentId === activeDocumentId}
+          // Two drafts may change one document: the row of the draft main paints is the open one.
+          isOpen={(file) =>
+            file.documentId === activeDocumentId &&
+            shownDraft(file.documentId)?.draftId === file.item.draftId
+          }
           onPicked={onPicked}
         />
       );

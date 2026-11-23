@@ -885,6 +885,10 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "against {name}"
+msgstr ""
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr ""
@@ -998,6 +1002,14 @@ msgstr ""
 
 #: src/features/draft-review/stayed-words.ts
 msgid "Another Apply or Discard"
+msgstr ""
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another draft"
+msgstr ""
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another file"
 msgstr ""
 
 #: src/features/import/import-presentation.ts
@@ -1668,6 +1680,10 @@ msgstr ""
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Compaction stopped"
+msgstr ""
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "Compare with"
 msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -3341,6 +3357,7 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewTargetPicker.tsx
 msgid "Live"
 msgstr ""
 
@@ -5563,6 +5580,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Tabs"
+msgstr ""
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Take"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts

@@ -1,33 +1,50 @@
 /**
  * Review changes on the one editor of a draft page (design §6, "Three page states, one editor"):
- * Live's text of each changed paragraph as read-only DOM above the draft's (Inline) or beside every
- * paragraph (Side by side), the words each side alone has marked, and the change's `×` / `✓` pair in
- * the right margin. All of it is decorations: the draft's text stays the editor's, editable, with
- * its one Ctrl+Z history. Nothing here writes.
+ * the reference's text of each changed paragraph as read-only DOM above the draft's (Inline) or
+ * beside every paragraph (Side by side), the words each side alone has marked, and in the right
+ * margin the change's `×` / `✓` pair against Live, or `Take` against another draft. All of it is
+ * decorations: the draft's text stays the editor's, editable, with its one Ctrl+Z history. Only
+ * `takeRow` writes, as an edit.
  *
- * The rows are read from the fork's copy and its Live copy (`reviewRows`) after the document
- * settles, never inside a keystroke: decorations map through typing and are rebuilt once the
- * writer pauses, so a 10,000-word chapter types as fast with Review changes on as off.
+ * The rows are read from the fork's copy and the reference's after the document settles, never
+ * inside a keystroke: decorations map through typing and are rebuilt once the writer pauses, so a
+ * 10,000-word chapter types as fast with Review changes on as off.
  */
 import { type RoomDocs, readDocument, type ShapeBlock } from "@meridian/document-model";
-import { blocksOf, loroSyncKey } from "@meridian/loro-prosemirror";
+import { blocksOf, inlineNodes, loroSyncKey, nodeOf } from "@meridian/loro-prosemirror";
+import { newBlockId } from "@meridian/prosemirror-schema";
 import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { blockText, type ReviewParagraph, type ReviewRow, reviewRows } from "./review-rows";
+import {
+  blockText,
+  draftDifferenceRows,
+  fileDifferenceRows,
+  type ReviewParagraph,
+  type ReviewRow,
+  reviewRows,
+} from "./review-rows";
 
 export type ReviewVerdict = "apply" | "discard";
 
 export type ReviewChangesConfig = {
   /** `count`: the plain draft page, which paints nothing and only reads the rows for its header. */
   layout: "inline" | "side" | "count";
+  /**
+   * What the draft is compared against: Live, whose changes it presses; another draft, whose
+   * paragraphs it takes; or another file, read only. `reference` is the other room, null on Live
+   * and until it is open.
+   */
+  against: "live" | "draft" | "file";
+  reference: RoomDocs | null;
   /** The change in focus (the address's `change`); null is none yet. */
   focus: string | null;
   /** Changes pressed and not yet answered: the page shows them gone. */
   hidden: ReadonlySet<string>;
-  labels: { apply: string; discard: string; restore: string };
+  labels: { apply: string; discard: string; restore: string; take: string };
   press: (verdict: ReviewVerdict, row: ReviewRow) => void;
+  take: (row: ReviewRow) => void;
   focusRow: (row: ReviewRow) => void;
   /** The rows as last read, for the bar's stepper. */
   onRows: (rows: readonly ReviewRow[]) => void;
@@ -106,7 +123,7 @@ function addedSpans(paragraph: ReviewParagraph): [number, number][] {
 }
 
 function referenceElement(paragraph: ReviewParagraph): HTMLElement {
-  const live = paragraph.live;
+  const live = paragraph.reference;
   const level = live?.node === "heading" ? Number(live.attrs.level ?? 1) : 0;
   const element = document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
   element.className = "meridian-review-ref";
@@ -133,13 +150,15 @@ function referenceElement(paragraph: ReviewParagraph): HTMLElement {
   return element;
 }
 
-function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement {
+/** The row's actions: a press's pair against Live, `Take` against another draft, none against a file. */
+function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement | null {
+  if (config.against === "file") return null;
   const pair = document.createElement("span");
   pair.className = "meridian-review-pair";
-  const button = (verdict: ReviewVerdict, label: string, glyph: string) => {
+  const button = (kind: string, label: string, glyph: string, act: () => void) => {
     const element = document.createElement("button");
     element.type = "button";
-    element.className = `meridian-review-act meridian-review-${verdict}`;
+    element.className = `meridian-review-act meridian-review-${kind}`;
     element.setAttribute("aria-label", label);
     element.title = label;
     element.dataset.glyph = glyph;
@@ -148,17 +167,24 @@ function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement {
     element.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      config.press(verdict, row);
+      act();
     });
     return element;
   };
+  if (config.against === "draft") {
+    const take = button("take", config.labels.take, "take", () => config.take(row));
+    take.textContent = config.labels.take;
+    pair.append(take);
+    return pair;
+  }
   pair.append(
     button(
       "discard",
       row.removed ? config.labels.restore : config.labels.discard,
       row.removed ? "restore" : "discard",
+      () => config.press("discard", row),
     ),
-    button("apply", config.labels.apply, "apply"),
+    button("apply", config.labels.apply, "apply", () => config.press("apply", row)),
   );
   return pair;
 }
@@ -183,7 +209,8 @@ function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean
     const wrap = cellOf(row, config, focused, view);
     for (const paragraph of row.paragraphs)
       if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph));
-    wrap.append(pairElement(row, config));
+    const pair = pairElement(row, config);
+    if (pair) wrap.append(pair);
     return wrap;
   };
 }
@@ -202,7 +229,8 @@ function sideCell(
   return (view: EditorView) => {
     const cell = cellOf(row, config, focused, view);
     cell.append(paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph));
-    if (first) cell.append(pairElement(row, config));
+    const pair = first ? pairElement(row, config) : null;
+    if (pair) cell.append(pair);
     return cell;
   };
 }
@@ -306,8 +334,8 @@ function buildDecorations(
   }
   if (side) {
     // Every paragraph both sides show reads beside itself, muted.
-    const docs = loroSyncKey.getState(state)?.docs;
-    const live = docs?.live ? textOf(readDocument(docs.live)) : new Map<string, string>();
+    const reference = referenceOf(state, config);
+    const live = reference ? textOf(readDocument(reference)) : new Map<string, string>();
     doc.forEach((node, offset) => {
       const id = node.attrs.id;
       if (typeof id === "string" && rowed.has(id)) return;
@@ -333,11 +361,57 @@ function textOf(blocks: readonly ShapeBlock[]): Map<string, string> {
   return texts;
 }
 
-/** The rows of the editor's draft copy as it stands. Null off a draft. */
-function readRows(state: EditorState): ReviewRow[] | null {
+function referenceOf(state: EditorState, config: ReviewChangesConfig): RoomDocs | null {
+  if (config.against !== "live") return config.reference;
+  return loroSyncKey.getState(state)?.docs?.live ?? null;
+}
+
+/** The rows of the editor's draft copy as it stands against the reference. Null off a draft. */
+function readRows(state: EditorState, config: ReviewChangesConfig): ReviewRow[] | null {
   const docs = loroSyncKey.getState(state)?.docs;
   if (!docs?.live) return null;
-  return reviewRows(docs, readDocument(docs.live), blocksOf(state.doc));
+  const reference = referenceOf(state, config);
+  if (!reference) return [];
+  const fork = blocksOf(state.doc);
+  if (config.against === "draft") return draftDifferenceRows(readDocument(reference), fork);
+  if (config.against === "file") return fileDifferenceRows(readDocument(reference), fork);
+  return reviewRows(docs, readDocument(reference), fork);
+}
+
+/** Where the textblock of `id` starts, or null. */
+function positionOf(doc: Node, id: string): number | null {
+  return blockPositions(doc).get(id) ?? null;
+}
+
+/**
+ * `Take`: the row's paragraph becomes the other draft's, as an edit in this editor that Ctrl+Z
+ * takes back. A paragraph only the other draft has comes in with a fresh id, so two drafts never
+ * share a text doc Live doesn't; one only this draft has goes.
+ */
+export function takeRow(view: EditorView, row: ReviewRow): void {
+  const { schema } = view.state;
+  const tr = view.state.tr;
+  for (const paragraph of [...row.paragraphs].reverse()) {
+    const doc = tr.doc;
+    if (paragraph.kind === "removed" && paragraph.reference) {
+      const before = paragraph.before === null ? null : positionOf(doc, paragraph.before);
+      const node = nodeOf(schema, { ...paragraph.reference, id: newBlockId() });
+      tr.insert(before ?? doc.content.size, node);
+      continue;
+    }
+    const pos = positionOf(doc, paragraph.id);
+    const node = pos === null ? null : doc.nodeAt(pos);
+    if (pos === null || !node) continue;
+    if (paragraph.kind === "added") {
+      tr.delete(pos, pos + node.nodeSize);
+      continue;
+    }
+    const reference = paragraph.reference;
+    if (!reference) continue;
+    tr.replaceWith(pos + 1, pos + node.nodeSize - 1, inlineNodes(schema, reference.inline));
+    tr.setNodeMarkup(pos, schema.nodes[reference.node], { ...reference.attrs, id: node.attrs.id });
+  }
+  if (tr.docChanged) view.dispatch(tr);
 }
 
 function paints(config: ReviewChangesConfig | null | undefined): config is ReviewChangesConfig {
@@ -396,7 +470,7 @@ export const ReviewChangesExtension = Extension.create({
             if (view.isDestroyed) return;
             const state = reviewChangesKey.getState(view.state);
             if (!state?.config) return;
-            const rows = readRows(view.state) ?? [];
+            const rows = readRows(view.state, state.config) ?? [];
             state.config.onRows(rows);
             view.dispatch(
               view.state.tr
@@ -417,9 +491,14 @@ export const ReviewChangesExtension = Extension.create({
           return {
             update(view, previous) {
               const config = reviewChangesKey.getState(view.state)?.config ?? null;
-              const turnedOn = config !== null && shownConfig === null;
+              // On, or compared against something else: read at once.
+              const turnedOn =
+                config !== null &&
+                (shownConfig === null ||
+                  shownConfig.against !== config.against ||
+                  shownConfig.reference !== config.reference);
               shownConfig = config;
-              watch(view, config ? (loroSyncKey.getState(view.state)?.docs?.live ?? null) : null);
+              watch(view, config ? referenceOf(view.state, config) : null);
               if (!config) {
                 clearTimeout(timer);
                 timer = undefined;
