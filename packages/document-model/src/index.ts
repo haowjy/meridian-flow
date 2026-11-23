@@ -11,7 +11,6 @@ export {
   type PressOptions,
   type PressUndo,
   pendingRemovalVersion,
-  restoreBefore,
   selectChanges,
   undoPress,
 } from "./changes.js";
@@ -133,6 +132,8 @@ export {
   commitStructure,
   type DocChange,
   encodeChanges,
+  type MovedPiece,
+  type Piece,
   StructureWriter,
   setCommentBody,
   type WriteOptions,

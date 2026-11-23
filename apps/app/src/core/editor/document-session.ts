@@ -436,7 +436,7 @@ export class DocumentSession {
   private forwardFromLive(): void {
     if (!this.docs.live || this.docs.isFreed) return;
     const forwarded = this.docs.forward();
-    if (forwarded.restore) this.publish([forwarded.restore]);
+    if (forwarded.restore.length) this.publish(forwarded.restore);
     if (forwarded.changed.length > 0) notifyChanged(this.docs, forwarded.changed);
   }
 

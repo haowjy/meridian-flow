@@ -1,5 +1,5 @@
-import type { Frontiers } from "loro-crdt";
-import { inMap, scoped } from "./handles.js";
+import type { Frontiers, LoroDoc } from "loro-crdt";
+import { inMap, inText, scoped } from "./handles.js";
 import { structureValues } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, overrideMap } from "./shape.js";
@@ -20,15 +20,35 @@ export const UNTRACKED_ORIGIN = "untracked";
  * that is not removed, or was removed without a record (an older build's `null`), is left alone.
  * Returns the change to publish.
  */
-export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange | null {
+export function restore(
+  docs: RoomDocs,
+  ids: Iterable<BlockId>,
+  options: { deleteMoved?: boolean } = {},
+): DocChange[] {
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
+  const textChanges: DocChange[] = [];
   for (const id of ids) {
     const removal = view.removal(id);
-    if (removal) writer.set("order", id, removal.at);
+    if (!removal) continue;
+    if (options.deleteMoved !== false && removal.moved) {
+      const [destination, runs] = removal.moved;
+      const doc = docs.textOf(destination);
+      if (doc) {
+        const start = doc.frontiers();
+        deleteMoved(doc, runs);
+        doc.commit({ origin: UNTRACKED_ORIGIN });
+        const after = doc.frontiers();
+        if (!sameFrontiers(start, after))
+          textChanges.push({ key: destination, doc, before: start, after });
+      }
+    }
+    const base = view.baseValue("order", id);
+    writer.set("order", id, docs.draft && removalOf(base) ? base : removal.at);
   }
-  return commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
+  const structure = commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
+  return structure ? [...textChanges, structure] : textChanges;
 }
 
 /**
@@ -38,9 +58,9 @@ export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange | nul
  * `forward` run it on every import, before anything reads the copy. A draft's fork answers only
  * the removals in its own overrides. Returns the change to publish.
  */
-export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | null {
+export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange[] {
   const removed = removedSince(docs, before);
-  if (removed.length === 0) return null;
+  if (removed.length === 0) return [];
   const under = keysUnder(docs);
   const unread = removed.filter(([id, removal]) =>
     under(id).some((key) => {
@@ -53,7 +73,38 @@ export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | n
         docs,
         unread.map(([id]) => id),
       )
-    : null;
+    : [];
+}
+
+function deleteMoved(doc: LoroDoc, runs: readonly [string, number, number][]) {
+  const ids = new Set(
+    runs.flatMap(([peer, counter, length]) =>
+      Array.from({ length }, (_, offset) => `${peer}:${counter + offset}`),
+    ),
+  );
+  if (ids.size === 0) return;
+  inText(doc, (text) => {
+    const positions: number[] = [];
+    for (let i = 0; i < text.length; i++) {
+      const cursor = text.getCursor(i, 0);
+      if (!cursor) continue;
+      const id = cursor.pos();
+      cursor.free();
+      if (id && ids.has(`${id.peer}:${id.counter}`)) positions.push(i);
+    }
+    for (let i = positions.length - 1; i >= 0; ) {
+      const end = positions[i--] + 1;
+      let start = end - 1;
+      while (i >= 0 && positions[i] === start - 1) start = positions[i--];
+      text.delete(start, end - start);
+    }
+  });
+}
+
+function sameFrontiers(a: readonly unknown[], b: readonly unknown[]) {
+  return (
+    a.length === b.length && a.every((id, index) => JSON.stringify(id) === JSON.stringify(b[index]))
+  );
 }
 
 /**
