@@ -7,8 +7,8 @@
 /** Who wrote a commit: a chat's turn, or a press. A commit with no author is the writer's own. */
 export type CommitAuthor = { turn: string } | { press: string };
 
-/** Ops per peer, as `[from, to)` counters: an edit's in one doc (`TextSpan.ops`). */
-export type OpSpans = Record<string, [number, number]>;
+/** Ops per peer, as `[from, to)` counter spans: an edit's ops in one doc. */
+export type OpSpans = Record<string, [number, number][]>;
 
 /**
  * The characters a take-back commit's inserted characters stand for, in the order it inserted
@@ -26,9 +26,18 @@ export interface TakeBackNote {
   ops: OpSpans;
 }
 
+/** A split or join's text in another block, naming the source block and its own delete. */
+export interface CopyNote {
+  from: string;
+  for: StandsFor;
+  ops: OpSpans;
+}
+
 export interface CommitNote {
   by?: CommitAuthor;
   undo?: TakeBackNote;
+  copy?: CopyNote;
+  clash?: boolean;
 }
 
 /** The message a commit carrying `note` is committed under; none for an empty note. */
@@ -52,6 +61,9 @@ export function readCommitMessage(message: string | undefined): CommitNote {
   if (by) note.by = by;
   const undo = takeBackOf(said.undo);
   if (undo) note.undo = undo;
+  const copy = copyOf(said.copy);
+  if (copy) note.copy = copy;
+  if (said.clash === true) note.clash = true;
   return note;
 }
 
@@ -75,15 +87,24 @@ function takeBackOf(undo: unknown): TakeBackNote | null {
       !Number.isInteger(run[2])
     )
       return null;
-  for (const span of Object.values(ops))
-    if (
-      !Array.isArray(span) ||
-      span.length !== 2 ||
-      !Number.isInteger(span[0]) ||
-      !Number.isInteger(span[1])
-    )
-      return null;
+  for (const spans of Object.values(ops)) {
+    if (!Array.isArray(spans)) return null;
+    for (const span of spans)
+      if (
+        !Array.isArray(span) ||
+        span.length !== 2 ||
+        !Number.isInteger(span[0]) ||
+        !Number.isInteger(span[1])
+      )
+        return null;
+  }
   return { for: runs as StandsFor, ops: ops as OpSpans };
+}
+
+function copyOf(copy: unknown): CopyNote | null {
+  if (!isObject(copy) || typeof copy.from !== "string") return null;
+  const parsed = takeBackOf(copy);
+  return parsed ? { from: copy.from, ...parsed } : null;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>

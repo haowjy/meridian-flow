@@ -22,10 +22,12 @@ export {
 export {
   type CommitAuthor,
   type CommitNote,
+  type CopyNote,
   commitMessage,
   type OpSpans,
   readCommitMessage,
 } from "./commit-message.js";
+export { chainOf, forwardText, idsAt, oneCopy } from "./copies.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export {
@@ -114,6 +116,8 @@ export {
   opsBetween,
   putBackValues,
   type SetValue,
+  type StandingOps,
+  standingSince,
   type TextOp,
   type TextSpan,
   valuesOf,
