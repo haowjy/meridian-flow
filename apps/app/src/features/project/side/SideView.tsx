@@ -40,6 +40,7 @@ import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import { type PanePlace, useOptionalPanePlace } from "../pane-place";
 import { useChatNavigation } from "../routing/chat-navigation";
+import type { ReviewTarget } from "../routing/project-address";
 import type { Item } from "../views";
 import {
   type Described,
@@ -299,10 +300,15 @@ export function SideViewProvider({
       const pane = placeIn(item.kind, mainRef.current);
       if (pane === "main") return pane;
       if (item.kind === "document") {
-        if (draft) setDocumentView(accountId, projectId, item.documentId, { pin: draft });
+        if (draft)
+          setDocumentView(accountId, projectId, item.documentId, {
+            pin: { draftId: draft.draftId, itemKey: draft.itemKey },
+          });
         writeLastShownDocument(accountId, projectId, {
           documentId: item.documentId,
           ...(item.workId ? { workId: item.workId } : {}),
+          ...(draft?.review ? { review: draft.review } : {}),
+          ...(draft?.review && draft.changeId ? { changeId: draft.changeId } : {}),
         });
       } else writeLastShownChat(accountId, projectId, item.chatId);
       setRevealed((count) => count + 1);
@@ -422,8 +428,8 @@ export type PlacedItem =
  */
 export type Place = (
   item: PlacedItem,
-  /** With a document, the draft it shows. */
-  draft?: DraftPin,
+  /** With a document, the draft it shows, and Review changes on it when `review` is set. */
+  draft?: DraftPin & { review?: ReviewTarget; changeId?: string },
 ) => PanePlace;
 
 /** The placement command; the side's picker and empty list choose through it too. */

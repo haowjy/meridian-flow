@@ -39,7 +39,7 @@ stateDiagram-v2
   Work's draft as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
   live's Trash.
 - **One rule for a page's version** (`shownDraft`, `features/project/views.ts`), read by the
-  paint, the address (`use-review-address-sync.ts`) and a tab's activation (`useOpenInMain`):
+  paint, the address (`use-draft-address-sync.ts`) and a tab's activation (`useOpenInMain`):
   a pin to another owner's draft shows it; the choice on Draft, or a page live doesn't have,
   shows the Work's draft where its list has one; else Live. Flipping writes only the choice; a
   pin to the Work's own draft carries only the focused change. A review address naming the

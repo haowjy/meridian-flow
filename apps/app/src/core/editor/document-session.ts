@@ -1,5 +1,11 @@
 /**
- * document-session — owns the lifecycle of one document's Live copy in this tab.
+ * document-session — owns the lifecycle of one document room's copy in this tab: the document's
+ * Live room, or a draft's fork room of it (design §6, "The session lifecycle").
+ *
+ * A fork session is built over the Live session of its document, which its holder keeps alive
+ * longer: its docs are a draft copy of the Live copy (`RoomDocs.draftOf`), and it registers them
+ * with the binding so every batch the Live session imports or writes forwards them, editor or
+ * not. It has its own socket, store, presence and Undo.
  *
  * A copy is a `RoomDocs` (the structure doc and a text doc per block, design §1), its IndexedDB
  * store (`local-copy-store.ts`), the room transport (`loro-room-transport.ts`), presence on
@@ -22,7 +28,7 @@
  */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
-import { WS_CLOSE } from "@meridian/contracts/protocol";
+import { loroRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import {
   type DocChange,
   type DocKey,
@@ -38,8 +44,10 @@ import {
   versionCovers,
 } from "@meridian/document-model";
 import {
+  forwardLocalWrite,
   importRemoteUpdate,
   notifyChanged,
+  registerDraft,
   UNTRACKED_ORIGIN,
   writeProseMirror,
 } from "@meridian/loro-prosemirror";
@@ -76,9 +84,18 @@ export type DocumentSessionStatus =
   | "access-lost"
   | "destroyed";
 
+/**
+ * The key a room's session goes by in this tab (registry, replacement, reading position, fence
+ * quarantine): the bare document id for Live, which keeps what earlier builds stored under it,
+ * and the room's name for a fork.
+ */
+export function sessionRoomKey(room: DocumentRoom): string {
+  return room.kind === "live" ? room.documentId : loroRoomName(room);
+}
+
 export type DocumentSessionSnapshot = {
   documentId: string;
-  /** The room key: the bare document id. */
+  /** `sessionRoomKey` of the room. */
   roomKey: string;
   room: DocumentRoom;
   status: DocumentSessionStatus;
@@ -154,8 +171,9 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** The room key: the bare document id. */
-  roomKey: string;
+  room: DocumentRoom;
+  /** A fork room's Live session, which outlives this one. */
+  live?: DocumentSession;
   /** The copy's IndexedDB database, by its exact name. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
   transportFactory?: DocumentSessionTransportFactory;
@@ -215,6 +233,9 @@ export class DocumentSession {
   private holdsUndeliverable = false;
   /** Replaced by another session: nothing more goes to the server or to other tabs. */
   private inert = false;
+  /** Inside a peer's batch: its writes are the import's, which forwards drafts itself. */
+  private importing = false;
+  private readonly unregisterDraft: () => void;
   private boundEditors = 0;
   private readonly unbound = new Set<() => void>();
   private schemaFence: SchemaFence | null = null;
@@ -239,17 +260,25 @@ export class DocumentSession {
   private resolveLifecycleCompleted!: () => void;
 
   constructor({
-    roomKey,
+    room,
+    live,
     persistence,
     transportFactory,
     persistSchemaFence,
     access = null,
   }: DocumentSessionOptions) {
-    this.roomKey = roomKey;
+    if ((room.kind === "fork") !== (live !== undefined))
+      throw new Error("a fork session takes its Live session, and only a fork session does");
+    this.roomKey = sessionRoomKey(room);
     this.access = access;
-    this.room = { kind: "live", documentId: roomKey };
-    this.documentId = roomKey;
-    this.docs = RoomDocs.create(documentShape(), this.peer);
+    this.room = room;
+    this.documentId = room.documentId;
+    this.docs = live
+      ? RoomDocs.draftOf(live.docs, this.peer)
+      : RoomDocs.create(documentShape(), this.peer);
+    this.unregisterDraft = live
+      ? registerDraft(this.docs, (changes) => this.publish(changes))
+      : noop;
     this.history = new DocumentHistory(this.docs, (changes) => this.publish(changes));
     this.persistSchemaFence = persistSchemaFence;
     this.localPresence = createLocalPresence(this.peer);
@@ -279,6 +308,11 @@ export class DocumentSession {
   publish(changes: readonly DocChange[]): void {
     if (this.destroyed || changes.length === 0) return;
     this.publishBatch(encodeChanges(changes));
+    if (!this.importing && !this.docs.live)
+      forwardLocalWrite(
+        this.docs,
+        changes.map((change) => change.key),
+      );
   }
 
   /**
@@ -314,11 +348,14 @@ export class DocumentSession {
   /** A peer's batch: imported through the composition guard, then stored. */
   private importRemote(batch: Uint8Array, store = true): void {
     if (this.destroyed || this.docs.isFreed) return;
+    this.importing = true;
     try {
       importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes));
     } catch (error) {
       reportError(error);
       return;
+    } finally {
+      this.importing = false;
     }
     if (store) this.append(batch);
     this.contentChanged();
@@ -372,6 +409,7 @@ export class DocumentSession {
       // copy already.
       if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
       for (const batch of loaded.updates) this.importRemote(batch, false);
+      this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
       this.store = store;
@@ -389,6 +427,17 @@ export class DocumentSession {
       this.localPersistenceSynced = true;
       this.recomputeStatus();
     }
+  }
+
+  /**
+   * A fork's copy is brought up to the Live copy it reads through: after its own load, whose
+   * stored copy can trail the Live copy this tab holds. Every later Live batch forwards it.
+   */
+  private forwardFromLive(): void {
+    if (!this.docs.live || this.docs.isFreed) return;
+    const forwarded = this.docs.forward();
+    if (forwarded.restore) this.publish([forwarded.restore]);
+    if (forwarded.changed.length > 0) notifyChanged(this.docs, forwarded.changed);
   }
 
   private startTabs(): void {
@@ -568,34 +617,21 @@ export class DocumentSession {
     return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
   }
 
+  /**
+   * Settles once the server acknowledged every batch this session sent so far, and at once while
+   * it is not connected. A fork's copy holds the Live ops it forwards, which its room never
+   * acknowledges, so a press waits on this (design §4).
+   */
+  whenSentAcknowledged(): Promise<void> {
+    return this.transportProvider?.whenSentAcknowledged() ?? Promise.resolve();
+  }
+
   /** Captured now; later typing does not move this barrier. */
   whenCurrentChangesAcknowledged(): Promise<void> {
     const provider = this.transportProvider;
     if (!provider) return Promise.reject(new Error("Document session has no transport"));
     if (this.access === "read") return Promise.resolve();
     return provider.whenCurrentChangesAcknowledged();
-  }
-
-  /**
-   * Settles once the server holds what this room holds now, or at once while the room is not
-   * synced or is read-admitted, and when it stops being synced or becomes read.
-   */
-  whenServerHoldsLocalChanges(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      let stop = () => {};
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        stop();
-        resolve();
-      };
-      stop = this.subscribe((snapshot) => {
-        if (snapshot.status !== "synced" || snapshot.access === "read") done();
-      });
-      if (settled) stop();
-      else this.whenCurrentChangesAcknowledged().then(done, done);
-    });
   }
 
   /** Whether this copy holds words a read-admitting server will never take. */
@@ -816,6 +852,7 @@ export class DocumentSession {
     this.transportProvider?.destroy();
     this.transportProvider = null;
     this.localPresence.release();
+    this.unregisterDraft();
     this.history.destroy();
     const store = this.store;
     this.store = null;

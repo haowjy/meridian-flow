@@ -293,7 +293,7 @@ reviews: a host that is not showing (the kept document, a closed side) paints no
 nothing and writes no pin. That keeps one review per document, and Discard
 writes into the issuing host's own editor, whose Undo takes it back.
 
-Main's address and main's view stay in step (`use-review-address-sync.ts`): an address arriving by
+Main's address and main's view stay in step (`use-draft-address-sync.ts`): an address arriving by
 push, pop or load sets or drops the pin; after that the view writes the address by replace. The
 side's view never writes the address. Launchers live in `review-launch.tsx`. Keep `PaintHold` and
 the opened review's focus in the presenting container; a command adapter may request a launch but must

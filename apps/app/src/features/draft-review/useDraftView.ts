@@ -2,9 +2,9 @@
 
 import type { DraftItem } from "@meridian/contracts/drafts";
 import type { DraftChangesView } from "./draft-changes";
-import type { DraftItemRef } from "./draft-review-session";
 import { listedItemChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
+import type { DraftItemRef } from "./useDraftReviewController";
 import type { WorkDraftCommands } from "./usePressCommands";
 
 export function useDraftView(

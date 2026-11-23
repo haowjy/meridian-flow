@@ -1,6 +1,11 @@
 /** Browser grammar contracts: kind-first paths, exact filenames, owners only where the path is not enough. */
 import { describe, expect, it } from "vitest";
-import { parseProjectAddress, projectAddressHref, withoutReview } from "./project-address";
+import {
+  parseProjectAddress,
+  projectAddressHref,
+  withoutDraft,
+  withoutReview,
+} from "./project-address";
 
 const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
@@ -15,12 +20,15 @@ function parse(href: string) {
 
 describe("readable project addresses", () => {
   it("round trips a stable change only inside a review address", () => {
-    const href = `${P}/editor/manuscript/chapter.md?item=draft-one&change=class%3Apart%2Ftwo`;
+    const href = `${P}/editor/manuscript/chapter.md?item=draft-one&review=live&change=class%3Apart%2Ftwo`;
     const parsed = parse(href);
     expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
     expect(projectAddressHref(parsed.address)).toBe(href);
-    expect(parse(`${P}/editor/manuscript/chapter.md?change=gone`)).toMatchObject({
+    expect(parse(`${P}/editor/manuscript/chapter.md?item=draft-one&change=gone`)).toMatchObject({
+      href: `${P}/editor/manuscript/chapter.md?item=draft-one`,
+    });
+    expect(parse(`${P}/editor/manuscript/chapter.md?review=live`)).toMatchObject({
       href: `${P}/editor/manuscript/chapter.md`,
     });
     expect(parse(`${href}&change=other`)).toMatchObject({
@@ -95,14 +103,14 @@ describe("readable project addresses", () => {
     });
   });
 
-  it("dropping a review keeps a Scratch document's owner", () => {
-    const draft = parse(`${P}/editor/manuscript/chapter.md?item=draft-one`);
+  it("closing a review keeps the draft, and leaving the draft keeps a Scratch document's owner", () => {
+    const review = parse(`${P}/editor/manuscript/chapter.md?item=draft-one&review=live&change=c1`);
     const scratch = parse(`${P}/editor/scratch/notes.md?owner=work%3A${WORK}&item=draft-one`);
-    if (draft.kind !== "valid" || scratch.kind !== "valid") throw new Error("fixture");
-    expect(projectAddressHref(withoutReview(draft.address))).toBe(
-      `${P}/editor/manuscript/chapter.md`,
+    if (review.kind !== "valid" || scratch.kind !== "valid") throw new Error("fixture");
+    expect(projectAddressHref(withoutReview(review.address))).toBe(
+      `${P}/editor/manuscript/chapter.md?item=draft-one`,
     );
-    expect(projectAddressHref(withoutReview(scratch.address))).toBe(
+    expect(projectAddressHref(withoutDraft(scratch.address))).toBe(
       `${P}/editor/scratch/notes.md?owner=work%3A${WORK}`,
     );
   });

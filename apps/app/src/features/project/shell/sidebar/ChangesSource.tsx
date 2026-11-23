@@ -3,7 +3,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
-import { Folder as FolderIcon, Layers } from "lucide-react";
+import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -28,7 +28,6 @@ import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import { ReviewStatusContent } from "@/features/draft-review/ReviewCompletion";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
@@ -201,7 +200,6 @@ export function ChangesSource({
   /** What an Apply of several asks about first: the documents it deletes. */
   const [asking, setAsking] = useState<{
     targets: readonly ReviewFileTarget[];
-    folders: readonly string[];
     deleting: readonly ReviewFileTarget[];
   } | null>(null);
   // The folder changes Apply all takes along: every one that can land.
@@ -218,14 +216,14 @@ export function ChangesSource({
   const refsOf = (targets: readonly ReviewFileTarget[]) =>
     targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
   const everyItem = refsOf(files);
-  const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
+  const applyAll = (targets: readonly ReviewFileTarget[]) => {
     hold();
-    void controller.applyMany(refsOf(targets), folders);
+    void controller.applyMany(refsOf(targets));
   };
-  const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
+  const startApply = (targets: readonly ReviewFileTarget[]) => {
     const deleting = targets.filter((file) => file.item.tree?.deleted === true);
-    if (deleting.length > 0) setAsking({ targets, folders, deleting });
-    else applyAll(targets, folders);
+    if (deleting.length > 0) setAsking({ targets, deleting });
+    else applyAll(targets);
   };
   const untitled = t`Untitled document`;
   const names = (targets: readonly ReviewFileTarget[]) =>
@@ -239,7 +237,7 @@ export function ChangesSource({
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          applyAll(asking.targets, asking.folders);
+          applyAll(asking.targets);
         },
         disabled: controller.dispositionLocked,
       }
@@ -350,7 +348,6 @@ export function ChangesSource({
                       hold();
                       void controller.discardAll(
                         everyItem,
-                        changedFolders,
                         // A lone folder change names itself in the notice.
                         everyItem.length === 0 && changedFolders.length === 1
                           ? (groupsOf(groups).find(
@@ -364,7 +361,7 @@ export function ChangesSource({
               onApply={
                 files.every((file) => hasApply(file.item)) &&
                 (files.length > 0 || changedFolders.length > 0)
-                  ? () => startApply(files, changedFolders)
+                  ? () => startApply(files)
                   : undefined
               }
             />
@@ -385,7 +382,8 @@ export function ChangesSource({
           <div className="px-2">
             <ListLine iconSlot status>
               <span className="inline-flex items-center gap-1.5">
-                <ReviewStatusContent completing="apply" />
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+                <Trans>Applying</Trans>
               </span>
             </ListLine>
           </div>
@@ -444,19 +442,7 @@ export function ChangesSource({
                     open={!folded.has(folder.id)}
                     onToggle={() => fold(folder.id)}
                     files={own}
-                    controller={controller}
-                    touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={!folder.fault && own.every((file) => hasApply(file.item))}
-                    onApply={() => startApply(own, folder.folders)}
-                    onDiscard={(name) => {
-                      hold();
-                      void controller.discardSelection({
-                        items: refsOf(own),
-                        folders: folder.folders,
-                        name,
-                      });
-                    }}
                   />
                 );
               }
@@ -591,7 +577,6 @@ function ChangeRow({
         title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file)}
         notice={notice}
-        revealActions={!touch}
         actions={
           <ReviewActions
             scope="document"
@@ -678,11 +663,6 @@ function FolderGroupRow({
   open,
   onToggle,
   files,
-  controller,
-  touch,
-  canApply,
-  onApply,
-  onDiscard,
   notice,
 }: {
   /** What the owner's notice says on this row. */
@@ -694,22 +674,10 @@ function FolderGroupRow({
   open: boolean;
   onToggle: () => void;
   files: readonly ReviewFileTarget[];
-  controller: WorkDraftCommands;
-  touch: boolean;
-  canApply: boolean;
-  onApply: () => void;
-  /** `name`: the folder's, for what the Discard's notice says. */
-  onDiscard: (name: string) => void;
   /** The Work's draft, whose folder items hold the folder's command state. */
   draftId: string | null;
 }) {
   const keys = draftId ? folder.folders.map((id) => folderKey(draftId, id)) : [];
-  useSyncExternalStore(
-    controller.owner.subscribe,
-    controller.owner.snapshot,
-    controller.owner.snapshot,
-  );
-  const pending = keys.some((key) => controller.owner.state(key).hidden);
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
@@ -728,21 +696,6 @@ function FolderGroupRow({
         }
         detail={folderSummary(folder)}
         notice={notice}
-        actions={
-          <ReviewActions
-            scope="document"
-            labels={{
-              apply: t`Apply changes in ${name}`,
-              discard: t`Discard changes in ${name}`,
-            }}
-            density="icon"
-            touch={touch}
-            disabled={pending || controller.dispositionLocked}
-            className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={() => onDiscard(name)}
-            onApply={canApply ? onApply : undefined}
-          />
-        }
         below={
           <div className="pl-1">
             {folder.fault ? (

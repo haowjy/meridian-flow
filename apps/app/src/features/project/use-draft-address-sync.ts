@@ -1,11 +1,12 @@
 /**
  * Main's address and main's document view, kept in step. An address arriving by push, pop or load
- * (a link, a reload, Back) is a command: it sets the view's pin to the draft it names, or drops the
- * pin when it names none; naming the scope's draft also sets the toggle to Draft. A replace is
- * not, unless it changes main's document: it rewrites its entry in place (`arrivalOf`). After that
- * what the document shows (`shownDraft`) is the owner and the address follows it by replace, so a
- * draft the writer picks, leaves, flips the toggle on, or focuses a change in rewrites the address
- * in place and never adds a Back step.
+ * (a link, a reload, Back) is a command: it sets the view's pin to the draft its `item` names, or
+ * drops the pin when it names none; naming the scope's draft also sets the toggle to Draft. A
+ * replace is not, unless it changes main's document: it rewrites its entry in place (`arrivalOf`).
+ * After that what the document shows (`shownDraft`) is the owner and the address's `item` follows
+ * it by replace, so a draft the writer picks, leaves or flips the toggle on rewrites the address in
+ * place and never adds a Back step. A pin that changes drops `review` and `change` in that same
+ * replace (`writeItemKey`): Review changes is of the draft it was opened on.
  */
 import type { RouterHistory } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
@@ -18,12 +19,12 @@ import {
 } from "@/client/project-shell/document-views";
 import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useAccountId } from "./context/account-feature-context";
-import type { ReviewAddressAdmission } from "./use-review-admission";
+import type { DraftAddressAdmission } from "./use-review-mode";
 import { useScopeDraftOwner } from "./use-work-scope";
 import { useShownDraft } from "./views";
 
 function samePin(a: DraftPin | null | undefined, b: DraftPin | null | undefined): boolean {
-  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
+  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey;
 }
 
 const inheritedArrivals = new WeakMap<RouterHistory, Map<string, string>>();
@@ -50,11 +51,11 @@ function arrivalOf(history: RouterHistory, key: string): string {
   return inherited.get(key) ?? key;
 }
 
-export function useReviewAddressSync({
+export function useDraftAddressSync({
   projectId,
   chatThreadId,
   locationKey: entryKey,
-  reviewOwner,
+  draftOwner,
   address,
   writeItemKey,
 }: {
@@ -63,14 +64,13 @@ export function useReviewAddressSync({
   chatThreadId: string | null;
   /** The rendered history entry's key. */
   locationKey: string | undefined;
-  /** The draft the address's item reviews (`addressReviewDraft`); null without one. */
-  reviewOwner: string | null;
+  /** The draft the address's item reviews (`addressDraftOwner`); null without one. */
+  draftOwner: string | null;
   address: {
     itemKey: string | undefined;
-    changeId: string | undefined;
     /** Main's document, as the address resolved it; undefined when main holds no document. */
     documentId: string | undefined;
-    admission: ReviewAddressAdmission | undefined;
+    admission: DraftAddressAdmission | undefined;
   };
   writeItemKey: (review: DraftPin | null) => void;
 }) {
@@ -91,34 +91,24 @@ export function useReviewAddressSync({
 
   useLayoutEffect(() => {
     if (locationKey === undefined || !documentId || arrived.current === locationKey) return;
-    if (address.itemKey && (address.admission !== "admitted" || !reviewOwner)) return;
+    if (address.itemKey && (address.admission !== "admitted" || !draftOwner)) return;
     arrived.current = locationKey;
     const next =
-      address.itemKey && reviewOwner
-        ? {
-            draftId: reviewOwner,
-            itemKey: address.itemKey,
-            ...(address.changeId ? { changeId: address.changeId } : {}),
-          }
-        : null;
+      address.itemKey && draftOwner ? { draftId: draftOwner, itemKey: address.itemKey } : null;
     // An address naming the scope's draft is the toggle's Draft: every page shows its draft.
     if (next && next.draftId === scopeDraftId)
       writeTreeVersionChoice(accountId, projectId, "draft");
     const current = readDocumentView(accountId, projectId, documentId).pin;
     if (samePin(next, current) || (!next && !current)) return;
     setDocumentView(accountId, projectId, documentId, next ? { pin: next } : { version: "live" });
-  }, [documentId, locationKey, reviewOwner, address, accountId, projectId, scopeDraftId]);
+  }, [documentId, locationKey, draftOwner, address, accountId, projectId, scopeDraftId]);
 
   useEffect(() => {
     if (!documentId || arrived.current !== locationKey) return;
     // The store, not this render's pin: the arrival above set the pin in this same commit, and the
     // render's older pin would write the address back to what the arrival replaced.
     const shown = shownOf(documentId);
-    if (
-      (address.itemKey ?? null) === (shown?.itemKey ?? null) &&
-      address.changeId === shown?.changeId
-    )
-      return;
+    if ((address.itemKey ?? null) === (shown?.itemKey ?? null)) return;
     writeItemKey(shown ?? null);
-  }, [documentId, locationKey, address.itemKey, address.changeId, stored, shownOf, writeItemKey]);
+  }, [documentId, locationKey, address.itemKey, stored, shownOf, writeItemKey]);
 }

@@ -63,7 +63,7 @@ export function ProjectAddressDocument({
   entryKey,
   address,
   result,
-  reviewItemKey,
+  draftItemKey,
   workId,
   navigation,
   onAdmission,
@@ -73,18 +73,18 @@ export function ProjectAddressDocument({
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
   /** An explicit selector (or hidden create) never publishes a live representation. */
-  reviewItemKey?: string;
+  draftItemKey?: string;
   workId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
-  const admissionInput = useRef({ address, result, reviewItemKey });
-  admissionInput.current = { address, result, reviewItemKey };
+  const admissionInput = useRef({ address, result, draftItemKey });
+  admissionInput.current = { address, result, draftItemKey };
   // Address projections are rebuilt from JSON snapshots. Their object identity is not an
   // admission event; only their serialized meaning is.
-  const admissionFingerprint = JSON.stringify({ result, reviewItemKey });
+  const admissionFingerprint = JSON.stringify({ result, draftItemKey });
   useEffect(() => {
-    const { address, result, reviewItemKey } = admissionInput.current;
+    const { address, result, draftItemKey } = admissionInput.current;
     if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
@@ -95,9 +95,9 @@ export function ProjectAddressDocument({
       publish("unavailable");
       return;
     }
-    if (reviewItemKey) {
+    if (draftItemKey) {
       // The link to a draft carries its item key, which names the draft.
-      const next = { ...canonical, itemKey: reviewItemKey };
+      const next = { ...canonical, itemKey: draftItemKey };
       if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;
     }

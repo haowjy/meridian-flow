@@ -14,20 +14,42 @@ import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id"
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
 
-/** A document in a slot. One followed from a link keeps the link's Work. */
-export type ShownDocument = { documentId: string; workId?: string };
-
-const WORK = "?work=";
+/**
+ * A document in a slot. One followed from a link keeps the link's Work. The side has no address, so
+ * its slot carries what main's address says beyond the document's pin: Review changes on
+ * (`review`, what it compares against) and the change in focus.
+ */
+export type ShownDocument = {
+  documentId: string;
+  workId?: string;
+  review?: string;
+  changeId?: string;
+};
 
 function encodeDocument(document: ShownDocument): string {
-  return `${document.documentId}${document.workId ? `${WORK}${document.workId}` : ""}`;
+  const query = new URLSearchParams();
+  if (document.workId) query.set("work", document.workId);
+  if (document.review) query.set("review", document.review);
+  if (document.review && document.changeId) query.set("change", document.changeId);
+  const rest = query.toString();
+  return rest ? `${document.documentId}?${rest}` : document.documentId;
 }
 
 function decodeDocument(stored: string | null): ShownDocument | null {
   if (!stored) return null;
-  const [documentId, workId] = stored.split(WORK);
+  const at = stored.indexOf("?");
+  const documentId = at < 0 ? stored : stored.slice(0, at);
   if (!documentId) return null;
-  return workId ? { documentId, workId } : { documentId };
+  const query = new URLSearchParams(at < 0 ? "" : stored.slice(at + 1));
+  const workId = query.get("work");
+  const review = query.get("review");
+  const changeId = review ? query.get("change") : null;
+  return {
+    documentId,
+    ...(workId ? { workId } : {}),
+    ...(review ? { review } : {}),
+    ...(changeId ? { changeId } : {}),
+  };
 }
 
 const listeners = new Map<string, Set<() => void>>();

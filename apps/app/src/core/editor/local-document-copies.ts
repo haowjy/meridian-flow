@@ -24,7 +24,7 @@
  * the copy, its mark (`SERVER_META`): what it holds beyond its mark is what a room that ends for
  * good drops.
  */
-import type { AccountId } from "@meridian/contracts/protocol";
+import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
@@ -48,9 +48,14 @@ function parseName(name: string): { key: string; incarnation: number } {
     : { key: name.slice(0, at), incarnation: Number(name.slice(at + 1)) };
 }
 
-/** A room's copy key, with no incarnation: `LocalDocumentCopies.current` says which one is open now. */
-export function documentSessionPersistenceKey(accountId: AccountId, documentId: DocumentId) {
-  return `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(documentId)}`;
+/**
+ * A room's copy key, with no incarnation: `LocalDocumentCopies.current` says which one is open now.
+ * A fork room's copy is named under its document's, so the document's copies are its Live copy and
+ * every fork copy of it, found and deleted together.
+ */
+export function documentSessionPersistenceKey(accountId: AccountId, room: DocumentRoom) {
+  const live = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(room.documentId)}`;
+  return room.kind === "live" ? live : `${live}/fork/${encodeURIComponent(room.draftId)}`;
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";

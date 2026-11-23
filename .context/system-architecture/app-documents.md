@@ -40,8 +40,9 @@ Binds the document session, chooses live or review presentation and mounts the t
 
 Review of a Work's draft: Changes, Apply, Discard, Undo.
 
-A change is one of the Work's tree records (a create, rename, move or delete), read from the
-owner's draft list. Apply or Discard of a document, folder or Work is a press on the server.
+A change is a paragraph of a document's fork room that differs from Live, or one of the Work's
+tree records (a create, rename, move or delete). Review changes paints the text changes in the
+editor; Apply or Discard of a change, document, draft or Work is a press on the server.
 
 - Kind: feature
 - Paths: `apps/app/src/features/draft-review`

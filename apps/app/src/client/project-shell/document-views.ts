@@ -1,5 +1,5 @@
 /**
- * How this browser tab shows each document: Live or a draft, which draft, and Show changes. One
+ * How this browser tab shows each document: Live or a draft, and which draft. One
  * record per (account, project) in sessionStorage, keyed by document id, holding only views that
  * differ from the default. Whichever host holds the document paints it from here.
  *
@@ -8,17 +8,14 @@
  * a remembered draft would hide a later draft of the same owner, because an item names the
  * draft and the document, not one draft.
  */
-import { parseDraftItemKey } from "@meridian/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
-import { projectQueryKeys } from "../query/project-query-keys";
-import { tabChangeCounts, withTabChangeCounts } from "../query/tab-change-counts";
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import { writeTreeVersionChoice } from "./store";
 
-/** A draft by its id, item, and focused change. */
-export type DraftPin = { draftId: string; itemKey: string; changeId?: string };
+/** The draft a page shows, by its id and item. Whether Review changes is on is the address's. */
+export type DraftPin = { draftId: string; itemKey: string };
 
 export type DocumentView = {
   /**
@@ -28,16 +25,14 @@ export type DocumentView = {
    */
   version: "draft" | "live";
   pin?: DraftPin;
-  showChanges: boolean;
 };
 
-export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live", showChanges: true };
+export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live" };
 
 /** A pin replaces the draft shown; `null` drops it. Choosing Live drops the pin with it. */
 export type DocumentViewPatch = {
   version?: DocumentView["version"];
   pin?: DraftPin | null;
-  showChanges?: boolean;
 };
 
 type Views = Readonly<Record<string, DocumentView>>;
@@ -49,10 +44,9 @@ const listeners = new Map<string, Set<() => void>>();
 
 function parsePin(value: unknown): DraftPin | undefined {
   if (!isRecord(value)) return undefined;
-  const { draftId, itemKey, changeId } = value;
+  const { draftId, itemKey } = value;
   if (typeof draftId !== "string" || typeof itemKey !== "string") return undefined;
-  if (changeId !== undefined && typeof changeId !== "string") return undefined;
-  return { draftId, itemKey, ...(changeId ? { changeId } : {}) };
+  return { draftId, itemKey };
 }
 
 function parseViews(value: unknown): Views | undefined {
@@ -62,11 +56,7 @@ function parseViews(value: unknown): Views | undefined {
     if (!isRecord(raw)) continue;
     const version = raw.version === "draft" ? "draft" : "live";
     const pin = version === "draft" ? parsePin(raw.pin) : undefined;
-    views[documentId] = {
-      version,
-      ...(pin ? { pin } : {}),
-      showChanges: raw.showChanges !== false,
-    };
+    views[documentId] = { version, ...(pin ? { pin } : {}) };
   }
   return views;
 }
@@ -95,7 +85,7 @@ function read(accountId: string, projectId: string): Views {
 }
 
 function isDefault(view: DocumentView): boolean {
-  return view.version === "live" && view.showChanges;
+  return view.version === "live";
 }
 
 function write(accountId: string, projectId: string, next: Views): void {
@@ -111,12 +101,11 @@ function patched(view: DocumentView, patch: DocumentViewPatch): DocumentView {
   return {
     version,
     ...(pin && version === "draft" ? { pin } : {}),
-    showChanges: patch.showChanges ?? view.showChanges,
   };
 }
 
 function samePin(a: DraftPin | undefined, b: DraftPin | undefined): boolean {
-  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
+  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey;
 }
 
 export function readDocumentView(
@@ -136,12 +125,7 @@ export function setDocumentView(
   const views = read(accountId, projectId);
   const current = views[documentId] ?? DEFAULT_DOCUMENT_VIEW;
   const next = patched(current, patch);
-  if (
-    next.version === current.version &&
-    next.showChanges === current.showChanges &&
-    samePin(next.pin, current.pin)
-  )
-    return;
+  if (next.version === current.version && samePin(next.pin, current.pin)) return;
   const { [documentId]: _old, ...rest } = views;
   write(accountId, projectId, isDefault(next) ? rest : { ...rest, [documentId]: next });
 }
@@ -172,10 +156,8 @@ export function enterScope(
       (cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? []).some(
         (row) => row.itemKey === pin.itemKey && row.isNew,
       );
-    if (view.version === "draft" && !onScope && !created) {
-      changed = true;
-      if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
-    } else next[documentId] = view;
+    if (view.version === "draft" && !onScope && !created) changed = true;
+    else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
 }
@@ -192,56 +174,10 @@ export function endPin(accountId: string, projectId: string, pin: DraftPin): voi
   for (const [documentId, view] of Object.entries(views)) {
     if (view.pin?.draftId === pin.draftId && view.pin.itemKey === pin.itemKey) {
       changed = true;
-      next[documentId] = { version: view.version, showChanges: view.showChanges };
+      next[documentId] = { version: view.version };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
-}
-
-const verifying = new Map<string, Promise<void>>();
-const verifyKey = (projectId: string, draftId: string, itemKey: string) =>
-  JSON.stringify([projectId, draftId, itemKey]);
-
-/**
- * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
- * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
- * draft has ended (Applied, Discarded, or gone in another tab). The read is taken as this tab
- * knows it: a document open here is listed by its editor's changes (`withTabChangeCounts`), and a
- * draft this browser's create makes (`created`) stays, since the server may not have heard of it.
- * A failed read clears nothing. Concurrent calls for one item share one read.
- */
-export function verifyPin(
-  queryClient: QueryClient,
-  accountId: string,
-  projectId: string,
-  pin: DraftPin,
-  created: (itemKey: string) => boolean,
-): void {
-  const key = verifyKey(projectId, pin.draftId, pin.itemKey);
-  if (verifying.has(key)) return;
-  const queryKey = projectQueryKeys.drafts(projectId, pin.draftId);
-  const documentId = parseDraftItemKey(pin.itemKey)?.documentId;
-  const held = documentId ? tabChangeCounts().get(documentId) : undefined;
-  // An editor here holding the document with none of the owner's changes in it has already
-  // answered: a read could only bring the server's older word.
-  const read =
-    held && !held[pin.draftId] ? Promise.resolve() : queryClient.refetchQueries({ queryKey });
-  const check = read.then(() => {
-    // A failed refetch keeps the old rows and sets status "error": it proves nothing.
-    if (queryClient.getQueryState(queryKey)?.status !== "success") return;
-    if (
-      created(pin.itemKey) ||
-      withTabChangeCounts(
-        cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? [],
-        pin.draftId,
-        tabChangeCounts(),
-      ).some((row) => row.itemKey === pin.itemKey)
-    )
-      return;
-    endPin(accountId, projectId, pin);
-  });
-  verifying.set(key, check);
-  void check.finally(() => verifying.delete(key));
 }
 
 function subscribe(accountId: string, projectId: string, listener: () => void) {
