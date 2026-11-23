@@ -4,7 +4,7 @@ import { structureValues } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, overrideMap } from "./shape.js";
 import { isOrderKey, type Removal, removalOf, StructureView } from "./structure.js";
-import { copiesIn } from "./take-back.js";
+import { copiesOf } from "./take-back.js";
 import { docCovers, docVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -19,38 +19,34 @@ export const UNTRACKED_ORIGIN = "untracked";
  * Bring removed blocks back (design §1, "Removed blocks"): `order[id]` set to the key its record
  * holds, last-writer-wins like any structure value, in a commit no Undo history records. A block
  * that is not removed, or was removed without a record (an older build's `null`), is left alone.
- * A block a join carried into another comes back without its copy there: the characters that
- * stand for its text (`copiesIn`) are deleted, by id, so two copies that both restore it delete
+ * A block comes back without the copies a split or a join made of its text, wherever later moves
+ * carried them (`copiesOf`): they are deleted, by id, so two copies that both restore it delete
  * them once. Returns the changes to publish.
  */
 export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
-  const changes: DocChange[] = [];
-  for (const id of ids) {
+  const removed = [...ids].flatMap((id) => {
     const removal = view.removal(id);
-    if (!removal) continue;
-    if (removal.moved !== undefined) {
-      const change = deleteCopies(docs, removal.moved, id);
-      if (change) changes.push(change);
-    }
-    writer.set("order", id, removal.at);
+    return removal ? [[id, removal.at] as const] : [];
+  });
+  const changes: DocChange[] = [];
+  for (const [key, stretches] of copiesOf(
+    docs,
+    removed.map(([id]) => id),
+  )) {
+    const { doc, before } = docs.writableText(key);
+    inText(doc, (text) => {
+      for (const [from, to] of stretches.reverse()) text.delete(from, to - from);
+    });
+    doc.commit({ origin: UNTRACKED_ORIGIN });
+    changes.push({ key, doc, before, after: doc.frontiers() });
   }
+  for (const [id, at] of removed) writer.set("order", id, at);
   const change = commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
   if (change) changes.push(change);
   return changes;
-}
-
-function deleteCopies(docs: RoomDocs, into: BlockId, of: BlockId): DocChange | null {
-  const shown = docs.textOf(into);
-  if (!shown || copiesIn(shown, of).length === 0) return null;
-  const { doc, before } = docs.writableText(into);
-  inText(doc, (text) => {
-    for (const [from, to] of copiesIn(doc, of).reverse()) text.delete(from, to - from);
-  });
-  doc.commit({ origin: UNTRACKED_ORIGIN });
-  return { key: into, doc, before, after: doc.frontiers() };
 }
 
 /**

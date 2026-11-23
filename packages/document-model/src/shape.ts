@@ -30,12 +30,34 @@ export const settledTarget = (key: string): [StructureMap, string] => {
 };
 
 /**
+ * Whether a draft's override holding `raw` is in force, with its `d.settled` entry `entry`: it is
+ * set, and not the value a press settled it at. One not in force reads Live's value.
+ */
+export const inForce = (raw: unknown, entry: unknown) =>
+  raw !== undefined && !sameValue(entry, raw);
+
+/**
+ * What a stored map of the structure doc holds: Live's values of a structure map (`base`), a
+ * draft's overrides of one (`override`, `overrideMap`), or a press's settling of overrides
+ * (`settled`, `SETTLED_MAP`).
+ */
+export type MapKind = { kind: "base" | "override"; map: StructureMap } | { kind: "settled" };
+
+export function mapKind(name: string): MapKind {
+  if (name === SETTLED_MAP) return { kind: "settled" };
+  return name.startsWith("d.")
+    ? { kind: "override", map: name.slice(2) as StructureMap }
+    : { kind: "base", map: name as StructureMap };
+}
+
+/**
  * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
  * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A
  * key per write, so recording a pair again always writes, and a deletion of the keys a copy read
  * never takes a record made since. Only a draft writes it (`d.pieces`). `changedBlocks` reads the
- * records to group changes; `retirePieces` deletes those no pending change needs, inside the write
- * or the press that settled them; a press's Undo puts back what it deleted (design §2).
+ * records to group changes; a press settles those of the changes it settles (`d.settled`, as any
+ * override), and `retirePieces` deletes those no pending change needs, inside a draft's write
+ * (design §2).
  */
 export const pieceKey = (a: BlockId, b: BlockId, stamp: string) =>
   a < b ? `${a}/${b}/${stamp}` : `${b}/${a}/${stamp}`;
@@ -47,13 +69,14 @@ export const pieceEnds = (key: string) => key.split("/", 2) as [BlockId, BlockId
  * entry what its override belongs to; every other map is keyed by block id.
  */
 export const membersOf = (name: string, key: string): string[] => {
-  if (name === SETTLED_MAP) {
+  const kind = mapKind(name);
+  if (kind.kind === "settled") {
     const [map, target] = settledTarget(key);
     return membersOf(map, target);
   }
-  return name.endsWith("attrs")
+  return kind.map === "attrs"
     ? [key.slice(0, key.lastIndexOf("/"))]
-    : name.endsWith("pieces")
+    : kind.map === "pieces"
       ? pieceEnds(key)
       : [key];
 };

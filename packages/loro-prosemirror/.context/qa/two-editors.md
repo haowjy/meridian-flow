@@ -79,9 +79,13 @@ brings the placeholder back. From review p18996: one edit judged on its author's
 a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
 Live has moved the block since. A Draft tab's Ctrl+Z of a split, a move or a retype the writer
 then applied stays, and the draft shows the applied edit with nothing pending: the press settled
-its values (`d.settled`). A join that did not read a peer's typing gives the block back without
-its copy, whether the typing arrives after the join (rule 1) or the typer's caret kept the block
-(the caret rule). A peer's Backspace run (one delete op with a negative `len`) over text A deleted
+its values (`d.settled`). With the Apply undone first, `Restore before` of each edit takes it
+back, and so does Ctrl+Z of the move and the retype; Ctrl+Z of the split and the typing stays,
+since the press's Undo returned their text to the draft as put-back text, which Loro's manager
+cannot delete (review p19057). A join that did not read a peer's typing gives the block back
+without its copy, whether the typing arrives after the join (rule 1) or the typer's caret kept the
+block (the caret rule), and so does a join followed by a split of its copy, or two joins in a row:
+the restore follows the copy of a copy (reviews p19056, p19057). A peer's Backspace run (one delete op with a negative `len`) over text A deleted
 keeps A's Ctrl+Z. From review p18998: B's batch between each of A's 1,001 keys splits A's
 one typing step into an item per key, and its Undo takes back every key.
 

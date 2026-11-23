@@ -105,7 +105,6 @@ export {
   StructureView,
 } from "./structure.js";
 export {
-  copiesIn,
   deletedBetween,
   type Edit,
   type EditValues,

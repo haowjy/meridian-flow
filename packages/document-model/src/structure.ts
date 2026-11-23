@@ -6,12 +6,12 @@ import {
   type Attrs,
   type BlockId,
   type DocKey,
+  inForce,
   overrideMap,
   SETTLED_MAP,
   type ShapeSchema,
   STRUCTURE_MAPS,
   type StructureMap,
-  sameValue,
   settledKey,
 } from "./shape.js";
 import type { DocVersion } from "./version.js";
@@ -28,8 +28,6 @@ type MapValues = Readonly<Record<string, unknown>>;
 export interface Removal {
   at: string;
   seen: ReadonlyMap<DocKey, DocVersion>;
-  /** The block a join carried this block's text into: where its copies stand (`CopyNote`). */
-  moved?: BlockId;
 }
 
 /**
@@ -44,7 +42,6 @@ export function isOrderKey(value: unknown): value is string {
 type StoredRemoval = {
   at?: unknown;
   seen?: Record<DocKey, Record<PeerId, number>>;
-  moved?: unknown;
 };
 
 /** The record an `order` value holds, or null: a key, or a removal written without one. */
@@ -56,11 +53,10 @@ export function removalOf(value: unknown): Removal | null {
   } catch {
     return null;
   }
-  const { at, seen, moved } = parsed;
+  const { at, seen } = parsed;
   if (!isOrderKey(at) || seen === null || typeof seen !== "object") return null;
   return {
     at,
-    ...(typeof moved === "string" ? { moved } : {}),
     seen: new Map(
       Object.entries(seen).map(([key, version]) => [
         key,
@@ -70,11 +66,10 @@ export function removalOf(value: unknown): Removal | null {
   };
 }
 
-export const encodeRemoval = ({ at, seen, moved }: Removal): string =>
+export const encodeRemoval = ({ at, seen }: Removal): string =>
   JSON.stringify({
     at,
     seen: Object.fromEntries([...seen].map(([key, version]) => [key, Object.fromEntries(version)])),
-    ...(moved === undefined ? {} : { moved }),
   });
 
 /**
@@ -272,9 +267,7 @@ export class StructureView {
   /** The draft's override in force: none where a press settled the value it holds (`d.settled`). */
   override(name: StructureMap, key: string): unknown {
     const raw = this.rawOverride(name, key);
-    return raw !== undefined && sameValue(this.settled[settledKey(name, key)], raw)
-      ? undefined
-      : raw;
+    return inForce(raw, this.settledValue(name, key)) ? raw : undefined;
   }
 
   /** The override as stored, in force or settled: what a writer compares its write with. */

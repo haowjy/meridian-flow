@@ -22,6 +22,7 @@ import {
   inText,
   docVersion,
   type Edit,
+  editSince,
   editStays,
   encodeRoomVersion,
   isOrderKey,
@@ -31,6 +32,7 @@ import {
   STRUCTURE_KEY,
   StructureView,
   setCommentBody,
+  undoEdits,
   undoPress,
   visibleComments,
 } from "@meridian/document-model";
@@ -947,6 +949,34 @@ function racedRemovals(): string[] {
         r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
         r.a.history.endStep();
         return settle(r, "join against unread typing", once("Mid word."), once("qA9"), once("Pre."));
+      },
+    },
+    // Review p19056: B joins x into p, then splits p where x began, so x's words move again, into
+    // a block of their own. A, not having seen either, types in x. The restore of x takes out the
+    // copy of a copy: x's words show once.
+    "a join, then a split of its copy, gives the block back without either copy": {
+      room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
+      run: (r) => {
+        r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
+        r.b.history.endStep();
+        split(r.b, "p", 4, "p2");
+        r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
+        r.a.history.endStep();
+        return settle(r, "join, split, unread typing", once("Mid word."), once("qA9"), once("Pre."));
+      },
+    },
+    // Review p19057: B joins y into x, then x into p, so p holds a copy of x's copy of y's text. A,
+    // not having seen either, types in y. The restore of y takes the copy out of p too.
+    "two joins in a row give the block back without its copy": {
+      room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
+      run: (r) => {
+        r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "y")));
+        r.b.history.endStep();
+        r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
+        r.b.history.endStep();
+        r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "y") + 1));
+        r.a.history.endStep();
+        return settle(r, "two joins, unread typing", once("Tail text."), once("qA9"), once("Mid word."));
       },
     },
     // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
@@ -1956,28 +1986,62 @@ function racedRemovals(): string[] {
 
   // A Draft tab's Ctrl+Z of an edit the writer then applied: the press settled the draft's
   // values (`d.settled`) and carried its text into Live, and the draft reads Live's, which hold
-  // them now. The step stays, so Ctrl+Z goes on to the step before it.
-  const draftUndoAfterApply = (name: string, edit: (de: Editor) => void): string | null => {
+  // them now. The step stays, so Ctrl+Z goes on to the step before it. With the press undone
+  // first (`then`), the edit is the draft's alone again: `Restore before` of it takes it back, and
+  // so does Ctrl+Z of an edit that wrote no text. Text the press's Undo returned to the draft is
+  // put-back text, which Loro's manager cannot delete (`Edit.ownTextOnly`): that step stays.
+  const draftUndoAfterApply = (
+    name: string,
+    edit: (de: Editor) => void,
+    writesText: boolean,
+    then: "nothing" | "Ctrl+Z" | "Restore before",
+  ): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
     const draft = RoomDocs.draftOf(live, freshPeerId());
     const de = editor("Draft", draft);
-    try {
-      edit(de);
+    const command = <T,>(run: (cmd: RoomDocs) => T): T => {
       const cmd = draft.fork(freshPeerId());
       try {
-        applyBlocks(cmd, "all", { liveVersion: live.version() });
+        const out = run(cmd);
         live.importBatch((cmd.live as RoomDocs).exportSince(live.version()));
         const got = draft.importBatch(cmd.exportSince(draft.version()));
         notifyChanged(draft, [...got.changed, ...draft.forward().changed]);
+        return out;
       } finally {
         cmd.free();
       }
-      const applied = shown(de);
-      if (runHistory(de, "undo")) return `applied ${name}: the Draft tab's Ctrl+Z ran`;
-      if (shown(de) !== applied) return `applied ${name}: the draft shows "${shown(de)}"`;
-      const pending = changedBlocks(draft);
-      return pending.length ? `applied ${name}: ${pending.length} changes pending` : null;
+    };
+    try {
+      const before = shown(de);
+      const since = draft.shownVersion();
+      edit(de);
+      const stored = editSince(draft, since, draft.peer, draft.version().keys());
+      const pressed = command((cmd) => applyBlocks(cmd, "all", { liveVersion: live.version() }).pressed);
+      if (then === "nothing") {
+        const applied = shown(de);
+        if (runHistory(de, "undo")) return `applied ${name}: the Draft tab's Ctrl+Z ran`;
+        if (shown(de) !== applied) return `applied ${name}: the draft shows "${shown(de)}"`;
+        const pending = changedBlocks(draft);
+        return pending.length ? `applied ${name}: ${pending.length} changes pending` : null;
+      }
+      const undone = command((cmd) => undoPress(cmd, pressed));
+      if (undone.stayed.length) return `applied ${name}, then undone: the press's Undo stayed`;
+      if (then === "Ctrl+Z") {
+        const pending = shown(de);
+        const ran = runHistory(de, "undo");
+        if (writesText)
+          return ran || shown(de) !== pending
+            ? `applied ${name}, then undone: Ctrl+Z ran over put-back text: "${shown(de)}"`
+            : null;
+        if (!ran) return `applied ${name}, then undone: Ctrl+Z stayed`;
+      } else {
+        const back = command((cmd) => undoEdits(cmd, [stored]));
+        if (back.stayed.size) return `applied ${name}, then undone: Restore before stayed`;
+      }
+      return shown(de) === before
+        ? null
+        : `applied ${name}, undone, then ${then}: the draft shows "${shown(de)}", wanted "${before}"`;
     } finally {
       de.destroy();
       draft.free();
@@ -2003,22 +2067,24 @@ function racedRemovals(): string[] {
   }
   const draft = draftRedoAfterLiveWrite();
   if (draft) failures.push(draft);
-  const edits: [string, (de: Editor) => void][] = [
-    ["split", (de) => split(de, "x", 14, "x2")],
-    ["move", (de) => move(de, "x", "a")],
-    ["retype", (de) => retype(de, "x", "heading", { level: 2 })],
+  const edits: [string, (de: Editor) => void, boolean][] = [
+    ["split", (de) => split(de, "x", 14, "x2"), true],
+    ["move", (de) => move(de, "x", "a"), false],
+    ["retype", (de) => retype(de, "x", "heading", { level: 2 }), false],
     [
       "typing",
       (de) => {
         caret(de, "x", 6);
         type(de, " new");
       },
+      true,
     ],
   ];
-  for (const [name, edit] of edits) {
-    const applied = draftUndoAfterApply(name, edit);
-    if (applied) failures.push(applied);
-  }
+  for (const [name, edit, writesText] of edits)
+    for (const then of ["nothing", "Ctrl+Z", "Restore before"] as const) {
+      const applied = draftUndoAfterApply(name, edit, writesText, then);
+      if (applied) failures.push(applied);
+    }
   return failures;
 }
 

@@ -1,7 +1,7 @@
 import { Groups } from "./groups.js";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
-import { type BlockId, overrideMap, pieceEnds } from "./shape.js";
+import { type BlockId, overrideMap, pieceEnds, SETTLED_MAP, settledKey } from "./shape.js";
 import { blockPending, Side } from "./side.js";
 
 /** The blocks the `pieces` records connect, one group per connected component. */
@@ -17,9 +17,9 @@ export function linkedPieces(keys: Iterable<string>): Groups {
 }
 
 /**
- * The `d.pieces` records of each connected component holding one of `blocks`, each with the block
- * of `blocks` in its component. A press deletes them all: every changed block of such a component
- * is in the change it settles.
+ * The `d.pieces` records of each connected component holding one of `blocks`, settled or not, each
+ * with the block of `blocks` in its component. A press settles those in force: every changed block
+ * of such a component is in the change it settles.
  */
 export function piecesOf(docs: RoomDocs, blocks: Iterable<BlockId>): Map<string, BlockId> {
   const out = new Map<string, BlockId>();
@@ -36,9 +36,14 @@ export function piecesOf(docs: RoomDocs, blocks: Iterable<BlockId>): Map<string,
   return out;
 }
 
-export function deletePieces(docs: RoomDocs, keys: Iterable<string>): void {
+/** Delete records, and a press's settling of each, as every write of an override does. */
+function deletePieces(docs: RoomDocs, keys: readonly string[]): void {
   inMap(docs.structure, overrideMap("pieces"), (map) => {
     for (const key of keys) map.delete(key);
+  });
+  inMap(docs.structure, SETTLED_MAP, (map) => {
+    for (const key of keys)
+      if (map.get(settledKey("pieces", key)) !== undefined) map.delete(settledKey("pieces", key));
   });
 }
 

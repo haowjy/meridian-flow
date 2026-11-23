@@ -11,6 +11,8 @@ import type { RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
   type DocKey,
+  inForce,
+  mapKind,
   membersOf,
   overrideMap,
   SETTLED_MAP,
@@ -127,8 +129,9 @@ function baseThrough(doc: LoroDoc, name: string, key: string, left: unknown): un
 
 /** The Live key a draft's `name[key]` holding `left` reads through to, if it does. */
 function readsThrough(name: string, key: string, left: unknown): [StructureMap, string] | null {
-  if (name === SETTLED_MAP) return settledTarget(key);
-  return left === undefined && name.startsWith("d.") ? [baseName(name), key] : null;
+  const kind = mapKind(name);
+  if (kind.kind === "settled") return settledTarget(key);
+  return left === undefined && kind.kind === "override" ? [kind.map, key] : null;
 }
 
 /**
@@ -181,18 +184,19 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
       for (const [key, { before, left, base }] of keys) {
         if (sameValue(before, left)) continue;
         if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
+        const kind = mapKind(name);
         // A press settled the value it wrote: the draft reads Live's, which holds it now, so
         // taking it back would change nothing on screen. It stays, as a write over it would.
-        if (name.startsWith("d.") && name !== SETTLED_MAP && left !== undefined) {
-          const settled = settledKey(baseName(name), key);
+        if (kind.kind === "override" && left !== undefined) {
+          const settled = settledKey(kind.map, key);
           const by = inMap(docs.structure, SETTLED_MAP, (entries) =>
-            sameValue(entries.get(settled), left) ? entries.getLastEditor(settled) : undefined,
+            inForce(left, entries.get(settled)) ? undefined : entries.getLastEditor(settled),
           );
           if (by !== undefined && by !== peer) return `${name}[${key}] was settled by a press`;
         }
         // A settled override someone wrote since without seeing the press (which writes no op on
         // the settled entry) holds another value now.
-        if (name === SETTLED_MAP && left !== undefined) {
+        if (kind.kind === "settled" && left !== undefined) {
           const [overridden, target] = settledTarget(key);
           const now = inMap(docs.structure, overrideMap(overridden), (map) => map.get(target));
           if (!sameValue(now, left))
@@ -265,12 +269,13 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
 }
 
 /**
- * Write every structure value of an edit back (it passed `editStays`), in one commit. A block the
- * edit made goes as a removal through `StructureWriter.remove`, with what this copy reads now, and
- * keeps its other keys to come back with; a removal record put back is written the same way, so a
- * peer's typing it did not read brings the block back (design §1, "Removed blocks"). Returns the
- * change and the values of the way back. `view`, if given, reads the structure as it is; the
- * commit is by `by`.
+ * Write every structure value of an edit back (it passed `editStays`), in one commit: each key,
+ * a press's `d.settled` entries included, gets the value it held before the edit (`planOf`). A
+ * block the edit made goes as a removal through `StructureWriter.remove`, with what this copy
+ * reads now, and keeps its other keys to come back with; a removal record put back in force is
+ * written the same way, so a peer's typing it did not read brings the block back (design §1,
+ * "Removed blocks"). Returns the change and the values of the way back. `view`, if given, reads
+ * the structure as it is; the commit is by `by`.
  */
 export function putBackValues(
   docs: RoomDocs,
@@ -284,22 +289,12 @@ export function putBackValues(
   const before = structure.frontiers();
   const read = view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
-  const write = ({ name, key, value }: Put) =>
-    inMap(structure, name, (map) => {
-      if (value === undefined) map.delete(key);
-      else map.set(key, value as never);
-    });
-  for (const put of puts) {
-    const { name, key, at } = put;
-    if (at === undefined && name !== SETTLED_MAP) {
-      write(put);
-      // A write of an override takes back a press's settling of it, as `StructureWriter`'s does.
-      if (name.startsWith("d."))
-        inMap(structure, SETTLED_MAP, (map) => {
-          const settled = settledKey(baseName(name), key);
-          if (map.get(settled) !== undefined) map.delete(settled);
-        });
-    }
+  for (const { name, key, value, at } of puts) {
+    if (at === undefined)
+      inMap(structure, name, (map) => {
+        if (value === undefined) map.delete(key);
+        else map.set(key, value as never);
+      });
     keysOf(back, name).set(key, { before: values.get(name)?.get(key)?.left, left: undefined });
   }
   // A removal counts the text under it as the run leaves it, a block the run puts back under it
@@ -310,11 +305,8 @@ export function putBackValues(
       docs,
       removals.length < puts.length ? new StructureView(docs) : read,
     );
-    for (const { key, at, moved } of removals) writer.remove(key, at ?? undefined, moved);
+    for (const { key, at } of removals) writer.remove(key, at ?? undefined);
   }
-  // Settled entries last: an edit that wrote an override and its entry together (a write that
-  // dropped an override matching Live) gets both back, and the writes above unsettle the key.
-  for (const put of puts) if (put.name === SETTLED_MAP) write(put);
   const change = commitStructure(docs, before, { by });
   for (const [name, keys] of back)
     inMap(structure, name, (map) => {
@@ -326,18 +318,20 @@ export function putBackValues(
   return { change, values: back };
 }
 
-/**
- * A write of a put-back: `at` set makes it a removal of block `key` (null: at its key now), naming
- * where a join carried its text (`moved`) as the record it puts back did.
- */
+/** A write of a put-back: `at` set makes it a removal of block `key` (null: at its key now). */
 interface Put {
   name: string;
   key: string;
   value: unknown;
   at?: string | null;
-  moved?: BlockId;
 }
 
+/**
+ * What putting `values` back writes, key by key: the value each held before the edit, except a
+ * removal, which is written anew (`Put.at`) where it is in force after the run. A record a press
+ * settled, its entry put back too, is not in force (it reads Live's): it goes back as stored, so
+ * it equals its entry again.
+ */
 function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] {
   const order = docs.draft ? overrideMap("order") : "order";
   // A block the edit made had no `order` before it; in a draft, none in Live either.
@@ -349,6 +343,11 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
       (!docs.draft || view.baseValue("order", id) === undefined)
     )
       made.add(id);
+  const entries = values.get(SETTLED_MAP);
+  const entryAfter = (key: string) => {
+    const entry = settledKey("order", key);
+    return entries?.has(entry) ? entries.get(entry)?.before : view.settledValue("order", key);
+  };
   const puts: Put[] = [];
   for (const [name, keys] of values)
     for (const [key, { before, left }] of keys) {
@@ -359,21 +358,12 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
         continue;
       }
       if (name !== order && membersOf(name, key).every((id) => made.has(id))) continue;
-      // A record a press settled is not in force (it reads Live's): it goes back as stored, so it
-      // equals its entry again.
-      const settled =
-        name === order &&
-        docs.draft &&
-        sameValue(
-          values.get(SETTLED_MAP)?.get(settledKey("order", key))?.before ??
-            view.settledValue("order", key),
-          before,
-        );
-      const removal = name === order && !settled ? removalOf(before) : null;
+      const removal =
+        name === order && (!docs.draft || inForce(before, entryAfter(key)))
+          ? removalOf(before)
+          : null;
       puts.push(
-        removal
-          ? { name, key, value: before, at: removal.at, moved: removal.moved }
-          : { name, key, value: before },
+        removal ? { name, key, value: before, at: removal.at } : { name, key, value: before },
       );
     }
   return puts;
@@ -398,45 +388,33 @@ function screenAfter(
 } {
   const { shape } = docs;
   type ScreenMap = "order" | "parent" | "node";
-  const onScreen = (map: string): map is ScreenMap =>
+  const onScreen = (map: StructureMap): map is ScreenMap =>
     map === "order" || map === "parent" || map === "node";
-  // What the run writes of each value, and of each settled entry (`putBackValues`: a write of an
-  // override deletes its entry, and an entry put back is written after).
-  const wrote = new Map<string, { map: ScreenMap; key: string; value: unknown }>();
-  const settles = new Map<string, unknown>();
+  // The plan's writes: of each value (a removal reads as any value that is not a key, and as an
+  // override in force), and of each settled entry.
+  const wrote = new Map<string, unknown>();
+  const entries = new Map<string, unknown>();
   const touched = new Set<BlockId>();
   for (const { name, key, value, at } of planOf(docs, view, values)) {
-    if (name === SETTLED_MAP) {
-      const [map, target] = settledTarget(key);
-      if (!onScreen(map)) continue;
-      touched.add(target);
-      settles.set(`${map}\u0000${target}`, value);
-      continue;
-    }
-    const map = baseName(name);
+    const kind = mapKind(name);
+    const [map, id] = kind.kind === "settled" ? settledTarget(key) : [kind.map, key];
     if (!onScreen(map)) continue;
-    touched.add(key);
-    // A removal reads as any value that is not a key.
-    wrote.set(`${map}\u0000${key}`, { map, key, value: at !== undefined ? "{}" : value });
+    touched.add(id);
+    if (kind.kind === "settled") entries.set(`${map}\u0000${id}`, value);
+    else wrote.set(`${map}\u0000${id}`, at !== undefined ? "{}" : value);
   }
   const puts = new Map<string, unknown>();
   for (const id of touched)
     for (const map of ["order", "parent", "node"] as const) {
       const at = `${map}\u0000${id}`;
-      if (!wrote.has(at) && !settles.has(at)) continue;
-      const value = wrote.get(at)?.value;
+      if (!wrote.has(at) && !entries.has(at)) continue;
       if (!docs.draft) {
-        puts.set(at, value);
+        puts.set(at, wrote.get(at));
         continue;
       }
-      // In a draft, the override after the run, unless it equals its settled entry: Live's then.
-      const raw = wrote.has(at) ? value : view.rawOverride(map, id);
-      const settled = settles.has(at)
-        ? settles.get(at)
-        : wrote.has(at)
-          ? undefined
-          : view.settledValue(map, id);
-      puts.set(at, raw === undefined || sameValue(raw, settled) ? view.baseValue(map, id) : raw);
+      const raw = wrote.has(at) ? wrote.get(at) : view.rawOverride(map, id);
+      const entry = entries.has(at) ? entries.get(at) : view.settledValue(map, id);
+      puts.set(at, inForce(raw, entry) ? raw : view.baseValue(map, id));
     }
   const valueAfter = (map: "parent" | "node", id: BlockId) => {
     const key = `${map}\u0000${id}`;
@@ -474,9 +452,6 @@ function screenAfter(
   };
 }
 
-const baseName = (name: string): StructureMap =>
-  (name.startsWith("d.") ? name.slice(2) : name) as StructureMap;
-
 /**
  * Whether `doc` has ops `then` lacks that are neither `self`'s nor the edit's own (`own`, its ops
  * there: a press's are its draft's writers').
@@ -501,12 +476,7 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
   const standing = standingSince(doc, then);
   if (!standing) return true;
   for (const ops of standing) {
-    if (
-      ops.undo &&
-      Object.entries(ops.undo.ops).every(([by, [from]]) => from >= (then.get(by as PeerID) ?? 0))
-    )
-      continue;
-    if (ops.peer === self) continue;
+    if (takesBackOnlySince(ops, then) || ops.peer === self) continue;
     const [from, to] = own[ops.peer] ?? [0, 0];
     if (ops.from >= from && ops.to <= to) continue;
     return true;
@@ -514,14 +484,28 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
   return false;
 }
 
-/** Whether every op of `ops` is in `doc` and stands there (`standingSince`). */
+/** Whether `ops` are a take-back of ops made since `then` alone: no write of their own. */
+const takesBackOnlySince = (ops: StandingOps, then: DocVersion) =>
+  ops.undo !== undefined &&
+  Object.entries(ops.undo.ops).every(([by, [from]]) => from >= (then.get(by as PeerID) ?? 0));
+
+/**
+ * Whether every op of `ops` is in `doc` and stands there: read by `standingSince` from where the
+ * ops were made, so a take-back by any peer since (a press's Undo) counts.
+ */
 function standsIn(doc: LoroDoc, ops: OpSpans): boolean {
   const spans = Object.entries(ops).filter(([, [from, to]]) => to > from);
   if (spans.length === 0) return false;
   const version = docVersion(doc);
   if (spans.some(([peer, [, to]]) => (version.get(peer as PeerID) ?? 0) < to)) return false;
   const then = new Map(version);
-  for (const [peer, [from]] of spans) then.set(peer as PeerID, from);
+  for (const [peer, [from]] of spans) {
+    const change = changeAt(doc, { peer: peer as PeerID, counter: from });
+    if (!change) return false;
+    const deps = plainVersion(doc.frontiersToVV(change.deps));
+    for (const [other, at] of then) then.set(other, Math.min(at, deps.get(other) ?? 0));
+    then.set(peer as PeerID, Math.min(then.get(peer as PeerID) ?? 0, from));
+  }
   const standing = standingSince(doc, then as DocVersion);
   if (!standing) return false;
   return spans.every(([peer, [from, to]]) => {
@@ -663,7 +647,7 @@ function rangesOf(since: readonly TextOp[]): { gone: Range[]; styled: Range[] } 
 export function textSince(doc: LoroDoc, after: Frontiers): TextOp[] {
   const since = textDiff(doc, after, doc.frontiers());
   if (!since.some((op) => op.delete != null)) return since;
-  const roots: StandsForMemo = new Map();
+  const roots = new Chains();
   let base: { units: Unit[]; view: LoroDoc } | null = null;
   try {
     return inText(doc, (text) => {
@@ -739,7 +723,7 @@ export function putBackOf(
   } finally {
     view.free();
   }
-  const memo: StandsForMemo = new Map();
+  const memo = new Chains();
   inText(doc, (text) => {
     let now = 0;
     let unit = 0;
@@ -810,77 +794,151 @@ function align(units: Unit[], view: LoroDoc, pos: number, n: number, came: Came[
  * back, by id, and what that one stands for in turn. Every link of the chain counts: a press carries
  * a draft's put-back text into Live as itself, so the text at an edit's `after` can be any of them.
  */
-function putBy(doc: LoroDoc, text: LoroText, pos: number, memo: StandsForMemo): Set<string> | null {
+function putBy(doc: LoroDoc, text: LoroText, pos: number, chains: Chains): Set<string> | null {
   const id = idAt(text, pos);
-  return id ? chainOf(doc, id, memo) : null;
+  return id ? chainOf(doc, id, chains) : null;
 }
 
-type StandsForMemo = Map<string, Set<string> | null>;
+/** One read's memo of `chainOf`, and of the characters each change inserted. */
+class Chains {
+  readonly ids = new Map<string, Set<string> | null>();
+  readonly inserted = new Map<string, [number, number][]>();
+}
 
 /**
- * The stretches `[from, to)` of `doc`'s text that are copies of block `of`'s text (`CopyNote`): a
- * character a split or a join wrote as a copy of `of`, or one an Undo put back for such a
- * character, followed through the take-back chain.
+ * A character of block `block`'s text doc, as a chain names one outside the doc it starts in, with
+ * the peer that copied it from there (`by`).
  */
-export function copiesIn(doc: LoroDoc, of: BlockId): [number, number][] {
-  const memo: StandsForMemo = new Map();
-  const notes = new Map<string, boolean>();
-  const isCopy = (id: string) => {
-    const at = parseId(id);
-    const change = changeAt(doc, at);
-    if (!change) return false;
-    const key = `${change.counter}@${change.peer}`;
-    let copies = notes.get(key);
-    if (copies === undefined) {
-      copies = readCommitMessage(change.message).copy?.from === of;
-      notes.set(key, copies);
-    }
-    return copies;
-  };
-  return inText(doc, (text) => {
-    const out: [number, number][] = [];
-    for (let pos = 0; pos < text.length; pos++) {
-      const id = idAt(text, pos);
-      if (!id || !(isCopy(id) || [...(chainOf(doc, id, memo) ?? [])].some(isCopy))) continue;
-      const last = out.at(-1);
-      if (last && last[1] === pos) last[1]++;
-      else out.push([pos, pos + 1]);
-    }
-    return out;
-  });
-}
+const linkTo = (block: BlockId, id: string, by: PeerID) => `${block}\u0000${id}\u0000${by}`;
+const linkOf = (link: string) => {
+  const [block, id, by] = link.split("\u0000");
+  return by === undefined ? null : { block, id, by: by as PeerID };
+};
 
-function chainOf(doc: LoroDoc, id: string, memo: StandsForMemo): Set<string> | null {
-  if (memo.has(id)) return memo.get(id) ?? null;
-  memo.set(id, null);
+/**
+ * What the character `id` of `doc` stands for, every link up: the character a take-back put it
+ * back for (`TakeBackNote`), by its id, and the one a split or a join carried it from (`CopyNote`),
+ * in block `from`'s text doc (`linkTo`), and what each one in this doc stands for in turn. A link
+ * into another doc ends the chain here: `copiesOf` follows it there. Readers of one doc compare
+ * bare ids, which a link never equals.
+ */
+function chainOf(doc: LoroDoc, id: string, chains: Chains): Set<string> | null {
+  const { ids } = chains;
+  if (ids.has(id)) return ids.get(id) ?? null;
+  ids.set(id, null);
   const at = parseId(id);
   const change = changeAt(doc, at);
-  const runs = readCommitMessage(change?.message).undo?.for;
-  const root = change && runs ? nthOf(runs, insertedBefore(doc, change, at.counter)) : null;
-  let chain: Set<string> | null = null;
+  const { undo, copy } = readCommitMessage(change?.message);
+  if (!change || (!undo && !copy)) return null;
+  const n = insertedBefore(doc, change, at.counter, chains);
+  const chain = new Set<string>();
+  const copied = copy && nthOf(copy.for, n);
+  if (copied) chain.add(linkTo(copy.from, copied, at.peer));
+  const root = undo && nthOf(undo.for, n);
   if (root) {
-    chain = new Set([root]);
-    for (const further of chainOf(doc, root, memo) ?? []) chain.add(further);
+    chain.add(root);
+    for (const further of chainOf(doc, root, chains) ?? []) chain.add(further);
   }
-  memo.set(id, chain);
-  return chain;
+  const out = chain.size > 0 ? chain : null;
+  ids.set(id, out);
+  return out;
+}
+
+/**
+ * Where each block of `docs` holds a copy of text of the blocks `restored` (design §1, "Removed
+ * blocks"): the stretches `[from, to)` whose characters stand for one of theirs, through any
+ * number of take-backs and further splits and joins (`chainOf`). A restore deletes them, so a
+ * block that comes back never shows beside a copy, wherever later moves carried it. A character
+ * the copy's own writer deleted there was moved, not copied (a split, a drag): its copy stays.
+ */
+export function copiesOf(
+  docs: RoomDocs,
+  restored: Iterable<BlockId>,
+): Map<DocKey, [number, number][]> {
+  const blocks = new Set(restored);
+  const out = new Map<DocKey, [number, number][]>();
+  if (blocks.size === 0) return out;
+  const memos = new Map<DocKey, Chains>();
+  const chainsOf = (key: DocKey) => {
+    const chains = memos.get(key) ?? new Chains();
+    memos.set(key, chains);
+    return chains;
+  };
+  const moves = new Map<string, Set<string>>();
+  const movedBy = (doc: LoroDoc, block: BlockId, by: PeerID) => {
+    const key = `${block}\u0000${by}`;
+    const ids = moves.get(key) ?? deletedBy(doc, { [by]: [0, docVersion(doc).get(by) ?? 0] });
+    moves.set(key, ids);
+    return ids;
+  };
+  const copies = new Map<string, boolean>();
+  const copiesOne = (key: DocKey, doc: LoroDoc, id: string): boolean => {
+    const at = `${key}\u0000${id}`;
+    const known = copies.get(at);
+    if (known !== undefined) return known;
+    copies.set(at, false);
+    let hit = false;
+    for (const was of chainOf(doc, id, chainsOf(key)) ?? []) {
+      const link = linkOf(was);
+      const from = link && docs.textOf(link.block);
+      if (!link || !from) continue;
+      hit = blocks.has(link.block)
+        ? !movedBy(from, link.block, link.by).has(link.id)
+        : copiesOne(link.block, from, link.id);
+      if (hit) break;
+    }
+    copies.set(at, hit);
+    return hit;
+  };
+  for (const key of docs.textKeys()) {
+    const doc = docs.textOf(key);
+    if (!doc || !holdsCopies(doc)) continue;
+    const stretches = inText(doc, (text) => {
+      const found: [number, number][] = [];
+      for (let pos = 0; pos < text.length; pos++) {
+        const id = idAt(text, pos);
+        if (!id || !copiesOne(key, doc, id)) continue;
+        const last = found.at(-1);
+        if (last && last[1] === pos) last[1]++;
+        else found.push([pos, pos + 1]);
+      }
+      return found;
+    });
+    if (stretches.length > 0) out.set(key, stretches);
+  }
+  return out;
+}
+
+/** Whether a split or a join ever wrote a copy into `doc` (`CopyNote`): only then can it hold one. */
+function holdsCopies(doc: LoroDoc): boolean {
+  for (const changes of doc.getAllChanges().values())
+    for (const { message } of changes) if (readCommitMessage(message).copy) return true;
+  return false;
 }
 
 /** How many characters `change` inserted before the one at `counter`, in the order it inserted them. */
-function insertedBefore(doc: LoroDoc, change: Change, counter: number): number {
+function insertedBefore(doc: LoroDoc, change: Change, counter: number, chains: Chains): number {
+  const key = `${change.counter}@${change.peer}/${change.length}`;
+  let runs = chains.inserted.get(key);
+  if (!runs) {
+    runs = [];
+    for (const json of doc.exportJsonInIdSpan({
+      peer: change.peer,
+      counter: change.counter,
+      length: change.length,
+    }))
+      for (const op of json.ops) {
+        const { content } = op as { content: { type: string; text?: string } };
+        if (content.type === "insert" && content.text !== undefined)
+          runs.push([op.counter, [...content.text].length]);
+      }
+    chains.inserted.set(key, runs);
+  }
   let count = 0;
-  for (const json of doc.exportJsonInIdSpan({
-    peer: change.peer,
-    counter: change.counter,
-    length: change.length,
-  }))
-    for (const op of json.ops) {
-      const { content } = op as { content: { type: string; text?: string } };
-      if (content.type !== "insert" || content.text === undefined) continue;
-      const length = [...content.text].length;
-      if (counter < op.counter + length) return count + Math.max(0, counter - op.counter);
-      count += length;
-    }
+  for (const [from, length] of runs) {
+    if (counter < from + length) return count + Math.max(0, counter - from);
+    count += length;
+  }
   return count;
 }
 
@@ -949,9 +1007,10 @@ function deletedAgain(
   peer: PeerID,
 ): string | null {
   if (deleted.size === 0) return null;
-  const standing = standingSince(doc, plainVersion(doc.frontiersToVV(after)));
+  const then = plainVersion(doc.frontiersToVV(after));
+  const standing = standingSince(doc, then);
   if (!standing) return "cut by a snapshot";
-  const memo: StandsForMemo = new Map();
+  const memo = new Chains();
   const isDeleted = (id: string) =>
     deleted.has(id) || [...(chainOf(doc, id, memo) ?? [])].some((was) => deleted.has(was));
   let putsBack = false;
@@ -960,7 +1019,7 @@ function deletedAgain(
       ops.undo?.for.some(([by, counter, length]) =>
         Array.from({ length }, (_, k) => `${counter + k}@${by}`).some(isDeleted),
       ) ?? false;
-    if (ops.peer === peer) continue;
+    if (ops.peer === peer || takesBackOnlySince(ops, then)) continue;
     for (const change of doc.exportJsonInIdSpan({
       peer: ops.peer,
       counter: ops.from,
@@ -1001,10 +1060,10 @@ function deletedAgain(
 
 /**
  * Per text doc, what each removal record a peer other than `peer` wrote since `since` (structure
- * frontiers) read of it, whether the removal still stands or a restore answered it. A removal
- * takes the text it read off the screen, as a delete would: a join copies a block's text into the
- * block before and removes it. A join's record a restore answered does not count: the restore
- * took its copy out (`restore`), so the text shows once again.
+ * frontiers) read of it, while the removal stands. A removal takes the text it read off the
+ * screen, as a delete would: a join copies a block's text into the block before and removes it.
+ * One a restore answered does not count: the block shows again, and the restore took its copies
+ * out (`restore`), so the text shows once.
  */
 function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocKey, DocVersion[]> {
   const out = new Map<DocKey, DocVersion[]>();
@@ -1022,9 +1081,8 @@ function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocK
       for (const { container, content } of change.ops) {
         if (content.type !== "insert" || mapName(container) !== order) continue;
         const removal = removalOf((content as { value: unknown }).value);
-        if (removal?.moved !== undefined && answered((content as { key: string }).key)) continue;
-        for (const [key, seen] of removal?.seen ?? [])
-          out.set(key, [...(out.get(key) ?? []), seen]);
+        if (!removal || answered((content as { key: string }).key)) continue;
+        for (const [key, seen] of removal.seen) out.set(key, [...(out.get(key) ?? []), seen]);
       }
   }
   return out;

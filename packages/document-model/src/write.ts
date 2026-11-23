@@ -96,9 +96,8 @@ export interface WriteOptions {
 /**
  * What one write moved between blocks (a split, a join, a paste, a drop). A draft records each
  * pair so the two blocks are one change (design §2). Each stretch of text carried whole goes in
- * as a copy that names the characters it stands for (`CopyNote`), and a block whose text a join
- * carried off names where it went in its removal record, so the block coming back takes its copy
- * out (design §1).
+ * as a copy that names the characters it stands for (`CopyNote`), so a block coming back takes
+ * its copies out wherever they stand (`restore`, design §1).
  */
 export interface Moved {
   pieces: readonly (readonly [BlockId, BlockId])[];
@@ -174,7 +173,7 @@ export class StructureWriter {
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
    * they remove. `at` is given when an Undo writes a removal record back (`putBackValues`).
    */
-  remove(id: BlockId, at = this.view.order(id) as string, moved?: BlockId): void {
+  remove(id: BlockId, at = this.view.order(id) as string): void {
     const seen = new Map<DocKey, DocVersion>();
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
@@ -182,7 +181,7 @@ export class StructureWriter {
       // holds ops it never showed.
       if (doc) seen.set(key, plainVersion(doc.version()));
     }
-    this.set("order", id, encodeRemoval({ at, seen, moved }));
+    this.set("order", id, encodeRemoval({ at, seen }));
   }
 
   /**
@@ -406,10 +405,7 @@ export function writeDocument(
       // A block under a removed block hides with it, and comes back with it.
       const parent = read().parent(id);
       const goesWithParent = typeof parent === "string" && !written.has(parent);
-      if (!written.has(id) && !goesWithParent) {
-        const into = [...copies].find(([, list]) => list.some((copy) => copy.from === id))?.[0];
-        structure().remove(id, undefined, into);
-      }
+      if (!written.has(id) && !goesWithParent) structure().remove(id);
     }
   if (docs.draft) {
     for (const [a, b] of options.moved?.pieces ?? []) structure().pieces(a, b);

@@ -8,6 +8,7 @@ import {
   type DocKey,
   INLINE_STYLE,
   type InlineItem,
+  inForce,
   type Marks,
   markNameOf,
   type NodeRule,
@@ -240,9 +241,7 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
   return {
     value(name, key) {
       const override = docs.draft ? get(overrideMap(name), key) : undefined;
-      return override === undefined || sameValue(get(SETTLED_MAP, settledKey(name, key)), override)
-        ? get(name, key)
-        : override;
+      return inForce(override, get(SETTLED_MAP, settledKey(name, key))) ? override : get(name, key);
     },
   };
 }

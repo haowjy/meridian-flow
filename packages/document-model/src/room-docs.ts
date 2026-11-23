@@ -274,6 +274,12 @@ export class RoomDocs {
     return this.texts.get(id) ?? this.live?.textOf(id);
   }
 
+  /** Every block whose text a reader reads (`textOf`): its own and, for a draft, Live's. */
+  textKeys(): Set<BlockId> {
+    this.alive();
+    return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
+  }
+
   /**
    * The doc a write into block `id` goes to: its own, else (in a draft) a fork of Live's taken now,
    * else a new doc. A draft never writes into Live's text docs. `before` is the frontier the write
