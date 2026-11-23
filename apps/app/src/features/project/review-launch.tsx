@@ -41,6 +41,8 @@ export type ItemLaunchTarget = {
   focus?: ReviewFocus;
   /** The writer just made the document: its text takes the caret, as one made on Live does. */
   made?: true;
+  /** Replace the history entry: the stepper crossing chapters within Review changes. */
+  replace?: true;
 };
 
 type EditorReviewCommand = (target: ItemLaunchTarget) => Promise<void>;
@@ -104,7 +106,7 @@ export function ReviewLaunchProvider({
               documentId: target.documentId,
             }),
             {
-              replaceIfSameDocument: true,
+              ...(target.replace ? { replace: true } : { replaceIfSameDocument: true }),
               document: tab ?? undefined,
               draftOnly: target.draftOnly,
               itemKey: target.itemKey,

@@ -67,6 +67,8 @@ export type DraftReviewController = {
   /** The review editor reports when its body is (or stops being) the painted one. */
   setInlineReviewShown: (documentId: string, itemKey: string, shown: boolean) => void;
   startItem: (mode: "apply" | "discard", item: DraftItemRef) => CommandStart;
+  /** One change of a document, named by any of its members. */
+  startChange: (mode: "apply" | "discard", item: DraftItemRef, change: string) => CommandStart;
   apply: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
 };
@@ -146,7 +148,7 @@ export function useDraftReviewController({
     [reportFocusedChange],
   );
 
-  const { startItem, apply, discard } = commands;
+  const { startItem, startChange, apply, discard } = commands;
 
   return useMemo(
     () => ({
@@ -166,6 +168,7 @@ export function useDraftReviewController({
       exitReview,
       setInlineReviewShown,
       startItem,
+      startChange,
       apply,
       discard,
     }),
@@ -186,6 +189,7 @@ export function useDraftReviewController({
       exitReview,
       setInlineReviewShown,
       startItem,
+      startChange,
       apply,
       discard,
     ],

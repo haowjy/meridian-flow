@@ -30,7 +30,7 @@ export {
   type SelectionCursors,
   selectionCursors,
 } from "./cursors.js";
-export { type HistoryRun, UNTRACKED_ORIGIN, UndoHistory } from "./history.js";
+export { type HistoryRun, type OutsideStep, UNTRACKED_ORIGIN, UndoHistory } from "./history.js";
 export {
   type LoroSyncOptions,
   type LoroSyncState,

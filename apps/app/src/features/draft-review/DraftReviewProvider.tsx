@@ -149,3 +149,8 @@ export function useDraftReview(): DraftReviewContextValue {
   }
   return value;
 }
+
+/** The host's review, or null outside a document host (an editor that is not a page). */
+export function useOptionalDraftReview(): DraftReviewContextValue | null {
+  return useContext(DraftReviewContext);
+}

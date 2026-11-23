@@ -19,7 +19,7 @@ import {
 } from "@/client/project-shell/document-views";
 import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useAccountId } from "./context/account-feature-context";
-import type { ReviewAddressAdmission } from "./DocumentReview";
+import type { ReviewAddressAdmission } from "./use-review-mode";
 import { useScopeDraftOwner } from "./use-work-scope";
 import { useShownDraft } from "./views";
 

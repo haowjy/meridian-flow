@@ -2,8 +2,8 @@
  * One document host's review scope and paint: what the document shows (Live or a draft) and the
  * draft's list. Every host that holds a document (main, the side, the phone) gets one, so two
  * documents on screen show two drafts without sharing state. Commands stay account-wide and
- * queued per item (`DraftCommandOwner`). Painting a draft opens the plain draft; nothing here
- * turns Review changes on.
+ * queued per item (`DraftCommandOwner`). Painting a draft opens the plain draft; Review changes is
+ * on only where the host's address (main) or stored slot (the side) says (`useHostReviewMode`).
  *
  * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
  * mounted hidden and paint Live.
@@ -17,32 +17,24 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import {
+  type DraftPage,
+  DraftPageProvider,
+  type ReviewMode,
+  ReviewModeProvider,
+} from "@/features/draft-review/review-mode";
 import { useAccountId } from "./context/account-feature-context";
-import type { MainReviewControls } from "./routing/main-review";
-import type { ReviewTarget } from "./routing/project-address";
 import { useShellTreeVersion } from "./tree-version";
+import { useHostReviewMode } from "./use-review-mode";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
-
-/** The route's verdict on the draft item an address names, asked of the server by owner and item. */
-export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
-
-/** The review main's address names, and the route's verdict on it. Null off a document address. */
-export type MainReviewAddress = {
-  documentId: string | undefined;
-  itemKey: string | undefined;
-  admission: ReviewAddressAdmission | undefined;
-  /** Review changes is on, against this; undefined is the plain draft. */
-  review: ReviewTarget | undefined;
-  /** The change in focus in Review changes. */
-  changeId: string | undefined;
-  controls: MainReviewControls | undefined;
-};
-export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
 export type DocumentReview = {
   value: DraftReviewContextValue;
   paint: DocumentPaint;
+  /** Review changes on this host; null on Live and on a plain draft. */
+  mode: ReviewMode | null;
+  page: DraftPage | null;
 };
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
@@ -96,7 +88,16 @@ export function useDocumentReview(
     showLive,
   });
 
-  return { value, paint };
+  const mode = useHostReviewMode(projectId, documentId, paint);
+  const pin = paint.draft;
+  const page = useMemo(
+    () =>
+      documentId && pin
+        ? { projectId, documentId, draftId: pin.draftId, itemKey: pin.itemKey }
+        : null,
+    [projectId, documentId, pin],
+  );
+  return { value, paint, mode, page };
 }
 
 /** Exposes one host's review to everything that host renders, in one or several subtrees. */
@@ -109,7 +110,11 @@ export function DocumentReviewBoundary({
 }) {
   return (
     <DraftReviewBoundary value={review.value}>
-      <DocumentPaintContext.Provider value={review.paint}>{children}</DocumentPaintContext.Provider>
+      <DocumentPaintContext.Provider value={review.paint}>
+        <DraftPageProvider value={review.page}>
+          <ReviewModeProvider value={review.mode}>{children}</ReviewModeProvider>
+        </DraftPageProvider>
+      </DocumentPaintContext.Provider>
     </DraftReviewBoundary>
   );
 }

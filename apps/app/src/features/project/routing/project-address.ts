@@ -12,6 +12,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
+import type { ReviewTarget } from "@/features/draft-review/review-mode";
 
 export type ProjectDestination =
   | { kind: "new-chat" | "chat-recents" | "editor" }
@@ -41,8 +42,7 @@ export type ParsedProjectAddress =
   | { kind: "invalid"; reason: string };
 const RECOGNIZED_QUERY = new Set(["owner", "item", "review", "change", "settings"]);
 
-/** What Review changes compares the draft against. */
-export type ReviewTarget = "live" | `file:${string}` | (string & {});
+export type { ReviewTarget };
 
 /** The reference a review target names. */
 export function parseReviewTarget(

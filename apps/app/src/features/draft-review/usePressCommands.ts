@@ -336,8 +336,9 @@ export function usePressCommands({
         if (answer.kind !== "done") return answer;
         const changed = pressed.result.items.map((item) => item.node);
         const where = noticeSurface(input.documentId);
+        let step: PressEntries;
         if (verdict === "apply") {
-          const step = remember("apply", pressed, () => {
+          step = remember("apply", pressed, () => {
             if (notices.appliedFacts(draftId)?.facts.some((fact) => fact.step === step))
               notices.end(draftId);
           });
@@ -354,7 +355,7 @@ export function usePressCommands({
           });
         } else {
           let shown: number | null = null;
-          const step = remember("discard", pressed, () => {
+          step = remember("discard", pressed, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
             const notice = notices.get(draftId);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
@@ -376,7 +377,7 @@ export function usePressCommands({
           };
           shown = notices.showDiscard({ projectId, draftId, surface: where, parts: [part] });
         }
-        return answer;
+        return { ...answer, undo: () => step.undo() };
       });
       return { sent: true, outcome };
     };

@@ -37,11 +37,6 @@ import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import { DesktopProject } from "./DesktopProject";
-import {
-  type MainReviewAddress,
-  MainReviewAddressContext,
-  type ReviewAddressAdmission,
-} from "./DocumentReview";
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
@@ -63,6 +58,11 @@ import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
 import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
+import {
+  type MainReviewAddress,
+  MainReviewAddressContext,
+  type ReviewAddressAdmission,
+} from "./use-review-mode";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";

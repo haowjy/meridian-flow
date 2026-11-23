@@ -41,7 +41,11 @@ type Step = {
   edit: Edit;
   selection: SelectionCursors;
   at: number;
+  /** A step this copy's editor did not write (a press): its Undo and Redo are the caller's. */
+  outside?: OutsideStep;
 };
+/** A step taken outside the editor, such as a press: Ctrl+Z runs `undo`, Ctrl+Shift+Z `redo`. */
+export type OutsideStep = { undo: () => void; redo: () => void };
 type Watched = { manager: UndoManager; doc: LoroDoc };
 
 /**
@@ -148,6 +152,32 @@ export class UndoHistory {
     this.tag = { step: step.id, selection: step.selection };
   }
 
+  /**
+   * A step taken outside the editor (a press) goes on the history as the newest: Ctrl+Z reaching
+   * it runs its `undo` and goes no further, which writes nothing here; whatever that does arrives
+   * as imports. Redo runs `redo`.
+   */
+  pushOutside(outside: OutsideStep): void {
+    this.endStep();
+    this.undoSteps.push({
+      id: ++this.ids,
+      edit: {
+        peer: this.docs.peer,
+        values: new Map(),
+        texts: new Map(),
+        leaving: new Map(),
+        arriving: new Set(),
+        shown: new Set(),
+        structureAt: [],
+      },
+      selection: { anchor: null, head: null },
+      at: this.now(),
+      outside,
+    });
+    if (this.undoSteps.length > DEPTH) this.forget(this.undoSteps.shift() as Step);
+    this.clearRedo();
+  }
+
   /** The write `beforeWrite` announced is done; `changes` are what it changed (maybe nothing). */
   record(changes: readonly DocChange[]): void {
     const step = this.open;
@@ -236,6 +266,12 @@ export class UndoHistory {
     this.note(read);
     let stayed = 0;
     for (let step = from.pop(); step; step = from.pop()) {
+      if (step.outside) {
+        if (direction === "undo") step.outside.undo();
+        else step.outside.redo();
+        to.push(step);
+        return { changes: [], selection: null, stayed };
+      }
       const top = (key: DocKey) => {
         const manager = this.watched.get(key)?.manager;
         return (direction === "undo" ? manager?.topUndoValue() : manager?.topRedoValue()) as

@@ -11,6 +11,7 @@ import {
   type HistoryRun,
   loroSyncKey,
   notifyChanged,
+  type OutsideStep,
   resolveCursor,
   UndoHistory,
 } from "@meridian/loro-prosemirror";
@@ -129,6 +130,18 @@ export class DocumentHistory {
       if (editor !== source && !editor.isDestroyed && !editor.view.composing)
         editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
+}
+
+/**
+ * A press made from this editor's page goes on its Ctrl+Z (design §6, "Ctrl+Z is Loro's"): Undo
+ * sends the press's Undo, Redo presses again. Nothing when the editor has no history.
+ */
+export function pushOutsideStep(state: EditorState, step: OutsideStep): void {
+  const docs = loroSyncKey.getState(state)?.docs;
+  const history = docs && byDocs.get(docs);
+  if (!history) return;
+  history.steps.pushOutside(step);
+  history.changed();
 }
 
 /**

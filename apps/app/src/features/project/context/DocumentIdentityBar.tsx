@@ -8,19 +8,18 @@ import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { ReviewBar } from "@/features/draft-review/ReviewBar";
+import { ReviewChangesButton } from "@/features/draft-review/ReviewChangesButton";
+import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
-import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
-import { useItemLauncher } from "../review-launch";
+import { useFocusSuccession } from "@/lib/focus-follow";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -37,13 +36,6 @@ export type DocumentIdentityBarProps = {
   document: OpenDocument;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
-  onCloseDraftOnly?: () => void;
-  /**
-   * The draft whose review controls take the focus when they show: one opened from
-   * the previous draft's controls. Held above this bar, which remounts per document.
-   */
-  focusReview?: string | null;
-  onFocusReview?: (itemKey: string | null) => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -59,9 +51,6 @@ export function DocumentIdentityBar({
   readOnly: readOnlyDocument = false,
   onCommitted,
   onOpenExisting,
-  onCloseDraftOnly,
-  focusReview,
-  onFocusReview,
 }: DocumentIdentityBarProps) {
   // On Draft of a deleted Work the placement field is not offered: its tree takes no change.
   const workDeleted = useTreeVersion().ended === "deleted";
@@ -75,18 +64,8 @@ export function DocumentIdentityBar({
     onCommitted,
   });
 
-  const { controller } = useDraftReview();
-  const { openReviewFile } = useItemLauncher();
-  const review = controller.inlineReview;
-  const reviewItemKey =
-    review?.documentId === document.documentId && review.shown ? review.itemKey : null;
-  // A review that has been entered but not yet painted is a review destination in flight:
-  // it must not read as the live document's chip until its preview answers.
-  const reviewPending = review?.documentId === document.documentId && !review.shown;
-  const openItem = (row: ReviewFileTarget, takeFocus?: boolean) => {
-    if (takeFocus) onFocusReview?.(row.item.itemKey);
-    openReviewFile(row, controller.draftId);
-  };
+  const mode = useReviewMode();
+  const reviewItemKey = mode?.documentId === document.documentId ? mode.itemKey : null;
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
@@ -144,32 +123,13 @@ export function DocumentIdentityBar({
             onChooseHome={() => setFieldOpen(true)}
           />
           <AgentFileState projectId={projectId} document={document} />
-          {/* The version chip holds one place: Live while the document has a draft, or Draft while reviewing. */}
-          {version ??
-            (reviewItemKey || reviewPending ? null : (
-              <DocumentVersionMenu projectId={projectId} document={document} />
-            ))}
+          <ReviewChangesButton document={document} />
+          {version ?? <DocumentVersionMenu projectId={projectId} document={document} />}
         </div>
       </DocumentStatePortal>
     </>
   );
-  return (
-    <DraftReviewBand
-      projectId={projectId}
-      document={document}
-      documentId={document.documentId}
-      itemKey={reviewItemKey ?? ""}
-      onOpenItem={openItem}
-      onCloseDraftOnly={onCloseDraftOnly}
-      onFocusDocument={() =>
-        focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)
-      }
-      focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
-      onOpenFocused={() => onFocusReview?.(null)}
-    >
-      {({ version, controls }) => renderState(version, controls)}
-    </DraftReviewBand>
-  );
+  return renderState(null, mode ? <ReviewBar /> : null);
 }
 
 /** Chip slot at the bar's right edge. */
@@ -228,25 +188,9 @@ const editorProse = (documentId: string) =>
     ),
   ].find((prose) => !prose.closest("[inert]")) ?? null;
 
-const mainProse = (leftDocumentId: string) =>
-  [...document.querySelectorAll<HTMLElement>('[role="main"] [contenteditable="true"]')].find(
-    (prose) =>
-      !prose.closest("[inert]") &&
-      !prose.closest(`[data-context-editor-document-id="${escapeCssIdent(leftDocumentId)}"]`),
-  ) ?? null;
-
 /** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
   editorProse(documentId)?.focus();
-}
-
-/**
- * A closing review swaps the document's editor once the live one has painted, so the
- * prose may not be there yet: holds the focus for it until the writer takes the focus.
- */
-function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
-  // A draft-only document's discard sends main back: its prose never returns, main's does.
-  holdFocus(() => editorProse(documentId) ?? (leaving ? mainProse(documentId) : null));
 }
 
 /**

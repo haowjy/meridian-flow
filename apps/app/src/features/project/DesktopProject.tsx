@@ -148,9 +148,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const mainKey = mainTab ? mainTabKey({ kind: "document", document: mainTab }) : null;
   const tabCommands = useMainTabCommands({ projectId, kind: "document", open, mainKey });
 
-  // Each document has its own host, so the draft that takes the focus when its controls show is
-  // kept here.
-  const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
     slot: place === "main" ? "center" : place === "side" && sideOpen ? "side" : null,
@@ -163,8 +160,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         main={place === "main" ? main.document : undefined}
         presentation="desktop"
         editorWorkId={props.editorWorkId}
-        focusReview={focusReview}
-        onFocusReview={setFocusReview}
         header={
           place === "main" ? (
             <MainHeader

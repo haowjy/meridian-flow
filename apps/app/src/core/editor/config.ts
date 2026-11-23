@@ -47,6 +47,7 @@ import { NestingExtension } from "./extensions/nesting";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
+import { ReviewChangesExtension } from "./extensions/review-changes/ReviewChangesExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
@@ -409,6 +410,8 @@ export function createStandaloneEditorExtensions({
     // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
     PassageHighlightExtension,
+    // Review changes' paint on a draft page; inert until its host turns it on.
+    ReviewChangesExtension,
     // The one door a picture comes in through — picker, drop, pasted file,
     // pasted address — and the owner of the clipboard's asset translation,
     // which is why the markdown text parser is its prop rather than a

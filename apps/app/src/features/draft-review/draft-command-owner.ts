@@ -22,6 +22,8 @@ export type CommandOutcome =
       commandId?: string;
       /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
       took?: DiscardTook;
+      /** Takes the press back once, as its notice's Undo does. */
+      undo?: () => Promise<unknown>;
     }
   /** The server answered and the press changed none of these items. */
   | { kind: "settled"; took?: DiscardTook };

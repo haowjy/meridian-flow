@@ -19,6 +19,7 @@ export function ReviewStepper({
   onStep,
   touch = false,
   compact = false,
+  crosses = false,
 }: {
   count: number;
   /** The focused change's place, or -1 when none is focused. */
@@ -27,8 +28,10 @@ export function ReviewStepper({
   onStep: (direction: 1 | -1) => void;
   touch?: boolean;
   compact?: boolean;
+  /** A step past either end goes on to another chapter: the stepper shows even for one change. */
+  crosses?: boolean;
 }) {
-  if (count <= 1) return null;
+  if (count <= 1 && !crosses) return null;
   const position = focusedIndex + 1;
   return (
     <div className="flex items-center gap-0.5">
