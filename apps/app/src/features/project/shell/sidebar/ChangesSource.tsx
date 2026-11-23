@@ -3,7 +3,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
-import { Folder as FolderIcon, Layers } from "lucide-react";
+import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -28,7 +28,6 @@ import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import { ReviewStatusContent } from "@/features/draft-review/ReviewCompletion";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
@@ -383,7 +382,8 @@ export function ChangesSource({
           <div className="px-2">
             <ListLine iconSlot status>
               <span className="inline-flex items-center gap-1.5">
-                <ReviewStatusContent completing="apply" />
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+                <Trans>Applying</Trans>
               </span>
             </ListLine>
           </div>

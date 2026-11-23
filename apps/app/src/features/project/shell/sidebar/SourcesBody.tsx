@@ -644,8 +644,6 @@ function TreeVersionChip() {
           onSelect: () => shell.show("draft"),
         },
       ]}
-      draftOnly={false}
-      disabled={false}
       onShowLive={() => shell.show("live")}
       touch={touch}
     />

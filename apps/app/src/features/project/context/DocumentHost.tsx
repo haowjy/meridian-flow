@@ -17,7 +17,7 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { AgentFileState } from "@/features/agents/AgentFileState";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import {
   DocumentStatePortal,
@@ -34,10 +34,7 @@ import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import { EndedWorkNotice } from "../work/EndedWorkNotice";
-import {
-  useContextRemovalCoordinator,
-  useOptionalPresentedDocuments,
-} from "./account-feature-context";
+import { useOptionalPresentedDocuments } from "./account-feature-context";
 import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
@@ -308,8 +305,6 @@ function PhoneDocumentFrame({
   document: OpenDocument;
   local: boolean;
 }) {
-  const removal = useContextRemovalCoordinator();
-  const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
   const name = document.name;
   return (
     <PaintHold
@@ -324,12 +319,7 @@ function PhoneDocumentFrame({
           <PhoneEditor projectId={projectId} document={document} />
         </div>
       ) : (
-        <MobileDocumentReview
-          projectId={projectId}
-          document={document}
-          // A draft-only document has no live version to return to: its review closes it.
-          onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
-        >
+        <MobileDocumentReview projectId={projectId} document={document}>
           <PhoneEditor projectId={projectId} document={document}>
             <PassageNotice documentId={document.documentId} />
           </PhoneEditor>
@@ -349,11 +339,11 @@ function PhoneEditor({
   children?: ReactNode;
 }) {
   const freeze = useDocumentFreeze(projectId, document);
-  const review = useDraftReview().controller.inlineReview;
+  const review = useReviewMode();
   return (
     <DocumentStateSlotProvider>
-      {/* The version chip lives at the toolbar row's end, as on a desktop; a review, painted or on
-          its way, shows its own chip in its header. */}
+      {/* The version chip lives at the toolbar row's end, as on a desktop; Review changes has its
+          own bar instead. */}
       {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
           <AgentFileState projectId={projectId} document={document} touch />

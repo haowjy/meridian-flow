@@ -23,6 +23,7 @@ import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extens
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
 import { CommentMark } from "./extensions/CommentMark";
+import { KeptRemovedExtension } from "./extensions/KeptRemovedExtension";
 import { LoroSyncExtension } from "./extensions/loro-sync";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
@@ -412,6 +413,8 @@ export function createStandaloneEditorExtensions({
     PassageHighlightExtension,
     // Review changes' paint on a draft page; inert until its host turns it on.
     ReviewChangesExtension,
+    // A paragraph another device deleted, kept while the caret is in it.
+    KeptRemovedExtension,
     // The one door a picture comes in through — picker, drop, pasted file,
     // pasted address — and the owner of the clipboard's asset translation,
     // which is why the markdown text parser is its prop rather than a

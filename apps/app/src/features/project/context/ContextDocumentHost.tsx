@@ -25,8 +25,6 @@ import type {
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isTreeOnly } from "@/features/draft-review/tree-line";
-import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { useHostDocumentPaint } from "../DocumentReview";
@@ -60,7 +58,7 @@ export function ContextDocumentHost({
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
   inMain = false,
 }: ContextDocumentHostProps) {
-  const { controller, fileForDocument } = useDraftReview();
+  const { fileForDocument } = useDraftReview();
   const bindingKeys = useRef(new WeakMap<object, string>());
   const paint = useHostDocumentPaint();
   const shownDraftId = paint?.draft?.draftId ?? null;
@@ -71,16 +69,6 @@ export function ContextDocumentHost({
   const draftRow = draftRows.rows.find((row) => row.documentId === document.documentId);
   const roomKnown = shownDraftId === null || draftRows.status !== "loading";
   const forkDraftId = shownDraftId !== null && !draftRow?.isNew ? shownDraftId : undefined;
-  const inline = controller.inlineReview;
-  const selectedReviewItemKey = inline?.documentId === document.documentId ? inline.itemKey : null;
-  const selectedReviewFile =
-    selectedReviewItemKey && typeof fileForDocument === "function"
-      ? fileForDocument(document.documentId)
-      : null;
-  const treeOnlyReview =
-    selectedReviewFile?.item.itemKey === selectedReviewItemKey &&
-    isTreeOnly(selectedReviewFile.item);
-  const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
   // The draft's list could not be read: say so here rather than open a room that may be wrong.
   const queryClient = useQueryClient();
   const pinnedOwner = draftRows.status === "failed" ? shownDraftId : null;
@@ -154,16 +142,6 @@ export function ContextDocumentHost({
                   readOnly={readOnly}
                 />
               ) : null}
-              <ActiveReviewBinding
-                documentId={document.documentId}
-                liveSession={session}
-                active={active}
-                inReview={Boolean(
-                  presentation.presenceSuspendsOn === "requested-review"
-                    ? selectedReviewItemKey
-                    : reviewItemKey,
-                )}
-              />
               <EditorView
                 projectId={projectId}
                 documentId={document.documentId}
@@ -176,15 +154,11 @@ export function ContextDocumentHost({
                 active={active}
                 editable={editable}
                 showToolbar={editable}
-                reviewReadOnly={presentation.reviewReadOnly}
                 detached={document.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={document.kind === "tracked" ? document.schemaType : "document"}
                 filetype={document.kind === "tracked" ? document.filetype : undefined}
                 showCollaborationDecorations={presentation.collaborationDecorations}
-                // The intent, not the resolved room: the live editor goes
-                // read-only from the click, while the room is still resolving.
-                reviewItemKey={selectedReviewItemKey}
               />
             </>
           )}
@@ -208,11 +182,6 @@ export function ContextDocumentHost({
       {renderEditor}
     </OpenDocumentSessionBoundary>
   );
-}
-
-function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]) {
-  useActiveReviewBinding(props);
-  return null;
 }
 
 /**

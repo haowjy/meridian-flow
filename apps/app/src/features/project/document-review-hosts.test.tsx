@@ -63,11 +63,11 @@ it("paints a document's draft only in the host that shows it", async () => {
   });
   expect(side).toMatchObject({
     paint: { showing: "draft", draft: { itemKey: "item" } },
-    value: { controller: { inlineReview: null } },
+    mode: null,
   });
   expect(main).toMatchObject({
     paint: { showing: "live", draft: null },
-    value: { controller: { inlineReview: null } },
+    mode: null,
   });
   await act(async () => root.unmount());
 });

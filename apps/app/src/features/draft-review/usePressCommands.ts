@@ -44,8 +44,8 @@ import {
 import { useItemLauncher } from "@/features/project/review-launch";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
-import type { DraftItemRef } from "./draft-review-session";
 import { PressEntries, type PressPort, type Seat } from "./press-history";
+import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
 /**

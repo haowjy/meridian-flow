@@ -1,5 +1,5 @@
 /**
- * How this browser tab shows each document: Live or a draft, which draft, and Show changes. One
+ * How this browser tab shows each document: Live or a draft, and which draft. One
  * record per (account, project) in sessionStorage, keyed by document id, holding only views that
  * differ from the default. Whichever host holds the document paints it from here.
  *
@@ -28,16 +28,14 @@ export type DocumentView = {
    */
   version: "draft" | "live";
   pin?: DraftPin;
-  showChanges: boolean;
 };
 
-export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live", showChanges: true };
+export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live" };
 
 /** A pin replaces the draft shown; `null` drops it. Choosing Live drops the pin with it. */
 export type DocumentViewPatch = {
   version?: DocumentView["version"];
   pin?: DraftPin | null;
-  showChanges?: boolean;
 };
 
 type Views = Readonly<Record<string, DocumentView>>;
@@ -61,11 +59,7 @@ function parseViews(value: unknown): Views | undefined {
     if (!isRecord(raw)) continue;
     const version = raw.version === "draft" ? "draft" : "live";
     const pin = version === "draft" ? parsePin(raw.pin) : undefined;
-    views[documentId] = {
-      version,
-      ...(pin ? { pin } : {}),
-      showChanges: raw.showChanges !== false,
-    };
+    views[documentId] = { version, ...(pin ? { pin } : {}) };
   }
   return views;
 }
@@ -94,7 +88,7 @@ function read(accountId: string, projectId: string): Views {
 }
 
 function isDefault(view: DocumentView): boolean {
-  return view.version === "live" && view.showChanges;
+  return view.version === "live";
 }
 
 function write(accountId: string, projectId: string, next: Views): void {
@@ -110,7 +104,6 @@ function patched(view: DocumentView, patch: DocumentViewPatch): DocumentView {
   return {
     version,
     ...(pin && version === "draft" ? { pin } : {}),
-    showChanges: patch.showChanges ?? view.showChanges,
   };
 }
 
@@ -135,12 +128,7 @@ export function setDocumentView(
   const views = read(accountId, projectId);
   const current = views[documentId] ?? DEFAULT_DOCUMENT_VIEW;
   const next = patched(current, patch);
-  if (
-    next.version === current.version &&
-    next.showChanges === current.showChanges &&
-    samePin(next.pin, current.pin)
-  )
-    return;
+  if (next.version === current.version && samePin(next.pin, current.pin)) return;
   const { [documentId]: _old, ...rest } = views;
   write(accountId, projectId, isDefault(next) ? rest : { ...rest, [documentId]: next });
 }
@@ -171,10 +159,8 @@ export function enterScope(
       (cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? []).some(
         (row) => row.itemKey === pin.itemKey && row.isNew,
       );
-    if (view.version === "draft" && !onScope && !created) {
-      changed = true;
-      if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
-    } else next[documentId] = view;
+    if (view.version === "draft" && !onScope && !created) changed = true;
+    else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
 }
@@ -191,7 +177,7 @@ export function endPin(accountId: string, projectId: string, pin: DraftPin): voi
   for (const [documentId, view] of Object.entries(views)) {
     if (view.pin?.draftId === pin.draftId && view.pin.itemKey === pin.itemKey) {
       changed = true;
-      next[documentId] = { version: view.version, showChanges: view.showChanges };
+      next[documentId] = { version: view.version };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);

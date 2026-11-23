@@ -4,9 +4,6 @@
  * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: another
  * owner's picked draft becomes the view's pin; the scope's own draft and Live set the sidebar
  * toggle and drop the pin. `DraftSwitcher` draws it.
- *
- * In review the host passes the review's own controls (`review`): its lock, the draft-only way
- * out, and the phone's Apply, Discard and Show changes.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -16,29 +13,21 @@ import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
-import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
+import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus } from "@/lib/focus-follow";
 
-export type DocumentVersionReview = Pick<
-  DraftSwitcherProps,
-  "disabled" | "draftOnly" | "onShowLive" | "onRename" | "marks" | "draftCommands"
->;
-
 export function DocumentVersionMenu({
   projectId,
   document,
   touch = false,
-  review,
 }: {
   projectId: string;
   document: OpenDocument;
   touch?: boolean;
-  /** The open review's controls; absent while the document shows Live. */
-  review?: DocumentVersionReview;
 }) {
   const { documentId } = document;
   const accountId = useAccountId();
@@ -97,30 +86,23 @@ export function DocumentVersionMenu({
     },
   }));
   // As the sidebar's chip shows only while there is a draft to switch to, this one shows only
-  // while the document has a version besides the one on screen, or its review needs the menu.
+  // while the document has a version besides the one on screen.
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
-  if (showing === "live" && drafts.length === 0 && !review) return null;
+  if (showing === "live" && drafts.length === 0) return null;
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
   const outOfScope =
     shown && paint?.outOfScope ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`) : null;
 
   return (
     <DraftSwitcher
-      // An ended draft's review stays open ("No changes left") while main paints Live.
       showing={showing}
       drafts={drafts}
       owner={outOfScope ?? undefined}
-      draftOnly={review?.draftOnly ?? false}
-      disabled={review?.disabled ?? false}
       onShowLive={() => {
-        if (review) review.onShowLive();
-        else setDocumentView(accountId, projectId, documentId, { version: "live" });
+        setDocumentView(accountId, projectId, documentId, { version: "live" });
         shell?.show("live");
         followToChip(documentId);
       }}
-      onRename={review?.onRename}
-      marks={review?.marks}
-      draftCommands={review?.draftCommands}
       touch={touch}
     />
   );

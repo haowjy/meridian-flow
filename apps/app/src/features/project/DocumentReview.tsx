@@ -62,16 +62,6 @@ export function useDocumentReview(
     (activeWorkId === noWork?.id
       ? noWork
       : (works?.find((work) => work.id === activeWorkId) ?? null));
-  const showChanges = paint.view.showChanges;
-  const marks = useMemo(
-    () => ({
-      visible: showChanges,
-      set: (visible: boolean) => {
-        if (documentId) setDocumentView(accountId, projectId, documentId, { showChanges: visible });
-      },
-    }),
-    [accountId, projectId, documentId, showChanges],
-  );
   // Live for the scope's draft is the toggle's Live (`shownDraft`); another owner's pin just goes.
   const shell = useShellTreeVersion();
   const scopeShown = paint.draft !== null && !paint.outOfScope;
@@ -84,7 +74,6 @@ export function useDocumentReview(
     work: reviewWork,
     draftId,
     threadId: null,
-    marks,
     showLive,
   });
 

@@ -1,9 +1,5 @@
-/**
- * The document body: one Live editor, whatever the review. Drafts of a document's text are off
- * for now: a Work's review shows its tree changes over Live text.
- */
+/** The document body: one editor over the room its host bound, Live or a draft's fork. */
 import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
-import { useLayoutEffect } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
@@ -12,7 +8,6 @@ import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./
 
 export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   documentId: string;
-  reviewReadOnly?: boolean;
   /** The host-owned live/local session; absent while it opens. */
   session?: DocumentSession;
   bindingKey?: string;
@@ -21,8 +16,6 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   schemaType?: TrackedSchemaType;
   filetype?: Filetype;
   showCollaborationDecorations?: boolean;
-  /** Requested destination, including while the canonical room is still resolving. */
-  reviewItemKey?: string | null;
   /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
   /** Main's document: the caret main gives goes to it, not to a side's or a sheet's. */
@@ -31,14 +24,6 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
 
 export function EditorView(props: EditorViewProps) {
   const { controller } = useDraftReview();
-  const requestedItemKey = props.reviewItemKey ?? null;
-  const review =
-    controller.inlineReview?.documentId === props.documentId &&
-    controller.inlineReview.itemKey === requestedItemKey
-      ? controller.inlineReview
-      : null;
-  // The phone reviews without typing; it types again once the review closes.
-  const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;
   const session = props.session ?? null;
   const identity: EditorMountIdentity = {
     documentId: props.documentId,
@@ -50,12 +35,6 @@ export function EditorView(props: EditorViewProps) {
     bindingKey: props.bindingKey,
     detached: props.detached ?? false,
   };
-  // The review's chrome (band, list, phone sheet) shows once the editor that holds it does.
-  const { setInlineReviewShown } = controller;
-  useLayoutEffect(() => {
-    if (!review) return;
-    setInlineReviewShown(props.documentId, review.itemKey, session !== null);
-  }, [setInlineReviewShown, props.documentId, review?.itemKey, session]);
   const surface = session ? `live:${editorMountKey(identity)}|${session.peer}` : "pending";
   return (
     <>
@@ -67,8 +46,8 @@ export function EditorView(props: EditorViewProps) {
               key={surface}
               identity={identity}
               surfaceOptions={{
-                editable: props.editable && !reviewReadOnly,
-                showToolbar: props.showToolbar && !reviewReadOnly,
+                editable: props.editable,
+                showToolbar: props.showToolbar,
                 active: props.active,
                 ariaLabel: props.ariaLabel,
                 localContentReady: props.localContentReady,
