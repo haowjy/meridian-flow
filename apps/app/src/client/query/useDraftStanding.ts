@@ -1,15 +1,18 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { listWorkDrafts } from "@/client/api/drafts-api";
+import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { projectThreadsQueryOptions } from "./useProjectThreads";
 import { useWorks, useWorksSnapshot } from "./useWorks";
 
 /**
- * Whether the project still has a draft: a Work names it (a deleted one too, until its purge deletes
- * the draft), a Work being created does, or a chat does. The server lists an id it doesn't store
- * as empty, since a browser mints one before its create lands, so the list can't say. `gone` only
- * once both lists were read after this asked and neither names it; null until then, and while a
- * read fails (offline, a link keeps its draft).
+ * Whether the project still has a draft: a Work names it as its default (a deleted Work too, until
+ * its purge deletes the draft), a Work being created does, a chat does, or a Work lists it among
+ * its drafts. The server lists an id it doesn't store as empty, since a browser mints one before
+ * its create lands, so the draft's own list can't say. `gone` only once every list was read after
+ * this asked and none names it; null until then, and while a read fails (offline, a link keeps its
+ * draft). A Work's drafts are read only when nothing cheaper names the draft.
  */
 export function useDraftStanding(
   projectId: string,
@@ -23,21 +26,33 @@ export function useDraftStanding(
     ...projectThreadsQueryOptions(client, projectId),
     enabled: projectReadEnabled(!!draftId),
   });
-  const named =
+  const namedCheaply =
     !!draftId &&
     ([...(works ?? []), ...deleted].some((work) => work.draftId === draftId) ||
       [...creations.values()].some(({ work }) => work.draftId === draftId) ||
       (threadsList.data ?? []).some((thread) => thread.draftId === draftId));
-  const worksFresh = worksList.dataUpdatedAt >= asked && !worksList.isError;
-  const threadsFresh = threadsList.dataUpdatedAt >= asked && !threadsList.isError;
+  const workDrafts = useQueries({
+    queries: (works ?? []).map((work) => ({
+      queryKey: projectQueryKeys.workDrafts(projectId, work.id),
+      queryFn: () => listWorkDrafts(work.id),
+      enabled: projectReadEnabled(!!draftId && !namedCheaply),
+    })),
+  });
+  const named =
+    namedCheaply ||
+    workDrafts.some((read) => read.data?.drafts.some((draft) => draft.id === draftId));
+  const fresh = (read: { dataUpdatedAt: number; isError: boolean }) =>
+    read.dataUpdatedAt >= asked && !read.isError;
   const refetchWorks = worksList.refetch;
   const refetchThreads = threadsList.refetch;
   useEffect(() => {
     if (!draftId || named) return;
     if (worksList.dataUpdatedAt < asked && !worksList.isFetching) void refetchWorks();
     if (threadsList.dataUpdatedAt < asked && !threadsList.isFetching) void refetchThreads();
-  }, [draftId, named, asked]);
+    for (const read of workDrafts)
+      if (read.dataUpdatedAt < asked && !read.isFetching) void read.refetch();
+  }, [draftId, named, asked, workDrafts]);
   if (!draftId) return null;
   if (named) return "exists";
-  return worksFresh && threadsFresh ? "gone" : null;
+  return works && fresh(worksList) && fresh(threadsList) && workDrafts.every(fresh) ? "gone" : null;
 }
