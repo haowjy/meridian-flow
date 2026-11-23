@@ -1,15 +1,19 @@
 import {
-  commitStructure,
   type DocChange,
   type DocKey,
-  inMap,
+  type Edit,
+  editStays,
+  noteEdit,
+  opsBetween,
+  putBackValues,
   type RoomDocs,
-  restampRemovals,
   STRUCTURE_KEY,
-  sameValue,
+  StructureView,
+  takeBackMessage,
   UNTRACKED_ORIGIN,
+  valuesOf,
 } from "@meridian/document-model";
-import { Cursor, type Frontiers, type LoroDoc, UndoManager } from "loro-crdt";
+import { Cursor, type LoroDoc, UndoManager } from "loro-crdt";
 import type { EditorState } from "prosemirror-state";
 import { type SelectionCursors, selectionCursors } from "./cursors.js";
 
@@ -27,24 +31,23 @@ const DEPTH = 500;
 type End = "anchor" | "head";
 /** What each Undo item carries: its step, and which selection ends its cursors are. */
 type Tag = { step: number; ends: End[] };
-/** A structure value a step set: what the key held before the step, and what the step left. */
-type Value = { before: unknown; left: unknown };
-/** A step's structure values, by map then key. `undefined` is a key not set. */
-type Values = Map<string, Map<string, Value>>;
 type Step = {
   id: number;
-  /** The text docs the step wrote, each undone by its Loro manager. */
-  keys: Set<DocKey>;
-  values: Values;
+  /** What the step did, for the rule; its text docs are undone by their Loro managers. */
+  edit: Edit;
   selection: SelectionCursors;
   at: number;
 };
 type Watched = { manager: UndoManager; doc: LoroDoc };
 
-/** What one Undo or Redo did: the changes to publish, and the selection to put back. */
+/**
+ * What one Undo or Redo did: the changes to publish, the selection to put back (null when no step
+ * ran), and how many steps it found written over and took out of the history.
+ */
 export interface HistoryRun {
   changes: DocChange[];
-  selection: SelectionCursors;
+  selection: SelectionCursors | null;
+  stayed: number;
 }
 
 /**
@@ -53,12 +56,15 @@ export interface HistoryRun {
  * carried through every edit since, so chains of dependent steps undo and redo exactly, and it
  * records only this peer's commits, so Ctrl+Z never takes back a peer's or the model's edit. A
  * step is one or more items on each manager it touched, tagged with the step; Undo runs exactly
- * those managers until their top item is another step's.
+ * those managers until their top item is another step's. Structure values are the step's own
+ * (the structure doc has no manager).
  *
- * Structure values are the step's own: it keeps, per key it set, the value before and the value
- * it left, and Undo writes a key back only while it still holds what the step left (design §2's
- * rule: an Undo never overwrites a later write). Loro's map undo would write the old value over
- * a peer's later move, retype or delete.
+ * A step goes back whole or stays whole (design §2, "An Undo takes an edit back whole"): before a
+ * run, `editStays` tests it. A step someone else wrote over writes nothing; Loro's managers cannot
+ * drop one item, so the managers of its text docs start again empty, and every step with an item
+ * in one of them leaves the history too, as does every step that set one of its keys, through
+ * all they share. Ctrl+Z then goes on to the step before. A write that sets structure is a step
+ * of its own, so typing either side of an Enter is not kept with it.
  *
  * Every tracked write goes `beforeWrite` → the write's commits → `record` (the binding's plugin
  * does this). A manager is created when the doc is first written (`RoomDocs.beforeTextWrite`);
@@ -77,26 +83,38 @@ export class UndoHistory {
   /** The cursors the last push handed to Loro: still ours to free. */
   private pushed: Cursor[] = [];
   private ids = 0;
+  private readonly now: () => number;
   private readonly stopWatching: () => void;
+  /** Why the last step found written over stayed (a probe reads it). */
+  why = "";
 
-  constructor(private readonly docs: RoomDocs) {
+  constructor(
+    private readonly docs: RoomDocs,
+    options: { now?: () => number } = {},
+  ) {
+    this.now = options.now ?? Date.now;
     this.stopWatching = docs.beforeTextWrite((id, doc) => this.watch(id, doc));
   }
 
   /**
-   * A tracked write is about to run from `state`: it joins the open step when it comes soon after
-   * the last write, else starts one whose selection is `state`'s, taken as cursors before the
-   * write so a restored deletion brings the selection back over it.
+   * A tracked write is about to run from `state`. Typing (`joins`) joins the open step when it
+   * comes soon after the last write; any other write starts a step, whose selection is `state`'s,
+   * taken as cursors before the write so a restored deletion brings the selection back over it.
    */
-  beforeWrite(state: EditorState): void {
-    const now = Date.now();
+  beforeWrite(state: EditorState, joins: boolean): void {
+    const now = this.now();
     let step = this.open;
-    if (!step || now - step.at >= GROUP_MS) {
+    if (!step || !joins || now - step.at >= GROUP_MS) {
       this.endStep();
       step = {
         id: ++this.ids,
-        keys: new Set(),
-        values: new Map(),
+        edit: {
+          values: new Map(),
+          texts: new Map(),
+          leaving: new Map(),
+          arriving: new Set(),
+          shown: new Set(),
+        },
         selection: selectionCursors(this.docs, state),
         at: now,
       };
@@ -110,23 +128,31 @@ export class UndoHistory {
     const step = this.open;
     this.tag = null;
     if (!step || changes.length === 0) return;
-    if (step.keys.size === 0 && step.values.size === 0) {
+    const { edit } = step;
+    if (edit.texts.size === 0 && edit.values.size === 0) {
       this.undoSteps.push(step);
       if (this.undoSteps.length > DEPTH) this.undoSteps.shift();
       this.clearRedo();
     }
     for (const { key, doc, before, after } of changes) {
       if (key === STRUCTURE_KEY) {
-        recordValues(step.values, doc, before, after);
+        valuesOf(doc, before, after, edit.values);
         continue;
       }
-      if (step.keys.has(key)) continue;
-      step.keys.add(key);
-      // The doc's first commit in the step is an item already; the rest of the step merges into
-      // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
-      this.watched.get(key)?.manager.groupStart();
+      const span = edit.texts.get(key);
+      if (span) span.after = after;
+      else {
+        edit.texts.set(key, { before, after });
+        // The doc's first commit in the step is an item already; the rest of the step merges into
+        // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
+        this.watched.get(key)?.manager.groupStart();
+      }
     }
-    step.at = Date.now();
+    step.at = this.now();
+    if (edit.values.size > 0) {
+      noteEdit(this.docs, edit);
+      this.endStep();
+    }
   }
 
   /** The next write starts its own step. */
@@ -134,7 +160,7 @@ export class UndoHistory {
     const step = this.open;
     if (!step) return;
     this.open = null;
-    for (const key of step.keys) this.watched.get(key)?.manager.groupEnd();
+    for (const key of step.edit.texts.keys()) this.watched.get(key)?.manager.groupEnd();
   }
 
   canUndo(): boolean {
@@ -146,8 +172,8 @@ export class UndoHistory {
   }
 
   /**
-   * Undo the newest step, from the editor at `state`. A step whose items change nothing now (a
-   * peer deleted what it wrote) is dropped for the one before it. Null when nothing ran.
+   * Undo the newest step that can go back whole, from the editor at `state`. Null when the
+   * history had nothing to undo.
    */
   undo(state: EditorState): HistoryRun | null {
     return this.run("undo", state);
@@ -171,12 +197,22 @@ export class UndoHistory {
     this.endStep();
     const [from, to] =
       direction === "undo" ? [this.undoSteps, this.redoSteps] : [this.redoSteps, this.undoSteps];
+    if (from.length === 0) return null;
     const now = selectionCursors(this.docs, state);
+    let stayed = 0;
     for (let step = from.pop(); step; step = from.pop()) {
+      // One read serves the test and the put-back: the managers between them write only text.
+      const view = step.edit.values.size > 0 ? new StructureView(this.docs) : undefined;
+      const why = editStays(this.docs, step.edit, view);
+      if (why) {
+        this.why = why;
+        stayed += this.drop(step);
+        continue;
+      }
       this.tag = { step: step.id, selection: now };
       this.popped.clear();
       const changes: DocChange[] = [];
-      for (const key of step.keys) {
+      for (const [key, span] of step.edit.texts) {
         const watched = this.watched.get(key);
         if (!watched) continue;
         const { manager, doc } = watched;
@@ -185,55 +221,80 @@ export class UndoHistory {
             | Tag
             | undefined;
         const before = doc.frontiers();
-        while (top()?.step === step.id) {
-          if (direction === "undo") manager.undo();
-          else manager.redo();
+        // Loro commits an Undo and a Redo alike under the origin `undo`: the message says which
+        // ops the commit takes back, so text it puts back can be told from typing.
+        const message = takeBackMessage(opsBetween(doc, span.before, span.after, this.docs.peer));
+        // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
+        const unstamp = doc.subscribePreCommit(({ modifier }) => {
+          modifier.setMessage(message).free();
+          modifier.free();
+        });
+        try {
+          while (top()?.step === step.id) {
+            if (direction === "undo") manager.undo();
+            else manager.redo();
+          }
+        } finally {
+          unstamp();
         }
         const after = doc.frontiers();
+        step.edit.texts.set(key, { before, after });
         if (doc.cmpFrontiers(before, after) !== 0) changes.push({ key, doc, before, after });
       }
       this.tag = null;
-      const structure = this.putBack(step);
-      if (structure) changes.push(structure);
+      const back = putBackValues(this.docs, step.edit.values, view);
+      step.edit.values = back.values;
+      if (back.change) changes.push(back.change);
+      noteEdit(this.docs, step.edit);
       if (changes.length === 0) continue;
       const selection = this.restored(step.selection);
       step.selection = now;
       to.push(step);
-      return { changes, selection };
+      return { changes, selection, stayed };
     }
-    return null;
+    return { changes: [], selection: null, stayed };
   }
 
   /**
-   * Write back each structure value of `step` that still holds what the step left, and make the
-   * step's values the way back: the keys this wrote, from what they hold now. A key a peer or an
-   * untracked write changed since keeps its value and leaves the step, so the Redo leaves it too.
+   * `step` stays, as a peer's edit would, and writes nothing. Loro's manager cannot drop an item
+   * from under the ones on top of it, so the managers of the step's text docs start again empty,
+   * and every step with an item in one of them leaves the history, Undo and Redo alike; so does
+   * every step that set one of the same structure keys, whose Undo would otherwise pass over the
+   * kept value as this copy's own write. Returns how many steps left.
    */
-  private putBack(step: Step): DocChange | null {
-    const { structure } = this.docs;
-    const before = structure.frontiers();
-    const back: Values = new Map();
-    for (const [name, keys] of step.values)
-      inMap(structure, name, (map) => {
-        for (const [key, { before: value, left }] of keys) {
-          if (sameValue(value, left) || !sameValue(map.get(key), left)) continue;
-          if (value === undefined) map.delete(key);
-          else map.set(key, value as never);
-          keysOf(back, name).set(key, { before: left, left: value });
-        }
-      });
-    const change = commitStructure(this.docs, before, {});
-    if (change) {
-      // A removal the run replayed says what the first removal read: read it again now, and send
-      // it with the run, or a peer could answer the old record first.
-      if (restampRemovals(this.docs, before)) change.after = structure.frontiers();
-      for (const [name, keys] of back)
-        inMap(structure, name, (map) => {
-          for (const [key, value] of keys) value.left = map.get(key);
-        });
+  private drop(step: Step): number {
+    const docs = new Set<DocKey>();
+    const keys = new Set<string>();
+    const take = ({ edit }: Step) => {
+      for (const key of edit.texts.keys()) docs.add(key);
+      for (const [name, values] of edit.values)
+        for (const key of values.keys()) keys.add(`${name}\u0000${key}`);
+    };
+    const shares = ({ edit }: Step) =>
+      [...edit.texts.keys()].some((key) => docs.has(key)) ||
+      [...edit.values].some(([name, values]) =>
+        [...values.keys()].some((key) => keys.has(`${name}\u0000${key}`)),
+      );
+    take(step);
+    let dropped = 1;
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const list of [this.undoSteps, this.redoSteps])
+        for (let i = list.length - 1; i >= 0; i--)
+          if (shares(list[i])) {
+            take(list[i]);
+            list.splice(i, 1);
+            dropped++;
+            grew = true;
+          }
     }
-    step.values = back;
-    return change;
+    for (const key of docs) {
+      const watched = this.watched.get(key);
+      if (!watched) continue;
+      watched.manager.free();
+      watched.manager = this.manager(key, watched.doc);
+    }
+    return dropped;
   }
 
   /** A step's selection, each end moved to the cursor its doc's popped item carried back. */
@@ -259,7 +320,11 @@ export class UndoHistory {
 
   private watch(key: DocKey, doc: LoroDoc): void {
     if (this.watched.has(key)) return;
-    const manager = new UndoManager(doc, {
+    this.watched.set(key, { manager: this.manager(key, doc), doc });
+  }
+
+  private manager(key: DocKey, doc: LoroDoc): UndoManager {
+    return new UndoManager(doc, {
       mergeInterval: 0,
       maxUndoSteps: DEPTH * 2,
       excludeOriginPrefixes: [UNTRACKED_ORIGIN],
@@ -294,37 +359,5 @@ export class UndoHistory {
         });
       },
     });
-    this.watched.set(key, { manager, doc });
   }
 }
-
-/**
- * Add to `values` the structure keys one tracked write (`before` → `after`, this copy's commits
- * alone) set: the value before the step's first write of a key, and the one its last write left.
- */
-function recordValues(values: Values, doc: LoroDoc, before: Frontiers, after: Frontiers): void {
-  const old = new Map(doc.diff(after, before, true));
-  for (const [container, diff] of doc.diff(before, after, true)) {
-    if (diff.type !== "map") continue;
-    const name = mapName(container);
-    const was = old.get(container);
-    const keys = keysOf(values, name);
-    for (const [key, left] of Object.entries(diff.updated)) {
-      const value = keys.get(key);
-      if (value) value.left = left;
-      else keys.set(key, { before: was?.type === "map" ? was.updated[key] : undefined, left });
-    }
-  }
-}
-
-function keysOf(values: Values, name: string): Map<string, Value> {
-  let keys = values.get(name);
-  if (!keys) {
-    keys = new Map();
-    values.set(name, keys);
-  }
-  return keys;
-}
-
-/** The structure doc holds root maps only: `cid:root-<name>:Map`. */
-const mapName = (container: string) => container.slice("cid:root-".length, -":Map".length);

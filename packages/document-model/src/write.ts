@@ -107,7 +107,7 @@ export class StructureWriter {
    * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
    * and what this copy read of every text doc under it, so a write the removal did not read can
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
-   * they remove. `at` is given when a removal is written again (`restampRemovals`).
+   * they remove. `at` is given when an Undo writes a removal record back (`putBackValues`).
    */
   remove(id: BlockId, at = this.view.order(id) as string): void {
     const seen = new Map<DocKey, DocVersion>();

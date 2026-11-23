@@ -37,7 +37,7 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
   block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
   record) and its ancestors show. A removed block comes back only by a write of its key:
-  `restore`, Undo's replay, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
+  `restore`, an Undo's `putBackValues`, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
   import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
   holder sends and saves it like a local write (`encodeChanges`). They are the only ways ops enter
   a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
@@ -52,6 +52,12 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.
+- Every Undo, the editor's Ctrl+Z and a press's, follows one rule (`take-back.ts`, design §2 "An
+  Undo takes an edit back whole, or leaves it whole"): `editStays` tests an `Edit` (`valuesOf`,
+  its text spans, `noteEdit` after each write or run), and only then does the caller take its
+  text back and `putBackValues` write its structure. Don't add a second test beside it. Every
+  commit that takes ops back says which in its message (`takeBackMessage`), so `textSince` can
+  read text an Undo put back as the text it deleted, by character id.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s

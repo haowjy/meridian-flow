@@ -2,7 +2,8 @@
  * The document's Undo (design §6, "Ctrl+Z is Loro's, grouped by us"): the binding's
  * `UndoHistory`, which keeps one Loro `UndoManager` per text doc the tab changes and the
  * structure values each step set, and groups one editor step across them, so Ctrl+Z takes back
- * the writer's change and leaves a peer's or the model's alone. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
+ * the writer's change and leaves a peer's or the model's alone. A step someone else wrote over
+ * stays whole (design §2), and Ctrl+Z goes on to the one before it. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
  * editor attaches while it shows the document.
  */
 import type { DocChange, RoomDocs } from "@meridian/document-model";
@@ -71,21 +72,27 @@ export class DocumentHistory {
     return this.steps.canRedo();
   }
 
-  /** Undo or Redo the newest step, synchronously. Returns whether a step ran. */
+  /**
+   * Undo or Redo the newest step that can go back whole, synchronously. Returns whether the
+   * history had a step to try: steps someone else wrote over stay, and leave the history.
+   */
   run(direction: "undo" | "redo", editor: Editor): boolean {
     if (this.docs.isFreed) return false;
     const ran =
       direction === "undo" ? this.steps.undo(editor.state) : this.steps.redo(editor.state);
-    if (ran) {
+    if (ran && ran.changes.length > 0) {
       this.publish(ran.changes);
       notifyChanged(
         this.docs,
         ran.changes.map((change) => change.key),
       );
+    }
+    const selection = ran?.selection;
+    if (selection) {
       const { doc } = editor.state;
-      const at = (end: typeof ran.selection.anchor) => end && resolveCursor(this.docs, doc, end);
-      const anchor = at(ran.selection.anchor);
-      const head = at(ran.selection.head) ?? anchor;
+      const at = (end: typeof selection.anchor) => end && resolveCursor(this.docs, doc, end);
+      const anchor = at(selection.anchor);
+      const head = at(selection.head) ?? anchor;
       if (!editor.isDestroyed && anchor != null && head != null)
         editor.view.dispatch(
           editor.state.tr

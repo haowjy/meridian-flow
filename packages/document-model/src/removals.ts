@@ -98,21 +98,6 @@ function keysUnder(docs: RoomDocs): (id: BlockId) => BlockId[] {
 }
 
 /**
- * After an Undo or Redo that changed the structure doc: write again, with what this copy reads
- * now, every removal record the run's ops (since `before`) left in `order`. Loro replays the value
- * it stored, which says what the first removal read; a peer that typed since would answer it with
- * a restore and the Redo would not land. Publish the change in one batch with the run's.
- */
-export function restampRemovals(docs: RoomDocs, before: Frontiers): DocChange | null {
-  const removed = removedSince(docs, before);
-  if (removed.length === 0) return null;
-  const at = docs.structure.frontiers();
-  const writer = new StructureWriter(docs, new StructureView(docs));
-  for (const [id, removal] of removed) writer.remove(id, removal.at);
-  return commitStructure(docs, at, { origin: UNTRACKED_ORIGIN });
-}
-
-/**
  * The removed blocks on `id`'s path (itself and every block above it) that the editor can keep
  * on screen for its caret (design §1, "The caret rule"): empty when the path shows, or when a
  * block on it was removed without a record and cannot come back at a key.

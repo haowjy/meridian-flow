@@ -183,7 +183,7 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 
 ## loro-prosemirror
 
-Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin, the composition guard, and the editor's Ctrl+Z (`UndoHistory`: one Loro `UndoManager` per doc a tab changes, grouped into editor steps).
+Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin, the composition guard, and the editor's Ctrl+Z (`UndoHistory`: one Loro `UndoManager` per text doc a tab changes, grouped into editor steps, each run only while `document-model`'s take-back rule finds nobody else wrote over it).
 
 Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. The app's editor mounts it; the server and agent-edit use its codec.
 

@@ -135,10 +135,13 @@ identity in anchors or holds.
   boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
   carries through its inverse (a deleted selection comes back over the restored text); Redo puts
   back the one Undo was pressed from. Structure values (order, parent, node type, attributes,
-  comment bodies) are not Loro's: each step keeps the values it set, and Ctrl+Z writes a key back
-  only while it still holds what the step left, so a peer's later move, retype or delete of the
-  block stands, and the Redo leaves that key alone too (design §2's "an Undo never overwrites a
-  later write", which the press follows). Destroying an editor only detaches it: the history lasts
+  comment bodies) are not Loro's: each step keeps the values it set. A step goes back whole or
+  stays whole (design §2, "An Undo takes an edit back whole"): when another peer wrote over any of
+  it (a key, the new half of an Enter, a word it typed, a style it set), Ctrl+Z leaves it, writes
+  nothing, drops it and every step sharing its paragraphs from the history, and goes on to the
+  step before; `run`'s result counts the steps that stayed, and what the app shows for them is
+  open (design §9). Typing joins the open step; any other write starts one, and a write that sets
+  structure ends it, so an Enter is a step of its own. Destroying an editor only detaches it: the history lasts
   as long as the session, so a tab's undo survives its editor; the session frees its managers
   before its docs. Reload resets it. With drafts off, a press Apply has no Undo entry.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
