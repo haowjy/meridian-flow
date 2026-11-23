@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The press through the HTTP routes of a running stack on the mock model: a draft-created paragraph
-# applied alone, a second draft's count, Apply all at `work` scope and its Undo, and an Undo that
-# leaves a change a chat wrote over and names it. Recipe: work-drafts.md beside this file.
+# applied alone, a second draft's count, Apply all at `work` scope and its Undo, and an Undo over a
+# chat's write, which runs and keeps the chat's words. Recipe: work-drafts.md beside this file.
 #
 #   MODEL_PROVIDER=mock pnpm dev
 #   bash apps/server/server/domains/collab/.context/qa/press-on-the-stack.sh

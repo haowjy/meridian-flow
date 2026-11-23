@@ -100,7 +100,6 @@ export {
   type TextOp,
   type TextSpan,
   takeBack,
-  textInverse,
   valuesOf,
 } from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";

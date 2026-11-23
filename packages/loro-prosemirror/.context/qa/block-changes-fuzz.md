@@ -120,10 +120,11 @@ Every word counts at the end: a word a split or a join moved is a duplicate like
 Live token counts as lost only when the fork shows it nowhere whole, nor in pieces where Live typed
 it (a split, Live's or the draft's, carries it on). Text shown twice (`duplicate-text`) is counted,
 not failed: the owner accepted it as the cost of an Undo that always runs (design §2), and a
-restore no longer takes a split's or a join's copy out. So is a later press's Undo putting back
-text an earlier press's Undo then leaves beside its own (a chain undone in turn is checked exactly
-only where no later press wrote the same text). At 12,010 seeds (2026-11-23, the always-runs
-rule) 12,009 pass, with no word lost; 115 seeds show text twice. The one failure is open:
+restore no longer takes a split's or a join's copy out. A chain undone in turn is checked exactly:
+a later press's Undo puts its text back as new characters, and the earlier press's inverse reads a
+delete beside an insert of the same text as no change (`unchanged` in `take-back.ts`). At 12,010
+seeds (2026-11-23, the always-runs rule) 12,009 pass, with no word lost; 112 seeds show text
+twice. The one failure is open, and fails the same on `feat/loro` before the rule:
 - `stale-discarded-back` 6611: a stale Draft tab's insert anchored inside text a Discard deleted
   lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k f22k"); no
   character comes back. Two inserts at one gap, open in the gate.

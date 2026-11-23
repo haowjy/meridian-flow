@@ -275,10 +275,10 @@ const length = (op: TextOp) => op.retain ?? op.delete ?? (op.insert as string).l
  * inverse `diff(after, before)` moved through what happened since, so it deletes only the write's
  * characters that still stand, puts back what it deleted, and keeps whatever anyone wrote since.
  */
-export function textInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): TextOp[] {
+function textInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): TextOp[] {
   const inverse = textDiff(doc, after, before);
   if (inverse.length === 0) return [];
-  const since = textDiff(doc, after, doc.frontiers());
+  const since = unchanged(textDiff(doc, after, doc.frontiers()), textDiff(doc, [], after));
   const out: TextOp[] = [];
   const a = inverse.map((op) => ({ ...op }));
   const b = since.map((op) => ({ ...op }));
@@ -321,6 +321,41 @@ export function textInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): 
     if (length(y) === 0) j++;
   }
   while (out.length > 0 && out.at(-1)?.retain != null && !out.at(-1)?.attributes) out.pop();
+  return out;
+}
+
+/**
+ * `since` with every delete beside an insert of the same text, styles included, read as no change.
+ * An Undo puts deleted text back as new characters (Loro has no undelete), so the Undo of a later
+ * edit leaves the text an earlier edit wrote looking deleted and retyped; the earlier edit's
+ * Undo must still take it out. `base` is the text at `since`'s start, as one insert delta.
+ */
+function unchanged(since: TextOp[], base: TextOp[]): TextOp[] {
+  const chars = base.flatMap((op) =>
+    [...(op.insert as string)].map((char) => char + JSON.stringify(op.attributes ?? {})),
+  );
+  const spelled = (op: TextOp) =>
+    [...(op.insert as string)].map((char) => char + JSON.stringify(op.attributes ?? {})).join("");
+  const out: TextOp[] = [];
+  let at = 0;
+  for (let i = 0; i < since.length; i++) {
+    const op = since[i] as TextOp;
+    const next = since[i + 1];
+    const [del, ins] =
+      op.delete != null && next?.insert != null
+        ? [op, next]
+        : op.insert != null && next?.delete != null
+          ? [next, op]
+          : [];
+    if (del && ins && chars.slice(at, at + (del.delete as number)).join("") === spelled(ins)) {
+      out.push({ retain: del.delete as number });
+      at += del.delete as number;
+      i++;
+      continue;
+    }
+    out.push(op);
+    if (op.insert == null) at += length(op);
+  }
   return out;
 }
 

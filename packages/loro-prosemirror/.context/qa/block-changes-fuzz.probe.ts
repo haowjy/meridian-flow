@@ -1088,11 +1088,7 @@ export function runScript(seed, { verbose = false } = {}) {
       if (g.chance(0.3)) userEdit(tab, "f", { prefer: p.ids });
       if (g.chance(0.25)) liveEdit(false);
       syncLive();
-      // A later press's Undo puts the text it took back as new characters, which this press's
-      // inverse does not delete (design §2: text shows twice): exact only where none wrote this
-      // press's text.
-      const rewritten = presses.slice(i + 1).some((q) => [...q.written.keys()].some((key) => p.written.has(key)));
-      undoPressStep(p, { exact: inTurn && liveWrites === p.liveAt && !p.liveTyped && !rewritten, inTurn });
+      undoPressStep(p, { exact: inTurn && liveWrites === p.liveAt && !p.liveTyped, inTurn });
       if (inTurn) stats.chainUndosInTurn++;
       else stats.chainUndosOutOfOrder++;
     }

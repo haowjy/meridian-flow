@@ -34,7 +34,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/turn-inverse.db.test.ts",
   "apps/server/server/domains/collab/inverse-attribution.db.test.ts",
   "apps/server/server/domains/collab/model-inverse.db.test.ts",
-  "apps/server/server/domains/collab/inverse-actions.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts",
   "apps/server/server/domains/collab/grep-text.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",

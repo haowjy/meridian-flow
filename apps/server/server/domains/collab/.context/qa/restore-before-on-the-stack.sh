@@ -112,7 +112,7 @@ tool "$tmp/d-undo.json" "{\"command\":\"undo\",\"path\":\"manuscript://$four\"}"
 send "$direct" "$tmp/d-undo.json"
 said=$(sql "select b.content->'result'->>'message' from turn_blocks b join turns u on u.id = b.turn_id
   where u.thread_id = '$direct' and b.block_type = 'tool_result' order by b.created_at desc limit 1")
-check "$(echo "$said" | grep -c 'Took e1 out')" 1 "D: the model's undo takes the edit out"
+check "$(echo "$said" | grep -c 'undone: e1')" 1 "D: the model's undo takes the edit out"
 check "$(words "$(live "$four")" "burned low was lit")" True "D: the writer's words stay and the lamp's text comes back"
 
 # E. A chat reads in Draft, the writer types in Live, the chat is switched to Live and writes: the
