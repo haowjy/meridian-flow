@@ -5,8 +5,8 @@
  */
 import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import type { WorksSnapshot } from "@meridian/contracts/works";
-import { type QueryClient, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { type QueryClient, useQueries } from "@tanstack/react-query";
+import { useMemo, useRef } from "react";
 
 import { listOwnerDrafts } from "@/client/api/drafts-api";
 import { useCreatedDrafts } from "./created-drafts";
@@ -82,6 +82,8 @@ export function refreshDraftReads(
     reads.push(refreshWorksSnapshotSince(queryClient, projectId, since));
   reads.push(
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentDraftHintsOf(projectId) }),
+    // A Work's drafts carry their counts.
+    queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDraftsOf(projectId) }),
   );
   bumpLinkResolutionEpoch(projectId);
   return Promise.allSettled(reads);
@@ -110,32 +112,152 @@ export function patchOwnerDrafts(
   );
 }
 
+/** One draft's list as `useOwnerDraftLists` reads it: the list query with its rows completed. */
+export type OwnerDraftListQuery = {
+  data: DraftItemsResponse | undefined;
+  isPending: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  refetch: () => unknown;
+};
+
 /**
- * The owner's draft list as this browser knows it: the server's rows, then the drafts its Work's
- * pending creates make that the server has not listed yet (`useCreatedDrafts`), each open
- * document's text changes counted from its editor (`withTabChangeCounts`).
+ * Drafts' lists as this browser knows them, read together, by draft: the server's rows, then the
+ * drafts its pending creates make that the server has not listed yet (`useCreatedDrafts`), each
+ * open document's text changes counted from its editor (`withTabChangeCounts`).
  */
-export function useOwnerDraftList(projectId: string, owner: string, enabled: boolean) {
-  const query = useQuery({
-    ...ownerDraftsQueryOptions(projectId, owner),
-    enabled: projectReadEnabled(enabled),
+export function useOwnerDraftLists(
+  projectId: string,
+  owners: readonly string[],
+  enabled: boolean,
+): ReadonlyMap<string, OwnerDraftListQuery> {
+  const queries = useQueries({
+    queries: owners.map((owner) => ({
+      ...ownerDraftsQueryOptions(projectId, owner),
+      enabled: projectReadEnabled(enabled),
+    })),
   });
-  const created = useCreatedDrafts(
-    projectId,
-    enabled && query.data ? owner : null,
-    query.data?.items,
-  );
+  // What the lists' reads say now: the memos below rebuild only when it changes.
+  const read = queries
+    .map((query) => `${query.dataUpdatedAt}:${query.isPending}${query.isFetching}${query.isError}`)
+    .join();
+  const latest = useRef(queries);
+  latest.current = queries;
+  const listed = useMemo(() => {
+    const map = new Map<string, readonly DraftItem[]>();
+    owners.forEach((owner, index) => {
+      const data = latest.current[index]?.data;
+      if (enabled && data) map.set(owner, data.items);
+    });
+    return map;
+  }, [owners, enabled, read]);
+  const created = useCreatedDrafts(projectId, listed);
   const tab = useTabChangeCounts();
-  const data = useMemo(() => {
-    if (!query.data) return query.data;
-    const items = withTabChangeCounts(
-      created.length > 0 ? [...query.data.items, ...created] : query.data.items,
-      owner,
-      tab,
-    );
-    return items === query.data.items ? query.data : { ...query.data, items };
-  }, [query.data, created, owner, tab]);
-  return { ...query, data, created };
+  return useMemo(() => {
+    const lists = new Map<string, OwnerDraftListQuery>();
+    owners.forEach((owner, index) => {
+      const query = latest.current[index];
+      if (!query) return;
+      const data = query.data;
+      const made = created.get(owner);
+      const items = data
+        ? withTabChangeCounts(made ? [...data.items, ...made] : data.items, owner, tab)
+        : undefined;
+      lists.set(owner, {
+        data: data && items && items !== data.items ? { ...data, items } : data,
+        isPending: query.isPending,
+        isFetching: query.isFetching,
+        isError: query.isError,
+        refetch: query.refetch,
+      });
+    });
+    return lists;
+  }, [owners, read, created, tab]);
+}
+
+/** One draft's list (`useOwnerDraftLists`). */
+export function useOwnerDraftList(
+  projectId: string,
+  owner: string,
+  enabled: boolean,
+): OwnerDraftListQuery {
+  const owners = useMemo(() => [owner], [owner]);
+  return useOwnerDraftLists(projectId, owners, enabled).get(owner) as OwnerDraftListQuery;
+}
+
+const DISABLED = {
+  data: null,
+  status: "disabled",
+  isError: false,
+  isFetching: false,
+  refetch: () => {},
+  files: null,
+  fileForDocument: () => null,
+  draftId: null,
+} as const satisfies OwnerDraftListStatus;
+
+/**
+ * Drafts' review items, one file per document each, by draft. The drafts are one owner's (a
+ * Work's, or a chat's one): its Scratch names their documents.
+ */
+export function useDraftLists(
+  projectId: string | null,
+  owners: readonly string[],
+  options?: { enabled?: boolean },
+): ReadonlyMap<string, OwnerDraftListStatus> {
+  const enabled = (options?.enabled ?? true) && Boolean(projectId) && owners.length > 0;
+  const lists = useOwnerDraftLists(projectId ?? "", owners, enabled);
+  const treeOwner = useDraftTreeOwner(projectId ?? "", owners[0] ?? null);
+  const schemes = useMemo(
+    () => [
+      ...new Set(
+        [...lists.values()].flatMap(
+          (list) =>
+            list.data?.items.flatMap((row) =>
+              row.contextLocation ? [row.contextLocation.scheme] : [],
+            ) ?? [],
+        ),
+      ),
+    ],
+    [lists],
+  );
+  const trees = useProjectTreeViews(projectId ?? "", schemes, {
+    enabled: enabled && schemes.length > 0,
+    ...treeOwner,
+  });
+  return useMemo(() => {
+    const statuses = new Map<string, OwnerDraftListStatus>();
+    for (const [owner, query] of lists) {
+      if (!enabled) {
+        statuses.set(owner, DISABLED);
+        continue;
+      }
+      const result = unwrapListQuery({ ...query, data: query.data?.items });
+      const visible = result.data;
+      const files = visible
+        ? projectWorkDraftFiles(visible, {
+            findDocument: (id) =>
+              Object.values(trees)
+                .flatMap(({ tree }) => tree?.findDocument(id) ?? [])
+                .at(0) ?? null,
+          })
+        : null;
+      const byDocument = new Map(files?.map((file) => [file.documentId, file]));
+      statuses.set(owner, {
+        ...result,
+        status:
+          result.status === "ready" || result.status === "empty"
+            ? visible?.length
+              ? "ready"
+              : "empty"
+            : result.status,
+        files,
+        fileForDocument: (documentId) => (documentId ? (byDocument.get(documentId) ?? null) : null),
+        draftId: query.data ? owner : null,
+      });
+    }
+    return statuses;
+  }, [lists, enabled, trees]);
 }
 
 export function useOwnerDrafts(
@@ -143,66 +265,6 @@ export function useOwnerDrafts(
   owner: string | null,
   options?: { enabled?: boolean },
 ): OwnerDraftListStatus {
-  const callerEnabled = options?.enabled ?? true;
-  const enabled = callerEnabled && Boolean(projectId) && Boolean(owner);
-  const query = useOwnerDraftList(projectId ?? "", owner ?? "", enabled);
-  const result = unwrapListQuery({ ...query, data: query.data?.items });
-  const treeOwner = useDraftTreeOwner(projectId ?? "", owner);
-
-  const schemes = useMemo(
-    () => [
-      ...new Set(
-        result.data?.flatMap((row) => (row.contextLocation ? [row.contextLocation.scheme] : [])),
-      ),
-    ],
-    [result.data],
-  );
-  const trees = useProjectTreeViews(projectId ?? "", schemes, {
-    enabled: enabled && Boolean(result.data?.length),
-    ...treeOwner,
-  });
-  const visible = result.data;
-  const files = useMemo(
-    () =>
-      enabled && visible
-        ? projectWorkDraftFiles(visible, {
-            findDocument: (id) =>
-              Object.values(trees)
-                .flatMap(({ tree }) => tree?.findDocument(id) ?? [])
-                .at(0) ?? null,
-          })
-        : null,
-    [enabled, visible, trees],
-  );
-  const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
-  const fileForDocument = useCallback(
-    (documentId: string | null | undefined) =>
-      documentId ? (byDocument.get(documentId) ?? null) : null,
-    [byDocument],
-  );
-
-  if (!enabled) {
-    return {
-      ...result,
-      data: null,
-      status: "disabled",
-      files: null,
-      fileForDocument,
-      draftId: null,
-    };
-  }
-
-  return {
-    ...result,
-    data: visible,
-    status:
-      result.status === "ready" || result.status === "empty"
-        ? visible?.length
-          ? "ready"
-          : "empty"
-        : result.status,
-    files,
-    fileForDocument,
-    draftId: query.data ? owner : null,
-  };
+  const owners = useMemo(() => (owner ? [owner] : []), [owner]);
+  return useDraftLists(projectId, owners, options).get(owner ?? "") ?? DISABLED;
 }

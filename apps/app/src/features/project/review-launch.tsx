@@ -15,7 +15,6 @@ import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
-import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -39,7 +38,7 @@ export type ItemLaunchTarget = {
   /** Review changes on, against this; omission opens the plain draft. */
   review?: ReviewTarget;
   /** The change Review changes opens at. */
-  focus?: ReviewFocus;
+  focus?: { id: string };
   /** The writer just made the document: its text takes the caret, as one made on Live does. */
   made?: true;
   /** Replace the history entry: the stepper crossing chapters within Review changes. */
@@ -220,10 +219,11 @@ export function useItemLauncher() {
     },
     [openDraft],
   );
+  /** `change`: the change it opens at, named by any of its members (a turn's first changed block). */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, draftId: string, focus?: ReviewFocus) => {
+    (row: ReviewFileTarget, draftId: string, change?: string) => {
       const target = fileTarget(row, draftId);
-      if (target) openReview({ ...target, ...(focus ? { focus } : {}) });
+      if (target) openReview(change ? { ...target, focus: { id: change } } : target);
     },
     [openReview],
   );

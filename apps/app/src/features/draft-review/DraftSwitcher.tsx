@@ -1,8 +1,10 @@
 /**
  * DraftSwitcher — the version chip with its menu: which version the view shows. A document's
  * header uses it for that document, and the sidebar for its trees (`TreeVersionChip`), so the
- * writer meets one Live/Draft control that names the version on screen. The versions are the live document and every draft of it, one
- * per owner (a Work, or a chat with no Work). The same chip and menu show on the
+ * writer meets one Live/Draft control that names the version on screen. The versions are the live
+ * document and its drafts: the picked Work's (a Work has several), then other owners' (another
+ * Work, or a chat with no Work). It makes a Work's drafts too: `+ New draft`, and `Delete draft`
+ * for the one on screen. The same chip and menu show on the
  * live document (picking a draft shows it) and on a draft (picking Live leaves
  * it, picking another draft switches), so the control the writer used to get in
  * is the one they use to get out. Moving between files is not here: it belongs
@@ -14,7 +16,9 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { type ReactNode, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { type ReactNode, type Ref, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,16 +27,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { DisclosureMark } from "@/components/ui/marks";
+import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
 /** One owner's draft of the document, as the menu lists it. */
-type DraftVersion = {
+export type DraftVersion = {
   key: string;
   /** The owner's name: its Work's, or the chat's for a draft with no Work. */
   name: ReactNode;
   /** What the draft does to the document besides its text (a move or delete). */
   detail?: ReactNode;
+  /** How much it changes, at the row's end ("2 files"). */
+  note?: ReactNode;
   /** The draft on screen. */
   current: boolean;
   /** The scope's own draft (the picked Work's, or the chat's): listed first, outside the fold. */
@@ -47,9 +56,13 @@ export type DraftSwitcherProps = {
   showing: "live" | "draft";
   /** Every owner's draft of the document. */
   drafts: readonly DraftVersion[];
-  /** The draft on screen is not the picked Work's: the chip names its owner. */
+  /** The chip names the draft: its owner's when it is not the picked Work's, or its own name among several. */
   owner?: ReactNode;
   onShowLive: () => void;
+  /** `+ New draft` in the picked Work: makes one and shows it. */
+  onNewDraft?: () => void;
+  /** `Delete draft`: deletes the draft on screen. */
+  onDeleteDraft?: () => void;
   /** A phone's header: the trigger is a 44px target and its menu fits the screen. */
   touch?: boolean;
 };
@@ -60,6 +73,8 @@ export function DraftSwitcher({
   drafts,
   owner,
   onShowLive,
+  onNewDraft,
+  onDeleteDraft,
   touch = false,
 }: DraftSwitcherProps) {
   const scoped = drafts.filter((draft) => draft.scope);
@@ -96,11 +111,18 @@ export function DraftSwitcher({
           <Trans>Live</Trans>
         </VersionItem>
         {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
-        {scoped.map((draft) => (
-          <DraftVersionItem key={draft.key} draft={draft} />
-        ))}
-        {scoped.length > 0 && others.length > 0 ? <DropdownMenuSeparator /> : null}
+        <WorkDraftRows as="menu" drafts={scoped} onNewDraft={onNewDraft} />
+        {others.length > 0 ? <DropdownMenuSeparator /> : null}
         {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}
+        {onDeleteDraft && showing === "draft" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onDeleteDraft}>
+              <Trash2 className="size-3.5" aria-hidden />
+              <Trans>Delete draft</Trans>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -130,16 +152,130 @@ function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; fold
   );
 }
 
-function DraftVersionItem({ draft }: { draft: DraftVersion }) {
+/**
+ * The picked Work's drafts and `+ New draft`: one list, the same rows in a version chip's menu and
+ * in a chat's `Writes into` panel, so picking a draft reads and behaves alike in both. Only the
+ * presentation differs: menu items in the chip (`as: "menu"`), and in the panel, whose toolbar
+ * owns the popover, the drafts as a radio group with `New draft` after it.
+ */
+export function WorkDraftRows({
+  as,
+  drafts,
+  onNewDraft,
+  rowRef,
+  label,
+}: {
+  as: "menu" | "radio";
+  drafts: readonly DraftVersion[];
+  onNewDraft?: () => void;
+  /** A panel's focus targets (`as: "radio"`). */
+  rowRef?: (draft: DraftVersion, index: number) => Ref<HTMLButtonElement> | undefined;
+  /** The radio group's accessible name. */
+  label?: string;
+}) {
+  const Row = as === "menu" ? MenuRow : PanelRow;
+  const rows = drafts.map((draft, index) => (
+    <Row
+      key={draft.key}
+      checked={draft.current}
+      onSelect={draft.onSelect}
+      rowRef={rowRef?.(draft, index)}
+      className={draftRowClass}
+    >
+      <DraftVersionLabel draft={draft} />
+    </Row>
+  ));
+  const create = onNewDraft ? (
+    <Row onSelect={onNewDraft}>
+      <NewDraftLabel />
+    </Row>
+  ) : null;
+  if (as === "menu")
+    return (
+      <>
+        {rows}
+        {create}
+      </>
+    );
+  return (
+    <fieldset className="m-0 min-w-0 border-0 p-0" onKeyDown={handleListKeys}>
+      <div role="radiogroup" aria-label={label}>
+        {rows}
+      </div>
+      {create}
+    </fieldset>
+  );
+}
+
+/** One row of a draft list: a draft (`checked` on the one in use) or `New draft`. */
+type RowProps = {
+  checked?: boolean;
+  onSelect: () => void;
+  rowRef?: Ref<HTMLButtonElement>;
+  className?: string;
+  children: ReactNode;
+};
+
+function MenuRow({ checked, onSelect, className, children }: RowProps) {
   return (
     <DropdownMenuItem
-      selected={draft.current}
-      onSelect={draft.current ? undefined : draft.onSelect}
-      className="h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11"
+      selected={checked}
+      onSelect={checked ? undefined : onSelect}
+      className={className}
     >
-      <span className="min-w-0 max-w-full truncate">{draft.name}</span>
-      {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}
+      {children}
     </DropdownMenuItem>
+  );
+}
+
+/** A panel's row: a draft is a radio of the group, `New draft` a button after it. */
+function PanelRow({ checked, onSelect, rowRef, className, children }: RowProps) {
+  return (
+    <Button
+      data-list-item
+      ref={rowRef}
+      role={checked === undefined ? undefined : "radio"}
+      aria-checked={checked}
+      variant="ghost"
+      className={cn(dropdownRowVariants({ selected: checked ?? false }), className)}
+      onClick={onSelect}
+    >
+      {children}
+    </Button>
+  );
+}
+
+const draftRowClass =
+  "h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11";
+
+function NewDraftLabel() {
+  return (
+    <>
+      <Plus className="size-3.5 text-muted-foreground" aria-hidden />
+      <Trans>New draft</Trans>
+    </>
+  );
+}
+
+function DraftVersionItem({ draft }: { draft: DraftVersion }) {
+  return (
+    <MenuRow checked={draft.current} onSelect={draft.onSelect} className={draftRowClass}>
+      <DraftVersionLabel draft={draft} />
+    </MenuRow>
+  );
+}
+
+function DraftVersionLabel({ draft }: { draft: DraftVersion }) {
+  return (
+    <>
+      <span className="flex w-full min-w-0 items-baseline gap-3">
+        <span className="min-w-0 flex-1 truncate text-left">{draft.name}</span>
+        {draft.note ? (
+          <span className="shrink-0 text-xs text-muted-foreground">{draft.note}</span>
+        ) : null}
+      </span>
+      {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}
+    </>
   );
 }
 

@@ -4,10 +4,13 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { useDraftCommandState } from "./draft-changes";
+import { useSyncExternalStore } from "react";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
-  const state = useDraftCommandState(itemKey);
+  const owner = useDraftCommandOwner();
+  const snapshot = () => owner.state(itemKey);
+  const state = useSyncExternalStore(owner.subscribe, snapshot, snapshot);
   if (!state.applying) return null;
   return (
     <div

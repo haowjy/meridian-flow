@@ -20,7 +20,7 @@ export type PressPort = {
 export type Seat = { push(): void; drop(): void };
 
 /**
- * One press (an Apply or a Discard) on the sidebar's stack, until it is taken back. It holds the
+ * One press (an Apply, a Discard or a Restore before) on the sidebar's stack, until it is taken back. It holds the
  * press's command id and nothing else of it: an Undo asks the server to take it back, and one
  * that lands ends it. A failed Undo leaves it to try again.
  */
@@ -35,6 +35,8 @@ export class PressEntries {
     private readonly seat: Seat | null,
     /** It ended: nothing is left of it to take back. */
     private readonly over: () => void,
+    /** An Undo of it went out, or came back: `undoing` changed. */
+    private readonly changed: () => void = () => {},
   ) {
     seat?.push();
   }
@@ -43,12 +45,18 @@ export class PressEntries {
     return this.commandId;
   }
 
+  /** An Undo of it is out: every surface that offers it shows it running. */
+  get undoing(): boolean {
+    return this.pending !== null;
+  }
+
   /** Every Undo of it: a row's or a card's Undo, the sidebar's Ctrl+Z. A press while one is out hears the same answer. */
   undo(): Promise<Undone> {
     if (this.ended) return Promise.resolve({ kind: "answered", unpressId: "", took: false });
     if (this.pending) return this.pending;
     const press = this.port.unpress(this.commandId).then((undone) => {
       this.pending = null;
+      this.changed();
       if (undone.kind === "failed") {
         if (!undone.told)
           notifyFailure({
@@ -60,6 +68,7 @@ export class PressEntries {
       return undone;
     });
     this.pending = press;
+    this.changed();
     return press;
   }
 
@@ -74,6 +83,8 @@ export class PressEntries {
 /** The Ctrl+Z of an editor open on a pressed document (`DocumentHistory`). */
 export type EditorHistory = {
   pushOutside(step: OutsideStep): void;
+  /** Marks blocks a press's Undo left in place (`PressUndoResult.stayed`). */
+  showStayed(labels: ReadonlyMap<string, string>): void;
   removeOutside(step: OutsideStep): void;
   restoreOutside(step: OutsideStep): void;
 };

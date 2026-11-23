@@ -22,7 +22,12 @@ import {
   useRef,
 } from "react";
 import { enterScope } from "@/client/project-shell/document-views";
-import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
+import {
+  useTreeVersionChoice,
+  writeShownWorkDraft,
+  writeTreeVersionChoice,
+} from "@/client/project-shell/store";
+import type { WorkDraftsState } from "@/client/query/draft-commands";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
@@ -42,10 +47,16 @@ export type ShellTreeVersion = {
   /** The Work's tree whichever way the toggle stands, for review; null with no draft. */
   draftVersion: TreeVersion | null;
   showing: "live" | "draft";
-  /** The Work has pending changes: the toggle is offered. */
+  /** The toggle is offered: a picked Work has drafts to show, or the chat's draft has changes. */
   offered: boolean;
-  /** Whose drafts the toggle shows. */
+  /** The draft the toggle shows. */
   draftId: string;
+  /** The picked Work's drafts, which the version chip lists and makes; null for a chat's own. */
+  workDrafts: WorkDraftsState | null;
+  /** Shows one of the picked Work's drafts: the toggle goes to Draft on it. */
+  pick: (draftId: string) => void;
+  /** The shown draft is deleted: the toggle goes to Live, and Draft is the Work's default again. */
+  leave: () => void;
   /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
   /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
@@ -69,11 +80,21 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
 }
 
 /**
- * A Work's review count, the one every surface shows: the Changes list's items when the shell has
- * the Work's list open (a change made offline or in flight is in it already), else the stored
- * count the Works list carries, which the open list agrees with once it syncs.
+ * A Work's review count, the one every surface shows: summed over its drafts, the shown draft's
+ * open list (a change made offline or in flight is in it already) and the others' stored counts;
+ * else the stored count the Works list carries, which the open list agrees with once it syncs.
  */
 export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
+  const drafts = shell?.work?.id === work.id ? shell.workDrafts?.drafts : null;
+  if (shell && drafts)
+    return drafts.reduce(
+      (sum, draft) =>
+        sum +
+        (draft.id === shell.draftId
+          ? shell.changeCount
+          : draft.pendingDocumentCount + draft.pendingFolderCount),
+      0,
+    );
   return shell && shell.draftId === work.draftId
     ? shell.changeCount
     : work.pendingDocumentCount + work.pendingFolderCount;
@@ -93,6 +114,44 @@ export function useDraftTreeVersion(
 /** The owner key of a new chat on screen: a scope whose drafts nobody holds yet. */
 const NO_OWNER = "new-chat";
 
+/**
+ * Drafts' tree changes by draft, from the browser's replay of each draft's view in each list it
+ * spans: what the Changes list builds its folder groups from, including a change not yet admitted
+ * (made offline or in flight).
+ */
+export function useDraftsTreeChanges(
+  projectId: string,
+  versions: readonly TreeVersion[],
+): ReadonlyMap<string, WorkTreeChanges> {
+  const accountId = useAccountId();
+  const project = useTreeList({ kind: "project", projectId });
+  const account = useTreeList({ kind: "account", userId: accountId });
+  return useMemo(() => {
+    const changes = new Map<string, WorkTreeChanges>();
+    for (const version of versions) {
+      const draft = version.view.draft;
+      if (draft === null) continue;
+      changes.set(
+        draft,
+        workTreeChanges(
+          [project, account].flatMap(({ session, snapshot }) =>
+            session && snapshot
+              ? [
+                  {
+                    live: session.replay(LIVE),
+                    work: session.replay(version.view),
+                    pending: pendingRecords(snapshot.doc, draft),
+                  },
+                ]
+              : [],
+          ),
+        ),
+      );
+    }
+    return changes;
+  }, [versions, project, account]);
+}
+
 export function TreeVersionProvider({
   projectId,
   chatThreadId,
@@ -106,7 +165,7 @@ export function TreeVersionProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const { draftId, work, known } = useScopeDraftOwner(projectId, chatThreadId);
+  const { draftId, work, picked, known, workDrafts } = useScopeDraftOwner(projectId, chatThreadId);
   // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before and
   // show the new owner's (`enterScope`). A new chat on screen has no drafts, so it is a change to
   // no owner. "" with no new chat, or any owner before the Works list loads, is no owner known
@@ -115,39 +174,29 @@ export function TreeVersionProvider({
   // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = known ? draftId || (newChat ? NO_OWNER : "") : "";
-  const owner = useRef(ownerKey);
+  // A move between one picked Work's drafts leaves the toggle as the move set it: a pick puts it
+  // on Draft, `Delete draft` on Live.
+  const pickedId = picked?.id ?? null;
+  const owner = useRef({ key: ownerKey, work: pickedId });
   useLayoutEffect(() => {
     if (!ownerKey) return;
-    if (owner.current && owner.current !== ownerKey)
-      enterScope(queryClient, accountId, projectId, ownerKey === NO_OWNER ? null : ownerKey);
-    owner.current = ownerKey;
-  }, [queryClient, accountId, projectId, ownerKey]);
+    const before = owner.current;
+    if (before.key && before.key !== ownerKey)
+      enterScope(
+        queryClient,
+        accountId,
+        projectId,
+        ownerKey === NO_OWNER ? null : ownerKey,
+        pickedId !== null && before.work === pickedId,
+      );
+    owner.current = { key: ownerKey, work: pickedId };
+  }, [queryClient, accountId, projectId, ownerKey, pickedId]);
   const drafts = useOwnerDrafts(projectId, draftId);
   const { draftId: listedDraft, fileForDocument } = drafts;
-  const project = useTreeList({ kind: "project", projectId });
-  const account = useTreeList({ kind: "account", userId: accountId });
   const { data: rows } = drafts;
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
-  // The Work's tree changes, from the browser's replay of its view in each list its draft
-  // spans: what the Changes list builds its folder groups from, including a change not yet
-  // admitted (made offline or in flight).
-  const tree = useMemo(() => {
-    const draft = draftVersion?.view.draft ?? null;
-    if (!draftVersion || draft === null) return null;
-    return workTreeChanges(
-      [project, account].flatMap(({ session, snapshot }) =>
-        session && snapshot
-          ? [
-              {
-                live: session.replay(LIVE),
-                work: session.replay(draftVersion.view),
-                pending: pendingRecords(snapshot.doc, draft),
-              },
-            ]
-          : [],
-      ),
-    );
-  }, [draftVersion, project, account]);
+  const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
+  const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
   // Documents from the server's pending drafts, folders from the replay.
   const changeCount = (rows?.length ?? 0) + (tree?.folders.size ?? 0);
   // The nodes the tree marks on Live.
@@ -155,7 +204,9 @@ export function TreeVersionProvider({
     () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
     [rows, tree],
   );
-  const offered = listedDraft !== null && changeCount > 0;
+  // A picked Work's chip stays, so `+ New draft` is always one pick away; a chat's own draft is
+  // offered while it holds changes.
+  const offered = listedDraft !== null && (changeCount > 0 || workDrafts.drafts !== null);
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
@@ -165,6 +216,18 @@ export function TreeVersionProvider({
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],
   );
+  const pick = useCallback(
+    (next: string) => {
+      if (!pickedId) return;
+      writeShownWorkDraft(accountId, projectId, { workId: pickedId, draftId: next });
+      writeTreeVersionChoice(accountId, projectId, "draft");
+    },
+    [accountId, projectId, pickedId],
+  );
+  const leave = useCallback(() => {
+    writeShownWorkDraft(accountId, projectId, null);
+    writeTreeVersionChoice(accountId, projectId, "live");
+  }, [accountId, projectId]);
 
   const { nameOf } = useWorks(projectId);
   const named = work && !work.isNoWork ? work : null;
@@ -176,6 +239,9 @@ export function TreeVersionProvider({
       showing,
       offered,
       draftId,
+      workDrafts: workDrafts.drafts ? workDrafts : null,
+      pick,
+      leave,
       work: named,
       name,
       changed,
@@ -190,6 +256,9 @@ export function TreeVersionProvider({
       showing,
       offered,
       draftId,
+      workDrafts,
+      pick,
+      leave,
       named,
       name,
       changed,

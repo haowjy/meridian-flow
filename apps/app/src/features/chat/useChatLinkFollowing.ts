@@ -44,7 +44,6 @@
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
-import { draftOf } from "@meridian/contracts/works";
 import { type ComponentProps, useCallback, useMemo, useState } from "react";
 
 import { useTopChat } from "@/client/query/useTopChat";
@@ -171,7 +170,7 @@ export function useChatLinkFollowing({
   // A page this chat drafted opens on its draft.
   const place = useLinkPlacement(
     projectId,
-    activeWork && activeThread ? draftOf(activeThread, activeWork) : null,
+    activeWork && activeThread ? activeThread.draftId : null,
   );
   const linkWorkId = activeWork?.id ?? null;
   const open = useCallback<LinkDestination>(

@@ -1,6 +1,7 @@
 /** Renders durable document and Work change receipts. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { DraftId, TurnId } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
@@ -11,7 +12,8 @@ import type {
 } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,7 @@ import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
+import { useItemLauncher } from "@/features/project/review-launch";
 import {
   type CanOpenContextUri,
   type OpenContextUri,
@@ -30,6 +33,8 @@ import {
 import { DocumentName } from "./DocumentName";
 import { describeModelMove, documentDisplayName, folderDisplayName } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
+import { RestoreBeforeSlot } from "./TurnRestoreBefore";
+import { useTurnCardDrafts } from "./turn-card-drafts";
 import { workReceiptLine } from "./work-receipt-copy";
 
 /** The answers that mean the press failed; every other answer is a press that took what it could. */
@@ -55,6 +60,8 @@ export type TurnEditsReceiptProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
+  /** When `receipt` was read. */
+  receiptReadAt?: number;
   /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
 };
@@ -64,6 +71,7 @@ export function TurnEditsReceipt({
   turn,
   documents,
   receipt,
+  receiptReadAt = 0,
   workReceipts = [],
 }: TurnEditsReceiptProps) {
   const panelId = useId();
@@ -75,6 +83,7 @@ export function TurnEditsReceipt({
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
+  const restore = useRestoreBefore(turn, documents, receipt, receiptReadAt);
   const hasEditedDocuments = documents.length > 0;
   const names = useOwnerNames();
   // Reversible Work mutation receipts are content in their own right: their
@@ -129,32 +138,44 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        <UndoSlot
-          reversible={reversible}
-          pending={pending}
-          undone={receipt?.undone === true}
-          onUndo={() => void reverseTurn()}
-        />
+        {restore.drafts.length === 1 ? restore.slot(restore.drafts[0] as DraftId, false) : null}
+        {/* A draft's writes are Restore before's: the card's Undo is for the rest, when there is any. */}
+        {reversible || receipt?.undone || restore.drafts.length === 0 ? (
+          <UndoSlot
+            reversible={reversible}
+            pending={pending}
+            undone={receipt?.undone === true}
+            onUndo={() => void reverseTurn()}
+          />
+        ) : null}
       </div>
       {projectId ? (
         <AgentPackagesSaveLines projectId={projectId} documents={documents} drafts={drafts} />
       ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {documents.length > 0 ? (
-            <ul className="flex flex-col">
-              {documents.map((doc) => (
-                <li key={doc.uri}>
-                  <DocumentRow
-                    document={doc}
-                    state={draftStateOf(doc, drafts)}
-                    onOpenContextUri={openContextUri}
-                    canOpenContextUri={canOpenContextUri}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {restore.groups.map((group) => (
+            <div key={group.draft ?? "live"}>
+              {group.draft ? (
+                <div className="flex min-h-6 items-center px-[var(--chat-card-pad-x)] text-foreground">
+                  <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
+                  {restore.slot(group.draft, true)}
+                </div>
+              ) : null}
+              <ul className="flex flex-col">
+                {group.documents.map((doc) => (
+                  <li key={`${doc.scope === "draft" ? doc.draft : "live"}:${doc.uri}`}>
+                    <DocumentRow
+                      document={doc}
+                      state={draftStateOf(doc, drafts)}
+                      onOpenContextUri={openContextUri}
+                      canOpenContextUri={canOpenContextUri}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
           {reversibleWorkReceipts.length > 0 ? (
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
@@ -171,6 +192,82 @@ export function TurnEditsReceipt({
     </div>
   );
 }
+
+/**
+ * The card's `Restore before`, one per draft the card's read offers it in or names a press in
+ * force for, or this tab pressed it in: with one, in the header; with several, each heads its
+ * draft's rows, named. `groups` are the rows to list: the turn's Live rows, then each such draft's
+ * under its name (one group, unnamed, with fewer than two).
+ */
+function useRestoreBefore(
+  turn: Turn,
+  documents: readonly TurnEditDocument[],
+  receipt: TurnReceiptChip | null,
+  readAt: number,
+) {
+  const cards = useTurnCardDrafts();
+  const owner = cards?.commands.owner;
+  useSyncExternalStore(
+    owner?.subscribe ?? noSubscription,
+    owner?.snapshot ?? noSnapshot,
+    owner?.snapshot ?? noSnapshot,
+  );
+  const turnId = turn.id as TurnId;
+  const offered = receipt?.restore ?? [];
+  const drafts: DraftId[] = cards
+    ? [
+        ...new Set([
+          ...offered,
+          ...(receipt?.restored ?? []).map((each) => each.draft),
+          ...(owner?.restoredDrafts(turnId) ?? []),
+        ]),
+      ]
+    : [];
+  const nameOf = (draft: string) => cards?.nameOf(draft) ?? "";
+  const written = (draft: string) =>
+    documents.filter((doc) => doc.scope === "draft" && doc.draft === draft);
+  const several = drafts.length > 1;
+  const groups: { draft: DraftId | null; name: string | null; documents: TurnEditDocument[] }[] =
+    several
+      ? [
+          {
+            draft: null,
+            name: null,
+            documents: documents.filter(
+              (doc) => doc.scope !== "draft" || !drafts.includes(doc.draft),
+            ),
+          },
+          ...drafts.map((draft) => ({ draft, name: nameOf(draft), documents: written(draft) })),
+        ]
+      : [{ draft: null, name: null, documents: [...documents] }];
+  return {
+    drafts,
+    groups: groups.filter((group) => group.draft || group.documents.length > 0),
+    slot: (draft: DraftId, named: boolean) =>
+      cards ? (
+        <RestoreBeforeSlot
+          key={draft}
+          commands={cards.commands}
+          turn={turnId}
+          draft={draft}
+          documents={written(draft)
+            .filter((doc) => !doc.folder)
+            .map((doc) => doc.documentId)}
+          name={named ? nameOf(draft) : null}
+          offered={offered.includes(draft)}
+          named={
+            receipt?.restored
+              ? (receipt.restored.find((each) => each.draft === draft)?.press ?? null)
+              : undefined
+          }
+          readAt={readAt}
+        />
+      ) : null,
+  };
+}
+
+const noSubscription = () => () => {};
+const noSnapshot = () => 0;
 
 /**
  * The Save state of each Agent package the turn's writes landed in (a live write, an applied
@@ -234,6 +331,16 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
+  // A chapter the turn drafted that still has changes opens in Review changes; any other row
+  // opens as a link does.
+  const projectId = useProjectDocumentNavigationProjectId();
+  const draftId = document.scope === "draft" ? document.draft : null;
+  const drafted = useOwnerDrafts(projectId ?? null, draftId).fileForDocument(document.documentId);
+  const { openReviewFile } = useItemLauncher();
+  const open = () => {
+    if (draftId && drafted?.item.pending) openReviewFile(drafted, draftId, document.block);
+    else onOpenContextUri?.(document.uri);
+  };
   // A folder has no document to open or drag: its row names where it is.
   if (document.folder && !document.tree)
     return (
@@ -261,7 +368,7 @@ function DocumentRow({
     <button
       type="button"
       {...drag}
-      onClick={() => onOpenContextUri(document.uri)}
+      onClick={open}
       onAuxClick={(event) => {
         if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
       }}

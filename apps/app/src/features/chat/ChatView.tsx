@@ -612,7 +612,11 @@ export function ChatView({
       {
         ...base,
         kind: "handoff",
-        draftId: newDraftId(),
+        // A named Work's chat writes into its default; with No Work the new lineage has its own.
+        draftId:
+          activeWork && !activeWork.isNoWork && activeWork.draftId
+            ? activeWork.draftId
+            : newDraftId(),
         originTurnId,
         agent: choice.agent,
         agentName: choice.agent.name,

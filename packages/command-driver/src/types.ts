@@ -41,7 +41,7 @@ export type CommandRecord<Body = unknown> = {
 };
 
 export type HttpRequest = {
-  method: "POST" | "PATCH" | "DELETE";
+  method: "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   /** An object: the driver adds `commandId`. */
   body: Record<string, unknown>;

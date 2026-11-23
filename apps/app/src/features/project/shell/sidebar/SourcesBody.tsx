@@ -32,6 +32,7 @@ import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
+import { useWorkDraftMenu } from "@/features/draft-review/work-draft-menu";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -50,7 +51,7 @@ import { useItemLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
-import { useOptionalMainItem } from "../../views";
+import { useOptionalMainItem, useShownDraft } from "../../views";
 import { AgentsSource } from "./AgentsSource";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
@@ -219,15 +220,21 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: ListChecks,
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, changes, changesCommands, activeDocumentId, onPicked } = useWriteSources();
+      const { projectId, chatThreadId, changes, changesCommands, activeDocumentId, onPicked } =
+        useWriteSources();
+      const shownDraft = useShownDraft(projectId, chatThreadId);
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
-          key={changes.draftId}
+          key={changes.drafts.map((draft) => draft.id).join()}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
-          isOpen={(file) => file.documentId === activeDocumentId}
+          // Two drafts may change one document: the row of the draft main paints is the open one.
+          isOpen={(file) =>
+            file.documentId === activeDocumentId &&
+            shownDraft(file.documentId)?.draftId === file.item.draftId
+          }
           onPicked={onPicked}
         />
       );
@@ -367,10 +374,11 @@ export function SourcesBody({
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
+  const changesDrafts = useMemo(() => changes.drafts.map((draft) => draft.id), [changes.drafts]);
   const changesCommands = usePressCommands({
     projectId,
     work: changes.work,
-    draftId: changes.draftId,
+    drafts: changesDrafts,
     surface: "changes",
   });
 
@@ -516,7 +524,13 @@ export function SourcesBody({
             else if (root && undo.handles(event)) undo.press(source === "user", root);
           }}
         >
-          <SourceTabs chosen={chosen} tabs={tabs} source={source} onSelect={setPicked} />
+          <SourceTabs
+            projectId={projectId}
+            chosen={chosen}
+            tabs={tabs}
+            source={source}
+            onSelect={setPicked}
+          />
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
@@ -549,11 +563,13 @@ function SourceView({ source }: { source: SourceKey }) {
 }
 
 function SourceTabs({
+  projectId,
   chosen,
   tabs,
   source,
   onSelect,
 }: {
+  projectId: string;
   /** The writer's tree tabs, which the ⋯ menu shows and changes. */
   chosen: readonly TreeTab[];
   /** The tabs on the strip now: Chat, the chosen trees, and Changes while it is offered. */
@@ -617,7 +633,7 @@ function SourceTabs({
         </DropdownMenu>
         {tabs.includes("changes") ? <span className="ml-auto">{tab("changes")}</span> : null}
       </div>
-      <TreeVersionChip />
+      <TreeVersionChip projectId={projectId} />
     </div>
   );
 }
@@ -627,24 +643,34 @@ function SourceTabs({
  * the Work has pending changes. Every tree, click, rename, move and Ctrl+Z in the sidebar follows
  * it, and so does main's page. Outside the tab strip, so it never scrolls out of view.
  */
-function TreeVersionChip() {
+function TreeVersionChip({ projectId }: { projectId: string }) {
   const shell = useShellTreeVersion();
   const touch = useCoarsePointer();
+  const menu = useWorkDraftMenu(
+    projectId,
+    shell,
+    (draftId) => shell?.showing === "draft" && draftId === shell.draftId,
+  );
   if (!shell?.offered) return null;
   return (
     <DraftSwitcher
       label={t`Sidebar version`}
       showing={shell.showing}
-      drafts={[
-        {
-          key: shell.draftId,
-          name: <WorkIdentity work={shell.work} unavailableLabel={t`This chat`} />,
-          current: shell.showing === "draft",
-          scope: true,
-          onSelect: () => shell.show("draft"),
-        },
-      ]}
+      owner={menu?.owner}
+      drafts={
+        menu?.drafts ?? [
+          {
+            key: shell.draftId,
+            name: <WorkIdentity work={shell.work} unavailableLabel={t`This chat`} />,
+            current: shell.showing === "draft",
+            scope: true,
+            onSelect: () => shell.show("draft"),
+          },
+        ]
+      }
       onShowLive={() => shell.show("live")}
+      onNewDraft={menu?.onNewDraft}
+      onDeleteDraft={menu?.onDeleteDraft}
       touch={touch}
     />
   );

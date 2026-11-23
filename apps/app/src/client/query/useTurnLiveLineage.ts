@@ -62,6 +62,8 @@ export function useRefreshTurnCardsOnEdit(editor: Editor | null, documentId: str
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {
   documents: TurnLiveLineageDocumentItem[] | null;
   receipt: TurnReceiptChip | null;
+  /** When `receipt` was read (0 before any read): a card weighs it against what this tab did since. */
+  readAt: number;
 };
 
 export function useTurnLiveLineage(
@@ -91,6 +93,7 @@ export function useTurnLiveLineage(
       refetch: () => undefined,
       documents: null,
       receipt: null,
+      readAt: 0,
     };
   }
 
@@ -111,5 +114,6 @@ export function useTurnLiveLineage(
     },
     documents,
     receipt: query.data?.receipt ?? null,
+    readAt: query.dataUpdatedAt,
   };
 }

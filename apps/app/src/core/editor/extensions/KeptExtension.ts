@@ -6,7 +6,9 @@
  * - a paragraph someone deleted while the caret was in it, kept while the caret stays (the binding's
  *   `kept`, "The caret rule");
  * - an edit Ctrl+Z or Ctrl+Shift+Z left in place because someone wrote over it since
- *   (`HistoryRun.kept`), briefly, naming who when their copy is here (`showKept`).
+ *   (`HistoryRun.kept`), briefly, naming who when their copy is here (`showKept`);
+ * - a change a press's Undo left in place for the same reason (`PressUndoResult.stayed`),
+ *   named by the server (`showStayed`).
  */
 import { t } from "@lingui/core/macro";
 import { type KeptEdit, loroSyncKey } from "@meridian/loro-prosemirror";
@@ -63,11 +65,21 @@ export function showKept(view: EditorView, edits: readonly KeptEdit[]): void {
   const labels = new Map<string, string>();
   for (const { blocks, by } of edits) {
     const name = by ? nameOf(by) : undefined;
-    const label = name
-      ? t`${name} wrote over this since. Undo left it as it is.`
-      : t`Written over since. Undo left it as it is.`;
-    for (const block of blocks) labels.set(block, label);
+    for (const block of blocks) labels.set(block, keptLabel(name));
   }
+  showStayed(view, labels);
+}
+
+/** What the mark says: who wrote over the edit, when someone is known. */
+export function keptLabel(name: string | undefined): string {
+  return name
+    ? t`${name} wrote over this since. Undo left it as it is.`
+    : t`Written over since. Undo left it as it is.`;
+}
+
+/** Marks blocks an Undo left in place, each with what its mark says, briefly. */
+export function showStayed(view: EditorView, labels: ReadonlyMap<string, string>): void {
+  if (view.isDestroyed || labels.size === 0 || !keptKey.get(view.state)) return;
   const token = ++tokens;
   view.dispatch(
     view.state.tr

@@ -77,7 +77,19 @@ export type DraftNotice =
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
       dismiss(): void;
+    })
+  | (Base & {
+      kind: "stayed";
+      /**
+       * What a press's Undo left in place because someone wrote over it since
+       * (`PressUndoResult.stayed`): each document, and what its mark says of who.
+       */
+      kept: readonly StayedFact[];
+      dismiss(): void;
     });
+
+/** One document a press's Undo left a change of in place, and who wrote over it. */
+export type StayedFact = { documentId: string; name: string; label: string };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
@@ -115,20 +127,29 @@ export class DraftNotices {
   }
 
   /**
-   * The Discard notice a document's identity row shows: one made in a document's band, on that
+   * The notice a document's identity row shows: a Discard made in a document's band, on that
    * document, or on the one main went back to when the Discard made it leave (null: Recently
-   * opened, whose top slot shows it). A list or strip keeps its own notice where it was made.
+   * opened, whose top slot shows it), or what an Undo made there left in place. A list or strip
+   * keeps its own notice where it was made.
    */
   forDocument(projectId: string, documentId: string | null): DraftNotice | null {
-    for (const notice of this.notices.values())
+    for (const notice of this.notices.values()) {
+      if (notice.projectId !== projectId) continue;
       if (
         notice.kind === "discarded" &&
-        notice.projectId === projectId &&
         (notice.surface.kind === "band"
           ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
           : notice.surface.kind === "landing" && documentId === null)
       )
         return notice;
+      // What an Undo made there left in place says so on the document.
+      if (
+        notice.kind === "stayed" &&
+        notice.surface.kind === "band" &&
+        notice.surface.documentId === documentId
+      )
+        return notice;
+    }
     return null;
   }
 
@@ -180,6 +201,21 @@ export class DraftNotices {
   appliedFacts(draftId: string) {
     const held = this.notices.get(draftId);
     return held?.kind === "applied" ? held : null;
+  }
+
+  /** What an Undo left in place, until the next press or a dismiss. */
+  showStayed(input: Omit<Extract<DraftNotice, { kind: "stayed" }>, "id" | "kind" | "dismiss">) {
+    if (this.closed) return;
+    const held = this.notices.get(input.draftId);
+    if (held) this.drop(held);
+    const id = this.nextId++;
+    this.notices.set(input.draftId, {
+      ...input,
+      kind: "stayed",
+      id,
+      dismiss: () => this.endIf(input.draftId, id),
+    });
+    this.publish();
   }
 
   showDiscard(input: {

@@ -8,7 +8,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
-import { draftOf, isWorkArchived } from "@meridian/contracts/works";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { topChatOf } from "@/client/query/useTopChat";
@@ -199,7 +199,7 @@ function ChatScreenLoaded({
           activeWork={activeWork}
           availableWorks={availableWorks}
           rootThreadId={thread?.rootThreadId ?? null}
-          draftId={activeWork && thread ? draftOf(thread, activeWork) : null}
+          draftId={activeWork && thread ? thread.draftId : null}
           chat={topChatOf(thread, projectThreads)}
           onOpenContextTarget={onOpenContextTarget}
         >

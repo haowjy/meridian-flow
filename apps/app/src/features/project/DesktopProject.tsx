@@ -369,6 +369,7 @@ function SideEmpty({ projectId }: { projectId: string }) {
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}
+              current={null}
               choose={(documentId) => place({ kind: "document", documentId })}
             />
           </div>

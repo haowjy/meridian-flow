@@ -162,11 +162,16 @@ export interface TurnInverseStore {
     inManuscript?: boolean;
   }>;
 }
-type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
+type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId" | "origin">;
+/**
+ * The card's Undo takes back the turn's Live writes; a write made in a draft is `Restore
+ * before`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
+ */
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (part.kind === "write" || part.kind === "revert") &&
   part.threadId === query.threadId &&
-  part.turnId === query.turnId;
+  part.turnId === query.turnId &&
+  !part.origin.draftId;
 
 /**
  * Each document's ordered steps, for both command and chip. Each of the turn's original edits is

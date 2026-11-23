@@ -1,9 +1,9 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`), the presses this tab can still take back (`presses`) and one notice per draft owner.
- * The press itself is `usePressCommands`.
+ * (`hold`), the presses this tab can still take back (`presses`), each turn's Restore before in a
+ * draft (`restore`) and one notice per draft owner. The press itself is `usePressCommands`.
  */
-import { type DraftId, draftItemKey } from "@meridian/contracts";
+import { type DraftId, draftItemKey, type TurnId } from "@meridian/contracts";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
 import type { PressEntries } from "./press-history";
 
@@ -28,6 +28,14 @@ export type CommandOutcome =
   /** The server answered and the press changed none of these items. */
   | { kind: "settled"; took?: DiscardTook };
 
+/**
+ * A turn's Restore before in one draft, as this tab knows it: sent and not yet answered, or in
+ * force with its one Undo (`press`).
+ */
+export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntries };
+
+const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
+
 export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
@@ -36,6 +44,8 @@ export class DraftCommandOwner {
   readonly presses = new Set<PressEntries>();
   /** One notice per draft owner, outliving the surface that made it. */
   readonly notices = new DraftNotices();
+  /** `at`: when the entry last changed here; a card read from before then is out of date. */
+  private readonly restores = new Map<string, { entry: RestoreEntry | null; at: number }>();
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -56,13 +66,41 @@ export class DraftCommandOwner {
     };
   }
 
+  /** The turn's Restore before in `draft` this tab has sent or holds in force. */
+  restore(turn: TurnId, draft: DraftId): RestoreEntry | null {
+    return this.restores.get(restoreKey(turn, draft))?.entry ?? null;
+  }
+
+  /** When the turn's Restore before in `draft` last changed here; 0 if it never did. */
+  restoreChangedAt(turn: TurnId, draft: DraftId): number {
+    return this.restores.get(restoreKey(turn, draft))?.at ?? 0;
+  }
+
+  /** The drafts where this tab has sent or holds the turn's Restore before. */
+  restoredDrafts(turn: TurnId): DraftId[] {
+    const prefix = `${turn}:`;
+    return [...this.restores].flatMap(([key, { entry }]) =>
+      entry && key.startsWith(prefix) ? [key.slice(prefix.length) as DraftId] : [],
+    );
+  }
+
+  setRestore(turn: TurnId, draft: DraftId, entry: RestoreEntry | null, at = Date.now()) {
+    this.restores.set(restoreKey(turn, draft), { entry, at });
+    this.changed();
+  }
+
+  /** Something a surface reads changed: a press's Undo went out or came back. */
+  changed = () => {
+    this.revision++;
+    for (const listener of this.listeners) listener();
+  };
+
   private setState(itemKey: string, state: DraftCommandState) {
     const previous = this.state(itemKey);
     if (previous.hidden === state.hidden && previous.applying === state.applying) return;
     if (state.hidden || state.applying) this.records.set(itemKey, state);
     else this.records.delete(itemKey);
-    this.revision++;
-    for (const listener of this.listeners) listener();
+    this.changed();
   }
 
   close() {
