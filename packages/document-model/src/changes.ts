@@ -19,13 +19,13 @@ import {
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
 import {
+  deletedBetween,
   type Edit,
   editStays,
   memberOf,
   noteEdit,
   opsBetween,
   putBackValues,
-  type TakenBack,
   type TextSpan,
   takeBackMessage,
   valuesOf,
@@ -655,18 +655,19 @@ export function undoPress(
   result.live = takeBack(live, liveEdits, liveView, options.message);
   // The text Live's Undo took out comes back in the fork as the fork's own edit: put-back text
   // that stands for what Live's Undo deleted.
-  const pending = new Map<DocKey, { at: Frontiers; ops: TakenBack }>();
+  const pending = new Map<DocKey, Frontiers>();
   for (const change of result.live) {
     const own = change.key === STRUCTURE_KEY ? undefined : draft.texts.get(change.key);
-    if (own) pending.set(change.key, { at: own.frontiers(), ops: spanOf(change).ops });
+    if (own) pending.set(change.key, own.frontiers());
   }
   forwarded(draft, result.fork);
-  for (const [key, { at, ops }] of pending) {
+  for (const [key, at] of pending) {
     const doc = draft.texts.get(key) as LoroDoc;
     const after = doc.frontiers();
     if (sameValue(at, after)) continue;
+    const message = takeBackMessage(deletedBetween(doc, at, after));
     doc.applyDiff(doc.diff(after, at, false));
-    doc.commit({ message: takeBackMessage(ops) });
+    doc.commit({ message });
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
   }
   result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.message));

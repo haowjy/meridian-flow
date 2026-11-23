@@ -6,9 +6,9 @@
 import type { DraftId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -29,10 +29,11 @@ export const drafts = pgTable(
       .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    /** The Work the draft belongs to (a Work holds several); null for a No Work lineage's draft. */
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .references((): AnyPgColumn => works.id, { onDelete: "cascade" }),
+    /**
+     * The Work the draft belongs to (a Work holds several), in the draft's own project
+     * (`drafts_work_same_project_fk`); null for a No Work lineage's draft.
+     */
+    workId: uuid("work_id").$type<WorkId>(),
     /** The draft a new chat of its Work writes into: one per Work. */
     isDefault: boolean("is_default").notNull().default(false),
     /** The writer's name for the draft; null shows the default name. */
@@ -50,6 +51,11 @@ export const drafts = pgTable(
     index("drafts_project").on(table.projectId),
     index("drafts_work").on(table.workId),
     uniqueIndex("drafts_work_default").on(table.workId).where(sql`${table.isDefault}`),
+    foreignKey({
+      columns: [table.projectId, table.workId],
+      foreignColumns: [works.projectId, works.id],
+      name: "drafts_work_same_project_fk",
+    }).onDelete("cascade"),
     check("drafts_id_shape", sql`${table.id} ~ '^[0-9a-z]{12}$'`),
   ],
 );

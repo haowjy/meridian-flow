@@ -1,4 +1,4 @@
-import type { Delta, Frontiers, LoroDoc, LoroText, PeerID } from "loro-crdt";
+import type { Change, Delta, Frontiers, LoroDoc, LoroText, PeerID } from "loro-crdt";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, type DocKey, overrideMap, type StructureMap, sameValue } from "./shape.js";
@@ -35,7 +35,7 @@ export type EditValues = Map<string, Map<string, SetValue>>;
 export interface TextSpan {
   before: Frontiers;
   after: Frontiers;
-  ops: TakenBack;
+  ops: OpSpans;
 }
 
 /**
@@ -369,7 +369,7 @@ const baseName = (name: string): StructureMap =>
  * Whether `doc` has ops `then` lacks that are neither `self`'s nor the edit's own (`own`, its ops
  * there: a press's are its draft's writers').
  */
-function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: TakenBack = {}): boolean {
+function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans = {}): boolean {
   for (const [peer, counter] of docVersion(doc)) {
     const start = then.get(peer) ?? 0;
     if (peer === self || counter <= start) continue;
@@ -445,15 +445,14 @@ type Range = { from: number; to: number; keys: string[] };
  * What happened to `doc`'s text since `after`, as a delta over the text at `after`, with text an
  * Undo put back read as the text it deleted. An Undo re-creates characters and cannot revive
  * them, so `diff(after, now)` shows a deletion and an insertion where nothing changed. A character
- * put in reads as a deleted one only if a commit that takes ops back wrote it (`takeBackMessage`)
- * and the ops it took back deleted that very character, by id, followed through earlier
- * take-backs, with the same styles. A writer's characters never read as put back, whatever they
+ * put in reads as a deleted one only if a take-back commit wrote it (`takeBackMessage`) for that
+ * very character, by id, followed through earlier take-backs, with the same styles. A writer's characters never read as put back, whatever they
  * spell (design §2, "Put-back text is told by the commit that wrote it").
  */
 export function textSince(doc: LoroDoc, after: Frontiers): TextOp[] {
   const since = textDiff(doc, after, doc.frontiers());
   if (!since.some((op) => op.delete != null)) return since;
-  const roots = new Map<string, Set<string>>();
+  const roots: StandsForMemo = new Map();
   let base: { units: Unit[]; view: LoroDoc } | null = null;
   try {
     return inText(doc, (text) => {
@@ -476,12 +475,7 @@ export function textSince(doc: LoroDoc, after: Frontiers): TextOp[] {
           if (one.delete != null) deleted += one.delete;
           else
             for (const ch of (one.insert as string).split(""))
-              came.push({
-                ch,
-                attributes: one.attributes,
-                key: unitKey(ch, one.attributes),
-                back: putBy(doc, text, now++, roots),
-              });
+              came.push({ ch, attributes: one.attributes, back: putBy(doc, text, now++, roots) });
         }
         if (!came.some((unit) => unit.back)) {
           if (deleted > 0) push(out, { delete: deleted });
@@ -499,8 +493,60 @@ export function textSince(doc: LoroDoc, after: Frontiers): TextOp[] {
   }
 }
 
-type Unit = { ch: string; key: string };
-type Came = Unit & { attributes: TextOp["attributes"]; back: Set<string> | null };
+/**
+ * Which of the units `since` (`textSince(doc, after)`) inserts, counted in order, stand for one
+ * `inverse` (a delta over the text at `after`) deletes: text an Undo put back where it no longer
+ * lines up with where it stood (two Undos putting back runs in another order), which a delta
+ * reads as typing. The inverse deletes them too, so an edit that goes back goes back whole.
+ */
+export function putBackOf(
+  doc: LoroDoc,
+  after: Frontiers,
+  inverse: readonly TextOp[],
+  since: readonly TextOp[],
+): Set<number> {
+  const out = new Set<number>();
+  if (!since.some((op) => op.insert != null) || !inverse.some((op) => op.delete != null))
+    return out;
+  const view = doc.fork();
+  const deletes = new Set<string>();
+  try {
+    view.checkout(after);
+    inText(view, (text) => {
+      let pos = 0;
+      for (const op of inverse) {
+        if (op.insert != null) continue;
+        const n = (op.retain ?? op.delete) as number;
+        if (op.delete != null)
+          for (let k = 0; k < n; k++) {
+            const id = idAt(text, pos + k);
+            if (id) deletes.add(id);
+          }
+        pos += n;
+      }
+    });
+  } finally {
+    view.free();
+  }
+  const memo: StandsForMemo = new Map();
+  inText(doc, (text) => {
+    let now = 0;
+    let unit = 0;
+    for (const op of since) {
+      if (op.retain != null) now += op.retain;
+      else if (op.insert != null)
+        for (let k = 0; k < (op.insert as string).length; k++, now++, unit++) {
+          const id = idAt(text, now);
+          const chain = id ? chainOf(doc, id, memo) : null;
+          if (chain && [...chain].some((was) => deletes.has(was))) out.add(unit);
+        }
+    }
+  });
+  return out;
+}
+
+type Unit = { ch: string; attributes: TextOp["attributes"] };
+type Came = Unit & { back: Set<string> | null };
 
 /** The text at `frontiers` as units, and the checked-out copy their ids are read from. */
 function unitsAt(doc: LoroDoc, frontiers: Frontiers): { units: Unit[]; view: LoroDoc } {
@@ -510,7 +556,7 @@ function unitsAt(doc: LoroDoc, frontiers: Frontiers): { units: Unit[]; view: Lor
     const delta = inText(view, (text) => text.toDelta()) as TextOp[];
     // Positions are UTF-16 code units: a character outside the BMP is two units with one id.
     const units = delta.flatMap((op) =>
-      (op.insert ?? "").split("").map((ch) => ({ ch, key: unitKey(ch, op.attributes) })),
+      (op.insert ?? "").split("").map((ch) => ({ ch, attributes: op.attributes })),
     );
     return { units, view };
   } catch (error) {
@@ -521,7 +567,8 @@ function unitsAt(doc: LoroDoc, frontiers: Frontiers): { units: Unit[]; view: Lor
 
 /**
  * The deleted units `[pos, pos + n)` of the text at `after` against the units that came at that
- * place: a unit that came is the deleted one it stands for (by id, with the same styles), in order.
+ * place: a unit that came is the deleted one it stands for (by id), in order, restyled where its
+ * styles differ (a peer's mark around the place spreads onto text put back inside it).
  */
 function align(units: Unit[], view: LoroDoc, pos: number, n: number, came: Came[]): TextOp[] {
   const ids = inText(view, (text) => Array.from({ length: n }, (_, k) => idAt(text, pos + k)));
@@ -532,56 +579,80 @@ function align(units: Unit[], view: LoroDoc, pos: number, n: number, came: Came[
     if (unit.back)
       for (let k = a; k < n && match < 0; k++) {
         const id = ids[k];
-        if (id && units[pos + k].key === unit.key && unit.back.has(id)) match = k;
+        if (id && unit.back.has(id)) match = k;
       }
     if (match < 0) {
       out.push(insertOf(unit));
       continue;
     }
     if (match > a) out.push({ delete: match - a });
-    out.push({ retain: 1 });
+    const restyle = styleChange(units[pos + match].attributes, unit.attributes);
+    out.push(restyle ? { retain: 1, attributes: restyle } : { retain: 1 });
     a = match + 1;
   }
   if (a < n) out.push({ delete: n - a });
   return out;
 }
 
-/** The ids the edits a take-back commit names deleted, if a take-back commit wrote the unit at `pos`. */
-function putBy(
-  doc: LoroDoc,
-  text: LoroText,
-  pos: number,
-  memo: Map<string, Set<string>>,
-): Set<string> | null {
+/**
+ * What the unit at `pos` stands for, if a take-back commit wrote it: the deleted character it puts
+ * back, by id, and what that one stands for in turn. Every link of the chain counts: a press carries
+ * a draft's put-back text into Live as itself, so the text at an edit's `after` can be any of them.
+ */
+function putBy(doc: LoroDoc, text: LoroText, pos: number, memo: StandsForMemo): Set<string> | null {
   const id = idAt(text, pos);
-  if (!id) return null;
-  const spans = takenBack(changeAt(doc, parseId(id))?.message);
-  return spans ? rootsOf(doc, spans, memo) : null;
+  return id ? chainOf(doc, id, memo) : null;
 }
 
-/**
- * The characters the ops in `spans` deleted, by id, each followed to what it stands for: one a
- * take-back commit wrote stands for what that commit's ops deleted. Ops below a shallow
- * snapshot's cutoff are unknown and stand for nothing.
- */
-function rootsOf(doc: LoroDoc, spans: TakenBack, memo: Map<string, Set<string>>): Set<string> {
-  const key = JSON.stringify(spans);
-  const known = memo.get(key);
-  if (known) return known;
-  const roots = new Set<string>();
-  memo.set(key, roots);
-  forEachDeleted(doc, spans, (id) => {
-    const earlier = takenBack(changeAt(doc, id)?.message);
-    if (earlier) for (const root of rootsOf(doc, earlier, memo)) roots.add(root);
-    else roots.add(`${id.counter}@${id.peer}`);
-  });
-  return roots;
+type StandsForMemo = Map<string, Set<string> | null>;
+
+function chainOf(doc: LoroDoc, id: string, memo: StandsForMemo): Set<string> | null {
+  if (memo.has(id)) return memo.get(id) ?? null;
+  memo.set(id, null);
+  const at = parseId(id);
+  const change = changeAt(doc, at);
+  const runs = takenBack(change?.message);
+  const root = change && runs ? nthOf(runs, insertedBefore(doc, change, at.counter)) : null;
+  let chain: Set<string> | null = null;
+  if (root) {
+    chain = new Set([root]);
+    for (const further of chainOf(doc, root, memo) ?? []) chain.add(further);
+  }
+  memo.set(id, chain);
+  return chain;
+}
+
+/** How many characters `change` inserted before the one at `counter`, in the order it inserted them. */
+function insertedBefore(doc: LoroDoc, change: Change, counter: number): number {
+  let count = 0;
+  for (const json of doc.exportJsonInIdSpan({
+    peer: change.peer,
+    counter: change.counter,
+    length: change.length,
+  }))
+    for (const op of json.ops) {
+      const { content } = op as { content: { type: string; text?: string } };
+      if (content.type !== "insert" || content.text === undefined) continue;
+      const length = [...content.text].length;
+      if (counter < op.counter + length) return count + Math.max(0, counter - op.counter);
+      count += length;
+    }
+  return count;
+}
+
+/** The `n`th character of `runs`, as `counter@peer`. */
+function nthOf(runs: StandsFor, n: number): string | null {
+  for (const [peer, counter, length] of runs) {
+    if (n < length) return `${counter + n}@${peer}`;
+    n -= length;
+  }
+  return null;
 }
 
 /** Each character the ops in `spans` deleted, by id. Ops below a shallow snapshot's cutoff are unknown. */
 function forEachDeleted(
   doc: LoroDoc,
-  spans: TakenBack,
+  spans: OpSpans,
   each: (id: { peer: PeerID; counter: number }) => void,
 ): void {
   const cutoff = doc.isShallow() ? plainVersion(doc.shallowSinceVV()) : null;
@@ -605,7 +676,7 @@ function forEachDeleted(
 }
 
 /** The characters the ops in `spans` deleted in `doc`, by id (`counter@peer`). */
-function deletedBy(doc: LoroDoc, spans: TakenBack): Set<string> {
+function deletedBy(doc: LoroDoc, spans: OpSpans): Set<string> {
   const ids = new Set<string>();
   forEachDeleted(doc, spans, (id) => ids.add(`${id.counter}@${id.peer}`));
   return ids;
@@ -617,7 +688,7 @@ function deletedBy(doc: LoroDoc, spans: TakenBack): Set<string> {
  */
 function deletedAgain(doc: LoroDoc, then: DocVersion, deleted: Set<string>, peer: PeerID): boolean {
   if (deleted.size === 0) return false;
-  const others: TakenBack = {};
+  const others: OpSpans = {};
   for (const [other, counter] of docVersion(doc))
     if (other !== peer && counter > (then.get(other) ?? 0))
       others[other] = [then.get(other) ?? 0, counter];
@@ -664,7 +735,7 @@ function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocK
 function readAny(
   reads: readonly DocVersion[],
   deleted: ReadonlySet<string>,
-  ops: TakenBack,
+  ops: OpSpans,
 ): boolean {
   for (const seen of reads) {
     if (Object.entries(ops).every(([peer, [, to]]) => (seen.get(peer as PeerID) ?? 0) >= to))
@@ -703,46 +774,96 @@ const parseId = (id: string) => {
   return { counter: Number(id.slice(0, at)), peer: id.slice(at + 1) as PeerID };
 };
 
-/** The ops a take-back commit takes back, per peer, as `[from, to)` counters. */
-export type TakenBack = Record<string, [number, number]>;
+/** Ops per peer, as `[from, to)` counters: an edit's in one text doc (`TextSpan.ops`). */
+export type OpSpans = Record<string, [number, number]>;
+
+/**
+ * The characters a take-back commit's inserted characters stand for, in the order it inserted
+ * them, as runs `[peer, counter, length]`.
+ */
+export type StandsFor = [string, number, number][];
 
 const TAKE_BACK = "undo";
 
 /**
- * The message of a commit that takes ops back (a tab's Undo or Redo, a press's Undo): which ops,
- * so text it puts back can be told from typing (`textSince`). A Redo takes back its Undo's ops.
+ * The message of a commit that puts text back (a tab's Undo or Redo, a press's Undo, a draft's
+ * return to pending): the character each one it inserts stands for (`deletedBetween`), so text it
+ * puts back can be told from typing (`textSince`), whatever it spells.
  */
-export function takeBackMessage(spans: TakenBack): string {
-  return `${TAKE_BACK} ${JSON.stringify(spans)}`;
+export function takeBackMessage(standsFor: StandsFor): string {
+  return `${TAKE_BACK} ${JSON.stringify(standsFor)}`;
 }
 
-/** The ops a commit's message says it takes back, or null. Messages come from any peer. */
-export function takenBack(message: string | undefined): TakenBack | null {
+/** What a commit's message says its inserted characters stand for, or null. Messages come from any peer. */
+function takenBack(message: string | undefined): StandsFor | null {
   if (!message?.startsWith(`${TAKE_BACK} `)) return null;
-  let spans: unknown;
+  let runs: unknown;
   try {
-    spans = JSON.parse(message.slice(TAKE_BACK.length + 1));
+    runs = JSON.parse(message.slice(TAKE_BACK.length + 1));
   } catch {
     return null;
   }
-  if (spans === null || typeof spans !== "object") return null;
-  for (const span of Object.values(spans))
-    if (!Array.isArray(span) || span.length !== 2 || !span.every(Number.isInteger)) return null;
-  return spans as TakenBack;
+  if (!Array.isArray(runs)) return null;
+  for (const run of runs)
+    if (
+      !Array.isArray(run) ||
+      run.length !== 3 ||
+      typeof run[0] !== "string" ||
+      !Number.isInteger(run[1]) ||
+      !Number.isInteger(run[2])
+    )
+      return null;
+  return runs as StandsFor;
 }
 
 /**
- * The ops `peer` made in `doc` from `before` to `after`, or with no `peer` every peer's, as a
- * take-back message names them.
+ * The characters the write from `before` to `after` deleted from `doc`'s text, in text order: what
+ * an Undo of it inserts, one character for each, in that order (an inverse inserts left to right).
+ */
+export function deletedBetween(doc: LoroDoc, before: Frontiers, after: Frontiers): StandsFor {
+  const diff = textDiff(doc, before, after);
+  if (!diff.some((op) => op.delete != null)) return [];
+  const view = doc.fork();
+  try {
+    view.checkout(before);
+    return inText(view, (text) => {
+      const out: StandsFor = [];
+      let pos = 0;
+      let last: string | null = null;
+      for (const op of diff) {
+        if (op.insert != null) continue;
+        const n = (op.retain ?? op.delete) as number;
+        if (op.delete != null)
+          for (let k = 0; k < n; k++) {
+            const id = idAt(text, pos + k);
+            // A character outside the BMP is two units with one id.
+            if (!id || id === last) continue;
+            last = id;
+            const { peer, counter } = parseId(id);
+            const run = out.at(-1);
+            if (run && run[0] === peer && run[1] + run[2] === counter) run[2]++;
+            else out.push([peer, counter, 1]);
+          }
+        pos += n;
+      }
+      return out;
+    });
+  } finally {
+    view.free();
+  }
+}
+
+/**
+ * The ops `peer` made in `doc` from `before` to `after`, or with no `peer` every peer's.
  */
 export function opsBetween(
   doc: LoroDoc,
   before: Frontiers,
   after: Frontiers,
   peer?: PeerID,
-): TakenBack {
+): OpSpans {
   const from = plainVersion(doc.frontiersToVV(before));
-  const out: TakenBack = {};
+  const out: OpSpans = {};
   for (const [by, to] of plainVersion(doc.frontiersToVV(after)))
     if ((peer === undefined || by === peer) && to > (from.get(by) ?? 0))
       out[by] = [from.get(by) ?? 0, to];
@@ -755,13 +876,18 @@ export function textDiff(doc: LoroDoc, from: Frontiers, to: Frontiers): TextOp[]
   return hit ? ((hit[1] as { diff?: TextOp[] }).diff ?? []) : [];
 }
 
-/** A unit as a comparable key: its character and its styles, sorted, a `null` style dropped. */
-const unitKey = (ch: string, attributes: TextOp["attributes"]) =>
-  `${ch}\u0000${JSON.stringify(
-    Object.entries(attributes ?? {})
-      .filter(([, value]) => value != null)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-  )}`;
+/** What takes styles `was` to `now`, or null: a style set or changed to its value, one cleared to null. */
+function styleChange(
+  was: TextOp["attributes"],
+  now: TextOp["attributes"],
+): TextOp["attributes"] | null {
+  const change: NonNullable<TextOp["attributes"]> = {};
+  for (const [key, value] of Object.entries(now ?? {}))
+    if (value != null && !sameValue(was?.[key], value)) change[key] = value;
+  for (const [key, value] of Object.entries(was ?? {}))
+    if (value != null && now?.[key] == null) change[key] = null;
+  return Object.keys(change).length > 0 ? change : null;
+}
 
 const insertOf = ({ ch, attributes }: Came): TextOp =>
   (attributes ? { insert: ch, attributes } : { insert: ch }) as TextOp;

@@ -70,8 +70,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   test beside it. "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's
   peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
   its span's (`TextSpan.ops`): the author's in the editor, every peer's for a press, which imports
-  its draft's ops. Every commit that takes ops back says which in its message (`takeBackMessage`),
-  so `textSince` can read text an Undo put back as the text it deleted, by character id.
+  its draft's ops. Every commit that puts text back says, in its message, the character each one it
+  inserts stands for (`takeBackMessage(deletedBetween(doc, before, after))`), so `textSince` reads
+  put-back text as the text it deleted, by character id. Read the message before the write: a fork
+  of the doc commits its pending ops, without the message.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`
   constructor enforces: a press writes both rooms from one copy, and one peer would mint the same
@@ -88,9 +90,8 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   (`PressedChange`, JSON for `press_changes`), noted as the press left the room: the note can't be
   taken later. `undoPress` tests each change with `editStays`, its Live and fork sides as one edit,
   and leaves one someone wrote over (`PressUndo.stayed`); `takeBack` writes the rest, Live's
-  first, each text doc by its inverse moved through `textSince` (`transformedInverse`, with rule
-  (a): a replacement whose new text a later write removed whole does not bring the old text back)
-  before `putBackValues`, so a removal record put back counts the text; then the fork is returned
+  first, each text doc by its inverse moved through `textSince` (`transformedInverse`; a change
+  that goes back goes back whole, as Ctrl+Z's does) before `putBackValues`, so a removal record put back counts the text; then the fork is returned
   to pending. A press over several drafts is undone one draft at a time, newest first.
   `restoreBefore` puts a turn's overrides back key by key through `putBackValues`, keeping a key
   written since. A forward's restore is not a write of the press. The hand-run fuzz is

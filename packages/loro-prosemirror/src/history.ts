@@ -1,6 +1,7 @@
 import {
   type DocChange,
   type DocKey,
+  deletedBetween,
   type Edit,
   editStays,
   noteEdit,
@@ -251,9 +252,9 @@ export class UndoHistory {
       for (const [key, span] of step.edit.texts) {
         const { manager, doc } = this.watched.get(key) as Watched;
         const before = doc.frontiers();
-        // Loro commits an Undo and a Redo alike under the origin `undo`: the message says which
-        // ops the commit takes back, so text it puts back can be told from typing.
-        const message = takeBackMessage(span.ops);
+        // Loro commits an Undo and a Redo alike under the origin `undo`: the message says what
+        // each character the commit puts back stands for, so it can be told from typing.
+        const message = takeBackMessage(deletedBetween(doc, span.before, span.after));
         // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
         const unstamp = doc.subscribePreCommit(({ modifier }) => {
           modifier.setMessage(message).free();

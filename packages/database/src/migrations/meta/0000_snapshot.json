@@ -6611,19 +6611,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "drafts_work_id_works_id_fk": {
-          "name": "drafts_work_id_works_id_fk",
-          "tableFrom": "drafts",
-          "tableTo": "works",
-          "columnsFrom": [
-            "work_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "drafts_created_by_users_id_fk": {
           "name": "drafts_created_by_users_id_fk",
           "tableFrom": "drafts",
@@ -6632,6 +6619,21 @@
             "created_by"
           ],
           "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "drafts_work_same_project_fk": {
+          "name": "drafts_work_same_project_fk",
+          "tableFrom": "drafts",
+          "tableTo": "works",
+          "columnsFrom": [
+            "project_id",
+            "work_id"
+          ],
+          "columnsTo": [
+            "project_id",
             "id"
           ],
           "onDelete": "cascade",

@@ -4,11 +4,13 @@ import type { RoomDocs } from "./room-docs.js";
 import type { BlockId, DocKey } from "./shape.js";
 import type { StructureView } from "./structure.js";
 import {
+  deletedBetween,
   type Edit,
   type EditValues,
+  type OpSpans,
+  putBackOf,
   putBackValues,
   type SetValue,
-  type TakenBack,
   type TextOp,
   takeBackMessage,
   textDiff,
@@ -36,7 +38,7 @@ type VersionJson = Record<string, number>;
 export interface StoredEdit {
   peer: PeerID;
   values: [string, [string, SetValue][]][];
-  texts: [DocKey, { before: VersionJson; after: VersionJson; ops: TakenBack }][];
+  texts: [DocKey, { before: VersionJson; after: VersionJson; ops: OpSpans }][];
   leaving: [BlockId, VersionJson][];
   arriving: BlockId[];
   shown: DocKey[];
@@ -72,12 +74,12 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
   const texts: Edit["texts"] = new Map();
   for (const [key, { before, after, ops }] of stored.texts) {
     const doc = docs.doc(key);
-    if (doc)
-      texts.set(key, {
-        before: frontiersOf(doc, version(before)),
-        after: frontiersOf(doc, version(after)),
-        ops,
-      });
+    if (!doc) throw new Error(`no text doc ${key} for a stored edit`);
+    texts.set(key, {
+      before: frontiersOf(doc, version(before)),
+      after: frontiersOf(doc, version(after)),
+      ops,
+    });
   }
   return {
     peer: stored.peer,
@@ -93,7 +95,7 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
 /**
  * Take back `edits` on `docs`, each of which passed `editStays` there (a press's Undo, design §2):
  * each text doc by its inverse moved through what happened since (`transformedInverse`), in a
- * commit that names the ops it takes back (`takeBackMessage`); then every structure value in one
+ * commit that names what each character it puts back stands for (`takeBackMessage`); then every structure value in one
  * commit under `message` (`putBackValues`), after the text, so a removal record it writes counts
  * the text put back. `view` reads the structure as it is. Returns the changes.
  */
@@ -111,9 +113,11 @@ export function takeBack(
       if (!doc) continue;
       const moved = transformedInverse(doc, span.before, span.after);
       if (moved.length === 0) continue;
+      // Read before the write: a fork commits pending ops, without the message.
+      const message = takeBackMessage(deletedBetween(doc, span.before, span.after));
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(moved));
-      doc.commit({ message: takeBackMessage(span.ops) });
+      doc.commit({ message });
       out.push({ key, doc, before, after: doc.frontiers() });
     }
     for (const [name, keys] of edit.values) {
@@ -133,71 +137,32 @@ const length = (op: TextOp) => op.retain ?? op.delete ?? (op.insert as string).l
  * The text Undo of a write made between `before` and `after`, for the text as it is now (design
  * §2): the inverse `diff(after, before)`, moved through what happened since (`textSince`, where
  * text an Undo put back reads as the characters it stands for), so a deletion skips what is
- * already gone and keeps what was typed inside it.
- *
- * One condition, the value map's in text form (settled (a)): where the write replaced text (a
- * deletion and an insertion at one place), the old text comes back only while some of what the
- * write put in there remains. When a later write removed all of it, the Undo leaves that write
- * alone. A write that only deleted always gives its text back.
+ * already gone and keeps what was typed inside it, and deletes text an Undo put back for what it
+ * deletes wherever that text now stands (`putBackOf`). Whether the write goes back at all is
+ * `editStays`'s call, made before this runs; a write that goes back goes back whole.
  */
 export function transformedInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): TextOp[] {
   const inverse = textDiff(doc, after, before);
   if (inverse.length === 0) return [];
   const since = textSince(doc, after);
-  return transform(dropReplaced(inverse, removedBy(since)), since);
-}
-
-/** Which units of the text at the write's `after` the ops since have deleted. */
-function removedBy(since: readonly TextOp[]): boolean[] {
-  const gone: boolean[] = [];
-  let pos = 0;
-  for (const op of since) {
-    if (op.retain != null) pos += op.retain;
-    else if (op.delete != null) {
-      for (let i = 0; i < op.delete; i++) gone[pos + i] = true;
-      pos += op.delete;
-    }
-  }
-  return gone;
+  return transform(inverse, since, putBackOf(doc, after, inverse, since));
 }
 
 /**
- * The inverse without the old text of each replacement whose new text a later write removed
- * whole: at one place, the inverse deletes what the write inserted and inserts what it deleted.
+ * `inverse` and `since` both start from one text; the result is `inverse` after `since`, deleting
+ * the units `since` inserts that `drop` counts (in order).
  */
-function dropReplaced(inverse: readonly TextOp[], gone: readonly boolean[]): TextOp[] {
-  const out: TextOp[] = [];
-  let pos = 0;
-  for (let i = 0; i < inverse.length; ) {
-    const op = inverse[i];
-    if (op.retain != null) {
-      out.push(op);
-      pos += op.retain;
-      i++;
-      continue;
-    }
-    const place: TextOp[] = [];
-    let deleted = 0;
-    while (i < inverse.length && inverse[i].retain == null) {
-      const one = inverse[i++];
-      place.push(one);
-      if (one.delete != null) deleted += one.delete;
-    }
-    let removed = deleted > 0 && place.some((one) => one.insert != null);
-    for (let k = pos; removed && k < pos + deleted; k++) removed = gone[k] === true;
-    for (const one of place) if (!(removed && one.insert != null)) out.push(one);
-    pos += deleted;
-  }
-  return out;
-}
-
-/** `inverse` and `since` both start from one text; the result is `inverse` after `since`. */
-function transform(inverse: readonly TextOp[], since: readonly TextOp[]): TextOp[] {
+function transform(
+  inverse: readonly TextOp[],
+  since: readonly TextOp[],
+  drop: ReadonlySet<number>,
+): TextOp[] {
   const out: TextOp[] = [];
   const a = inverse.map((op) => ({ ...op }));
   const b = since.map((op) => ({ ...op }));
   let i = 0;
   let j = 0;
+  let unit = 0;
   const shrink = (op: TextOp, n: number) => {
     if (op.retain != null) (op as { retain: number }).retain -= n;
     else (op as { delete: number }).delete -= n;
@@ -211,7 +176,14 @@ function transform(inverse: readonly TextOp[], since: readonly TextOp[]): TextOp
       continue;
     }
     if (y?.insert != null) {
-      out.push({ retain: (y.insert as string).length });
+      for (let k = 0; k < (y.insert as string).length; k++) {
+        const last = out.at(-1);
+        if (drop.has(unit++)) {
+          if (last?.delete != null) (last as { delete: number }).delete++;
+          else out.push({ delete: 1 });
+        } else if (last?.retain != null && !last.attributes) (last as { retain: number }).retain++;
+        else out.push({ retain: 1 });
+      }
       j++;
       continue;
     }

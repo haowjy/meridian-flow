@@ -84,19 +84,19 @@ export {
   StructureView,
 } from "./structure.js";
 export {
+  deletedBetween,
   type Edit,
   type EditValues,
   editStays,
   leftOf,
   noteEdit,
+  type OpSpans,
   opsBetween,
   putBackValues,
   type SetValue,
-  type TakenBack,
   type TextOp,
   type TextSpan,
   takeBackMessage,
-  takenBack,
   textSince,
   valuesOf,
 } from "./take-back.js";

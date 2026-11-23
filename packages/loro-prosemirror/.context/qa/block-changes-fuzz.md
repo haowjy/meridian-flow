@@ -41,9 +41,12 @@ its changes are stored as JSON and read back.
 - Dependent presses: 2 to 5 presses over one block, with Live and Draft typing between, undone
   newest first and in random order.
 - Live and Draft deletions and replacements over a press's text before its Undo (the later write
-  of design §2's text rule), retypes that hold the press's text or are held by it ("house" pressed,
+  of design §2's edit rule), retypes that hold the press's text or are held by it ("house" pressed,
   then "household" or "hous"), and typing right after it, which in a chain is often text a later
-  press's Undo put back.
+  press's Undo put back. These are written by position, as the editor's typing is (`replaceText`),
+  so every character a retype types is new and can spell the press's text without being it.
+- A draft that replaces one word or two in a block, pressed alone, then one of its replacements
+  overwritten: the press Undo takes the whole change back, as Ctrl+Z does.
 - A Work's `Apply all` over two drafts that both rewrite one paragraph, on a copy of the Live room:
   pressed in draft order, sometimes with Live typing between, and undone draft by draft, newest
   first.
@@ -60,11 +63,15 @@ its changes are stored as JSON and read back.
   (`quietUndos`) no change stays. Undone in turn with no change left, Live is back to before the
   press when nothing else wrote Live, and the fork reads as before. Out of order, the fork's text in
   every shown block is unchanged.
-- **No Undo puts back text a later write removed** (settled rule (a)): where a press's change to a text
-  doc was one replacement and a later write removed every character it put in, the press's Undo adds
-  no character to that doc (`replacedChecks` in the summary). Whether the press's text is still there
-  is decided by character id: its own characters, or ones a take-back commit put back for them
-  (`undo {spans}`, followed through earlier take-backs), never by what the text spells.
+- **An Undo takes a change back whole, or leaves it whole** (`wholeChecks`): for each text doc of a
+  change that did not stay, the Undo put back every character the press deleted, in order, and left
+  none of the press's characters in Live. Ctrl+Z is held to the first half too.
+- **No Undo puts back text a later write removed** (`replacedChecks`): where a press's change to a
+  text doc was one replacement and a later write removed every character it put in, the change stays
+  and that doc is unchanged, neither the old text back nor the later write taken out.
+- Identity is by character id, from the probe's own record of what each Undo put back (the
+  characters it inserted, lined up with the ones the edit deleted), never from the take-back messages
+  the model reads, and never by what the text spells.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
 - After the two drafts' Undo: Live is back (or holds the typing between), each draft has only that
@@ -80,23 +87,28 @@ its changes are stored as JSON and read back.
 
 ## Accepted, and counted rather than failed
 
+A press that replaced text at two places in one doc, one of which a later write retyped whole, goes
+back whole for the other (design §2's edit rule, part 4): the retyped place's old text returns beside
+the retype ("the fox went home" pressed as "the dog went house", "dog" retyped "cat": "the foxcat went
+home"), as Ctrl+Z's does. Tokens it doubles are not counted as duplicates (`besideRetype`).
+
 Text or marks that a Discard, an Undo or a restore puts back are new operations by the fork, since
 Loro has no undelete. A later Live delete or unmark inside that span leaves the fork's copy, which
 then shows as a pending change the writer can Discard again (design §1, gate 5's N7). The summary
 counts these as `resetCopyObserved`. Text both drafts deleted no longer comes back into a draft:
 the first press's change stays (`twoDraftsStayed`), and the check fails if a draft gains text.
 
-**Counted, not accepted:** in the two-drafts case, text the first draft deleted around the second's
-rewrite comes back with the first press's Undo as one run of new characters, and Loro may place it on
-either side of the second draft's own re-created words (`twoDraftsMoved`, about one two-drafts run in
-twelve). No character is lost, but the draft's words read in another order; the check fails on a lost
-character only. Design §2's proposed fix (put the text back where the deleted characters were, by a
+**Accepted cost** (design §2, "the order of put-back text"): in the two-drafts case, text the first
+draft deleted around the second's rewrite comes back with the first press's Undo as one run of new
+characters, and Loro may place it on either side of the second draft's own re-created words
+(`twoDraftsMoved`, about 6 runs in 1,000 seeds). No character is lost and every copy agrees, but the
+draft's words read in another order; the check fails on a lost character only. Design §2's proposed fix (put the text back where the deleted characters were, by a
 cursor on them) does not reach it: in the reordered runs the cursor resolves to the index the
 transform already uses. The two runs are concurrent inserts at one gap (Live never sees the draft's
 re-created words), and Loro orders those itself; an insert by index cannot choose a side.
 
 Pins implementation decisions: design §2's grouping (ancestor, merged sibling order, comment
 bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per
-change with its Live and fork sides as one edit, rule (a) with put-back text told by take-back
-commits, a block `Restore before` takes away going as a removal, and a Work press undone draft by
+change with its Live and fork sides as one edit, a change going back whole, put-back text told by
+take-back commits, a block `Restore before` takes away going as a removal, and a Work press undone draft by
 draft, newest first.
