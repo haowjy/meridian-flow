@@ -2,8 +2,8 @@
  * Review changes on one document host: which draft the page reviews, against what, the change in
  * focus, and the commands that move within it or leave it. Main reads it from its address and the
  * side from its stored slot (`features/project/use-review-mode.ts`); nothing else records whether a
- * pane is reviewing. The rows are the editor's (`ReviewChangesExtension`), lifted here so the bar
- * can count and step them.
+ * pane is reviewing. The rows are the editor's (`ReviewChangesExtension`), lifted into the host's
+ * `ReviewSurface` so the bar can count and step them.
  */
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { browserStorage } from "@/client/storage/browser-record";
@@ -48,25 +48,75 @@ export function useReviewMode(): ReviewMode | null {
   return useContext(ReviewModeContext);
 }
 
-/** The rows the editor last read, by document: what the bar's stepper counts. */
-const rowsByDocument = new Map<string, readonly ReviewRow[]>();
-const rowListeners = new Set<() => void>();
-const NO_ROWS: readonly ReviewRow[] = [];
+/**
+ * What the host's editor reads of Review changes, for the chrome above it: the rows (the stepper's
+ * and "Review N changes"'s count) and whether the pane is wide enough for Side by side. One per
+ * host (`useDocumentReview`), so two documents on screen keep their own.
+ */
+export class ReviewSurface {
+  private rowsNow: readonly ReviewRow[] | null = null;
+  private wideNow = false;
+  /** A step back into another chapter: its review opens at its last change, not its first. */
+  private landing: "last" | null = null;
+  private readonly listeners = new Set<() => void>();
 
-export function publishReviewRows(documentId: string, rows: readonly ReviewRow[] | null): void {
-  if (rows) rowsByDocument.set(documentId, rows);
-  else rowsByDocument.delete(documentId);
-  for (const listener of rowListeners) listener();
+  get rows(): readonly ReviewRow[] | null {
+    return this.rowsNow;
+  }
+
+  get wide(): boolean {
+    return this.wideNow;
+  }
+
+  publishRows(rows: readonly ReviewRow[] | null): void {
+    if (rows === this.rowsNow) return;
+    this.rowsNow = rows;
+    this.notify();
+  }
+
+  setWide(wide: boolean): void {
+    if (wide === this.wideNow) return;
+    this.wideNow = wide;
+    this.notify();
+  }
+
+  landOnLast(): void {
+    this.landing = "last";
+  }
+
+  /** Where the next chapter's review opens without a `change`, once: its first change or its last. */
+  takeLanding(): "first" | "last" {
+    const landing = this.landing ?? "first";
+    this.landing = null;
+    return landing;
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
+  }
 }
 
-export function useReviewRows(documentId: string): readonly ReviewRow[] | null {
+const ReviewSurfaceContext = createContext<ReviewSurface | null>(null);
+export const ReviewSurfaceProvider = ReviewSurfaceContext.Provider;
+
+export function useReviewSurface(): ReviewSurface | null {
+  return useContext(ReviewSurfaceContext);
+}
+
+const noSubscription = () => () => {};
+
+/** The rows the host's editor last read; null before it has read any. */
+export function useReviewRows(): readonly ReviewRow[] | null {
+  const surface = useReviewSurface();
   return useSyncExternalStore(
-    (listener) => {
-      rowListeners.add(listener);
-      return () => rowListeners.delete(listener);
-    },
-    () => rowsByDocument.get(documentId) ?? null,
-    () => NO_ROWS,
+    surface?.subscribe ?? noSubscription,
+    () => surface?.rows ?? null,
+    () => null,
   );
 }
 
@@ -84,6 +134,23 @@ export function setReviewLayout(layout: ReviewLayout): void {
   layoutSubscribers.notify();
 }
 
-export function useReviewLayout(): ReviewLayout {
+/** The layout the writer chose: what the toggle shows. */
+export function useChosenReviewLayout(): ReviewLayout {
   return useSyncExternalStore(layoutSubscribers.subscribe, readLayout, () => "inline");
+}
+
+/** Whether the host's pane is wide enough for two columns; a narrow one offers Inline only. */
+export function useReviewFitsSide(): boolean {
+  const surface = useReviewSurface();
+  return useSyncExternalStore(
+    surface?.subscribe ?? noSubscription,
+    () => surface?.wide ?? false,
+    () => false,
+  );
+}
+
+/** The layout the page shows: Side by side only where it was chosen and the pane fits it. */
+export function useReviewLayout(): ReviewLayout {
+  const chosen = useChosenReviewLayout();
+  return useReviewFitsSide() ? chosen : "inline";
 }

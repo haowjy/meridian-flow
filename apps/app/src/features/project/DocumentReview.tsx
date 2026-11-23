@@ -8,7 +8,7 @@
  * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
  * mounted hidden and paint Live.
  */
-import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
@@ -22,6 +22,8 @@ import {
   DraftPageProvider,
   type ReviewMode,
   ReviewModeProvider,
+  ReviewSurface,
+  ReviewSurfaceProvider,
 } from "@/features/draft-review/review-mode";
 import { useAccountId } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
@@ -35,6 +37,7 @@ export type DocumentReview = {
   /** Review changes on this host; null on Live and on a plain draft. */
   mode: ReviewMode | null;
   page: DraftPage | null;
+  surface: ReviewSurface;
 };
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
@@ -86,7 +89,8 @@ export function useDocumentReview(
         : null,
     [projectId, documentId, pin],
   );
-  return { value, paint, mode, page };
+  const [surface] = useState(() => new ReviewSurface());
+  return { value, paint, mode, page, surface };
 }
 
 /** Exposes one host's review to everything that host renders, in one or several subtrees. */
@@ -101,7 +105,9 @@ export function DocumentReviewBoundary({
     <DraftReviewBoundary value={review.value}>
       <DocumentPaintContext.Provider value={review.paint}>
         <DraftPageProvider value={review.page}>
-          <ReviewModeProvider value={review.mode}>{children}</ReviewModeProvider>
+          <ReviewModeProvider value={review.mode}>
+            <ReviewSurfaceProvider value={review.surface}>{children}</ReviewSurfaceProvider>
+          </ReviewModeProvider>
         </DraftPageProvider>
       </DocumentPaintContext.Provider>
     </DraftReviewBoundary>

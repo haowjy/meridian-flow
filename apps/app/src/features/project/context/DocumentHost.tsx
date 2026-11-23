@@ -17,6 +17,7 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { AgentFileState } from "@/features/agents/AgentFileState";
+import { ReviewEscapeScope } from "@/features/draft-review/ReviewEscapeScope";
 import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import {
@@ -77,23 +78,25 @@ export function DocumentHost(props: DocumentHostProps) {
   return (
     <PanePlaceContext.Provider value={place === "side" ? "side" : "main"}>
       <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
-        {place === "main" && props.main ? (
-          <MainDocumentBinding projectId={projectId} document={tab} />
-        ) : null}
-        {props.presentation === "phone" ? (
-          place === "main" ? (
-            <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
-          ) : (
-            <div className="flex h-full min-h-0 flex-col">
-              {props.header}
-              <div className="min-h-0 flex-1">
-                <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+        <ReviewEscapeScope>
+          {place === "main" && props.main ? (
+            <MainDocumentBinding projectId={projectId} document={tab} />
+          ) : null}
+          {props.presentation === "phone" ? (
+            place === "main" ? (
+              <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+            ) : (
+              <div className="flex h-full min-h-0 flex-col">
+                {props.header}
+                <div className="min-h-0 flex-1">
+                  <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+                </div>
               </div>
-            </div>
-          )
-        ) : (
-          <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
-        )}
+            )
+          ) : (
+            <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
+          )}
+        </ReviewEscapeScope>
       </DocumentReviewProvider>
     </PanePlaceContext.Provider>
   );

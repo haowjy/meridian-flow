@@ -1,25 +1,10 @@
-/* The review line's give-up ladder for a line too narrow for the review controls
-   (levels 1 to 4, set by fitReviewLine in DocumentIdentityBar). */
 [data-document-identity-row] {
   min-width: 0;
   position: relative;
   z-index: 20;
 }
-/* The review actions' own form (their names, then icons) is set by fitReviewLine. */
-[data-review-line]:not([data-collapse="0"]) .identity-count-short {
-  display: inline;
-}
-[data-review-line]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
-  .identity-step-count {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  padding: 0;
-}
 /* Extend only vertically: every visible box owns its full width, and gaps stay
-   unclaimed (especially beside Discard). Real touch widths participate in fitting. */
+   unclaimed (especially beside Discard). */
 @media (max-width: 640px), (pointer: coarse) {
   :is([data-document-identity-row], [data-review-line]) button {
     position: relative;
@@ -42,25 +27,4 @@
     min-width: 44px;
     min-height: 44px;
   }
-  /* Last resort, after every label has collapsed: the change list and stepper
-     give their place to Discard and Apply, which must stay reachable. */
-  [data-review-line][data-collapse="4"] [data-review-secondary] {
-    display: none;
-  }
-}
-
-[data-review-line]:not([data-collapse="0"])
-  :is([data-draft-review-controls], [data-review-actions]) {
-  gap: 2px;
-}
-[data-review-line]:not([data-collapse="0"]) [data-review-actions][data-density="full"] button {
-  padding-inline: 3px;
-}
-
-[data-review-line]:not([data-collapse="0"]) .identity-count-long {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
 }

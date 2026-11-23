@@ -135,17 +135,24 @@
   -webkit-user-select: none;
 }
 
-/* Side by side: the reference in the left column, the draft in the right, each row's halves level
-   by the grid's rows (a widget is placed just before its paragraph). */
+/* Side by side: the reference in the left column, the draft in the right. Every paragraph puts one
+   cell in each column, in DOM order (an empty one where a side lacks it), so the grid's rows pair
+   them; margins move to the row gap, so both cells of a row start level. */
 .meridian-editor .ProseMirror.meridian-review-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   column-gap: 24px;
+  row-gap: 0.75em;
   align-items: start;
 }
 
 .meridian-editor .ProseMirror.meridian-review-side > * {
   grid-column: 2;
+}
+
+.meridian-editor .ProseMirror.meridian-review-side > *,
+.meridian-editor .ProseMirror.meridian-review-side .meridian-review-ref {
+  margin-block: 0;
 }
 
 .meridian-editor .ProseMirror.meridian-review-side > .meridian-review-chg,
@@ -157,11 +164,32 @@
   left: calc(200% + 24px + 6px);
 }
 
-/* A paragraph another device deleted, kept on screen while the caret is in it (design §1). */
-.meridian-editor .ProseMirror .meridian-kept-removed {
+/* Text kept in place (KeptExtension): a paragraph deleted under the caret, kept while it stays
+   (design §1), and briefly an edit Undo left because someone wrote over it (design §2). */
+.meridian-editor .ProseMirror .meridian-kept {
   color: var(--color-muted-foreground);
   background-image: linear-gradient(var(--color-ink-fill), var(--color-ink-fill));
   border-radius: var(--radius-sm);
+}
+
+.meridian-editor .ProseMirror .meridian-kept-stayed {
+  color: inherit;
+  animation: meridian-kept-fade 4s ease-in forwards;
+}
+
+@keyframes meridian-kept-fade {
+  70% {
+    background-size: 100% 100%;
+  }
+  to {
+    background-size: 100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-editor .ProseMirror .meridian-kept-stayed {
+    animation: none;
+  }
 }
 
 @media (forced-colors: active) {

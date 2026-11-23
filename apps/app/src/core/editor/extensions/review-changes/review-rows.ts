@@ -18,6 +18,8 @@ export type ReviewParagraph = {
   live: Extract<ShapeBlock, { kind: "text" }> | null;
   /** The words of Live's text and the draft's, aligned; empty for an added or removed paragraph. */
   words: readonly WordPart[];
+  /** The draft paragraph it paints before: itself, or for a removal the next one the draft holds; null at the end. */
+  before: BlockId | null;
 };
 
 /**
@@ -96,8 +98,16 @@ export function reviewRows(
       if (before && after) {
         const words = wordDiff(blockText(before), blockText(after));
         if (words.every((part) => part.kind === "same") && before.node === after.node) continue;
-        paragraphs.push({ id, kind: "edited", live: before, words });
-      } else paragraphs.push({ id, kind: after ? "added" : "removed", live: before, words: [] });
+        paragraphs.push({ id, kind: "edited", live: before, words, before: id });
+      } else if (after) paragraphs.push({ id, kind: "added", live: null, words: [], before: id });
+      else
+        paragraphs.push({
+          id,
+          kind: "removed",
+          live: before,
+          words: [],
+          before: anchorFrom(order.get(id) ?? 0),
+        });
     }
     if (paragraphs.length === 0) continue;
     paragraphs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));

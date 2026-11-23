@@ -14,16 +14,20 @@ import {
 import type { ReviewRow } from "@/core/editor/extensions/review-changes/review-rows";
 import { useOptionalDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import {
-  publishReviewRows,
   useDraftPage,
   useReviewLayout,
   useReviewMode,
+  useReviewSurface,
 } from "@/features/draft-review/review-mode";
+
+/** The editor's width at which Review changes offers two columns. */
+const SIDE_BY_SIDE_MIN_PX = 720;
 
 export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const mode = useReviewMode();
   const review = useOptionalDraftReview();
   const layout = useReviewLayout();
+  const surface = useReviewSurface();
   // Pressed changes leave the page at once; the server's answer then takes them out of the copy.
   const [pressed, setPressed] = useState<ReadonlySet<string>>(new Set());
   const rows = useRef<readonly ReviewRow[] | null>(null);
@@ -77,7 +81,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       labels: { apply: t`Apply`, discard: t`Discard`, restore: t`Restore` },
       press,
       focusRow: (row) => latest.current.mode?.focus(row.id),
-      close: () => latest.current.mode?.close(),
       onRows: (all) => {
         rows.current = all;
         // A pressed change the copy no longer holds is settled.
@@ -86,11 +89,12 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
           const kept = new Set([...prior].filter((id) => ids.has(id)));
           return kept.size === prior.size ? prior : kept;
         });
-        publishReviewRows(documentId, shown(all));
+        surface?.publishRows(shown(all));
         settle();
       },
     };
-    // Review changes opens at its `change`; one that no longer exists, or none, is the first.
+    // Review changes opens at its `change`; one that no longer exists, or none, is the first (the
+    // last after a step back from the next chapter).
     const settle = () => {
       const { mode } = latest.current;
       const left = shown(rows.current ?? []);
@@ -99,15 +103,17 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
         mode?.target === "live" &&
         left.length > 0 &&
         !left.some((row) => row.id === mode.changeId)
-      )
-        mode.focus(left[0].id);
+      ) {
+        const landing = surface?.takeLanding() === "last" ? left.at(-1) : left[0];
+        if (landing) mode.focus(landing.id);
+      }
     };
     setReviewChanges(editor.view, config);
     if (rows.current) {
-      publishReviewRows(documentId, shown(rows.current));
+      surface?.publishRows(shown(rows.current));
       settle();
     }
-  }, [active, reviewing, documentId, editor, layout, changeId, pressed]);
+  }, [active, reviewing, documentId, editor, layout, changeId, pressed, surface]);
 
   useEffect(() => {
     if (!active || editor.isDestroyed) return;
@@ -121,9 +127,19 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     if (!documentId) return;
     return () => {
       rows.current = null;
-      publishReviewRows(documentId, null);
+      surface?.publishRows(null);
     };
-  }, [documentId]);
+  }, [documentId, surface]);
+
+  useEffect(() => {
+    if (!surface || editor.isDestroyed) return;
+    const dom = editor.view.dom;
+    const measure = () => surface.setWide(dom.clientWidth >= SIDE_BY_SIDE_MIN_PX);
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(dom);
+    return () => resize.disconnect();
+  }, [editor, surface]);
 
   // The focused change comes into view: a step, a press's next change, a link's `change`.
   const focus = reviewing ? changeId : null;

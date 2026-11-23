@@ -1,12 +1,12 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, a review's controls). The state chips portal into the document's state slot; a
- * review's controls take a line of their own above the toolbar.
+ * move, "Review N changes" or Review changes' controls in its place). They portal into the
+ * document's state slot in the toolbar row; a draft's notice takes a line above it.
  */
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
@@ -65,34 +65,28 @@ export function DocumentIdentityBar({
   });
 
   const mode = useReviewMode();
-  const reviewItemKey = mode?.documentId === document.documentId ? mode.itemKey : null;
+  const draftItemKey = mode?.documentId === document.documentId ? mode.itemKey : null;
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
-    !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
+    !draftItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
   const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, document.documentId);
   const lineFocus = useRef<HTMLDivElement>(null);
   useFocusSuccession(lineFocus);
 
-  // Reviewing a draft is a mode, not a notice: its controls take a line of their own
-  // above the toolbar, and a Discard's notice takes that line when it ends the review (or
-  // shares it, wrapping, when it does not). The version chip and other state stay on the
-  // toolbar row.
-  const renderState = (version: ReactNode, controls: ReactNode) => (
+  return (
     <>
       {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
           Undo and an Undo's back to the controls. */}
       <div ref={lineFocus} className="contents">
-        {controls || notice ? (
+        {notice ? (
           <div
-            ref={fitReviewLine}
             data-review-line
             className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
           >
-            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
-            {controls}
+            <DraftNoticeLine notice={notice} className="flex-auto px-0" />
           </div>
         ) : null}
       </div>
@@ -123,13 +117,12 @@ export function DocumentIdentityBar({
             onChooseHome={() => setFieldOpen(true)}
           />
           <AgentFileState projectId={projectId} document={document} />
-          <ReviewChangesButton document={document} />
-          {version ?? <DocumentVersionMenu projectId={projectId} document={document} />}
+          {mode ? <ReviewBar /> : <ReviewChangesButton document={document} />}
+          <DocumentVersionMenu projectId={projectId} document={document} />
         </div>
       </DocumentStatePortal>
     </>
   );
-  return renderState(null, mode ? <ReviewBar /> : null);
 }
 
 /** Chip slot at the bar's right edge. */
@@ -192,34 +185,3 @@ const editorProse = (documentId: string) =>
 function focusEditorProse(documentId: string) {
   editorProse(documentId)?.focus();
 }
-
-/**
- * The review line's ref: it gives up labels, in order (`ACTIONS_DENSITY` and
- * document-identity-row.css), only while its controls don't fit the line's width.
- */
-function fitReviewLine(line: HTMLDivElement) {
-  const fit = () => {
-    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
-    const style = getComputedStyle(line);
-    const available =
-      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
-    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
-      line.dataset.collapse = String(level);
-      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
-      if (!controls || controls.getBoundingClientRect().width <= available) break;
-    }
-  };
-  fit();
-  const resize = new ResizeObserver(fit);
-  resize.observe(line);
-  const mutations = new MutationObserver(fit);
-  mutations.observe(line, { childList: true, subtree: true, characterData: true });
-  return () => {
-    resize.disconnect();
-    mutations.disconnect();
-  };
-}
-
-/** The review actions' form at each collapse level (document-identity-row.css has the rest). */
-const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;

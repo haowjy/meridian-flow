@@ -18,6 +18,7 @@ import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
+import { escapeCssIdent } from "@/lib/css-selector";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
@@ -206,7 +207,9 @@ export function useItemLauncher() {
   /** Review changes: `Review N changes`, a Changes or dock row, a turn's edited chapter. */
   const openReview = useCallback(
     (target: ItemLaunchTarget) => {
-      void open({ ...target, review: target.review ?? "live" });
+      void open({ ...target, review: target.review ?? "live" }).then((outcome) => {
+        if (outcome.kind === "committed") focusReviewControls(target.documentId);
+      });
     },
     [open],
   );
@@ -337,4 +340,23 @@ export function useOpenPlacedDocument(
       ),
     [place, openDocument],
   );
+}
+
+/**
+ * Opening Review changes moves the focus to its stepper (its Close when there is nothing to
+ * step), once the document's bar has mounted.
+ */
+export function focusReviewControls(documentId: string): void {
+  let frames = 30;
+  const attempt = () => {
+    const bar = document.querySelector<HTMLElement>(
+      `[data-review-bar="${escapeCssIdent(documentId)}"]`,
+    );
+    const target =
+      bar?.querySelector<HTMLElement>("[data-review-stepper]") ??
+      bar?.querySelector<HTMLElement>(":scope > button:last-of-type");
+    if (target) target.focus();
+    else if (--frames > 0) requestAnimationFrame(attempt);
+  };
+  requestAnimationFrame(attempt);
 }

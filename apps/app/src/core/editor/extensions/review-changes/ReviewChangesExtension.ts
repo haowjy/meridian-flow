@@ -29,7 +29,6 @@ export type ReviewChangesConfig = {
   labels: { apply: string; discard: string; restore: string };
   press: (verdict: ReviewVerdict, row: ReviewRow) => void;
   focusRow: (row: ReviewRow) => void;
-  close: () => void;
   /** The rows as last read, for the bar's stepper. */
   onRows: (rows: readonly ReviewRow[]) => void;
 };
@@ -164,24 +163,62 @@ function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement {
   return pair;
 }
 
+function cellOf(row: ReviewRow, config: ReviewChangesConfig, focused: boolean, view: EditorView) {
+  const cell = document.createElement("div");
+  cell.className = `meridian-review-chg${focused ? " is-focused" : ""}`;
+  cell.contentEditable = "false";
+  cell.dataset.reviewRow = row.id;
+  cell.addEventListener("mousedown", (event) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    event.preventDefault();
+    config.focusRow(row);
+    view.focus();
+  });
+  return cell;
+}
+
+/** Inline: Live's text of the row's paragraphs above its first draft paragraph, with the pair. */
 function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean) {
   return (view: EditorView) => {
-    const wrap = document.createElement("div");
-    wrap.className = `meridian-review-chg${focused ? " is-focused" : ""}`;
-    wrap.contentEditable = "false";
-    wrap.dataset.reviewRow = row.id;
+    const wrap = cellOf(row, config, focused, view);
     for (const paragraph of row.paragraphs)
-      if (paragraph.kind !== "added" || config.layout === "side")
-        wrap.append(referenceElement(paragraph));
+      if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph));
     wrap.append(pairElement(row, config));
-    wrap.addEventListener("mousedown", (event) => {
-      if ((event.target as HTMLElement).closest("button")) return;
-      event.preventDefault();
-      config.focusRow(row);
-      view.focus();
-    });
     return wrap;
   };
+}
+
+/**
+ * Side by side: one paragraph's Live cell, in the left column. An added paragraph's is empty. The
+ * row's first carries the pair.
+ */
+function sideCell(
+  row: ReviewRow,
+  paragraph: ReviewParagraph,
+  config: ReviewChangesConfig,
+  focused: boolean,
+  first: boolean,
+) {
+  return (view: EditorView) => {
+    const cell = cellOf(row, config, focused, view);
+    cell.append(paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph));
+    if (first) cell.append(pairElement(row, config));
+    return cell;
+  };
+}
+
+function emptyCell(): HTMLElement {
+  const element = document.createElement("p");
+  element.className = "meridian-review-ref";
+  return element;
+}
+
+/** Side by side: the draft column's empty cell beside a paragraph only Live holds. */
+function draftHole() {
+  const element = document.createElement("div");
+  element.className = "meridian-review-hole";
+  element.contentEditable = "false";
+  return element;
 }
 
 function sideReference(text: string, node: Node) {
@@ -201,29 +238,58 @@ function buildDecorations(
   rows: readonly ReviewRow[],
 ): DecorationSet {
   const doc = state.doc;
+  const side = config.layout === "side";
   const positions = blockPositions(doc);
   const decorations: Decoration[] = [];
   const rowed = new Set<string>();
+  // Side by side, the grid pairs cells in DOM order: every paragraph adds one cell to each column.
+  // A removal's pair sits before the paragraph it precedes, whose own cells come after it
+  // (`side` -1); `order` keeps the removals in reading order among themselves.
+  let order = -10_000;
   for (const row of rows) {
     if (config.hidden.has(row.id)) continue;
     const focused = row.id === config.focus;
-    const at = row.anchor ? positions.get(row.anchor) : undefined;
-    const widgetAt = at ?? doc.content.size;
-    decorations.push(
-      Decoration.widget(widgetAt, rowWidget(row, config, focused), {
-        side: -1,
-        key: `review:${row.id}:${focused}:${config.layout}:${row.paragraphs.map((p) => `${p.kind}${p.words.length}`).join()}`,
-        ignoreSelection: true,
-      }),
-    );
-    for (const paragraph of row.paragraphs) {
-      if (paragraph.kind === "removed") continue;
+    const tone = focused ? " is-focused" : "";
+    const shape = row.paragraphs.map((p) => `${p.kind}${p.words.length}`).join();
+    if (!side) {
+      const at = row.anchor ? positions.get(row.anchor) : undefined;
+      decorations.push(
+        Decoration.widget(at ?? doc.content.size, rowWidget(row, config, focused), {
+          side: -1,
+          key: `review:${row.id}:${focused}:${shape}`,
+          ignoreSelection: true,
+        }),
+      );
+    }
+    row.paragraphs.forEach((paragraph, index) => {
+      if (side) {
+        const before = paragraph.before === null ? undefined : positions.get(paragraph.before);
+        const at = before ?? doc.content.size;
+        const removed = paragraph.kind === "removed";
+        const key = `review:${row.id}:${paragraph.id}:${focused}:${shape}`;
+        const cell = sideCell(row, paragraph, config, focused, index === 0);
+        decorations.push(
+          Decoration.widget(at, cell, {
+            side: removed ? order++ : -1,
+            key,
+            ignoreSelection: true,
+          }),
+        );
+        if (removed)
+          decorations.push(
+            Decoration.widget(at, draftHole, {
+              side: order++,
+              key: `hole:${paragraph.id}`,
+              ignoreSelection: true,
+            }),
+          );
+      }
+      if (paragraph.kind === "removed") return;
       const pos = positions.get(paragraph.id);
-      if (pos === undefined) continue;
+      if (pos === undefined) return;
       const node = doc.nodeAt(pos);
-      if (!node) continue;
+      if (!node) return;
       rowed.add(paragraph.id);
-      const tone = focused ? " is-focused" : "";
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
           class: `meridian-review-draft${tone}`,
@@ -236,16 +302,15 @@ function buildDecorations(
           : addedSpans(paragraph);
       for (const [from, to] of textRanges(node, pos, spans))
         decorations.push(Decoration.inline(from, to, { class: `meridian-review-ins${tone}` }));
-    }
+    });
   }
-  if (config.layout === "side") {
-    // Every paragraph both sides show reads beside itself, muted, so a row's halves stay level.
+  if (side) {
+    // Every paragraph both sides show reads beside itself, muted.
     const docs = loroSyncKey.getState(state)?.docs;
     const live = docs?.live ? textOf(readDocument(docs.live)) : new Map<string, string>();
     doc.forEach((node, offset) => {
       const id = node.attrs.id;
       if (typeof id === "string" && rowed.has(id)) return;
-      if (rows.some((row) => row.anchor === id)) return;
       decorations.push(
         Decoration.widget(offset, sideReference(live.get(id) ?? node.textContent, node), {
           side: -1,
@@ -318,12 +383,6 @@ export const ReviewChangesExtension = Extension.create({
             return paints(config)
               ? { class: `meridian-review meridian-review-${config.layout}` }
               : {};
-          },
-          handleKeyDown: (view, event) => {
-            const config = reviewChangesKey.getState(view.state)?.config;
-            if (!paints(config) || event.key !== "Escape" || event.defaultPrevented) return false;
-            config.close();
-            return true;
           },
         },
         view: () => {

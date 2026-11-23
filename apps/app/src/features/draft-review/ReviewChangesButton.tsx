@@ -12,14 +12,14 @@ import { useDraftPage, useReviewMode, useReviewRows } from "./review-mode";
 export function ReviewChangesButton({ document }: { document: OpenDocument }) {
   const page = useDraftPage();
   const mode = useReviewMode();
-  const rows = useReviewRows(page?.documentId ?? "");
+  const rows = useReviewRows();
   const { openReview } = useItemLauncher();
   if (!page || mode || !rows?.length || document.kind !== "tracked") return null;
   return (
     <Button
       type="button"
       size="sm"
-      variant="secondary"
+      variant="quiet"
       onClick={() =>
         openReview({
           draftId: page.draftId,
