@@ -57,7 +57,9 @@ steps either side of it in other blocks (C3); with nobody else writing, Ctrl+Z t
 picture whose upload landed as an untracked write (C4). A split a peer wrote over takes the typing
 under it out of the history; a peer's rewrite of a word A typed that keeps one of its letters keeps
 A's typing, as a chat's rewrite keeps the letters it shares (#1854: the Undo took those letters out
-of the chat's words).
+of the chat's words), and still keeps it once the peer has undone the rewrite: the peer's Undo put
+A's text back as new characters, which Loro's manager can't delete, so A's Ctrl+Z left "LastOwl."
+(review p19027).
 From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
 deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); a
 draft that also deleted A's "F" is pressed into Live and the press undone, and A's Ctrl+Z goes

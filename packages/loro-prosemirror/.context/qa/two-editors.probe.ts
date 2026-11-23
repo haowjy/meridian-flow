@@ -1529,6 +1529,21 @@ function racedRemovals(): string[] {
       if (runHistory(r.a, "undo")) return "rewrite: A's Ctrl+Z ran over B's rewrite";
       return settle(r, "rewrite, then A's Ctrl+Z", showsAll("|Last BwD.|"));
     },
+    // B's Undo of that rewrite puts " Owl" back as new characters: Loro's manager can delete only
+    // A's own, so A's Ctrl+Z would leave "LastOwl."; it stays (review p19027).
+    "a peer's rewrite undone since still keeps A's typing": (r) => {
+      caret(r.a, "z", 4);
+      type(r.a, " Owl");
+      syncAll(r);
+      const at = posOf(r.b, "z") + 1 + 5;
+      r.b.view.dispatch(r.b.view.state.tr.insertText("D", at + 2, at + 3).insertText("B", at, at + 1));
+      r.b.history.endStep();
+      syncAll(r);
+      if (!runHistory(r.b, "undo")) return "rewrite undone: B's Ctrl+Z stayed";
+      syncAll(r);
+      if (runHistory(r.a, "undo")) return "rewrite undone: A's Ctrl+Z ran over put-back text";
+      return settle(r, "rewrite undone, then A's Ctrl+Z", showsAll("|Last Owl.|"));
+    },
     "A's own split goes back exactly, and Redo gives it back": (r) => {
       const before = shown(r.a);
       split(r.a, "x", 14, "x2");

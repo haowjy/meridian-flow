@@ -19,6 +19,13 @@ export {
   turnSpan,
   undoPress,
 } from "./changes.js";
+export {
+  type CommitAuthor,
+  type CommitNote,
+  commitMessage,
+  type OpSpans,
+  readCommitMessage,
+} from "./commit-message.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export {
@@ -104,14 +111,11 @@ export {
   editStays,
   memberOf,
   noteEdit,
-  type OpSpans,
   opsBetween,
   putBackValues,
   type SetValue,
   type TextOp,
   type TextSpan,
-  takeBackMessage,
-  textSince,
   valuesOf,
 } from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";

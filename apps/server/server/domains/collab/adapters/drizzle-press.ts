@@ -4,7 +4,7 @@
  * each on Live as the one before left it. Its tree half is the Apply's (`drizzle-apply-tree.ts`)
  * or the Discard's (`discardTreeRecords`); its text half runs `applyBlocks` or `discardBlocks` on
  * a command copy of each document's fork room, commits Live's room then the fork's under
- * `press:<id>`, and stores each change's edit in `press_changes`. The Undo goes draft by draft,
+ * the press (`CommitAuthor`), and stores each change's edit in `press_changes`. The Undo goes draft by draft,
  * newest first: `undoPress` from those rows, then `undoApply` or `restoreDiscard`. Pressing again
  * is the Redo.
  *
@@ -57,6 +57,7 @@ import {
   restoreBefore,
   type StoredEdit,
   undoEdits,
+  readCommitMessage,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -246,14 +247,14 @@ export function createDrizzlePress(
     const room = { kind: "fork" as const, draftId: draft, documentId };
     const copy = await deps.rooms.read(room);
     try {
-      const message = `press:${envelope.commandId}`;
+      const by = { press: envelope.commandId };
       const pressed =
         request.verdict === "apply"
           ? applyBlocks(copy, selection, {
-              message,
+              by,
               liveVersion: request.liveVersions?.get(documentId) ?? new Map(),
             })
-          : discardBlocks(copy, selection, { message });
+          : discardBlocks(copy, selection, { by });
       const committed = await commitCopy(room, pressed);
       // An Apply writes Live and may leave the fork no write: its pending flag is read here.
       await markFork(tx(), room, copy);
@@ -295,7 +296,7 @@ export function createDrizzlePress(
         const copy = copies[index] as RoomDocs;
         const forward = room.kind === "fork" ? copy.forward().restore : null;
         const since = copy.shownVersion();
-        const changes = restoreBefore(copy, span, { message: `press:${envelope.commandId}` });
+        const changes = restoreBefore(copy, span, { by: { press: envelope.commandId } });
         const written = [...(forward ? [forward] : []), ...changes];
         if (room.kind === "fork") {
           if (await commitCopy(room, { live: [], fork: written })) documents.push(documentId);
@@ -486,14 +487,15 @@ export function createDrizzlePress(
   }
 
   /**
-   * The commits since `after` by a peer other than the Undo copy's own, into `seen`: each one's
-   * message, and whether a tab committed (a tab's commit carries none). A server write with no
-   * message (a restore, a copy) names no author.
+   * Who wrote the commits since `after` by a peer other than the Undo copy's own, into `seen`, by
+   * each one's message (`readCommitMessage`): a chat's turn, a press, or none, which a tab's commit
+   * is the writer's (its Undo and Redo included). A server write by no one (a restore, a copy)
+   * names no author.
    */
   function commitsOver(
     doc: LoroDoc,
     after: Frontiers,
-    seen: { messages: Set<string>; tab: boolean },
+    seen: { turns: Set<string>; press: boolean; tab: boolean },
   ) {
     const own = doc.peerIdStr;
     for (const span of doc.findIdSpansBetween(after, doc.frontiers()).forward) {
@@ -501,7 +503,9 @@ export function createDrizzlePress(
       let counter = span.counter;
       while (counter < span.counter + span.length) {
         const change = doc.getChangeAt({ peer: span.peer, counter });
-        if (change.message) seen.messages.add(change.message);
+        const { by } = readCommitMessage(change.message);
+        if (by && "turn" in by) seen.turns.add(by.turn);
+        else if (by) seen.press = true;
         else if (!isServerPeer(span.peer as PeerId)) seen.tab = true;
         counter = change.counter + change.length;
       }
@@ -515,7 +519,7 @@ export function createDrizzlePress(
   async function overwriters(
     sides: readonly (readonly [RoomDocs | undefined, StoredEdit | null])[],
   ): Promise<PressOverwriter[]> {
-    const seen = { messages: new Set<string>(), tab: false };
+    const seen = { turns: new Set<string>(), press: false, tab: false };
     for (const [side, stored] of sides) {
       if (!side || !stored) continue;
       for (const [key, span] of stored.texts) {
@@ -525,13 +529,9 @@ export function createDrizzlePress(
         commitsOver(doc, after, seen);
       }
     }
-    const { messages } = seen;
     const by: PressOverwriter[] = seen.tab ? [{ kind: "writer" }] : [];
     // A message is the room's content, which any client writes: a turn id that isn't one names no chat.
-    const turnIds = [...messages].flatMap((message) => {
-      const id = message.startsWith("turn:") ? message.slice("turn:".length) : null;
-      return id && isUuid(id) ? [id] : [];
-    });
+    const turnIds = [...seen.turns].filter(isUuid);
     if (turnIds.length > 0) {
       const chats = await tx()
         .selectDistinct({ ref: threads.ref })
@@ -540,7 +540,7 @@ export function createDrizzlePress(
         .where(inArray(turns.id, turnIds as never[]));
       for (const { ref } of chats) if (ref) by.push({ kind: "chat", ref });
     }
-    if ([...messages].some((message) => message.startsWith("press:"))) by.push({ kind: "press" });
+    if (seen.press) by.push({ kind: "press" });
     return by;
   }
 
@@ -602,7 +602,7 @@ export function createDrizzlePress(
           async (locked): Promise<PressUndoResult> => {
             const judge = await owners.judge(locked);
             const by = `user:${envelope.accountId}`;
-            const message = `press:${envelope.commandId}`;
+            const author = { press: envelope.commandId };
             const living = new Set<DraftId>();
             for (const draft of [...draftIds].sort())
               if (await deps.drafts.lock(draft)) living.add(draft);
@@ -631,7 +631,7 @@ export function createDrizzlePress(
                       const undone = undoEdits(
                         copy,
                         changes.map((change) => change.live as StoredEdit),
-                        message,
+                        author,
                       );
                       if (undone.changes.length) {
                         await deps.rooms.commit(tx(), room, encodeChanges(undone.changes), ORIGIN);
@@ -647,7 +647,7 @@ export function createDrizzlePress(
                       }
                       continue;
                     }
-                    const undone = undoPress(copy, changes, { message });
+                    const undone = undoPress(copy, changes, { by: author });
                     if (await commitCopy(room, undone)) documents.add(documentId);
                     await markFork(tx(), room, copy);
                     for (const change of undone.stayed)

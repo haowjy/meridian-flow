@@ -21,7 +21,7 @@ never makes one.
   `draft` or `work` scope takes the forks flagged pending). It reads the fork room as a command
   copy (its own peer, carrying its forwarded copy of Live), runs `applyBlocks` or
   `discardBlocks` (a `change` scope selects the change by any member id), commits Live's room
-  then the fork's under the message `press:<id>`, and stores each change's `PressedChange` in
+  then the fork's by the press (`commitMessage({ by: { press: <id> } })`), and stores each change's `PressedChange` in
   `press_changes` (command, draft, document) for its Undo. It then sets the fork's `pending`
   flag from the copy: an Apply writes only Live, so no fork save would.
 - **`liveVersions`** stamps the record of a removal the press applies, nothing else: the server
@@ -116,10 +116,12 @@ closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree
 
 `unpress` takes a press back once, in the press's own project, draft by draft, newest first. Per
 document, `undoPress` reads the press's `press_changes` rows: each change goes back whole or stays
-whole (`editStays`), each room its own, committed under `press:<undo id>`. A change that stays is
-in the answer's `stayed`, with who wrote over it, read from the commit messages on its text since
-the press: a tab's commit (no message) is the writer, `turn:<id>` a chat (by its ref), `press:`
-another press; a server write with no message (a restore, a copy) names no one.
+whole (`editStays`), each room its own, committed by the Undo's press (its text commits carry
+the take-back note too: one message holds both, `commit-message.ts`). A change that stays is in
+the answer's `stayed`, with who wrote over it, read from the commit messages' `by` on its text
+since the press (`readCommitMessage`): a tab's commit, which names no author (its typing, its
+Ctrl+Z and Redo), is the writer; a turn is a chat (by its ref); a press is another press, its
+Undo included; a server write by no one (a restore, a copy) names no one.
 Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Restore before) on that draft's part, with
 the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
 other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing

@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
+import { type CommitAuthor, commitMessage, type OpSpans } from "./commit-message.js";
 import { inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, type DocKey, STRUCTURE_KEY } from "./shape.js";
@@ -9,13 +10,11 @@ import {
   type EditValues,
   editStays,
   noteEdit,
-  type OpSpans,
   opsBetween,
   putBackOf,
   putBackValues,
   type SetValue,
   type TextOp,
-  takeBackMessage,
   textDiff,
   textSince,
   valuesOf,
@@ -153,15 +152,16 @@ export function holdsEdit(docs: RoomDocs, stored: StoredEdit): boolean {
 /**
  * Take back `edits` on `docs`, each of which passed `editStays` there (a press's Undo, design §2):
  * each text doc by its inverse moved through what happened since (`transformedInverse`), in a
- * commit that names what each character it puts back stands for (`takeBackMessage`); then every structure value in one
- * commit under `message` (`putBackValues`), after the text, so a removal record it writes counts
- * the text put back. `view` reads the structure as it is. Returns the changes.
+ * commit by `by` that names what each character it puts back stands for (`TakeBackNote`); then
+ * every structure value in one commit by `by` (`putBackValues`), after the text, so a removal
+ * record it writes counts the text put back. `view` reads the structure as it is. Returns the
+ * changes.
  */
 export function takeBack(
   docs: RoomDocs,
   edits: readonly Edit[],
   view: StructureView,
-  message?: string,
+  by?: CommitAuthor,
 ): DocChange[] {
   const out: DocChange[] = [];
   const values: EditValues = new Map();
@@ -172,7 +172,10 @@ export function takeBack(
       const moved = transformedInverse(doc, span.before, span.after);
       if (moved.length === 0) continue;
       // Read before the write: a fork commits pending ops, without the message.
-      const message = takeBackMessage(deletedBetween(doc, span.before, span.after), span.ops);
+      const message = commitMessage({
+        by,
+        undo: { for: deletedBetween(doc, span.before, span.after), ops: span.ops },
+      });
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(moved));
       doc.commit({ message });
@@ -184,7 +187,7 @@ export function takeBack(
       values.set(name, into);
     }
   }
-  const { change } = putBackValues(docs, values, view, message);
+  const { change } = putBackValues(docs, values, view, by);
   if (change) out.push(change);
   return out;
 }
@@ -212,7 +215,7 @@ export function whyEditStays(
 export function undoEdits(
   docs: RoomDocs,
   edits: readonly StoredEdit[],
-  message?: string,
+  by?: CommitAuthor,
 ): { changes: DocChange[]; stayed: Map<number, EditStayed> } {
   const changes: DocChange[] = [];
   const stayed = new Map<number, EditStayed>();
@@ -224,7 +227,7 @@ export function undoEdits(
       return;
     }
     const edit = loadEdit(docs, stored);
-    const wrote = takeBack(docs, [edit], view, message);
+    const wrote = takeBack(docs, [edit], view, by);
     changes.push(...wrote);
     if (wrote.some((change) => change.key === STRUCTURE_KEY)) view = new StructureView(docs);
   });

@@ -1,10 +1,11 @@
 // What a result showed on Loro, and who changed what since the model's last read (design §5,
 // "The concurrent-change report"): the frontiers say which docs changed, the docs' commit messages
-// say who (`turn:<id>` a chat, `press:<id>` the writer's Apply or Discard, anything else the writer).
+// say who (`readCommitMessage`: a chat's turn, the writer's Apply or Discard, or else the writer).
 
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
   type BlockId,
+  type CommitAuthor,
   type DocKey,
   freshServerPeerId,
   readDocument,
@@ -14,11 +15,11 @@ import {
 import type { Frontiers } from "loro-crdt";
 import type { FrontierLookup } from "../frontier.js";
 import {
+  authorsSince,
   changedSince,
   encodeFrontierMap,
   type FrontierMap,
   latestRead,
-  messagesSince,
   planningFrontiers,
 } from "../loro-frontier.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "../model/block-hash.js";
@@ -99,8 +100,8 @@ async function listing(
     const doc = key === STRUCTURE_KEY ? docs.structure : docs.textOf(key);
     const out = new Set<string>();
     if (!doc) return out;
-    for (const message of messagesSince(doc, from)) {
-      const label = await labelOf(source, message, labels);
+    for (const by of authorsSince(doc, from)) {
+      const label = await labelOf(source, by, labels);
       if (label) out.add(label);
     }
     return out;
@@ -173,12 +174,12 @@ async function listing(
 /** Who a commit message names: null for the reader's own turn. */
 async function labelOf(
   source: LoroListingSource,
-  message: string | undefined,
+  by: CommitAuthor | undefined,
   cache: Map<string, string | null>,
 ): Promise<string | null> {
-  if (message?.startsWith("press:")) return "the user's Apply or Discard";
-  if (!message?.startsWith("turn:")) return "the user";
-  const turn = message.slice("turn:".length);
+  if (!by) return "the user";
+  if (!("turn" in by)) return "the user's Apply or Discard";
+  const { turn } = by;
   if (turn === source.ownTurn) return null;
   let label = cache.get(turn);
   if (label === undefined) {

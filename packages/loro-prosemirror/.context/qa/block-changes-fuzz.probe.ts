@@ -245,7 +245,7 @@ function withIds(pm, rng) {
   return tr.doc;
 }
 /** One editor transaction on `d`, written as the editor writes it. */
-function edit(d, fn, { rng, message } = {}) {
+function edit(d, fn, { rng, by } = {}) {
   const state = EditorState.create({ schema, doc: read(d) });
   const tr = fn(state.tr, state.doc);
   if (!tr || !tr.docChanged) return [];
@@ -256,7 +256,7 @@ function edit(d, fn, { rng, message } = {}) {
     const under = parent === tr.doc ? null : parent.attrs.id;
     return parent.childCount === 1 && isDerivedEmpty(blockOf(node), under);
   });
-  return writeProseMirror(d, tr.doc, { message, random: rng });
+  return writeProseMirror(d, tr.doc, { by, random: rng });
 }
 
 export function runScript(seed, { verbose = false } = {}) {
@@ -487,7 +487,7 @@ export function runScript(seed, { verbose = false } = {}) {
       ? records(edit(d, (tr, doc) => {
           built = e.build(tr, doc);
           return built;
-        }, { rng: g.rng, message: opts.message }))
+        }, { rng: g.rng, by: opts.by }))
       : [];
     if (built?.docChanged)
       check(built.doc.eq(read(d)), "binding", () => `codec failed round trip for ${e.kind}: expected ${JSON.stringify(built.doc.toJSON())}; got ${render(d)}`);
@@ -662,7 +662,7 @@ export function runScript(seed, { verbose = false } = {}) {
     let after = null;
     try {
       for (let i = 0; i < n; i++) {
-        const r = userEdit(work, "a", { message: "turn" });
+        const r = userEdit(work, "a", { by: { turn: "turn" } });
         stats.edits++;
         for (const rec of r?.changed ?? []) {
           const key = rec.id ?? STRUCTURE_KEY;
@@ -697,7 +697,7 @@ export function runScript(seed, { verbose = false } = {}) {
       }
     }
     const before = snapshotIds(fork);
-    markCopies(restoreBefore(fork, turn, { message: "restore" }));
+    markCopies(restoreBefore(fork, turn));
     recordOrigins(fork);
     rememberAll(fork, before);
     toTab();
@@ -786,14 +786,14 @@ export function runScript(seed, { verbose = false } = {}) {
     const pressed = [];
     for (const [i, d] of drafts.entries()) {
       if (i === 1 && liveTyped) typeIn(room, id, liveToken);
-      pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }), (r) => stored(r.pressed)));
+      pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { by: { press: `work press ${i}` }, liveVersion: room.version() }), (r) => stored(r.pressed)));
     }
     for (const d of drafts) {
       d.forward();
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
     for (let i = drafts.length - 1; i >= 0; i--) {
-      const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { message: `work press undo ${i}` }));
+      const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { by: { press: `work press undo ${i}` } }));
       check(!stayed.length, "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
     }
     const liveIds = new Set(charIds(room.textOf(id)));
@@ -871,7 +871,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const liveVersion = fromTab ? tabLive.version() : live.version();
     const { r, written } = command(
       fork,
-      (cmd) => applyBlocks(cmd, chosen, { message: `press:${stats.presses}`, liveVersion }),
+      (cmd) => applyBlocks(cmd, chosen, { by: { press: `${stats.presses}` }, liveVersion }),
       (r) => ({ r, written: textWrites(r.live) }),
     );
     const liveKeys = [...written.keys()];
@@ -932,7 +932,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const { stayed, undone } = command(
       fork,
       (cmd) => {
-        const u = undoPress(cmd, p.pressed, { message: "press undo" });
+        const u = undoPress(cmd, p.pressed, { by: { press: "press undo" } });
         markCopies(u.fork);
         return u;
       },
@@ -1156,7 +1156,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const r = command(
       fork,
       (cmd) => {
-        const r = discardBlocks(cmd, chosen, { message: all ? "discard all" : "discard" });
+        const r = discardBlocks(cmd, chosen, { by: { press: all ? "discard all" : "discard" } });
         markCopies(r.fork);
         return r;
       },
@@ -1189,7 +1189,7 @@ export function runScript(seed, { verbose = false } = {}) {
     syncTab();
     const ids = snapshotIds(fork);
     const { stayed } = command(fork, (cmd) => {
-      const u = undoPress(cmd, rec.r.pressed, { message: `${kind} undo` });
+      const u = undoPress(cmd, rec.r.pressed, { by: { press: `${kind} undo` } });
       markCopies(u.fork);
       return u;
     });
@@ -1209,7 +1209,7 @@ export function runScript(seed, { verbose = false } = {}) {
   }
 
   try {
-    writeProseMirror(live, withIds(g.initialDoc(), g.rng), { random: g.rng, message: "init" });
+    writeProseMirror(live, withIds(g.initialDoc(), g.rng), { random: g.rng });
     if (g.chance(0.6)) {
       const e = randomEdit(g, read(live), "s", { structure: false });
       if (e?.kind === "comment" || e?.kind === "comment2") {
@@ -1340,7 +1340,7 @@ export function runScript(seed, { verbose = false } = {}) {
         else check(false, "live-typing-lost", () => `Live token ${tok} characters missing from fork; id ${id}; live ${blockValues(live).get(id)}; fork ${blockValues(fork).get(id)}`);
       }
     }
-    command(fork, (cmd) => applyBlocks(cmd, "all", { message: "apply all", liveVersion: live.version() }));
+    command(fork, (cmd) => applyBlocks(cmd, "all", { by: { press: "apply all" }, liveVersion: live.version() }));
     syncTab();
     syncLive();
     toTab();

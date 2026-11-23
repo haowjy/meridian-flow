@@ -1,4 +1,5 @@
 import {
+  commitMessage,
   type DocChange,
   type DocKey,
   deletedBetween,
@@ -10,7 +11,6 @@ import {
   type RoomDocs,
   STRUCTURE_KEY,
   StructureView,
-  takeBackMessage,
   UNTRACKED_ORIGIN,
   valuesOf,
 } from "@meridian/document-model";
@@ -148,6 +148,8 @@ export class UndoHistory {
           arriving: new Set(),
           shown: new Set(),
           structureAt: [],
+          // Its text goes back through the managers, which delete only this peer's characters.
+          ownTextOnly: true,
         },
         selection: selectionCursors(this.docs, state),
         at: now,
@@ -312,8 +314,11 @@ export class UndoHistory {
         const { manager, doc } = this.watched.get(key) as Watched;
         const before = doc.frontiers();
         // Loro commits an Undo and a Redo alike under the origin `undo`: the message says what
-        // each character the commit puts back stands for, so it can be told from typing.
-        const message = takeBackMessage(deletedBetween(doc, span.before, span.after), span.ops);
+        // each character the commit puts back stands for, so it can be told from typing. It
+        // names no author: the writer's.
+        const message = commitMessage({
+          undo: { for: deletedBetween(doc, span.before, span.after), ops: span.ops },
+        }) as string;
         // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
         const unstamp = doc.subscribePreCommit(({ modifier }) => {
           modifier.setMessage(message).free();
