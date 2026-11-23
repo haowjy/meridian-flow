@@ -7051,8 +7051,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "changes": {
-          "name": "changes",
+        "change_count": {
+          "name": "change_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

@@ -250,7 +250,7 @@ export function toWireItem(
     documentId: item.documentId,
     pending: item.pending,
     liveVersion: item.liveVersion,
-    changes: item.changes,
+    changeCount: item.changeCount,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,
