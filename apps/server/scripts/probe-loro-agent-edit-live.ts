@@ -2,7 +2,8 @@
 // in-memory rooms (no database, no dev stack), while a scripted writer edits it. From apps/server:
 //   LIVE_TEST_MODEL=deepseek-flash pnpm exec tsx --env-file=<.env> scripts/probe-loro-agent-edit-live.ts
 // Passes when the writer's sentence survives the model's rewrite of the other, the result names
-// `the user`, turn Undo leaves the writer's words, and `format: "edits"` lists e1. It prints the
+// `the user`, turn Undo leaves the writer's words, `format: "edits"` lists e1, and after the chat
+// switches to Draft its write lands in the draft only and `format: "changes"` shows it. It prints the
 // tool calls, then `ok: live scenarios pass on <model>`, or the transcript and the failed step.
 import {
   createAgentEditCodecFactory,
@@ -27,15 +28,19 @@ if (!model) throw new Error("Set LIVE_TEST_MODEL (deepseek-flash)");
 const { gateway, cleanup } = await createGatewayFromEnv(process.env);
 const schema = buildDocumentSchema();
 const host = createInMemoryLoroHost(schema);
-const liveChat = host.chat(null);
-const core = createLoroEditCore({
-  rooms: liveChat.rooms,
-  ordinals: host.ordinals,
-  schema,
-  codec: createAgentEditCodecFactory(mdxCodec({ schema })),
-  links: createStaticDocumentLinks(undefined, { preloaded: true }),
-  documentEdits: liveChat.documentEdits,
-});
+/** The chat's core: Live (`null`), or Draft on the draft's fork room once the writer switches it. */
+const coreFor = (draftId: string | null) => {
+  const chat = host.chat(draftId);
+  return createLoroEditCore({
+    rooms: chat.rooms,
+    ordinals: host.ordinals,
+    schema,
+    codec: createAgentEditCodecFactory(mdxCodec({ schema })),
+    links: createStaticDocumentLinks(undefined, { preloaded: true }),
+    documentEdits: chat.documentEdits,
+  });
+};
+let core = coreFor(null);
 const paragraph = (id: string, text: string) =>
   schema.nodes.paragraph.create({ id }, schema.text(text));
 const texts = async () => (await host.live("ch1")).map((block) => block.textContent);
@@ -183,6 +188,25 @@ if (afterUndo[0] !== "The rain hammered the tin roof. Mara waited by the door.")
 const t3 = await turn("t3", 'List your edits to ch1.md: read it with format "edits".');
 const edits = t3.find((outcome) => outcome.command === "read" && !outcome.isError);
 if (!edits || !/e1/.test(renderAgentEditResult(edits.result))) fail("format edits lists e1");
+
+// The writer switches the chat to Draft mode: its writes go to draft d1's fork of ch1.
+core = coreFor("d1");
+const t4 = await turn(
+  "t4",
+  "You are in draft mode now. In ch1.md, change the second paragraph so that nobody came for three nights.",
+);
+if (!t4.some((outcome) => outcome.command === "replace" && !outcome.isError)) fail("turn 4 wrote");
+const draft = (await host.draft("ch1", "d1")).map((block) => block.textContent);
+console.log("draft after turn 4:", draft);
+if (!/three nights/i.test(draft[1] ?? "")) fail("the Draft write lands in the draft");
+if ((await texts())[1] !== "Nobody came that night.") fail("the Draft write leaves Live");
+const t5 = await turn(
+  "t5",
+  'Show what your draft changes in ch1.md: read it with format "changes".',
+);
+const changes = t5.find((outcome) => outcome.command === "read" && !outcome.isError);
+if (!changes || !/\{(\+\+|~~)/.test(renderAgentEditResult(changes.result)))
+  fail("format changes shows the draft's change as CriticMarkup");
 
 console.log(log.join("\n"));
 console.log("ok: live scenarios pass on", model);

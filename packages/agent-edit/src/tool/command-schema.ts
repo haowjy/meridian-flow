@@ -65,7 +65,7 @@ const READ_FIELDS = {
   format: z
     .enum(["full", "outline", "edits", "changes"])
     .describe(
-      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands; handles are for you, never show them to the user. `changes` shows, in draft mode, each block where your draft differs from live, as CriticMarkup ({++added++}, {--removed--}, {~~old~>new~~}): what waits for the user to apply or discard in Review changes. `edits` and `changes` don't take `in`, `around` or `version`.",
+      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands; `changes`, your draft's changes as CriticMarkup. Neither takes `in`, `around` or `version`. Handles are for you; never show them to the user.",
     )
     .optional(),
 };
@@ -176,11 +176,12 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies; a part someone has written over since stays as they left it. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. In draft mode the undo is a draft change like your writes, waiting for the user's review: an edit the user already applied stays in live until they apply the undo too, and one they discarded has nothing left to undo.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. In draft mode the undo waits for review, as your writes do.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
-    description: `Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it is a draft change like your writes, waiting for the user's review.`,
+    description:
+      'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
     fields: { edit: WRITE_HANDLE },
   },
 } as const;
