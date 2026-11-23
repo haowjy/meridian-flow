@@ -51,7 +51,12 @@ export interface ApplyOpsOptions extends WriteOptions {
 }
 
 export type ApplyOpsResult =
-  | { ok: true; changes: DocChange[] }
+  | {
+      ok: true;
+      changes: DocChange[];
+      /** Each empty paragraph the ops wrote into, with the fresh id it is now stored under. */
+      renamed: ReadonlyMap<BlockId, BlockId>;
+    }
   | { ok: false; code: "invalid_write"; message: string };
 
 /**
@@ -63,7 +68,9 @@ export type ApplyOpsResult =
  * The unstored empty paragraph a reader sees in an empty document or cell (`derivedEmptyParent`)
  * is addressable like any block: a text or attribute op stores a paragraph in its place under a
  * fresh id (`options.newBlockId`), and every later op of the call addressing it writes that one;
- * an insert after it goes first, or after the stored paragraph; deleting it writes nothing.
+ * an insert after it goes first, or after the stored paragraph; deleting it writes nothing. The
+ * result's `renamed` maps each placeholder written into to its fresh id: a caller that goes on
+ * addressing the paragraph (a later call, a result that lists it) must follow it there.
  */
 export function applyOps(
   docs: RoomDocs,
@@ -240,5 +247,9 @@ export function applyOps(
   for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
 
   const structure = commitStructure(docs, before, options);
-  return { ok: true, changes: [...(structure ? [structure] : []), ...changes.values()] };
+  return {
+    ok: true,
+    changes: [...(structure ? [structure] : []), ...changes.values()],
+    renamed: stored,
+  };
 }

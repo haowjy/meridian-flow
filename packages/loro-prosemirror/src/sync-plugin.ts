@@ -68,6 +68,8 @@ export interface LoroSyncState {
 export const REMOTE_META = "remote";
 /** Meta on a remote transaction: the blocks its read kept. */
 const KEPT_META = "loro-kept";
+/** Meta on a local transaction: each placeholder id it stored, with the fresh id it took. */
+const STORED_META = "loro-stored";
 const NONE: ReadonlySet<BlockId> = new Set();
 
 /**
@@ -96,8 +98,10 @@ const NONE: ReadonlySet<BlockId> = new Set();
  * The empty paragraph an empty container shows (`<container>/empty`) is a placeholder no block is
  * stored under (design §1). A local transaction that leaves a node with such an id anywhere but as
  * its parent's one empty paragraph (typing into it, Enter, a retype, an unwrap moving it out)
- * gives that node a fresh id in the same transaction, before the write. The plugin filters after
- * the editor's block-id fixer, so it reads the ids the fixer gave.
+ * gives that node a fresh id in the same transaction, before the write; either order of this
+ * filter and the editor's block-id fixer holds, since the fixer never gives a placeholder id. Typing
+ * into the placeholder stays typing for the history (`typingOf`'s `stores`): the write stores the
+ * paragraph, and the burst it starts is one Undo step.
  */
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs, history } = options;
@@ -128,6 +132,8 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           const message = options.messageOf?.(tr);
           const recorded = tr.getMeta("addToHistory") !== false;
           const typing = typingOf(docs, oldState, newState, tr);
+          // Typing into an empty paragraph stores it: typing for the history, a full write.
+          const fast = typing && !typing.stores ? typing : null;
           // One read of the structure, if anything takes it, serves the history and the write.
           let view: StructureView | undefined;
           const read = () => {
@@ -136,11 +142,15 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           };
           // Typing joins the open Undo step; any other write starts one (design §2).
           if (recorded)
-            history?.beforeWrite(oldState, typing !== null, kept.size === 0 ? read : undefined);
+            history?.beforeWrite(
+              oldState,
+              { joins: typing !== null, structure: fast === null },
+              kept.size === 0 ? read : undefined,
+            );
           else history?.endStep();
           const origin = recorded ? tracked : UNTRACKED_ORIGIN;
-          const changes = typing
-            ? writeTyping(docs, typing, origin, message)
+          const changes = fast
+            ? writeTyping(docs, fast, origin, message)
             : writeProseMirror(docs, newState.doc, {
                 origin,
                 message,
@@ -255,7 +265,7 @@ function rangeOf(step: Transaction["steps"][number]): { from: number; to: number
  * is too, and typing elsewhere costs the depth of the block it types in.
  */
 function storePlaceholders(tr: Transaction, newBlockId: () => BlockId): void {
-  const stale = new Set<number>();
+  const stale = new Map<number, BlockId>();
   tr.steps.forEach((step, i) => {
     const range = rangeOf(step);
     if (!range) return;
@@ -266,21 +276,38 @@ function storePlaceholders(tr: Transaction, newBlockId: () => BlockId): void {
       const id = node.attrs.id;
       if (typeof id === "string" && emptyParagraphOf(id) !== undefined && parent) {
         const under = parent === tr.doc ? null : (parent.attrs.id as BlockId);
-        if (parent.childCount !== 1 || !isDerivedEmpty(blockOf(node), under)) stale.add(pos);
+        if (parent.childCount !== 1 || !isDerivedEmpty(blockOf(node), under)) stale.set(pos, id);
       }
       return !node.isTextblock;
     });
   });
-  for (const pos of stale) tr.setNodeAttribute(pos, "id", newBlockId());
+  if (stale.size === 0) return;
+  const stored = new Map<BlockId, BlockId>();
+  for (const [pos, id] of stale) {
+    const fresh = newBlockId();
+    stored.set(id, fresh);
+    tr.setNodeAttribute(pos, "id", fresh);
+  }
+  tr.setMeta(STORED_META, stored);
 }
 
-/** Typing: one replace step of inline content inside one textblock. */
-type Typing = { id: string; rule: NodeRule; from: number; to: number; content: Fragment };
+/**
+ * Typing: one replace step of inline content inside one textblock. `stores`: the block was an
+ * empty paragraph's placeholder, which the transaction stores under `id` (`storePlaceholders`).
+ */
+type Typing = {
+  id: string;
+  rule: NodeRule;
+  from: number;
+  to: number;
+  content: Fragment;
+  stores: boolean;
+};
 
 /**
- * The text fast path: one replace step of inline content inside one textblock, written with
- * `replaceText` into that block's text doc alone (so typing inside bold is one op). Null when the
- * transaction needs the full write.
+ * Typing: one replace step of inline content inside one textblock, besides the steps that store
+ * placeholders. Without those it is the text fast path, written with `replaceText` into that
+ * block's text doc alone (so typing inside bold is one op). Null when the transaction is not.
  */
 function typingOf(
   docs: RoomDocs,
@@ -288,7 +315,8 @@ function typingOf(
   newState: EditorState,
   tr: Transaction,
 ): Typing | null {
-  if (tr.steps.length !== 1) return null;
+  const stored = tr.getMeta(STORED_META) as ReadonlyMap<BlockId, BlockId> | undefined;
+  if (tr.steps.length !== 1 + (stored?.size ?? 0)) return null;
   const step = tr.steps[0].toJSON() as { stepType?: string; from?: number; to?: number };
   if (step.stepType !== "replace" || step.from === undefined || step.to === undefined) return null;
   const slice = (tr.steps[0] as unknown as { slice: Slice }).slice;
@@ -296,12 +324,13 @@ function typingOf(
   const $from = oldState.doc.resolve(step.from);
   const $after = newState.doc.resolve(step.from);
   const block = $from.parent;
-  const id = block.attrs.id;
+  const was = block.attrs.id;
   const rule = docs.shape.node(block.type.name);
+  if (!block.isTextblock || !rule || typeof was !== "string") return null;
+  const id = stored?.get(was) ?? was;
+  // Any other placeholder the transaction stored makes it more than typing.
+  if (stored && (stored.size !== 1 || id === was)) return null;
   if (
-    !block.isTextblock ||
-    !rule ||
-    typeof id !== "string" ||
     step.to > $from.end() ||
     $after.parent.attrs.id !== id ||
     $after.parent.type !== block.type ||
@@ -310,7 +339,14 @@ function typingOf(
   )
     return null;
   const from = $from.parentOffset;
-  return { id, rule, from, to: from + step.to - step.from, content: slice.content };
+  return {
+    id,
+    rule,
+    from,
+    to: from + step.to - step.from,
+    content: slice.content,
+    stores: id !== was,
+  };
 }
 
 function writeTyping(
@@ -331,8 +367,10 @@ function writeTyping(
   return [{ key: id, doc, before, after: doc.frontiers() }];
 }
 
+/** Whether two nodes' attributes match, their ids aside. */
 function sameAttrs(a: Node, b: Node): boolean {
-  for (const key of Object.keys(a.attrs)) if (a.attrs[key] !== b.attrs[key]) return false;
+  for (const key of Object.keys(a.attrs))
+    if (key !== "id" && a.attrs[key] !== b.attrs[key]) return false;
   return true;
 }
 

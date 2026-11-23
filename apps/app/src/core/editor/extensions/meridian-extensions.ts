@@ -7,7 +7,15 @@
  * surface; consumed by the editor `config`.
  */
 import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
-import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
+import {
+  getAttributesFromExtensions,
+  getRenderedAttributes,
+  isiOS,
+  isMacOS,
+  type KeyboardShortcutCommand,
+  mergeAttributes,
+  Node,
+} from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -190,6 +198,10 @@ export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
+/** A level the binding read from the room may be anything; only a real one makes a heading. */
+const paragraphTag = (node: ProseMirrorNode) =>
+  HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
+
 /**
  * A heading is a paragraph with a `level` (null is body text). One node name
  * means retyping a block edits its block in place instead of rebuilding
@@ -215,9 +227,40 @@ export const MeridianParagraph = Paragraph.extend({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    // A level the binding read from the room may be anything; only a real one makes a heading.
-    const tag = HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
-    return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+    return [paragraphTag(node), mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+  },
+
+  // ProseMirror rebuilds a node whose attributes change. A new id (the binding storing an empty
+  // paragraph on its first keystroke, the block-id fixer) would replace the element holding an
+  // open IME composition, and the browser commits its raw keys as a stray letter. This view keeps
+  // the element and sets the attributes in place; only a change of tag (a level) rebuilds it.
+  addNodeView() {
+    let attributes: ReturnType<typeof getAttributesFromExtensions> | undefined;
+    const rendered = (node: ProseMirrorNode) => {
+      attributes ??= getAttributesFromExtensions(this.editor.extensionManager.extensions);
+      return mergeAttributes(this.options.HTMLAttributes, getRenderedAttributes(node, attributes));
+    };
+    return ({ node }) => {
+      const tag = paragraphTag(node);
+      const dom = document.createElement(tag);
+      let shown: Record<string, unknown> = {};
+      const show = (next: Record<string, unknown>) => {
+        for (const name of Object.keys(shown)) if (!(name in next)) dom.removeAttribute(name);
+        for (const [name, value] of Object.entries(next))
+          if (value != null && value !== shown[name]) dom.setAttribute(name, String(value));
+        shown = next;
+      };
+      show(rendered(node));
+      return {
+        dom,
+        contentDOM: dom,
+        update: (next) => {
+          if (next.type !== node.type || paragraphTag(next) !== tag) return false;
+          show(rendered(next));
+          return true;
+        },
+      };
+    };
   },
 
   addCommands() {

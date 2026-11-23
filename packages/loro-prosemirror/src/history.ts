@@ -67,7 +67,9 @@ export interface HistoryRun {
  * drop one item, so the managers of its text docs start again empty, and every step with an item
  * in one of them leaves the history too, as does every step that set one of its keys, through
  * all they share. Ctrl+Z then goes on to the step before. A write that sets structure is a step
- * of its own, so typing either side of an Enter is not kept with it.
+ * of its own, so typing either side of an Enter is not kept with it; the one exception is typing
+ * into an empty paragraph, whose structure write only stores the paragraph (design §1): it joins
+ * as typing, so the burst it starts is one step.
  *
  * Every tracked write goes `beforeWrite` → the write's commits → `record` (the binding's plugin
  * does this). A manager is created when the doc is first written (`RoomDocs.beforeTextWrite`);
@@ -86,6 +88,8 @@ export class UndoHistory {
   /** The cursors the last push handed to Loro: still ours to free. */
   private pushed: Cursor[] = [];
   private ids = 0;
+  /** Whether the write `beforeWrite` announced joins as typing: it leaves the step open. */
+  private joining = false;
   private readonly now: () => number;
   private readonly stopWatching: () => void;
   private readonly stopImports: () => void;
@@ -107,13 +111,19 @@ export class UndoHistory {
 
   /**
    * A tracked write is about to run from `state`. Typing (`joins`) joins the open step when it
-   * comes soon after the last write; any other write starts a step, whose selection is `state`'s,
-   * taken as cursors before the write so a restored deletion brings the selection back over it.
-   * Any other write may change the structure, so the last steps' notes are taken first, from
-   * `read` (the docs' structure as they are now, which the write reads too) when given.
+   * comes soon after the last write, and leaves it open; any other write starts a step, whose
+   * selection is `state`'s, taken as cursors before the write so a restored deletion brings the
+   * selection back over it, and closes it. A write that may change the structure (`structure`)
+   * takes the last steps' notes first, from `read` (the docs' structure as they are now, which the
+   * write reads too) when given.
    */
-  beforeWrite(state: EditorState, joins: boolean, read?: () => StructureView): void {
-    if (!joins) this.note(read);
+  beforeWrite(
+    state: EditorState,
+    { joins, structure }: { joins: boolean; structure: boolean },
+    read?: () => StructureView,
+  ): void {
+    if (structure) this.note(read);
+    this.joining = joins;
     const now = this.now();
     let step = this.open;
     if (!step || !joins || now - step.at >= GROUP_MS) {
@@ -164,7 +174,7 @@ export class UndoHistory {
     }
     step.at = this.now();
     this.unnoted.add(step);
-    if (edit.values.size > 0) this.endStep();
+    if (edit.values.size > 0 && !this.joining) this.endStep();
   }
 
   /** The next write starts its own step. */

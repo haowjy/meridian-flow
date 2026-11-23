@@ -4,6 +4,7 @@ import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
+  emptyParagraphOf,
   normalizeInline,
   readInline,
   shownUnits,
@@ -285,6 +286,10 @@ export function writeDocument(
         continue;
       }
       take(block.id);
+      // Only a row stored before the placeholder rule may hold one (design §1); a new one is a
+      // caller that skipped giving the paragraph a fresh id.
+      if (emptyParagraphOf(block.id) !== undefined && read().node(block.id) === undefined)
+        throw new Error(`block id ${block.id} is a placeholder, never stored`);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
         structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);

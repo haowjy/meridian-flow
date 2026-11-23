@@ -21,8 +21,10 @@ What it covers:
 - `read` with `format: "edits"` lists the chat's writes by handle.
 - Another chat's change is named by its chat (`authorOfTurn`), and a block the writer removed is
   listed as removed.
-- A write into an emptied document (the unstored `/empty` paragraph) lands, and `create` writes a
-  new document.
+- Writes into an emptied document (the unstored `/empty` paragraph) land: a replace with one
+  paragraph or three, and an insert after it. The result lists what was written: the paragraph's
+  ref follows the fresh id `applyOps` stores it under (`renamed`). Then `create` writes a new
+  document.
 - After the writer's turn Undo restores text the chat last saw replaced, an exact `find` of the
   restored text lands, though the chat's view still holds its own words there.
 - A read whose frontiers are below the history cutoff (the host's `compact`) plans on the

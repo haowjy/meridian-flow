@@ -16,9 +16,14 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
 - Every block the editor hands the binding has a unique `id`. The app's block-id fixer gives a
   split or a paste its ids inside the same transaction; the binding throws on a missing or
   duplicate id rather than inventing one. The one id the binding changes is an empty container's
-  placeholder `<container>/empty`: its `filterTransaction`, after the fixer's, gives a node holding
-  one a fresh id (`newBlockId`, from the caller) once it is anything but that container's one
-  empty paragraph, so the docs never store a placeholder id.
+  placeholder `<container>/empty`: its `filterTransaction` gives a node holding one a fresh id
+  (`newBlockId`, from the caller) once it is anything but that container's one empty paragraph,
+  so the docs never store a placeholder id (`writeDocument` throws if one would be). It runs
+  before or after the fixer's filter alike: the fixer never gives a placeholder id, and a renamed
+  node is unclaimed by any other. Typing into a placeholder is still typing for the history: the
+  write stores the paragraph, and the burst stays one Undo step. An editor whose node view rebuilds
+  a textblock on any attribute change breaks an IME composition at that rename: the app's
+  paragraph view keeps its element.
 - Two comments on the same text are two style keys, `comment_<id>`; `marksOf` orders marks the
   same on every peer.
 - Typing (one replace of inline content inside one textblock) goes through `replaceText` on that

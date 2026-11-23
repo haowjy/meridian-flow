@@ -289,11 +289,12 @@ function run(seed: number): string | null {
   const sinceRedo = { A: new Set<string>(), B: new Set<string>() };
   /**
    * Each typed word the editor shows (its caret's kept blocks too: the writer sees them), with the
-   * marks any of its characters carry and how often it shows (a Join's copy shows it twice).
+   * marks any of its characters carry; and each place it shows, by block and occurrence in it
+   * (a split undone leaves a copy of the words in two blocks), with that place's marks.
    */
   const wordMarks = (e: Editor) => {
     const out = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const placed = new Map<string, Set<string>>();
     e.view.state.doc.descendants((node) => {
       if (!node.isTextblock) return true;
       let text = "";
@@ -304,15 +305,19 @@ function run(seed: number): string | null {
         const names = child.marks.map((mark) => mark.type.name).filter((name) => name !== "comment");
         for (let k = 0; k < piece.length; k++) marks.push(names);
       });
+      const seen = new Map<string, number>();
       for (const match of text.matchAll(/q[AB]\d+/g)) {
-        const set = out.get(match[0]) ?? new Set<string>();
-        for (let k = match.index; k < match.index + match[0].length; k++) for (const name of marks[k]) set.add(name);
-        out.set(match[0], set);
-        counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
+        const word = match[0];
+        const here = new Set<string>();
+        for (let k = match.index; k < match.index + word.length; k++) for (const name of marks[k]) here.add(name);
+        out.set(word, new Set([...(out.get(word) ?? []), ...here]));
+        const nth = seen.get(word) ?? 0;
+        seen.set(word, nth + 1);
+        placed.set(`${node.attrs.id}\u0000${word}\u0000${nth}`, here);
       }
       return false;
     });
-    return { marks: out, counts };
+    return { marks: out, placed };
   };
   /** Who changed a word on a screen: the editor's own edit, a peer's, both merged, or a Ctrl+Z. */
   type Source = "own" | "peer" | "merge" | "run";
@@ -329,35 +334,36 @@ function run(seed: number): string | null {
    */
   const observe = (e: Editor, source: Source, peer?: Editor) => {
     const screen = screens.get(e.name) ?? {
-      words: { marks: new Map(), counts: new Map() },
+      words: { marks: new Map(), placed: new Map() },
       left: new Map(),
       marked: new Map(),
     };
     screens.set(e.name, screen);
     const now = wordMarks(e);
-    const theirs = peer && wordMarks(peer).marks;
+    const peerSees = peer && wordMarks(peer);
+    const theirs = peerSees?.marks;
     const what = `${e.name}'s ${source === "run" ? "Undo or Redo" : source}`;
     for (const word of screen.words.marks.keys())
       if (!now.marks.has(word)) screen.left.set(word, theirs?.has(word) ? "merge" : source);
-    for (const [word, marks] of now.marks) {
-      const was = screen.words.marks.get(word);
-      if (!was) {
-        if (source === "run" && screen.left.get(word) === "peer")
-          throw new Bad(`${what} brought back ${word}, which a peer deleted`);
-        screen.left.delete(word);
-        continue;
-      }
-      // A copy coming or going changes which marks show without anyone marking, and a word in two
-      // places shows the union of their marks, which no one edit owns (seed 1098 at 200 400 900:
-      // a peer unbolds one copy of a Join's, then A's Undo rebolds the other, its own).
-      const count = now.counts.get(word);
-      if (count !== screen.words.counts.get(word) || count !== 1) continue;
+    for (const word of now.marks.keys()) {
+      if (screen.words.marks.has(word)) continue;
+      if (source === "run" && screen.left.get(word) === "peer")
+        throw new Bad(`${what} brought back ${word}, which a peer deleted`);
+      screen.left.delete(word);
+    }
+    // Marks are judged per place, not per word: a word in two places (seed 1098 at 200 400 900,
+    // a split undone) shows each place's own marks, and a peer unbolding one place says nothing
+    // about A's Undo rebolding the other. A place coming or going is no one marking.
+    for (const [place, marks] of now.placed) {
+      const was = screen.words.placed.get(place);
+      if (!was) continue;
+      const word = place.split("\u0000")[1];
       for (const name of new Set([...was, ...marks])) {
         if (was.has(name) === marks.has(name)) continue;
-        if (source === "run" && screen.marked.get(`${word}\u0000${name}`) === "peer")
+        if (source === "run" && screen.marked.get(`${place}\u0000${name}`) === "peer")
           throw new Bad(`${what} turned ${name} ${marks.has(name) ? "on" : "off"} on ${word}, which a peer set`);
-        const same = theirs && theirs.get(word)?.has(name) === marks.has(name);
-        screen.marked.set(`${word}\u0000${name}`, theirs && !same ? "merge" : source);
+        const same = peerSees && peerSees.placed.get(place)?.has(name) === marks.has(name);
+        screen.marked.set(`${place}\u0000${name}`, peerSees && !same ? "merge" : source);
       }
     }
     screen.words = now;
@@ -1036,8 +1042,8 @@ function racedRemovals(): string[] {
     },
     // B empties c to its placeholder, removing the paragraph A typed in, while A's caret is in
     // it. A's typing into the placeholder afterwards is a new paragraph: the removed one's words
-    // never show in it. A's Ctrl+Z takes the typing back and then the first key, which stored the
-    // paragraph (a structure write ends its step): c shows its placeholder again.
+    // never show in it. Storing the paragraph is typing for the history, so one Ctrl+Z takes the
+    // whole burst back: c shows its placeholder again (review p19004).
     "typing in a container's placeholder after a peer emptied it": {
       room: () => room([p("a", "First."), schema.nodes.jsx_container.create({ id: "c", name: "Panel" }, [p("i", "Inner.")]), p("z", "Last.")]),
       run: (r) => {
@@ -1055,8 +1061,7 @@ function racedRemovals(): string[] {
         const typed = badIds(r, "emptied, typed") ?? settle(r, "emptied, typed", showsAll("First.|new|Last."), showsNone("old"));
         if (typed) return typed;
         runHistory(r.a, "undo");
-        runHistory(r.a, "undo");
-        const undone = settle(r, "emptied, A Undo", showsAll("First.||Last."));
+        const undone = settle(r, "emptied, A one Undo", showsAll("First.||Last."));
         if (undone) return undone;
         return firstIn(r.a, "c") === "c/empty" ? null : `emptied, A Undo: c shows ${firstIn(r.a, "c")} "${shown(r.a)}", wanted its placeholder`;
       },
