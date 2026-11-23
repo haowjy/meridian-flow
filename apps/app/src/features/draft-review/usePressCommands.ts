@@ -17,8 +17,9 @@ import type {
   DraftItemsResponse,
   PressResult,
   PressScope,
+  PressUndoResult,
 } from "@meridian/contracts/drafts";
-import type { TreeListRef } from "@meridian/contracts/protocol";
+import type { Thread, TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
@@ -53,6 +54,7 @@ import {
   type PressPort,
   type Seat,
 } from "./press-history";
+import { stayedLabel } from "./stayed-words";
 import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
@@ -151,7 +153,10 @@ export function usePressCommands({
     });
 
     /** A press's Undo: the server takes back what that press did, and nothing else. */
-    const unpress = async (commandId: string, lane: string): Promise<"done" | Unpressed> => {
+    const unpress = async (
+      commandId: string,
+      lane: string,
+    ): Promise<PressUndoResult | Unpressed> => {
       if (!driver) return "failed";
       const record = await submitPressUndo(driver, lane, {
         projectId,
@@ -160,7 +165,48 @@ export function usePressCommands({
       if (!record) return "told";
       const settled = await driver.whenSettled(record.id);
       await refresh();
-      return settled?.state === "done" ? "done" : "failed";
+      return settled?.state === "done" && settled.outcome?.status === "done"
+        ? (settled.outcome.result as PressUndoResult)
+        : "failed";
+    };
+
+    /** A chat's title by its ref (`c12`), from the project's chats as this tab last read them. */
+    const chatTitle = (ref: string) =>
+      queryClient
+        .getQueryData<Thread[]>(projectQueryKeys.threads(projectId))
+        ?.find((thread) => thread.ref === ref)?.title ?? null;
+
+    /**
+     * What an Undo left in place (`PressUndoResult.stayed`): marked in each editor showing its
+     * document, and said on the surface's rows until the next press.
+     */
+    const showStayed = (
+      stayed: PressUndoResult["stayed"],
+      names: ReadonlyMap<string, string>,
+      noticeKey: string,
+      where: NoticeSurface,
+    ) => {
+      if (stayed.length === 0) return;
+      const kept = stayed.map((change) => ({
+        documentId: change.documentId,
+        change: change.change,
+        name: names.get(change.documentId) ?? nameOf(change.documentId),
+        label: stayedLabel(change.by, chatTitle),
+      }));
+      for (const documentId of new Set(kept.map((fact) => fact.documentId))) {
+        const labels = new Map(
+          kept.flatMap((fact) =>
+            fact.documentId === documentId ? [[fact.change, fact.label]] : [],
+          ),
+        );
+        for (const history of editorsOf([documentId])) history.showStayed(labels);
+      }
+      notices.showStayed({
+        projectId,
+        draftId: noticeKey,
+        surface: where,
+        kept: kept.map(({ documentId, name, label }) => ({ documentId, name, label })),
+      });
     };
 
     /**
@@ -239,9 +285,12 @@ export function usePressCommands({
       verdict: Verdict,
       pressed: Pressed,
       editor: EditorPressStep,
+      shown: { noticeKey: string; where: NoticeSurface; names: ReadonlyMap<string, string> },
       dropped: () => void,
     ): PressEntries => {
       const taken = pressed.took;
+      // What the Undo that ends this press left in place, said once it has ended.
+      let stayed: PressUndoResult["stayed"] = [];
       const { seat, place } = seatOf(taken, async () => (await entries.undo()).kind !== "failed");
       place(pressed.placement);
       const port: PressPort = {
@@ -250,8 +299,9 @@ export function usePressCommands({
           // the draft's plain page, where it is a draft's document again.
           const main = presented?.mainDocumentId(projectId);
           const answer = await unpress(commandId, pressed.lane);
-          if (answer !== "done")
+          if (typeof answer === "string")
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
+          stayed = answer.stayed;
           const created = rows().find((row) => row.documentId === main && row.isNew);
           if (verdict === "apply" && created && main && taken.includes(main))
             for (const file of projectWorkDraftFiles([created], null))
@@ -268,6 +318,7 @@ export function usePressCommands({
             seat.drop();
             editor.drop();
             dropped();
+            showStayed(stayed, shown.names, shown.noticeKey, shown.where);
           },
         },
         () => owner.presses.delete(entries),
@@ -427,7 +478,7 @@ export function usePressCommands({
         const where = noticeSurface(input.documentId);
         let step: PressEntries;
         if (verdict === "apply") {
-          step = remember("apply", pressed, editor, () => {
+          step = remember("apply", pressed, editor, { noticeKey, where, names }, () => {
             if (notices.appliedFacts(noticeKey)?.facts.some((fact) => fact.step === step))
               notices.end(noticeKey);
           });
@@ -444,7 +495,7 @@ export function usePressCommands({
           });
         } else {
           let shown: number | null = null;
-          step = remember("discard", pressed, editor, () => {
+          step = remember("discard", pressed, editor, { noticeKey, where, names }, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
             const notice = notices.get(noticeKey);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")

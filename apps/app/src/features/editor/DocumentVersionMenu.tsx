@@ -112,13 +112,13 @@ export function DocumentVersionMenu({
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
   if (showing === "live" && drafts.length === 0) return null;
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
+  // One of the picked Work's drafts is named by its own name, when the Work has several.
+  const workDraft = menu?.drafts.find((draft) => draft.key === shown?.draftId);
+  const named = menu && menu.drafts.length > 1 ? workDraft?.name : undefined;
   const outOfScope =
-    shown && paint?.outOfScope ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`) : null;
-  // Among several of the Work's drafts the chip names the one on screen.
-  const named =
-    menu && menu.drafts.length > 1
-      ? menu.drafts.find((draft) => draft.key === shown?.draftId)?.name
-      : undefined;
+    shown && paint?.outOfScope && !workDraft
+      ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`)
+      : null;
 
   return (
     <DraftSwitcher
