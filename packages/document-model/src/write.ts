@@ -299,6 +299,46 @@ export function writeDocument(
   const random = options.random ?? Math.random;
   const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
+  const textRules = (block: ShapeBlock) => {
+    const rule = shape.node(block.node);
+    if (!rule) throw new Error(`unknown node ${block.node}`);
+    return { rule, shape, visibleComment };
+  };
+  const blocksById = new Map<BlockId, ShapeBlock>();
+  const collect = (list: readonly ShapeBlock[]) => {
+    for (const block of list) {
+      blocksById.set(block.id, block);
+      if (block.kind === "container") collect(block.children);
+    }
+  };
+  collect(blocks);
+  const rememberSourceOps = (id: BlockId, change: DocChange | null) => {
+    if (!change) return;
+    for (const move of prepared) {
+      if (move.from !== id) continue;
+      const next = deleteOpsFor(
+        change.doc,
+        change.before,
+        change.after,
+        new Set(
+          move.for.flatMap(([peer, counter, length]) =>
+            Array.from({ length }, (_, i) => `${counter + i}@${peer}`),
+          ),
+        ),
+      );
+      for (const peer of Object.keys(move.ops)) delete move.ops[peer];
+      Object.assign(move.ops, next);
+    }
+  };
+  // A destination can precede its source in the document (notably a join). Write source deletes
+  // first so the destination commit can name the exact source ops even in that order.
+  for (const source of new Set(prepared.map((move) => move.from))) {
+    const block = blocksById.get(source);
+    if (!block || block.kind === "container") continue;
+    const change = writeText(docs, source, block.inline, textRules(block), options);
+    if (change) changes.push(change);
+    rememberSourceOps(source, change);
+  }
   const written = new Set<BlockId>();
   const take = (id: BlockId) => {
     if (written.has(id)) throw new Error(`block id ${id} appears twice`);
@@ -347,30 +387,18 @@ export function writeDocument(
         structure().block(block.id, parent, block.node, block.attrs, blockMoved);
       if (block.kind === "container") walk(block.children, block.id);
       else {
-        const rule = shape.node(block.node);
-        if (!rule) throw new Error(`unknown node ${block.node}`);
+        const rules = textRules(block);
         const copy = copyFor(block.id, prepared, options);
         const change = writeText(
           docs,
           block.id,
           block.inline,
-          { rule, shape, visibleComment },
+          rules,
           copy ? { ...options, copy } : options,
         );
         if (change) {
           changes.push(change);
-          for (const move of prepared)
-            if (move.from === block.id)
-              move.ops = deleteOpsFor(
-                change.doc,
-                change.before,
-                change.after,
-                new Set(
-                  move.for.flatMap(([peer, counter, length]) =>
-                    Array.from({ length }, (_, i) => `${counter + i}@${peer}`),
-                  ),
-                ),
-              );
+          rememberSourceOps(block.id, change);
         }
       }
     }

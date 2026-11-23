@@ -68,6 +68,7 @@ export {
   restore,
   UNTRACKED_ORIGIN,
 } from "./removals.js";
+export { answerRoomCopies } from "./room-copies.js";
 export {
   CorruptDocBytesError,
   HistoryCutoffError,

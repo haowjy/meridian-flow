@@ -3,6 +3,7 @@ import { forwardText, oneCopy } from "./copies.js";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
+import { answerRoomCopies } from "./room-copies.js";
 import {
   type BlockId,
   configureDoc,
@@ -418,6 +419,7 @@ export class RoomDocs {
     }
     const restore = this.answer(before, changed);
     if (restore) answers.unshift(restore);
+    answers.push(...answerRoomCopies(this));
     return { changed, pending, restore, answers };
   }
 
@@ -451,6 +453,7 @@ export class RoomDocs {
       if (result.imported) changed.push(id);
       answers.push(...result.changes);
     }
+    answers.push(...answerRoomCopies(this));
     return { changed, pending: false, restore, answers };
   }
 

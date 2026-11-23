@@ -372,6 +372,7 @@ export function applyBlocks(
   // Live's version of each doc the import below writes, before it: empty for a doc Live lacks.
   const held = new Map<DocKey, DocVersion>();
   const batch = new Map<DocKey, Uint8Array>();
+  let importedAnswers: DocChange[] = [];
   for (const id of blocks) {
     const text = draft.texts.get(id);
     if (!text) continue;
@@ -387,7 +388,11 @@ export function applyBlocks(
   }
   if (batch.size > 0) {
     const imported = live.importBatch(batch);
-    result.live.push(...imported.answers);
+    // The imported span must precede an answer on the same text doc. `encodeChanges` uses the
+    // first change for a key as its frontier, and an answer alone would omit the dependency it
+    // deletes against.
+    importedAnswers = imported.answers;
+    result.live.push(...importedAnswers.filter((change) => change.key === STRUCTURE_KEY));
   }
   const liveTexts = new Map<DocKey, TextSpan>();
   for (const key of batch.keys()) {
@@ -398,6 +403,7 @@ export function applyBlocks(
     result.live.push(change);
     liveTexts.set(key, spanOf(change));
   }
+  result.live.push(...importedAnswers.filter((change) => change.key !== STRUCTURE_KEY));
 
   // What the removal read of one text doc: what the writer was shown of Live, capped at what Live held before
   // the press, plus the draft's own ops the press brings, which every peer receiving the press
