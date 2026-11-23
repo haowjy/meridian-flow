@@ -74,8 +74,11 @@ synchronously, then drains transports and leases.
   Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
   decorations map through the typing in between: reading on every key costs more than a key may.
   The host turns it on and off with `setReviewChanges`; a plugin's config change needs a reload in
-  dev, since HMR keeps the plugin instance. `KeptRemovedExtension` marks a block another device
-  deleted that the binding keeps while the caret is in it (`loroSyncKey` state `kept`).
+  dev, since HMR keeps the plugin instance. `KeptExtension` is the one quiet mark on text kept in
+  place: a block someone deleted that the binding keeps while the caret is in it (`loroSyncKey`
+  state `kept`), and for 4 s each edit an Undo or Redo left because it was written over
+  (`HistoryRun.kept`, `showKept`), naming the writer when their copy's presence says who. The press
+  Undo's stayed rows (second round) are to go through `showKept` too.
 - Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other

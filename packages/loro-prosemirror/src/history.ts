@@ -14,7 +14,7 @@ import {
   UNTRACKED_ORIGIN,
   valuesOf,
 } from "@meridian/document-model";
-import { Cursor, type LoroDoc, UndoManager } from "loro-crdt";
+import { Cursor, type LoroDoc, type PeerID, UndoManager } from "loro-crdt";
 import type { EditorState } from "prosemirror-state";
 import { type SelectionCursors, selectionCursors } from "./cursors.js";
 
@@ -56,7 +56,12 @@ export interface HistoryRun {
   changes: DocChange[];
   selection: SelectionCursors | null;
   stayed: number;
+  /** The edits found written over, which stay where they are: their blocks, and who wrote last. */
+  kept: KeptEdit[];
 }
+
+/** An edit Undo or Redo left in place: the text blocks it touched, and another writer there, if any. */
+export type KeptEdit = { blocks: DocKey[]; by: PeerID | null };
 
 /**
  * The editor's Ctrl+Z over a copy (design §6, "Ctrl+Z is Loro's, grouped by us"). Text is undone
@@ -281,12 +286,13 @@ export class UndoHistory {
     };
     this.note(read);
     let stayed = 0;
+    const kept: KeptEdit[] = [];
     for (let step = from.pop(); step; step = from.pop()) {
       if (step.outside) {
         if (direction === "undo") step.outside.undo();
         else step.outside.redo();
         to.push(step);
-        return { changes: [], selection: null, stayed };
+        return { changes: [], selection: null, stayed, kept };
       }
       const top = (key: DocKey) => {
         const manager = this.watched.get(key)?.manager;
@@ -295,6 +301,7 @@ export class UndoHistory {
           | undefined;
       };
       if (editStays(this.docs, step.edit, step.edit.values.size > 0 ? read() : undefined)) {
+        kept.push(this.keptOf(step));
         stayed += this.drop(step);
         continue;
       }
@@ -337,9 +344,22 @@ export class UndoHistory {
       const selection = this.restored(step.selection);
       step.selection = now;
       to.push(step);
-      return { changes, selection, stayed };
+      return { changes, selection, stayed, kept };
     }
-    return { changes: [], selection: null, stayed };
+    return { changes: [], selection: null, stayed, kept };
+  }
+
+  /** Where a step that stays is, and the last other writer found in its text since it ran. */
+  private keptOf({ edit }: Step): KeptEdit {
+    let by: PeerID | null = null;
+    for (const [key, { after }] of edit.texts) {
+      const doc = this.docs.textOf(key);
+      if (!doc) continue;
+      const then = doc.frontiersToVV(after).toJSON();
+      for (const [peer, counter] of doc.version().toJSON())
+        if (peer !== edit.peer && counter > (then.get(peer) ?? 0)) by = peer;
+    }
+    return { blocks: [...edit.texts.keys()], by };
   }
 
   /** Take the note of every step written or run since the last import (`unnoted`). */

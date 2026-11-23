@@ -17,6 +17,7 @@ import {
 } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection } from "@tiptap/pm/state";
+import { showKept } from "./extensions/KeptExtension";
 
 const HISTORY_META = "meridian-editor-history";
 
@@ -133,6 +134,7 @@ export class DocumentHistory {
             .scrollIntoView(),
         );
     }
+    if (ran?.kept.length) showKept(editor.view, ran.kept);
     this.changed();
     return ran;
   }

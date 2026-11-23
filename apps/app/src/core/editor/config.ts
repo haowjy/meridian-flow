@@ -23,7 +23,7 @@ import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extens
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
 import { CommentMark } from "./extensions/CommentMark";
-import { KeptRemovedExtension } from "./extensions/KeptRemovedExtension";
+import { KeptExtension } from "./extensions/KeptExtension";
 import { LoroSyncExtension } from "./extensions/loro-sync";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
@@ -321,6 +321,8 @@ export function createEditorExtensions({
     // Mounted history records the binding's writes, so its key bindings mount with it
     // rather than in the standalone set.
     UndoRedoKeymapExtension.configure({ history }),
+    // Text kept in place: a paragraph deleted under the caret, an edit Undo left.
+    KeptExtension.configure({ presence }),
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
@@ -413,8 +415,6 @@ export function createStandaloneEditorExtensions({
     PassageHighlightExtension,
     // Review changes' paint on a draft page; inert until its host turns it on.
     ReviewChangesExtension,
-    // A paragraph another device deleted, kept while the caret is in it.
-    KeptRemovedExtension,
     // The one door a picture comes in through — picker, drop, pasted file,
     // pasted address — and the owner of the clipboard's asset translation,
     // which is why the markdown text parser is its prop rather than a
