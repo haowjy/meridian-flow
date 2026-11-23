@@ -3,24 +3,21 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
-import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import {
+  type OwnerDraftListStatus,
+  useDraftLists,
+  useOwnerDrafts,
+} from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { type GoneRow, withGone } from "@/components/app/RowWord";
+import { type GoneRow, type WithGone, withGone } from "@/components/app/RowWord";
 import { WorkName } from "@/components/app/WorkName";
 import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
+import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import {
   ApplyAllQuestion,
@@ -43,6 +40,7 @@ import {
   groupFiles,
   groupsOf,
   landingFaultSentence,
+  type WorkTreeChanges,
 } from "@/features/draft-review/tree-groups";
 import { hasApply } from "@/features/draft-review/tree-line";
 import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
@@ -53,12 +51,7 @@ import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
-import {
-  reviewCount,
-  useDraftTreeChanges,
-  useDraftTreeVersion,
-  useShellTreeVersion,
-} from "../../tree-version";
+import { reviewCount, useDraftsTreeChanges, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
 
@@ -144,16 +137,26 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }, [picked, work, draftId, workDrafts, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
-/** What one draft's section tells the tab's bar: what Discard all and Apply all would take. */
-type SectionState = {
+/**
+ * One draft's rows as the tab shows them, read in the tab so its bar acts on what is drawn: its
+ * folders and documents in the list's order, and the rows a press took that still say something.
+ */
+type DraftSection = {
+  draftId: string;
+  heading: string | null;
+  /** The draft's list as read; its `draftId` is null until it has come. */
+  list: OwnerDraftListStatus;
+  tree: WorkTreeChanges | null;
   /** Its rows' files, in the list's order. */
   files: readonly ReviewFileTarget[];
   /** The folder changes Apply all takes along: every one that can land. */
   folders: readonly { id: string; name: string }[];
-  /** A row a command took still shows. */
-  gone: boolean;
-  status: OwnerDraftListStatus["status"];
-  refetch: () => void;
+  /** The rows as drawn, folders folded away, before the gone ones go back in. */
+  items: readonly ChangeItem[];
+  /** Where each drawn row sits: its folder, or null at the top. */
+  folderOf: ReadonlyMap<string, string | null>;
+  /** An Apply the server is still running (a large Apply all). */
+  applying: boolean;
 };
 
 /**
@@ -193,26 +196,81 @@ export function ChangesSource({
   );
   const touch = useCoarsePointer();
   const several = scope.drafts.length > 1;
-  const [sections, setSections] = useState<ReadonlyMap<string, SectionState>>(() => new Map());
-  const report = useCallback((draftId: string, state: SectionState | null) => {
-    setSections((current) => {
-      const next = new Map(current);
-      if (state) next.set(draftId, state);
-      else next.delete(draftId);
+  const draftsKey = scope.drafts.map((draft) => draft.id).join();
+  const draftIds = useMemo(() => (draftsKey ? draftsKey.split(",") : []), [draftsKey]);
+  const lists = useDraftLists(projectId, draftIds);
+  const shell = useShellTreeVersion();
+  // The shown draft's tree changes are the shell's; the others' are replayed here.
+  const ownTree = shell?.draftId ?? null;
+  const replayedVersions = useMemo(
+    () => draftIds.filter((id) => id !== ownTree).map((id) => draftTreeVersion(id)),
+    [draftIds, ownTree],
+  );
+  const replayed = useDraftsTreeChanges(projectId, replayedVersions);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const fold = (draftId: string, folder: string) =>
+    setFolded((current) => {
+      const next = new Set(current);
+      const key = `${draftId}/${folder}`;
+      if (!next.delete(key)) next.add(key);
       return next;
     });
-  }, []);
-  // Each section holds its rows as the writer saw them, right before a press of everything.
-  const holds = useRef(new Map<string, () => void>());
-  const listed = scope.drafts.flatMap((draft) => {
-    const state = sections.get(draft.id);
-    return state ? [state] : [];
+  const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
+  const sections: DraftSection[] = scope.drafts.flatMap((draft) => {
+    const list = lists.get(draft.id);
+    if (!list) return [];
+    const tree = draft.id === ownTree ? (shell?.tree ?? null) : (replayed.get(draft.id) ?? null);
+    return [
+      draftSection({
+        draftId: draft.id,
+        heading: several ? draft.name : null,
+        list,
+        tree,
+        inFlight,
+        isApplying: (itemKey) => controller.owner.state(itemKey).applying,
+        folded: (folder) => folded.has(`${draft.id}/${folder}`),
+      }),
+    ];
   });
-  const files = listed.flatMap((state) => state.files);
-  const changedFolders = listed.flatMap((state) => state.folders);
+  const files = sections.flatMap((section) => section.files);
+  const changedFolders = sections.flatMap((section) => section.folders);
   // A folder changed alone lists no document, and is still a change to review.
   const hasFiles = files.length > 0 || changedFolders.length > 0;
-  const goneRows = listed.some((state) => state.gone);
+
+  const notice = useSurfaceNotice(controller.noticeKeys);
+  const words = useDraftNoticeWords(notice);
+  // One place for the tab's words: a word goes on the row that draws its node, in whichever
+  // section, else on the pane's heading. A row a press took stays drawn while a word speaks for it.
+  const drawnKey = sections
+    .map((section) => [...section.folderOf].map(([node, parent]) => `${node}>${parent}`).join())
+    .join("|");
+  const place = useMemo<NoticePlace>(() => {
+    const folderOf = new Map<string, string | null>();
+    for (const section of sections) {
+      for (const [node, parent] of section.folderOf)
+        if (!folderOf.has(node)) folderOf.set(node, parent);
+      for (const { key } of taken.get(section.draftId) ?? [])
+        if (!folderOf.has(key)) folderOf.set(key, null);
+    }
+    return {
+      holds: (node) => folderOf.has(node),
+      parent: (node) => folderOf.get(node) ?? null,
+      open: (folder) => !sections.some((section) => folded.has(`${section.draftId}/${folder}`)),
+    };
+    // `sections` is rebuilt every render; what it draws is in the keys below.
+  }, [drawnKey, folded, notice]);
+  const treeWords = useTreeNoticeWords(projectId, place);
+  const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
+  const shownOf = (section: DraftSection) =>
+    withGone(
+      section.items,
+      changeKey,
+      (taken.get(section.draftId) ?? []).filter(
+        (row) => words.held(row.key) || treeWords.word(row.key),
+      ),
+    );
+  const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
+  const goneRows = [...shown.values()].some((rows) => rows.some((row) => row.gone));
 
   /** What an Apply of several asks about first: the documents it deletes. */
   const [asking, setAsking] = useState<{
@@ -223,8 +281,21 @@ export function ChangesSource({
     if (hasFiles) return;
     setAsking(null);
   }, [hasFiles]);
+  // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
+  // saying so, while the notice speaks for it.
+  const holdSection = (section: DraftSection) => {
+    const keys = section.items.map(changeKey);
+    taken.set(
+      section.draftId,
+      section.items.map((item, at) => ({
+        key: item.key,
+        row: item,
+        after: keys.slice(0, at).reverse(),
+      })),
+    );
+  };
   const hold = () => {
-    for (const each of holds.current.values()) each();
+    for (const section of sections) holdSection(section);
   };
   const refsOf = (targets: readonly ReviewFileTarget[]) =>
     targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
@@ -255,23 +326,12 @@ export function ChangesSource({
         disabled: controller.dispositionLocked,
       }
     : null;
-  const notice = useSurfaceNotice(controller.noticeKeys);
-  // The pane's heading says what no section's row can: a node none of them draws.
-  const drawnNodes = new Set([
-    ...files.map((file) => file.documentId),
-    ...changedFolders.map((folder) => folder.id),
-  ]);
-  const treeWords = useTreeNoticeWords(projectId, {
-    holds: (node) => drawnNodes.has(node),
-    parent: () => null,
-    open: () => true,
-  });
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
   if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
-  const list = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useFocusSuccession(
-    list,
+    listRef,
     true,
     (element) =>
       noticeAction(element) ??
@@ -281,13 +341,13 @@ export function ChangesSource({
           )
         : null),
   );
-  const status = listed.some((state) => state.status === "loading")
+  const status = sections.some((section) => section.list.status === "loading")
     ? "loading"
-    : listed.find((state) => state.status === "error");
+    : sections.find((section) => section.list.status === "error")?.list;
   const [onlyFolder] = changedFolders;
 
   return (
-    <div ref={list} className="contents">
+    <div ref={listRef} className="contents">
       <SourcePane
         label={scope.heading}
         notice={treeWords.header}
@@ -328,19 +388,21 @@ export function ChangesSource({
           ) : null
         }
       >
-        {scope.drafts.map((draft) => (
+        {sections.map((section) => (
           <DraftChangesSection
-            key={draft.id}
+            key={section.draftId}
             projectId={projectId}
-            draftId={draft.id}
-            heading={several ? draft.name : null}
+            section={section}
+            shown={shown.get(section.draftId) ?? []}
             controller={controller}
             notice={notice}
+            wordOf={wordOf}
             touch={touch}
             isOpen={isOpen}
             onPicked={onPicked}
-            report={report}
-            holds={holds.current}
+            folded={(folder) => folded.has(`${section.draftId}/${folder}`)}
+            onFold={(folder) => fold(section.draftId, folder)}
+            onCommand={() => holdSection(section)}
           />
         ))}
         {hasFiles || goneRows ? null : status === "loading" ? (
@@ -355,7 +417,7 @@ export function ChangesSource({
             onRetry={status.refetch}
             actionLabel={t`Retry changes`}
           />
-        ) : listed.length < scope.drafts.length ? null : (
+        ) : sections.length < scope.drafts.length ? null : (
           <div className="px-2">
             <ListLine iconSlot>{scope.empty}</ListLine>
             {scope.elsewhere ? <ElsewhereLink projectId={projectId} {...scope.elsewhere} /> : null}
@@ -366,56 +428,31 @@ export function ChangesSource({
   );
 }
 
-/**
- * One draft's rows in the Changes tab, under its name when the tab lists several: its folders,
- * then its documents. It tells the tab what Discard all and Apply all would take of it
- * (`report`), and holds its rows as they were when one is pressed (`holds`).
- */
-function DraftChangesSection({
-  projectId,
+/** One draft's rows as the tab shows them (`DraftSection`). */
+function draftSection({
   draftId,
   heading,
-  controller,
-  notice,
-  touch,
-  isOpen,
-  onPicked,
-  report,
-  holds,
+  list,
+  tree,
+  inFlight,
+  isApplying,
+  folded,
 }: {
-  projectId: string;
   draftId: string;
   heading: string | null;
-  controller: WorkDraftCommands;
-  /** The tab's notice, said on the rows it took. */
-  notice: DraftNotice | null;
-  touch: boolean;
-  isOpen: (file: ReviewFileTarget) => boolean;
-  onPicked?: () => void;
-  report: (draftId: string, state: SectionState | null) => void;
-  holds: Map<string, () => void>;
-}) {
-  const drafts = useOwnerDrafts(projectId, draftId);
-  // A command in flight hides its row.
-  const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
-  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.item.itemKey));
-  const shell = useShellTreeVersion();
-  // The shown draft's tree changes are the shell's; another draft's are replayed here.
-  const own = shell?.draftId === draftId;
-  const replayed = useDraftTreeChanges(projectId, useDraftTreeVersion(own ? null : drafts.draftId));
-  const tree = own ? (shell?.tree ?? null) : replayed;
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
-  const fold = (id: string) =>
-    setFolded((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  list: OwnerDraftListStatus;
+  tree: WorkTreeChanges | null;
+  /** A command in flight hides its row. */
+  inFlight: (itemKey: string) => boolean;
+  isApplying: (itemKey: string) => boolean;
+  folded: (folder: string) => boolean;
+}): DraftSection {
+  const listedFiles = (list.files ?? []).filter((file) => !inFlight(file.item.itemKey));
   const folderInFlight = (id: string) =>
-    drafts.draftId !== null && inFlight(folderKey(drafts.draftId, id));
+    list.draftId !== null && inFlight(folderKey(list.draftId, id));
   // A folder whose own cut is in flight hides as a document does, once nothing under it shows.
-  const shownGroups = (list: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
-    list.flatMap((group) => {
+  const shownGroups = (groups: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
+    groups.flatMap((group) => {
       const inner = shownGroups(group.inner);
       return group.folder && folderInFlight(group.folder.id) && !group.files.length && !inner.length
         ? []
@@ -424,44 +461,23 @@ function DraftChangesSection({
   const grouped = tree ? groupByChangedFolder(listedFiles, tree) : null;
   const groups = grouped ? shownGroups(grouped) : [{ folder: null, files: listedFiles, inner: [] }];
   // An Apply the server is still running (a large Apply all) says so where its rows were.
-  const applyingKey = (itemKey: string) =>
-    inFlight(itemKey) && controller.owner.state(itemKey).applying;
+  const applyingKey = (itemKey: string) => inFlight(itemKey) && isApplying(itemKey);
   const applying =
-    (drafts.files ?? []).some((file) => applyingKey(file.item.itemKey)) ||
-    (drafts.draftId !== null &&
+    (list.files ?? []).some((file) => applyingKey(file.item.itemKey)) ||
+    (list.draftId !== null &&
       (grouped ?? []).some((group) =>
         (group.folder?.folders ?? []).some((id) =>
-          applyingKey(folderKey(drafts.draftId as string, id)),
+          applyingKey(folderKey(list.draftId as string, id)),
         ),
       ));
-  // Grouped, the list's order is the groups' order: every index below reads this one.
-  const files = groups.flatMap(groupFiles);
-  const changedFolders = groupsOf(groups).flatMap((group) =>
-    group.folder && !group.folder.fault ? [{ id: group.folder.id, name: group.folder.name }] : [],
-  );
-  const words = useDraftNoticeWords(notice);
-  const openDocument = useOpenProjectDocument(projectId);
-  // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
-  const drawn = useMemo<NoticePlace>(() => {
-    const folderOf = new Map<string, string | null>();
-    const walk = (group: ChangeGroup<ReviewFileTarget>, parent: string | null) => {
-      const here = group.folder?.id ?? null;
-      if (here) folderOf.set(here, parent);
-      for (const file of group.files) folderOf.set(file.documentId, here);
-      for (const inner of group.inner) walk(inner, here);
-    };
-    for (const group of groups) walk(group, null);
-    // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
-    // skipped or left (an edit made since) has a row to show on.
-    for (const { key } of taken.get(draftId) ?? []) if (!folderOf.has(key)) folderOf.set(key, null);
-    return {
-      holds: (node) => folderOf.has(node),
-      parent: (node) => folderOf.get(node) ?? null,
-      open: (folder) => !folded.has(folder),
-    };
-  }, [groups, folded, draftId]);
-  const treeWords = useTreeNoticeWords(projectId, drawn);
-  const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
+  const folderOf = new Map<string, string | null>();
+  const walk = (group: ChangeGroup<ReviewFileTarget>, parent: string | null) => {
+    const here = group.folder?.id ?? null;
+    if (here) folderOf.set(here, parent);
+    for (const file of group.files) folderOf.set(file.documentId, here);
+    for (const inner of group.inner) walk(inner, here);
+  };
+  for (const group of groups) walk(group, null);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
   const itemsOf = (group: ChangeGroup<ReviewFileTarget>, depth: number): ChangeItem[] => [
     ...(group.folder
@@ -476,7 +492,7 @@ function DraftChangesSection({
           },
         ]
       : []),
-    ...(group.folder && folded.has(group.folder.id)
+    ...(group.folder && folded(group.folder.id)
       ? []
       : [
           ...group.files.map((file) => ({
@@ -490,49 +506,54 @@ function DraftChangesSection({
           ...group.inner.flatMap((inner) => itemsOf(inner, depth + 1)),
         ]),
   ];
-  const items: ChangeItem[] = groups.flatMap((group) => itemsOf(group, 0));
-  // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
-  // saying so, while the notice speaks for it.
-  const hold = () => {
-    const keys = items.map(changeKey);
-    taken.set(
-      draftId,
-      items.map((item, at) => ({ key: item.key, row: item, after: keys.slice(0, at).reverse() })),
-    );
+  return {
+    draftId,
+    heading,
+    list,
+    tree,
+    // Grouped, the list's order is the groups' order.
+    files: groups.flatMap(groupFiles),
+    folders: groupsOf(groups).flatMap((group) =>
+      group.folder && !group.folder.fault ? [{ id: group.folder.id, name: group.folder.name }] : [],
+    ),
+    items: groups.flatMap((group) => itemsOf(group, 0)),
+    folderOf,
+    applying,
   };
-  const latestHold = useRef(hold);
-  latestHold.current = hold;
-  useEffect(() => {
-    holds.set(draftId, () => latestHold.current());
-    return () => {
-      holds.delete(draftId);
-    };
-  }, [holds, draftId]);
-  const shown = withGone(
-    items,
-    changeKey,
-    (taken.get(draftId) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
-  );
-  const gone = shown.some((item) => item.gone);
-  const signature = [
-    files.map((file) => file.item.itemKey).join(),
-    changedFolders.map((folder) => folder.id).join(),
-    gone,
-    drafts.status,
-  ].join("|");
-  const latest = useRef({ files, changedFolders, gone, status: drafts.status, drafts });
-  latest.current = { files, changedFolders, gone, status: drafts.status, drafts };
-  useEffect(() => {
-    const now = latest.current;
-    report(draftId, {
-      files: now.files,
-      folders: now.changedFolders,
-      gone: now.gone,
-      status: now.status,
-      refetch: () => void now.drafts.refetch(),
-    });
-  }, [report, draftId, signature]);
-  useEffect(() => () => report(draftId, null), [report, draftId]);
+}
+
+/** One draft's rows in the Changes tab, under its name when the tab lists several. */
+function DraftChangesSection({
+  projectId,
+  section,
+  shown,
+  controller,
+  notice,
+  wordOf,
+  touch,
+  isOpen,
+  onPicked,
+  folded,
+  onFold,
+  onCommand,
+}: {
+  projectId: string;
+  section: DraftSection;
+  shown: readonly WithGone<ChangeItem, ChangeItem>[];
+  controller: WorkDraftCommands;
+  /** The tab's notice, said on the rows it took. */
+  notice: DraftNotice | null;
+  wordOf: (key: string) => ReactNode;
+  touch: boolean;
+  isOpen: (file: ReviewFileTarget) => boolean;
+  onPicked?: () => void;
+  folded: (folder: string) => boolean;
+  onFold: (folder: string) => void;
+  /** A row's own × or ✓ was pressed: the section holds its rows as they were. */
+  onCommand: () => void;
+}) {
+  const openDocument = useOpenProjectDocument(projectId);
+  const { draftId, heading, list, tree, applying } = section;
   if (!applying && shown.length === 0) return null;
 
   return (
@@ -599,11 +620,11 @@ function DraftChangesSection({
               return (
                 <FolderGroupRow
                   key={`folder:${folder.id}`}
-                  draftId={drafts.draftId}
+                  draftId={list.draftId}
                   folder={folder}
                   depth={item.depth}
-                  open={!folded.has(folder.id)}
-                  onToggle={() => fold(folder.id)}
+                  open={!folded(folder.id)}
+                  onToggle={() => onFold(folder.id)}
                   files={groupFiles(group)}
                   notice={wordOf(folder.id)}
                 />
@@ -623,7 +644,7 @@ function DraftChangesSection({
                 controller={controller}
                 touch={touch}
                 notice={wordOf(file.documentId)}
-                onCommand={hold}
+                onCommand={onCommand}
                 onPicked={onPicked}
               />
             );
@@ -633,7 +654,6 @@ function DraftChangesSection({
     </section>
   );
 }
-
 type ChangeItem = { key: string; name: string; detail: ReactNode } & (
   | { kind: "folder"; group: ChangeGroup<ReviewFileTarget>; depth: number }
   | { kind: "file"; file: ReviewFileTarget; depth: number }
@@ -647,11 +667,10 @@ const taken = new Map<string, readonly GoneRow<ChangeItem>[]>();
 const NOTHING = () => {};
 
 /**
- * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
- * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
- * rows. A folder changed with no drafted document under it takes its × and ✓ alone. Its own
- * command's state (pending) shows under it, as a document's
- * does under its row.
+ * A folder the Work changes, heading what it holds: its name, what the Work does to it, and why
+ * it cannot land if it cannot; a click folds its rows. It has no × or ✓ of its own: Discard all
+ * and Apply all take it. Its own command's state (pending) shows under it, as a document's does
+ * under its row.
  */
 function FolderGroupRow({
   draftId,

@@ -8,7 +8,7 @@ import {
   useShownWorkDraft,
   writeProjectScope,
 } from "@/client/project-shell/store";
-import { useWorkDrafts } from "@/client/query/draft-commands";
+import { useWorkDrafts, type WorkDraftsState } from "@/client/query/draft-commands";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useAccountId } from "./context/account-feature-context";
@@ -79,11 +79,18 @@ export function useWorkScope(projectId: string): {
  * (`useShownWorkDraft`) while the Work lists it, else its default; of a chat, the chat's own.
  * `draftId` is "" when there are none to show; `work` is the Work its commands act for. `known`
  * is false until the Works list has loaded: before that a picked Work's draft reads as "".
+ * `workDrafts` is the picked Work's drafts.
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
-): { picked: Work | null; work: Work | null; draftId: string; known: boolean } {
+): {
+  picked: Work | null;
+  work: Work | null;
+  draftId: string;
+  known: boolean;
+  workDrafts: WorkDraftsState;
+} {
   const accountId = useAccountId();
   const { workId } = useWorkScope(projectId);
   const catalog = useWorks(projectId);
@@ -96,7 +103,8 @@ export function useScopeDraftOwner(
       ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
       : null;
   const shown = useShownWorkDraft(accountId, projectId);
-  const { drafts } = useWorkDrafts(projectId, picked?.id ?? null);
+  const workDrafts = useWorkDrafts(projectId, picked?.id ?? null);
+  const { drafts } = workDrafts;
   const pickedDraft =
     picked &&
     shown?.workId === picked.id &&
@@ -111,11 +119,11 @@ export function useScopeDraftOwner(
   return useMemo(
     () =>
       picked
-        ? { picked, work: picked, draftId: pickedDraft, known }
+        ? { picked, work: picked, draftId: pickedDraft, known, workDrafts }
         : creating
-          ? { picked: null, work: null, draftId: creating, known }
-          : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey, known },
-    [picked, pickedDraft, creating, chatWork, chatKey, known],
+          ? { picked: null, work: null, draftId: creating, known, workDrafts }
+          : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey, known, workDrafts },
+    [picked, pickedDraft, creating, chatWork, chatKey, known, workDrafts],
   );
 }
 

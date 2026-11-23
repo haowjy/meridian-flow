@@ -24,8 +24,8 @@ import type { WorkDraftCommands } from "./usePressCommands";
 
 /**
  * One drafted document: its name, and under it what the draft does to it (a move, rename or
- * delete, a new document, its text changes). Its × and ✓ show on hover or focus, always with a
- * finger. A refused or pending command shows in the status line under it.
+ * delete, a new document, its text changes), with its × and ✓ for the whole document. A refused
+ * or pending command shows in the status line under it.
  */
 export function DraftFileRow({
   projectId,

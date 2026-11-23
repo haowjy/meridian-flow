@@ -27,7 +27,7 @@ import {
   writeShownWorkDraft,
   writeTreeVersionChoice,
 } from "@/client/project-shell/store";
-import { useWorkDrafts, type WorkDraftsState } from "@/client/query/draft-commands";
+import type { WorkDraftsState } from "@/client/query/draft-commands";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
@@ -115,34 +115,41 @@ export function useDraftTreeVersion(
 const NO_OWNER = "new-chat";
 
 /**
- * A draft's tree changes, from the browser's replay of its view in each list it spans: what the
- * Changes list builds its folder groups from, including a change not yet admitted (made offline
- * or in flight). Null with no draft.
+ * Drafts' tree changes by draft, from the browser's replay of each draft's view in each list it
+ * spans: what the Changes list builds its folder groups from, including a change not yet admitted
+ * (made offline or in flight).
  */
-export function useDraftTreeChanges(
+export function useDraftsTreeChanges(
   projectId: string,
-  draftVersion: TreeVersion | null,
-): WorkTreeChanges | null {
+  versions: readonly TreeVersion[],
+): ReadonlyMap<string, WorkTreeChanges> {
   const accountId = useAccountId();
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
   return useMemo(() => {
-    const draft = draftVersion?.view.draft ?? null;
-    if (!draftVersion || draft === null) return null;
-    return workTreeChanges(
-      [project, account].flatMap(({ session, snapshot }) =>
-        session && snapshot
-          ? [
-              {
-                live: session.replay(LIVE),
-                work: session.replay(draftVersion.view),
-                pending: pendingRecords(snapshot.doc, draft),
-              },
-            ]
-          : [],
-      ),
-    );
-  }, [draftVersion, project, account]);
+    const changes = new Map<string, WorkTreeChanges>();
+    for (const version of versions) {
+      const draft = version.view.draft;
+      if (draft === null) continue;
+      changes.set(
+        draft,
+        workTreeChanges(
+          [project, account].flatMap(({ session, snapshot }) =>
+            session && snapshot
+              ? [
+                  {
+                    live: session.replay(LIVE),
+                    work: session.replay(version.view),
+                    pending: pendingRecords(snapshot.doc, draft),
+                  },
+                ]
+              : [],
+          ),
+        ),
+      );
+    }
+    return changes;
+  }, [versions, project, account]);
 }
 
 export function TreeVersionProvider({
@@ -158,8 +165,7 @@ export function TreeVersionProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const { draftId, work, picked, known } = useScopeDraftOwner(projectId, chatThreadId);
-  const workDrafts = useWorkDrafts(projectId, picked && !picked.isNoWork ? picked.id : null);
+  const { draftId, work, picked, known, workDrafts } = useScopeDraftOwner(projectId, chatThreadId);
   // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before and
   // show the new owner's (`enterScope`). A new chat on screen has no drafts, so it is a change to
   // no owner. "" with no new chat, or any owner before the Works list loads, is no owner known
@@ -189,7 +195,8 @@ export function TreeVersionProvider({
   const { draftId: listedDraft, fileForDocument } = drafts;
   const { data: rows } = drafts;
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
-  const tree = useDraftTreeChanges(projectId, draftVersion);
+  const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
+  const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
   // Documents from the server's pending drafts, folders from the replay.
   const changeCount = (rows?.length ?? 0) + (tree?.folders.size ?? 0);
   // The nodes the tree marks on Live.
