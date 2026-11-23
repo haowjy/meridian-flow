@@ -89,8 +89,9 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
   block); no word shows twice that showed once (a run that wrote no text is exempt: the Undo of a
   delete brings blocks back as they were); no word the other editor typed leaves the screen; no
   word a peer's edit took off this editor's screen comes back; and no mark a peer set or cleared
-  on a word is undone. A change a batch made is the peer's when the peer's screen shows it too,
-  else it came of two edits meeting (a block moved into a container the other removed), which an
+  on a word is undone (judged while the word shows once: a word a Join's copy shows twice shows
+  the union of both copies' marks, which no one edit owns, seed 1098 at `200 400 900`). A change
+  a batch made is the peer's when the peer's screen shows it too, else it came of two edits meeting (a block moved into a container the other removed), which an
   Undo may bring back; a kept block leaving on a click counts the same way (seed 415). A Redo
   may take off the screen only words typed since the editor's Redo was last emptied, by any edit,
   in a burst too (seeds 460 and 483). The editor's screen counts, kept blocks included;

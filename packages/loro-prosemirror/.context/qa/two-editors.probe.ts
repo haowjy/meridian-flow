@@ -347,8 +347,11 @@ function run(seed: number): string | null {
         screen.left.delete(word);
         continue;
       }
-      // A copy coming or going changes which marks show without anyone marking.
-      if (now.counts.get(word) !== screen.words.counts.get(word)) continue;
+      // A copy coming or going changes which marks show without anyone marking, and a word in two
+      // places shows the union of their marks, which no one edit owns (seed 1098 at 200 400 900:
+      // a peer unbolds one copy of a Join's, then A's Undo rebolds the other, its own).
+      const count = now.counts.get(word);
+      if (count !== screen.words.counts.get(word) || count !== 1) continue;
       for (const name of new Set([...was, ...marks])) {
         if (was.has(name) === marks.has(name)) continue;
         if (source === "run" && screen.marked.get(`${word}\u0000${name}`) === "peer")
