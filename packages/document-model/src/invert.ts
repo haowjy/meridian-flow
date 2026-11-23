@@ -114,7 +114,7 @@ export function takeBack(
       const moved = transformedInverse(doc, span.before, span.after);
       if (moved.length === 0) continue;
       // Read before the write: a fork commits pending ops, without the message.
-      const message = takeBackMessage(deletedBetween(doc, span.before, span.after));
+      const message = takeBackMessage(deletedBetween(doc, span.before, span.after), span.ops);
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(moved));
       doc.commit({ message });

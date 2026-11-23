@@ -13,6 +13,7 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import {
+  applyBlocks,
   applyOps,
   type DocKey,
   encodeEnvelope,
@@ -29,6 +30,7 @@ import {
   STRUCTURE_KEY,
   StructureView,
   setCommentBody,
+  undoPress,
   visibleComments,
 } from "@meridian/document-model";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -932,6 +934,60 @@ function racedRemovals(): string[] {
         return settle(r, "join/delete-across then A Undo", once("qA8"));
       },
     },
+    // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
+    // deletes the "F" A deleted. Its press carries that delete into Live; the press's Undo takes it
+    // back, so it counts as never made, and A's Ctrl+Z goes back.
+    "a press undone since does not keep A's step": {
+      room: () => room([p("a", "First."), p("z", "Last.")]),
+      run: (r) => {
+        const live = r.agent();
+        const draft = RoomDocs.draftOf(live, freshPeerId());
+        const command = <T,>(run: (cmd: RoomDocs) => T): T => {
+          const cmd = draft.fork(freshPeerId());
+          try {
+            const out = run(cmd);
+            live.importBatch((cmd.live as RoomDocs).exportSince(live.version()));
+            draft.importBatch(cmd.exportSince(draft.version()));
+            draft.forward();
+            return out;
+          } finally {
+            cmd.free();
+          }
+        };
+        try {
+          const state = EditorState.create({ schema, doc: readProseMirror(draft, schema) });
+          writeProseMirror(draft, state.tr.insertText("B rewrote f", 1, 2).doc);
+          r.a.view.dispatch(r.a.view.state.tr.delete(posOf(r.a, "a") + 1, posOf(r.a, "a") + 2));
+          r.a.history.endStep();
+          live.importBatch(r.a.docs.exportSince(live.version()));
+          const pressed = command((cmd) => applyBlocks(cmd, "all", { liveVersion: live.version() }).pressed);
+          const undo = command((cmd) => undoPress(cmd, pressed));
+          if (undo.stayed.length > 0) return "undone press: the press's Undo stayed";
+          send(live, r.a);
+          send(live, r.b);
+          if (shown(r.a) !== "irst.|Last.") return `undone press: A shows "${shown(r.a)}" before its Ctrl+Z`;
+          if (!runHistory(r.a, "undo")) return "undone press: A's Ctrl+Z stayed";
+          return settle(r, "undone press, then A's Ctrl+Z", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
+        } finally {
+          draft.free();
+        }
+      },
+    },
+    // B's Ctrl+Z of its own delete of A's "F", before it sees A's, puts "F" back: A's Ctrl+Z would
+    // show it twice, so it stays, though B's delete was taken back.
+    "a peer's Undo put back text A deleted": {
+      room: () => room([p("a", "First."), p("z", "Last.")]),
+      run: (r) => {
+        for (const e of [r.a, r.b]) {
+          e.view.dispatch(e.view.state.tr.delete(posOf(e, "a") + 1, posOf(e, "a") + 2));
+          e.history.endStep();
+        }
+        runHistory(r.b, "undo");
+        syncAll(r);
+        if (runHistory(r.a, "undo")) return "put back by a peer: A's Ctrl+Z ran";
+        return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
+      },
+    },
     // Seed 477: A and B remove x from one state, so their removal records are equal,
     // and A's wins (the higher peer). B's Ctrl+Z finds a value A wrote: x stays removed.
     "a peer's equal removal keeps the block removed": {
@@ -1447,6 +1503,32 @@ function racedRemovals(): string[] {
       return settled ?? null;
     },
     // --- The step rule: a step that set structure goes back whole or stays whole.
+    // B's typing in the new half, undone since, is no one's write: A's Ctrl+Z of the Enter goes
+    // back (design §2, part 2).
+    "a peer's typing undone since does not keep A's split": (r) => {
+      split(r.a, "x", 14, "x2");
+      syncAll(r);
+      caret(r.b, "x2", 0);
+      type(r.b, "Zq");
+      if (!runHistory(r.b, "undo")) return "typing undone: B's Ctrl+Z stayed";
+      away(r.b);
+      syncAll(r);
+      if (!runHistory(r.a, "undo")) return "typing undone: A's Ctrl+Z stayed";
+      return settle(r, "typing undone, then A's Ctrl+Z", showsAll("Delete-target before after."));
+    },
+    // B rewrites a word A typed keeping one of its letters, as a chat's rewrite keeps the letters
+    // it shares: A's Ctrl+Z would take that letter out of B's word and scramble it, so it stays.
+    "a peer's rewrite keeps A's typing": (r) => {
+      caret(r.a, "z", 4);
+      type(r.a, " Owl");
+      syncAll(r);
+      const at = posOf(r.b, "z") + 1 + 5;
+      r.b.view.dispatch(r.b.view.state.tr.insertText("D", at + 2, at + 3).insertText("B", at, at + 1));
+      r.b.history.endStep();
+      syncAll(r);
+      if (runHistory(r.a, "undo")) return "rewrite: A's Ctrl+Z ran over B's rewrite";
+      return settle(r, "rewrite, then A's Ctrl+Z", showsAll("|Last BwD.|"));
+    },
     "A's own split goes back exactly, and Redo gives it back": (r) => {
       const before = shown(r.a);
       split(r.a, "x", 14, "x2");
@@ -1668,18 +1750,6 @@ function racedRemovals(): string[] {
       return bold?.text === "before" && schema.marks.strong.isInSet(bold.marks)
         ? null
         : `split/mark: x2 starts ${JSON.stringify(bold?.toJSON())}`;
-    },
-    // A peer deleted part of what A typed: A's Ctrl+Z takes the rest, and the deletion stays.
-    "a peer's deletion of A's typing stays through A's Ctrl+Z": (r) => {
-      caret(r.a, "z", 0);
-      type(r.a, "hello world ");
-      syncAll(r);
-      const at = posOf(r.b, "z") + 1 + 6;
-      r.b.view.dispatch(r.b.view.state.tr.delete(at, at + 6));
-      r.b.history.endStep();
-      syncAll(r);
-      if (!runHistory(r.a, "undo")) return "typing/delete: Ctrl+Z did nothing";
-      return settle(r, "typing/delete then A Undo", showsAll("|Last.|"), showsNone("hello", "world"));
     },
     // A moves i1 out of the container, B removes the container, A's Ctrl+Z: i1 would go under a
     // removed block, off the screen with words its removal never read. The move stays.

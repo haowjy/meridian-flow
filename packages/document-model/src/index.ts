@@ -91,7 +91,6 @@ export {
   type Edit,
   type EditValues,
   editStays,
-  leftOf,
   noteEdit,
   type OpSpans,
   opsBetween,

@@ -267,8 +267,8 @@ export function runScript(seed, { verbose = false } = {}) {
   const stats = {
     edits: 0, presses: 0, pressUndos: 0, discards: 0, discardUndos: 0, discardAlls: 0, discardAllUndos: 0,
     restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
-    chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0, wholeChecks: 0, besideRetype: 0,
-    tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsStayed: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
+    chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0, wholeChecks: 0,
+    tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsGained: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
     resetCopyObserved: 0, kinds: {},
   };
   const outcomes = [];
@@ -295,12 +295,6 @@ export function runScript(seed, { verbose = false } = {}) {
   const splitMoved = new Set();
   const resetRestored = new Map();
   const inverseCopies = new Map();
-  /**
-   * Tokens a press Undo put back beside a later retype: the press replaced text at two places in one doc, a
-   * later write retyped one of them whole, and the change went back whole for the other (design §2's edit rule,
-   * part 4), so the retyped place's old text returns beside the retype, as Ctrl+Z's does.
-   */
-  const besideRetype = new Set();
   /** The token each character was first seen in, by block and character id: ids repeat across text docs. */
   const origins = new Map();
   let liveWrites = 0;
@@ -779,9 +773,10 @@ export function runScript(seed, { verbose = false } = {}) {
       const kept = new Set(charIds(d.textOf(id)));
       deletedBy.push(new Set(original.filter((c) => !kept.has(c))));
     }
-    // Both drafts deleted one character: the second press's import deleted it again, so by the Undo rule's part 4
-    // the first press's change stays (design §2), even with the second press undone.
-    const bothDeleted = [...deletedBy[0]].some((c) => deletedBy[1].has(c));
+    // Characters both drafts deleted: the second press's import deleted them again, but its Undo took that back, so
+    // the first press goes back too (design §2), and puts them back into Live as new characters the second draft
+    // never deleted.
+    const bothDeleted = [...deletedBy[0]].filter((c) => deletedBy[1].has(c)).length;
     const before = render(room);
     const draftsBefore = drafts.map((d) => {
       d.forward();
@@ -794,39 +789,23 @@ export function runScript(seed, { verbose = false } = {}) {
       if (i === 1 && liveTyped) typeIn(room, id, liveToken);
       pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }), (r) => stored(r.pressed)));
     }
-    const pressedTexts = drafts.map((d) => {
-      d.forward();
-      return textOfDoc(d.textOf(id));
-    });
     for (const d of drafts) {
+      d.forward();
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
-    const stays = [];
     for (let i = drafts.length - 1; i >= 0; i--) {
       const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { message: `work press undo ${i}` }));
-      stays[i] = stayed.length > 0;
-      check(!stays[i] || (i === 0 && bothDeleted), "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
+      check(!stayed.length, "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
     }
-    if (stays[0]) stats.twoDraftsStayed++;
     const liveIds = new Set(charIds(room.textOf(id)));
     for (const [i, d] of drafts.entries()) {
       d.forward();
       const changes = changedBlocks(d);
-      if (stays[i]) {
-        check(!changes.length, "two-drafts", () => `draft ${i}, whose press stayed, pending ${JSON.stringify(changes)}`);
-        continue;
-      }
       check(changes.length === 1 && same(changes[0].blocks, [id]), "two-drafts", () => `draft ${i} pending ${JSON.stringify(changes)} after the Undo, not ${id}`);
       // The draft's text is back (as new characters of its own: the return to pending). Beside it are only Live's
       // characters: its typing, and text both drafts deleted that the other press's Undo put back as new
       // characters, which this draft never deleted (the accepted copy of design §2: Loro has no undelete).
       const text = textOfDoc(d.textOf(id));
-      if (stays[0]) {
-        // The first press stayed in Live, so this draft reads its deletions too, and Live is as the presses left it
-        // but for this draft's own change: its text is unchanged by its press's Undo (design §2).
-        check(text === pressedTexts[i], "two-drafts", () => `draft ${i} changed by the Undo: ${JSON.stringify(pressedTexts[i])} -> ${JSON.stringify(text)}`);
-        continue;
-      }
       const ids = charIds(d.textOf(id));
       const live = (at) => liveIds.has(ids[at]);
       if (!withExtras(draftsBefore[i], text, live)) {
@@ -841,25 +820,30 @@ export function runScript(seed, { verbose = false } = {}) {
         }
         stats.twoDraftsMoved++;
       }
-      if (!liveTyped) check(text.length === draftsBefore[i].length, "two-drafts", () => `draft ${i} gained text from the Undo: ${draftsBefore[i]} -> ${text}`);
+      if (!liveTyped) {
+        // Text both drafts deleted, which the first press's Undo put back, shows in the second draft (counted, not
+        // failed: design §2, "Text both drafts deleted"); nothing else may come in.
+        const gained = text.length - draftsBefore[i].length;
+        check(gained === 0 || (i === 1 && gained <= bothDeleted), "two-drafts", () => `draft ${i} gained text from the Undo: ${draftsBefore[i]} -> ${text}`);
+        if (gained > 0) stats.twoDraftsGained++;
+      }
     }
     const liveText = textOfDoc(room.textOf(id));
     if (liveTyped) check(liveText.includes(liveToken), "two-drafts", "Live typing between the presses lost by the Undo");
-    if (stays[0]) check(liveText.includes(`d0${seed}k`) && !liveText.includes(`d1${seed}k`), "two-drafts", () => `Live after the second press's Undo, the first staying: ${liveText}`);
-    else if (!liveTyped) check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
+    if (!liveTyped) check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
     stats.twoDrafts++;
     note("  TWO DRAFTS");
   }
 
   /**
    * The press's replacements in Live's text (a deletion and an insertion at one place), each with the characters it
-   * put in; `alone` when it is its doc's one change, the case "no Undo puts back text a later write removed" pins.
+   * put in: where a later write goes.
    */
   const replacements = (written) =>
     [...written].flatMap(([key, { places }]) =>
       places
         .filter((place) => place.deleted.length && place.inserted.length)
-        .map((place) => ({ key, ids: new Set(place.inserted.map((c) => c.id)), alone: places.length === 1 })),
+        .map((place) => ({ key, ids: new Set(place.inserted.map((c) => c.id)) })),
     );
 
   function press(prefer = [], only = false) {
@@ -939,17 +923,11 @@ export function runScript(seed, { verbose = false } = {}) {
     const ft = textValues(fork);
     const beforeLive = blockValues(live);
     const beforeFork = blockValues(fork);
-    // The press's one replacement in a doc, all of whose characters a later write removed (by id, or put back for
-    // them by a later Undo; never by what they spell).
-    const expectGone = p.replaced.filter((place) => place.alone && !placeAt(live.texts.get(place.key), place.key, place.ids).length).map((place) => place.key);
-    // Characters the press deleted at a replacement a later write retyped whole: they come back beside the retype.
-    const retyped = new Set(
-      [...p.written].flatMap(([key, { places }]) =>
-        places
-          .filter((place) => place.deleted.length && place.inserted.length && !placeAt(live.texts.get(key), key, new Set(place.inserted.map((c) => c.id))).length)
-          .flatMap((place) => place.deleted.map((c) => `${key}|${c.id}`)),
-      ),
-    );
+    // The docs where a later write removed some of what the press put in (by id, or put back for it by a later
+    // Undo; never by what it spells).
+    const expectGone = [...p.written]
+      .filter(([key, { inserted }]) => inserted.length && placeAt(live.texts.get(key), key, new Set(inserted.map((c) => c.id))).length < inserted.length)
+      .map(([key]) => key);
     const liveBefore = snapshotIds(live);
     const forkBefore = snapshotIds(fork);
     const { stayed, undone } = command(
@@ -969,11 +947,11 @@ export function runScript(seed, { verbose = false } = {}) {
       stats.quietUndos++;
       check(!stayed.length, "press-undo", () => `a change stayed with nothing written since the press: ${JSON.stringify(stayed.map((c) => c.members))}`);
     }
-    // The press was the doc's one replacement and a later write removed all it put in: the change stays, so the
-    // Undo neither puts the old text back nor takes the later write out.
+    // A later write removed some of what the press put in: the change stays, so the Undo neither puts the old text
+    // back beside or inside the later write nor takes the press's characters it kept out of it.
     for (const key of expectGone) {
       stats.replacedChecks++;
-      check(stayedIds.has(key) && same(charIds(live.texts.get(key)), liveBefore.get(key)), "undo-replaced", () => `Undo of a replacement a later write removed changed ${key} (stayed ${stayedIds.has(key)}): ${textOfDoc(live.texts.get(key))}`);
+      check(stayedIds.has(key) && same(charIds(live.texts.get(key)), liveBefore.get(key)), "undo-replaced", () => `Undo of a press a later write partly removed changed ${key} (stayed ${stayedIds.has(key)}): ${textOfDoc(live.texts.get(key))}`);
     }
     // A change that went back went back whole: every character the press deleted is back, and none it put in is left.
     for (const [key, edit] of p.written) {
@@ -983,13 +961,6 @@ export function runScript(seed, { verbose = false } = {}) {
       const left = placeAt(live.texts.get(key), key, mine);
       check(!left.length, "undo-whole", () => `the press Undo of ${key} left ${left.length} of the press's characters: ${textOfDoc(live.texts.get(key))}`);
       stats.wholeChecks++;
-      const beside = new Set((undone.get(key)?.inserted ?? []).filter((c, i) => retyped.has(`${key}|${edit.deleted[i].id}`)).map((c) => c.id));
-      if (!beside.size) continue;
-      stats.besideRetype++;
-      const doc = live.texts.get(key);
-      const ids = charIds(doc);
-      for (const m of textOfDoc(doc).matchAll(new RegExp(TOKEN.source, "g")))
-        if (ids.slice(m.index, m.index + m[0].length).some((c) => beside.has(c))) besideRetype.add(m[0]);
     }
     recordOrigins(live);
     recordOrigins(fork);
@@ -1077,8 +1048,12 @@ export function runScript(seed, { verbose = false } = {}) {
     const b = shownIndex(to);
     const origin = side === "live" ? "l" : "f";
     // Over the press's text, also a retype that holds it ("home" pressed to "house", then "household") or is held by
-    // it ("hous"), and typing right after it, which may be text an Undo put back: none of it is the press's.
-    const kind = mine.length ? g.pick(["overwrite", "overwrite", "overdelete", "overdelete", "holds", "held", "after"]) : g.pick(["overwrite", "overdelete"]);
+    // it ("hous"), typing right after it, which may be text an Undo put back: none of it is the press's; and a
+    // rewrite that keeps one of the press's characters inside its own text, as a chat's rewrite keeps the letters
+    // it shares with what it replaces.
+    const kind = mine.length
+      ? g.pick(["overwrite", "overwrite", "overdelete", "overdelete", "holds", "held", "after", "rewrite"])
+      : g.pick(["overwrite", "overdelete"]);
     const pressed = text.slice(from, to);
     const replacement = {
       overwrite: g.tok(origin),
@@ -1088,7 +1063,15 @@ export function runScript(seed, { verbose = false } = {}) {
     }[kind];
     // By position, as the editor's typing is: every character typed is new, so a retype can spell the press's
     // text without being it.
-    userEdit(d, origin, { edit: { kind, write: typeOver(key, rule, [{ from: kind === "after" ? b : a, to: b, text: replacement ?? "" }]) } });
+    const keep = kind === "rewrite" ? shownIndex(g.pick(mine)) : 0;
+    const spans =
+      kind === "rewrite"
+        ? [
+            { from: a, to: keep, text: g.tok(origin) },
+            { from: keep + 1, to: Math.max(keep + 1, b), text: g.tok(origin) },
+          ]
+        : [{ from: kind === "after" ? b : a, to: b, text: replacement ?? "" }];
+    userEdit(d, origin, { edit: { kind, write: typeOver(key, rule, spans) } });
     stats.overwrites++;
     if (side === "live") syncLive();
     else syncTab();
@@ -1097,8 +1080,8 @@ export function runScript(seed, { verbose = false } = {}) {
   /**
    * The draft replaces a word, or two, the press applies it alone, a later write in Live or the draft replaces or
    * deletes what the press put in at one place (wholly or in part), and the press is undone: design §2's edit rule,
-   * part 4. With two words and one of them retyped, the Undo takes the whole change back ("the fox went home"
-   * pressed as "the dog went house", "dog" retyped "cat": "the foxcat went home", as Ctrl+Z gives).
+   * part 4. With two words and one of them retyped in Live, the change stays whole ("the fox went home" pressed as
+   * "the dog went house", "dog" retyped "cat": Live keeps "the cat went house"), as Ctrl+Z's does.
    */
   function replaceThenOverwrite() {
     ensure();
@@ -1501,7 +1484,7 @@ export function runScript(seed, { verbose = false } = {}) {
       for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
         if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(`${id}|${c}`) && origins.get(`${id}|${c}`) !== m[0])) collisions.add(m[0]);
     }
-    const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t) && !besideRetype.has(t));
+    const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t));
     check(!dup.length, "duplicate-text", () => `duplicate tokens ${dup.join(",")}; Live ${render(live)}`);
     const allIds = [];
     read(live).descendants((n) => {
