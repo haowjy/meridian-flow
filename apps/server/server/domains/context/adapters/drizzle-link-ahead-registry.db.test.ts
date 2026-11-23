@@ -1,9 +1,10 @@
 /**
- * PostgreSQL proof for ahead registration, settlement CAS, and the writer's own links registered
- * when the document's derivation runs (L-3).
+ * PostgreSQL proof for ahead registration, settlement CAS, refs written in a draft (registered
+ * globally and left unbound until a live document arrives, 12a), and the writer's own links
+ * registered when the document's derivation runs (L-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - global ahead registration and arrival settlement CAS (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)
+ * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)
  */
 
 import { createDb, type Database } from "@meridian/database";
@@ -25,7 +26,11 @@ import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
-import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
+import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
+import {
+  createTestDocumentLinkScopes,
+  createTestLinkAheadRegistry,
+} from "../../collab/test-support/document-link-scopes.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
 import { lockDocumentNamespaces } from "./context-fs/document-locations.js";
 
@@ -232,7 +237,7 @@ if (!RUN) {
         .toEqual([[long, null]]);
     });
 
-    describe("typed by the writer", () => {
+    describe("written in a draft, or typed by the writer", () => {
       // Commands publish after commit and registration opens root transactions: commit for real.
       const db = createDb(DATABASE_URL, { max: 12 });
       afterAll(() => db.close());
@@ -247,6 +252,41 @@ if (!RUN) {
           .where(eq(linkAheadRefs.aheadId, aheadId));
         return { registered: ref !== undefined, live: ref?.settled ?? null };
       }
+
+      it("registers a draft's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
+        const runtime = await runtimes.compose();
+        const scenario = await draftTreeScenario(db, { runtime, runtimes });
+        const work = await scenario.work("Ascension", "draft");
+        // The model's create is a hidden row in the Work's draft.
+        const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
+        const registry = createTestLinkAheadRegistry(db);
+        const at = { holderProjectId: scenario.project.id, address: KAEL };
+        // The draft's hidden document at the path binds nothing, for any holder or mint.
+        const typed = crypto.randomUUID();
+        await registry.register([{ ...at, aheadId: typed }]);
+        await registry.register([{ ...at, aheadId: typed }]);
+        expect
+          .soft(await registryRow(typed), "registered once, not bound to the draft's document")
+          .toEqual({ registered: true, live: null });
+        // A model's mint in the draft's view registers the same way.
+        const links = createScopedDocumentLinks({
+          scopes: createTestDocumentLinkScopes(db),
+          registrar: registry,
+        });
+        const minted = crypto.randomUUID();
+        await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
+        expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
+        // The first live arrival at the path (a live create there: the draft's document stays the
+        // draft's) binds every waiting ref, once.
+        const live = await scenario.writer.createDocument("lore/kael", "Kael, live.");
+        for (const aheadId of [typed, minted]) {
+          expect.soft(await registryRow(aheadId), "bound to the live document").toEqual({
+            registered: true,
+            live,
+          });
+        }
+        expect.soft(live, "a live create at the address makes its own document").not.toBe(kael);
+      });
 
       it("registers the writer's link when the document derives, best effort and globally (L-3)", async () => {
         const runtime = await runtimes.compose();

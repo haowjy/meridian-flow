@@ -308,8 +308,8 @@ read, and from a second chat editing another block:
 ```
 
 Writes land on the current Loro room and show the resulting block plus
-`the user changed <hash> after you last read it.` Phase 1 has no text drafts: a Draft-mode write
-lands live too. Missing targets return `not_found` and change no text.
+`the user changed <hash> after you last read it.` A Draft-mode write
+lands in the chat's draft's fork room, not Live. Missing targets return `not_found` and change no text.
 
 ## RP-21: Listed reads after compaction fit the budget, in listed order
 

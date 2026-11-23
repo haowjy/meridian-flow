@@ -10,6 +10,7 @@ export {
   type PressedChange,
   type PressOptions,
   type PressUndo,
+  pendingRemovalVersion,
   restoreBefore,
   selectChanges,
   undoPress,

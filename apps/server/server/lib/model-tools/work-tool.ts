@@ -13,7 +13,7 @@ import {
   type Thread,
 } from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
-import { draftOf, workLifecycleState } from "@meridian/contracts/works";
+import { workLifecycleState } from "@meridian/contracts/works";
 import {
   createWork,
   deleteWorkTransition,
@@ -412,7 +412,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   async show(deps, thread, { work }) {
     const [threads, drafts] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
-      deps.drafts.draftReview.list({ draft: draftOf(thread, work) }),
+      deps.drafts.draftReview.list({ draft: thread.draftId }),
     ]);
     return {
       work: modelWork(work),

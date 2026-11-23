@@ -10,6 +10,7 @@ import { formatThreadRef } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { rootDraftFor } from "../../../../shared/draft-owner.js";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
@@ -69,23 +70,34 @@ const pendingWriteMode = sql<AiWriteMode | null>`(
   LIMIT 1
 )`;
 
-// The lineage's draft: the root chat names it (`threads.draft_id`, set only on roots). A root's own
-// column first: an insert's RETURNING can't see the row it inserts through a subquery.
-const lineageDraftId = sql<string>`COALESCE(${schema.threads}.${sql.identifier("draft_id")}, (
-  SELECT root.draft_id FROM ${schema.threads} root
-  WHERE root.id = ${schema.threads}.${sql.identifier("root_thread_id")}
-))`;
+// The chat's draft: its root's (`threads.draft_id`, set only on roots) while that draft is one of
+// the chat's Work's (none, for No Work) and not deleted, else its Work's default. A root keeps its
+// draft one of its Work's (`thread-works-repository.ts`), so this differs from the root's only
+// for a fork or subagent bound to another Work, and while a draft is deleted. Then the row's own
+// column: an insert's RETURNING can't see the row it inserts through a subquery.
+const self = (column: string) => sql`${schema.threads}.${sql.identifier(column)}`;
+const chatDraftId = sql<string>`COALESCE(
+  (SELECT d.id FROM threads root JOIN drafts d ON d.id = root.draft_id
+    WHERE root.id = ${self("root_thread_id")} AND d.deleted_at IS NULL
+      AND d.work_id IS NOT DISTINCT FROM (
+        SELECT CASE WHEN w.is_no_work THEN NULL ELSE w.id END
+        FROM thread_works tw JOIN works w ON w.id = tw.work_id
+        WHERE tw.thread_id = ${self("id")} AND tw.is_primary)),
+  (SELECT d.id FROM thread_works tw JOIN drafts d ON d.work_id = tw.work_id AND d.is_default
+    WHERE tw.thread_id = ${self("id")} AND tw.is_primary),
+  ${self("draft_id")},
+  (SELECT root.draft_id FROM threads root WHERE root.id = ${self("root_thread_id")}))`;
 
 const threadColumns = {
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
   pendingWriteMode,
-  lineageDraftId,
+  chatDraftId,
 };
 
 type ThreadListRow = typeof schema.threads.$inferSelect & {
-  lineageDraftId: string;
+  chatDraftId: string;
   workId: string | null;
   workTitle: string | null;
   actionRequired: boolean;
@@ -186,8 +198,9 @@ export function createDrizzleThreadRepository(
       const threadId = input.id ?? crypto.randomUUID();
       const row = await insertThreadRow(db, {
         id: threadId,
-        // A root chat mints its lineage's draft with it; the client may have minted the id.
-        draftId: input.draftId ?? null,
+        // A new chat of a named Work names one of its drafts; with No Work it mints its
+        // lineage's (`mint_named_draft`), whose id the client may have minted.
+        draftId: await rootDraftFor(db, input.workId, input.draftId),
         projectId: input.projectId as ProjectId,
         createdByUserId: input.userId as string,
         kind: normalized.kind,
@@ -237,8 +250,12 @@ export function createDrizzleThreadRepository(
           initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,
           rootThreadId: thread.rootThreadId,
-          // A handoff is a new root and names its own draft; a fork shares its root's.
-          draftId: thread.rootThreadId === thread.id ? thread.draftId : null,
+          // A handoff is a new root and names its Work's draft, or with No Work its own; a fork
+          // shares its root's.
+          draftId:
+            thread.rootThreadId === thread.id
+              ? await rootDraftFor(db, thread.workId, thread.draftId)
+              : null,
           originTurnId: thread.originTurnId,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,

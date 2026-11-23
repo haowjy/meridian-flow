@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import { createDrizzleFileFacts } from "./drizzle-file-facts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -40,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(u, "file-facts"));
       await db.insert(projects).values({ id: p, userId: u, name: "Serial", slug: "serial" });
-      await db.insert(works).values([
+      await insertWorks(db, [
         { id: noWork, projectId: p, createdByUserId: u, name: "No Work", isNoWork: true },
         {
           id: a,

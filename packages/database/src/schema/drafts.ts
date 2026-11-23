@@ -1,7 +1,8 @@
 /**
- * Drafts: everything pending in one draft, its suggestion marks in Live documents and its tree
- * records (`draft_tree_nodes`, tree-nodes.ts). A Work's drafts name it (`work_id`) and go with it;
- * a root conversation names its lineage's (`threads.draft_id`), each minted with the row that names it.
+ * Drafts: everything pending in one draft, its forks of documents (`document_forks`) and its tree
+ * records (`draft_tree_nodes`, tree-nodes.ts). A Work has several, one of them its default, and
+ * they go with it (`work_id`); a No Work chat's lineage has its own. Every root chat names the
+ * draft its lineage writes into (`threads.draft_id`).
  */
 import type { DraftId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
@@ -13,6 +14,7 @@ import {
   integer,
   pgTable,
   text,
+  timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -23,7 +25,7 @@ import { users } from "./users";
 export const drafts = pgTable(
   "drafts",
   {
-    /** 12 base-36 characters (`newDraftId`): it sits on every suggestion mark in Live history. */
+    /** 12 base-36 characters (`newDraftId`): it names the draft's fork rooms (`fork:<draft>:<doc>`). */
     id: text("id").$type<DraftId>().primaryKey(),
     projectId: uuid("project_id")
       .$type<ProjectId>()
@@ -38,6 +40,11 @@ export const drafts = pgTable(
     isDefault: boolean("is_default").notNull().default(false),
     /** The writer's name for the draft; null shows the default name. */
     name: text("name"),
+    /**
+     * `Delete draft`: listed nowhere from then on, its forks untouched so the Undo finds them;
+     * retention purges it 30 days on.
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     /** The draft's pending documents; recounted at commit for every draft a write set locked. */
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     pendingFolderCount: integer("pending_folder_count").notNull().default(0),

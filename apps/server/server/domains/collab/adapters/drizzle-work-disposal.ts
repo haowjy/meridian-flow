@@ -1,8 +1,7 @@
 /**
  * Work purge's disposal of a purged Work (§2.6, F10), inside purge's transaction after its
- * deleted/cutoff proof: the draft the Work names and those its purged lineages' roots name each
- * have their tree records discarded; the purge then deletes their rows. Drafts hold no text while
- * they are off (phase 2 gives them forks, which go with their draft). The Work and the
+ * deleted/cutoff proof: the Work's drafts and those its purged lineages' roots name each have their
+ * tree records discarded; the purge then deletes their rows, and their forks go with them. The Work and the
  * lineages it purges are gone for good, so nothing is recorded to take back. The public command's
  * active-Work fence is never used, and no pending projection runs: the Work is being deleted.
  * Its drafted creates are in no view afterwards and retention purges them.

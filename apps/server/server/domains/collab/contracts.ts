@@ -365,6 +365,8 @@ export type DraftReviewApi = {
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
+  /** A Work's drafts: list, create, rename, delete and its Undo, and which one a chat writes into. */
+  workDrafts: import("./adapters/drizzle-work-drafts.js").WorkDrafts;
   /** Apply and Discard on documents, folders or a Work, and their Undo. */
   presses: import("./adapters/drizzle-press.js").PressStore;
 };

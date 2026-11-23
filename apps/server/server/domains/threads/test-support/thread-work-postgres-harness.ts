@@ -4,6 +4,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import * as schema from "@meridian/database/schema";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 
 export const THREAD_WORK_RACE = {
   userId: "00000000-0000-4000-8000-000000000471",
@@ -27,7 +28,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     name: "Work Lifecycle Race",
     slug: "work-lifecycle-race",
   });
-  await db.insert(schema.works).values([
+  await insertWorks(db, [
     {
       id: ids.noWorkId,
       projectId: ids.projectId,

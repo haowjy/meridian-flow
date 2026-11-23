@@ -1,6 +1,7 @@
 /** Seeds a second Work (with its primary chat and one assistant turn) beside the harness's first. */
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import type { createHarness } from "./collab-postgres-harness.js";
 import { PROJECT_ID, USER_ID } from "./collab-postgres-harness.js";
 
@@ -15,17 +16,18 @@ export const TURN_B_ID = "00000000-0000-4000-8000-000000000822" as TurnId;
 /** A second Work in the project with its own primary chat and one assistant turn. */
 export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<void> {
   const { db, schema } = fixture;
-  await db
-    .insert(schema.works)
-    .values({
+  await insertWorks(
+    db,
+    {
       id: WORK_B_ID,
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Work B",
       handle: "w2",
       draftId: WORK_B_DRAFT_ID,
-    })
-    .onConflictDoNothing();
+    },
+    { ifAbsent: true },
+  );
   await db
     .insert(schema.threads)
     .values({

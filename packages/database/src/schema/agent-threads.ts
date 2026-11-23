@@ -68,12 +68,12 @@ export const threads = pgTable(
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull(),
     /**
-     * A root chat's lineage draft, minted with the chat: what its No Work chats, forks and
-     * subagents draft into. Set exactly on root chats (`threads_draft_on_root`).
+     * The draft a root chat's lineage writes into: in a named Work one of its drafts (a new chat
+     * names the Work's default), with No Work the lineage's own, minted with the chat. Set exactly
+     * on root chats (`threads_draft_on_root`); forks and subagents write their root's.
      */
     draftId: text("draft_id")
       .$type<DraftId>()
-      .unique("threads_draft_id")
       .references((): PgColumn => drafts.id),
     originTurnId: uuid("origin_turn_id")
       .$type<TurnId>()
@@ -126,6 +126,7 @@ export const threads = pgTable(
     index("threads_lineage_derivations")
       .on(table.rootThreadId)
       .where(sql`${table.originType} IN ('fork', 'handoff')`),
+    index("threads_draft").on(table.draftId).where(sql`${table.draftId} IS NOT NULL`),
     index("threads_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),

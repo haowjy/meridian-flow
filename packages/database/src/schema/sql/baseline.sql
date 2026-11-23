@@ -226,8 +226,10 @@ ALTER TABLE ONLY public.turns
 ALTER TABLE ONLY public.tree_nodes
     ALTER CONSTRAINT tree_nodes_parent_in_source DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE ONLY public.works
-    ALTER CONSTRAINT works_draft_id_drafts_id_fk DEFERRABLE;
+-- A Work's default draft can be inserted before the Work in one transaction, with the id the
+-- client minted (`mint_work_default_draft`).
+ALTER TABLE ONLY public.drafts
+    ALTER CONSTRAINT drafts_work_same_project_fk DEFERRABLE INITIALLY DEFERRED;
 
 CREATE FUNCTION public.create_tree_list() RETURNS trigger
     LANGUAGE plpgsql
@@ -289,20 +291,14 @@ CREATE FUNCTION public.mint_named_draft() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-  names_draft boolean;
   draft_project uuid;
 BEGIN
-  -- A named Work and a root chat each name their draft, minted with them in the same insert
-  -- (`threads_draft_on_root`, `works_draft_unless_no_work`). The client may send the id it
-  -- minted, so it can type into the draft before the create returns.
-  IF TG_TABLE_NAME = 'works' THEN
-    names_draft := NOT NEW.is_no_work;
-  ELSE
-    names_draft := NEW.root_thread_id = NEW.id;
-  END IF;
+  -- A root chat names the draft its lineage writes into (`threads_draft_on_root`). In a named Work
+  -- the server names one of the Work's drafts; with No Work the chat's lineage has its own, minted
+  -- here with the chat. The client may send the id it minted, so it can type into the draft before
+  -- the create returns.
   -- A retried create whose row exists conflicts or does nothing: it mints nothing.
-  IF NOT names_draft OR EXISTS (SELECT 1 FROM works WHERE id = NEW.id)
-    OR EXISTS (SELECT 1 FROM threads WHERE id = NEW.id) THEN
+  IF NEW.root_thread_id <> NEW.id OR EXISTS (SELECT 1 FROM threads WHERE id = NEW.id) THEN
     RETURN NEW;
   END IF;
   IF NEW.draft_id IS NULL THEN
@@ -318,15 +314,33 @@ BEGIN
   IF draft_project <> NEW.project_id THEN
     RAISE EXCEPTION 'draft % belongs to another project', NEW.draft_id USING ERRCODE = 'check_violation';
   END IF;
-  -- One row names a draft: the two unique columns cannot see each other.
-  IF EXISTS (SELECT 1 FROM works WHERE draft_id = NEW.draft_id)
-    OR EXISTS (SELECT 1 FROM threads WHERE draft_id = NEW.draft_id) THEN
-    RAISE EXCEPTION 'draft % is named by another row', NEW.draft_id USING ERRCODE = 'unique_violation';
+  -- A lineage's own draft is named by its one root.
+  IF EXISTS (SELECT 1 FROM drafts d JOIN threads t ON t.draft_id = d.id
+      WHERE d.id = NEW.draft_id AND d.work_id IS NULL) THEN
+    RAISE EXCEPTION 'draft % is named by another chat', NEW.draft_id USING ERRCODE = 'unique_violation';
   END IF;
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER works_mint_draft BEFORE INSERT ON public.works FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();
-
 CREATE TRIGGER threads_mint_draft BEFORE INSERT ON public.threads FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();
+
+CREATE FUNCTION public.mint_work_default_draft() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- A named Work always has a default draft: what a new chat of it writes into. The server may
+  -- have inserted it first, under the id the client minted; otherwise it is minted here.
+  IF NEW.is_no_work OR EXISTS (SELECT 1 FROM drafts WHERE work_id = NEW.id AND is_default) THEN
+    RETURN NEW;
+  END IF;
+  INSERT INTO drafts (id, project_id, work_id, is_default, created_by)
+    VALUES ((
+      SELECT string_agg(substr('0123456789abcdefghijklmnopqrstuvwxyz', 1 + floor(random() * 36)::int, 1), '')
+      FROM generate_series(1, 12)
+    ), NEW.project_id, NEW.id, true, NEW.created_by_user_id);
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER works_mint_default_draft AFTER INSERT ON public.works FOR EACH ROW EXECUTE FUNCTION public.mint_work_default_draft();

@@ -140,7 +140,8 @@ writer text (`term`; the app's door finds the passage again with it).
 The tree module supplies `LIVE_TREE` and `{ kind: "draft", draftId }`. ContextFS
 uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a draft's
 document or folder that exists only in that Work's draft appears only there. A draft create's text is
-plain Live text (phase 1 has no text drafts). Readers compose `visibleDocuments(view)` and
+its own Live room, which only the draft's view shows; a draft's edits to a document Live has are
+its fork room (`fork:<draft>:<document>`). Readers compose `visibleDocuments(view)` and
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
 `DocumentRevisions.current` resolves the thread's current primary Work, asks file access
@@ -314,7 +315,7 @@ one source's tree contributes.
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
   path or room version, and a version sent for a folder, which the route refuses before the domain
   runs. A draft view names its Work and no chat: the server reads the document through that Work's
-  view of Live (Live, until phase 2 brings the Work's text drafts); a Work outside the project is refused
+  view of Live; a Work outside the project is refused
   as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
   documents the Work places in it, a document only the Work has included, and a node the Work
   does not place is left out as purged. The one name outcome left to the address-model

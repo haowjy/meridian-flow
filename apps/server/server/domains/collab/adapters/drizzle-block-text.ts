@@ -1,6 +1,12 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentBlockRooms, documentBlocks, documents, treeNodes } from "@meridian/database";
+import {
+  documentBlockRooms,
+  documentBlocks,
+  documentForks,
+  documents,
+  treeNodes,
+} from "@meridian/database";
 import { and, eq, inArray, isNull, lte, ne, not, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
@@ -71,8 +77,12 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .where(
           and(
             current(ids),
-            // A Work's reader sees its own suggestions, which the stored blocks leave out.
-            draft ? sql`not (${documentBlockRooms.pendingChanges} ? ${draft})` : undefined,
+            // The stored blocks are Live's: a reader whose draft has a fork of the document reads
+            // the fork instead.
+            draft
+              ? sql`not exists (select 1 from ${documentForks} where ${documentForks.documentId} = ${documents.id}
+                  and ${documentForks.draftId} = ${draft})`
+              : undefined,
           ),
         );
       return new Map(rows.map((row) => [row.id, row.text]));

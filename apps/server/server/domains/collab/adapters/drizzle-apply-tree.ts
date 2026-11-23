@@ -11,10 +11,8 @@
 import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
-import { docVersion, encodeDocVersion } from "@meridian/document-model";
 import {
   applyDraft,
-  covers,
   LIVE,
   pendingRecords,
   recordsOfItem,
@@ -25,7 +23,7 @@ import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizz
 import type { TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import { PressUnsynced, type TreeCut } from "../domain/press.js";
+import type { TreeCut } from "../domain/press.js";
 import { treeListOfNode } from "./drizzle-draft-tree-lists.js";
 
 /** One item of an Apply as the tree half reads it. */
@@ -78,6 +76,8 @@ export function createApplyTreeOperations(input: {
     draftId: DraftId;
     userId: UserId;
     commandId: CommandId;
+    /** The tree's name for this draft's part of the command (`assertNewCommand`: one per draft). */
+    treeCommand: string;
     saw: TreeCut | undefined;
     items: readonly TreeApplyItem[];
     /** Under the owners' locks: what each source takes. */
@@ -95,18 +95,11 @@ export function createApplyTreeOperations(input: {
     const { result: perList } = await input.treeLists.submit({
       lists,
       make: (writers) => {
-        const rows: {
-          scope: "project" | "account";
-          mark: Uint8Array;
-          created: string[];
-          nodes: string[];
-        }[] = [];
+        const rows: { scope: "project" | "account" }[] = [];
         for (const [at, end] of writers.entries()) {
           const { writer } = end;
           const list = lists[at] as TreeList;
           const saw = cutOf(click.saw, list.kind, end);
-          // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
-          if (saw && !covers(writer.doc, saw)) throw new PressUnsynced();
           const pending = pendingRecords(writer.doc, draftId);
           const draft = writer.view({ draft: draftId });
           const mine = items.filter((it) => it.list === list);
@@ -128,7 +121,7 @@ export function createApplyTreeOperations(input: {
                 writer,
                 draftId,
                 actor,
-                click.commandId,
+                click.treeCommand,
                 [...new Set(chosen.map((record) => record.id))],
                 saw,
                 click.judge.closed,
@@ -142,14 +135,7 @@ export function createApplyTreeOperations(input: {
               )
             )
               landed.add(it.node);
-          if (!applied) continue;
-          const { copies } = applied;
-          rows.push({
-            scope: list.kind,
-            mark: encodeDocVersion(docVersion(writer.doc)),
-            created: copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
-            nodes: [...new Set(copies.map((copy) => copy.node))],
-          });
+          if (applied) rows.push({ scope: list.kind });
         }
         // Every judgement above was a guess for a source whose owner was not locked.
         click.judge.assertLocked();
@@ -164,8 +150,6 @@ export function createApplyTreeOperations(input: {
           commandId: click.commandId,
           draftId,
           scope: row.scope,
-          mark: Buffer.from(row.mark),
-          nodes: row.nodes,
         })),
       );
     if (perList.length > 0) {

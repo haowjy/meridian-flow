@@ -144,7 +144,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       actionId,
       room: null,
       updates: committed.updates,
-      destination: "live" as const,
+      destination: versionOf(document),
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
       message: [
         command.command === "revert"
@@ -265,7 +265,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           actionId: randomUUID(),
           room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: live)`,
+            `your edits to ${document.uri}, newest first (version: ${versionOf(document)})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),
@@ -274,3 +274,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     },
   };
 }
+
+/** The version an inverse of this document runs in, as the model names it. */
+const versionOf = (document: InverseDocument) =>
+  document.room.kind === "fork" ? ("draft" as const) : ("live" as const);

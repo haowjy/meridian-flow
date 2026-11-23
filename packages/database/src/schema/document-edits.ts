@@ -97,7 +97,10 @@ export const documentEditParts = pgTable(
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
-    check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' = 'live'`),
+    check(
+      "document_edit_parts_origin_valid",
+      sql`${t.origin}->>'kind' = 'live' OR (${t.origin}->>'kind' = 'fork' AND ${t.origin}->>'draftId' IS NOT NULL)`,
+    ),
   ],
 );
 

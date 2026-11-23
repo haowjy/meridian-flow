@@ -1,26 +1,34 @@
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
+import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
   documentForks,
   documentSnapshots,
   documents,
+  drafts,
   type StoredFrontiers,
 } from "@meridian/database/schema";
 import {
+  changedBlocks,
   type DocKey,
   decodeEnvelope,
   decodeRoomVersion,
+  docCovers,
+  docVersion,
   encodeChanges,
   encodeEnvelope,
   encodeRoomVersion,
   freshServerPeerId,
   type Imported,
+  isServerPeer,
+  type PeerId,
+  pendingRemovalVersion,
   RoomDocs,
   type ShapeSchema,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
 import { processDetachedWork } from "../../../shared/detached-work.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -71,6 +79,9 @@ export const DEFAULT_ROOM_BOUNDS: RoomBounds = {
 /** A loaded room's estimated memory against its snapshot bytes, as gate 3 measured it. */
 const LOADED_SIZE_FACTOR = 10;
 
+/** Forks one retention pass reads at most. */
+const FORK_RETIRE_BATCH = 200;
+
 export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   /** Room names loaded now. */
   loaded(): string[];
@@ -85,6 +96,15 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
    * document with a row keeps its rows here: its row's delete, or the purge, takes them.
    */
   end(documentIds: readonly DocumentId[]): Promise<void>;
+  /** Ends these rooms as `end` does, without saving: a purged draft's forks. */
+  endRooms(rooms: readonly DocumentRoom[]): Promise<void>;
+  /**
+   * The retention pass over forks (design §2): each fork whose flag was last read 30 days ago, or
+   * that has been empty that long, is read again (forwarded) and its flag set from the read; one
+   * still empty 30 days on is deleted with its rows. A loaded fork is skipped: its saves keep its
+   * flag. Returns the forks it deleted.
+   */
+  retireEmptyForks(now?: Date): Promise<number>;
 }
 
 interface Loaded {
@@ -110,6 +130,65 @@ interface Loaded {
 }
 
 type Row = { docKey: string; snapshot: Uint8Array; frontiers: StoredFrontiers };
+type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
+
+/**
+ * Writes a fork's row, or sets what it says from a read of the fork now (`docs`, a draft copy):
+ * whether it is pending, Live's version under its removals, and whether the writer typed in it.
+ * Under the document's lock. Answers whether the pending flag changed: the draft's count moves.
+ */
+export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs): Promise<boolean> {
+  const changes = changedBlocks(docs);
+  const pending = changes.length > 0;
+  const [before] = await tx
+    .select({ pending: documentForks.pending })
+    .from(documentForks)
+    .where(
+      and(eq(documentForks.draftId, room.draftId), eq(documentForks.documentId, room.documentId)),
+    );
+  const removals = pending ? pendingRemovalVersion(docs, changes) : new Map();
+  const state = {
+    pending,
+    liveVersion: removals.size > 0 ? Buffer.from(encodeRoomVersion(removals)) : null,
+    writerWrote: pending && writerWrote(docs, changes),
+  };
+  await tx
+    .insert(documentForks)
+    .values({
+      draftId: room.draftId,
+      documentId: room.documentId,
+      ...state,
+      emptySince: pending ? null : new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [documentForks.draftId, documentForks.documentId],
+      set: {
+        ...state,
+        checkedAt: sql`now()`,
+        emptySince: pending ? null : sql`coalesce(${documentForks.emptySince}, now())`,
+      },
+    });
+  return (before?.pending ?? false) !== pending;
+}
+
+/**
+ * Whether a non-server peer (a tab) holds ops in the fork's structure or its changed blocks' text
+ * that Live lacks: the writer typed there. A fork forwards Live, so only ops beyond Live's count.
+ */
+function writerWrote(docs: RoomDocs, changes: readonly { blocks: readonly string[] }[]): boolean {
+  const live = docs.live;
+  const ahead = (doc: LoroDoc | undefined, base: LoroDoc | undefined) => {
+    if (!doc) return false;
+    const held = base ? docVersion(base) : new Map<string, number>();
+    for (const [peer, counter] of docVersion(doc))
+      if (!isServerPeer(peer as PeerId) && counter > (held.get(peer) ?? 0)) return true;
+    return false;
+  };
+  if (ahead(docs.structure, live?.structure)) return true;
+  return changes.some((change) =>
+    change.blocks.some((id) => ahead(docs.textOf(id), live?.textOf(id))),
+  );
+}
 
 /**
  * `DocumentRooms` on Postgres (design §4): a room's docs live in this process, loaded together from
@@ -135,6 +214,11 @@ export function createPostgresDocumentRooms(input: {
   schemaVersion: number;
   /** A save of a Live room's rows committed: its text moved for everyone who derives from it. */
   onLiveSaved?(documentId: DocumentId): void;
+  /**
+   * In the save's transaction: a fork's pending flag changed, so its draft's review count moved.
+   * A save that leaves the flag as it was (most keystrokes) does not call it.
+   */
+  onForkPendingChanged?(draftId: DraftId): Promise<void>;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
   const { db, shape, eventSink, schemaVersion } = input;
@@ -309,11 +393,15 @@ export function createPostgresDocumentRooms(input: {
    */
   function imported(
     loaded: Loaded,
-    { changed, restore }: Imported,
+    { changed, pending, restore }: Imported,
     batch: Uint8Array | null,
     origin: RoomOrigin,
   ) {
-    if (changed.length === 0) return;
+    if (changed.length === 0) {
+      // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
+      if (pending && batch) emitTo(loaded.room, batch, origin);
+      return;
+    }
     markDirty(loaded, changed);
     if (batch) emitTo(loaded.room, batch, origin);
     if (restore) emitTo(loaded.room, encodeChanges([restore]), "server:restore");
@@ -399,12 +487,26 @@ export function createPostgresDocumentRooms(input: {
       .from(documents)
       .where(eq(documents.id, room.documentId));
     if (row?.purgedAt) return { bytes: 0, docs: 0 };
+    // A purged draft's fork has no rows to write. The purge deletes the draft under this
+    // document's lock, so the read needs no row lock: one would follow the document key, against
+    // the lock order every press takes.
+    if (room.kind === "fork") {
+      const [draft] = await tx
+        .select({ id: drafts.id })
+        .from(drafts)
+        .where(eq(drafts.id, room.draftId));
+      if (!draft) return { bytes: 0, docs: 0 };
+    }
     const rows = [...keys].flatMap((docKey) => {
       const doc = docs.doc(docKey);
       return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
     });
     if (rows.length === 0) return { bytes: 0, docs: 0 };
     const bytes = await writeSnapshots(tx, rows);
+    // The fork's row comes with its first rows, whichever door wrote them (design §2), and every
+    // save sets whether it is pending from the docs in hand, forwarded.
+    if (room.kind === "fork" && (await markFork(tx, room, docs)))
+      await input.onForkPendingChanged?.(room.draftId);
     await tx
       .update(documents)
       .set({
@@ -570,6 +672,10 @@ export function createPostgresDocumentRooms(input: {
             .select({ draftId: documentForks.draftId })
             .from(documentForks)
             .where(eq(documentForks.documentId, live.documentId));
+          // Live's text docs a fork holds ops of that Live lacks: Apply imports those ops into
+          // Live, which throws once Live's history is cut past what they depend on (design §4).
+          // The structure is never held: Apply writes Live's structure with ops of its own.
+          const held = new Set<DocKey>();
           for (const { draftId } of forks) {
             const fork = { kind: "fork", draftId, documentId: live.documentId } as const;
             const forkName = loroRoomName(fork);
@@ -577,6 +683,10 @@ export function createPostgresDocumentRooms(input: {
             if (stored.length === 0) continue;
             const docs = await build(tx, fork, liveDocs, freshServerPeerId());
             try {
+              for (const [key, doc] of docs.texts) {
+                const base = liveDocs.texts.get(key);
+                if (!base || !docCovers(docVersion(base), docVersion(doc))) held.add(key);
+              }
               for (const { docKey } of stored) {
                 const saved = await cutRow(
                   tx,
@@ -592,6 +702,17 @@ export function createPostgresDocumentRooms(input: {
             }
           }
           for (const [docKey, mark] of marks) {
+            // Kept at its mark, and ripe again only `historyMs` from now: each unload until the
+            // fork moves on would otherwise rebuild Live and its forks for nothing.
+            if (held.has(docKey)) {
+              await tx
+                .update(documentSnapshots)
+                .set({ historyMarkAt: sql`now()` })
+                .where(
+                  and(eq(documentSnapshots.roomKey, name), eq(documentSnapshots.docKey, docKey)),
+                );
+              continue;
+            }
             const saved = await cutRow(tx, name, docKey, liveDocs.doc(docKey), mark);
             after -= saved;
             if (saved > 0) cut++;
@@ -621,7 +742,8 @@ export function createPostgresDocumentRooms(input: {
    * Rewrites one row as `doc` cut at `mark`, and moves the mark to where the doc stands now, so
    * the next compaction cuts there. Returns the bytes the row lost: 0 for no cut (no mark, or one
    * the doc lacks), and 0 where the cut would not shrink the row (a doc little changed since its
-   * mark), which keeps its history and only moves the mark.
+   * mark), which keeps its history. Either way the row holds the doc as it is now: a fork's doc was
+   * forwarded to Live before its cut, and a row left behind Live's cut could never forward again.
    */
   async function cutRow(
     tx: DrizzleDb,
@@ -632,27 +754,46 @@ export function createPostgresDocumentRooms(input: {
   ): Promise<number> {
     if (!doc || !mark || mark.length === 0 || !holdsFrontiers(doc, mark)) return 0;
     const shallow = doc.export({ mode: "shallow-snapshot", frontiers: loroFrontiers(mark) });
+    const full = doc.export({ mode: "snapshot" });
     const [row] = await tx
       .select({ bytes: sql<number>`octet_length(${documentSnapshots.snapshot})` })
       .from(documentSnapshots)
       .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
     const stored = Number(row?.bytes ?? 0);
     const now = storedFrontiers(doc);
-    const shrinks = shallow.byteLength < stored;
+    const shrinks = shallow.byteLength < full.byteLength && shallow.byteLength < stored;
+    const written = shrinks ? shallow : full;
     await tx
       .update(documentSnapshots)
       .set({
-        ...(shrinks
-          ? {
-              snapshot: Buffer.from(shallow.buffer, shallow.byteOffset, shallow.byteLength),
-              frontiers: now,
-            }
-          : {}),
+        snapshot: Buffer.from(written.buffer, written.byteOffset, written.byteLength),
+        frontiers: now,
         historyMark: now,
         historyMarkAt: sql`now()`,
       })
       .where(and(eq(documentSnapshots.roomKey, roomKey), eq(documentSnapshots.docKey, docKey)));
     return shrinks ? stored - shallow.byteLength : 0;
+  }
+
+  /** Frees the loaded rooms `match` picks, forks first, dropping what they have not saved. */
+  async function endLoaded(match: (room: DocumentRoom) => boolean) {
+    // A load in flight would register its room after this one ended.
+    await Promise.allSettled([...loading.values()]);
+    const victims = [...rooms.values()]
+      .filter((r) => match(r.room))
+      .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
+    for (const loaded of victims) {
+      if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
+      if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+      loaded.idleTimer = loaded.saveTimer = null;
+      loaded.dirty = new Set();
+      loaded.firstDirtyAt = 0;
+      if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+      // A save already running finishes with the docs it started on.
+      await loaded.queue;
+      loaded.docs.free();
+      settleIfIdle(loaded);
+    }
   }
 
   /**
@@ -789,24 +930,8 @@ export function createPostgresDocumentRooms(input: {
 
     async end(documentIds) {
       if (documentIds.length === 0) return;
-      // A load in flight would register its room after this one ended.
-      await Promise.allSettled([...loading.values()]);
       const ending = new Set<string>(documentIds);
-      const victims = [...rooms.values()]
-        .filter((r) => ending.has(r.room.documentId))
-        .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
-      for (const loaded of victims) {
-        if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
-        if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
-        loaded.idleTimer = loaded.saveTimer = null;
-        loaded.dirty = new Set();
-        loaded.firstDirtyAt = 0;
-        if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
-        // A save already running finishes with the docs it started on.
-        await loaded.queue;
-        loaded.docs.free();
-        settleIfIdle(loaded);
-      }
+      await endLoaded((room) => ending.has(room.documentId));
       await currentDrizzleDb(db).execute(sql`
         delete from document_snapshots s
         where s.room_key in (${sql.join(
@@ -814,6 +939,53 @@ export function createPostgresDocumentRooms(input: {
           sql`, `,
         )})
           and not exists (select 1 from documents d where 'live:' || d.id::text = s.room_key)`);
+    },
+
+    async endRooms(ended) {
+      const names = new Set(ended.map(loroRoomName));
+      if (names.size > 0) await endLoaded((room) => names.has(loroRoomName(room)));
+    },
+
+    async retireEmptyForks(now = new Date()) {
+      const cutoff = deletionPurgeCutoff(now);
+      const due = await runOutsideDrizzleTransaction(() =>
+        db
+          .select({ draftId: documentForks.draftId, documentId: documentForks.documentId })
+          .from(documentForks)
+          .where(or(lte(documentForks.checkedAt, cutoff), lte(documentForks.emptySince, cutoff)))
+          .orderBy(documentForks.checkedAt)
+          .limit(FORK_RETIRE_BATCH),
+      );
+      let retired = 0;
+      for (const { draftId, documentId } of due) {
+        const room: ForkRoom = { kind: "fork", draftId, documentId };
+        if (rooms.has(loroRoomName(room))) continue;
+        const gone = await runOutsideDrizzleTransaction(() =>
+          runInDrizzleTransaction(db, async () => {
+            const tx = currentDrizzleDb(db);
+            await lockRoom(tx, room);
+            const docs = await copyInTransaction(tx, room, freshServerPeerId());
+            try {
+              if (await markFork(tx, room, docs)) await input.onForkPendingChanged?.(draftId);
+            } finally {
+              docs.free();
+            }
+            const deleted = await tx
+              .delete(documentForks)
+              .where(
+                and(
+                  eq(documentForks.draftId, draftId),
+                  eq(documentForks.documentId, documentId),
+                  lte(documentForks.emptySince, cutoff),
+                ),
+              )
+              .returning({ draftId: documentForks.draftId });
+            return deleted.length > 0;
+          }),
+        );
+        if (gone) retired++;
+      }
+      return retired;
     },
 
     async close() {

@@ -30,7 +30,8 @@ the first write result rather than assuming `e1`:
 ./mf thread send "$T" revert --mock "$REVERT" --json
 ```
 
-Phase 1 has no text drafts: in Draft mode too, a write lands in Live. Browser cases use real
+In Draft mode a write lands in the chat's draft's fork room, and the model's undo and revert
+take back only parts written there; Live is untouched until a press. Browser cases use real
 typing instead of a mocked writer edit.
 
 ## Cases
