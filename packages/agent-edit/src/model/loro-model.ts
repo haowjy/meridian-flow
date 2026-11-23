@@ -171,6 +171,13 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       if (!result.ok) throw new Error(result.message);
     },
 
+    recordPieces(doc, a, b) {
+      const result = loroDocumentOf(doc).apply([
+        { kind: "pieces", blocks: [blockOf(a).id, blockOf(b).id] },
+      ]);
+      if (!result.ok) throw new Error(result.message);
+    },
+
     applyOps(doc, ref, ops) {
       const document = loroDocumentOf(doc);
       const block = blockOf(ref);
