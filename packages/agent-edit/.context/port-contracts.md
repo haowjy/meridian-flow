@@ -27,7 +27,8 @@ document in any of its rooms (Live or any draft's fork), as recorded, with the r
 switches between Live and Draft, and the core decides whether the room it writes in can check that
 read out. `planningShown` takes a document id and answers every block the planning blocks showed of
 it in full, from every room, oldest first. On the server each is a per-document query over
-`observation_frontiers` (the room column names the document); until 2b it asks Live's room only.
+`observation_frontiers`: its rooms are the document's Live room and its fork room in every
+draft of the project (`drizzle-model-evidence.ts`).
 
 ## `AgentEditCodec`
 

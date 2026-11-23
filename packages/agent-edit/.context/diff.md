@@ -1,15 +1,12 @@
 # agent-edit diff: block diff and correspondence
 
 `src/diff/` is the pure text model: which block of one version is which block of the other
-(`correspond`), what changed between two block lists (`diffBlocks`), some of those changes applied
-to the base (`composeHunks`). It depends on ProseMirror only, so the browser and the server import
+(`correspond`), and what changed between two block lists (`diffBlocks`). It depends on ProseMirror only, so the browser and the server import
 the same functions. The three-way merge in
 `src/content-merge/` ([page](content-merge.md)) builds on it.
 
 Who uses it now:
 
-- The Live turn inverse (`content-merge/stands.ts`, server `inverse-text.ts`): `editChanges` cuts an
-  AI edit's recorded delta into changes with `changeGroups` and `composeHunks`.
 - The browser: `countWords` (word count), `wordDiff`/`diffKeys` (a saved edit's diff in chat).
 
 
@@ -18,15 +15,6 @@ Who uses it now:
 `diffBlocks(base, draft)` returns both token sides, the cleaned hunks, the raw ones and the
 alignment. `blocksEqual` counts whitespace and marks, so `captureDelta` records an edit that only
 changed either.
-
-`changeGroups` (`groups.ts`) joins hunks into one change when fewer than three unchanged words
-separate them (a block start counts as one word), across paragraph breaks. A block the id pairing
-found moved is a removal where it was and an addition where it is; both hunks join one group marked
-`move`, so a change can never take half of a move. `editChanges` skips move groups.
-
-`composeHunks(schema, diff, selected)` returns block-range patches, each covering the smallest block
-range no hunk straddles, so two hunks in one paragraph compose jointly into one patch.
-`applySpanPatches` puts them into the base's blocks.
 
 Words are split by a regex of our own (`segmentText` in `tokens.ts`), never `Intl.Segmenter`, whose
 word breaks follow the engine's ICU (Node keeps `a.b` one word and Chrome splits it). A token's key

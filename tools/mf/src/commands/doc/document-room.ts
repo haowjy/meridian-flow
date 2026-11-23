@@ -17,9 +17,11 @@ import {
   decodeRoomVersion,
   encodeEnvelope,
   freshPeerId,
+  inText,
   RoomDocs,
   type RoomVersion,
   readDocument,
+  type ShapeBlock,
   versionCovers,
 } from "@meridian/document-model";
 import { nodeOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
@@ -132,6 +134,50 @@ export async function writeMarkdown(
       throw new CliError("http_error", `The document refused its text: ${written.message}`);
     const update = docs.exportSince(before);
     if (update.size > 0) await socket.send(room, encodeEnvelope(update));
+  } finally {
+    close();
+  }
+}
+
+/**
+ * Types `replace` over the one occurrence of `find` in a block's text, as the writer selects it in
+ * a tab's editor and types: the selection's characters are deleted and the new ones inserted into
+ * that block's text doc, in Live or a draft, sent as one batch.
+ */
+export async function typeOver(
+  session: Session,
+  documentId: string,
+  find: string,
+  replace: string,
+  draftId?: string,
+): Promise<void> {
+  const { docs, room, socket, close } = await openDocument(session, documentId, draftId);
+  try {
+    const hits: { id: ShapeBlock["id"]; at: number }[] = [];
+    const visit = (blocks: readonly ShapeBlock[]) => {
+      for (const block of blocks) {
+        if (block.kind === "container") visit(block.children);
+        else {
+          const doc = docs.textOf(block.id);
+          const chars = doc ? Array.from(inText(doc, (text) => text.toString())) : [];
+          const wanted = Array.from(find);
+          for (let at = 0; at + wanted.length <= chars.length; at++)
+            if (wanted.every((char, i) => chars[at + i] === char)) hits.push({ id: block.id, at });
+        }
+      }
+    };
+    visit(readDocument(docs));
+    const [hit] = hits;
+    if (!hit || hits.length > 1)
+      throw new CliError("not_found", `"${find}" does not occur exactly once in one paragraph`);
+    const before = docs.shownVersion();
+    const { doc } = docs.writableText(hit.id);
+    inText(doc, (text) => {
+      text.delete(hit.at, Array.from(find).length);
+      if (replace) text.insert(hit.at, replace);
+    });
+    doc.commit();
+    await socket.send(room, encodeEnvelope(docs.exportSince(before)));
   } finally {
     close();
   }
