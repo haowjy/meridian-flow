@@ -4,25 +4,27 @@
  * rooms.
  */
 
-/** One block a result showed the model in full, in the view it was read in; later showings last. */
+/** One block a result showed the model in full, in whichever room it read; later showings last. */
 export interface ShownBlock {
   hash: string;
   body: string;
-  view: "live" | "draft";
 }
 
 export interface ObservationFrontier {
-  /** The host's opaque label for the room the document belongs to; carried, never read. */
+  /** The host's label for the room the result read (`loroRoomName`); carried, never read. */
   room: string;
   /** `encodeFrontierMap` of the docs the result showed, at the copy it was rendered from. */
   snapshot: Uint8Array;
 }
 
 /**
- * A host's lookup of the model's latest frontier for a room. Never throws: an
- * unavailable frontier is `null`, the empty one.
+ * A host's lookup of the model's latest read of a document: the latest frontier recorded in any of
+ * the document's rooms (Live, or any draft's fork), tagged with that room. A chat can switch
+ * between Live and Draft, so its latest read may be of the other room; the core checks whether
+ * the room it writes in can check that read out (design §5). Never throws: an unavailable
+ * frontier is `null`, the empty one.
  */
-export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
+export type FrontierLookup = (documentId: string) => Promise<ObservationFrontier | null>;
 
 /**
  * A call's lookups. `recording` chains what a result records (a sibling call's
@@ -35,10 +37,11 @@ export interface FrontierLookups {
   /** Required for a model reply's write; a read plans nothing. */
   planning?: FrontierLookup;
   /**
-   * The blocks the planning frontier's results showed in full in `room`, oldest first: what a
-   * write plans on when its frontier can't be compared with the room (history compacted below it).
+   * The blocks the planning frontier's results showed in full of the document, in every room it
+   * read, oldest first: what a write plans on when its latest read can't be checked out in the room
+   * it writes in (history compacted below it, or a draft's read of text Live doesn't hold).
    */
-  planningShown?: (room: string) => Promise<readonly ShownBlock[]>;
+  planningShown?: (documentId: string) => Promise<readonly ShownBlock[]>;
   reply?: ReplyMutations;
 }
 

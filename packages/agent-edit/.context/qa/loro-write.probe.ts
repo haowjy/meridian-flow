@@ -1,5 +1,7 @@
 // Hand-run probe of agent-edit on Loro (design §5) over the in-memory rooms, with a scripted model.
 // Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/loro-write.probe.ts
+import { type DocumentRoom, parseLoroRoomName } from "@meridian/contracts/protocol";
+import { encodeEnvelope, freshPeerId, setCommentBody } from "@meridian/document-model";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -10,6 +12,7 @@ import {
   createStaticDocumentLinks,
   type ObservationFrontier,
   renderAgentEditResult,
+  type ShownBlock,
   type WriteContext,
   type WriteOutcome,
 } from "../../src/integration.js";
@@ -32,20 +35,25 @@ const paragraph = (id: string, text: string) =>
   schema.nodes.paragraph.create({ id }, text ? schema.text(text) : null);
 const texts = (blocks: readonly PMNode[]) => blocks.map((block) => block.textContent);
 
-/** A chat: one thread whose frontiers chain from result to result, as the host records them. */
+/**
+ * A chat: one thread whose frontiers chain from result to result, as the host records them. Its
+ * lookups answer by document, the latest read in any of the document's rooms (Live or a fork), so
+ * a chat that switches between Live and Draft keeps what it read.
+ */
 function chat(threadId: string, turnId: string) {
   const frontiers = new Map<string, ObservationFrontier>();
-  const shown: { hash: string; body: string; view: "live" }[] = [];
+  const shown = new Map<string, ShownBlock[]>();
   const reply = createReplyMutations();
   let planning = new Map<string, ObservationFrontier>();
+  let planningShown = new Map<string, ShownBlock[]>();
   const context = (): WriteContext => ({
     threadId,
     turnId,
     responseIdentity: { modelResponseId: `${turnId}-response`, providerResponseId: null },
     frontiers: {
-      recording: async (room) => frontiers.get(room) ?? null,
-      planning: async (room) => planning.get(room) ?? null,
-      planningShown: async () => shown,
+      recording: async (documentId) => frontiers.get(documentId) ?? null,
+      planning: async (documentId) => planning.get(documentId) ?? null,
+      planningShown: async (documentId) => planningShown.get(documentId) ?? [],
       reply,
     },
   });
@@ -54,13 +62,18 @@ function chat(threadId: string, turnId: string) {
     /** A new request: the model plans on what every result so far showed. */
     request() {
       planning = new Map(frontiers);
+      planningShown = new Map([...shown].map(([doc, blocks]) => [doc, [...blocks]]));
       reply.clear();
     },
     record(outcome: WriteOutcome) {
-      if (outcome.frontier) frontiers.set(outcome.frontier.room, outcome.frontier);
+      const room = outcome.frontier && parseLoroRoomName(outcome.frontier.room);
+      if (!room || room.kind === "tree") return outcome;
+      frontiers.set(room.documentId, outcome.frontier as ObservationFrontier);
+      const blocks = shown.get(room.documentId) ?? [];
       for (const group of outcome.result.blocks ?? [])
         if (group.extent === "full")
-          for (const item of group.items) shown.push({ hash: item.hash, body: item.body, view: "live" });
+          for (const item of group.items) blocks.push({ hash: item.hash, body: item.body });
+      shown.set(room.documentId, blocks);
       return outcome;
     },
     context,
@@ -407,7 +420,11 @@ check(
   { draft: await draftText("ch6"), live: texts(await host.live("ch6")), changes: text(changes10) },
 );
 const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());
-check(liveChanges.isError === true || /live, which has none/.test(text(liveChanges)), "a Live chat has no changes to read", text(liveChanges));
+check(
+  !liveChanges.isError && /writes to live, so nothing waits for review/.test(text(liveChanges)),
+  "a Live chat's changes read succeeds and says nothing waits",
+  text(liveChanges),
+);
 
 // 11. A chat reads in Live, switches to Draft, and writes: the write plans on what it read (the Live
 // read, its ops in the fork), so the writer's sentence typed since stays, and the report names
@@ -471,8 +488,10 @@ check(
   { draft: await draftText("ch8"), live: texts(await host.live("ch8")), text: text(undo12) },
 );
 
-// 13. After the writer's turn Undo, the same rewrite by hash asked again is not answered
-// "unchanged" in silence: the answer shows the text as it stands, and the next write lands.
+// 13. After the writer's turn Undo, the same rewrite by hash asked again lands nothing (on the
+// model's view it is a no-op, and the Undo stands), and is not answered "unchanged" in silence: the
+// answer says the text was edited since and shows it, with no instruction to write again. A write
+// planned on the text it shows lands.
 await host.seed("ch9", [paragraph("x1", "Plain line.")]);
 const c13 = chat("thread-13", "t13");
 c13.request();
@@ -486,8 +505,11 @@ await host.undoTurn("ch9", "t13");
 c13.request();
 const again = c13.record(await rewrite());
 check(
-  /changed since you read it/.test(text(again)) && text(again).includes("Plain line."),
-  "a rewrite the view already holds but the room lost shows the text as it stands",
+  /edited since/.test(text(again)) &&
+    text(again).includes("Plain line.") &&
+    !/write it again/i.test(text(again)) &&
+    texts(await host.live("ch9"))[0] === "Plain line.",
+  "a rewrite the view already holds but the room lost lands nothing and shows the text as it stands",
   text(again),
 );
 c13.request();
@@ -520,6 +542,192 @@ check(
     ["One.", "Two.", "Three."].every((line) => listed14.some((body) => body.includes(line))),
   "a Draft chat's write into an emptied draft lands in the fork and lists every block",
   { draft: await draftText("ch10"), live: texts(await host.live("ch10")), text: text(write14) },
+);
+
+// 15. A chat reads in Draft (the draft's own text), is switched to Live, and writes the paragraph
+// as it read it with one sentence changed, after the writer typed in Live. Its read can't be
+// checked out in Live, so the write plans on the transcript: the writer's Live typing stays, only
+// the model's change lands, and the draft is not corrupted with duplicated text.
+await host.seed("ch11", [paragraph("z1", "Base opening. The bell rang.")]);
+await host.writerEdit("ch11", () => [paragraph("z1", "Draft opening. The bell rang.")], "d1");
+const c15 = chat("thread-15", "t15");
+c15.request();
+const read15 = c15.record(await draftCore.read({ ...file("ch11") } as never, c15.context()));
+const z1 = read15.result.blocks?.[0]?.items[0]?.hash;
+await host.writerEdit("ch11", () => [paragraph("z1", "Writer opening. The bell rang.")]);
+c15.request();
+const write15 = c15.record(
+  await run(() =>
+    core.write({ command: "replace", ...file("ch11"), in: z1, content: "Draft opening. The bell tolled." } as never, c15.context()),
+  ),
+);
+check(
+  !write15.isError &&
+    texts(await host.live("ch11"))[0] === "Writer opening. The bell tolled." &&
+    !(await draftText("ch11"))[0].includes("DraftDraft"),
+  "a chat switched from Draft to Live keeps the writer's Live typing",
+  { live: texts(await host.live("ch11")), draft: await draftText("ch11"), text: text(write15) },
+);
+
+// 16. A chat reads in Draft before the draft wrote anything (its read is Live's text), is switched
+// to Live, and rewrites the paragraph after the writer typed in Live: it plans on that read, so
+// the writer's word stays and the report names the writer.
+await host.seed("ch12", [paragraph("k1", "Kade ran. The bell rang."), paragraph("k2", "Dusk.")]);
+const c16 = chat("thread-16", "t16");
+c16.request();
+const read16 = c16.record(await draftCore.read({ ...file("ch12") } as never, c16.context()));
+const k1 = read16.result.blocks?.[0]?.items[0]?.hash;
+await host.writerEdit("ch12", (blocks) =>
+  blocks.map((block) => (block.attrs.id === "k1" ? paragraph("k1", "Kade sprinted. The bell rang.") : block)),
+);
+c16.request();
+const write16 = c16.record(
+  await run(() =>
+    core.write({ command: "replace", ...file("ch12"), in: k1, content: "Kade ran. The bell tolled twice." } as never, c16.context()),
+  ),
+);
+check(
+  !write16.isError &&
+    texts(await host.live("ch12"))[0] === "Kade sprinted. The bell tolled twice." &&
+    (write16.result.concurrent?.groups ?? []).some((group) => group.author === "the user"),
+  "a chat switched from Draft to Live plans on its Draft read and names the writer's change",
+  { live: texts(await host.live("ch12")), text: text(write16) },
+);
+
+// 17. A chat reads in Live, Live is compacted past that read, the writer types, and the chat,
+// switched to Draft, rewrites the paragraph as it read it: the transcript holds its Live read, so
+// the writer's word stays in the draft.
+await host.seed("ch13", [paragraph("g1", "Kade ran. The bell rang."), paragraph("g2", "Dusk.")]);
+const c17 = chat("thread-17", "t17");
+c17.request();
+const read17 = c17.record(await core.read({ ...file("ch13") } as never, c17.context()));
+const g1 = read17.result.blocks?.[0]?.items[0]?.hash;
+await host.writerEdit("ch13", (blocks) =>
+  blocks.map((block) => (block.attrs.id === "g1" ? paragraph("g1", "Kade sprinted. The bell rang.") : block)),
+);
+await host.compact("ch13");
+c17.request();
+const write17 = c17.record(
+  await run(() =>
+    draftCore.write({ command: "replace", ...file("ch13"), in: g1, content: "Kade ran. The bell tolled twice." } as never, c17.context()),
+  ),
+);
+check(
+  !write17.isError && (await draftText("ch13"))[0] === "Kade sprinted. The bell tolled twice.",
+  "a Live read below the cutoff, then a Draft write: the transcript keeps the writer's word",
+  { draft: await draftText("ch13"), text: text(write17) },
+);
+
+// 18. A press since the chat's read leaves the write planned on the read, like an offline peer's.
+// Apply: the chat read the writer's new paragraph in the draft, the writer applied it, and the
+// chat rewrites it as it read it: Apply imports the draft's own ops into Live, so the paragraph
+// stays one paragraph in the draft and Live keeps what was applied. Discard: the chat read the
+// writer's draft rewrite of a paragraph (now a heading), the writer discarded it, and the chat
+// rewrites the heading as it read it: the discard stands, only the chat's word lands, and the
+// report names the press.
+await host.seed("ch14", [paragraph("m1", "The tower stood."), paragraph("m2", "Wind.")]);
+await host.writerEdit(
+  "ch14",
+  (blocks) => [
+    schema.nodes.paragraph.create({ id: "m1", level: 2 }, schema.text("The old tower stood.")),
+    paragraph("m3", "A crow called."),
+    blocks[1],
+  ],
+  "d1",
+);
+const c18 = chat("thread-18", "t18");
+c18.request();
+const read18 = c18.record(await draftCore.read({ ...file("ch14") } as never, c18.context()));
+const [m1, m3] = read18.result.blocks?.[0]?.items.map((item) => item.hash) ?? [];
+check(
+  (await host.press("apply", "ch14", "d1", ["m3"])) === 1 &&
+    texts(await host.live("ch14")).join("|") === "The tower stood.|A crow called.|Wind.",
+  "the writer applies the new paragraph, its text with it",
+  texts(await host.live("ch14")),
+);
+c18.request();
+const apply18 = c18.record(
+  await run(() =>
+    draftCore.write({ command: "replace", ...file("ch14"), in: m3, content: "A crow called twice." } as never, c18.context()),
+  ),
+);
+check(
+  !apply18.isError &&
+    (await draftText("ch14")).join("|") === "The old tower stood.|A crow called twice.|Wind." &&
+    texts(await host.live("ch14")).join("|") === "The tower stood.|A crow called.|Wind.",
+  "a write after an Apply plans on the read: no duplicate, Live keeps what was applied",
+  { draft: await draftText("ch14"), live: texts(await host.live("ch14")), text: text(apply18) },
+);
+check((await host.press("discard", "ch14", "d1", ["m1"])) === 1, "the writer discards the heading");
+c18.request();
+const discard18 = c18.record(
+  await run(() =>
+    draftCore.write({ command: "replace", ...file("ch14"), in: m1, content: "## The old tower stood alone." } as never, c18.context()),
+  ),
+);
+const draft18 = await host.draft("ch14", "d1");
+check(
+  !discard18.isError &&
+    draft18[0].textContent === "The tower stood alone." &&
+    !draft18[0].attrs.level &&
+    (discard18.result.concurrent?.groups ?? []).some((group) => group.author === "the user's Apply or Discard"),
+  "a write after a Discard plans on the read: the discard stands, and the report names the press",
+  { draft: texts(draft18), level: draft18[0].attrs.level, text: text(discard18) },
+);
+
+// 19. `format: "changes"`: a moved block is marked, a delimiter in the text is escaped, and a
+// comment whose body only the draft changed is listed.
+await host.seed("ch15", [
+  paragraph("n1", "First."),
+  paragraph("n2", "plain"),
+  schema.nodes.paragraph.create({ id: "n3" }, schema.text("Noted text.", [schema.marks.comment.create({ id: "cm1" })])),
+]);
+const setComment = async (room: DocumentRoom, body: string) => {
+  const docs = await host.rooms.read(room, { peer: freshPeerId() });
+  try {
+    const since = docs.shownVersion();
+    setCommentBody(docs, "cm1", { body, author: "writer", resolved: false });
+    await host.rooms.write(room, encodeEnvelope(docs.exportSince(since)), "socket:writer");
+  } finally {
+    docs.free();
+  }
+};
+await setComment({ kind: "live", documentId: "ch15" }, "Check this.");
+await host.writerEdit(
+  "ch15",
+  (blocks) => [blocks[1].attrs.id === "n2" ? paragraph("n2", "plain {++odd++} ~~} x ~> y") : blocks[1], blocks[2], blocks[0]],
+  "d1",
+);
+await setComment({ kind: "fork", draftId: "d1", documentId: "ch15" }, "Check this twice.");
+const changes19 = text(await draftCore.read({ ...file("ch15"), format: "changes" } as never, chat("thread-19", "t19").context()));
+check(
+  changes19.includes("|{>>moved<<}First.") &&
+    changes19.includes(String.raw`|plain{++ \{++odd++\} \~\~\} x \~\> y++}`) &&
+    /\ncomment on [0-9a-f]+: Check \{~~this\.~>this twice\.~~\}/.test(changes19),
+  'format "changes" marks a move, escapes delimiters, and lists a comment-only change',
+  changes19,
+);
+
+// 20. The model's undo after an undo goes past the edit it already took back, and an undo with
+// nothing left to take back says nothing false.
+await host.seed("ch16", [paragraph("q1", "One."), paragraph("q2", "Two.")]);
+const c20 = chat("thread-20", "t20");
+c20.request();
+const read20 = c20.record(await core.read({ ...file("ch16") } as never, c20.context()));
+const [r1, r2] = read20.result.blocks?.[0]?.items.map((item) => item.hash) ?? [];
+c20.request();
+c20.record(await run(() => core.write({ command: "replace", ...file("ch16"), in: r1, content: "One more." } as never, c20.context())));
+c20.request();
+c20.record(await run(() => core.write({ command: "replace", ...file("ch16"), in: r2, content: "Two more." } as never, c20.context())));
+const undo20a = await run(() => core.write({ command: "undo", ...file("ch16") } as never, c20.context()));
+const undo20b = await run(() => core.write({ command: "undo", ...file("ch16") } as never, c20.context()));
+check(
+  texts(await host.live("ch16")).join("|") === "One.|Two." &&
+    /e2/.test(text(undo20a)) &&
+    /Took e1 out/.test(text(undo20b)) &&
+    !/written over/.test(text(undo20b)),
+  "a second undo takes back the edit before, not the one already taken back",
+  { live: texts(await host.live("ch16")), first: text(undo20a), second: text(undo20b) },
 );
 
 await host.close();

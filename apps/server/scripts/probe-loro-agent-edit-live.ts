@@ -116,8 +116,8 @@ async function turn(turnId: string, ask: string): Promise<WriteOutcome[]> {
         tool_use_id: use.toolCallId,
         responseIdentity: { modelResponseId: `${turnId}-${step}`, providerResponseId: null },
         frontiers: {
-          recording: async (room: string) => frontiers.get(room) ?? null,
-          planning: async (room: string) => planning.get(room) ?? null,
+          recording: async (documentId: string) => frontiers.get(documentId) ?? null,
+          planning: async (documentId: string) => planning.get(documentId) ?? null,
           reply,
         },
       };
@@ -125,7 +125,8 @@ async function turn(turnId: string, ask: string): Promise<WriteOutcome[]> {
         use.toolName === "read"
           ? await core.read(input, context)
           : await host.command(() => core.write(input, context));
-      if (outcome.frontier) frontiers.set(outcome.frontier.room, outcome.frontier);
+      // The chat's latest read of the document, in whichever room: the port answers by document.
+      if (outcome.frontier) frontiers.set("ch1", outcome.frontier);
       outcomes.push(outcome);
       const rendered = renderAgentEditResult(outcome.result);
       log.push(`--- ${turnId} ${use.toolName} ${JSON.stringify(use.input)}\n${rendered}`);

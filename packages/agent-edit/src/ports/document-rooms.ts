@@ -48,6 +48,11 @@ export interface AgentWriteRecord {
    * A Draft-mode turn's `Restore before` returns the fork to its first write's (design §2).
    */
   before: RoomVersion;
+  /**
+   * Each doc the batch writes, at its version once the write landed in the call's copy.
+   * `Restore before` keeps a structure key anyone wrote after its turn's last write's `after`.
+   */
+  after: RoomVersion;
   /** Stable write id (`turn:<turn>:tool:<call>`), and its ordinal, rendered `e<N>`. */
   writeId: string;
   wId: number;
@@ -95,7 +100,10 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /** Store a write's record in `tx`, beside its committed batch. */
+  /**
+   * Store a write's record in `tx`, beside its committed batch. The record says all an inverse
+   * needs; the batch is there to store, not to read back.
+   */
   recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
 }
 

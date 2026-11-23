@@ -494,7 +494,8 @@ export function applyBlocks(
     if (imported.restore) result.live.push(imported.restore);
   }
   const liveTexts = new Map<DocKey, TextSpan>();
-  for (const [key, at] of liveBefore) {
+  for (const key of batch.keys()) {
+    const at = liveBefore.get(key) ?? [];
     const doc = live.texts.get(key);
     if (!doc || sameValue(at, doc.frontiers())) continue;
     const change = { key, doc, before: at, after: doc.frontiers() };

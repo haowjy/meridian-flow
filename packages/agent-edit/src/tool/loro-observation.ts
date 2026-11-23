@@ -1,6 +1,6 @@
 // What a result showed on Loro, and who changed what since the model's last read (design §5,
 // "The concurrent-change report"): the frontiers say which docs changed, the docs' commit messages
-// say who (`turn:<id>` a chat, anything else the writer).
+// say who (`turn:<id>` a chat, `press:<id>` the writer's Apply or Discard, anything else the writer).
 
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
@@ -17,9 +17,9 @@ import {
   changedSince,
   encodeFrontierMap,
   type FrontierMap,
+  latestRead,
   messagesSince,
   planningFrontiers,
-  recordedRead,
 } from "../loro-frontier.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "../model/block-hash.js";
 import type { LoroDocument, LoroDocumentModel } from "../model/loro-model.js";
@@ -32,6 +32,7 @@ export interface LoroListingSource {
   copy: LoroDocument;
   model: LoroDocumentModel;
   room: DocumentRoom;
+  documentId: string;
   recording?: FrontierLookup;
   /** The reader's own turn: its changes are not listed. */
   ownTurn: string | null;
@@ -43,10 +44,11 @@ export interface LoroListingSource {
 }
 
 /**
- * The result with the frontier it showed and, when the model read this document before (in this
- * room, or in Live for a fork room: `recordedRead`), the blocks others changed since that read, by
+ * The result with the frontier it showed and, when the model's latest read of this document
+ * (`latestRead`) is one this room can check out, the blocks others changed since that read, by
  * author. In a fork, Live's forwarded changes carry their own commit messages: the writer's typing
- * and presses read as `the user`, a Live chat's writes as that chat. Never fails the result: a failure goes out without it.
+ * reads as `the user`, a press as their Apply or Discard, a Live chat's writes as that chat. Never
+ * fails the result: a failure goes out without it.
  */
 export async function recordLoroObservation(
   result: InternalWriteResult,
@@ -54,7 +56,7 @@ export async function recordLoroObservation(
 ): Promise<InternalWriteResult> {
   if (!source.recording) return result;
   try {
-    const recorded = await recordedRead(source.recording, source.room, source.copy.docs);
+    const recorded = await latestRead(source.recording, source.documentId);
     const frontier = {
       room: loroRoomName(source.room),
       snapshot: encodeFrontierMap(source.copy.docs.frontiers()),
@@ -174,6 +176,7 @@ async function labelOf(
   message: string | undefined,
   cache: Map<string, string | null>,
 ): Promise<string | null> {
+  if (message?.startsWith("press:")) return "the user's Apply or Discard";
   if (!message?.startsWith("turn:")) return "the user";
   const turn = message.slice("turn:".length);
   if (turn === source.ownTurn) return null;

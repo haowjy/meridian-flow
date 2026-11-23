@@ -8,7 +8,6 @@ import {
   type ChangeSelection,
   type DocKey,
   type DocVersion,
-  decodeEnvelope,
   discardBlocks,
   encodeChanges,
   encodeEnvelope,
@@ -18,7 +17,6 @@ import {
   readDocument,
   restoreBefore,
   STRUCTURE_KEY,
-  updateEnd,
   writeDocument,
 } from "@meridian/document-model";
 import {
@@ -101,10 +99,11 @@ const fork = (documentId: string, draftId: string): DocumentRoom => ({
 export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
   const rooms = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const records: AgentWriteRecord[] = [];
-  const batches = new Map<AgentWriteRecord, Uint8Array>();
+  /** Writes an inverse took back: the model's undo goes past them, as the server's does. */
+  const takenBack = new Set<AgentWriteRecord>();
   const ordinals = new Map<string, number>();
   let tx: MemoryRoomTx | null = null;
-  const pending: { record: AgentWriteRecord; batch: Uint8Array }[] = [];
+  const pending: AgentWriteRecord[] = [];
   let presses = 0;
 
   const command = <T>(work: () => Promise<T>) =>
@@ -112,10 +111,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       tx = current;
       try {
         const result = await work();
-        for (const { record, batch } of pending.splice(0)) {
-          records.push(record);
-          batches.set(record, batch);
-        }
+        records.push(...pending.splice(0));
         return result;
       } finally {
         pending.length = 0;
@@ -182,6 +178,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
         { message },
       );
     }
+    for (const record of taken) takenBack.add(record);
     return taken;
   };
 
@@ -205,8 +202,16 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const chosen =
         inverse.command === "revert"
           ? mine.filter((r) => editHandle(r.wId) === inverse.edit)
-          : mine.slice(-(inverse.count ?? 1)).reverse();
+          : mine
+              .filter((r) => !takenBack.has(r))
+              .slice(-(inverse.count ?? 1))
+              .reverse();
       if (chosen.length === 0) return { status: "invalid_write", message: "No such edit here." };
+      if (chosen.every((r) => takenBack.has(r)))
+        return {
+          status: "success",
+          message: `${editHandle(chosen[0].wId)} is already taken back.`,
+        };
       // The model's inverse names its turn, as its writes do.
       const taken = await takeBackIn(chosen, `turn:${context.turnId ?? "model"}`);
       const names = (parts: readonly AgentWriteRecord[]) =>
@@ -231,8 +236,8 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       roomFor: async (documentId) => (draftId ? fork(documentId, draftId) : live(documentId)),
       transaction: inCommand,
       origin: "server:agent",
-      recordWrite: async (_tx, record, batch) => {
-        pending.push({ record, batch });
+      recordWrite: async (_tx, record) => {
+        pending.push(record);
       },
     }),
     documentEdits,
@@ -307,13 +312,11 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const before = new Map<DocKey, DocVersion>();
       for (const write of writes)
         for (const [key, at] of write.before) if (!before.has(key)) before.set(key, at);
-      const last = writes.at(-1);
-      const structure = last && decodeEnvelope(batches.get(last) as Uint8Array).get(STRUCTURE_KEY);
       const docs = await rooms.read(room);
       try {
         const changes = restoreBefore(
           docs,
-          { before, after: structure ? updateEnd(structure) : null },
+          { before, after: writes.at(-1)?.after.get(STRUCTURE_KEY) ?? null },
           { message: `restore:turn:${turnId}` },
         );
         if (changes.length)
@@ -340,7 +343,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     },
     async undoTurn(documentId, turnId) {
       const parts = records
-        .filter((r) => r.documentId === documentId && r.turnId === turnId)
+        .filter((r) => r.documentId === documentId && r.turnId === turnId && !takenBack.has(r))
         .reverse();
       return { taken: (await takeBackIn(parts, `undo:turn:${turnId}`)).length };
     },
