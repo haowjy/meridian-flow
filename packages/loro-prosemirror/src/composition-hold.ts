@@ -105,7 +105,7 @@ function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrit
   for (const target of targets)
     for (const listener of hold.listeners.get(target) ?? []) listener.before();
   const result = docs.importBatch(batch);
-  if (result.restore) publish([result.restore]);
+  if (result.answers.length > 0) publish(result.answers);
   const changed = new Set(result.changed);
   deliver(hold, docs, changed, true);
   if (!docs.live) forwardInto(hold, changed);
@@ -118,7 +118,7 @@ function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
     // The draft reads Live's text for blocks it has not written, and its structure fork follows
     // Live's structure once forwarded.
     const forwarded = draft.forward();
-    if (forwarded.restore) publishDraft([forwarded.restore]);
+    if (forwarded.answers.length > 0) publishDraft(forwarded.answers);
     const keys = new Set([
       ...forwarded.changed,
       ...[...changed].filter((key) => !draft.texts.has(key)),

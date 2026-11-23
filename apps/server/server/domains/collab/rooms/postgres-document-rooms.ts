@@ -394,18 +394,18 @@ export function createPostgresDocumentRooms(input: {
    */
   function imported(
     loaded: Loaded,
-    { changed, pending, restore }: Imported,
+    { changed, pending, answers }: Imported,
     batch: Uint8Array | null,
     origin: RoomOrigin,
   ) {
-    if (changed.length === 0) {
+    if (changed.length === 0 && answers.length === 0) {
       // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
       if (pending && batch) emitTo(loaded.room, batch, origin);
       return;
     }
     markDirty(loaded, changed);
     if (batch) emitTo(loaded.room, batch, origin);
-    if (restore) emitTo(loaded.room, encodeChanges([restore]), "server:restore");
+    if (answers.length > 0) emitTo(loaded.room, encodeChanges(answers), "server:restore");
     if (loaded.room.kind === "live")
       for (const fork of forksOf(loaded.room.documentId))
         imported(fork, fork.docs.forward(), null, origin);
@@ -561,7 +561,7 @@ export function createPostgresDocumentRooms(input: {
             merged = true;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
-            const result = { changed: merge.changed, pending: false, restore: null };
+            const result = { changed: merge.changed, pending: false, restore: null, answers: [] };
             imported(loaded, result, merge.delta, "server:merge");
           }
           // Taken here, after the merge and right before the export, so a batch landing during
