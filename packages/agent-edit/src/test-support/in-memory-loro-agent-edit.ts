@@ -13,11 +13,8 @@ import {
   encodeEnvelope,
   freshPeerId,
   freshServerPeerId,
-  holdsSpan,
   type RoomDocs,
   readDocument,
-  restoreBefore,
-  turnSpan,
   writeDocument,
 } from "@meridian/document-model";
 import {
@@ -82,10 +79,10 @@ export interface InMemoryLoroHost {
     selection: ChangeSelection,
   ): Promise<number>;
   /**
-   * A Draft-mode turn card's `Restore before`: the fork back to the turn's start (design §2).
-   * False, and nothing written, when the room cut the history it needs.
+   * A Draft-mode turn card's `Restore before`: the turn's writes into the fork taken back by the
+   * Undo rule, newest first (design §2). Returns how many went back.
    */
-  restoreBefore(documentId: string, draftId: string, turnId: string): Promise<boolean>;
+  restoreBefore(documentId: string, draftId: string, turnId: string): Promise<number>;
   /** Compact the document's history to now (design §4's cutoff), as an unload past the bound does. */
   compact(documentId: string): Promise<void>;
   /** The writer's turn Undo on a chat card: the turn's writes taken back, each in its room (design §5). */
@@ -293,27 +290,15 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       }
     },
     async restoreBefore(documentId, draftId, turnId) {
-      const room = fork(documentId, draftId);
-      const span = turnSpan(
-        records.filter(
+      const room = loroRoomName(fork(documentId, draftId));
+      const parts = records
+        .filter(
           (r) =>
-            r.documentId === documentId &&
-            r.turnId === turnId &&
-            loroRoomName(r.room) === loroRoomName(room),
-        ),
-      );
-      const docs = await rooms.read(room);
-      try {
-        if (!holdsSpan(docs, span)) return false;
-        const changes = restoreBefore(docs, span, { by: { press: String(++presses) } });
-        if (changes.length)
-          await command(() =>
-            rooms.commit(inCommand(), room, encodeChanges(changes), "server:restore-before"),
-          );
-        return true;
-      } finally {
-        docs.free();
-      }
+            r.documentId === documentId && r.turnId === turnId && loroRoomName(r.room) === room,
+        )
+        .reverse();
+      const { taken } = await takeBackIn(parts, { press: String(++presses) });
+      return taken.length;
     },
     async compact(documentId) {
       const docs = await rooms.read(live(documentId));

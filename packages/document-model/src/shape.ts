@@ -15,6 +15,21 @@ export type StructureMap = (typeof STRUCTURE_MAPS)[number];
 export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 
 /**
+ * A fork's record of the overrides a press settled (design §2, "A press settles an override by a
+ * record"): `d.settled["<map>/<key>"]` holds the override value the press read, and the override
+ * reads as absent while it still holds that value. A press sets entries and never writes an
+ * override's key, so a tab's write the press did not read stays a pending change; its Undo
+ * deletes them; every writer of an override deletes the key's entry in the same commit.
+ */
+export const SETTLED_MAP = "d.settled";
+export const settledKey = (name: StructureMap, key: string) => `${name}/${key}`;
+/** The override a `d.settled` key names: its map, and its key there. */
+export const settledTarget = (key: string): [StructureMap, string] => {
+  const slash = key.indexOf("/");
+  return [key.slice(0, slash) as StructureMap, key.slice(slash + 1)];
+};
+
+/**
  * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
  * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A
  * key per write, so recording a pair again always writes, and a deletion of the keys a copy read
@@ -28,15 +43,20 @@ export const pieceEnds = (key: string) => key.split("/", 2) as [BlockId, BlockId
 
 /**
  * What a structure key belongs to: for a comment body (`comments`, `d.comments`) the comment, for
- * an `attrs` key (`id/name`) its block, for a `pieces` record both its blocks; every other map is
- * keyed by block id.
+ * an `attrs` key (`id/name`) its block, for a `pieces` record both its blocks, for a `d.settled`
+ * entry what its override belongs to; every other map is keyed by block id.
  */
-export const membersOf = (name: string, key: string): string[] =>
-  name.endsWith("attrs")
+export const membersOf = (name: string, key: string): string[] => {
+  if (name === SETTLED_MAP) {
+    const [map, target] = settledTarget(key);
+    return membersOf(map, target);
+  }
+  return name.endsWith("attrs")
     ? [key.slice(0, key.lastIndexOf("/"))]
     : name.endsWith("pieces")
       ? pieceEnds(key)
       : [key];
+};
 
 /** The text doc's one container. */
 export const TEXT_KEY = "t";

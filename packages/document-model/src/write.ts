@@ -23,10 +23,12 @@ import {
   membersOf,
   overrideMap,
   pieceKey,
+  SETTLED_MAP,
   type ShapeBlock,
   STRUCTURE_KEY,
   type StructureMap,
   sameValue,
+  settledKey,
   storedAttrs,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
@@ -92,12 +94,15 @@ export interface WriteOptions {
 /**
  * Writes structure values the way every writer must (design §1): Live's copy writes Live's maps;
  * a draft's fork writes only its `d.*` overrides, and deletes an override whose value equals Live's
- * instead of writing it, so a matching override never hides Live's later edits of the key.
- * Comparisons read the `StructureView` taken before the write.
+ * instead of writing it, so a matching override never hides Live's later edits of the key. Every
+ * write of an override takes back a press's settling of that key (`unsettle`). Comparisons read the
+ * `StructureView` taken before the write.
  */
 export class StructureWriter {
   /** The blocks (and comments) whose values this writer set, for `retirePieces`. */
   readonly touched = new Set<string>();
+  /** The `pieces` records this writer made, which its write never retires (`retirePieces`). */
+  readonly recorded = new Set<string>();
 
   constructor(
     readonly docs: RoomDocs,
@@ -112,12 +117,25 @@ export class StructureWriter {
       if (!sameValue(base, value)) inMap(structure, name, (map) => map.set(key, value as never));
       return;
     }
-    const override = this.view.override(name, key);
+    this.unsettle(name, key);
+    const override = this.view.rawOverride(name, key);
     const baseRead = name === "attrs" ? (base ?? null) : base;
     if (sameValue(baseRead, value)) {
       if (override !== undefined) inMap(structure, overrideMap(name), (map) => map.delete(key));
     } else if (!sameValue(override, value))
       inMap(structure, overrideMap(name), (map) => map.set(key, value as never));
+  }
+
+  /**
+   * A write of an override takes back a press's settling of it (`d.settled`), in the same commit:
+   * the override is the writer's again, even where the writer sets the very value the press read,
+   * for which Loro writes no op.
+   */
+  private unsettle(name: StructureMap, key: string): void {
+    const settled = settledKey(name, key);
+    inMap(this.docs.structure, SETTLED_MAP, (map) => {
+      if (map.get(settled) !== undefined) map.delete(settled);
+    });
   }
 
   /**
@@ -144,7 +162,9 @@ export class StructureWriter {
   pieces(a: BlockId, b: BlockId): void {
     if (!this.docs.draft || a === b) return;
     const { peer, structure } = this.docs;
-    this.set("pieces", pieceKey(a, b, `${peer}@${docVersion(structure).get(peer) ?? 0}`), true);
+    const key = pieceKey(a, b, `${peer}@${docVersion(structure).get(peer) ?? 0}`);
+    this.recorded.add(key);
+    this.set("pieces", key, true);
   }
 
   /**
@@ -192,6 +212,7 @@ export class StructureWriter {
         const id = [...left].find((candidate) => sameOrderAsBase(now, candidate));
         if (id === undefined) break;
         orders.delete(id);
+        this.unsettle("order", id);
         left.delete(id);
         this.touched.add(id);
       }
@@ -199,8 +220,10 @@ export class StructureWriter {
     const after = new StructureView(this.docs, this.view.kept);
     inMap(structure, overrideMap("comments"), (comments) => {
       for (const key of after.overrideKeys("comments"))
-        if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
+        if (sameValue(after.baseValue("comments", key), after.override("comments", key))) {
           comments.delete(key);
+          this.unsettle("comments", key);
+        }
     });
   }
 }
@@ -361,6 +384,7 @@ export function writeDocument(
       docs,
       [...(writer?.touched ?? []), ...typed],
       (id) => shown(id) && textDiffers(docs, id),
+      writer?.recorded,
     );
   }
   const committed = commitStructure(docs, before, options);

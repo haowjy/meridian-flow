@@ -18,9 +18,9 @@ export type PressScope =
 
 /**
  * What a press does, and to what. Apply or Discard on one change, a document, a draft or every draft of a Work; or a
- * Draft chat turn card's `Restore before` on a turn in one draft: every room the turn wrote the draft's text in (its
- * fork of a document, or the Live room of a document only the draft holds) goes back to before the turn's first write
- * there, on today's Live, and the nodes the turn created in the draft go to Trash (design §2). Live's manuscript is
+ * Draft chat turn card's `Restore before` on a turn in one draft: the turn's writes into the draft's text (its fork of a
+ * document, or the Live room of a document only the draft holds) go back by the one Undo rule, newest first, each whole
+ * or left whole when someone wrote over it since, and the nodes the turn created in the draft go to Trash (design §2). Live's manuscript is
  * untouched, so text an Apply already put there stays. A turn that wrote in several drafts is one press per draft,
  * each in that draft's lane. One recorded command; one Undo (`PressUndoRequest`) takes it back; pressing again is the
  * Redo.
@@ -61,10 +61,11 @@ export type PressResult = PressAction & {
   /** A Discard's or a Restore before's: the tree's delete records that put the documents it took out in Trash. */
   trashed?: string[];
   /**
-   * A Restore before that found the draft's history cut below the turn's start since the card offered it (design §4's
-   * cutoff): it restored nothing, all or nothing. The card no longer offers it.
+   * A Restore before's writes of the turn it left whole (design §2's Undo rule): `written_over`, someone wrote over them
+   * since; `compacted`, the room no longer keeps history that old (design §4's cutoff). Absent when every write went
+   * back. The rest went back, and `documents` names only the documents whose text changed.
    */
-  compacted?: true;
+  kept?: { written_over: number; compacted: number };
 };
 
 /**

@@ -3,7 +3,7 @@
  * Why independent: Chat rail data is shared by server routes and frontend query consumers.
  */
 
-import type { DraftId } from "../ids.js";
+import type { CommandId, DraftId } from "../ids.js";
 
 export type ThreadDocumentRelationship = "editing" | "reading" | "created";
 
@@ -57,9 +57,17 @@ export interface TurnReceiptChip {
   undone?: true;
   /**
    * The drafts the turn wrote in whose `Restore before` the card offers, one press each (`PressAction`'s `restore`):
-   * absent when none. A draft whose history was cut below the turn's start is left out, all or nothing (design §2).
+   * those where pressing it would change something now (a write of the turn there would go back by design §2's Undo
+   * rule, or a document it created would go to Trash). Absent when none: a turn already restored or undone there is
+   * left out.
    */
   restore?: DraftId[];
+  /**
+   * The `Restore before` press in force for each draft the turn wrote in: the latest that changed something and has not
+   * been undone (its Undo is `PressUndoRequest` with this `press`). Absent when none, so every tab and a reload read
+   * the same state.
+   */
+  restored?: { draft: DraftId; press: CommandId }[];
 }
 
 export interface ListTurnLiveLineageResponse {

@@ -13,8 +13,11 @@ import {
   type DocKey,
   membersOf,
   overrideMap,
+  SETTLED_MAP,
   type StructureMap,
   sameValue,
+  settledKey,
+  settledTarget,
 } from "./shape.js";
 import { isOrderKey, removalOf, StructureView, showRule } from "./structure.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
@@ -113,10 +116,19 @@ export function valuesOf(
   return into;
 }
 
-/** In a draft, Live's value an override `name[key]` that holds `left` reads through, if absent. */
+/**
+ * In a draft, Live's value an override `name[key]` that holds `left` reads through: if absent, or
+ * for a press's settled entry, which reads through to Live's value of its override's key.
+ */
 function baseThrough(doc: LoroDoc, name: string, key: string, left: unknown): unknown {
-  if (left !== undefined || !name.startsWith("d.")) return undefined;
-  return inMap(doc, baseName(name), (map) => map.get(key));
+  const through = readsThrough(name, key, left);
+  return through && inMap(doc, through[0], (map) => map.get(through[1]));
+}
+
+/** The Live key a draft's `name[key]` holding `left` reads through to, if it does. */
+function readsThrough(name: string, key: string, left: unknown): [StructureMap, string] | null {
+  if (name === SETTLED_MAP) return settledTarget(key);
+  return left === undefined && name.startsWith("d.") ? [baseName(name), key] : null;
 }
 
 /**
@@ -169,12 +181,23 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
       for (const [key, { before, left, base }] of keys) {
         if (sameValue(before, left)) continue;
         if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
-        // An absent override reads Live's value: Live writing another one since writes over it.
-        if (map.get(key) === undefined && name.startsWith("d.")) {
-          const through = inMap(docs.structure, baseName(name), (live) =>
-            sameValue(live.get(key), base) ? null : live.getLastEditor(key),
+        // A settled override someone wrote since without seeing the press (which writes no op on
+        // the settled entry) holds another value now.
+        if (name === SETTLED_MAP && left !== undefined) {
+          const [overridden, target] = settledTarget(key);
+          const now = inMap(docs.structure, overrideMap(overridden), (map) => map.get(target));
+          if (!sameValue(now, left))
+            return `${overrideMap(overridden)}[${target}] was written over`;
+        }
+        // An absent or settled override reads Live's value: Live writing another one since
+        // writes over it.
+        const through = readsThrough(name, key, map.get(key));
+        if (through) {
+          const [live, target] = through;
+          const by = inMap(docs.structure, live, (map) =>
+            sameValue(map.get(target), base) ? null : map.getLastEditor(target),
           );
-          if (through && through !== peer) return `${baseName(name)}[${key}] was written over`;
+          if (by && by !== peer) return `${live}[${target}] was written over`;
         }
       }
       return null;
@@ -249,11 +272,18 @@ export function putBackValues(
   const read = view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
   for (const { name, key, value, at } of puts) {
-    if (at === undefined)
+    if (at === undefined) {
       inMap(structure, name, (map) => {
         if (value === undefined) map.delete(key);
         else map.set(key, value as never);
       });
+      // A write of an override takes back a press's settling of it, as `StructureWriter`'s does.
+      if (name.startsWith("d.") && name !== SETTLED_MAP)
+        inMap(structure, SETTLED_MAP, (map) => {
+          const settled = settledKey(baseName(name), key);
+          if (map.get(settled) !== undefined) map.delete(settled);
+        });
+    }
     keysOf(back, name).set(key, { before: values.get(name)?.get(key)?.left, left: undefined });
   }
   // A removal counts the text under it as the run leaves it, a block the run puts back under it
@@ -335,6 +365,19 @@ function screenAfter(
   const puts = new Map<string, unknown>();
   const touched = new Set<BlockId>();
   for (const { name, key, value, at } of planOf(docs, view, values)) {
+    // A settled entry put back changes what its override reads as: in force again when deleted,
+    // Live's value when set.
+    if (name === SETTLED_MAP) {
+      const [map, target] = settledTarget(key);
+      if (map !== "order" && map !== "parent" && map !== "node") continue;
+      touched.add(target);
+      puts.set(
+        `${map}\u0000${target}`,
+        (value === undefined ? view.rawOverride(map, target) : undefined) ??
+          view.baseValue(map, target),
+      );
+      continue;
+    }
     const map = baseName(name);
     if (map !== "order" && map !== "parent" && map !== "node") continue;
     touched.add(key);

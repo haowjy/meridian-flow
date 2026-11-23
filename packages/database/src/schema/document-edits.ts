@@ -22,7 +22,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { createdAt, idColumn } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
@@ -86,13 +86,6 @@ export const documentEditParts = pgTable(
      */
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
-    /**
-     * An AI write's docs at their versions before and after it (`encodeRoomVersion`): a Draft-mode
-     * turn's `Restore before` reads its first part's `before` per doc and its last part's `after`.
-     * Null for a part no AI wrote.
-     */
-    before: byteaColumn("before"),
-    after: byteaColumn("after"),
     /**
      * An AI write as one edit of the Undo rule (`StoredEdit` in `@meridian/document-model`): what
      * the turn Undo and the model's undo and revert test and take back. Null for a part no AI

@@ -7,9 +7,12 @@ import {
   type BlockId,
   type DocKey,
   overrideMap,
+  SETTLED_MAP,
   type ShapeSchema,
   STRUCTURE_MAPS,
   type StructureMap,
+  sameValue,
+  settledKey,
 } from "./shape.js";
 import type { DocVersion } from "./version.js";
 
@@ -177,6 +180,7 @@ export class StructureView {
   readonly draft: boolean;
   private readonly base: Record<StructureMap, MapValues>;
   private readonly overrides: Record<StructureMap, MapValues> | null;
+  private readonly settled: MapValues;
   private readonly attrIndex = new Map<BlockId, Record<string, unknown>>();
   private readonly parentOf: ReadonlyMap<BlockId, BlockId | null | undefined>;
   private readonly childrenOf = new Map<BlockId | null, BlockId[]>();
@@ -203,9 +207,10 @@ export class StructureView {
           MapValues
         >)
       : null;
+    this.settled = draft ? read(SETTLED_MAP) : {};
     this.ids = [
       ...new Set([...Object.keys(this.base.order), ...Object.keys(this.overrides?.order ?? {})]),
-    ];
+    ].filter((id) => this.value("order", id) !== undefined);
     for (const key of new Set([
       ...Object.keys(this.base.attrs),
       ...Object.keys(this.overrides?.attrs ?? {}),
@@ -245,9 +250,9 @@ export class StructureView {
       );
   }
 
-  /** The value a reader sees: a draft's override where it has one, else Live's. */
+  /** The value a reader sees: a draft's override where it has one in force, else Live's. */
   value(name: StructureMap, key: string): unknown {
-    const override = this.overrides?.[name][key];
+    const override = this.override(name, key);
     return override === undefined ? this.base[name][key] : override;
   }
 
@@ -256,12 +261,24 @@ export class StructureView {
     return this.base[name][key];
   }
 
+  /** The draft's override in force: none where a press settled the value it holds (`d.settled`). */
   override(name: StructureMap, key: string): unknown {
+    const raw = this.rawOverride(name, key);
+    return raw !== undefined && sameValue(this.settled[settledKey(name, key)], raw)
+      ? undefined
+      : raw;
+  }
+
+  /** The override as stored, in force or settled: what a writer compares its write with. */
+  rawOverride(name: StructureMap, key: string): unknown {
     return this.overrides?.[name][key];
   }
 
+  /** The keys of the overrides in force. */
   overrideKeys(name: StructureMap): string[] {
-    return Object.keys(this.overrides?.[name] ?? {});
+    return Object.keys(this.overrides?.[name] ?? {}).filter(
+      (key) => this.override(name, key) !== undefined,
+    );
   }
 
   node(id: BlockId): string | undefined {

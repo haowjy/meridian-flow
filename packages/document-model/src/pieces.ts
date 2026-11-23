@@ -47,12 +47,16 @@ export function deletePieces(docs: RoomDocs, keys: Iterable<string>): void {
  * lists as changed (design §2). Run inside the write that may have settled them, so its Undo puts
  * them back with it: such a component recorded a move that is gone, and a later edit of its blocks
  * is its own change. `pending` names blocks the caller already knows are changed, so a component
- * holding one is kept without reading the structure.
+ * holding one is kept without reading the structure. The records the write itself made (`made`)
+ * stay: a press on another copy can make the move pending again before this write reaches it (a
+ * tab joins back a split the server is applying), and only the write's own record ties its halves
+ * then. The next write that finds the component settled retires it.
  */
 export function retirePieces(
   docs: RoomDocs,
   touched: Iterable<BlockId>,
   pending: (id: BlockId) => boolean = () => false,
+  made: ReadonlySet<string> = new Set(),
 ): void {
   const live = docs.live;
   const found = live ? piecesOf(docs, touched) : new Map<string, BlockId>();
@@ -72,7 +76,7 @@ export function retirePieces(
   if (settled.size > 0)
     deletePieces(
       docs,
-      [...found].filter(([, by]) => settled.has(by)).map(([key]) => key),
+      [...found].filter(([key, by]) => settled.has(by) && !made.has(key)).map(([key]) => key),
     );
 }
 

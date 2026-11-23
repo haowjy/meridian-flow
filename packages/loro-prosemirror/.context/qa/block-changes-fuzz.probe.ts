@@ -16,17 +16,15 @@ import {
   commentVisibility,
   decodeEnvelope,
   discardBlocks,
+  editSince,
   editStays,
-  frontiersOf,
   inMap,
   inText,
   isOrderKey,
   noteEdit,
   opsBetween,
-  overrideMap,
   RoomDocs,
   replaceText,
-  restoreBefore,
   STRUCTURE_KEY,
   STRUCTURE_MAPS,
   StructureView,
@@ -38,6 +36,7 @@ import {
   isDerivedEmpty,
   takeBack,
   textUnits,
+  undoEdits,
   undoPress,
   valuesOf,
   versionOf,
@@ -292,7 +291,7 @@ export function runScript(seed, { verbose = false } = {}) {
   const liveTokenBlock = new Map();
   const liveTokenIds = new Map();
   const draftDeletedChars = new Set();
-  const splitMoved = new Set();
+  const splitMoved = process.env.FUZZ_STRICT ? { add() {}, has: () => false } : new Set();
   const resetRestored = new Map();
   const inverseCopies = new Map();
   /** The token each character was first seen in, by block and character id: ids repeat across text docs. */
@@ -342,10 +341,14 @@ export function runScript(seed, { verbose = false } = {}) {
       if (l !== f || f !== t) say(`     ${id.slice(0, 4)} L ${l}\n          F ${f}${t !== f ? `\n          T ${t}` : ""}`);
     }
   };
-  const overrides = () =>
-    fork
-      ? STRUCTURE_MAPS.flatMap((n) => inMap(fork.structure, overrideMap(n), (m) => Object.entries(m.toJSON())).map(([k, v]) => `${n}:${k.slice(0, 4)}${k.includes("/") ? k.slice(k.indexOf("/")) : ""}=${JSON.stringify(v)?.slice(0, 12)}`)).join(" ")
-      : "";
+  // The overrides in force: a press's settled ones read as Live's.
+  const overrides = () => {
+    if (!fork) return "";
+    const view = new StructureView(fork);
+    return STRUCTURE_MAPS.flatMap((name) =>
+      view.overrideKeys(name).map((key) => `${name}:${key.slice(0, 4)}${key.includes("/") ? key.slice(key.indexOf("/")) : ""}=${JSON.stringify(view.override(name, key))?.slice(0, 12)}`),
+    ).join(" ");
+  };
   const note = (s) => {
     if (!verbose) return;
     say(s);
@@ -362,7 +365,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const r = to.importBatch(from.exportSince(to.shownVersion()));
     check(!r.pending, "pending-import", "an import waited on ops the copy lacks");
     // A restore Live writes, or one its tab wrote reaching it (Live typing answering a removal), is a Live write.
-    if ((to === live && r.restore) || (tabWrote !== null && tabStructure() > tabWrote)) liveWrites++;
+    if ((to === live && r.restore.length > 0) || (tabWrote !== null && tabStructure() > tabWrote)) liveWrites++;
   }
   function sync(a, b) {
     send(a, b);
@@ -392,7 +395,7 @@ export function runScript(seed, { verbose = false } = {}) {
     if (changes.length === 0) return;
     const imported = to.importBatch(decodeEnvelope(encodeChanges(changes)));
     check(!imported.pending, "pending-import", "a press's changes waited on ops the room lacks");
-    if (to === live && imported.restore) liveWrites++;
+    if (to === live && imported.restore.length > 0) liveWrites++;
   }
   /** A press's changes as `press_changes` stores them: JSON. */
   const stored = (pressed) => JSON.parse(JSON.stringify(pressed));
@@ -657,48 +660,30 @@ export function runScript(seed, { verbose = false } = {}) {
   function aiTurn(n) {
     ensure();
     syncTab();
-    const shadow = track(fork.fork(next()));
     const work = fork.fork(next());
-    const before = new Map();
-    let after = null;
+    const edits = [];
     try {
       for (let i = 0; i < n; i++) {
+        const since = work.shownVersion();
         const r = userEdit(work, "a", { by: { turn: "turn" } });
         stats.edits++;
-        for (const rec of r?.changed ?? []) {
-          const key = rec.id ?? STRUCTURE_KEY;
-          if (!before.has(key)) before.set(key, versionOf(rec.doc, rec.before));
-          if (key === STRUCTURE_KEY) after = versionOf(rec.doc, rec.after);
-        }
+        if (!r) continue;
+        edits.push(editSince(work, since, work.peer, new Set(r.changed.map((rec) => rec.id ?? STRUCTURE_KEY))));
       }
       send(work, fork);
     } finally {
       work.free();
     }
     toTab();
-    return { before, after, shadow };
+    return { edits };
   }
+  /** `Restore before` the turn: its writes taken back by the Undo rule, newest first (design §2). */
   function restore(turn) {
     syncTab();
     fwdLive();
-    send(live, turn.shadow.live);
-    turn.shadow.forward();
-    const expected = textValues(turn.shadow);
     const prior = textValues(fork);
-    const overridesNow = () => STRUCTURE_MAPS.map((n) => inMap(fork.structure, overrideMap(n), (m) => m.toJSON()));
-    const atStart = STRUCTURE_MAPS.map((n) => inMap(turn.shadow.structure, overrideMap(n), (m) => m.toJSON()));
-    let structureUnchanged = same(atStart, overridesNow());
-    if (turn.after) {
-      const at = fork.structure.fork();
-      try {
-        at.checkout(frontiersOf(fork.structure, turn.after));
-        structureUnchanged = same(STRUCTURE_MAPS.map((n) => inMap(at, overrideMap(n), (m) => m.toJSON())), overridesNow());
-      } finally {
-        at.free();
-      }
-    }
     const before = snapshotIds(fork);
-    markCopies(restoreBefore(fork, turn));
+    markCopies(undoEdits(fork, [...turn.edits].reverse(), { press: "restore" }).changes);
     recordOrigins(fork);
     rememberAll(fork, before);
     toTab();
@@ -706,22 +691,6 @@ export function runScript(seed, { verbose = false } = {}) {
     note("  RESTORE");
     const now = textValues(fork);
     structureAfter([...now.keys()].filter((id) => now.get(id) !== prior.get(id)));
-    if (!structureUnchanged) return;
-    // A block the turn created goes as a removal, keeping its other keys to come back with (the shared put-back).
-    const restored = overridesNow();
-    const order = STRUCTURE_MAPS.indexOf("order");
-    const made = (key) => {
-      const id = key.split("/")[0];
-      return atStart[order][id] === undefined && typeof restored[order][id] === "string" && !isOrderKey(restored[order][id]);
-    };
-    const kept = restored.map((map, i) => Object.fromEntries(Object.entries(map).filter(([key]) => i === STRUCTURE_MAPS.indexOf("comments") || !made(key))));
-    check(same(kept, atStart), "restore", () => `overrides differ from the turn's start: ${JSON.stringify(restored)} vs ${JSON.stringify(atStart)}`);
-    for (const [id, value] of now) {
-      const wrote = turn.before.has(id) && turn.before.get(id).size > 0;
-      const want = wrote ? expected.get(id) : prior.get(id);
-      if (want !== undefined)
-        check(value === want, "restore", () => `block ${id}: expected ${want}, got ${value}; raw shadow ${JSON.stringify(deltaOf(turn.shadow.textOf(id)))} fork ${JSON.stringify(deltaOf(fork.textOf(id)))} node ${new StructureView(turn.shadow).node(id)}/${new StructureView(fork).node(id)} before ${JSON.stringify([...(turn.before.get(id) ?? [])])} owns ${turn.shadow.texts.has(id)}/${fork.texts.has(id)}`);
-    }
   }
   function markerAttrs(d, id, token) {
     const delta = deltaOf(d.textOf(id));
