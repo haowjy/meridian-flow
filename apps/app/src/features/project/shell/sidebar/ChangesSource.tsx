@@ -577,7 +577,6 @@ function ChangeRow({
         title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file)}
         notice={notice}
-        revealActions={!touch}
         actions={
           <ReviewActions
             scope="document"
