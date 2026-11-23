@@ -74,9 +74,9 @@ in force per draft (the latest done `restore` press that changed something and h
   Discard's tree half (`discardTreeRecords` with `trash`): the draft read without them before the
   turn. Their text goes with them, so no room of theirs is restored. Other tree changes the turn
   drafted (moves, renames, deletes) stay.
-- **What stayed** is counted in the answer (`kept: { written_over, compacted }`), which names only
-  the documents the press changed: a press that changed nothing names none and makes no Undo step.
-  The card says nothing of what stayed, as the turn Undo does.
+- **What stayed** is not reported: the answer names only the documents the press changed, so a
+  press that changed nothing names none and makes no Undo step. The card says nothing of what
+  stayed, as the turn Undo does.
 
 Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
 for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is

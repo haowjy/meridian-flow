@@ -60,12 +60,6 @@ export type PressResult = PressAction & {
   items: { node: string; tree?: true }[];
   /** A Discard's or a Restore before's: the tree's delete records that put the documents it took out in Trash. */
   trashed?: string[];
-  /**
-   * A Restore before's writes of the turn it left whole (design §2's Undo rule): `written_over`, someone wrote over them
-   * since; `compacted`, the room no longer keeps history that old (design §4's cutoff). Absent when every write went
-   * back. The rest went back, and `documents` names only the documents whose text changed.
-   */
-  kept?: { written_over: number; compacted: number };
 };
 
 /**

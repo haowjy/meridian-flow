@@ -279,7 +279,7 @@ export function createDrizzlePress(
    * (`drizzle-restore-before.ts`): the turn's writes into the draft's text go back by the one Undo
    * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
    * first (`undoInRooms`); Live's manuscript is untouched. A write someone wrote over since, or
-   * whose history the room cut, stays whole and is counted in `kept`. Each room's restore is one
+   * whose history the room cut, stays whole. Each room's restore is one
    * edit, stored in `press_changes` on the side of the room it was written in (`fork`, or `live`
    * for a document only the draft holds), so the press's Undo takes it back by the same rule.
    * Returns the documents whose text it changed.
@@ -288,7 +288,6 @@ export function createDrizzlePress(
     envelope: CommandEnvelope,
     draft: DraftId,
     plan: RestorePlan,
-    kept: NonNullable<PressResult["kept"]>,
   ): Promise<DocumentId[]> {
     const copies = await readRooms(deps.rooms, plan);
     try {
@@ -306,7 +305,6 @@ export function createDrizzlePress(
       const undone = undoInRooms(plan.parts, (room) => copies.get(loroRoomName(room)) as RoomDocs, {
         press: envelope.commandId,
       });
-      for (const why of undone.stayed.values()) kept[why.kind]++;
       const taken = new Map(undone.rooms.map(({ room, changes }) => [loroRoomName(room), changes]));
       const documents: DocumentId[] = [];
       for (const [name, { room, forward, since }] of rooms) {
@@ -418,10 +416,9 @@ export function createDrizzlePress(
             const documents = new Set<string>();
             const tree = new Set<string>();
             const trashed: string[] = [];
-            const kept = { written_over: 0, compacted: 0 };
             for (const { part, restore, nodes, texts } of plan) {
               if (restore)
-                for (const documentId of await restoreDraft(envelope, part.draft, restore, kept))
+                for (const documentId of await restoreDraft(envelope, part.draft, restore))
                   documents.add(documentId);
               // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
@@ -460,10 +457,7 @@ export function createDrizzlePress(
               }
             }
             judge.assertLocked();
-            return {
-              ...answer(documents, tree, trashed),
-              ...(kept.written_over || kept.compacted ? { kept } : {}),
-            };
+            return answer(documents, tree, trashed);
           },
         ),
       );

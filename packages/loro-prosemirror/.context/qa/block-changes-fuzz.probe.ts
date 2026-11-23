@@ -1413,8 +1413,9 @@ export function runScript(seed, { verbose = false } = {}) {
         stats.liveTokenDeleted++;
         continue;
       }
-      // A Live split or join since carried the token on: the fork shows it where Live does.
-      if (fTokens.get(tok) !== id && fTokens.get(tok) !== lTokens.get(tok)) {
+      // A split or a join since, Live's or the draft's, carried the token on: the fork shows it
+      // whole in another block, or in pieces in this one.
+      if (!fTokens.has(tok)) {
         const text = textOfDoc(fork.textOf(id));
         let at = 0;
         for (const c of text) if (c === tok[at]) at++;
