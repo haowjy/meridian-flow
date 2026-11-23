@@ -55,6 +55,8 @@ export type ShellTreeVersion = {
   workDrafts: WorkDraftsState | null;
   /** Shows one of the picked Work's drafts: the toggle goes to Draft on it. */
   pick: (draftId: string) => void;
+  /** The shown draft is deleted: the toggle goes to Live, and Draft is the Work's default again. */
+  leave: () => void;
   /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
   /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
@@ -166,13 +168,23 @@ export function TreeVersionProvider({
   // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = known ? draftId || (newChat ? NO_OWNER : "") : "";
-  const owner = useRef(ownerKey);
+  // A move between one picked Work's drafts leaves the toggle as the move set it: a pick puts it
+  // on Draft, `Delete draft` on Live.
+  const pickedId = picked?.id ?? null;
+  const owner = useRef({ key: ownerKey, work: pickedId });
   useLayoutEffect(() => {
     if (!ownerKey) return;
-    if (owner.current && owner.current !== ownerKey)
-      enterScope(queryClient, accountId, projectId, ownerKey === NO_OWNER ? null : ownerKey);
-    owner.current = ownerKey;
-  }, [queryClient, accountId, projectId, ownerKey]);
+    const before = owner.current;
+    if (before.key && before.key !== ownerKey)
+      enterScope(
+        queryClient,
+        accountId,
+        projectId,
+        ownerKey === NO_OWNER ? null : ownerKey,
+        pickedId !== null && before.work === pickedId,
+      );
+    owner.current = { key: ownerKey, work: pickedId };
+  }, [queryClient, accountId, projectId, ownerKey, pickedId]);
   const drafts = useOwnerDrafts(projectId, draftId);
   const { draftId: listedDraft, fileForDocument } = drafts;
   const { data: rows } = drafts;
@@ -197,7 +209,6 @@ export function TreeVersionProvider({
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],
   );
-  const pickedId = picked?.id ?? null;
   const pick = useCallback(
     (next: string) => {
       if (!pickedId) return;
@@ -206,6 +217,10 @@ export function TreeVersionProvider({
     },
     [accountId, projectId, pickedId],
   );
+  const leave = useCallback(() => {
+    writeShownWorkDraft(accountId, projectId, null);
+    writeTreeVersionChoice(accountId, projectId, "live");
+  }, [accountId, projectId]);
 
   const { nameOf } = useWorks(projectId);
   const named = work && !work.isNoWork ? work : null;
@@ -219,6 +234,7 @@ export function TreeVersionProvider({
       draftId,
       workDrafts: workDrafts.drafts ? workDrafts : null,
       pick,
+      leave,
       work: named,
       name,
       changed,
@@ -235,6 +251,7 @@ export function TreeVersionProvider({
       draftId,
       workDrafts,
       pick,
+      leave,
       named,
       name,
       changed,

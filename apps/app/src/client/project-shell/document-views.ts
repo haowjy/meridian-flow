@@ -136,15 +136,17 @@ export function setDocumentView(
  * where it has one and Live where it has none (`shownDraft`). A view on one of the new owner's
  * drafts keeps its pin, and so does a view on a document only its draft holds (Live has no
  * version of it to return to); every other pin ends, so no page keeps a draft, or a change
- * focused in one, from the scope before.
+ * focused in one, from the scope before. `keepVersion`: the owner moved to another draft of the
+ * same Work, whose pick or delete has set the toggle already.
  */
 export function enterScope(
   queryClient: QueryClient,
   accountId: string,
   projectId: string,
   draftId: string | null,
+  keepVersion = false,
 ): void {
-  writeTreeVersionChoice(accountId, projectId, "draft");
+  if (!keepVersion) writeTreeVersionChoice(accountId, projectId, "draft");
   const views = read(accountId, projectId);
   let changed = false;
   const next: Record<string, DocumentView> = {};

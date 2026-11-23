@@ -63,7 +63,7 @@ export function workDraftMenu(
     onDeleteDraft: shown
       ? () => {
           state.remove(shown);
-          shell.show("live");
+          shell.leave();
           setDeleted({ projectId, draft: shown, restore: () => state.restore(shown) });
         }
       : undefined,
