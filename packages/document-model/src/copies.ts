@@ -124,7 +124,10 @@ export function chainOf(links: ReadonlyMap<Id, Id>, id: Id): Id[] {
 }
 
 /** Delete duplicate/dead copies on one text doc. Returns the local answer, if one was written. */
-export function oneCopy(doc: LoroDoc): { change: DocChange | null; removed: number } {
+export function oneCopy(
+  doc: LoroDoc,
+  key: string = TEXT_KEY,
+): { change: DocChange | null; removed: number } {
   const when = new Map<Id, number>();
   const links = standsFor(doc, when);
   if (links.size === 0) return { change: null, removed: 0 };
@@ -162,7 +165,7 @@ export function oneCopy(doc: LoroDoc): { change: DocChange | null; removed: numb
     for (let pos = shown.length - 1; pos >= 0; pos--) if (go.has(shown[pos])) text.delete(pos, 1);
   });
   doc.commit({ origin: "untracked" });
-  return { change: { key: TEXT_KEY, doc, before, after: doc.frontiers() }, removed: go.size };
+  return { change: { key, doc, before, after: doc.frontiers() }, removed: go.size };
 }
 
 function minVersion(a: ReadonlyMap<PeerID, number>, b: ReadonlyMap<PeerID, number>) {
@@ -224,6 +227,7 @@ function addSpan(out: Record<string, [number, number][]>, peer: PeerID, from: nu
 export function forwardText(
   fork: LoroDoc,
   live: LoroDoc,
+  key: string = TEXT_KEY,
 ): { imported: boolean; changes: DocChange[] } {
   const had = minVersion(docVersion(fork), docVersion(live));
   const before = fork.frontiers();
@@ -234,14 +238,22 @@ export function forwardText(
   if (status.pending || sameFrontiers(before, after)) return { imported: false, changes };
 
   const liveWas = withVector(had, (vector) => fork.vvToFrontiers(vector));
+  const draftDelta = textDiff(fork, liveWas, before);
+  const links = standsFor(fork, new Map());
+  if (!draftDelta.some((op) => op.delete != null) && links.size === 0)
+    return { imported: true, changes };
+  if (!draftDelta.some((op) => op.delete != null)) {
+    const answer = oneCopy(fork, key);
+    if (answer.change) changes.push(answer.change);
+    return { imported: true, changes };
+  }
   const liveNow = live.frontiers();
   const wasIds = idsAt(fork, liveWas);
   const nowIds = idsAt(fork, liveNow);
-  const links = standsFor(fork, new Map());
   const rootOf = (id: Id) => chainOf(links, id).at(-1) ?? id;
   const shownRoots = new Set(idsAt(fork, before).map(rootOf));
   const draftDeleted = new Set<Id>();
-  for (const hunk of hunksOf(textDiff(fork, liveWas, before)))
+  for (const hunk of hunksOf(draftDelta))
     for (let i = 0; i < hunk.deleted; i++) {
       const id = wasIds[hunk.at + i];
       if (id && !shownRoots.has(rootOf(id))) draftDeleted.add(id);
@@ -323,9 +335,9 @@ export function forwardText(
     const head = fork.frontiers();
     inText(fork, (text) => text.applyDelta(delta));
     fork.commit({ message });
-    changes.push({ key: TEXT_KEY, doc: fork, before: head, after: fork.frontiers() });
+    changes.push({ key, doc: fork, before: head, after: fork.frontiers() });
   }
-  const answer = oneCopy(fork);
+  const answer = oneCopy(fork, key);
   if (answer.change) changes.push(answer.change);
   return { imported: true, changes };
 }

@@ -73,9 +73,9 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
 
   // As the Postgres adapter: what an import changed is saved and sent, and a restore the room's
   // copy wrote on it (design §1, rule 1) goes out after the batch as the room's own.
-  const landed = (loaded: Loaded, { changed, restore }: Imported) => {
+  const landed = (loaded: Loaded, { changed, answers }: Imported) => {
     for (const key of changed) loaded.dirty.add(key);
-    if (restore) relay(loaded, encodeChanges([restore]), "server:restore");
+    if (answers.length > 0) relay(loaded, encodeChanges(answers), "server:restore");
   };
 
   const importInto = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {

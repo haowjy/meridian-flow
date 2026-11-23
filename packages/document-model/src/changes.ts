@@ -1,4 +1,4 @@
-import type { Frontiers, LoroDoc } from "loro-crdt";
+import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { type CommitAuthor, commitMessage } from "./commit-message.js";
 import { Groups } from "./groups.js";
 import { inMap } from "./handles.js";
@@ -250,6 +250,8 @@ export interface PressChanges {
 export interface PressOptions {
   /** Who its commits are by: the press. */
   by?: CommitAuthor;
+  /** All command peers belonging to one Work press, so its parts undo as one edit. */
+  ownPeers?: ReadonlySet<PeerID>;
 }
 
 export interface ApplyOptions extends PressOptions {
@@ -273,7 +275,7 @@ function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][]
 
 function forwarded(draft: RoomDocs, into: DocChange[]): void {
   const imported: Imported = draft.forward();
-  if (imported.restore) into.push(imported.restore);
+  into.push(...imported.answers);
 }
 
 /** What a press wrote in one room: each text doc's span, and its one structure commit. */
@@ -385,7 +387,7 @@ export function applyBlocks(
   }
   if (batch.size > 0) {
     const imported = live.importBatch(batch);
-    if (imported.restore) result.live.push(imported.restore);
+    result.live.push(...imported.answers);
   }
   const liveTexts = new Map<DocKey, TextSpan>();
   for (const key of batch.keys()) {
@@ -487,8 +489,20 @@ export function discardBlocks(
     const base = live.texts.get(id);
     if (!text || !base) continue;
     const before = text.frontiers();
+    const liveNow = base.frontiers();
+    const held = docVersion(base);
+    const common = new Map<PeerID, number>();
+    for (const [peer, counter] of docVersion(text)) {
+      const n = Math.min(counter, held.get(peer) ?? 0);
+      if (n > 0) common.set(peer, n);
+    }
+    const had = frontiersOf(text, common);
     text.applyDiff(text.diff(before, base.frontiers(), false));
-    text.commit({ message: commitMessage({ by: options.by }) });
+    const message = commitMessage({
+      by: options.by,
+      undo: { for: deletedBetween(text, liveNow, before), ops: opsBetween(text, had, before) },
+    });
+    text.commit({ message });
     if (sameValue(before, text.frontiers())) continue;
     const change = { key: id, doc: text, before, after: text.frontiers() };
     result.fork.push(change);
@@ -549,6 +563,10 @@ export function undoPress(
   for (const change of pressed) {
     const onLive = change.live && loadEdit(live, change.live);
     const onFork = change.fork && loadEdit(draft, change.fork);
+    if (onLive) onLive.ownPeers = options.ownPeers;
+    if (onFork) onFork.ownPeers = options.ownPeers;
+    if (onLive) onLive.ownPress = true;
+    if (onFork) onFork.ownPress = true;
     if (
       (onLive && editStays(live, onLive, liveView)) ||
       (onFork && editStays(draft, onFork, forkView))

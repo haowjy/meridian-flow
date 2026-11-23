@@ -1,4 +1,5 @@
 import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
+import { forwardText, oneCopy } from "./copies.js";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
@@ -25,6 +26,8 @@ export interface Imported {
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange | null;
+  /** Every answer written while importing: removals and text-copy cleanup. */
+  answers: DocChange[];
 }
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
@@ -396,6 +399,7 @@ export class RoomDocs {
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
     let pending = false;
+    const answers: DocChange[] = [];
     for (const [key, bytes] of batch) {
       let doc = this.doc(key);
       if (!doc) {
@@ -407,8 +411,14 @@ export class RoomDocs {
       const status = doc.import(bytes);
       if (status.pending) pending = true;
       if (!sameFrontiers(doc.oplogFrontiers(), at)) changed.push(key);
+      if (key !== STRUCTURE_KEY) {
+        const answer = oneCopy(doc, key).change;
+        if (answer) answers.push(answer);
+      }
     }
-    return { changed, pending, restore: this.answer(before, changed) };
+    const restore = this.answer(before, changed);
+    if (restore) answers.unshift(restore);
+    return { changed, pending, restore, answers };
   }
 
   /**
@@ -418,10 +428,11 @@ export class RoomDocs {
    */
   forward(): Imported {
     const live = this.live;
-    if (!live) return { changed: [], pending: false, restore: null };
+    if (!live) return { changed: [], pending: false, restore: null, answers: [] };
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
+    const answers: DocChange[] = [];
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
       const at = into.oplogFrontiers();
       const update = withVector(docVersion(into), (vector) =>
@@ -431,11 +442,16 @@ export class RoomDocs {
       if (!sameFrontiers(into.oplogFrontiers(), at)) changed.push(key);
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
+    const restore = this.answer(before, changed);
+    if (restore) answers.push(restore);
     for (const [id, doc] of this.texts) {
       const base = live.textOf(id);
-      if (base) pull(id, base, doc);
+      if (!base) continue;
+      const result = forwardText(doc, base, id);
+      if (result.imported) changed.push(id);
+      answers.push(...result.changes);
     }
-    return { changed, pending: false, restore: this.answer(before, changed) };
+    return { changed, pending: false, restore, answers };
   }
 
   private answer(before: Frontiers, changed: readonly DocKey[]): DocChange | null {

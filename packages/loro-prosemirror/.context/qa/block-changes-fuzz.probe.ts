@@ -367,7 +367,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const r = to.importBatch(from.exportSince(to.shownVersion()));
     check(!r.pending, "pending-import", "an import waited on ops the copy lacks");
     // A restore Live writes, or one its tab wrote reaching it (Live typing answering a removal), is a Live write.
-    if ((to === live && r.restore) || (tabWrote !== null && tabStructure() > tabWrote)) liveWrites++;
+    if ((to === live && r.answers.length > 0) || (tabWrote !== null && tabStructure() > tabWrote)) liveWrites++;
   }
   function sync(a, b) {
     send(a, b);
@@ -397,7 +397,7 @@ export function runScript(seed, { verbose = false } = {}) {
     if (changes.length === 0) return;
     const imported = to.importBatch(decodeEnvelope(encodeChanges(changes)));
     check(!imported.pending, "pending-import", "a press's changes waited on ops the room lacks");
-    if (to === live && imported.restore) liveWrites++;
+    if (to === live && imported.answers.length > 0) liveWrites++;
   }
   /** A press's changes as `press_changes` stores them: JSON. */
   const stored = (pressed) => JSON.parse(JSON.stringify(pressed));
@@ -798,8 +798,18 @@ export function runScript(seed, { verbose = false } = {}) {
       d.forward();
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
+    const ownPressPeers = new Set(
+      pressed.flatMap((changes) =>
+        changes.flatMap((change) => [change.live?.peer, change.fork?.peer].filter(Boolean)),
+      ),
+    );
     for (let i = drafts.length - 1; i >= 0; i--) {
-      const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { by: { press: `work press undo ${i}` } }));
+      const { stayed } = command(drafts[i], (cmd) =>
+        undoPress(cmd, pressed[i], {
+          by: { press: `work press undo ${i}` },
+          ownPeers: ownPressPeers,
+        }),
+      );
       check(!stayed.length, "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
     }
     const liveIds = new Set(charIds(room.textOf(id)));

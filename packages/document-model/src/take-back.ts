@@ -62,6 +62,10 @@ export interface Edit {
    * Undo runs on a server copy with a peer of its own.
    */
   peer: PeerID;
+  /** Other peers in the same Work press; their writes are one press's own edit. */
+  ownPeers?: ReadonlySet<PeerID>;
+  /** A press Undo's own answer commits use a fresh command peer. */
+  ownPress?: boolean;
   values: EditValues;
   texts: Map<DocKey, TextSpan>;
   /**
@@ -164,17 +168,19 @@ export function noteEdit(docs: RoomDocs, edit: Edit, view?: StructureView): void
  */
 export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): string | null {
   const { peer } = edit;
+  const own = (author: PeerID) => author === peer || edit.ownPeers?.has(author) === true;
   for (const [name, keys] of edit.values) {
     const why = inMap(docs.structure, name, (map) => {
       for (const [key, { before, left, base }] of keys) {
         if (sameValue(before, left)) continue;
-        if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
+        if (!own(map.getLastEditor(key) as PeerID)) return `${name}[${key}] was written over`;
         // An absent override reads Live's value: Live writing another one since writes over it.
         if (map.get(key) === undefined && name.startsWith("d.")) {
           const through = inMap(docs.structure, baseName(name), (live) =>
             sameValue(live.get(key), base) ? null : live.getLastEditor(key),
           );
-          if (through && through !== peer) return `${baseName(name)}[${key}] was written over`;
+          if (through && !own(through as PeerID))
+            return `${baseName(name)}[${key}] was written over`;
         }
       }
       return null;
@@ -193,8 +199,8 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
       if (readAny(removals.get(key) ?? [], deleted, ops))
         return `text it deleted in ${key} left with a block another peer removed`;
     }
-    if (!othersWrote(doc, then, peer)) continue;
-    const again = deletedAgain(doc, before, after, deleted, peer);
+    if (!othersWrote(doc, then, peer, edit.texts.get(key)?.ops, edit.ownPeers)) continue;
+    const again = deletedAgain(doc, before, after, deleted, peer, edit.ownPeers, edit.ownPress);
     if (again) return `text it deleted in ${key} was ${again}`;
     // A write that kept some of the edit's characters reads them as its own: a chat's rewrite
     // keeps the letters it shares, and taking those out scrambles its words. An edit that set
@@ -211,7 +217,17 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   for (const id of after.hidden) {
     if (!edit.leaving.has(id)) return `it would take ${id} off the screen`;
     const doc = docs.textOf(id);
-    if (doc && othersStand(doc, edit.leaving.get(id) ?? new Map(), peer, edit.texts.get(id)?.ops))
+    if (
+      doc &&
+      othersStand(
+        doc,
+        edit.leaving.get(id) ?? new Map(),
+        peer,
+        edit.texts.get(id)?.ops,
+        edit.ownPeers,
+        edit.ownPress,
+      )
+    )
       return `${id}, which it would take away, was written in`;
   }
   // A block comes back only from under removals the edit itself put back: one a peer removed
@@ -391,10 +407,16 @@ const baseName = (name: string): StructureMap =>
  * Whether `doc` has ops `then` lacks that are neither `self`'s nor the edit's own (`own`, its ops
  * there: a press's are its draft's writers').
  */
-function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans = {}): boolean {
+function othersWrote(
+  doc: LoroDoc,
+  then: DocVersion,
+  self: PeerID,
+  own: OpSpans = {},
+  ownPeers?: ReadonlySet<PeerID>,
+): boolean {
   for (const [peer, counter] of docVersion(doc)) {
     const start = then.get(peer) ?? 0;
-    if (peer === self || counter <= start) continue;
+    if (peer === self || ownPeers?.has(peer) === true || counter <= start) continue;
     const spans = own[peer] ?? [];
     if (
       spans.length === 0 ||
@@ -410,11 +432,19 @@ function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
  * (`standingSince`); a take-back that stands and names only ops made since is no write of its own.
  * So a peer's typing it has undone since is no one's write.
  */
-function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans = {}): boolean {
-  if (!othersWrote(doc, then, self, own)) return false;
+function othersStand(
+  doc: LoroDoc,
+  then: DocVersion,
+  self: PeerID,
+  own: OpSpans = {},
+  ownPeers?: ReadonlySet<PeerID>,
+  ownPress = false,
+): boolean {
+  if (!othersWrote(doc, then, self, own, ownPeers)) return false;
   const standing = standingSince(doc, then);
   if (!standing) return true;
   for (const ops of standing) {
+    if (ownPress && ops.note.by && "press" in ops.note.by) continue;
     if (
       ops.undo &&
       Object.entries(ops.undo.ops).every(([by, spans]) =>
@@ -422,7 +452,7 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
       )
     )
       continue;
-    if (ops.peer === self) continue;
+    if (ops.peer === self || ownPeers?.has(ops.peer) === true) continue;
     const spans = own[ops.peer] ?? [];
     if (spans.some(([from, to]) => ops.from >= from && ops.to <= to)) continue;
     return true;
@@ -819,6 +849,8 @@ function deletedAgain(
   after: Frontiers,
   deleted: ReadonlySet<string>,
   peer: PeerID,
+  ownPeers?: ReadonlySet<PeerID>,
+  ownPress = false,
 ): string | null {
   if (deleted.size === 0) return null;
   const standing = standingSince(doc, plainVersion(doc.frontiersToVV(after)));
@@ -832,7 +864,8 @@ function deletedAgain(
       ops.undo?.for.some(([by, counter, length]) =>
         Array.from({ length }, (_, k) => `${counter + k}@${by}`).some(isDeleted),
       ) ?? false;
-    if (ops.peer === peer) continue;
+    if (ownPress && ops.note.by && "press" in ops.note.by) continue;
+    if (ops.peer === peer || ownPeers?.has(ops.peer) === true) continue;
     for (const change of doc.exportJsonInIdSpan({
       peer: ops.peer,
       counter: ops.from,
