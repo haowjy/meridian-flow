@@ -131,7 +131,7 @@ same on the content test this rule replaced): `Restore before` over a turn's tex
 split the paragraph puts back the words the split moved (seeds 163, 372), and a press Undo in a
 chain after a join (seeds 249, 305, 325).
 
-Pins implementation decisions: design §2's grouping (ancestor, `pieces` records written by the
+Pins implementation decisions: design §2's grouping (ancestor, `pieces` records written and retired by the
 write, comment bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per
 change with its Live and fork sides as one edit, a change going back whole, put-back text told by
 take-back commits, a block `Restore before` takes away going as a removal, and a Work press undone draft by

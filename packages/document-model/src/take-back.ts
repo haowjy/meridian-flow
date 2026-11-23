@@ -8,7 +8,14 @@ import {
 } from "./commit-message.js";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
-import { type BlockId, type DocKey, overrideMap, type StructureMap, sameValue } from "./shape.js";
+import {
+  type BlockId,
+  type DocKey,
+  membersOf,
+  overrideMap,
+  type StructureMap,
+  sameValue,
+} from "./shape.js";
 import { isOrderKey, removalOf, StructureView, showRule } from "./structure.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
@@ -298,7 +305,7 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
           puts.push({ name, key, value: undefined, at: null });
         continue;
       }
-      if (name !== order && made.has(memberOf(name, key))) continue;
+      if (name !== order && membersOf(name, key).every((id) => made.has(id))) continue;
       const removal = name === order ? removalOf(before) : null;
       puts.push(
         removal ? { name, key, value: before, at: removal.at } : { name, key, value: before },
@@ -1014,13 +1021,6 @@ function keysOf(values: EditValues, name: string): Map<string, SetValue> {
   }
   return keys;
 }
-
-/**
- * What a structure key belongs to: for a comment body (`comments`, `d.comments`) the comment, for
- * an `attrs` key (`id/name`) its block; every other map is keyed by block id.
- */
-export const memberOf = (name: string, key: string): string =>
-  name.endsWith("attrs") ? key.slice(0, key.lastIndexOf("/")) : key;
 
 /** The structure doc holds root maps only: `cid:root-<name>:Map`. */
 const mapName = (container: string) => container.slice("cid:root-".length, -":Map".length);

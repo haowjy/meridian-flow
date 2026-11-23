@@ -1,35 +1,46 @@
 import type { BlockId } from "@meridian/document-model";
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
-import type { EditorView } from "prosemirror-view";
 
 /**
- * The pairs of blocks `tr` moved text between: text the transaction kept that stands in a
- * textblock with another id than the one it stood in before (Enter inside a paragraph, a join, a
- * delete or a paste across a paragraph boundary). Read from the steps' position maps, so it is the
- * same characters and never a guess from what the text spells. A draft's write records the pairs,
- * and the two blocks are one change (design §2).
+ * The pairs of blocks `tr` moved text between, read from its steps, never from what the text
+ * spells. A draft's write records the pairs, and the two blocks are one change (design §2):
+ * - a step's replaced range that starts in one textblock and ends in another joins the two (a
+ *   join, a delete or typing across a paragraph boundary, text read back from the page);
+ * - text the steps kept that stands in a textblock with another id than before (Enter inside a
+ *   paragraph, a paste of paragraphs into one);
+ * - a drop (`uiEvent: "drop"`) moves text from the textblocks it deleted from into those it
+ *   inserted into.
  */
 export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
   const { before, doc, mapping } = tr;
-  // What the steps replaced, in the old document's positions.
+  // What the steps replaced, in the old document's positions, and what they inserted, in the new.
   const replaced: [number, number][] = [];
+  const inserted: [number, number][] = [];
   mapping.maps.forEach((map, i) => {
-    const ranges: [number, number][] = [];
-    map.forEach((from, to) => {
-      ranges.push([from, to]);
-    });
-    if (ranges.length === 0) return;
     // Back through the maps before this one only: `Mapping.slice(0, i).invert()` would read
     // them all, and widen the range by what this step and the later ones deleted.
     const back = (pos: number, assoc: number) => {
       for (let j = i - 1; j >= 0; j--) pos = mapping.maps[j].invert().map(pos, assoc);
       return pos;
     };
-    for (const [from, to] of ranges) replaced.push([back(from, -1), back(to, 1)]);
+    const ahead = (pos: number, assoc: number) => {
+      for (let j = i + 1; j < mapping.maps.length; j++) pos = mapping.maps[j].map(pos, assoc);
+      return pos;
+    };
+    map.forEach((from, to, newFrom, newTo) => {
+      replaced.push([back(from, -1), back(to, 1)]);
+      inserted.push([ahead(newFrom, -1), ahead(newTo, 1)]);
+    });
   });
   if (replaced.length === 0) return [];
   const pairs = new Map<string, [BlockId, BlockId]>();
+  const pair = (a: BlockId | null, b: BlockId | null) => {
+    if (a !== null && b !== null && a !== b) pairs.set(a < b ? `${a}/${b}` : `${b}/${a}`, [a, b]);
+  };
+
+  for (const [from, to] of replaced) pair(textblockAt(before, from), textblockAt(before, to));
+
   const seen = new Set<Node>();
   for (const [from, to] of replaced)
     before.nodesBetween(
@@ -51,33 +62,40 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
           // The character after `at` was kept: where it stands now.
           const now = mapping.mapResult(at, 1);
           if (now.deleted || mapping.map(at + 1, -1) !== now.pos + 1) continue;
-          const parent = doc.resolve(now.pos).parent;
-          const id = parent.attrs.id;
-          if (parent.isTextblock && typeof id === "string" && id !== was)
-            pairs.set(`${was}\u0000${id}`, [was, id]);
+          pair(was, textblockAt(doc, now.pos));
         }
         return false;
       },
     );
+
+  if (tr.getMeta("uiEvent") === "drop") {
+    const from = textblocksIn(before, replaced);
+    const into = textblocksIn(doc, inserted);
+    for (const a of from) for (const b of into) pair(a, b);
+  }
   return [...pairs.values()];
 }
 
-/**
- * Text that replaces a selection across textblocks without a keypress (`insertText` from
- * dictation, an autocorrect replacement, CDP): ProseMirror would read it back from the DOM, and its
- * diff stops at the joined block, whose id is the first block's, so the kept tail is rewritten as
- * new text and `movedPieces` sees nothing moved. Insert it as ProseMirror's keypress handler does.
- * Composition text cannot be cancelled and still takes the DOM path.
- */
-export function insertAcrossBlocks(view: EditorView, event: InputEvent): boolean {
-  const { $from, $to } = view.state.selection;
-  if (event.inputType !== "insertText" && event.inputType !== "insertReplacementText") return false;
-  if ($from.sameParent($to)) return false;
-  const text = event.data ?? event.dataTransfer?.getData("text/plain");
-  if (!text) return false;
-  event.preventDefault();
-  const insert = () => view.state.tr.insertText(text);
-  if (!view.someProp("handleTextInput", (f) => f(view, $from.pos, $to.pos, text, insert)))
-    view.dispatch(insert().scrollIntoView());
-  return true;
+function textblockAt(doc: Node, pos: number): BlockId | null {
+  const parent = doc.resolve(pos).parent;
+  const id = parent.attrs.id;
+  return parent.isTextblock && typeof id === "string" ? id : null;
+}
+
+/** The ids of the textblocks holding any of `ranges`, an end included. */
+function textblocksIn(doc: Node, ranges: readonly [number, number][]): Set<BlockId> {
+  const out = new Set<BlockId>();
+  for (const [from, to] of ranges) {
+    for (const at of [from, to]) {
+      const id = textblockAt(doc, at);
+      if (id !== null) out.add(id);
+    }
+    if (from < to)
+      doc.nodesBetween(from, to, (node) => {
+        if (!node.isTextblock) return true;
+        if (typeof node.attrs.id === "string") out.add(node.attrs.id);
+        return false;
+      });
+  }
+  return out;
 }

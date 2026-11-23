@@ -1,28 +1,26 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
 import { type CommitAuthor, commitMessage } from "./commit-message.js";
+import { Groups } from "./groups.js";
 import { inMap } from "./handles.js";
 import { frontiersOf, loadEdit, type StoredEdit, storeEdit, takeBack } from "./invert.js";
-import { commentVisibility, readInline, shownStyleKeys } from "./read.js";
+import { deletePieces, linkedPieces, piecesOf } from "./pieces.js";
 import type { Imported, RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
-  COMMENT_STYLE_PREFIX,
   type DocKey,
-  type InlineItem,
-  type NodeRule,
+  membersOf,
   overrideMap,
-  pieceEnds,
   STRUCTURE_KEY,
   STRUCTURE_MAPS,
   type StructureMap,
   sameValue,
 } from "./shape.js";
+import { blockDiffers, Side } from "./side.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
 import {
   deletedBetween,
   type Edit,
   editStays,
-  memberOf,
   noteEdit,
   opsBetween,
   putBackValues,
@@ -131,13 +129,7 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   // Changed blocks the `d.pieces` records connect are one change. A block that is no change only
   // connects: a half split off and joined into the next paragraph, or a paragraph whose text
   // left and came back. It is no member, so no press writes anything of it.
-  const linked = new Groups([]);
-  for (const key of F.overrideKeys("pieces")) {
-    const [a, b] = pieceEnds(key);
-    linked.add(a);
-    linked.add(b);
-    linked.join(a, b);
-  }
+  const linked = linkedPieces(F.overrideKeys("pieces"));
   const first = new Map<BlockId, BlockId>();
   for (const id of groups.members()) {
     if (!linked.has(id)) continue;
@@ -190,7 +182,7 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
 function overriddenBlocks(view: StructureView): Set<BlockId> {
   const out = new Set<BlockId>();
   for (const name of BLOCK_MAPS)
-    for (const key of view.overrideKeys(name)) out.add(memberOf(name, key));
+    for (const key of view.overrideKeys(name)) for (const id of membersOf(name, key)) out.add(id);
   return out;
 }
 
@@ -226,91 +218,6 @@ export function pendingRemovalVersion(
       }
     }
   return out;
-}
-
-/** One side's structure read and its blocks' normalized text, read once each. */
-class Side {
-  readonly view: StructureView;
-  private readonly visible: (comment: string) => boolean;
-  private readonly inlines = new Map<BlockId, InlineItem[]>();
-  private readonly carriedBy = new Map<BlockId, ReadonlySet<string>>();
-
-  constructor(readonly docs: RoomDocs) {
-    this.view = new StructureView(docs);
-    this.visible = commentVisibility(this.view);
-  }
-
-  rule(id: BlockId): NodeRule | undefined {
-    const node = this.view.node(id);
-    return node === undefined ? undefined : this.docs.shape.node(node);
-  }
-
-  inline(id: BlockId): InlineItem[] {
-    let items = this.inlines.get(id);
-    if (!items) {
-      const rule = this.rule(id);
-      items = rule?.textblock
-        ? readInline(this.docs.textOf(id), rule, this.docs.shape, this.visible)
-        : [];
-      this.inlines.set(id, items);
-    }
-    return items;
-  }
-
-  /**
-   * The comments whose mark the block's text holds on a shown unit. By the stored text, not the
-   * read: a block retyped to one that shows no marks (a `code_block`) still carries the comment it
-   * shows again when its type goes back, and Live text keeps a mark whose body an Undo took back,
-   * which a draft's body for it would show again.
-   */
-  carried(id: BlockId): ReadonlySet<string> {
-    const known = this.carriedBy.get(id);
-    if (known) return known;
-    const comments = new Set<string>();
-    const rule = this.rule(id);
-    if (rule?.textblock)
-      for (const key of shownStyleKeys(this.docs.textOf(id), rule, this.docs.shape))
-        if (key.startsWith(COMMENT_STYLE_PREFIX))
-          comments.add(key.slice(COMMENT_STYLE_PREFIX.length));
-    this.carriedBy.set(id, comments);
-    return comments;
-  }
-}
-
-function blockDiffers(live: Side, fork: Side, id: BlockId): boolean {
-  for (const name of ["parent", "order", "node"] as const)
-    if (!sameValue(live.view.value(name, id), fork.view.value(name, id))) return true;
-  if (!sameValue(live.view.attrs(id), fork.view.attrs(id))) return true;
-  return live.rule(id)?.textblock === true && !sameValue(live.inline(id), fork.inline(id));
-}
-
-/** Union-find over changed block ids. */
-class Groups {
-  private readonly parent = new Map<BlockId, BlockId>();
-  constructor(ids: Iterable<BlockId>) {
-    for (const id of ids) this.parent.set(id, id);
-  }
-  has(id: BlockId) {
-    return this.parent.has(id);
-  }
-  add(id: BlockId) {
-    if (!this.parent.has(id)) this.parent.set(id, id);
-  }
-  members() {
-    return [...this.parent.keys()];
-  }
-  find(id: BlockId): BlockId {
-    const up = this.parent.get(id) as BlockId;
-    if (up === id) return id;
-    const root = this.find(up);
-    this.parent.set(id, root);
-    return root;
-  }
-  join(a: BlockId, b: BlockId) {
-    const ra = this.find(a);
-    const rb = this.find(b);
-    if (ra !== rb) this.parent.set(rb, ra);
-  }
 }
 
 /**
@@ -360,20 +267,8 @@ function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][]
   const out: [StructureMap, string][] = [];
   for (const name of BLOCK_MAPS)
     for (const key of view.overrideKeys(name))
-      if (memberOf(name, key) === id) out.push([name, key]);
+      if (membersOf(name, key)[0] === id) out.push([name, key]);
   return out;
-}
-
-/** Delete the fork's `d.pieces` records that name any of `blocks`: the press settles them. */
-function deletePieces(draft: RoomDocs, view: StructureView, blocks: readonly BlockId[]): void {
-  const pressed = new Set(blocks);
-  const keys = view
-    .overrideKeys("pieces")
-    .filter((key) => pieceEnds(key).some((id) => pressed.has(id)));
-  if (keys.length > 0)
-    inMap(draft.structure, overrideMap("pieces"), (map) => {
-      for (const key of keys) map.delete(key);
-    });
 }
 
 function forwarded(draft: RoomDocs, into: DocChange[]): void {
@@ -398,7 +293,11 @@ function spanOf({ doc, before, after }: DocChange): TextSpan {
  * each key and text doc belongs to and noted now, as the press left the room. The author is the
  * room copy's peer: a command's copy has a fresh one, so every later write is someone else's.
  */
-function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): PressedChange[] {
+function pressedOf(
+  chosen: readonly BlockChange[],
+  rooms: (Wrote | null)[],
+  retired: ReadonlyMap<string, BlockId>,
+): PressedChange[] {
   const index = new Map<string, number>();
   chosen.forEach((change, i) => {
     for (const id of [...change.blocks, ...change.comments]) index.set(id, i);
@@ -419,10 +318,9 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
       const { doc, before, after } = wrote.structure;
       for (const [name, keys] of valuesOf(doc, before, after))
         for (const [key, value] of keys) {
-          // A `pieces` record goes with the change that holds one of its blocks.
-          const member = name.endsWith("pieces")
-            ? pieceEnds(key).find((id) => index.has(id))
-            : memberOf(name, key);
+          // A `pieces` record goes with the change that holds one of its blocks, or else with
+          // the change its component connects to.
+          const member = membersOf(name, key).find((id) => index.has(id)) ?? retired.get(key);
           const { values } = edits[index.get(member as string) as number];
           const into = values.get(name) ?? new Map();
           values.set(name, into.set(key, value));
@@ -544,16 +442,21 @@ export function applyBlocks(
   for (const id of blocks)
     for (const [name, key] of overridesOf(forkView, id))
       inMap(draft.structure, overrideMap(name), (map) => map.delete(key));
-  deletePieces(draft, forkView, blocks);
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  const retired = piecesOf(draft, blocks);
+  deletePieces(draft, retired.keys());
   const forkCommit = commitStructure(draft, forkStructure, { by: options.by });
   if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
-  result.pressed = pressedOf(result.chosen, [
-    { docs: live, texts: liveTexts, structure: liveCommit },
-    { docs: draft, texts: new Map(), structure: forkCommit },
-  ]);
+  result.pressed = pressedOf(
+    result.chosen,
+    [
+      { docs: live, texts: liveTexts, structure: liveCommit },
+      { docs: draft, texts: new Map(), structure: forkCommit },
+    ],
+    retired,
+  );
   return result;
 }
 
@@ -598,12 +501,17 @@ export function discardBlocks(
     if (view.baseValue("order", id) === undefined)
       inMap(draft.structure, overrideMap("order"), (map) => map.set(id, null as never));
   }
-  deletePieces(draft, view, blocks);
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  const retired = piecesOf(draft, blocks);
+  deletePieces(draft, retired.keys());
   const commit = commitStructure(draft, structure, { by: options.by });
   if (commit) result.fork.push(commit);
-  result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);
+  result.pressed = pressedOf(
+    result.chosen,
+    [null, { docs: draft, texts, structure: commit }],
+    retired,
+  );
   return result;
 }
 

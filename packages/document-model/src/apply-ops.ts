@@ -1,6 +1,7 @@
 import { commitMessage } from "./commit-message.js";
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
+import { retirePieces } from "./pieces.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -46,8 +47,9 @@ export type ShapeOp =
   /** Set (or with null clear) attributes of the block, or of its inline node at `unit`. */
   | { kind: "attrs"; block: BlockId; attrs: Attrs; unit?: number }
   /**
-   * The edit moved text between these two blocks (it split one, or joined one into the other):
-   * a draft records them as one change (design §2). Either may be a block the edit removed.
+   * The edit moved text between these two blocks (it split one, joined one into the other, or
+   * carried words across their boundary): a draft records them as one change (design §2), unless
+   * neither shows a change once the op is written. Either may be a block the edit removed.
    */
   | { kind: "pieces"; blocks: readonly [BlockId, BlockId] };
 
@@ -253,6 +255,7 @@ export function applyOps(
 
   for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
   for (const op of of("pieces")) writer.pieces(...op.blocks);
+  if (docs.draft) retirePieces(docs, [...writer.touched, ...changes.keys()]);
 
   const structure = commitStructure(docs, before, options);
   return {

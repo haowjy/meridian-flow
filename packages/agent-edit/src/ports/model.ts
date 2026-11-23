@@ -94,7 +94,7 @@ export interface DocumentModel {
    */
   deleteBlock(doc: DocHandle, block: BlockRef): void;
 
-  /** Record that an edit moved text between two blocks (a split, a join); `b` may be about to go. */
+  /** Record that an edit moved text between two blocks (a split, a join); `b` may be gone. */
   recordPieces(doc: DocHandle, a: BlockRef, b: BlockRef): void;
 }
 

@@ -591,21 +591,27 @@ function planSplicedGroup(
   }
 }
 
-/** Words a run must hold to count as text moved across a paragraph boundary. */
-const BOUNDARY_WORDS = 4;
+/** `text` without its closing punctuation: a word carried off a sentence's end leaves its stop. */
+const unclosed = (text: string) => text.replace(/\p{P}+$/u, "");
+
+/** Whether `text` ends with `run`, its closing punctuation set aside or not. */
+const endsWithRun = (text: string, run: string) =>
+  text.endsWith(run) || unclosed(text).endsWith(run);
 
 /**
- * The longest run of whole words that ends `first` and starts `second`, when it holds at least
- * `BOUNDARY_WORDS`: the same words at the facing edges of two neighbouring paragraphs.
+ * The longest run of whole words that starts `second` and ends `first` (its closing punctuation
+ * set aside or not): the same words at the facing edges of two neighbouring paragraphs. Any length:
+ * a short run taken for a carry only makes a change larger, never wrong.
  */
 function edgeRun(first: string, second: string): string {
-  for (let size = Math.min(first.length, second.length); size > 0; size--) {
+  for (let size = second.length; size > 0; size--) {
     const run = second.slice(0, size);
     if (/\s/.test(run[size - 1]) || (size < second.length && !/\s/.test(second[size]))) continue;
-    const at = first.length - size;
-    if (at > 0 && !/\s/.test(first[at - 1])) continue;
-    if (!first.endsWith(run)) continue;
-    return run.trim().split(/\s+/).length >= BOUNDARY_WORDS ? run : "";
+    if (!/[\p{L}\p{N}]/u.test(run)) continue;
+    for (const end of [first, unclosed(first)]) {
+      const at = end.length - size;
+      if (at >= 0 && end.endsWith(run) && (at === 0 || /\s/.test(end[at - 1]))) return run;
+    }
   }
   return "";
 }
@@ -712,10 +718,10 @@ function replaceScope(
               const left = stays.get(at);
               if (at < step.old) {
                 const run = edgeRun(other.textContent, now);
-                return run !== "" && !was.startsWith(run) && !left?.endsWith(run);
+                return run !== "" && !was.startsWith(run) && !(left && endsWithRun(left, run));
               }
               const run = edgeRun(now, other.textContent);
-              return run !== "" && !was.endsWith(run) && !left?.startsWith(run);
+              return run !== "" && !endsWithRun(was, run) && !left?.startsWith(run);
             })
           : [];
         if (lowered.length > 0)

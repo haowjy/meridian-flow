@@ -212,8 +212,9 @@ function executePlan(
       break;
     }
     case "delete":
-      if (plan.edit.pieceOf) model.recordPieces(doc, plan.edit.pieceOf, plan.edit.block);
       model.deleteBlock(doc, plan.edit.block);
+      // After the delete: a record whose blocks show no change yet is retired as it is written.
+      if (plan.edit.pieceOf) model.recordPieces(doc, plan.edit.pieceOf, plan.edit.block);
       if (plan.removesBlock) {
         accumulator.deletedHashes.add(plan.blockId);
       } else {

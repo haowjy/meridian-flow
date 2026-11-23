@@ -17,13 +17,26 @@ export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 /**
  * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
  * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A
- * key per write, so recording a pair again always writes, and a press that deletes the keys it
- * read never takes a record made since. Only a draft writes it (`d.pieces`), and only
- * `changedBlocks` reads it (design §2).
+ * key per write, so recording a pair again always writes, and a deletion of the keys a copy read
+ * never takes a record made since. Only a draft writes it (`d.pieces`). `changedBlocks` reads the
+ * records to group changes; `retirePieces` deletes those no pending change needs, inside the write
+ * or the press that settled them; a press's Undo puts back what it deleted (design §2).
  */
 export const pieceKey = (a: BlockId, b: BlockId, stamp: string) =>
   a < b ? `${a}/${b}/${stamp}` : `${b}/${a}/${stamp}`;
 export const pieceEnds = (key: string) => key.split("/", 2) as [BlockId, BlockId];
+
+/**
+ * What a structure key belongs to: for a comment body (`comments`, `d.comments`) the comment, for
+ * an `attrs` key (`id/name`) its block, for a `pieces` record both its blocks; every other map is
+ * keyed by block id.
+ */
+export const membersOf = (name: string, key: string): string[] =>
+  name.endsWith("attrs")
+    ? [key.slice(0, key.lastIndexOf("/"))]
+    : name.endsWith("pieces")
+      ? pieceEnds(key)
+      : [key];
 
 /** The text doc's one container. */
 export const TEXT_KEY = "t";

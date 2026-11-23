@@ -92,7 +92,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   (`WriteOptions.pieces`, the `pieces` op; one key per write, `<a>/<b>/<peer>@<counter>`, so
   recording a pair again always writes an op and a press deletes only the keys it read). The
   writer of a split or a join says which blocks they are; nothing here compares two texts to
-  guess. Records form a graph: changed blocks connected in it are one change. A block that is not
+  guess. Records form a graph: changed blocks connected in it are one change. A record lives only
+  while its component holds a changed block: every draft write retires the components it touched
+  that hold none (`retirePieces`, in the write's own commit, so its Undo brings them back), and a
+  press deletes the components of the blocks it settles, so a clean draft holds no records. A block that is not
   a change (hidden on both sides, or reading as Live's again) only connects its neighbours and is
   never a member, so a press writes none of its overrides into Live. It runs on every fork save
   and Live batch, so it reads only blocks the fork holds text or an override for (a block with

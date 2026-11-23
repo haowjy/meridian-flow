@@ -4,6 +4,7 @@ import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
+import { retirePieces, textDiffers } from "./pieces.js";
 import {
   commentVisibility,
   emptyParagraphOf,
@@ -19,6 +20,7 @@ import {
   type CommentBody,
   type DocKey,
   type InlineItem,
+  membersOf,
   overrideMap,
   pieceKey,
   type ShapeBlock,
@@ -94,12 +96,16 @@ export interface WriteOptions {
  * Comparisons read the `StructureView` taken before the write.
  */
 export class StructureWriter {
+  /** The blocks (and comments) whose values this writer set, for `retirePieces`. */
+  readonly touched = new Set<string>();
+
   constructor(
     readonly docs: RoomDocs,
     readonly view: StructureView,
   ) {}
 
   set(name: StructureMap, key: string, value: unknown): void {
+    for (const member of membersOf(name, key)) this.touched.add(member);
     const { structure, draft } = this.docs;
     const base = this.view.baseValue(name, key);
     if (!draft) {
@@ -187,6 +193,7 @@ export class StructureWriter {
         if (id === undefined) break;
         orders.delete(id);
         left.delete(id);
+        this.touched.add(id);
       }
     });
     const after = new StructureView(this.docs, this.view.kept);
@@ -344,7 +351,18 @@ export function writeDocument(
       const goesWithParent = typeof parent === "string" && !written.has(parent);
       if (!written.has(id) && !goesWithParent) structure().remove(id);
     }
-  if (docs.draft) for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
+  if (docs.draft) {
+    for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
+    // A block shown after the write with other text than Live's is changed; a typed block left
+    // with Live's text is the only one a keystroke can settle.
+    const shown = (id: BlockId) => written.has(id) && !options.kept?.has(id);
+    const typed = changes.map((change) => change.key).filter((id) => !textDiffers(docs, id));
+    retirePieces(
+      docs,
+      [...(writer?.touched ?? []), ...typed],
+      (id) => shown(id) && textDiffers(docs, id),
+    );
+  }
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;
