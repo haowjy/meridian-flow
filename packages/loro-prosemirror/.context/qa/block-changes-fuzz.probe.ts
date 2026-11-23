@@ -42,9 +42,10 @@ import {
   valuesOf,
   versionOf,
 } from "@meridian/document-model";
+import { Fragment, Slice } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import { blockOf } from "../../src/codec.js";
-import { readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
+import { movedPieces, readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
 import { Gen, randomEdit, schema, TOKEN } from "./block-changes.gen.ts";
 
 const shape = shapeSchemaOf(schema);
@@ -256,7 +257,7 @@ function edit(d, fn, { rng, by } = {}) {
     const under = parent === tr.doc ? null : parent.attrs.id;
     return parent.childCount === 1 && isDerivedEmpty(blockOf(node), under);
   });
-  return writeProseMirror(d, tr.doc, { by, random: rng });
+  return writeProseMirror(d, tr.doc, { by, random: rng, pieces: process.env.FUZZ_NO_PIECES ? [] : movedPieces(tr) });
 }
 
 export function runScript(seed, { verbose = false } = {}) {
@@ -1142,11 +1143,11 @@ export function runScript(seed, { verbose = false } = {}) {
     }
   }
 
-  function discard(all = false) {
+  function discard(all = false, named = null) {
     syncTab();
     const groups = pending();
     if (!groups.length) return null;
-    const selected = all ? null : g.pick(groups);
+    const selected = all ? null : (groups.find((c) => c.blocks.includes(named)) ?? g.pick(groups));
     const chosen = all ? "all" : [...selected.blocks, ...selected.comments];
     const before = render(fork);
     const pendingBefore = new Set(touched);
@@ -1206,6 +1207,122 @@ export function runScript(seed, { verbose = false } = {}) {
         const now = blockValues(fork);
         return `fork not back to before Discard: ${[...new Set([...rec.blocksBefore.keys(), ...now.keys()])].filter((id) => rec.blocksBefore.get(id) !== now.get(id)).map((id) => `${id} ${rec.blocksBefore.get(id)} -> ${now.get(id)}`).join("; ")}`;
       });
+  }
+
+  /** The draft's top-level paragraphs of plain text with nothing pending: `[id, node, pos]`. */
+  function cleanParagraphs() {
+    ensure();
+    syncLive();
+    syncTab();
+    const pendingNow = new Set(pendingIds());
+    const out = [];
+    read(tab).forEach((node, pos) => {
+      const plain = node.type === schema.nodes.paragraph && node.childCount === 1 && node.firstChild.isText && node.firstChild.marks.length === 0;
+      out.push(plain && !pendingNow.has(node.attrs.id) && new StructureView(live).shown.has(node.attrs.id) ? [node.attrs.id, node, pos] : null);
+    });
+    return out;
+  }
+  const changeOf = (id) => pending().findIndex((c) => c.blocks.includes(id));
+
+  /**
+   * A split or a join is one change (design §2): the writer's Enter inside a paragraph, or a join
+   * of two, then a press that names one of the two blocks. Both settle, Live shows no word twice,
+   * and the press's Undo leaves them one change again.
+   */
+  function halves() {
+    const paragraphs = cleanParagraphs();
+    const wordy = (p) => p && / \S/.test(p[1].textContent.slice(1));
+    const kind = g.pick(["split", "split", "join", "join", "crossDelete", "typeOver", "multi", "paste", "joinEnter"]);
+    const alone = kind === "split" || kind === "paste";
+    const at = paragraphs.findIndex((p, i) => wordy(p) && (alone || wordy(paragraphs[i + 1])));
+    if (at < 0) return;
+    const [first, node, pos] = paragraphs[at];
+    const [second, next, nextPos] = alone ? [] : paragraphs[at + 1];
+    const idsBefore = new Set(textblocks(tab).keys());
+    // Words the draft already shows twice (a `Restore before` over a split leaves such a copy).
+    const drafted = tokens(tab);
+    const already = new Set(drafted.filter((t) => drafted.indexOf(t) !== drafted.lastIndexOf(t)));
+    const moved = [...tokensOf(node.textContent), ...(next ? tokensOf(next.textContent) : [])];
+    // A place inside each paragraph, before a space, so no word is cut.
+    const inFirst = pos + 1 + node.textContent.indexOf(" ", 1);
+    const inSecond = next && nextPos + 1 + next.textContent.indexOf(" ", 1);
+    const paragraph = () => schema.nodes.paragraph.create(null, schema.text(g.tok("f")));
+    const builds = {
+      split: (tr) => tr.split(inFirst),
+      join: (tr) => tr.join(nextPos),
+      // A selection from inside one paragraph to inside the next, deleted or typed over.
+      crossDelete: (tr) => tr.delete(inFirst, inSecond),
+      typeOver: (tr) => tr.insertText(` ${g.tok("f")}`, inFirst, inSecond),
+      // Two steps: typing at the start, then the delete across the break.
+      multi: (tr) => {
+        tr.insertText(`${g.tok("f")} `, pos + 1);
+        return tr.delete(tr.mapping.map(inFirst), tr.mapping.map(inSecond));
+      },
+      // Two paragraphs pasted inside one: its tail ends up in the second pasted paragraph.
+      paste: (tr) => tr.replace(inFirst, inFirst, new Slice(Fragment.from([paragraph(), paragraph()]), 1, 1)),
+      joinEnter: (tr) => tr.join(nextPos),
+    };
+    if (!userEdit(tab, "f", { edit: { kind, build: builds[kind] } })) return;
+    // A join mended by hand: Enter where the two were joined. The first paragraph reads as Live
+    // again, and the second, removed, and the new one are one change through it.
+    if (kind === "joinEnter" && !userEdit(tab, "f", { edit: { kind: "split", build: (tr) => tr.split(pos + 1 + node.content.size) } })) return;
+    syncTab();
+    const fresh = [...textblocks(tab).keys()].find((x) => !idsBefore.has(x));
+    const [id, other] = kind === "joinEnter" ? [second, fresh] : [first, alone ? fresh : second];
+    stats.halves = (stats.halves ?? 0) + 1;
+    stats[`halves:${kind}`] = (stats[`halves:${kind}`] ?? 0) + 1;
+    check(changeOf(id) >= 0 && changeOf(id) === changeOf(other), "pieces", () => `${kind} of ${id} and ${other} is not one change: ${JSON.stringify(pending())}`);
+    const named = g.chance(0.5) ? id : other;
+    // By what the press acted on: the press step types into a pressed block afterwards.
+    const settled = (what, acted) =>
+      check(acted.includes(id) && acted.includes(other), "pieces", () => `${what} naming ${named} acted on ${acted}, not on both halves`);
+    if (g.chance(0.6)) {
+      const p = press([named], true);
+      if (!p) return;
+      settled("Apply", p.ids);
+      const shown = tokens(live);
+      const twice = moved.filter((t) => !already.has(t) && shown.indexOf(t) !== shown.lastIndexOf(t));
+      check(!twice.length, "pieces", () => `Live shows ${twice.join(" ")} twice after Apply naming ${named}`);
+      if (g.chance(0.5)) {
+        syncLive();
+        undoPressStep(p, { exact: liveWrites === p.liveAt && !p.liveTyped, inTurn: true });
+        const [a, b] = [changeOf(id), changeOf(other)];
+        if (a >= 0 || b >= 0) check(a === b, "pieces", () => `after the Undo ${id} and ${other} are not one change: ${JSON.stringify(pending())}`);
+      }
+    } else {
+      const r = discard(false, named);
+      if (!r) return;
+      settled("Discard", r.r.chosen.flatMap((c) => c.blocks));
+      if (g.chance(0.5)) undoDiscard(r, "discard");
+    }
+  }
+
+  /**
+   * Independent rewrites of two neighbours stay two changes (design §2), though one loses three
+   * characters the other gains: applying the first leaves the second pending.
+   */
+  function neighbours() {
+    const paragraphs = cleanParagraphs();
+    const at = paragraphs.findIndex((p, i) => p && paragraphs[i + 1] && /^\S{4,}/.test(p[1].textContent));
+    if (at < 0) return;
+    const [[a, node, pos], [b]] = [paragraphs[at], paragraphs[at + 1]];
+    const word = node.textContent.match(/^\S+/)[0];
+    const fresh = g.tok("f");
+    if (!userEdit(tab, "f", { edit: { kind: "rewrite", build: (tr) => tr.insertText(fresh, pos + 1, pos + 1 + word.length) } })) return;
+    // The first rewrite moved the second paragraph: find its end in the document as it is now.
+    const endOf = (doc) => {
+      let end = -1;
+      doc.forEach((child, offset) => {
+        if (child.attrs.id === b) end = offset + 1 + child.content.size;
+      });
+      return end;
+    };
+    if (!userEdit(tab, "f", { edit: { kind: "rewrite", build: (tr, doc) => tr.insertText(` ${word.slice(0, 3)}~`, endOf(doc)) } })) return;
+    syncTab();
+    stats.neighbours = (stats.neighbours ?? 0) + 1;
+    check(changeOf(a) >= 0 && changeOf(b) >= 0 && changeOf(a) !== changeOf(b), "pieces", () => `rewrites of ${a} and ${b} are not two changes: ${JSON.stringify(pending())}`);
+    if (!press([a], true)) return;
+    check(pendingIds().includes(b), "pieces", () => `Apply of ${a} did not leave ${b} pending`);
   }
 
   try {
@@ -1290,6 +1407,9 @@ export function runScript(seed, { verbose = false } = {}) {
         if (g.chance(0.5)) writerEdit();
       }
     }
+    // After the seeded steps, so a seed's script up to here is what it was before these cases.
+    halves();
+    neighbours();
     syncLive();
     syncTab();
 

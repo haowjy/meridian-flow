@@ -4,6 +4,7 @@ import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
+import { retirePieces, textDiffers } from "./pieces.js";
 import {
   commentVisibility,
   emptyParagraphOf,
@@ -19,7 +20,9 @@ import {
   type CommentBody,
   type DocKey,
   type InlineItem,
+  membersOf,
   overrideMap,
+  pieceKey,
   type ShapeBlock,
   STRUCTURE_KEY,
   type StructureMap,
@@ -28,7 +31,7 @@ import {
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
-import { type DocVersion, plainVersion } from "./version.js";
+import { type DocVersion, docVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -79,6 +82,11 @@ export interface WriteOptions {
   kept?: ReadonlySet<BlockId>;
   /** The read of the structure with `kept` as it is now, when the caller already took it. */
   view?: StructureView;
+  /**
+   * The pairs of blocks this write moved text between (a split, a join): the writer knows them
+   * from the edit it is writing, and a draft records them so the two are one change (design §2).
+   */
+  pieces?: readonly (readonly [BlockId, BlockId])[];
 }
 
 /**
@@ -88,12 +96,16 @@ export interface WriteOptions {
  * Comparisons read the `StructureView` taken before the write.
  */
 export class StructureWriter {
+  /** The blocks (and comments) whose values this writer set, for `retirePieces`. */
+  readonly touched = new Set<string>();
+
   constructor(
     readonly docs: RoomDocs,
     readonly view: StructureView,
   ) {}
 
   set(name: StructureMap, key: string, value: unknown): void {
+    for (const member of membersOf(name, key)) this.touched.add(member);
     const { structure, draft } = this.docs;
     const base = this.view.baseValue(name, key);
     if (!draft) {
@@ -123,6 +135,16 @@ export class StructureWriter {
       if (doc) seen.set(key, plainVersion(doc.version()));
     }
     this.set("order", id, encodeRemoval({ at, seen }));
+  }
+
+  /**
+   * Record that this write moved text between `a` and `b`, so a draft's review takes them as one
+   * change. Live keeps no record: nothing reviews it.
+   */
+  pieces(a: BlockId, b: BlockId): void {
+    if (!this.docs.draft || a === b) return;
+    const { peer, structure } = this.docs;
+    this.set("pieces", pieceKey(a, b, `${peer}@${docVersion(structure).get(peer) ?? 0}`), true);
   }
 
   /**
@@ -171,6 +193,7 @@ export class StructureWriter {
         if (id === undefined) break;
         orders.delete(id);
         left.delete(id);
+        this.touched.add(id);
       }
     });
     const after = new StructureView(this.docs, this.view.kept);
@@ -328,6 +351,18 @@ export function writeDocument(
       const goesWithParent = typeof parent === "string" && !written.has(parent);
       if (!written.has(id) && !goesWithParent) structure().remove(id);
     }
+  if (docs.draft) {
+    for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
+    // A block shown after the write with other text than Live's is changed; a typed block left
+    // with Live's text is the only one a keystroke can settle.
+    const shown = (id: BlockId) => written.has(id) && !options.kept?.has(id);
+    const typed = changes.map((change) => change.key).filter((id) => !textDiffers(docs, id));
+    retirePieces(
+      docs,
+      [...(writer?.touched ?? []), ...typed],
+      (id) => shown(id) && textDiffers(docs, id),
+    );
+  }
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;

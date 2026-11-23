@@ -49,7 +49,7 @@ import {
   encodeChanges,
   frontiersOf,
   isServerPeer,
-  memberOf,
+  membersOf,
   type PeerId,
   type PressedChange,
   type RoomDocs,
@@ -315,7 +315,7 @@ export function createDrizzlePress(
         const members = [
           ...new Set([
             ...edit.texts.map(([key]) => key),
-            ...edit.values.flatMap(([name, keys]) => keys.map(([key]) => memberOf(name, key))),
+            ...edit.values.flatMap(([name, keys]) => keys.flatMap(([key]) => membersOf(name, key))),
           ]),
         ];
         const [first, ...rest] = members;
