@@ -19,7 +19,7 @@ import {
 } from "@meridian/document-model";
 import { createMemoryDocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, withBlockIds } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, newBlockId, withBlockIds } from "@meridian/prosemirror-schema";
 import {
   CrdtType,
   decode as decodeFrame,
@@ -296,7 +296,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
       { kind: "insert", parent: null, after: p2.id, blocks: [{ kind: "text", id: "newblock01", node: "paragraph", attrs: {}, inline: [{ kind: "text", text: "Inserted.", marks: { em: {} } }] }] },
       { kind: "delete", block: p3.id },
     ],
-    { message: "turn:t1" },
+    { message: "turn:t1", newBlockId },
   );
   check("applyOps ok", result.ok, () => result);
   const out = readProseMirror(live, schema);
@@ -311,7 +311,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
       out.child(2).child(0).marks[0]?.type.name === "em",
     () => show(out),
   );
-  const bad = applyOps(live, [{ kind: "text", block: p1.id, splices: [{ from: 0, to: 999, content: [] }], formats: [] }]);
+  const bad = applyOps(live, [{ kind: "text", block: p1.id, splices: [{ from: 0, to: 999, content: [] }], formats: [] }], { newBlockId });
   check("applyOps refuses an out-of-range splice before writing", !bad.ok);
   check("the change carries the message", result.ok && result.changes.every((c) => c.doc.getChangeAt(c.after[0]).message === "turn:t1"));
 }
@@ -322,7 +322,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const live = seed(fromMarkdown("Hello world.\n\nSecond."));
   const tab = track(RoomDocs.create(shape, freshPeerId()));
   tab.importBatch(live.exportSince());
-  let state = EditorState.create({ schema, doc: readProseMirror(tab, schema), plugins: [loroSyncPlugin({ docs: tab })] });
+  let state = EditorState.create({ schema, doc: readProseMirror(tab, schema), plugins: [loroSyncPlugin({ docs: tab, newBlockId })] });
   const textVersion = () => tab.textOf(readDocument(tab)[0].id)?.oplogVersion();
   const structureBefore = tab.structure.oplogVersion();
   state = state.apply(state.tr.insertText("!", 12));
@@ -355,7 +355,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const tab = track(RoomDocs.create(shape, freshPeerId()));
   tab.importBatch(live.exportSince());
   const writes: number[] = [];
-  const plugin = loroSyncPlugin({ docs: tab, onLocalWrite: (changes) => writes.push(changes.length) });
+  const plugin = loroSyncPlugin({ docs: tab, newBlockId, onLocalWrite: (changes) => writes.push(changes.length) });
   const view = {
     state: EditorState.create({ schema, doc: readProseMirror(tab, schema), plugins: [plugin] }),
     composing: false,
@@ -412,7 +412,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const tabLive = track(RoomDocs.create(shape, freshPeerId()));
   tabLive.importBatch(live.exportSince());
   const tabDraft = track(RoomDocs.draftOf(tabLive, freshPeerId()));
-  const plugin = loroSyncPlugin({ docs: tabDraft });
+  const plugin = loroSyncPlugin({ docs: tabDraft, newBlockId });
   const view = {
     state: EditorState.create({ schema, doc: readProseMirror(tabDraft, schema), plugins: [plugin] }),
     composing: false,

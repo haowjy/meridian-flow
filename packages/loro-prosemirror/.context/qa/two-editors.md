@@ -60,9 +60,13 @@ From investigation p18995, one case per cause the seeds found: a peer's join tak
 deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); two
 equal removals of one block, and the Ctrl+Z of the one that lost finds the other's value and stays
 (477, with fixed peer ids); a move beside a block the caret keeps leaves that block removed (602);
-an unwrap of an emptied container and a peer's concurrent move of it read no id twice (the derived
-`c/empty`); a peer removes a stored `c/empty`, and typing in the empty paragraph c shows again
-stores it with the new text alone. From review p18996: one edit judged on its author's copy and on
+the placeholder id `c/empty` (design §1): typing into it stores a fresh id, so an unwrap of the
+container and a peer's concurrent move of it read no id twice and store no placeholder id; three
+copies unwrapping, wrapping and moving the container at once show the typed text once, through
+each copy's Ctrl+Z (review p18998); a peer filling a container whose paragraph B emptied, B's
+caret in it, never shows B's deleted words again (seed 953); typing into the placeholder after a
+peer emptied the container is a new paragraph without the removed one's words, and one Ctrl+Z
+brings the placeholder back. From review p18996: one edit judged on its author's copy and on
 a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
 Live has moved the block since. From review p18998: B's batch between each of A's 1,001 keys splits A's
 one typing step into an item per key, and its Undo takes back every key.
@@ -85,8 +89,10 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
   block); no word shows twice that showed once (a run that wrote no text is exempt: the Undo of a
   delete brings blocks back as they were); no word the other editor typed leaves the screen; no
   word a peer's edit took off this editor's screen comes back; and no mark a peer set or cleared
-  on a word is undone. A change a batch made is the peer's when the peer's screen shows it too,
-  else it came of two edits meeting (a block moved into a container the other removed), which an
+  on a word is undone (judged per place, by block and occurrence: a split and its Undo can
+  leaves a copy of its words in two blocks, and a peer unbolding one copy says nothing about this
+  editor's Undo rebolding the other, seed 1098 at `200 400 900`). A change
+  a batch made is the peer's when the peer's screen shows it too, else it came of two edits meeting (a block moved into a container the other removed), which an
   Undo may bring back; a kept block leaving on a click counts the same way (seed 415). A Redo
   may take off the screen only words typed since the editor's Redo was last emptied, by any edit,
   in a burst too (seeds 460 and 483). The editor's screen counts, kept blocks included;
@@ -101,7 +107,7 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets
-structure ends it. `WHY=1` prints how many steps each run left, `TRACE=1` both screens after
+structure ends it, except typing into an empty paragraph, which stores it and joins as typing. `WHY=1` prints how many steps each run left, `TRACE=1` both screens after
 every step.
 
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold
@@ -117,5 +123,6 @@ holds what the step left, each doc and key alone) fails 11 of the step rule's ca
 seeds at 400 steps under the Undo checks
 ([q14](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/probe/scripts/q14-step-rule/README.md)). Not covered: drafts beyond the one Redo case (off until phase 2), a real IME composition (the
 browser matrix; the raced cases dispatch the commit's transaction), the selection Undo puts back (the app sets it; checked by hand in the browser).
-The block-id fixer here gives a fresh id to any taken one and to another parent's
-`<parent>/empty`; the app's keeps the id on the half that was there.
+The block-id fixer here gives a fresh id to any missing or taken one; the app's keeps the id on
+the half that was there. The editors' binding stores an empty container's placeholder under the
+seed's own ids, so a seed replays exactly.

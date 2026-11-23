@@ -203,18 +203,34 @@ check(
   { groups3, text: text(write3) },
 );
 
-// 5. A write into an emptied document lands (`/empty`), and so does create into a new one.
-await host.writerEdit("ch1", () => []);
-c1.request();
-const read4 = c1.record(await core.read({ ...file("ch1") } as never, c1.context()));
-const empty = read4.result.blocks?.[0]?.items[0]?.hash;
-c1.request();
-const write4 = c1.record(
-  await run(() =>
-    core.write({ command: "replace", ...file("ch1"), in: empty, content: "A new start." } as never, c1.context()),
-  ),
+// 5. Writes into an emptied document land (the unstored `/empty` paragraph, stored under a fresh
+// id by the first op): replaced with one paragraph or three, or inserted after. The result lists
+// what was written under its new hash. Then create writes a new document.
+const intoEmpty = async (command: Record<string, unknown>, want: string, what: string) => {
+  await host.writerEdit("ch1", () => []);
+  c1.request();
+  const read = c1.record(await core.read({ ...file("ch1") } as never, c1.context()));
+  const empty = read.result.blocks?.[0]?.items[0]?.hash;
+  c1.request();
+  const write = c1.record(
+    await run(() => core.write({ ...command, ...file("ch1"), [command.command === "insert" ? "after" : "in"]: empty } as never, c1.context())),
+  );
+  const live = texts(await host.live("ch1")).join("|");
+  check(!write.isError && live === want, what, { live, result: text(write) });
+  const listed = (write.result.blocks ?? []).flatMap((group) => group.items.map((item) => item.body));
+  check(
+    want.split("|").every((line) => listed.some((body) => body.includes(line))),
+    `${what}: the result lists every written block`,
+    text(write),
+  );
+};
+await intoEmpty({ command: "replace", content: "A new start." }, "A new start.", "one paragraph replaces the empty one");
+await intoEmpty(
+  { command: "replace", content: "One.\n\nTwo.\n\nThree." },
+  "One.|Two.|Three.",
+  "three paragraphs replace the empty one",
 );
-check(!write4.isError && texts(await host.live("ch1"))[0] === "A new start.", "a write into an emptied document lands", text(write4));
+await intoEmpty({ command: "insert", content: "After." }, "After.", "a paragraph goes after the empty one");
 const created = await run(() =>
   core.write({ command: "create", ...file("ch2"), content: "# Two\n\nFresh text." } as never, c1.context()),
 );

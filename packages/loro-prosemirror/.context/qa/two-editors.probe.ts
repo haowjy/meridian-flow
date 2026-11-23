@@ -21,7 +21,6 @@ import {
   docVersion,
   type Edit,
   editStays,
-  emptyParagraphOf,
   encodeRoomVersion,
   isOrderKey,
   removalOf,
@@ -90,13 +89,21 @@ type Editor = {
 };
 type Place = { node: Node; pos: number };
 
-/** An editor with the binding and its Undo on `docs`, started from what they read. */
-function editor(name: string, docs: RoomDocs): Editor & { destroy(): void } {
+let made = 0;
+const madeId = () => `n${(made++).toString(36)}`;
+
+/**
+ * An editor with the binding and its Undo on `docs`, started from what they read. `fresh` gives
+ * the ids the binding stores an empty container's paragraph under: a seed passes its own, so it
+ * replays exactly.
+ */
+function editor(name: string, docs: RoomDocs, fresh: () => string = madeId): Editor & { destroy(): void } {
   const history = new UndoHistory(docs, { now: clock });
   const typed = new Map<DocKey, number>();
   const plugin = loroSyncPlugin({
     docs,
     history,
+    newBlockId: fresh,
     onLocalWrite: (changes) => {
       for (const { key, doc } of changes)
         if (key !== STRUCTURE_KEY)
@@ -181,20 +188,13 @@ function runHistory(e: Editor, direction: "undo" | "redo"): boolean {
   return true;
 }
 
-/**
- * The app's block-id fixer, simplified: a block with no id or a taken one gets a fresh one, and so
- * does a block holding another parent's empty-paragraph id (design §1: an unwrap or a move takes
- * `c/empty` out of `c`).
- */
+/** The app's block-id fixer, simplified: a block with no id or a taken one gets a fresh one. */
 function fixBlockIds(tr: Transaction, fresh: () => string): Transaction {
   const seen = new Set<string>();
-  tr.doc.descendants((node, pos, parent) => {
+  tr.doc.descendants((node, pos) => {
     if (node.isBlock && node.type.spec.attrs?.id) {
       const value = node.attrs.id;
-      const owner = typeof value === "string" ? emptyParagraphOf(value) : undefined;
-      const under = parent === tr.doc ? null : (parent?.attrs.id as string);
-      if (typeof value !== "string" || seen.has(value) || (owner !== undefined && owner !== under))
-        tr.setNodeAttribute(pos, "id", fresh());
+      if (typeof value !== "string" || seen.has(value)) tr.setNodeAttribute(pos, "id", fresh());
       else seen.add(value);
     }
     return !node.isTextblock;
@@ -262,8 +262,8 @@ function run(seed: number): string | null {
 
   const seedDocs = copy();
   writeProseMirror(seedDocs, schema.topNodeType.create(null, Array.from({ length: 8 }, para)));
-  const a = editor("A", copy());
-  const b = editor("B", copy());
+  const a = editor("A", copy(), id);
+  const b = editor("B", copy(), id);
   for (const e of [a, b]) {
     e.docs.importBatch(seedDocs.exportSince());
     e.view.state = EditorState.create({
@@ -289,11 +289,12 @@ function run(seed: number): string | null {
   const sinceRedo = { A: new Set<string>(), B: new Set<string>() };
   /**
    * Each typed word the editor shows (its caret's kept blocks too: the writer sees them), with the
-   * marks any of its characters carry and how often it shows (a Join's copy shows it twice).
+   * marks any of its characters carry; and each place it shows, by block and occurrence in it
+   * (a split undone leaves a copy of the words in two blocks), with that place's marks.
    */
   const wordMarks = (e: Editor) => {
     const out = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const placed = new Map<string, Set<string>>();
     e.view.state.doc.descendants((node) => {
       if (!node.isTextblock) return true;
       let text = "";
@@ -304,15 +305,19 @@ function run(seed: number): string | null {
         const names = child.marks.map((mark) => mark.type.name).filter((name) => name !== "comment");
         for (let k = 0; k < piece.length; k++) marks.push(names);
       });
+      const seen = new Map<string, number>();
       for (const match of text.matchAll(/q[AB]\d+/g)) {
-        const set = out.get(match[0]) ?? new Set<string>();
-        for (let k = match.index; k < match.index + match[0].length; k++) for (const name of marks[k]) set.add(name);
-        out.set(match[0], set);
-        counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
+        const word = match[0];
+        const here = new Set<string>();
+        for (let k = match.index; k < match.index + word.length; k++) for (const name of marks[k]) here.add(name);
+        out.set(word, new Set([...(out.get(word) ?? []), ...here]));
+        const nth = seen.get(word) ?? 0;
+        seen.set(word, nth + 1);
+        placed.set(`${node.attrs.id}\u0000${word}\u0000${nth}`, here);
       }
       return false;
     });
-    return { marks: out, counts };
+    return { marks: out, placed };
   };
   /** Who changed a word on a screen: the editor's own edit, a peer's, both merged, or a Ctrl+Z. */
   type Source = "own" | "peer" | "merge" | "run";
@@ -329,32 +334,36 @@ function run(seed: number): string | null {
    */
   const observe = (e: Editor, source: Source, peer?: Editor) => {
     const screen = screens.get(e.name) ?? {
-      words: { marks: new Map(), counts: new Map() },
+      words: { marks: new Map(), placed: new Map() },
       left: new Map(),
       marked: new Map(),
     };
     screens.set(e.name, screen);
     const now = wordMarks(e);
-    const theirs = peer && wordMarks(peer).marks;
+    const peerSees = peer && wordMarks(peer);
+    const theirs = peerSees?.marks;
     const what = `${e.name}'s ${source === "run" ? "Undo or Redo" : source}`;
     for (const word of screen.words.marks.keys())
       if (!now.marks.has(word)) screen.left.set(word, theirs?.has(word) ? "merge" : source);
-    for (const [word, marks] of now.marks) {
-      const was = screen.words.marks.get(word);
-      if (!was) {
-        if (source === "run" && screen.left.get(word) === "peer")
-          throw new Bad(`${what} brought back ${word}, which a peer deleted`);
-        screen.left.delete(word);
-        continue;
-      }
-      // A copy coming or going changes which marks show without anyone marking.
-      if (now.counts.get(word) !== screen.words.counts.get(word)) continue;
+    for (const word of now.marks.keys()) {
+      if (screen.words.marks.has(word)) continue;
+      if (source === "run" && screen.left.get(word) === "peer")
+        throw new Bad(`${what} brought back ${word}, which a peer deleted`);
+      screen.left.delete(word);
+    }
+    // Marks are judged per place, not per word: a word in two places (seed 1098 at 200 400 900,
+    // a split undone) shows each place's own marks, and a peer unbolding one place says nothing
+    // about A's Undo rebolding the other. A place coming or going is no one marking.
+    for (const [place, marks] of now.placed) {
+      const was = screen.words.placed.get(place);
+      if (!was) continue;
+      const word = place.split("\u0000")[1];
       for (const name of new Set([...was, ...marks])) {
         if (was.has(name) === marks.has(name)) continue;
-        if (source === "run" && screen.marked.get(`${word}\u0000${name}`) === "peer")
+        if (source === "run" && screen.marked.get(`${place}\u0000${name}`) === "peer")
           throw new Bad(`${what} turned ${name} ${marks.has(name) ? "on" : "off"} on ${word}, which a peer set`);
-        const same = theirs && theirs.get(word)?.has(name) === marks.has(name);
-        screen.marked.set(`${word}\u0000${name}`, theirs && !same ? "merge" : source);
+        const same = peerSees && peerSees.placed.get(place)?.has(name) === marks.has(name);
+        screen.marked.set(`${place}\u0000${name}`, peerSees && !same ? "merge" : source);
       }
     }
     screen.words = now;
@@ -869,18 +878,42 @@ function racedRemovals(): string[] {
 
   /** A case run in the room it makes, rather than the default one. */
   type Own = { room: () => Room; run: (r: Room) => string | null };
-  const unwrapEmptied = (e: Editor, id: string, fresh: () => string) => {
+  /** Replace container `id` with its children, as an unwrap does: they move, keeping their ids. */
+  const unwrap = (e: Editor, id: string) => {
     const c = e.view.state.doc.nodeAt(posOf(e, id)) as Node;
     const at = posOf(e, id);
-    e.view.dispatch(fixBlockIds(e.view.state.tr.replaceWith(at, at + c.nodeSize, c.content), fresh));
+    e.view.dispatch(e.view.state.tr.replaceWith(at, at + c.nodeSize, c.content));
     e.history.endStep();
   };
-  /** Empty container `id` as the editor empties a cell: its one paragraph becomes `<id>/empty`. */
+  /** Empty container `id` to its placeholder paragraph `<id>/empty`, the one it shows when empty. */
   const emptyOut = (e: Editor, id: string) => {
     const c = e.view.state.doc.nodeAt(posOf(e, id)) as Node;
     const at = posOf(e, id);
     e.view.dispatch(e.view.state.tr.replaceWith(at + 1, at + c.nodeSize - 1, p(`${id}/empty`)));
     e.history.endStep();
+  };
+  /** The id of container `id`'s first child on `e`'s screen. */
+  const firstIn = (e: Editor, id: string) =>
+    (e.view.state.doc.nodeAt(posOf(e, id)) as Node).child(0).attrs.id as string;
+  /** Every block id `e`'s docs read, in document order. */
+  const readIds = (e: Editor) => {
+    const ids: string[] = [];
+    readProseMirror(e.docs, schema).descendants((node) => {
+      if (node.isBlock) ids.push(node.attrs.id);
+      return true;
+    });
+    return ids;
+  };
+  /** A block id some editor's docs read twice, or a placeholder id they store. */
+  const badIds = (r: Room, when: string) => {
+    for (const e of r.editors) {
+      const ids = readIds(e);
+      const twice = ids.find((id, k) => ids.indexOf(id) !== k);
+      if (twice) return `${when}: ${e.name} reads ${twice} twice in [${ids}]`;
+      const stored = ids.find((id) => id.endsWith("/empty") && new StructureView(e.docs).shown.has(id));
+      if (stored) return `${when}: ${e.name} stores the placeholder id ${stored}`;
+    }
+    return null;
   };
   const ownRooms: Record<string, Own> = {
     // Seed 414: B joins x into p, so p holds a copy of x's text and x is removed; A,
@@ -933,34 +966,85 @@ function racedRemovals(): string[] {
         );
       },
     },
-    // The derived id (p18995): an unwrap of an emptied container stores its paragraph at the top
-    // with a fresh id, so B's concurrent move of the container, which brings it back empty, shows
-    // one `c/empty`, and no id twice.
+    // The placeholder id (p18995's dup-id): A types into emptied c, so the paragraph is stored
+    // under a fresh id, and unwraps c, a move of it to the top. B's concurrent move of c brings
+    // c back with no child: it shows its placeholder, and no id reads twice.
     "an unwrap of an emptied container and a peer's move of it": {
       room: () => room([p("a", "First."), schema.nodes.jsx_container.create({ id: "c", name: "Panel" }, [p("i", "Inner.")]), p("z", "Last.")]),
       run: (r) => {
         emptyOut(r.a, "c");
+        caret(r.a, "c/empty", 0);
+        type(r.a, "TOKEN");
         syncAll(r);
-        unwrapEmptied(r.a, "c", () => "u1");
+        unwrap(r.a, "c");
         for (const level of [2, null, 2, null]) {
           r.b.view.dispatch(r.b.view.state.tr.setNodeAttribute(posOf(r.b, "a"), "level", level));
           r.b.history.endStep();
         }
         move(r.b, "c", "a");
         syncAll(r);
-        const all: string[] = [];
-        readProseMirror(r.a.docs, schema).descendants((node) => {
-          if (node.isBlock) all.push(node.attrs.id);
-          return true;
-        });
-        const twice = all.filter((id, k) => all.indexOf(id) !== k);
-        return twice.length > 0 ? `derived id: ${twice} read twice in [${all}]` : settle(r, "unwrap/move");
+        return badIds(r, "unwrap/move") ?? settle(r, "unwrap/move", once("TOKEN"));
       },
     },
-    // A peer removes a stored `c/empty` (the cell's one paragraph, with text): c shows its empty
-    // paragraph again under that id, reading as empty, and typing in it stores it with the new
-    // text alone. B's Ctrl+Z of the removal finds A's write and stays; A's takes the typing back.
-    "typing in an empty paragraph whose stored block a peer removed": {
+    // Review p18998 (Sol): three copies unwrap c, wrap c in w and move c at once. The paragraph A
+    // typed in moved out as itself, so the merge shows its text once, through every Undo.
+    "three copies: placeholder id under unwrap, wrap and move": {
+      room: () => room([p("a", "First."), schema.nodes.jsx_container.create({ id: "c", name: "Panel" }, [p("i", "Inner.")]), p("z", "Last.")]),
+      run: (r) => {
+        const third = r.third();
+        emptyOut(r.a, "c");
+        caret(r.a, "c/empty", 0);
+        type(r.a, "TOKEN");
+        syncAll(r);
+        unwrap(r.a, "c");
+        const at = posOf(r.b, "c");
+        const node = r.b.view.state.doc.nodeAt(at) as Node;
+        r.b.view.dispatch(r.b.view.state.tr.replaceWith(at, at + node.nodeSize,
+          schema.nodes.jsx_container.create({ id: "w", name: "Panel" }, [node])));
+        r.b.history.endStep();
+        move(third, "c", "a");
+        syncAll(r);
+        const merged = badIds(r, "three-copy merge") ?? settle(r, "three-copy merge", once("TOKEN"));
+        if (merged) return merged;
+        for (const e of [r.a, r.b, third]) {
+          runHistory(e, "undo");
+          syncAll(r);
+        }
+        return badIds(r, "three-copy undos") ?? settle(r, "three-copy undos", once("TOKEN"));
+      },
+    },
+    // Seed 953: B deletes the words A typed into c's empty paragraph, its caret staying there,
+    // and A gives c another child. B's screen never shows the words again, and B's Ctrl+Z gives
+    // them back once.
+    "a peer fills a container whose paragraph B emptied, B's caret in it": {
+      room: () => room([p("a", "First."), schema.nodes.jsx_container.create({ id: "c", name: "Panel" }, [p("i", "Inner.")]), p("z", "Last.")]),
+      run: (r) => {
+        emptyOut(r.a, "c");
+        caret(r.a, "c/empty", 0);
+        type(r.a, "WORD");
+        syncAll(r);
+        const typed = firstIn(r.b, "c");
+        caret(r.b, typed, 4);
+        const at = posOf(r.b, typed);
+        r.b.view.dispatch(r.b.view.state.tr.delete(at + 1, at + 5));
+        r.b.history.endStep();
+        const c = posOf(r.a, "c");
+        const inner = r.a.view.state.doc.nodeAt(c) as Node;
+        r.a.view.dispatch(r.a.view.state.tr.replaceWith(c + 1, c + inner.nodeSize - 1, p("n1", "New.")));
+        r.a.history.endStep();
+        sync(r.a, r.b);
+        if (shown(r.b).includes("WORD")) return `emptied/filled: B shows "${shown(r.b)}"`;
+        const filled = settle(r, "emptied/filled", showsAll("New."), showsNone("WORD"));
+        if (filled) return filled;
+        runHistory(r.b, "undo");
+        return badIds(r, "emptied/filled, B Undo") ?? settle(r, "emptied/filled, B Undo", showsNone("WORDWORD"));
+      },
+    },
+    // B empties c to its placeholder, removing the paragraph A typed in, while A's caret is in
+    // it. A's typing into the placeholder afterwards is a new paragraph: the removed one's words
+    // never show in it. Storing the paragraph is typing for the history, so one Ctrl+Z takes the
+    // whole burst back: c shows its placeholder again (review p19004).
+    "typing in a container's placeholder after a peer emptied it": {
       room: () => room([p("a", "First."), schema.nodes.jsx_container.create({ id: "c", name: "Panel" }, [p("i", "Inner.")]), p("z", "Last.")]),
       run: (r) => {
         emptyOut(r.a, "c");
@@ -971,16 +1055,15 @@ function racedRemovals(): string[] {
         syncAll(r);
         // A's caret kept the paragraph on its screen; it moves away first.
         away(r.a);
-        if (shown(r.a).includes("old")) return `stored empty: A still shows "${shown(r.a)}"`;
+        if (shown(r.a).includes("old")) return `emptied: A still shows "${shown(r.a)}"`;
         caret(r.a, "c/empty", 0);
         type(r.a, "new");
-        const typed = settle(r, "stored empty, typed", showsAll("First.|new|Last."), showsNone("old"));
+        const typed = badIds(r, "emptied, typed") ?? settle(r, "emptied, typed", showsAll("First.|new|Last."), showsNone("old"));
         if (typed) return typed;
-        runHistory(r.b, "undo");
-        const kept = settle(r, "stored empty, B Undo", showsAll("First.|new|Last."), showsNone("old"));
-        if (kept) return kept;
         runHistory(r.a, "undo");
-        return settle(r, "stored empty, A Undo", showsNone("old", "new"));
+        const undone = settle(r, "emptied, A one Undo", showsAll("First.||Last."));
+        if (undone) return undone;
+        return firstIn(r.a, "c") === "c/empty" ? null : `emptied, A Undo: c shows ${firstIn(r.a, "c")} "${shown(r.a)}", wanted its placeholder`;
       },
     },
     // Review p18996: the rule reads the edit's author from the edit, not the copy it runs on (a
@@ -1634,7 +1717,7 @@ function racedRemovals(): string[] {
       const restored = settle(r, "agent text case, restored", showsAll("Cell XYthree."));
       if (restored) return restored;
       const agent = r.agent();
-      const ok = applyOps(agent, [{ kind: "text", block: "c3p", splices: [{ from: 5, to: 7, content: [] }], formats: [] }]);
+      const ok = applyOps(agent, [{ kind: "text", block: "c3p", splices: [{ from: 5, to: 7, content: [] }], formats: [] }], { newBlockId: madeId });
       if (!ok.ok) return `agent text case: ${ok.message}`;
       for (const e of r.editors) send(agent, e);
       const written = settle(r, "agent text case", showsAll("Cell three.", "Cell one."));
@@ -1651,7 +1734,7 @@ function racedRemovals(): string[] {
       const restored = settle(r, "agent delete case, restored", showsAll("Inner one.X|Inner two."));
       if (restored) return restored;
       const agent = r.agent();
-      const ok = applyOps(agent, [{ kind: "delete", block: "i2" }]);
+      const ok = applyOps(agent, [{ kind: "delete", block: "i2" }], { newBlockId: madeId });
       if (!ok.ok) return `agent delete case: ${ok.message}`;
       for (const e of r.editors) send(agent, e);
       runHistory(r.b, "undo");

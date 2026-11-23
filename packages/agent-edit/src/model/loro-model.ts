@@ -13,7 +13,7 @@ import {
   type WriteOptions,
 } from "@meridian/document-model";
 import { blocksOf, inlineOf, nodeOf } from "@meridian/loro-prosemirror";
-import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
+import { newBlockId, withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, EditOp, ProjectedBlock } from "../ports/model.js";
@@ -67,9 +67,21 @@ export class LoroDocument {
     return this.top().find((block) => block.id === id);
   }
 
-  /** Apply ops and forget the read: the next reader reads what the write left. */
+  /**
+   * Apply ops and forget the read: the next reader reads what the write left. An empty paragraph
+   * the ops stored under a fresh id keeps its ref, which moves to the new id, so a later edit
+   * anchored on it and the result that lists it follow it.
+   */
   apply(ops: readonly ShapeOp[]): ReturnType<typeof applyShapeOps> {
-    const result = applyShapeOps(this.docs, ops, this.write);
+    const result = applyShapeOps(this.docs, ops, { ...this.write, newBlockId });
+    if (result.ok)
+      for (const [from, to] of result.renamed) {
+        const ref = this.refs.get(from);
+        if (!ref) continue;
+        this.refs.delete(from);
+        ref.id = to;
+        this.refs.set(to, ref);
+      }
     this.forget();
     return result;
   }
@@ -83,7 +95,8 @@ export class LoroDocument {
 
 /** A top-level block of a `LoroDocument`, by id. */
 export interface LoroBlock {
-  readonly id: BlockId;
+  /** Changes only when `LoroDocument.apply` stores this empty paragraph under a fresh id. */
+  id: BlockId;
   readonly document: LoroDocument;
 }
 

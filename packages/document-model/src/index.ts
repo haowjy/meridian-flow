@@ -1,4 +1,4 @@
-export { type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
+export { type ApplyOpsOptions, type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
@@ -10,7 +10,6 @@ export {
 } from "./peer.js";
 export {
   commentVisibility,
-  derivedEmptyParent,
   emptyParagraphId,
   emptyParagraphOf,
   isDerivedEmpty,

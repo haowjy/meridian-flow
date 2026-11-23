@@ -18,7 +18,6 @@ type PlannedEdit =
   | {
       kind: "ops";
       edit: Extract<ResolvedEdit, { kind: "ops" }>;
-      blockId: string;
     }
   | {
       kind: "insert";
@@ -138,7 +137,7 @@ function preflightOps(
   if (edit.ops.length === 0) {
     return { ok: false, code: "invalid_write", message: "Edits require at least one operation" };
   }
-  return { ok: true, plan: { kind: "ops", edit, blockId: model.getBlockId(edit.block) } };
+  return { ok: true, plan: { kind: "ops", edit } };
 }
 
 function preflightInsert(
@@ -193,7 +192,8 @@ function executePlan(
     case "ops": {
       const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
-      accumulator.touchedHashes.add(plan.blockId);
+      // After the write: writing into an empty document's paragraph gives it a new id.
+      accumulator.touchedHashes.add(model.getBlockId(plan.edit.block));
       break;
     }
     case "insert": {

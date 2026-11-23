@@ -3,8 +3,8 @@ import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
-  checkEmptyParagraphId,
   commentVisibility,
+  emptyParagraphOf,
   normalizeInline,
   readInline,
   shownUnits,
@@ -247,14 +247,13 @@ export function writeDocument(
   const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
   const written = new Set<BlockId>();
-  const take = (id: BlockId, parent: BlockId | null) => {
+  const take = (id: BlockId) => {
     if (written.has(id)) throw new Error(`block id ${id} appears twice`);
-    checkEmptyParagraphId(id, parent);
     written.add(id);
   };
-  const keep = (block: ShapeBlock, parent: BlockId | null) => {
-    take(block.id, parent);
-    if (block.kind === "container") for (const child of block.children) keep(child, block.id);
+  const keep = (block: ShapeBlock) => {
+    take(block.id);
+    if (block.kind === "container") for (const child of block.children) keep(child);
   };
 
   const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
@@ -283,10 +282,14 @@ export function writeDocument(
       const was = known?.blocks.get(block.id);
       const inPlace = !moved && was !== undefined && was.parent === parent;
       if (inPlace && was.block === block) {
-        keep(block, parent);
+        keep(block);
         continue;
       }
-      take(block.id, parent);
+      take(block.id);
+      // Only a row stored before the placeholder rule may hold one (design §1); a new one is a
+      // caller that skipped giving the paragraph a fresh id.
+      if (emptyParagraphOf(block.id) !== undefined && read().node(block.id) === undefined)
+        throw new Error(`block id ${block.id} is a placeholder, never stored`);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
         structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);
