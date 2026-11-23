@@ -83,33 +83,3 @@ export type PressUndoResult = {
   /** The nodes whose tree change came back. */
   tree: string[];
 };
-
-/**
- * The press today's server and client speak: the tree half over documents and folders of one draft. 2b and 2c move
- * onto `PressRequest` and delete these.
- */
-export type TreePressRequest = {
-  commandId: CommandId;
-  /** The draft pressed on. */
-  draft: DraftId;
-  verdict: PressVerdict;
-  /** Documents and folders (a folder takes what is under it), or everything the Work has pending. */
-  items: { node: string }[] | "all";
-  saw?: TreeSaw;
-};
-
-export type TreePressResult = {
-  status: "pressed";
-  commandId: CommandId;
-  draft: DraftId;
-  verdict: PressVerdict;
-  items: { node: string; tree?: true }[];
-  trashed?: string[];
-};
-
-export type TreePressUndoResult = {
-  status: "unpressed";
-  commandId: CommandId;
-  pressCommandId: CommandId;
-  tree: string[];
-};
