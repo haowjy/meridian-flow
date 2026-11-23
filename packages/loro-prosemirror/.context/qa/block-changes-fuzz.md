@@ -25,8 +25,11 @@ the pressing tab never saw), the fork (the draft's room copy, with its own Live 
 tab (its own copies of both, synced at random; a stale Draft tab goes on typing after a Discard
 all). Every Live write in a press goes through the product's own import and restore rule; the
 probe never writes a removal or a restore itself. Each press, Discard and Undo runs on a command's own
-copy of the fork room and is sent back, as the server runs them, so its writes have fresh peers, and
-its changes are stored as JSON and read back.
+copy of the fork room, as the server runs them, so its writes have fresh peers. Only the changes it
+returns reach the rooms, encoded as the server commits them (`encodeChanges`), Live's first and the
+fork forwarded before its own: a write the press made but didn't return never lands (an Apply of a
+created block once left its text out of Live, which syncing the whole copy hid). Its changes are
+stored as JSON and read back.
 
 ## Steps
 

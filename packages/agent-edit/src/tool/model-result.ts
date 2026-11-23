@@ -131,7 +131,7 @@ export interface AgentEditModelPayload {
     given: "media" | "text" | "description";
   };
   read?: {
-    format: "full" | "outline" | "edits";
+    format: "full" | "outline" | "edits" | "changes";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows the selected document draft. */

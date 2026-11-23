@@ -1,5 +1,6 @@
 // Observation frontiers on Loro (design §5): what a result showed is the frontiers of every doc of
 // the room copy it rendered from, and a write plans on a view of the room at them.
+
 import {
   type DocKey,
   type DocVersion,
@@ -19,6 +20,7 @@ import {
   type LoroDoc,
   type PeerID,
 } from "loro-crdt";
+import type { FrontierLookup } from "./frontier.js";
 
 export type FrontierMap = ReadonlyMap<DocKey, Frontiers>;
 
@@ -102,6 +104,20 @@ export function planningFrontiers(
     );
   }
   return out;
+}
+
+/**
+ * The chat's latest read of `documentId`, in whichever of its rooms it was (design §5): null when
+ * it never read the document. A write plans on it when its room can check it out
+ * (`planningFrontiers`), and on the transcript when not: a later read is never passed over for an
+ * earlier one, whose text the model no longer works from.
+ */
+export async function latestRead(
+  lookup: FrontierLookup,
+  documentId: string,
+): Promise<FrontierMap | null> {
+  const frontier = await lookup(documentId);
+  return frontier ? decodeFrontierMap(frontier.snapshot) : null;
 }
 
 /** The doc keys whose frontiers differ between a recorded read and `docs` now. */

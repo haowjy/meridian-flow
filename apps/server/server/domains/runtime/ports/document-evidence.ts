@@ -38,8 +38,8 @@ export type RecordedFrontier = { blockId: string; recordedSeq: number; snapshot:
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
-  /** What `planning`'s blocks showed of a room in full, oldest first (`shownLookup`). */
-  planningShown(room: string): Promise<readonly ShownBlock[]>;
+  /** What `planning`'s blocks showed of a document in full, oldest first (`shownLookup`). */
+  planningShown(documentId: string): Promise<readonly ShownBlock[]>;
   credited(): readonly string[];
   reply: ReplyMutations;
 }
