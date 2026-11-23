@@ -81,15 +81,15 @@ function doubling(draft: RoomDocs): number {
       if (process.env.DETAIL) {
         const [L, F] = [new StructureView(draft.live as RoomDocs), new StructureView(draft)];
         const text = (docs: RoomDocs, id: string) => docs.textOf(id)?.getText("t").toString().slice(0, 90);
-        console.log(`\nchange ${JSON.stringify(change.blocks)} doubles: ${fresh.map((x) => x.slice(0, 80)).join(" | ")}`);
+        process.stdout.write(`\nchange ${JSON.stringify(change.blocks)} doubles: ${fresh.map((x) => x.slice(0, 80)).join(" | ")}\n`);
         for (const id of change.blocks)
-          console.log(`  ${id} live:${L.shown.has(id)} fork:${F.shown.has(id)}\n    L ${text(draft.live as RoomDocs, id)}\n    F ${text(draft, id)}`);
+          process.stdout.write(`  ${id} live:${L.shown.has(id)} fork:${F.shown.has(id)}\n    L ${text(draft.live as RoomDocs, id)}\n    F ${text(draft, id)}\n`);
         const order = F.children(null);
         for (const sentence of fresh)
           for (const id of new Set([...L.shown, ...F.shown])) {
             const hit = (docs: RoomDocs) => (docs.textOf(id)?.getText("t").toString() ?? "").toLowerCase().replace(/[^a-z0-9 ]/g, "").includes(sentence);
             if (hit(draft.live as RoomDocs) || hit(draft))
-              console.log(`    sentence in ${id} (fork index ${order.indexOf(id)}) live:${hit(draft.live as RoomDocs)} fork:${hit(draft)} changed:${changedBlocks(draft).findIndex((c) => c.blocks.includes(id))}`);
+              process.stdout.write(`    sentence in ${id} (fork index ${order.indexOf(id)}) live:${hit(draft.live as RoomDocs)} fork:${hit(draft)} changed:${changedBlocks(draft).findIndex((c) => c.blocks.includes(id))}\n`);
           }
       }
     }
@@ -124,4 +124,4 @@ for (const file of readdirSync(rewrites).sort()) {
   });
 }
 console.table(rows);
-console.log(JSON.stringify(rows));
+process.stdout.write(`${JSON.stringify(rows)}\n`);
