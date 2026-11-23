@@ -191,7 +191,7 @@ try {
     { a: await workCount(a.workId), b: await workCount(b.workId) },
   );
 } finally {
-  await rooms.close().catch(() => {});
+  await rooms.close();
   await h.close();
   await scratch.drop();
 }
