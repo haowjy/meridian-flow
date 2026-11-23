@@ -14,7 +14,7 @@ import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
-import { workDraftMenu } from "@/features/draft-review/work-draft-menu";
+import { useWorkDraftMenu } from "@/features/draft-review/work-draft-menu";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { useShellTreeVersion } from "@/features/project/tree-version";
@@ -37,11 +37,14 @@ export function DocumentVersionMenu({
   const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works, nameOf } = useWorks(projectId);
-  if (document.kind === "new") return null;
-
   // The chip reads the paint, the one version rule, never whether the review's controls are up:
   // a draft whose room is still opening is already the version on screen.
   const shown = paint?.draft ?? null;
+  // The picked Work's drafts are listed whether or not they change this document; picking one
+  // shows it on every page, as the sidebar's chip does.
+  const menu = useWorkDraftMenu(projectId, shell, (draftId) => shown?.draftId === draftId);
+  if (document.kind === "new") return null;
+
   const draftWork = (draft: string) => works?.find((candidate) => candidate.draftId === draft);
   const draftName = (draft: string, label: string | null) => {
     const work = draftWork(draft);
@@ -58,9 +61,6 @@ export function DocumentVersionMenu({
     });
   const scopeDraft = paint?.scopeDraftId ?? null;
 
-  // The picked Work's drafts are listed whether or not they change this document; picking one
-  // shows it on every page, as the sidebar's chip does.
-  const menu = workDraftMenu(projectId, shell, (draftId) => shown?.draftId === draftId);
   const workDraftIds = new Set(menu?.drafts.map((draft) => draft.key));
   const detailOf = (hint: DocumentDraftHint) =>
     hint.tree ? (
@@ -112,9 +112,7 @@ export function DocumentVersionMenu({
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
   if (showing === "live" && drafts.length === 0) return null;
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
-  // One of the picked Work's drafts is named by its own name, when the Work has several.
   const workDraft = menu?.drafts.find((draft) => draft.key === shown?.draftId);
-  const named = menu && menu.drafts.length > 1 ? workDraft?.name : undefined;
   const outOfScope =
     shown && paint?.outOfScope && !workDraft
       ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`)
@@ -124,7 +122,7 @@ export function DocumentVersionMenu({
     <DraftSwitcher
       showing={showing}
       drafts={drafts}
-      owner={outOfScope ?? named}
+      owner={outOfScope ?? menu?.owner}
       onShowLive={() => {
         setDocumentView(accountId, projectId, documentId, { version: "live" });
         shell?.show("live");

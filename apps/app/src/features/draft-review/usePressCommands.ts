@@ -124,8 +124,6 @@ export function usePressCommands({
           : (parseDraftItemKey(scope.item)?.draftId ?? draftId);
     const rows = () =>
       drafts.flatMap((draft) => cachedOwnerDrafts(queryClient, projectId, draft) ?? []);
-    const draftOfNode = (node: string) =>
-      rows().find((item) => item.documentId === node)?.draftId ?? draftId;
     const nameOf = (node: string) => {
       const row = rows().find((item) => item.documentId === node);
       return row?.documentName ?? documentBasename(row?.contextLocation?.path) ?? "";
@@ -419,19 +417,33 @@ export function usePressCommands({
         : { kind: "settled", took: { untaken } };
     };
 
-    /** The Ctrl+Z of each editor showing one of the documents now, in this draft or in Live. */
-    const editorsOf = (documents: readonly string[]): EditorHistory[] =>
-      documents.flatMap((node) => {
+    /**
+     * The Ctrl+Z of each editor showing one of the documents now: in Live, or in a draft of the
+     * press's scope that changes it. Two drafts of one Work can both hold a chapter.
+     */
+    const editorsOf = (documents: readonly string[], scope?: PressScope): EditorHistory[] => {
+      const inScope = scope ? scopeDrafts(scope) : drafts;
+      const listed = rows();
+      return documents.flatMap((node) => {
         const documentId = node as DocumentId;
-        const rooms = [
-          { kind: "fork", draftId: draftOfNode(node) as DraftId, documentId },
-          { kind: "live", documentId },
-        ] as const;
+        const forks = listed.flatMap((item) =>
+          item.documentId === node && inScope.includes(item.draftId)
+            ? [{ kind: "fork", draftId: item.draftId as DraftId, documentId } as const]
+            : [],
+        );
+        const rooms = [...forks, { kind: "live", documentId } as const];
         return rooms.flatMap((room) => {
           const history = registry?.openSession(room)?.history;
           return history?.open ? [history] : [];
         });
       });
+    };
+    const scopeDrafts = (scope: PressScope): readonly string[] =>
+      scope.kind === "work"
+        ? drafts
+        : scope.kind === "draft"
+          ? [scope.draft]
+          : [parseDraftItemKey(scope.item)?.draftId ?? draftId];
 
     /** `again`: a Redo in an editor presses again, under the step it already has. */
     const run = (
@@ -447,7 +459,7 @@ export function usePressCommands({
       const editor =
         again ??
         new EditorPressStep(
-          editorsOf(target.documents ?? rows().map((row) => row.documentId)),
+          editorsOf(target.documents ?? rows().map((row) => row.documentId), target.scope),
           (step) => run(verdict, target, input, step),
         );
       let entries: PressEntries | null = null;

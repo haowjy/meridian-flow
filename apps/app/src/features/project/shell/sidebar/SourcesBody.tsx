@@ -32,7 +32,7 @@ import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
-import { DeletedDraftNotice, workDraftMenu } from "@/features/draft-review/work-draft-menu";
+import { useWorkDraftMenu } from "@/features/draft-review/work-draft-menu";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -531,7 +531,6 @@ export function SourcesBody({
             source={source}
             onSelect={setPicked}
           />
-          <DeletedDraftNotice projectId={projectId} />
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
@@ -647,16 +646,17 @@ function SourceTabs({
 function TreeVersionChip({ projectId }: { projectId: string }) {
   const shell = useShellTreeVersion();
   const touch = useCoarsePointer();
-  if (!shell?.offered) return null;
-  const menu = workDraftMenu(
+  const menu = useWorkDraftMenu(
     projectId,
     shell,
-    (draftId) => shell.showing === "draft" && draftId === shell.draftId,
+    (draftId) => shell?.showing === "draft" && draftId === shell.draftId,
   );
+  if (!shell?.offered) return null;
   return (
     <DraftSwitcher
       label={t`Sidebar version`}
       showing={shell.showing}
+      owner={menu?.owner}
       drafts={
         menu?.drafts ?? [
           {

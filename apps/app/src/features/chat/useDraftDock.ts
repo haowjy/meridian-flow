@@ -5,13 +5,14 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useWorkDrafts } from "@/client/query/draft-commands";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import { hasApply } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
-import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
@@ -55,10 +56,13 @@ export function useDraftDock({
   const files = listed.filter((file) => !controller.owner.state(file.item.itemKey).hidden);
   const refs = files.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
   const applicable = files.filter((file) => hasApply(file.item));
-  // The Work's other drafts' files, counted from the listed draft, so a press in flight doesn't
-  // count its own files as more.
-  const workCount = work && !work.isNoWork ? reviewCount(shell, work) : null;
-  const more = workCount === null ? 0 : Math.max(0, workCount - listed.length);
+  // What the Work's other drafts change, as their rows in the Changes tab count it.
+  const workDrafts = useWorkDrafts(projectId, work && !work.isNoWork ? work.id : null).drafts;
+  const more = (workDrafts ?? []).reduce(
+    (sum, draft) =>
+      draft.id === draftId ? sum : sum + draft.pendingDocumentCount + draft.pendingFolderCount,
+    0,
+  );
 
   return {
     controller,
