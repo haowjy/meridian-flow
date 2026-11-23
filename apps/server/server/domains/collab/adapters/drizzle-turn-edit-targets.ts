@@ -1,12 +1,13 @@
 /**
  * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
- * documents the turn edited the text of that some tree view still shows. Every text edit is in
- * Live (a Work's are suggestions there). Final address liveness stays with the lineage reader.
+ * documents the turn edited the text of that some tree view still shows, live or in a draft.
+ * Final address liveness stays with the lineage reader.
  * A tree change leaves no text target;
  * `readTurnTreeTargets` lists the documents a reply only moved, created or deleted, for its card.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   documentEditParts,
@@ -28,14 +29,29 @@ import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live
  */
 export const receiptDraftExists = or(isNull(treeEditReceipts.draftId), isNotNull(drafts.id));
 
+/**
+ * Where the turn wrote text: each document, live or in the draft the write was made in (its
+ * part's `origin`: a fork, or a document only that draft holds), with the owner's handle, and the
+ * first block the turn's first write there changed, where its card opens the document. A part in
+ * a draft a Work purge deleted has nothing left to show.
+ */
 export async function readTurnEditTargets(
-  db: Pick<Database, "selectDistinct">,
+  db: Pick<Database, "select">,
   query: TurnInverseQuery,
 ): Promise<TurnEditedDocumentId[]> {
+  const owner = draftOwnerSql();
+  const draftOf = sql<string | null>`${documentEditParts.origin}->>'draftId'`;
   const rows = await db
-    .selectDistinct({ documentId: documentEdits.documentId })
+    .select({
+      documentId: documentEdits.documentId,
+      drafted: draftOf,
+      draft: drafts.id,
+      handle: owner.handle,
+      delta: documentEditParts.delta,
+    })
     .from(documentEdits)
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
+    .leftJoin(drafts, eq(drafts.id, draftOf))
     .where(
       and(
         livingDocumentSql(documentEdits.documentId),
@@ -50,8 +66,43 @@ export async function readTurnEditTargets(
         query.documentIds ? inArray(documentEdits.documentId, query.documentIds) : undefined,
       ),
     )
-    .orderBy(documentEdits.documentId);
-  return rows.map((row) => ({ documentId: row.documentId, scope: "live" as const }));
+    .orderBy(documentEdits.documentId, documentEditParts.id);
+  const targets = new Map<string, TurnEditedDocumentId>();
+  for (const row of rows) {
+    if (row.drafted && !row.draft) continue;
+    const key = `${row.documentId}:${row.drafted ?? "live"}`;
+    const known = targets.get(key);
+    if (known) {
+      if (!known.block && row.delta) known.block = firstChangedBlock(row.delta);
+      continue;
+    }
+    const block = row.delta ? firstChangedBlock(row.delta) : undefined;
+    targets.set(
+      key,
+      row.draft
+        ? {
+            documentId: row.documentId,
+            scope: "draft",
+            draft: row.draft as DraftId,
+            ownerHandle: row.handle,
+            ...(block ? { block } : {}),
+          }
+        : { documentId: row.documentId, scope: "live", ...(block ? { block } : {}) },
+    );
+  }
+  return [...targets.values()];
+}
+
+/**
+ * The first block a write's delta changed, by id: one it put in or changed, or for a write that
+ * only took blocks out, the block after them. The delta keeps one unchanged block either side.
+ */
+function firstChangedBlock(delta: StoredDelta): string | undefined {
+  const idOf = (block: Record<string, unknown>) => (block.attrs as { id?: string } | undefined)?.id;
+  const before = new Map(delta.before.map((block) => [idOf(block), JSON.stringify(block)]));
+  const changed = delta.after.find((block) => before.get(idOf(block)) !== JSON.stringify(block));
+  const at = changed ?? delta.after[1] ?? delta.after[0];
+  return at ? idOf(at) : undefined;
 }
 
 /**

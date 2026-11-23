@@ -1,12 +1,10 @@
 # The content merge: its rules, repairs, rescues and known losses
 
 `src/content-merge/` merges two versions of a block list against their base. Production uses it in
-three places:
+two places:
 
 - `apps/server/server/domains/collab/domain/code-merge.ts` (`mergeCodeText`) brings an agent
   package's Save of a code document into the project's copy.
-- `packages/agent-edit/src/content-merge/stands.ts` checks and takes out recorded AI changes; the
-  Live turn inverse calls these helpers through `apps/server/server/domains/collab/domain/inverse-text.ts`.
 - `packages/agent-edit/src/tool/loro-write.ts` (`transcriptMerge`) merges a whole-document write
   with the text the model read when the history cutoff dropped part of that read.
 
@@ -27,7 +25,10 @@ same change on both sides applies once. A **merge rule** is anything the merge d
 ## Where the code is
 
 `content-merge/` depends on `diff/` (tokens, `align`, `correspond`, `buildBlocks`), never the
-other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge` and the `stands.ts` reads.
+other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`, and `captureDelta`/`readDelta`,
+which record an AI write's blocks before and after (`document_edit_parts.delta`) for the card's
+rows and the model's edit listing. Whether an AI write can be undone is not read from the delta:
+that is the Loro Undo rule (`editStays` in `@meridian/document-model`).
 
 `contentMerge(schema, base, live, draft)` returns `{ blocks, rules, overrode, conflicts, orderConflict }`.
 `rules` is the rule name to the number of times it fired in that merge. It carries no text.
@@ -42,25 +43,6 @@ Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both
 merge attributes, merge block order (`mergeOrder`), align both sides to base as tokens, lift
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
-
-## Reading an AI edit against a text: `stands`
-
-`content-merge/stands.ts` answers one question about one change of an AI edit, from the edit's
-recorded delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and the
-manuscript, with no CRDT identity. `editChanges` cuts the delta into changes
-([diff](diff.md#hunks-and-changes)); `changeStateIn` reads each:
-
-- `stands` when the text holds the whole change, the merge can take it out
-  (`contentMerge(after, before, window)` has no conflict and changes the window), and putting the
-  change back on the result gives the window again, with either side named first, since words typed
-  at the very edge of the change sit on either side of it;
-- `altered` when the text holds it changed;
-- `out` when it is gone.
-
-`takeOut` writes the inverse for a change that stands. The window is the change's blocks, found by
-id, and one either side; a block of the change that was joined away leaves the whole text as the
-window. The server's Live turn inverse (`inverse-text.ts`) runs these for an AI edit written into
-Live. An Undo puts back `before` as the AI saw it.
 
 ## Merge rules
 
@@ -104,7 +86,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
 | `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `coords` |
 
-**Shape** (`buildBlocks` in `diff/tokens.ts`; `composeHunks` shares it and does not count)
+**Shape** (`buildBlocks` in `diff/tokens.ts`)
 
 | Rule | What it does |
 |---|---|

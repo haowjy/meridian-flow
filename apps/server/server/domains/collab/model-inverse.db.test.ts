@@ -232,19 +232,19 @@ describe("model document stack", () => {
   });
 });
 
-it("model undo of an edit the writer typed inside is refused and leaves the writer's text", async () => {
+it("model undo of an edit the writer retyped is refused and leaves the writer's text", async () => {
   const { harness, view, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
     const command = { documentId: ALPHA_ID, file: "alpha.md" };
     await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    // The writer types inside the model's word.
-    await writerEdit(view.rooms, ALPHA_ID, (blocks) => replacedText(blocks, "Gamma", "Ga!mma"));
+    // The writer retypes the model's word: none of what it put in is left (design §2's Undo rule).
+    await writerEdit(view.rooms, ALPHA_ID, (blocks) => replacedText(blocks, "Gamma", "Red"));
     await core.read({ ...command, format: "edits" }, context);
     expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
       status: "cant_undo_changed",
     });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Red.\n\nBlue.\n");
   } finally {
     await harness.dispose();
   }

@@ -87,12 +87,18 @@ export const documentEditParts = pgTable(
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
     /**
-     * The room's version before the write (`encodeRoomVersion`), and its structure doc's after it
-     * (`encodeDocVersion`): a Draft-mode turn's `Restore before` reads its first part's `before` and
-     * its last part's `after`. Null for a part written before the columns.
+     * An AI write's docs at their versions before and after it (`encodeRoomVersion`): a Draft-mode
+     * turn's `Restore before` reads its first part's `before` per doc and its last part's `after`.
+     * Null for a part no AI wrote.
      */
     before: byteaColumn("before"),
     after: byteaColumn("after"),
+    /**
+     * An AI write as one edit of the Undo rule (`StoredEdit` in `@meridian/document-model`): what
+     * the turn Undo and the model's undo and revert test and take back. Null for a part no AI
+     * wrote.
+     */
+    edit: jsonb("edit"),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),

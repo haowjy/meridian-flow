@@ -593,6 +593,7 @@ CREATE TABLE "document_edit_parts" (
 	"origin" jsonb NOT NULL,
 	"before" "bytea",
 	"after" "bytea",
+	"edit" jsonb,
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
 	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' = 'live' OR ("document_edit_parts"."origin"->>'kind' = 'fork' AND "document_edit_parts"."origin"->>'draftId' IS NOT NULL))
 );
@@ -711,6 +712,7 @@ CREATE TABLE "document_forks" (
 	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"empty_since" timestamp with time zone,
 	"live_version" "bytea",
+	"change_count" integer DEFAULT 0 NOT NULL,
 	"writer_wrote" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")

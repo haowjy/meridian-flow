@@ -3,6 +3,7 @@
 // record, and record what the result showed.
 import {
   decodeEnvelope,
+  editSince,
   encodeEnvelope,
   encodeRoomVersion,
   freshServerPeerId,
@@ -20,8 +21,8 @@ import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
+import { captureDelta } from "../content-merge/delta.js";
 import { contentMerge } from "../content-merge/merge.js";
-import { captureDelta } from "../content-merge/stands.js";
 import type { ShownBlock } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { SpliceFallback } from "../links/find-splice.js";
@@ -755,6 +756,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       room: read.room,
       before,
       after,
+      edit: editSince(copy.docs, since, planDoc.docs.peer, written),
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),

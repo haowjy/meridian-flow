@@ -7,6 +7,7 @@ import {
   documentEdits,
   type EditOrigin,
 } from "@meridian/database";
+import { encodeRoomVersion, type RoomVersion, type StoredEdit } from "@meridian/document-model";
 import {
   getDrizzleTransactionLocal,
   setDrizzleTransactionLocal,
@@ -31,6 +32,8 @@ export interface ReceiptWrite {
     origin: EditOrigin;
     targets?: EditTarget[];
     delta?: StoredDelta | null;
+    /** An AI write's docs before and after it, and the write as an Undo-rule edit. */
+    write?: { before: RoomVersion; after: RoomVersion; edit: StoredEdit };
   }[];
 }
 
@@ -80,6 +83,13 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
+      ...(p.write
+        ? {
+            before: Buffer.from(encodeRoomVersion(p.write.before)),
+            after: Buffer.from(encodeRoomVersion(p.write.after)),
+            edit: p.write.edit,
+          }
+        : {}),
     })),
   );
   return edit.id;
