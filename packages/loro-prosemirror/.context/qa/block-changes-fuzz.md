@@ -61,7 +61,7 @@ stored as JSON and read back.
   and half the time its Undo (`halves`). The ways: Enter inside a paragraph (`split`), a join
   (`join`), a delete from inside one paragraph to inside the next (`crossDelete`), typing over
   such a selection (`typeOver`), an insert and then that delete in one transaction (`multi`), a
-  paste of three paragraphs into the middle of one (`paste`), and a join followed by Enter at the
+  paste of two paragraphs into the middle of one (`paste`), and a join followed by Enter at the
   same place, which leaves the first paragraph reading as Live's (`joinEnter`). Then rewrites of
   two neighbouring paragraphs where one loses three characters the other gains, and an Apply of
   the first (`neighbours`).
