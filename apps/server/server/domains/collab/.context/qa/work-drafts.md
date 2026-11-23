@@ -6,13 +6,13 @@ save (`rooms/postgres-document-rooms.ts`) or the pending counts change.
 
 ## On a scratch database
 
-[`work-drafts.probe.mts`](work-drafts.probe.mts) runs the production adapters (`createDrizzleWorkDrafts`,
+[`scripts/probe-work-drafts.ts`](../../../../../scripts/probe-work-drafts.ts) runs the production adapters (`createDrizzleWorkDrafts`,
 the rooms, the Works boundary, the thread-Works repository) over its own `lfd_probe_*` database
 and prints one line per check. No stack.
 
 ```sh
 pnpm dev:infra   # Postgres
-node --import tsx apps/server/server/domains/collab/.context/qa/work-drafts.probe.mts
+node --import tsx apps/server/scripts/probe-work-drafts.ts
 ```
 
 | Check | What it shows |

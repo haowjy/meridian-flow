@@ -1,11 +1,8 @@
-/**
- * A Work's drafts on a scratch database, through the production adapters: `Delete draft` and its
- * Undo, `setChatDraft` racing a delete, the purge racing a fork room's save, and a chat move
- * recounting both Works. Recipe: `work-drafts.md` beside this file.
- *
- *   pnpm dev:infra
- *   node --import tsx apps/server/server/domains/collab/.context/qa/work-drafts.probe.mts
- */
+// Hand-run probe: a Work's drafts on a scratch database, through the production adapters:
+// `Delete draft` and its Undo, `setChatDraft` racing a delete, the purge racing a fork room's save,
+// and a chat move recounting both Works. Recipe: `domains/collab/.context/qa/work-drafts.md`.
+//   pnpm dev:infra
+//   node --import tsx apps/server/scripts/probe-work-drafts.ts
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { encodeEnvelope, freshPeerId, readDocument, writeDocument } from "@meridian/document-model";
@@ -19,17 +16,19 @@ import {
 import {
   createScratchDatabase,
   openHarness,
-} from "../../../../../../../tools/qa/probes/model-edit-harness/scratch.mts";
-import { createDrizzleTreeListStore } from "../../../context/adapters/drizzle-tree-list-store.ts";
-import { createNoopEventSink } from "../../../observability/index.ts";
-import { createDrizzleThreadWorksRepository } from "../../../threads/adapters/drizzle/thread-works-repository.ts";
-import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.ts";
-import { createDrizzleWorkDrafts } from "../../adapters/drizzle-work-drafts.ts";
-import { createPostgresDocumentRooms } from "../../rooms/postgres-document-rooms.ts";
+} from "../../../tools/qa/probes/model-edit-harness/scratch.mts";
+import { createDrizzleWorkDrafts } from "../server/domains/collab/adapters/drizzle-work-drafts.ts";
+import { createPostgresDocumentRooms } from "../server/domains/collab/rooms/postgres-document-rooms.ts";
+import { createDrizzleTreeListStore } from "../server/domains/context/adapters/drizzle-tree-list-store.ts";
+import { createNoopEventSink } from "../server/domains/observability/index.ts";
+import { createDrizzleThreadWorksRepository } from "../server/domains/threads/adapters/drizzle/thread-works-repository.ts";
+import { createTestWorkProjectionMutation } from "../server/test-support/work-projection.ts";
 
 const failures: string[] = [];
 const check = (ok: boolean, what: string, detail?: unknown) => {
-  console.log(`${ok ? "ok  " : "FAIL"} ${what}${detail === undefined ? "" : ` ${JSON.stringify(detail)}`}`);
+  console.log(
+    `${ok ? "ok  " : "FAIL"} ${what}${detail === undefined ? "" : ` ${JSON.stringify(detail)}`}`,
+  );
   if (!ok) failures.push(what);
 };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -86,8 +85,9 @@ const forkRow = async (draftId: string, documentId: string) =>
       select pending from document_forks where draft_id = ${draftId} and document_id = ${documentId}`
   )[0];
 const workCount = async (workId: string) =>
-  (await raw<{ n: number }[]>`select pending_document_count as n from works where id = ${workId}`)[0]
-    ?.n;
+  (
+    await raw<{ n: number }[]>`select pending_document_count as n from works where id = ${workId}`
+  )[0]?.n;
 
 try {
   const a = await h.seedWork("Rewrite");
@@ -141,16 +141,17 @@ try {
   await drafts.remove({ workId: a.workId, draftId: second.id, userId: h.ids.user });
   await raw`update drafts set deleted_at = now() - interval '31 days' where id = ${second.id}`;
   await typeInFork(second.id, documentId, "Typed while the purge runs.");
-  const [purged, saved] = await Promise.allSettled([
-    drafts.purgeDeleted(),
-    rooms.flush(fork),
-  ]);
+  const [purged, saved] = await Promise.allSettled([drafts.purgeDeleted(), rooms.flush(fork)]);
   check(
     purged.status === "fulfilled" && purged.value === 1,
     "the purge takes the draft deleted 31 days ago",
     purged.status === "rejected" ? String(purged.reason) : purged.value,
   );
-  check(saved.status === "fulfilled", "the racing save settles", saved.status === "rejected" ? String(saved.reason) : undefined);
+  check(
+    saved.status === "fulfilled",
+    "the racing save settles",
+    saved.status === "rejected" ? String(saved.reason) : undefined,
+  );
   check(
     (await raw`select 1 from drafts where id = ${second.id}`).length === 0 &&
       (await forkRow(second.id, documentId)) === undefined &&
@@ -180,8 +181,8 @@ try {
   for (let i = 0; i < 40 && (await workCount(b.workId)) !== 1; i++) await sleep(50);
   check(
     (await chatDraft(a.threadId)) === a.draftId &&
-      (await raw<{ w: string }[]>`select work_id as w from drafts where id = ${a.draftId}`)[0]?.w ===
-        b.workId,
+      (await raw<{ w: string }[]>`select work_id as w from drafts where id = ${a.draftId}`)[0]
+        ?.w === b.workId,
     "an unshared draft moves with its chat",
   );
   check(
