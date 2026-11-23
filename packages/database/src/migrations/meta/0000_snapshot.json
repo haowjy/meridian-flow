@@ -5616,12 +5616,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "default_draft_id": {
-          "name": "default_draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "pending_document_count": {
           "name": "pending_document_count",
           "type": "integer",
@@ -5773,19 +5767,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "works_default_draft_id_drafts_id_fk": {
-          "name": "works_default_draft_id_drafts_id_fk",
-          "tableFrom": "works",
-          "tableTo": "drafts",
-          "columnsFrom": [
-            "default_draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -6527,6 +6508,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -6591,6 +6579,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "drafts_work_default": {
+          "name": "drafts_work_default",
+          "columns": [
+            {
+              "expression": "work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"drafts\".\"is_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6600,6 +6604,19 @@
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "drafts_work_id_works_id_fk": {
+          "name": "drafts_work_id_works_id_fk",
+          "tableFrom": "drafts",
+          "tableTo": "works",
+          "columnsFrom": [
+            "work_id"
           ],
           "columnsTo": [
             "id"
@@ -7197,6 +7214,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "room_key": {
           "name": "room_key",
           "type": "text",
@@ -7236,13 +7259,27 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "press_commits_draft_id_drafts_id_fk": {
+          "name": "press_commits_draft_id_drafts_id_fk",
+          "tableFrom": "press_commits",
+          "tableTo": "drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "press_commits_command_id_room_key_doc_key_pk": {
-          "name": "press_commits_command_id_room_key_doc_key_pk",
+        "press_commits_command_id_draft_id_room_key_doc_key_pk": {
+          "name": "press_commits_command_id_draft_id_room_key_doc_key_pk",
           "columns": [
             "command_id",
+            "draft_id",
             "room_key",
             "doc_key"
           ]

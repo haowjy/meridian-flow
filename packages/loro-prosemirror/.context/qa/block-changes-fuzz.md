@@ -31,13 +31,17 @@ probe never writes a removal or a restore itself.
 - Writer edits in Draft (text, marks, comments, inline nodes, block inserts, deletes, moves,
   splits, joins, type changes, table rows), Ctrl+Z through `invertCommit`, AI turns on a copy of
   the fork, and `Restore before` of a turn (`restoreBefore`).
-- A press of random changes (`applyBlocks`), half of them carrying a `seen` version, with Live
-  typing the tab never saw and Draft typing landing after it.
+- A press of random changes (`applyBlocks`), carrying as the Live version the writer was shown the
+  Live tab's (half the time) or the Changes list's (the server copy's, just read), with Live typing
+  the tab never saw and Draft typing landing after it.
 - Its Undo (`undoPress`), with Draft typing and Live writes between.
 - Dependent presses: 2 to 5 presses over one block, with Live and Draft typing between, undone
   newest first and in random order.
 - Live and Draft deletions and replacements over a press's text before its Undo (the later write
   of design §2's text rule).
+- A Work's `Apply all` over two drafts that both rewrite one paragraph, on a copy of the Live room:
+  pressed in draft order, sometimes with Live typing between, and undone draft by draft, newest
+  first.
 - One-change Discard and its Undo, Discard all and its Undo, and a stale Draft tab across a Discard
   all.
 
@@ -56,6 +60,8 @@ probe never writes a removal or a restore itself.
   an Undo of a later press re-creates counts as the press's own from then on.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
+- After the two drafts' Undo: Live is back (or holds the typing between), each draft has only that
+  paragraph pending, and no character of either draft's text is lost.
 - After `Restore before`: the fork's text and overrides are what they were before the turn, with
   Live's changes since kept.
 - At the end, after `Apply all`: Live, the fork and both tabs converge; nothing is pending; every
@@ -67,8 +73,16 @@ probe never writes a removal or a restore itself.
 Text or marks that a Discard, an Undo or a restore puts back are new operations by the fork, since
 Loro has no undelete. A later Live delete or unmark inside that span leaves the fork's copy, which
 then shows as a pending change the writer can Discard again (design §1, gate 5's N7). The summary
-counts these as `resetCopyObserved`.
+counts these as `resetCopyObserved`; the two-drafts case counts, as `twoDraftsCopies`, text both
+drafts deleted that one press's Undo brought back into the other draft.
+
+**Counted, not accepted:** in the two-drafts case, text the first draft deleted around the second's
+rewrite comes back with the first press's Undo as one run of new characters, and Loro may place it on
+either side of the second draft's own re-created words (`twoDraftsMoved`, about one two-drafts run in
+five; seeds 148, 214, 237, 252 and 261 under `--n 300`). No character is lost, but the draft's words
+read in another order. It waits on the text Undo redesign; the check fails on a lost character only.
 
 Pins implementation decisions: design §2's grouping (ancestor, merged sibling order, comment
-bodies), the apply record's `seen`, rule (a) with `align`'s put-back rule, and a bounced removal
-returning on Undo.
+bodies), the apply record's `seen` from the Live version the writer was shown, rule (a) with
+`align`'s put-back rule, a bounced removal returning on Undo, and a Work press undone draft by
+draft, newest first.

@@ -1,4 +1,4 @@
-import type { CommandId, DocumentId, DraftId, WorkId } from "../ids.js";
+import type { CommandId, DocumentId, DraftId, DraftItemKey, WorkId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
 /**
@@ -8,14 +8,18 @@ import type { TreeSaw } from "./review.js";
 export type PressVerdict = "apply" | "discard";
 
 /**
- * What a press takes. A change is named by any one of its blocks: the press takes the whole change it belongs to
- * (`changedBlocks`'s group). There is no folder scope.
+ * What a press takes. A document of a draft is its `DraftItemKey`. A change is named by the id of any one of its members
+ * (a block id, or a comment id for a comment-body change: `changedBlocks`'s `BlockChange`), the id `change=<id>` carries
+ * in the address; the press takes the whole change it belongs to. There is no folder scope.
  */
 export type PressScope =
-  | { kind: "change"; draft: DraftId; documentId: DocumentId; blockId: string }
-  | { kind: "document"; draft: DraftId; documentId: DocumentId }
+  | { kind: "change"; item: DraftItemKey; change: string }
+  | { kind: "document"; item: DraftItemKey }
   | { kind: "draft"; draft: DraftId }
-  /** The Changes tab's `Apply all`: every draft of the Work. */
+  /**
+   * The Changes tab's `Apply all`: every draft of the Work, pressed one after another in draft id order, each on Live as
+   * the one before left it. Its Undo takes them back draft by draft in the reverse order.
+   */
   | { kind: "work"; work: WorkId };
 
 export type PressRequest = {
@@ -24,6 +28,14 @@ export type PressRequest = {
   scope: PressScope;
   /** The tree cut the press was drawn from: records admitted after it stay pending. */
   saw?: TreeSaw;
+  /**
+   * For an Apply, the Live text the writer was shown, per document: an encoded `RoomVersion` (`encodeRoomVersion`) of
+   * Live's text docs as the pressing tab showed them, or as the Changes list was read (`DraftItem.liveVersion`). It only
+   * stamps the record of a removal the press applies, never a barrier: Live typing it does not count brings the block
+   * back. A document, or a text doc of one, it names no version for counts as never shown, so a removal there does not
+   * land.
+   */
+  liveVersions?: { documentId: DocumentId; version: string }[];
 };
 
 export type PressResult = {
@@ -31,7 +43,10 @@ export type PressResult = {
   commandId: CommandId;
   verdict: PressVerdict;
   scope: PressScope;
-  /** The documents whose text the press changed, in Live or in a fork: what its Undo takes back. Empty when the scope had no change. */
+  /**
+   * Every document whose rooms the press committed to, in Live or a fork: text, structure or a comment body. What its
+   * Undo takes back. Empty when the scope had no change.
+   */
   documents: DocumentId[];
   /** The nodes whose tree change the press made. */
   items: { node: string; tree?: true }[];
@@ -45,7 +60,7 @@ export type PressUndoResult = {
   status: "unpressed";
   commandId: CommandId;
   pressCommandId: CommandId;
-  /** The documents whose text came back. */
+  /** Every document whose rooms the Undo committed to. */
   documents: DocumentId[];
   /** The nodes whose tree change came back. */
   tree: string[];

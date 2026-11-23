@@ -51,6 +51,7 @@ export function useCreatedDrafts(
         itemKey: draftItemKey(draftId, documentId),
         documentId,
         pending: false,
+        liveVersion: null,
         origin: "created",
         isNew: true,
         binary: false,

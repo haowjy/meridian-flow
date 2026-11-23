@@ -575,7 +575,6 @@ CREATE TABLE "works" (
 	"default_ai_write_mode" text DEFAULT 'direct' NOT NULL,
 	"entity_revision" bigint DEFAULT 1 NOT NULL,
 	"draft_id" text,
-	"default_draft_id" text,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -659,6 +658,7 @@ CREATE TABLE "drafts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" uuid NOT NULL,
 	"work_id" uuid,
+	"is_default" boolean DEFAULT false NOT NULL,
 	"name" text,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
@@ -731,11 +731,12 @@ CREATE TABLE "document_snapshots" (
 --> statement-breakpoint
 CREATE TABLE "press_commits" (
 	"command_id" uuid NOT NULL,
+	"draft_id" text NOT NULL,
 	"room_key" text NOT NULL,
 	"doc_key" text NOT NULL,
 	"before" "bytea" NOT NULL,
 	"after" "bytea" NOT NULL,
-	CONSTRAINT "press_commits_command_id_room_key_doc_key_pk" PRIMARY KEY("command_id","room_key","doc_key")
+	CONSTRAINT "press_commits_command_id_draft_id_room_key_doc_key_pk" PRIMARY KEY("command_id","draft_id","room_key","doc_key")
 );
 --> statement-breakpoint
 CREATE TABLE "mcp_calls" (
@@ -1037,7 +1038,6 @@ ALTER TABLE "upload_intakes" ADD CONSTRAINT "upload_intakes_context_source_id_co
 ALTER TABLE "works" ADD CONSTRAINT "works_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "works" ADD CONSTRAINT "works_default_draft_id_drafts_id_fk" FOREIGN KEY ("default_draft_id") REFERENCES "public"."drafts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edit_parts" ADD CONSTRAINT "document_edit_parts_edit_id_document_edits_id_fk" FOREIGN KEY ("edit_id") REFERENCES "public"."document_edits"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1048,12 +1048,14 @@ ALTER TABLE "tree_edit_receipt_nodes" ADD CONSTRAINT "tree_edit_receipt_nodes_th
 ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "drafts" ADD CONSTRAINT "drafts_work_id_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."works"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "press_commits" ADD CONSTRAINT "press_commits_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_commits" ADD CONSTRAINT "press_commits_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_calls" ADD CONSTRAINT "mcp_calls_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1166,6 +1168,7 @@ CREATE INDEX "tree_edit_receipts_command_idx" ON "tree_edit_receipts" USING btre
 CREATE INDEX "tree_edit_receipts_reverses_idx" ON "tree_edit_receipts" USING btree ("reverses");--> statement-breakpoint
 CREATE INDEX "drafts_project" ON "drafts" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX "drafts_work" ON "drafts" USING btree ("work_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "drafts_work_default" ON "drafts" USING btree ("work_id") WHERE "drafts"."is_default";--> statement-breakpoint
 CREATE INDEX "import_entries_import_order" ON "import_entries" USING btree ("import_id","ordinal");--> statement-breakpoint
 CREATE INDEX "import_entries_import_state" ON "import_entries" USING btree ("import_id","state");--> statement-breakpoint
 CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","created_at");--> statement-breakpoint
@@ -1600,6 +1603,9 @@ ALTER TABLE ONLY public.turns
 
 ALTER TABLE ONLY public.tree_nodes
     ALTER CONSTRAINT tree_nodes_parent_in_source DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.works
+    ALTER CONSTRAINT works_draft_id_drafts_id_fk DEFERRABLE;
 
 CREATE FUNCTION public.create_tree_list() RETURNS trigger
     LANGUAGE plpgsql

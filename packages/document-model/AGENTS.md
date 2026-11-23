@@ -72,14 +72,20 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   commit that takes ops back says which in its message (`takeBackMessage`), so `textSince` can
   read text an Undo put back as the text it deleted, by character id.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
-  peer across all its docs. A draft copy's own Live copy (`RoomDocs.fork`) takes another: a press
-  writes both rooms from one copy, and one peer would mint the same op ids in both.
+  peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`
+  constructor enforces: a press writes both rooms from one copy, and one peer would mint the same
+  op ids in both.
 - The block-change model (`changes.ts`, `invert.ts`; design §2) works on a draft copy and forwards
-  it first. `changedBlocks` groups what differs from Live into changes; `applyBlocks` imports the
-  fork's text into Live and writes the chosen overrides there, a removal as a new record;
+  it first. `changedBlocks` groups what differs from Live into changes; it runs on every fork save
+  and Live batch, so it reads only blocks the fork holds text or an override for (a block with
+  neither reads as Live's), plus Live's carriers of a comment body the fork changed. `applyBlocks`
+  imports the fork's text into Live and writes the chosen overrides there, a removal as a new
+  record stamped with the Live version the writer was shown (`liveVersion`; a text doc it lacks
+  counts as never shown);
   `discardBlocks` makes the fork take Live's. Each returns the commits it made (`PressCommit`: side,
   doc key, versions either side), which `undoPress` takes back: Live's first, then the fork is
-  returned to pending. `invertCommit` is the one Undo of a commit: the structure doc key by key
+  returned to pending. A press over several drafts is undone one draft at a time, newest first.
+  `invertCommit` is the one Undo of a commit: the structure doc key by key
   (only while a key holds what the commit left), a text doc by the inverse moved through what
   happened since (`transformedInverse`, with rule (a): a replacement whose new text a later write
   removed whole does not bring the old text back). Invert a room's text docs before its structure

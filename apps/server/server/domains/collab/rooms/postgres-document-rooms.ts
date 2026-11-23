@@ -677,7 +677,7 @@ export function createPostgresDocumentRooms(input: {
       return copy;
     }
     if (room.kind === "live") return build(tx, room, null, peer);
-    const live = await copyInTransaction(tx, liveRoomOf(room), peer);
+    const live = await copyInTransaction(tx, liveRoomOf(room), freshServerPeerId());
     try {
       const docs = await build(tx, room, live, peer);
       // A copy owns the Live copy it reads through; `fork` makes one that does.

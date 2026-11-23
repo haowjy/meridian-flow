@@ -98,6 +98,22 @@ const tokenBlocks = (d) => {
     for (const tok of tokensOf(textOfDoc(d.textOf(id)))) out.set(tok, id);
   return out;
 };
+/** Whether `text` is `wanted` with characters added where `extra(at)` allows one. */
+function withExtras(wanted, text, extra) {
+  // reach[j]: `wanted`'s first j characters match a prefix of `text` read so far.
+  let reach = new Array(wanted.length + 1).fill(false);
+  reach[0] = true;
+  for (let at = 0; at < text.length; at++) {
+    const next = new Array(wanted.length + 1).fill(false);
+    for (let j = 0; j <= wanted.length; j++) {
+      if (!reach[j]) continue;
+      if (extra(at)) next[j] = true;
+      if (j < wanted.length && wanted[j] === text[at]) next[j + 1] = true;
+    }
+    reach = next;
+  }
+  return reach[wanted.length];
+}
 /** Each unit's op id (`peer:counter`), from a cursor per unit. */
 function charIds(doc) {
   if (!doc) return [];
@@ -198,7 +214,7 @@ export function runScript(seed, { verbose = false } = {}) {
     edits: 0, presses: 0, pressUndos: 0, discards: 0, discardUndos: 0, discardAlls: 0, discardAllUndos: 0,
     restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
     chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0,
-    seenPresses: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
+    tabVersionPresses: 0, twoDrafts: 0, twoDraftsCopies: 0, twoDraftsMoved: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
     resetCopyObserved: 0, kinds: {},
   };
   const outcomes = [];
@@ -477,7 +493,7 @@ export function runScript(seed, { verbose = false } = {}) {
       for (const mode of ["apply", "discard"]) {
         const b = fork.fork(next());
         try {
-          if (mode === "apply") applyBlocks(b, [id]);
+          if (mode === "apply") applyBlocks(b, [id], { liveVersion: b.live.version() });
           else discardBlocks(b, [id]);
           check(!changedBlocks(b).some((c) => c.blocks.includes(id) || c.comments.includes(id)), `undo-${mode}`, () => `${mode} after Undo left ${id} pending: live ${JSON.stringify(deltaOf(b.live.textOf(id)))} fork ${JSON.stringify(deltaOf(b.textOf(id)))} bodies live ${JSON.stringify(new StructureView(b.live).value("comments", "c0"))} fork ${JSON.stringify(new StructureView(b).value("comments", "c0"))}`);
         } finally {
@@ -591,6 +607,76 @@ export function runScript(seed, { verbose = false } = {}) {
   }
 
   /**
+   * A Work's `Apply all` over two drafts that both rewrite one paragraph (design §2): pressed one after the other on
+   * a copy of the Live room, each on Live as the one before left it, then undone draft by draft in the reverse
+   * order, each from its own commits. Live typing may land between the presses. Leaves the script's copies alone.
+   */
+  function twoDrafts() {
+    syncLive();
+    const room = track(live.fork(next()));
+    const view = new StructureView(room);
+    const paragraphs = [...view.shown].filter((id) => view.node(id) === "paragraph" && textOfDoc(room.textOf(id)));
+    if (!paragraphs.length) return;
+    const id = g.pick(paragraphs);
+    const drafts = [track(RoomDocs.draftOf(room, next())), track(RoomDocs.draftOf(room, next()))];
+    for (const [i, d] of drafts.entries()) {
+      let block = null;
+      read(d).descendants((node, pos) => {
+        if (node.isTextblock && node.attrs.id === id) block = { from: pos + 1, size: node.content.size };
+      });
+      const from = g.int(block.size + 1);
+      const to = from + g.int(Math.min(6, block.size - from) + 1);
+      edit(d, (tr) => tr.insertText(` d${i}${seed}k `, block.from + from, block.from + to), { rng: g.rng });
+    }
+    const before = render(room);
+    const draftsBefore = drafts.map((d) => {
+      d.forward();
+      return textOfDoc(d.textOf(id));
+    });
+    const liveToken = `y${seed}0wk`;
+    const liveTyped = g.chance(0.4);
+    const commits = [];
+    for (const [i, d] of drafts.entries()) {
+      if (i === 1 && liveTyped) typeIn(room, id, liveToken);
+      commits.push(applyBlocks(d, "all", { message: `work press ${i}`, liveVersion: room.version() }).commits);
+    }
+    for (const d of drafts) {
+      d.forward();
+      check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
+    }
+    for (let i = drafts.length - 1; i >= 0; i--) undoPress(drafts[i], commits[i], { message: `undo work press ${i}` });
+    for (const [i, d] of drafts.entries()) {
+      d.forward();
+      const changes = changedBlocks(d);
+      check(changes.length === 1 && same(changes[0].blocks, [id]), "two-drafts", () => `draft ${i} pending ${JSON.stringify(changes)} after the Undo, not ${id}`);
+      // The draft's text is back (as new characters of its own: the return to pending). Beside it are only Live's
+      // characters: its typing, and text both drafts deleted that the other press's Undo put back as new
+      // characters, which this draft never deleted (the accepted copy of design §2: Loro has no undelete).
+      const text = textOfDoc(d.textOf(id));
+      const ids = charIds(d.textOf(id));
+      const live = (at) => ids[at]?.startsWith(`${room.peer}:`);
+      if (!withExtras(draftsBefore[i], text, live)) {
+        // Text the other draft deleted comes back as one run of new characters, placed by Loro beside this
+        // draft's own re-created insertion at the same gap: on either side. Counted, not failed (reported to
+        // the text Undo redesign); a character the draft had that is gone still fails.
+        const left = [...text];
+        for (const ch of draftsBefore[i]) {
+          const at = left.indexOf(ch);
+          check(at >= 0, "two-drafts", () => `draft ${i} lost "${ch}" to the Undo: ${draftsBefore[i]} -> ${text}`);
+          left.splice(at, 1);
+        }
+        stats.twoDraftsMoved++;
+      }
+      const added = text.length - draftsBefore[i].length;
+      if (added && !liveTyped) stats.twoDraftsCopies++;
+    }
+    if (liveTyped) check(textOfDoc(room.textOf(id)).includes(liveToken), "two-drafts", "Live typing between the presses lost by the Undo");
+    else check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
+    stats.twoDrafts++;
+    note("  TWO DRAFTS");
+  }
+
+  /**
    * The press's replacements in Live's text, for the rule "no Undo puts back text a later write removed"
    * (design §2, settled (a)): per text doc whose change is one replacement, the units it put in.
    */
@@ -656,9 +742,11 @@ export function runScript(seed, { verbose = false } = {}) {
     const liveToken = `y${seed}0${stats.presses}k`;
     const lateTyped = late && typeIn(late, leaf, draftToken);
     const liveTyped = leaf && typeIn(liveTab, leaf, liveToken);
-    const seen = g.chance(0.5) ? tabLive.version() : undefined;
-    if (seen) stats.seenPresses++;
-    const r = applyBlocks(fork, chosen, { message: `press:${stats.presses}`, seen });
+    // What the writer was shown: the Live tab's copy, or the Changes list's, read on the server just now.
+    const fromTab = g.chance(0.5);
+    if (fromTab) stats.tabVersionPresses++;
+    const liveVersion = fromTab ? tabLive.version() : live.version();
+    const r = applyBlocks(fork, chosen, { message: `press:${stats.presses}`, liveVersion });
     const ids = r.chosen.flatMap((c) => [...c.blocks, ...c.comments]);
     stats.presses++;
     note(`  PRESS ${chosen.map((x) => x.slice(0, 4))} -> ${ids.map((x) => x.slice(0, 4))}`);
@@ -668,7 +756,7 @@ export function runScript(seed, { verbose = false } = {}) {
     structureAfter(ids);
     const newBlocks = blockValues(live);
     for (const [id, b] of oldBlocks) if (!ids.includes(id) && newBlocks.has(id)) check(b === newBlocks.get(id), "apply", () => `unchosen block ${id} changed: ${b} -> ${newBlocks.get(id)}`);
-    check(applyBlocks(fork, chosen).commits.length === 0, "apply", "applying again was not a no-op");
+    check(applyBlocks(fork, chosen, { liveVersion: live.version() }).commits.length === 0, "apply", "applying again was not a no-op");
     if (liveTyped) {
       syncLive();
       stats.unsyncedLive++;
@@ -1021,7 +1109,8 @@ export function runScript(seed, { verbose = false } = {}) {
           check(!back.length, "stale-discarded-back", `discarded ${back.join(" ")}`);
         }
         if (order === 1 && g.chance(0.5)) undoDiscard(r, "discard all", false);
-      } else {
+      } else if (k < 0.87) twoDrafts();
+      else {
         liveEdit();
         if (g.chance(0.5)) writerEdit();
       }
@@ -1076,7 +1165,7 @@ export function runScript(seed, { verbose = false } = {}) {
         else check(false, "live-typing-lost", () => `Live token ${tok} characters missing from fork; id ${id}; live ${blockValues(live).get(id)}; fork ${blockValues(fork).get(id)}`);
       }
     }
-    applyBlocks(fork, "all", { message: "apply all" });
+    applyBlocks(fork, "all", { message: "apply all", liveVersion: live.version() });
     syncTab();
     syncLive();
     toTab();

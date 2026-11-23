@@ -1,7 +1,8 @@
 import type { Frontiers } from "loro-crdt";
+import { commonEnds } from "./common-ends.js";
 import { inMap } from "./handles.js";
 import { frontiersOf, invertCommit, type PressCommit, pressCommit } from "./invert.js";
-import { commentVisibility, readInline, textUnits } from "./read.js";
+import { commentVisibility, readInline, shownStyleKeys } from "./read.js";
 import type { Imported, RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
@@ -60,6 +61,25 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   const sides = { live: new Side(live), fork: new Side(draft) };
   const L = sides.live.view;
   const F = sides.fork.view;
+  const overridden = overriddenBlocks(F);
+  // Comment bodies the fork changed. One whose visibility differs between the sides changes how a
+  // block reads with no write of the fork's in it, so its Live carriers are read too.
+  const bodies = F.overrideKeys("comments").filter(
+    (comment) => !sameValue(L.baseValue("comments", comment), F.override("comments", comment)),
+  );
+  const liveCarriers = new Map(bodies.map((comment) => [comment, [] as BlockId[]]));
+  if (bodies.length > 0)
+    for (const id of L.shown)
+      for (const comment of sides.live.carried(id)) liveCarriers.get(comment)?.push(id);
+  const relit = new Set(
+    bodies
+      .filter(
+        (comment) =>
+          (L.baseValue("comments", comment) != null) !== (F.value("comments", comment) != null),
+      )
+      .flatMap((comment) => liveCarriers.get(comment) ?? []),
+  );
+
   const changed: BlockId[] = [];
   // Hidden on both sides but written by the draft: a block the draft put inside a block it then
   // removed. It is no change of its own, but goes with that ancestor's, so discarding the removal
@@ -68,9 +88,14 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   for (const id of new Set([...L.ids, ...F.ids])) {
     const inLive = L.shown.has(id);
     if (inLive !== F.shown.has(id)) changed.push(id);
-    else if (inLive) {
-      if (blockDiffers(sides.live, sides.fork, id)) changed.push(id);
-    } else if (overridesOf(F, id).length > 0) under.push(id);
+    else if (!inLive) {
+      if (overridden.has(id)) under.push(id);
+    } else if (
+      // A block the fork has neither text nor an override for reads as Live's.
+      (draft.texts.has(id) || overridden.has(id) || relit.has(id)) &&
+      blockDiffers(sides.live, sides.fork, id)
+    )
+      changed.push(id);
   }
   const groups = new Groups(changed);
   const insertedOrRemoved = new Set(changed.filter((id) => L.shown.has(id) !== F.shown.has(id)));
@@ -92,15 +117,24 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       break;
     }
 
+  // The merged sibling order, of the parents that hold a changed block only.
+  const shownIn = (id: BlockId) => (F.shown.has(id) ? F : L);
+  const parentOf = (id: BlockId) => shownIn(id).value("parent", id);
+  const parents = new Set(
+    groups
+      .members()
+      .filter((id) => L.shown.has(id) || F.shown.has(id))
+      .map(parentOf),
+  );
   const siblings = new Map<unknown, BlockId[]>();
   for (const id of new Set([...L.shown, ...F.shown])) {
-    const view = F.shown.has(id) ? F : L;
-    const parent = view.value("parent", id);
+    const parent = parentOf(id);
+    if (!parents.has(parent)) continue;
     const list = siblings.get(parent);
     if (list) list.push(id);
     else siblings.set(parent, [id]);
   }
-  const key = (id: BlockId) => String((F.shown.has(id) ? F : L).value("order", id));
+  const key = (id: BlockId) => String(shownIn(id).value("order", id));
   for (const list of siblings.values()) {
     list.sort((a, b) => {
       const ka = key(a);
@@ -120,22 +154,23 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
     }
   }
 
+  // The blocks the fork can read a mark on that Live's read of them does not show: any other
+  // block the fork shows reads Live's text under Live's node.
+  const forkReads = [
+    ...new Set([...draft.texts.keys(), ...overridden, ...insertedOrRemoved]),
+  ].filter((id) => F.shown.has(id));
   const ownBodies: string[] = [];
   const carried = new Map<string, BlockId[]>();
-  for (const comment of F.overrideKeys("comments")) {
-    if (sameValue(L.baseValue("comments", comment), F.override("comments", comment))) continue;
-    const liveCarriers = [...L.shown].filter((id) => sides.live.carries(id, comment));
-    if (liveCarriers.length > 0 && L.baseValue("comments", comment) != null) {
+  for (const comment of bodies) {
+    const inLive = liveCarriers.get(comment) ?? [];
+    if (inLive.length > 0 && L.baseValue("comments", comment) != null) {
       ownBodies.push(comment);
       continue;
     }
     // Live has no body to show: every block holding the mark on either side reads differently
     // for the body alone, so the body goes with them.
     const carriers = [
-      ...new Set([
-        ...[...F.shown].filter((id) => sides.fork.carries(id, comment)),
-        ...liveCarriers,
-      ]),
+      ...new Set([...forkReads.filter((id) => sides.fork.carried(id).has(comment)), ...inLive]),
     ];
     if (carriers.length === 0) continue;
     for (const id of carriers) groups.add(id);
@@ -158,6 +193,15 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   return [...out.values(), ...ownBodies.map((comment) => ({ blocks: [], comments: [comment] }))];
 }
 
+/** The blocks the fork holds an override of `parent`, `order`, `node` or attributes for. */
+function overriddenBlocks(view: StructureView): Set<BlockId> {
+  const out = new Set<BlockId>();
+  for (const name of BLOCK_MAPS)
+    for (const key of view.overrideKeys(name))
+      out.add(name === "attrs" ? key.slice(0, key.lastIndexOf("/")) : key);
+  return out;
+}
+
 /** The changes `selection` names, expanded to their whole groups. */
 export function selectChanges(changes: readonly BlockChange[], selection: ChangeSelection) {
   if (selection === "all") return [...changes];
@@ -172,6 +216,7 @@ class Side {
   readonly view: StructureView;
   private readonly visible: (comment: string) => boolean;
   private readonly inlines = new Map<BlockId, InlineItem[]>();
+  private readonly carriedBy = new Map<BlockId, ReadonlySet<string>>();
 
   constructor(readonly docs: RoomDocs) {
     this.view = new StructureView(docs);
@@ -204,18 +249,22 @@ class Side {
   }
 
   /**
-   * Whether the block's text holds comment `comment`'s mark on a shown unit. By the stored text,
-   * not the read: a block retyped to one that shows no marks (a `code_block`) still carries the
-   * comment it shows again when its type goes back, and Live text keeps a mark whose body an Undo
-   * took back, which a draft's body for it would show again.
+   * The comments whose mark the block's text holds on a shown unit. By the stored text, not the
+   * read: a block retyped to one that shows no marks (a `code_block`) still carries the comment it
+   * shows again when its type goes back, and Live text keeps a mark whose body an Undo took back,
+   * which a draft's body for it would show again.
    */
-  carries(id: BlockId, comment: string): boolean {
+  carried(id: BlockId): ReadonlySet<string> {
+    const known = this.carriedBy.get(id);
+    if (known) return known;
+    const comments = new Set<string>();
     const rule = this.rule(id);
-    if (!rule?.textblock) return false;
-    const key = `${COMMENT_STYLE_PREFIX}${comment}`;
-    return textUnits(this.docs.textOf(id), rule, this.docs.shape).some(
-      (unit) => !unit.hidden && unit.stored[key] != null,
-    );
+    if (rule?.textblock)
+      for (const key of shownStyleKeys(this.docs.textOf(id), rule, this.docs.shape))
+        if (key.startsWith(COMMENT_STYLE_PREFIX))
+          comments.add(key.slice(COMMENT_STYLE_PREFIX.length));
+    this.carriedBy.set(id, comments);
+    return comments;
   }
 }
 
@@ -235,18 +284,6 @@ function textMoved(sourceLive: string, sourceFork: string, destLive: string, des
   return false;
 }
 
-function commonEnds(a: string, b: string) {
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let end = 0;
-  while (
-    end < a.length - start &&
-    end < b.length - start &&
-    a[a.length - 1 - end] === b[b.length - 1 - end]
-  )
-    end++;
-  return { start, end };
-}
 const removedPart = (a: string, b: string) => {
   const { start, end } = commonEnds(a, b);
   return a.slice(start, a.length - end);
@@ -302,13 +339,16 @@ export interface PressChanges {
 export interface PressOptions {
   /** The commit message: `press:<commandId>`. */
   message?: string;
+}
+
+export interface ApplyOptions extends PressOptions {
   /**
-   * For an Apply, the Live version of each text doc the pressing tab showed (design §2): a block
-   * the draft removed is removed in Live with a record of what the writer saw, capped at what this
-   * copy holds, so Live typing the writer never saw brings the block back. A doc it does not name
-   * counts as seen as this copy holds it.
+   * The Live version of each text doc the writer was shown (design §2, `PressRequest.liveVersions`):
+   * a block the draft removed is removed in Live with a record of it, capped at what this copy
+   * holds, so Live typing the writer was not shown brings the block back. A text doc it names no
+   * version for counts as never shown.
    */
-  seen?: RoomVersion;
+  liveVersion: RoomVersion;
 }
 
 /** The overrides the fork holds for block `id`, by map: what Apply copies and Discard deletes. */
@@ -336,14 +376,14 @@ function forwarded(draft: RoomDocs, into: DocChange[]): void {
  * value of each override the fork holds and delete the override in the fork, have Live import the
  * fork's text ops for the blocks the fork wrote (`importBatch`; a block the draft created becomes
  * Live's own doc), and copy the comment bodies the change carries. A block the draft removed is
- * removed in Live by a new record (`PressOptions.seen`), never the fork's. A selection whose
+ * removed in Live by a new record (`ApplyOptions.liveVersion`), never the fork's. A selection whose
  * changes are already empty changes nothing. Both copies are committed under `message`; the fork
  * is forwarded again, so it reads as before.
  */
 export function applyBlocks(
   draft: RoomDocs,
   selection: ChangeSelection,
-  options: PressOptions = {},
+  options: ApplyOptions,
 ): PressChanges {
   const live = draft.live;
   if (!live) throw new Error("applyBlocks needs a draft copy");
@@ -356,13 +396,16 @@ export function applyBlocks(
 
   const forkView = new StructureView(draft);
   const liveView = new StructureView(live);
-  const liveBefore = new Map<DocKey, { at: Frontiers; version: DocVersion }>();
+  const liveBefore = new Map<DocKey, Frontiers>();
+  // Live's version of each doc the import below writes, before it: empty for a doc Live lacks.
+  const held = new Map<DocKey, DocVersion>();
   const batch = new Map<DocKey, Uint8Array>();
   for (const id of blocks) {
     const text = draft.texts.get(id);
     if (!text) continue;
     const base = live.texts.get(id);
-    if (base) liveBefore.set(id, { at: base.frontiers(), version: docVersion(base) });
+    held.set(id, base ? docVersion(base) : new Map());
+    if (base) liveBefore.set(id, base.frontiers());
     batch.set(
       id,
       base
@@ -374,28 +417,27 @@ export function applyBlocks(
     const imported = live.importBatch(batch);
     if (imported.restore) result.live.push(imported.restore);
   }
-  for (const [key, { at }] of liveBefore) {
+  for (const [key, at] of liveBefore) {
     const doc = live.texts.get(key);
     if (doc && !sameValue(at, doc.frontiers()))
       own(result, "live", { key, doc, before: at, after: doc.frontiers() });
   }
 
-  // What the removal read of one text doc: the tab's view of Live, capped at what Live held before
+  // What the removal read of one text doc: what the writer was shown of Live, capped at what Live held before
   // the press, plus the draft's own ops the press brings, which every peer receiving the press
   // holds and must count as read.
   const seenOf = (key: DocKey): DocVersion => {
     const base = live.textOf(key);
-    const held = liveBefore.get(key)?.version ?? (base ? docVersion(base) : new Map());
-    const tab = options.seen?.get(key) ?? held;
+    const before = held.get(key) ?? (base ? docVersion(base) : new Map());
     const out = new Map<string, number>();
-    for (const [peer, counter] of tab) {
-      const capped = Math.min(counter, held.get(peer) ?? 0);
+    for (const [peer, counter] of options.liveVersion.get(key) ?? []) {
+      const capped = Math.min(counter, before.get(peer) ?? 0);
       if (capped > 0) out.set(peer, capped);
     }
     const text = draft.texts.get(key);
     if (text)
       for (const [peer, counter] of docVersion(text))
-        if (counter > (held.get(peer) ?? 0)) out.set(peer, counter);
+        if (counter > (before.get(peer) ?? 0)) out.set(peer, counter);
     return out as DocVersion;
   };
 
@@ -443,7 +485,7 @@ export function applyBlocks(
 export function discardBlocks(
   draft: RoomDocs,
   selection: ChangeSelection,
-  options: Pick<PressOptions, "message"> = {},
+  options: PressOptions = {},
 ): PressChanges {
   const live = draft.live;
   if (!live) throw new Error("discardBlocks needs a draft copy");
@@ -489,7 +531,7 @@ export function discardBlocks(
 export function undoPress(
   draft: RoomDocs,
   commits: readonly PressCommit[],
-  options: Pick<PressOptions, "message"> = {},
+  options: PressOptions = {},
 ): Pick<PressChanges, "live" | "fork"> {
   const live = draft.live;
   if (!live) throw new Error("undoPress needs a draft copy");
@@ -539,7 +581,7 @@ export function undoPress(
 export function restoreBefore(
   draft: RoomDocs,
   turn: { before: RoomVersion; after: DocVersion | null },
-  options: Pick<PressOptions, "message"> = {},
+  options: PressOptions = {},
 ): DocChange[] {
   const live = draft.live;
   if (!live) throw new Error("restoreBefore needs a draft copy");

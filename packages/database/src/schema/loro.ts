@@ -69,9 +69,11 @@ export const documentForks = pgTable(
 );
 
 /**
- * One doc a press, or its Undo, committed: its room (`live:<doc>` or `fork:<draft>:<doc>`), its doc
- * key, and its versions either side (`encodeDocVersion`). The press's Undo inverts each row
- * (`invertCommit`), each room its own.
+ * One doc a press committed: the draft whose changes it pressed, its room (`live:<doc>` or
+ * `fork:<draft>:<doc>`), its doc key, and its versions either side (`encodeDocVersion`). A press
+ * of several drafts (a Work's `Apply all`) presses them one after another in draft id order, so
+ * one Live doc can have a row per draft. The press's Undo runs `undoPress` once per draft, in the
+ * reverse order, on that draft's rows; an Undo stores no rows (pressing again is the Redo).
  */
 export const pressCommits = pgTable(
   "press_commits",
@@ -80,10 +82,13 @@ export const pressCommits = pgTable(
       .$type<CommandId>()
       .notNull()
       .references(() => commands.id, { onDelete: "cascade" }),
+    draftId: draftIdColumn("draft_id").notNull(),
     roomKey: text("room_key").notNull(),
     docKey: text("doc_key").notNull(),
     before: byteaColumn("before").notNull(),
     after: byteaColumn("after").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.commandId, table.roomKey, table.docKey] })],
+  (table) => [
+    primaryKey({ columns: [table.commandId, table.draftId, table.roomKey, table.docKey] }),
+  ],
 );

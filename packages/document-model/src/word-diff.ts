@@ -1,3 +1,5 @@
+import { commonEnds } from "./common-ends.js";
+
 /** One run of a word-level diff: text both sides share, or text only one side has. */
 export interface WordPart {
   kind: "same" | "removed" | "added";
@@ -14,15 +16,7 @@ const WORDS = /\s+|[^\s]+/g;
 export function wordDiff(before: string, after: string): WordPart[] {
   const a = before.match(WORDS) ?? [];
   const b = after.match(WORDS) ?? [];
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let end = 0;
-  while (
-    end < a.length - start &&
-    end < b.length - start &&
-    a[a.length - 1 - end] === b[b.length - 1 - end]
-  )
-    end++;
+  const { start, end } = commonEnds(a, b);
   const midA = a.slice(start, a.length - end);
   const midB = b.slice(start, b.length - end);
   const n = midA.length;

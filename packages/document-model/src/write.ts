@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
@@ -403,20 +404,10 @@ export function writeText(
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */
 function spliceOf(a: string, b: string): { index: number; remove: number; insert: number } {
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let { start, end } = commonEnds(a, b);
   if (start > 0 && isHighSurrogate(a.charCodeAt(start - 1))) start--;
-  let endA = a.length;
-  let endB = b.length;
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
-    endA--;
-    endB--;
-  }
-  if (endA < a.length && isLowSurrogate(a.charCodeAt(endA)) && endA > start) {
-    endA++;
-    endB++;
-  }
-  return { index: start, remove: endA - start, insert: endB - start };
+  if (end > 0 && isLowSurrogate(a.charCodeAt(a.length - end)) && a.length - end > start) end--;
+  return { index: start, remove: a.length - end - start, insert: b.length - end - start };
 }
 
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;

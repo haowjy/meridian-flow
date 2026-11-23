@@ -216,6 +216,7 @@ export function toWireItem(
     itemKey: item.itemKey,
     documentId: item.documentId,
     pending: item.pending,
+    liveVersion: null,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,

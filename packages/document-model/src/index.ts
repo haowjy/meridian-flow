@@ -1,5 +1,6 @@
 export { type ApplyOpsOptions, type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export {
+  type ApplyOptions,
   applyBlocks,
   type BlockChange,
   type ChangeSelection,
