@@ -29,6 +29,7 @@ export {
   selectionCursors,
 } from "./cursors.js";
 export { type HistoryRun, UNTRACKED_ORIGIN, UndoHistory } from "./history.js";
+export { movedPieces } from "./pieces.js";
 export {
   type LoroSyncOptions,
   type LoroSyncState,

@@ -17,6 +17,7 @@ and exits non-zero on a failure. A seed takes about 0.1 s; split 10,000 across p
 `--start`/`--n`. `--seed N` replays one script; with `FUZZ_TRACE=1` it prints, after each step,
 every block where Live (L), the fork (F) and the Draft tab (T) differ, and the fork's overrides.
 `FUZZ_OFF=split,join` leaves edit kinds out of the generator (`block-changes.gen.ts`).
+`FUZZ_NO_PIECES=1` writes no `pieces` record, to see the split and join checks fail (188 of 300 seeds).
 
 ## The copies
 
@@ -52,6 +53,11 @@ its changes are stored as JSON and read back.
   first.
 - One-change Discard and its Undo, Discard all and its Undo, and a stale Draft tab across a Discard
   all.
+- At the end of every script, after the seeded steps so earlier seeds read as before: the writer's
+  Enter inside a clean paragraph, or a join of two, then an Apply or a Discard that names one of
+  the two blocks, and half the time its Undo (`halves`); and rewrites of two neighbouring
+  paragraphs where one loses three characters the other gains, then an Apply of the first
+  (`neighbours`).
 
 ## Checks
 
@@ -72,6 +78,11 @@ its changes are stored as JSON and read back.
 - Identity is by character id, from the probe's own record of what each Undo put back (the
   characters it inserted, lined up with the ones the edit deleted), never from the take-back messages
   the model reads, and never by what the text spells.
+- **A split or a join is one change, and independent rewrites are two** (design §2, "Which
+  paragraphs go together"): the two blocks of a split or a join are in one change, a press naming
+  either acts on both, Live shows none of the moved words twice, and after the press's Undo they
+  are one change again. Two rewritten neighbours are two changes, and applying the first leaves
+  the second pending.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
 - After the two drafts' Undo: Live is back (or holds the typing between), each draft has only that
@@ -107,8 +118,14 @@ cursor on them) does not reach it: in the reordered runs the cursor resolves to 
 transform already uses. The two runs are concurrent inserts at one gap (Live never sees the draft's
 re-created words), and Loro orders those itself; an insert by index cannot choose a side.
 
-Pins implementation decisions: design §2's grouping (ancestor, merged sibling order, comment
-bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per
+A word a split or a join moved is not counted as a duplicate at the end (`splitMoved`). That
+hides two things that are not grouping and fail with the exemption off (5 of seeds 0 to 399, the
+same on the content test this rule replaced): `Restore before` over a turn's text after the writer
+split the paragraph puts back the words the split moved (seeds 163, 372), and a press Undo in a
+chain after a join (seeds 249, 305, 325).
+
+Pins implementation decisions: design §2's grouping (ancestor, `pieces` records written by the
+write, comment bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per
 change with its Live and fork sides as one edit, a change going back whole, put-back text told by
 take-back commits, a block `Restore before` takes away going as a removal, and a Work press undone draft by
 draft, newest first.

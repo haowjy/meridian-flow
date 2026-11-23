@@ -10,9 +10,16 @@ export const STRUCTURE_KEY = "s";
 export type DocKey = string;
 
 /** The structure doc's value maps. A fork writes only the `d.`-prefixed copies (`overrideMap`). */
-export const STRUCTURE_MAPS = ["parent", "order", "node", "attrs", "comments"] as const;
+export const STRUCTURE_MAPS = ["parent", "order", "node", "attrs", "comments", "pieces"] as const;
 export type StructureMap = (typeof STRUCTURE_MAPS)[number];
 export const overrideMap = (name: StructureMap) => `d.${name}` as const;
+
+/**
+ * A `pieces` key: the two blocks one edit moved text between (a split, a join), smaller id first.
+ * Only a draft writes it (`d.pieces`), and only `changedBlocks` reads it (design §2).
+ */
+export const pieceKey = (a: BlockId, b: BlockId) => (a < b ? `${a}/${b}` : `${b}/${a}`);
+export const pieceEnds = (key: string) => key.split("/") as [BlockId, BlockId];
 
 /** The text doc's one container. */
 export const TEXT_KEY = "t";

@@ -79,7 +79,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   constructor enforces: a press writes both rooms from one copy, and one peer would mint the same
   op ids in both.
 - The block-change model (`changes.ts`, `invert.ts`; design §2) works on a draft copy and forwards
-  it first. `changedBlocks` groups what differs from Live into changes; it runs on every fork save
+  it first. `changedBlocks` groups what differs from Live into changes: blocks under an inserted or removed
+  container, and blocks a write moved text between, by the `d.pieces` record that write made
+  (`WriteOptions.pieces`, the `pieces` op). The writer of a split or a join says which blocks they
+  are; nothing here compares two texts to guess. It runs on every fork save
   and Live batch, so it reads only blocks the fork holds text or an override for (a block with
   neither reads as Live's), plus Live's carriers of a comment body the fork changed. `applyBlocks`
   imports the fork's text into Live and writes the chosen overrides there, a removal as a new
