@@ -119,7 +119,7 @@ for (const file of readdirSync(rewrites).sort()) {
     changes: changes.length,
     largest: sizes[0] ?? 0,
     "of 2+": sizes.filter((n) => n > 1).length,
-    pieces: F.overrideKeys("pieces" as never).length,
+    pieces: new Set(F.overrideKeys("pieces" as never).map((key) => key.split("/", 2).join("/"))).size,
     "doubles alone": doubling(draft),
   });
 }

@@ -15,11 +15,15 @@ export type StructureMap = (typeof STRUCTURE_MAPS)[number];
 export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 
 /**
- * A `pieces` key: the two blocks one edit moved text between (a split, a join), smaller id first.
- * Only a draft writes it (`d.pieces`), and only `changedBlocks` reads it (design §2).
+ * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
+ * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A
+ * key per write, so recording a pair again always writes, and a press that deletes the keys it
+ * read never takes a record made since. Only a draft writes it (`d.pieces`), and only
+ * `changedBlocks` reads it (design §2).
  */
-export const pieceKey = (a: BlockId, b: BlockId) => (a < b ? `${a}/${b}` : `${b}/${a}`);
-export const pieceEnds = (key: string) => key.split("/") as [BlockId, BlockId];
+export const pieceKey = (a: BlockId, b: BlockId, stamp: string) =>
+  a < b ? `${a}/${b}/${stamp}` : `${b}/${a}/${stamp}`;
+export const pieceEnds = (key: string) => key.split("/", 2) as [BlockId, BlockId];
 
 /** The text doc's one container. */
 export const TEXT_KEY = "t";

@@ -42,6 +42,7 @@ import {
   valuesOf,
   versionOf,
 } from "@meridian/document-model";
+import { Fragment, Slice } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import { blockOf } from "../../src/codec.js";
 import { movedPieces, readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
@@ -1247,23 +1248,47 @@ export function runScript(seed, { verbose = false } = {}) {
    */
   function halves() {
     const paragraphs = cleanParagraphs();
-    const join = g.chance(0.4);
-    const at = paragraphs.findIndex((p, i) => p && (join ? paragraphs[i + 1] && p[1].textContent && paragraphs[i + 1][1].textContent : / \S/.test(p[1].textContent.slice(1))));
+    const wordy = (p) => p && / \S/.test(p[1].textContent.slice(1));
+    const kind = g.pick(["split", "split", "join", "join", "crossDelete", "typeOver", "multi", "paste", "joinEnter"]);
+    const alone = kind === "split" || kind === "paste";
+    const at = paragraphs.findIndex((p, i) => wordy(p) && (alone || wordy(paragraphs[i + 1])));
     if (at < 0) return;
-    const [id, node, pos] = paragraphs[at];
+    const [first, node, pos] = paragraphs[at];
+    const [second, next, nextPos] = alone ? [] : paragraphs[at + 1];
     const idsBefore = new Set(textblocks(tab).keys());
     // Words the draft already shows twice (a `Restore before` over a split leaves such a copy).
     const drafted = tokens(tab);
     const already = new Set(drafted.filter((t) => drafted.indexOf(t) !== drafted.lastIndexOf(t)));
-    const moved = join ? tokensOf(paragraphs[at + 1][1].textContent) : null;
-    const build = join
-      ? (tr) => tr.join(paragraphs[at + 1][2])
-      : (tr) => tr.split(pos + 1 + node.textContent.indexOf(" ", 1));
-    if (!userEdit(tab, "f", { edit: { kind: join ? "join" : "split", build } })) return;
+    const moved = [...tokensOf(node.textContent), ...(next ? tokensOf(next.textContent) : [])];
+    // A place inside each paragraph, before a space, so no word is cut.
+    const inFirst = pos + 1 + node.textContent.indexOf(" ", 1);
+    const inSecond = next && nextPos + 1 + next.textContent.indexOf(" ", 1);
+    const paragraph = () => schema.nodes.paragraph.create(null, schema.text(g.tok("f")));
+    const builds = {
+      split: (tr) => tr.split(inFirst),
+      join: (tr) => tr.join(nextPos),
+      // A selection from inside one paragraph to inside the next, deleted or typed over.
+      crossDelete: (tr) => tr.delete(inFirst, inSecond),
+      typeOver: (tr) => tr.insertText(` ${g.tok("f")}`, inFirst, inSecond),
+      // Two steps: typing at the start, then the delete across the break.
+      multi: (tr) => {
+        tr.insertText(`${g.tok("f")} `, pos + 1);
+        return tr.delete(tr.mapping.map(inFirst), tr.mapping.map(inSecond));
+      },
+      // Two paragraphs pasted inside one: its tail ends up in the second pasted paragraph.
+      paste: (tr) => tr.replace(inFirst, inFirst, new Slice(Fragment.from([paragraph(), paragraph()]), 1, 1)),
+      joinEnter: (tr) => tr.join(nextPos),
+    };
+    if (!userEdit(tab, "f", { edit: { kind, build: builds[kind] } })) return;
+    // A join mended by hand: Enter where the two were joined. The first paragraph reads as Live
+    // again, and the second, removed, and the new one are one change through it.
+    if (kind === "joinEnter" && !userEdit(tab, "f", { edit: { kind: "split", build: (tr) => tr.split(pos + 1 + node.content.size) } })) return;
     syncTab();
-    const other = join ? paragraphs[at + 1][0] : [...textblocks(tab).keys()].find((x) => !idsBefore.has(x));
+    const fresh = [...textblocks(tab).keys()].find((x) => !idsBefore.has(x));
+    const [id, other] = kind === "joinEnter" ? [second, fresh] : [first, alone ? fresh : second];
     stats.halves = (stats.halves ?? 0) + 1;
-    check(changeOf(id) >= 0 && changeOf(id) === changeOf(other), "pieces", () => `${join ? "join" : "split"} of ${id} and ${other} is not one change: ${JSON.stringify(pending())}`);
+    stats[`halves:${kind}`] = (stats[`halves:${kind}`] ?? 0) + 1;
+    check(changeOf(id) >= 0 && changeOf(id) === changeOf(other), "pieces", () => `${kind} of ${id} and ${other} is not one change: ${JSON.stringify(pending())}`);
     const named = g.chance(0.5) ? id : other;
     // By what the press acted on: the press step types into a pressed block afterwards.
     const settled = (what, acted) =>
@@ -1273,7 +1298,7 @@ export function runScript(seed, { verbose = false } = {}) {
       if (!p) return;
       settled("Apply", p.ids);
       const shown = tokens(live);
-      const twice = (moved ?? tokensOf(node.textContent)).filter((t) => !already.has(t) && shown.indexOf(t) !== shown.lastIndexOf(t));
+      const twice = moved.filter((t) => !already.has(t) && shown.indexOf(t) !== shown.lastIndexOf(t));
       check(!twice.length, "pieces", () => `Live shows ${twice.join(" ")} twice after Apply naming ${named}`);
       if (g.chance(0.5)) {
         syncLive();

@@ -14,10 +14,18 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
   // What the steps replaced, in the old document's positions.
   const replaced: [number, number][] = [];
   mapping.maps.forEach((map, i) => {
-    const back = mapping.slice(0, i).invert();
+    const ranges: [number, number][] = [];
     map.forEach((from, to) => {
-      replaced.push([back.map(from, -1), back.map(to, 1)]);
+      ranges.push([from, to]);
     });
+    if (ranges.length === 0) return;
+    // Back through the maps before this one only: `Mapping.slice(0, i).invert()` would read
+    // them all, and widen the range by what this step and the later ones deleted.
+    const back = (pos: number, assoc: number) => {
+      for (let j = i - 1; j >= 0; j--) pos = mapping.maps[j].invert().map(pos, assoc);
+      return pos;
+    };
+    for (const [from, to] of ranges) replaced.push([back(from, -1), back(to, 1)]);
   });
   if (replaced.length === 0) return [];
   const pairs = new Map<string, [BlockId, BlockId]>();

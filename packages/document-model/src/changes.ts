@@ -126,25 +126,24 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       break;
     }
 
-  // Blocks an edit moved text between (`d.pieces`) are one change. A block hidden on both sides
-  // connects what it was a piece of: a half split off and then joined into the next paragraph.
-  const pieces = new Map<BlockId, BlockId[]>();
+  // Changed blocks the `d.pieces` records connect are one change. A block that is no change only
+  // connects: a half split off and joined into the next paragraph, or a paragraph whose text
+  // left and came back. It is no member, so no press writes anything of it.
+  const linked = new Groups([]);
   for (const key of F.overrideKeys("pieces")) {
     const [a, b] = pieceEnds(key);
-    pieces.set(a, [...(pieces.get(a) ?? []), b]);
-    pieces.set(b, [...(pieces.get(b) ?? []), a]);
+    linked.add(a);
+    linked.add(b);
+    linked.join(a, b);
   }
-  const reached = groups.members();
-  for (let id = reached.pop(); id !== undefined; id = reached.pop())
-    for (const other of pieces.get(id) ?? []) {
-      const hidden = !L.shown.has(other) && !F.shown.has(other) && overridden.has(other);
-      if (!groups.has(other)) {
-        if (!hidden) continue;
-        groups.add(other);
-        reached.push(other);
-      }
-      groups.join(id, other);
-    }
+  const first = new Map<BlockId, BlockId>();
+  for (const id of groups.members()) {
+    if (!linked.has(id)) continue;
+    const root = linked.find(id);
+    const earlier = first.get(root);
+    if (earlier === undefined) first.set(root, id);
+    else groups.join(earlier, id);
+  }
 
   // The blocks the fork can read a mark on that Live's read of them does not show: any other
   // block the fork shows reads Live's text under Live's node.

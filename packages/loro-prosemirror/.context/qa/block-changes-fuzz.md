@@ -56,11 +56,15 @@ stored as JSON and read back.
   first.
 - One-change Discard and its Undo, Discard all and its Undo, and a stale Draft tab across a Discard
   all.
-- At the end of every script, after the seeded steps so earlier seeds read as before: the writer's
-  Enter inside a clean paragraph, or a join of two, then an Apply or a Discard that names one of
-  the two blocks, and half the time its Undo (`halves`); and rewrites of two neighbouring
-  paragraphs where one loses three characters the other gains, then an Apply of the first
-  (`neighbours`).
+- At the end of every script, after the seeded steps so earlier seeds read as before: one way of
+  moving text between clean paragraphs, then an Apply or a Discard that names one of the blocks,
+  and half the time its Undo (`halves`). The ways: Enter inside a paragraph (`split`), a join
+  (`join`), a delete from inside one paragraph to inside the next (`crossDelete`), typing over
+  such a selection (`typeOver`), an insert and then that delete in one transaction (`multi`), a
+  paste of three paragraphs into the middle of one (`paste`), and a join followed by Enter at the
+  same place, which leaves the first paragraph reading as Live's (`joinEnter`). Then rewrites of
+  two neighbouring paragraphs where one loses three characters the other gains, and an Apply of
+  the first (`neighbours`).
 
 ## Checks
 
@@ -81,10 +85,10 @@ stored as JSON and read back.
 - Identity is by character id, from the probe's own record of what each Undo put back (the
   characters it inserted, lined up with the ones the edit deleted), never from the take-back messages
   the model reads, and never by what the text spells.
-- **A split or a join is one change, and independent rewrites are two** (design §2, "Which
-  paragraphs go together"): the two blocks of a split or a join are in one change, a press naming
-  either acts on both, Live shows none of the moved words twice, and after the press's Undo they
-  are one change again. Two rewritten neighbours are two changes, and applying the first leaves
+- **Blocks a write moved text between are one change, and independent rewrites are two** (design
+  §2, "Which paragraphs go together"): the changed blocks of each way above are in one change, a
+  press naming either acts on both, Live shows none of the moved words twice, and after the
+  press's Undo they are one change again. Two rewritten neighbours are two changes, and applying the first leaves
   the second pending.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).

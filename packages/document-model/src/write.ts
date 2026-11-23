@@ -28,7 +28,7 @@ import {
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
-import { type DocVersion, plainVersion } from "./version.js";
+import { type DocVersion, docVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -135,7 +135,9 @@ export class StructureWriter {
    * change. Live keeps no record: nothing reviews it.
    */
   pieces(a: BlockId, b: BlockId): void {
-    if (this.docs.draft && a !== b) this.set("pieces", pieceKey(a, b), true);
+    if (!this.docs.draft || a === b) return;
+    const { peer, structure } = this.docs;
+    this.set("pieces", pieceKey(a, b, `${peer}@${docVersion(structure).get(peer) ?? 0}`), true);
   }
 
   /**
