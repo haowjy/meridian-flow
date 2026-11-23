@@ -20,11 +20,7 @@ export const UNTRACKED_ORIGIN = "untracked";
  * that is not removed, or was removed without a record (an older build's `null`), is left alone.
  * Returns the change to publish.
  */
-export function restore(
-  docs: RoomDocs,
-  ids: Iterable<BlockId>,
-  options: { deleteMoved?: boolean } = {},
-): DocChange[] {
+export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
@@ -32,7 +28,7 @@ export function restore(
   for (const id of ids) {
     const removal = view.removal(id);
     if (!removal) continue;
-    if (options.deleteMoved !== false && removal.moved) {
+    if (removal.moved) {
       const [destination, runs] = removal.moved;
       const doc = docs.textOf(destination);
       if (doc) {

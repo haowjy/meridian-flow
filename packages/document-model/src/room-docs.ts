@@ -1,7 +1,7 @@
 import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
-import { answerRemovals, restore } from "./removals.js";
+import { answerRemovals } from "./removals.js";
 import {
   type BlockId,
   configureDoc,
@@ -9,7 +9,6 @@ import {
   type ShapeSchema,
   STRUCTURE_KEY,
 } from "./shape.js";
-import { removalOf, StructureView } from "./structure.js";
 import {
   type DocVersion,
   docCovers,
@@ -436,43 +435,7 @@ export class RoomDocs {
       const base = live.textOf(id);
       if (base) pull(id, base, doc);
     }
-    const restored = this.answer(before, changed);
-    const joins = new Set<BlockId>();
-    if (this.draft) {
-      const liveView = new StructureView(live);
-      const view = new StructureView(this);
-      const takeBack = new Set<BlockId>();
-      const settle = new Set<BlockId>();
-      for (const id of view.overrideKeys("order")) {
-        const moved = removalOf(view.override("order", id));
-        if (!moved?.moved) continue;
-        const liveRecord = removalOf(liveView.value("order", id));
-        const liveRemoved = !!liveRecord;
-        const unread = [...view.textKeysUnder(id)].some((key) => {
-          const doc = live.textOf(key);
-          return doc !== undefined && !docCovers(moved.seen.get(key), docVersion(doc));
-        });
-        const sameJoin =
-          liveRecord?.moved !== undefined &&
-          JSON.stringify(liveRecord.moved) === JSON.stringify(moved.moved);
-        if (unread || (liveRemoved && !sameJoin)) takeBack.add(id);
-        else if (sameJoin) settle.add(id);
-      }
-      return {
-        changed,
-        pending: false,
-        restore: [
-          ...restored,
-          ...(takeBack.size > 0 ? restore(this, takeBack) : []),
-          ...(settle.size > 0 ? restore(this, settle, { deleteMoved: false }) : []),
-        ],
-      };
-    }
-    return {
-      changed,
-      pending: false,
-      restore: joins.size > 0 ? [...restored, ...restore(this, joins)] : restored,
-    };
+    return { changed, pending: false, restore: this.answer(before, changed) };
   }
 
   private answer(before: Frontiers, changed: readonly DocKey[]): DocChange[] {
