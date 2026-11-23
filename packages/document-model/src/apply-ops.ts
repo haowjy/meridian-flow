@@ -1,7 +1,6 @@
 import { commitMessage } from "./commit-message.js";
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
-import { retirePieces } from "./pieces.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -48,8 +47,8 @@ export type ShapeOp =
   | { kind: "attrs"; block: BlockId; attrs: Attrs; unit?: number }
   /**
    * The edit moved text between these two blocks (it split one, joined one into the other, or
-   * carried words across their boundary): a draft records them as one change (design §2), unless
-   * neither shows a change once the op is written. Either may be a block the edit removed.
+   * carried words across their boundary): a draft records them as one change (design §2). Either
+   * may be a block the edit removed.
    */
   | { kind: "pieces"; blocks: readonly [BlockId, BlockId] };
 
@@ -188,7 +187,7 @@ export function applyOps(
     // Right to left, so earlier offsets stay where they were planned.
     for (const { from, to, content } of [...op.splices].reverse())
       replaceText(doc, rules, from, to, content);
-    doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
+    doc.commit({ message: commitMessage(options.by), origin: options.origin });
     record({ key: block, doc, before: start, after: doc.frontiers() });
   }
 
@@ -210,7 +209,7 @@ export function applyOps(
         attrs,
       } as never),
     );
-    doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
+    doc.commit({ message: commitMessage(options.by), origin: options.origin });
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 
@@ -255,8 +254,6 @@ export function applyOps(
 
   for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
   for (const op of of("pieces")) writer.pieces(...op.blocks);
-  if (docs.draft)
-    retirePieces(docs, [...writer.touched, ...changes.keys()], undefined, writer.recorded);
 
   const structure = commitStructure(docs, before, options);
   return {

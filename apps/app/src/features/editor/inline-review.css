@@ -229,32 +229,11 @@
   left: calc(100% + 6px);
 }
 
-/* Text kept in place (KeptExtension): a paragraph deleted under the caret, kept while it stays
-   (design §1), and briefly an edit Undo left because someone wrote over it (design §2). */
+/* A paragraph deleted under the caret, kept while it stays (KeptExtension, design §1). */
 .meridian-editor .ProseMirror .meridian-kept {
   color: var(--color-muted-foreground);
   background-image: linear-gradient(var(--color-ink-fill), var(--color-ink-fill));
   border-radius: var(--radius-sm);
-}
-
-.meridian-editor .ProseMirror .meridian-kept-stayed {
-  color: inherit;
-  animation: meridian-kept-fade 4s ease-in forwards;
-}
-
-@keyframes meridian-kept-fade {
-  70% {
-    background-size: 100% 100%;
-  }
-  to {
-    background-size: 100% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .meridian-editor .ProseMirror .meridian-kept-stayed {
-    animation: none;
-  }
 }
 
 @media (forced-colors: active) {

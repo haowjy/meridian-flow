@@ -32,7 +32,6 @@ export {
 } from "./cursors.js";
 export {
   type HistoryRun,
-  type KeptEdit,
   type OutsideStep,
   UNTRACKED_ORIGIN,
   UndoHistory,

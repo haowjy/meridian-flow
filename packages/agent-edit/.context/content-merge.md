@@ -27,8 +27,8 @@ same change on both sides applies once. A **merge rule** is anything the merge d
 `content-merge/` depends on `diff/` (tokens, `align`, `correspond`, `buildBlocks`), never the
 other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`, and `captureDelta`/`readDelta`,
 which record an AI write's blocks before and after (`document_edit_parts.delta`) for the card's
-rows and the model's edit listing. Whether an AI write can be undone is not read from the delta:
-that is the Loro Undo rule (`editStays` in `@meridian/document-model`).
+rows and the model's edit listing. An AI write's Undo does not read the delta: it is the Loro
+Undo rule (`takeBack` in `@meridian/document-model`).
 
 `contentMerge(schema, base, live, draft)` returns `{ blocks, rules, overrode, conflicts, orderConflict }`.
 `rules` is the rule name to the number of times it fired in that merge. It carries no text.

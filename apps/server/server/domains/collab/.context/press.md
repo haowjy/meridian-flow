@@ -66,17 +66,17 @@ in force per draft (the latest done `restore` press that changed something and h
   document the turn wrote while only the draft held it, and the writer has since applied, is the
   manuscript's: it stays.
 - **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
-  first, taken back by design §2's Undo rule (`undoInRooms`, `whyEditStays`): each goes back whole,
-  or stays whole when someone wrote over it since or the room cut its history (§4's cutoff). A fork
-  copy is carried forward to today's Live first. Live's manuscript is never written, so text an
-  Apply already put there stays, and a value a press settled stays in the draft.
+  first, taken back by design §2's Undo rule (`undoInRooms`, `takeBack`): each goes back whatever
+  was written since, except one older than the room's history cutoff (§4), which can't (`holdsEdit`).
+  A part already taken back (by the card's Undo or the model's revert) is not taken again. A fork
+  copy is carried forward to today's Live first. Live's manuscript is never written: text an
+  Apply already put there stays in Live, and taking it out of the draft is a pending change.
 - **The nodes the turn created** in the draft that only the draft still holds go to Trash, by the
   Discard's tree half (`discardTreeRecords` with `trash`): the draft read without them before the
   turn. Their text goes with them, so no room of theirs is restored. Other tree changes the turn
   drafted (moves, renames, deletes) stay.
-- **What stayed** is not reported: the answer names only the documents the press changed, so a
-  press that changed nothing names none and makes no Undo step. The card says nothing of what
-  stayed, as the turn Undo does.
+- The answer names only the documents the press changed, so a press that changed nothing names
+  none and makes no Undo step.
 
 Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
 for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is
@@ -119,13 +119,10 @@ closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree
 ## Undo and Redo
 
 `unpress` takes a press back once, in the press's own project, draft by draft, newest first. Per
-document, `undoPress` reads the press's `press_changes` rows: each change goes back whole or stays
-whole (`editStays`), each room its own, committed by the Undo's press (its text commits carry
-the take-back note too: one message holds both, `commit-message.ts`). A change that stays is in
-the answer's `stayed`, with who wrote over it, read from the commit messages' `by` on its text
-since the press (`readCommitMessage`): a tab's commit, which names no author (its typing, its
-Ctrl+Z and Redo), is the writer; a turn is a chat (by its ref); a press is another press, its
-Undo included; a server write by no one (a restore, a copy) names no one.
+document, `undoPress` reads the press's `press_changes` rows: every change goes back, whatever
+was written since (design §2, "An Undo always runs"), each room its own, committed by the Undo's
+press (`commit-message.ts`). A change older than the room's history cutoff can't go back and is
+left as it is, silently.
 Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Restore before) on that draft's part, with
 the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
 other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing

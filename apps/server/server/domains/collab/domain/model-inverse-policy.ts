@@ -79,7 +79,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     };
     const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
       const planned = policy.textPlan(entry, direction);
-      if (planned.failure) return textPlanRefusal(document.uri, entry.handle, planned.failure);
+      if (planned.failure) return textPlanRefusal(document.uri, planned.failure);
       return {
         selection: planned.selection,
         actionKind: planned.actionKind as "undo" | "revert",
@@ -212,11 +212,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
             ? "undone by the user"
             : "undone"
-          : entry.parts.some((part) => policy.whyStays(part)?.kind === "written_over")
-            ? "changed"
-            : entry.parts.some((part) => policy.whyStays(part))
-              ? "too old to undo"
-              : "live";
+          : entry.parts.some((part) => policy.unavailable(part) === "compacted")
+            ? "too old to undo"
+            : "live";
         let command = "none";
         const revertPlan = policy.textPlan(entry, "revert");
         const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
@@ -297,8 +295,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
 }
 
 /**
- * An undo that took nothing: why, from how many of the edit's parts the room cut the history of
- * (the rest were written over).
+ * An undo that took nothing: the room cut the history of the edit's parts, or another Undo took
+ * them between the capture and the commit.
  */
 const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
   compacted > 0
@@ -307,8 +305,8 @@ const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
         message: `Can't undo ${handle}: the document no longer keeps history that old, so it stays as it is. Nothing was changed.`,
       }
     : {
-        status: "cant_undo_changed",
-        message: `Can't undo ${handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
+        status: "nothing_to_undo",
+        message: `${handle} is already undone. Nothing was changed.`,
       };
 
 /** The version the chat writes this document in, as the model names it. */

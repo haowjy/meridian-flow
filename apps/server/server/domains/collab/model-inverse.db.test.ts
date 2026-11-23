@@ -22,7 +22,6 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { replacedText, writerEdit } from "./test-support/live-room-text.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -230,22 +229,4 @@ describe("model document stack", () => {
       await harness.dispose();
     }
   });
-});
-
-it("model undo of an edit the writer retyped is refused and leaves the writer's text", async () => {
-  const { harness, view, context } = await fixture();
-  try {
-    const core = view.collab.agentEdit();
-    const command = { documentId: ALPHA_ID, file: "alpha.md" };
-    await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    // The writer retypes the model's word: none of what it put in is left (design §2's Undo rule).
-    await writerEdit(view.rooms, ALPHA_ID, (blocks) => replacedText(blocks, "Gamma", "Red"));
-    await core.read({ ...command, format: "edits" }, context);
-    expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
-      status: "cant_undo_changed",
-    });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Red.\n\nBlue.\n");
-  } finally {
-    await harness.dispose();
-  }
 });

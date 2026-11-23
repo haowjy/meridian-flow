@@ -6,13 +6,10 @@ import {
   type Attrs,
   type BlockId,
   type DocKey,
-  inForce,
   overrideMap,
-  SETTLED_MAP,
   type ShapeSchema,
   STRUCTURE_MAPS,
   type StructureMap,
-  settledKey,
 } from "./shape.js";
 import type { DocVersion } from "./version.js";
 
@@ -73,47 +70,40 @@ export const encodeRemoval = ({ at, seen }: Removal): string =>
   });
 
 /**
- * What the show rule reads of a structure, for the blocks in its scope: whether a block has a place
- * in the order (a key, or a kept block's record), its parent as stored (null: the document;
- * undefined: none) and its node. A block outside the scope is read as it already reads (`outside`).
+ * What the show rule reads of a structure: whether a block has a place in the order (a key, or a
+ * kept block's record), its parent as stored (null: the document; undefined: none) and its node.
  */
-export interface ShowInput {
+interface ShowInput {
   placed(id: BlockId): boolean;
   parent(id: BlockId): BlockId | null | undefined;
   node(id: BlockId): string | undefined;
-  outside?: {
-    shows(id: BlockId): boolean;
-    /** The shown blocks outside the scope under `id`. */
-    children(id: BlockId): readonly BlockId[];
-  };
 }
 
 /**
- * The one rule for which blocks show (design §1), over the blocks in `scope`: `StructureView` runs
- * it over every block, and an Undo's test (`take-back.ts`) over the blocks its run would change,
- * with the run's writes laid over the structure. A cycle (concurrent moves of a cell and a
- * `jsx_container`) reads with its smallest id as a child of the document, on every peer alike. A
- * block shows when it has a place in the order, its node is known, and its parent is the document
- * or a shown block; then a required container that cannot be filled (a table, a row) with no shown
- * child it accepts goes, which may empty its own parent, until nothing changes. No text doc decides
- * it. Returns the parents as read (the cycle rule applied) and the blocks of `scope` that show.
+ * The one rule for which of the blocks `ids` show (design §1). A cycle (concurrent moves of a cell
+ * and a `jsx_container`) reads with its smallest id as a child of the document, on every peer
+ * alike. A block shows when it has a place in the order, its node is known, and its parent is the
+ * document or a shown block; then a required container that cannot be filled (a table, a row)
+ * with no shown child it accepts goes, which may empty its own parent, until nothing changes. No
+ * text doc decides it. Returns the parents as read (the cycle rule applied) and the blocks that
+ * show.
  */
-export function showRule(
+function showRule(
   shape: ShapeSchema,
-  scope: readonly BlockId[],
+  ids: readonly BlockId[],
   input: ShowInput,
 ): { parents: Map<BlockId, BlockId | null | undefined>; shown: Set<BlockId> } {
-  const inScope = new Set(scope);
+  const known = new Set(ids);
   const parents = new Map<BlockId, BlockId | null | undefined>();
-  for (const id of scope) {
+  for (const id of ids) {
     const parent = input.parent(id);
     parents.set(id, typeof parent === "string" ? parent : parent === null ? null : undefined);
   }
-  for (const id of scope) {
+  for (const id of ids) {
     const seen = new Map<BlockId, number>();
     const path: BlockId[] = [];
     let at: BlockId | null | undefined = id;
-    while (typeof at === "string" && inScope.has(at)) {
+    while (typeof at === "string" && known.has(at)) {
       const index = seen.get(at);
       if (index !== undefined) {
         parents.set(path.slice(index).sort()[0], null);
@@ -124,12 +114,11 @@ export function showRule(
       at = parents.get(at);
     }
   }
-  const outsideShows = (id: BlockId) => input.outside?.shows(id) ?? false;
   const memo = new Map<BlockId, boolean>();
   const visit = (id: BlockId): boolean => {
-    if (!inScope.has(id)) return outsideShows(id);
-    const known = memo.get(id);
-    if (known !== undefined) return known;
+    if (!known.has(id)) return false;
+    const was = memo.get(id);
+    if (was !== undefined) return was;
     memo.set(id, false);
     const parent = parents.get(id);
     const node = input.node(id);
@@ -141,7 +130,7 @@ export function showRule(
     memo.set(id, shows);
     return shows;
   };
-  const shown = new Set(scope.filter(visit));
+  const shown = new Set(ids.filter(visit));
   const below = new Map<BlockId, BlockId[]>();
   for (const id of shown) {
     const parent = parents.get(id);
@@ -150,18 +139,17 @@ export function showRule(
     if (list) list.push(id);
     else below.set(parent, [id]);
   }
-  const shows = (id: BlockId) => (inScope.has(id) ? shown.has(id) : outsideShows(id));
   for (let changed = true; changed; ) {
     changed = false;
     for (const id of shown) {
       const parent = parents.get(id);
       const rule = shape.node(input.node(id) as string);
-      const orphan = typeof parent === "string" && !shows(parent);
+      const orphan = typeof parent === "string" && !shown.has(parent);
       const empty =
         rule?.required === true &&
         !rule.fillable &&
-        ![...(below.get(id) ?? []), ...(input.outside?.children(id) ?? [])].some(
-          (child) => shows(child) && rule.accepts(input.node(child) as string),
+        !(below.get(id) ?? []).some(
+          (child) => shown.has(child) && rule.accepts(input.node(child) as string),
         );
       if (orphan || empty) {
         shown.delete(id);
@@ -183,7 +171,6 @@ export class StructureView {
   readonly draft: boolean;
   private readonly base: Record<StructureMap, MapValues>;
   private readonly overrides: Record<StructureMap, MapValues> | null;
-  private readonly settled: MapValues;
   private readonly attrIndex = new Map<BlockId, Record<string, unknown>>();
   private readonly parentOf: ReadonlyMap<BlockId, BlockId | null | undefined>;
   private readonly childrenOf = new Map<BlockId | null, BlockId[]>();
@@ -210,7 +197,6 @@ export class StructureView {
           MapValues
         >)
       : null;
-    this.settled = draft ? read(SETTLED_MAP) : {};
     this.ids = [
       ...new Set([...Object.keys(this.base.order), ...Object.keys(this.overrides?.order ?? {})]),
     ].filter((id) => this.value("order", id) !== undefined);
@@ -253,7 +239,7 @@ export class StructureView {
       );
   }
 
-  /** The value a reader sees: a draft's override where it has one in force, else Live's. */
+  /** The value a reader sees: a draft's override where it has one, else Live's. */
   value(name: StructureMap, key: string): unknown {
     const override = this.override(name, key);
     return override === undefined ? this.base[name][key] : override;
@@ -264,27 +250,14 @@ export class StructureView {
     return this.base[name][key];
   }
 
-  /** The draft's override in force: none where a press settled the value it holds (`d.settled`). */
+  /** The draft's override, if it has one. */
   override(name: StructureMap, key: string): unknown {
-    const raw = this.rawOverride(name, key);
-    return inForce(raw, this.settledValue(name, key)) ? raw : undefined;
-  }
-
-  /** The override as stored, in force or settled: what a writer compares its write with. */
-  rawOverride(name: StructureMap, key: string): unknown {
     return this.overrides?.[name][key];
   }
 
-  /** The value a press settled the override at (`d.settled`), if any. */
-  settledValue(name: StructureMap, key: string): unknown {
-    return this.settled[settledKey(name, key)];
-  }
-
-  /** The keys of the overrides in force. */
+  /** The keys the draft holds overrides for. */
   overrideKeys(name: StructureMap): string[] {
-    return Object.keys(this.overrides?.[name] ?? {}).filter(
-      (key) => this.override(name, key) !== undefined,
-    );
+    return Object.keys(this.overrides?.[name] ?? {});
   }
 
   node(id: BlockId): string | undefined {

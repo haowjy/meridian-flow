@@ -308,7 +308,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             updates: [],
             wrote: false,
             reversed: 0,
-            stayed: 0,
             compacted: 0,
             inManuscript: false,
           },
@@ -399,7 +398,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         updates: documents.flatMap((entry) => entry.updates),
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
-        stayed: new Map(documents.map((entry) => [entry.documentId, entry.stayed])),
         compacted: new Map(documents.map((entry) => [entry.documentId, entry.compacted])),
         inManuscript: documents.some((entry) => entry.inManuscript),
       };
@@ -474,8 +472,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   /**
    * One step inside the commit scope: its parts taken back on the committed rooms, each in the room
-   * it was written in, by design §2's Undo rule, newest first (`undoInRooms`: a part someone wrote
-   * over between the capture and the lock stays whole), each room's changes committed into it as
+   * it was written in, by design §2's Undo rule, newest first (`undoInRooms`: a part whose
+   * history the room cut since the capture stays as it is), each room's changes committed into it as
    * one batch, and one receipt of kind `undo` or `revert` with a part per room, naming the parts it
    * took there, with the model's chat and write ordinal or the writer.
    */
@@ -509,10 +507,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
     const by = query.model && query.turnId ? { turn: query.turnId } : undefined;
     const undone = undoInRooms(parts, docsOf, by);
-    const taken = parts.filter((part) => !undone.stayed.has(part));
-    for (const why of undone.stayed.values())
-      if (why.kind === "compacted") entry.compacted++;
-      else entry.stayed++;
+    const taken = parts.filter((part) => !undone.compacted.has(part));
+    entry.compacted += undone.compacted.size;
     if (!taken.length || !undone.rooms.length) return { handle: "", parts: 0 };
     const receipts: ReceiptWrite["receipts"] = [];
     for (const { room, changes } of undone.rooms) {
@@ -540,7 +536,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ...(before?.blocks
           ? {
               delta: captureDelta(before.blocks, blocksIn(docs)),
-              write: { edit: editSince(docs, before.since, docs.peer, written) },
+              write: { edit: editSince(docs, before.since, written) },
             }
           : {}),
       });
@@ -630,8 +626,6 @@ type PlannedInverse = {
   wrote: boolean;
   /** Text parts the steps took. */
   reversed: number;
-  /** Text parts the steps found written over under the locks, and left whole. */
-  stayed: number;
   /** Text parts whose history the room cut, left as they are. */
   compacted: number;
   /** A step took text out of a draft that Live still holds (an Apply put it there). */

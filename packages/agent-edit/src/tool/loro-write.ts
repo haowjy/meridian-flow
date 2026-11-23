@@ -743,7 +743,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     await rooms.save(read.room, batch, {
       documentId: docId,
       room: read.room,
-      edit: editSince(copy.docs, since, planDoc.docs.peer, written),
+      edit: editSince(copy.docs, since, written),
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),

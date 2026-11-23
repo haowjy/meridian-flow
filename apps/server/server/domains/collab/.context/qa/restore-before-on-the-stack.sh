@@ -68,11 +68,13 @@ answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" 
 check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: Restore before names the document"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the draft reads as before the turn"
 check "$(pending "$CH1")" false "A: nothing waits for review"
-check "$(undo "$restore" | field "len(d['stayed'])")" 0 "A: its Undo leaves nothing"
+check "$(undo "$restore" | field "d['status']")" unpressed "A: its Undo runs"
 check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the Undo brings the turn's text back"
 check "$(pending "$CH1")" true "A: the draft is pending again"
 
-# B. One change of the turn applied first: Restore before leaves it in Live, and the draft agrees.
+# B. One change of the turn applied first: Restore before takes every write of the turn back in
+# the draft (design §2: an Undo always runs), so Live keeps the applied text and the draft shows
+# taking it out as a change of its own.
 two="Restore $run two"
 CH2=$(put "$two" $'# Two\n\nThe road ran north.\n\nThe river ran south.')
 reply "$tmp/b.json" "manuscript://$two" "The road ran north." "The road climbed into the hills." "The river ran south." "The river froze."
@@ -82,11 +84,12 @@ press "$(uuid)" apply "{\"kind\":\"change\",\"item\":\"$D:$CH2\",\"change\":\"$r
 check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Apply put one change in Live"
 press "$(uuid)" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH2")\",\"draft\":\"$D\"}" >/dev/null
 check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Restore before leaves the applied text in Live"
-check "$(draft "$two")" "The road climbed into the hills.||The river ran south.|" "B: the draft reads as Live"
-check "$(pending "$CH2")" false "B: nothing waits for review"
+check "$(draft "$two")" "The road ran north.||The river ran south.|" "B: the draft reads as before the turn"
+check "$(pending "$CH2")" true "B: taking the applied change out waits for review"
 
-# C. A Live chat turn rewrites two paragraphs; the writer retypes one. The card's Undo takes the
-# other back, leaves the retyped one whole, and says so.
+# C. A Live chat turn rewrites two paragraphs; the writer retypes one. The card's Undo takes both
+# back: the retyped one gets the text the turn deleted back beside the writer's (design §2).
+words() { python3 -c "import sys; t=sys.argv[1]; print(all(w in t for w in sys.argv[2].split()))" "$1" "$2"; }
 three="Restore $run three"
 CH3=$(put "$three" $'# Three\n\nThe bell rang.\n\nThe door was shut.')
 reply "$tmp/c.json" "manuscript://$three" "The bell rang." "The bell tolled twice." "The door was shut." "The door swung open."
@@ -94,11 +97,12 @@ send "$direct" "$tmp/c.json"
 ./mf doc edit "manuscript://$three" --find "tolled twice" --replace "fell silent" >/dev/null
 card=$(./mf api POST "/api/threads/$direct/context/reverse" \
   --data "{\"scope\":\"turn\",\"commandId\":\"$(uuid)\",\"target\":\"$(turn "$direct" "$CH3")\"}" --json)
-check "$(echo "$card" | field "d['status']")" partial "C: the card's Undo answers partial"
-check "$(echo "$card" | field "[x['status'] for x in d['documents']]")" "['partial']" "C: and names the document"
-check "$(live "$three")" "The bell fell silent.||The door was shut.|" "C: the writer's text stays, the untouched edit is undone"
+check "$(echo "$card" | field "d['status']")" reversed "C: the card's Undo answers reversed"
+check "$(echo "$card" | field "[x['status'] for x in d['documents']]")" "['reversed']" "C: and names the document"
+check "$(words "$(live "$three")" "fell silent rang door was shut")" True "C: the writer's words stay, the turn's text is undone"
 
-# D. The model's own undo of an edit the writer retyped: it stays, and the answer says so.
+# D. The model's own undo of an edit the writer retyped runs: the writer's words stay beside the
+# text the edit deleted.
 four="Restore $run four"
 put "$four" $'# Four\n\nThe lamp was lit.' >/dev/null
 reply "$tmp/d.json" "manuscript://$four" "The lamp was lit." "The lamp guttered out."
@@ -108,8 +112,8 @@ tool "$tmp/d-undo.json" "{\"command\":\"undo\",\"path\":\"manuscript://$four\"}"
 send "$direct" "$tmp/d-undo.json"
 said=$(sql "select b.content->'result'->>'message' from turn_blocks b join turns u on u.id = b.turn_id
   where u.thread_id = '$direct' and b.block_type = 'tool_result' order by b.created_at desc limit 1")
-check "$said" "Can't undo e1: someone has written over it since, so it stays as they left it. Nothing was changed." "D: the model's undo says the edit was written over"
-check "$(live "$four")" "The lamp burned low.|" "D: the writer's text stays"
+check "$(echo "$said" | grep -c 'Took e1 out')" 1 "D: the model's undo takes the edit out"
+check "$(words "$(live "$four")" "burned low was lit")" True "D: the writer's words stay and the lamp's text comes back"
 
 # E. A chat reads in Draft, the writer types in Live, the chat is switched to Live and writes: the
 # write plans on its Draft read (the draft wrote nothing there), so the writer's typing stays.

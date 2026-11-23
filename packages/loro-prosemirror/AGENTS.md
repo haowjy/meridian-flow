@@ -53,26 +53,17 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   every local write into the copy that no Ctrl+Z should take back commits under
   `UNTRACKED_ORIGIN`, or it becomes an item that blocks the steps below it on that doc.
   `destroy()` the history before freeing the docs: each manager is WASM memory.
-- The structure doc has no manager. A step goes back whole or stays whole (design §2, "An Undo
-  takes an edit back whole"): `UndoHistory` keeps what each step did as a `document-model`
-  `Edit` (structure values, text spans, what its next run takes off or brings onto the screen)
-  and runs a step only while `editStays` finds nobody else wrote over it; `putBackValues` then
-  writes its values back, a block it made going as a removal. That rule is `document-model`'s
-  (`take-back.ts`), shared with the press's Undo: change it there, not here. A step that stays
-  writes nothing: the managers of its text docs are made again, so it and every step sharing a
-  doc or a structure key with it leave the history (Loro can't drop one item). "Someone else" is
-  another peer: this copy's own untracked writes never keep a step. The history keeps steps
-  (500), not manager items: a manager has no item limit, since one typing step split by a peer's
-  batches is an item per key, and a limit would drop part of it. Typing joins the open step; any
-  other write starts one, and a write that sets structure ends it. A step's note is taken late, just before the next import
-  (`RoomDocs.beforeImport`), the next write that is not typing (sharing that write's read of the
-  structure), or a run: an Enter pays one read of the structure, not two.
-- Every Undo and Redo commit in a text doc carries a take-back note and no author
-  (`commitMessage({ undo })`: what each character it puts back stands for, `deletedBetween` of the
-  step's span, and the step's ops), set in `subscribePreCommit`: `textSince` reads text it put
-  back as the text it deleted, and attribution reads the commit as the writer's. Loro's manager
-  deletes only this peer's own characters, so every step's `Edit` carries `ownTextOnly`:
-  `editStays` keeps a step whose text another peer's Undo put back (design §2, part 4).
+- The structure doc has no manager. Every step runs (design §2, "An Undo always runs"):
+  `UndoHistory` keeps what each step did as a `document-model` `Edit` (structure values, text
+  spans); a run undoes or redoes the step's items on each text doc's manager, then
+  `putBackValues` writes its values back, a block it made going as a removal, and runs rule 1 over
+  what it wrote. That rule is `document-model`'s (`take-back.ts`), shared with the press's Undo:
+  change it there, not here. A step whose run changes nothing (a peer already took out all it
+  did) leaves the history. The history keeps steps (500), not manager items: a manager has no
+  item limit, since one typing step split by a peer's batches is an item per key, and a limit
+  would drop part of it. Typing joins the open step; any other write starts one, and a write that
+  sets structure ends it. Undo and Redo commits carry no message: attribution reads them as the
+  writer's.
 - The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the
   selection's head, or a block above it, the editor keeps every removed block on that path in its
   document. A local transaction with a step inside a kept block restores them (`restore`, which

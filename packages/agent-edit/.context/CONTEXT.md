@@ -99,8 +99,8 @@ and `revert` go through `LoroDocumentEdits`, which returns the batches it commit
 frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
 document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each
 part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
-over `undoEdits`): a write someone wrote over since stays whole and the answer says so, one whose
-room cut its history stays and the answer says that, and a part already taken back is skipped. The
+over `undoEdits`): every write goes back whatever was written since, but one whose room cut its
+history, which stays and the answer says so; a part already taken back is skipped. The
 in-memory host (`test-support`) calls the same `undoInRooms`, also for `Restore before` (the
 turn's parts in the draft, newest first), and runs the writer's Apply, Discard and `Restore before` as the
 server's press does. Probe: [loro-write](qa/loro-write.md).
@@ -108,9 +108,9 @@ server's press does. Probe: [loro-write](qa/loro-write.md).
 ## What an Undo reads
 
 Each AI write records its Loro `edit` (`AgentWriteRecord.edit`, a `StoredEdit`), and Undo, revert
-and the card's state judge it with `editStays` and take it back with `takeBack`, the rule a press's
-Undo uses (design §2): whole, or left whole when someone has written over it. Typing inside the
-AI's words leaves some of what it put in, so the write still goes back around the writer's words.
+and the card's state take it back with `takeBack`, the rule a press's Undo uses (design §2, "An
+Undo always runs"): the write's characters that still stand come out and what it deleted comes
+back, so the writer's typing inside or over the AI's words stays.
 
 A block write keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the

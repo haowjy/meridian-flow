@@ -83,8 +83,6 @@ export class PressEntries {
 /** The Ctrl+Z of an editor open on a pressed document (`DocumentHistory`). */
 export type EditorHistory = {
   pushOutside(step: OutsideStep): void;
-  /** Marks blocks a press's Undo left in place (`PressUndoResult.stayed`). */
-  showStayed(labels: ReadonlyMap<string, string>): void;
   removeOutside(step: OutsideStep): void;
   restoreOutside(step: OutsideStep): void;
 };

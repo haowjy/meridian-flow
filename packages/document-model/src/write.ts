@@ -1,15 +1,9 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
-import {
-  type CommitAuthor,
-  type CommitNote,
-  commitMessage,
-  type StandsFor,
-} from "./commit-message.js";
+import { type CommitAuthor, commitMessage } from "./commit-message.js";
 import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
-import { retirePieces, textDiffers } from "./pieces.js";
 import {
   commentVisibility,
   emptyParagraphOf,
@@ -25,20 +19,17 @@ import {
   type CommentBody,
   type DocKey,
   type InlineItem,
-  membersOf,
   overrideMap,
   pieceKey,
-  SETTLED_MAP,
   type ShapeBlock,
   STRUCTURE_KEY,
   type StructureMap,
   sameValue,
-  settledKey,
   storedAttrs,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
-import { patchStyles, replaceUnits, type TextRules, type WantedUnit, wantedUnits } from "./text.js";
-import { type DocVersion, docVersion, plainVersion } from "./version.js";
+import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
+import { type DocVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -89,65 +80,34 @@ export interface WriteOptions {
   kept?: ReadonlySet<BlockId>;
   /** The read of the structure with `kept` as it is now, when the caller already took it. */
   view?: StructureView;
-  /** What this write moved between blocks: the writer knows it from the edit it is writing. */
-  moved?: Moved;
-}
-
-/**
- * What one write moved between blocks (a split, a join, a paste, a drop). A draft records each
- * pair so the two blocks are one change (design §2). Each stretch of text carried whole goes in
- * as a copy that names the characters it stands for (`CopyNote`), so a block coming back takes
- * its copies out wherever they stand (`restore`, design §1).
- */
-export interface Moved {
-  pieces: readonly (readonly [BlockId, BlockId])[];
-  copies: readonly MovedText[];
-}
-
-/** `length` units of `from` at `was` now stand in `into` at `at`, as the editor counts units. */
-export interface MovedText {
-  from: BlockId;
-  into: BlockId;
-  was: number;
-  at: number;
-  length: number;
-}
-
-/** A copy for `writeText`: the units at `at` it writes stand for `for`, in `from`'s text doc. */
-interface Copy {
-  from: BlockId;
-  at: number;
-  for: StandsFor;
+  /**
+   * The pairs of blocks this write moved text between (a split, a join, a paste, a drop): the
+   * writer knows them from the edit it is writing. A draft records each pair, so the two blocks
+   * are one change (design §2).
+   */
+  pieces?: readonly (readonly [BlockId, BlockId])[];
 }
 
 /**
  * Writes structure values the way every writer must (design §1): Live's copy writes Live's maps;
  * a draft's fork writes only its `d.*` overrides, and deletes an override whose value equals Live's
- * instead of writing it, so a matching override never hides Live's later edits of the key. Every
- * write of an override takes back a press's settling of that key (`unsettle`). Comparisons read the
- * `StructureView` taken before the write.
+ * instead of writing it, so a matching override never hides Live's later edits of the key.
+ * Comparisons read the `StructureView` taken before the write.
  */
 export class StructureWriter {
-  /** The blocks (and comments) whose values this writer set, for `retirePieces`. */
-  readonly touched = new Set<string>();
-  /** The `pieces` records this writer made, which its write never retires (`retirePieces`). */
-  readonly recorded = new Set<string>();
-
   constructor(
     readonly docs: RoomDocs,
     readonly view: StructureView,
   ) {}
 
   set(name: StructureMap, key: string, value: unknown): void {
-    for (const member of membersOf(name, key)) this.touched.add(member);
     const { structure, draft } = this.docs;
     const base = this.view.baseValue(name, key);
     if (!draft) {
       if (!sameValue(base, value)) inMap(structure, name, (map) => map.set(key, value as never));
       return;
     }
-    this.unsettle(name, key);
-    const override = this.view.rawOverride(name, key);
+    const override = this.view.override(name, key);
     const baseRead = name === "attrs" ? (base ?? null) : base;
     if (sameValue(baseRead, value)) {
       if (override !== undefined) inMap(structure, overrideMap(name), (map) => map.delete(key));
@@ -156,30 +116,24 @@ export class StructureWriter {
   }
 
   /**
-   * A write of an override takes back a press's settling of it (`d.settled`), in the same commit:
-   * the override is the writer's again, even where the writer sets the very value the press read,
-   * for which Loro writes no op.
-   */
-  private unsettle(name: StructureMap, key: string): void {
-    const settled = settledKey(name, key);
-    inMap(this.docs.structure, SETTLED_MAP, (map) => {
-      if (map.get(settled) !== undefined) map.delete(settled);
-    });
-  }
-
-  /**
    * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
    * and what this copy read of every text doc under it, so a write the removal did not read can
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
-   * they remove. `at` is given when an Undo writes a removal record back (`putBackValues`).
+   * they remove. An Undo gives `at`, the key it puts back, and `saw`, what its edit left of the
+   * text docs it wrote (`putBackValues`): typing since, by anyone, brings the block back.
    */
-  remove(id: BlockId, at = this.view.order(id) as string): void {
+  remove(
+    id: BlockId,
+    at = this.view.order(id) as string,
+    saw?: (key: DocKey) => DocVersion | undefined,
+  ): void {
     const seen = new Map<DocKey, DocVersion>();
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
       // The version the copy shows, not its oplog's: a view checked out at a read (`RoomDocs.at`)
       // holds ops it never showed.
-      if (doc) seen.set(key, plainVersion(doc.version()));
+      const read = saw?.(key) ?? (doc && plainVersion(doc.version()));
+      if (read) seen.set(key, read);
     }
     this.set("order", id, encodeRemoval({ at, seen }));
   }
@@ -189,11 +143,7 @@ export class StructureWriter {
    * change. Live keeps no record: nothing reviews it.
    */
   pieces(a: BlockId, b: BlockId): void {
-    if (!this.docs.draft || a === b) return;
-    const { peer, structure } = this.docs;
-    const key = pieceKey(a, b, `${peer}@${docVersion(structure).get(peer) ?? 0}`);
-    this.recorded.add(key);
-    this.set("pieces", key, true);
+    if (this.docs.draft && a !== b) this.set("pieces", pieceKey(a, b), true);
   }
 
   /**
@@ -241,18 +191,14 @@ export class StructureWriter {
         const id = [...left].find((candidate) => sameOrderAsBase(now, candidate));
         if (id === undefined) break;
         orders.delete(id);
-        this.unsettle("order", id);
         left.delete(id);
-        this.touched.add(id);
       }
     });
     const after = new StructureView(this.docs, this.view.kept);
     inMap(structure, overrideMap("comments"), (comments) => {
       for (const key of after.overrideKeys("comments"))
-        if (sameValue(after.baseValue("comments", key), after.override("comments", key))) {
+        if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
           comments.delete(key);
-          this.unsettle("comments", key);
-        }
     });
   }
 }
@@ -332,9 +278,6 @@ export function writeDocument(
   const random = options.random ?? Math.random;
   const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
-  const copies = options.moved?.copies.length
-    ? copiesOf(docs, read, options.moved.copies)
-    : new Map<BlockId, Copy[]>();
   const written = new Set<BlockId>();
   const take = (id: BlockId) => {
     if (written.has(id)) throw new Error(`block id ${id} appears twice`);
@@ -391,7 +334,6 @@ export function writeDocument(
           block.inline,
           { rule, shape, visibleComment },
           options,
-          copies.get(block.id),
         );
         if (change) changes.push(change);
       }
@@ -407,19 +349,7 @@ export function writeDocument(
       const goesWithParent = typeof parent === "string" && !written.has(parent);
       if (!written.has(id) && !goesWithParent) structure().remove(id);
     }
-  if (docs.draft) {
-    for (const [a, b] of options.moved?.pieces ?? []) structure().pieces(a, b);
-    // A block shown after the write with other text than Live's is changed; a typed block left
-    // with Live's text is the only one a keystroke can settle.
-    const shown = (id: BlockId) => written.has(id) && !options.kept?.has(id);
-    const typed = changes.map((change) => change.key).filter((id) => !textDiffers(docs, id));
-    retirePieces(
-      docs,
-      [...(writer?.touched ?? []), ...typed],
-      (id) => shown(id) && textDiffers(docs, id),
-      writer?.recorded,
-    );
-  }
+  if (docs.draft) for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;
@@ -452,7 +382,7 @@ export function commitStructure(
   before: Frontiers,
   options: WriteOptions,
 ): DocChange | null {
-  docs.structure.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
+  docs.structure.commit({ message: commitMessage(options.by), origin: options.origin });
   const after = docs.structure.frontiers();
   return sameValue(before, after)
     ? null
@@ -471,83 +401,28 @@ export function writeText(
   inline: readonly InlineItem[],
   rules: TextRules,
   options: WriteOptions,
-  copies: readonly Copy[] = [],
 ): DocChange | null {
   const wantedItems = normalizeInline(inline);
   const current = readInline(docs.textOf(id), rules.rule, rules.shape, rules.visibleComment);
   if (sameValue(current, wantedItems)) return null;
   const { doc, before } = docs.writableText(id);
-  const wanted = wantedUnits(wantedItems);
-  const write = (target: readonly WantedUnit[], note: CommitNote) => {
-    const shown = shownUnits(doc, rules.rule, rules.shape);
-    const splice = spliceOf(
-      shown.map((unit) => unit.ch).join(""),
-      target.map((unit) => unit.ch).join(""),
-    );
-    replaceUnits(
-      doc,
-      rules,
-      splice.index,
-      splice.index + splice.remove,
-      target.slice(splice.index, splice.index + splice.insert),
-    );
-    inText(doc, (text) =>
-      patchStyles(text, shownUnits(doc, rules.rule, rules.shape), target, rules),
-    );
-    doc.commit({ message: commitMessage(note), origin: options.origin });
-  };
-  // Each copy goes in by a commit of its own, whose note names what its characters stand for:
-  // first the text without them, then each copy in order.
-  const placed = copies
-    .filter((copy) => copy.at >= 0 && copy.at + lengthOf(copy.for) <= wanted.length)
-    .sort((a, b) => a.at - b.at)
-    .filter((copy, i, all) => i === 0 || all[i - 1].at + lengthOf(all[i - 1].for) <= copy.at);
-  const without = (from: number) =>
-    wanted.filter(
-      (_, at) =>
-        !placed.some((copy, i) => i >= from && copy.at <= at && at < copy.at + lengthOf(copy.for)),
-    );
-  write(without(0), { by: options.by });
-  for (const [i, copy] of placed.entries())
-    write(without(i + 1), { by: options.by, copy: { from: copy.from, for: copy.for } });
+  const target = wantedUnits(wantedItems);
+  const shown = shownUnits(doc, rules.rule, rules.shape);
+  const splice = spliceOf(
+    shown.map((unit) => unit.ch).join(""),
+    target.map((unit) => unit.ch).join(""),
+  );
+  replaceUnits(
+    doc,
+    rules,
+    splice.index,
+    splice.index + splice.remove,
+    target.slice(splice.index, splice.index + splice.insert),
+  );
+  inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), target, rules));
+  doc.commit({ message: commitMessage(options.by), origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
-}
-
-const lengthOf = (runs: StandsFor) => runs.reduce((sum, [, , length]) => sum + length, 0);
-
-/**
- * The copies `moved` makes, by the block they go into: the characters of each stretch read from
- * the text it was carried from, before the write changes it. A stretch whose units do not all
- * read there (the caller's document and the docs disagree) is written as plain text.
- */
-function copiesOf(docs: RoomDocs, view: () => StructureView, moved: readonly MovedText[]) {
-  const out = new Map<BlockId, Copy[]>();
-  for (const { from, into, was, at, length } of moved) {
-    const doc = docs.textOf(from);
-    const rule = doc && docs.shape.node(view().node(from) ?? "");
-    if (!doc || !rule || length <= 0) continue;
-    const units = shownUnits(doc, rule, docs.shape).slice(was, was + length);
-    if (units.length !== length) continue;
-    const runs = inText(doc, (text) => {
-      const out: StandsFor = [];
-      for (const unit of units) {
-        const cursor = text.getCursor(unit.pos, 0);
-        const id = cursor?.pos();
-        cursor?.free();
-        if (!id) return null;
-        const last = out.at(-1);
-        if (last && last[0] === id.peer && last[1] + last[2] === id.counter) last[2]++;
-        else out.push([id.peer, id.counter, 1]);
-      }
-      return out;
-    });
-    if (!runs) continue;
-    const list = out.get(into) ?? [];
-    list.push({ from, at, for: runs });
-    out.set(into, list);
-  }
-  return out;
 }
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */

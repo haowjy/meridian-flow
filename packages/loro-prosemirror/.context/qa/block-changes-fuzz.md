@@ -35,8 +35,8 @@ stored as JSON and read back.
 ## Steps
 
 - Writer edits in Draft (text, marks, comments, inline nodes, block inserts, deletes, moves,
-  splits, joins, type changes, table rows), Ctrl+Z of the edit just made through `editStays` and
-  `takeBack`, AI turns on a copy of
+  splits, joins, type changes, table rows), Ctrl+Z of the edit just made through `takeBack`, AI
+  turns on a copy of
   the fork, and `Restore before` of a turn (`undoEdits` over the turn's edits, newest first).
 - A press of random changes (`applyBlocks`), carrying as the Live version the writer was shown the
   Live tab's (half the time) or the Changes list's (the server copy's, just read), with Live typing
@@ -52,7 +52,7 @@ stored as JSON and read back.
   typing is (`replaceText`), so every character a retype types is new and can spell the press's text
   without being it.
 - A draft that replaces one word or two in a block, pressed alone, then one of its replacements
-  overwritten: the change stays whole, as a Ctrl+Z step does.
+  overwritten, then the press's Undo.
 - A Work's `Apply all` over two drafts that both rewrite one paragraph, on a copy of the Live room:
   pressed in draft order, sometimes with Live typing between, and undone draft by draft, newest
   first.
@@ -73,20 +73,13 @@ stored as JSON and read back.
 - After a press: the chosen changes are no longer pending, unchosen blocks in Live are unchanged,
   pressing again commits nothing, Live typing the tab never saw is in Live and the fork, and Draft
   typing after the press is pending.
-- After a press Undo: a change the Undo left (`stayedChanges`: someone wrote over it, design §2's
-  four parts) changed nothing in Live or the fork, and with nothing written since the press
-  (`quietUndos`) no change stays. Undone in turn with no change left, Live is back to before the
-  press when nothing else wrote Live, and the fork reads as before. Out of order, the fork's text in
-  every shown block is unchanged.
-- **An Undo takes a change back whole, or leaves it whole** (`wholeChecks`): for each text doc of a
-  change that did not stay, the Undo put back every character the press deleted, in order, and left
-  none of the press's characters in Live. Ctrl+Z is held to the first half too.
-- **No Undo puts back text a later write removed** (`replacedChecks`): where a later write removed any
-  character a press put in a text doc, the change stays and that doc is unchanged: neither the old
-  text back beside or inside the later write, nor the press's characters it kept taken out of it.
-  The check once covered only a press's one replacement removed whole, and checked a change that went
-  back against the press's own characters alone, so a rewrite keeping some of them, scrambled by the
-  Undo, passed (#1854).
+- After a press Undo: every change went back (design §2, "An Undo always runs"). With nothing
+  written since the press (`quietUndos`), the fork reads exactly as before; with writes since, no
+  word the draft showed leaves it. Undone in turn when nothing else wrote the press's text, Live is
+  back to before the press. Out of order, the fork's text in every shown block is unchanged.
+- **An Undo puts back what its edit deleted and leaves none of what it put in** (`wholeChecks`):
+  for each text doc of a change, the Undo put back every character the press deleted, in order,
+  and left none of the press's characters in Live. Ctrl+Z is held to the first half too.
 - Identity is by character id, from the probe's own record of what each Undo put back (the
   characters it inserted, lined up with the ones the edit deleted), never from the take-back messages
   the model reads, and never by what the text spells.
@@ -97,11 +90,9 @@ stored as JSON and read back.
   the second pending.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
-- After the two drafts' Undo: neither press stays, Live is back (or holds the typing between), each
-  draft has only that paragraph pending, and no character of either draft's text is lost. When both
-  drafts deleted one character, the second press's import deleted it again, and its Undo took that
-  delete back, so the first press goes back too (part 4 of the rule).
-- After `Restore before`: each of the turn's edits went back whole or stayed whole.
+- After the two drafts' Undo: Live's text is back (or holds the typing between), each draft has
+  only that paragraph pending, and no character of either draft's text is lost.
+- After `Restore before`: each of the turn's edits went back.
 - At the end, after `Apply all`: Live, the fork and both tabs converge; nothing is pending; every
   comment mark has its body; no token is duplicated; block ids are unique; no block is pending that
   no write touched, except the accepted copies (below).
@@ -113,7 +104,8 @@ Loro has no undelete. A later Live delete or unmark inside that span leaves the 
 then shows as a pending change the writer can Discard again (design §1, gate 5's N7). The summary
 counts these as `resetCopyObserved`. Text both drafts deleted comes back into the second draft: the
 first press's Undo puts it back into Live as new characters that draft never deleted
-(`twoDraftsGained`, design §2, open). The check fails if a draft gains any other text.
+(`twoDraftsGained`, design §2, open). The check fails if a draft gains any other text. Such a
+character can come back without a mark it had (`twoDraftsMarks`); Live's text must be back.
 
 **Accepted cost** (design §2, "the order of put-back text"): in the two-drafts case, text the first
 draft deleted around the second's rewrite comes back with the first press's Undo as one run of new
@@ -126,17 +118,17 @@ re-created words), and Loro orders those itself; an insert by index cannot choos
 
 Every word counts at the end: a word a split or a join moved is a duplicate like any other, and a
 Live token counts as lost only when the fork shows it nowhere whole, nor in pieces where Live typed
-it (a split, Live's or the draft's, carries it on). At 12,010 seeds (2026-11-23, #1858's fix round)
-11,999 pass. The rest are open classes, not grouping:
-- `duplicate-text`, Live and the draft or a chat each split or joined the same text (class C of
-  [gate/press-whole](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/gate/press-whole/README.md),
-  part 3's rules 1 and 3): 583, 1116, 1187, 1661, 3285, 3792, 10807, 11524, 11619, 11640.
+it (a split, Live's or the draft's, carries it on). Text shown twice (`duplicate-text`) is counted,
+not failed: the owner accepted it as the cost of an Undo that always runs (design §2), and a
+restore no longer takes a split's or a join's copy out. So is a later press's Undo putting back
+text an earlier press's Undo then leaves beside its own (a chain undone in turn is checked exactly
+only where no later press wrote the same text). At 12,010 seeds (2026-11-23, the always-runs
+rule) 12,009 pass, with no word lost; 115 seeds show text twice. The one failure is open:
 - `stale-discarded-back` 6611: a stale Draft tab's insert anchored inside text a Discard deleted
   lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k f22k"); no
   character comes back. Two inserts at one gap, open in the gate.
 
-Pins implementation decisions: design §2's grouping (ancestor, `pieces` records written and retired by the
-write, comment bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per
-change with its Live and fork sides as one edit, a change going back whole, put-back text told by
-take-back commits, a block `Restore before` takes away going as a removal, and a Work press undone draft by
-draft, newest first.
+Pins implementation decisions: design §2's grouping (ancestor, `pieces` records per pair, deleted
+by the press that presses them, comment bodies), the apply record's `seen` from the Live version
+the writer was shown, a press's Undo of both sides of every change, a block `Restore before` takes
+away going as a removal, and a Work press undone draft by draft, newest first.

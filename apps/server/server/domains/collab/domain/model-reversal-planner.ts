@@ -2,12 +2,7 @@
 
 import { undoInRooms } from "@meridian/agent-edit/integration";
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
-import {
-  type EditStayed,
-  freshServerPeerId,
-  type RoomDocs,
-  whyEditStays,
-} from "@meridian/document-model";
+import { freshServerPeerId, holdsEdit, type RoomDocs } from "@meridian/document-model";
 import { partKey as key } from "./inverse-actions.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import type {
@@ -30,10 +25,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);
   const poppableByTurn = new Map<string, Set<string>>();
-  type TextFailure = "draft_archived" | "document_deleted" | "changed";
+  type TextFailure = "draft_archived" | "document_deleted";
   type TextOmission = {
     ordinal: number;
-    cause: "already_removed" | "edited_since" | "compacted" | "draft_archived";
+    cause: "already_removed" | "compacted" | "draft_archived";
   };
   /** A part an Undo took (the writer's card, the writer's revert, or the model's own undo). */
   const takenBy = (part: StoredInversePart) => actions.actions.byPart.get(key(part));
@@ -53,13 +48,20 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   const planned = new Map<string, RoomDocs>();
   const docsNow = (part: StoredInversePart) =>
     planned.get(loroRoomName(part.room)) ?? captured(part).docs;
-  /** Why the part's write would stay now, or null when it would go back whole. */
-  const whyStays = (part: StoredInversePart): EditStayed | null =>
-    part.edit ? whyEditStays(docsNow(part), part.edit) : { kind: "compacted" };
-  /** Takes `parts` back on the planned copies, each in its room; returns those that went, and why the rest stayed. */
+  /**
+   * Why a part can't go back now, or null when it goes back (design §2, "An Undo always runs"): an
+   * Undo took it already, or its room cut the history it needs.
+   */
+  const unavailable = (part: StoredInversePart) =>
+    taken(part)
+      ? ("already_removed" as const)
+      : !part.edit || !holdsEdit(docsNow(part), part.edit)
+        ? ("compacted" as const)
+        : null;
+  /** Takes `parts` back on the planned copies, each in its room; returns those that went, and those whose history was cut. */
   const planTakeOut = (parts: readonly StoredInversePart[]) => {
     const held = parts.filter(undoable);
-    const { stayed } = undoInRooms(held, (room) => {
+    const { compacted } = undoInRooms(held, (room) => {
       const name = loroRoomName(room);
       let copy = planned.get(name);
       if (!copy) {
@@ -68,23 +70,17 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       }
       return copy;
     });
-    return { taken: held.filter((part) => !stayed.has(part)), stayed };
+    return { taken: held.filter((part) => !compacted.has(part)), compacted: compacted.size };
   };
-  /** Why a part is not available: an Undo took it, its history was cut, or someone wrote over it. */
-  const unavailableCause = (part: StoredInversePart) =>
-    taken(part)
-      ? ("already_removed" as const)
-      : whyStays(part)?.kind === "compacted"
-        ? ("compacted" as const)
-        : ("edited_since" as const);
 
   function textSelection(entry: Entry) {
     const selection: StoredInversePart[] = [];
     const partial: TextOmission[] = [];
     for (const original of [...entry.parts].sort((a, b) => b.id - a.id)) {
       if (closed(original)) return { selection, partial, refusal: "draft_archived" as const };
-      if (!whyStays(original)) selection.push(original);
-      else partial.push({ ordinal: original.ordinal, cause: unavailableCause(original) });
+      const cause = unavailable(original);
+      if (!cause) selection.push(original);
+      else partial.push({ ordinal: original.ordinal, cause });
     }
     return { selection, partial, refusal: null };
   }
@@ -126,11 +122,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const skipped: TextOmission[] = [];
     const selection: StoredInversePart[] = [];
     for (const part of entry.parts) {
-      const reason = closed(part)
-        ? ("draft_archived" as const)
-        : whyStays(part)
-          ? unavailableCause(part)
-          : null;
+      const reason = closed(part) ? ("draft_archived" as const) : unavailable(part);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push(part);
     }
@@ -143,7 +135,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     turnTextPlan,
     takenBy,
     planTakeOut,
-    whyStays,
+    unavailable,
     free: () => {
       for (const copy of planned.values()) copy.free();
     },

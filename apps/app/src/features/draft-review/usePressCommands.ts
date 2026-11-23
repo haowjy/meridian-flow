@@ -26,7 +26,7 @@ import type {
   PressScope,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
-import type { Thread, TreeListRef } from "@meridian/contracts/protocol";
+import type { TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,7 +62,6 @@ import {
   type PressPort,
   type Seat,
 } from "./press-history";
-import { stayedLabel } from "./stayed-words";
 import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
@@ -207,46 +206,6 @@ export function usePressCommands({
         : "failed";
     };
 
-    /** A chat's title by its ref (`c12`), from the project's chats as this tab last read them. */
-    const chatTitle = (ref: string) =>
-      queryClient
-        .getQueryData<Thread[]>(projectQueryKeys.threads(projectId))
-        ?.find((thread) => thread.ref === ref)?.title ?? null;
-
-    /**
-     * What an Undo left in place (`PressUndoResult.stayed`): marked in each editor showing its
-     * document, and said on the surface's rows until the next press.
-     */
-    const showStayed = (
-      stayed: PressUndoResult["stayed"],
-      scope: Scope,
-      names: ReadonlyMap<string, string>,
-      noticeKey: string,
-      where: NoticeSurface,
-    ) => {
-      if (stayed.length === 0) return;
-      const kept = stayed.map((change) => ({
-        documentId: change.documentId,
-        change: change.change,
-        name: names.get(change.documentId) ?? nameOf(change.documentId),
-        label: stayedLabel(change.by, chatTitle),
-      }));
-      for (const documentId of new Set(kept.map((fact) => fact.documentId))) {
-        const labels = new Map(
-          kept.flatMap((fact) =>
-            fact.documentId === documentId ? [[fact.change, fact.label]] : [],
-          ),
-        );
-        for (const history of editorsOf([documentId], scope)) history.showStayed(labels);
-      }
-      notices.showStayed({
-        projectId,
-        draftId: noticeKey,
-        surface: where,
-        kept: kept.map(({ documentId, name, label }) => ({ documentId, name, label })),
-      });
-    };
-
     /**
      * Where the nodes show in the Work's tree now, in the project's list and the account's: its
      * view shows both what Live holds and what the Work made. None found, the project's list
@@ -324,12 +283,9 @@ export function usePressCommands({
       verdict: PressAction["verdict"],
       pressed: Pressed,
       editor: EditorPressStep,
-      shown: { noticeKey: string; where: NoticeSurface; names: ReadonlyMap<string, string> },
       dropped: () => void,
     ): PressEntries => {
       const taken = pressed.took;
-      // What the Undo that ends this press left in place, said once it has ended.
-      let stayed: PressUndoResult["stayed"] = [];
       const { seat, place } = seatOf(taken, async () => (await entries.undo()).kind !== "failed");
       place(pressed.placement);
       const port: PressPort = {
@@ -340,7 +296,6 @@ export function usePressCommands({
           const answer = await unpress(commandId, pressed.lane, scope);
           if (typeof answer === "string")
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
-          stayed = answer.stayed;
           const created = rows().find((row) => row.documentId === main && row.isNew);
           if (verdict === "apply" && created && main && taken.includes(main))
             for (const file of projectWorkDraftFiles([created], null))
@@ -357,7 +312,6 @@ export function usePressCommands({
             seat.drop();
             editor.drop();
             dropped();
-            showStayed(stayed, scope, shown.names, shown.noticeKey, shown.where);
           },
         },
         () => owner.presses.delete(entries),
@@ -376,10 +330,9 @@ export function usePressCommands({
       scope: TurnScope,
       pressed: Pressed,
       editor: EditorPressStep,
-      shown: { noticeKey: string; where: NoticeSurface; names: ReadonlyMap<string, string> },
     ): PressEntries => {
       const { turn, draft } = scope;
-      const step: PressEntries = remember(scope, "restore", pressed, editor, shown, () => {
+      const step: PressEntries = remember(scope, "restore", pressed, editor, () => {
         const entry = owner.restore(turn, draft);
         if (entry?.kind === "in-force" && entry.press === step) owner.setRestore(turn, draft, null);
       });
@@ -553,12 +506,11 @@ export function usePressCommands({
         const changed = pressed.took;
         const where = noticeSurface(input.documentId);
         let step: PressEntries;
-        const said = { noticeKey, where, names };
         if (scope.kind === "turn") {
           // The turn's card is its notice: it reads the press in force from the owner.
-          step = restoreInForce(scope, pressed, editor, said);
+          step = restoreInForce(scope, pressed, editor);
         } else if (verdict === "apply") {
-          step = remember(scope, verdict, pressed, editor, said, () => {
+          step = remember(scope, verdict, pressed, editor, () => {
             if (notices.appliedFacts(noticeKey)?.facts.some((fact) => fact.step === step))
               notices.end(noticeKey);
           });
@@ -575,7 +527,7 @@ export function usePressCommands({
           });
         } else {
           let shown: number | null = null;
-          step = remember(scope, verdict, pressed, editor, said, () => {
+          step = remember(scope, verdict, pressed, editor, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
             const notice = notices.get(noticeKey);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
@@ -683,7 +635,6 @@ export function usePressCommands({
         scope,
         { commandId: named, lane: pressLaneKey(scope), took: [], placement: [], landed: readAt },
         new EditorPressStep([], () => {}),
-        { noticeKey: draft, where: noticeSurface(null), names: new Map() },
       );
     };
     /** The draft's files: one press on the whole draft; a single file presses that document. */

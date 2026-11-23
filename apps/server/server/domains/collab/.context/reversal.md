@@ -8,16 +8,15 @@ recorded edit; it never rewrites a target row or marks it reversed.
 ## An AI edit is a Loro edit
 
 Every Undo of an AI write, the card's and the model's `undo` and `revert`, goes by design §2's one
-Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `editStays` judges the write, and
-`takeBack` takes it back whole or the Undo leaves it whole (`undoEdits` in
-`@meridian/document-model` `invert.ts`). Each AI write into the manuscript records its Loro `edit`
+Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `takeBack` takes the write
+back whatever was written since (`undoEdits` in `@meridian/document-model` `invert.ts`). Each AI write into the manuscript records its Loro `edit`
 (`document_edit_parts.edit`: the text docs it wrote with the ops between `before` and `after`, and
 the structure values it set, by `editSince`) beside its `delta` (the blocks it changed, as
 markdown, which the card's rows and `read(format: "edits")` excerpts read) and the room it wrote
 in (`origin`: Live, or a draft's fork; a Draft chat's write into a document only its draft holds
-is `live` with the draft's id). A part **stands** while `whyEditStays` finds nothing: no one wrote
-over it and the room still holds its history (`compacted` otherwise, a reason of its own); the
-card's offer and every Undo use that one test, so an Undo never takes a part the offer would not.
+is `live` with the draft's id). A part **stands** while it is not taken back and the room still
+holds its history (`holdsEdit`; `compacted` otherwise): the card's offer and every Undo use that
+one test (`unavailable` in the planner), so an Undo never takes a part the offer would not.
 
 Every part goes back in the room it was written in, whatever room the chat writes in now: a chat
 switched between Draft and Live still undoes and reverts the edits it made before the switch. The
@@ -114,33 +113,27 @@ actions: once a partial model Undo reverses any surviving part of an edit, the n
 continues to the preceding edit.
 
 The model owns one strict stack per thread/document. `write undo` accepts a count; `write revert`
-creates a new edit at the current (destination) view. Both read the part's `delta`: a part whose change no longer stands is skipped
+creates a new edit at the current (destination) view. Both read the part's `delta`: a part that no longer stands is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
-or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
-edit remains to reverse. The model uses ordinary `read` for the passage;
+or current text. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port; its excerpt of each edit is
 read from the part's `delta` (`deltaExcerpt`), and its state from the text as for any write
-(`changed` or `live`), or `undone` when an undo receipt names the part. The listing
-shows the chat's parts in every room, each judged in its own (`changed`, or `too old to undo` for a
-part whose room cut its history). Model actions
+(`live`), or `undone` when an undo receipt names the part. The listing
+shows the chat's parts in every room, each judged in its own (`too old to undo` for a part whose
+room cut its history). Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
 other text parts, including applied parts.
-Whether a part goes back is the Undo rule's, from what was written over it since, not from
-who typed or where:
+A part goes back whatever was written over it since (design §2, "An Undo always runs"):
 
-- Typing beside the AI's words, or in another sentence, stays; the AI's write comes out.
-- Typing inside the AI's words leaves some of what it put in: the write still goes back, and
-  takes out its own text around the writer's (design §2, part 4).
-- Deleting or retyping everything the write put in, styling the same text again, or deleting
-  again what it deleted is writing over it: the part stays whole, skipped as `edited_since`
-  (`cant_undo_changed` when nothing of the edit is left), and the answer says someone has
-  written over it.
-- A part whose room was compacted below its write stays, and the answer says the document no
-  longer keeps history that old (`expired` when nothing of the edit is left), never that someone
-  wrote over it.
+- The write's characters that still stand come out, and what it deleted comes back; typing
+  beside or inside the AI's words stays, around them.
+- A part the writer deleted or retyped whole still goes back: its words are gone already, so the
+  text it deleted comes back beside the writer's.
+- A part whose room was compacted below its write can't go back, and the answer says the
+  document no longer keeps history that old (`expired` when nothing of the edit is left).
 - A model undo in a draft that takes out text an Apply already put in Live says so: the
   manuscript still has the text, and the draft now differs from it there.
 - A part an Undo took reads `already_removed`; a card's reversal skips it and the chip reads
@@ -246,13 +239,13 @@ re-runs `undoInRooms`. A write that landed after the capture changes what a step
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.
 
-The card's chip and its Undo use the `prepare` plan and its `whyEditStays` check: one load of each
+The card's chip and its Undo use the `prepare` plan and its `unavailable` check: one load of each
 room the chat wrote the document in, one document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
 the same reads.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
-`expired`, `cant_undo_changed` (every part was written over) or `partial` (some were) with HTTP
+`expired` (every part is past the history cutoff) or `partial` (some are) with HTTP
 200; callers retain
 those outcomes and refresh the turn query. The outcome carries no per-part explanation: the
 card reads again and shows what is true.

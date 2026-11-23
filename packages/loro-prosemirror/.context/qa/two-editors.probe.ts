@@ -21,12 +21,9 @@ import {
   freshPeerId,
   inText,
   docVersion,
-  type Edit,
   editSince,
-  editStays,
   encodeRoomVersion,
   isOrderKey,
-  opsBetween,
   removalOf,
   RoomDocs,
   STRUCTURE_KEY,
@@ -164,8 +161,12 @@ function differs(e: Editor, when: string): string | null {
 
 /** Whether the last history run wrote a text doc. */
 let wroteText = false;
-/** How many steps the last history run found written over and left. */
-let stayed = 0;
+/** Undo chains a peer's write since made come back different, with no word lost. */
+let chainsOverPeers = 0;
+/** Undos and Redos that brought back a word a peer deleted, or a mark a peer changed. */
+let overPeers = 0;
+/** Undos and Redos that showed a word more times than it had shown. */
+let shownTwice = 0;
 /**
  * Ctrl+Z or Redo as the app runs it: publish nothing, re-read the changed docs, put the selection
  * back. Whether a step ran.
@@ -173,8 +174,6 @@ let stayed = 0;
 function runHistory(e: Editor, direction: "undo" | "redo"): boolean {
   const ran = direction === "undo" ? e.history.undo(e.view.state) : e.history.redo(e.view.state);
   wroteText = ran?.changes.some((change) => change.key !== STRUCTURE_KEY) ?? false;
-  stayed = ran?.stayed ?? 0;
-  if (process.env.WHY && stayed > 0) process.stderr.write(`   ${e.name} ${direction}: ${stayed} stayed\n`);
   const selection = ran?.selection;
   if (!ran || !selection) return false;
   notifyChanged(
@@ -334,7 +333,8 @@ function run(seed: number): string | null {
   >();
   /**
    * What changed on `e`'s screen since it was last looked at, and who did it. A Ctrl+Z or Redo
-   * never brings back a word a peer's edit took away, nor undoes a peer's mark on a word. A change
+   * that brings back a word a peer's edit took away, or undoes a peer's mark on a word, ran over
+   * the peer's write (design §2: last writer wins) and is counted. A change
    * a batch from `peer` made is the peer's when the peer's screen shows it too; otherwise it came
    * of the two copies' edits meeting (a block moved into a container the other removed).
    */
@@ -353,8 +353,7 @@ function run(seed: number): string | null {
       if (!now.marks.has(word)) screen.left.set(word, theirs?.has(word) ? "merge" : source);
     for (const word of now.marks.keys()) {
       if (screen.words.marks.has(word)) continue;
-      if (source === "run" && screen.left.get(word) === "peer")
-        throw new Bad(`${what} brought back ${word}, which a peer deleted`);
+      if (source === "run" && screen.left.get(word) === "peer") overPeers++;
       screen.left.delete(word);
     }
     // Marks are judged per place, not per word: a word in two places (seed 1098 at 200 400 900,
@@ -366,8 +365,7 @@ function run(seed: number): string | null {
       const word = place.split("\u0000")[1];
       for (const name of new Set([...was, ...marks])) {
         if (was.has(name) === marks.has(name)) continue;
-        if (source === "run" && screen.marked.get(`${place}\u0000${name}`) === "peer")
-          throw new Bad(`${what} turned ${name} ${marks.has(name) ? "on" : "off"} on ${word}, which a peer set`);
+        if (source === "run" && screen.marked.get(`${place}\u0000${name}`) === "peer") overPeers++;
         const same = peerSees && peerSees.placed.get(place)?.has(name) === marks.has(name);
         screen.marked.set(`${place}\u0000${name}`, peerSees && !same ? "merge" : source);
       }
@@ -493,13 +491,12 @@ function run(seed: number): string | null {
     const what = `${e.name}'s ${direction === "undo" ? "Undo" : "Redo"}`;
     const torn = dangling(e);
     if (torn) throw new Bad(`${what} left ${torn}`);
-    // Nothing shows twice that showed once: a word's count rises past one only to a count this
-    // screen has shown before (a restore beside a Join's copy shows a word twice with no Undo).
-    // A run that wrote no text only put blocks back as they were (the Undo of a delete): a copy
-    // of their text that a peer's Join made meanwhile is not this run's.
+    // A word that shows twice where it showed once is counted, not failed (design §2: an Undo
+    // over a peer's Join can show text twice). A run that wrote no text only put blocks back as
+    // they were (the Undo of a delete): a copy of their text a peer's Join made is not this run's.
     for (const [word, n] of after)
       if (wroteText && n > 1 && n > (before.get(word) ?? 0) && n > (peak[e.name as "A" | "B"].get(word) ?? 0))
-        throw new Bad(`${what} shows ${word} ${n} times`);
+        shownTwice++;
     // Nothing the other editor typed leaves the screen: by an Undo, none of its words; by a Redo
     // (which may delete a block again, with the words it had), none typed since this editor's
     // Redo was last empty.
@@ -549,25 +546,38 @@ function run(seed: number): string | null {
     if (e.history.canRedo() || !release(e)) return null;
     const start = e.view.state.doc;
     let ran = 0;
-    let left = 0;
     const k = 1 + Math.floor(rand() * 6);
     for (let i = 0; i < k; i++) {
       const bad = differs(e, `${when}, Undo ${i}`);
       if (bad) return bad;
       if (stepHistory(e, "undo")) ran++;
-      left += stayed;
     }
     for (let i = 0; e.history.canRedo(); i++) {
-      if (!stepHistory(e, "redo") && i === 0 && ran > 0 && stayed === 0)
-        return `${when}: no Redo after ${ran} Undos`;
-      left += stayed;
+      if (!stepHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
       const bad = differs(e, `${when}, Redo ${i}`);
       if (bad) return bad;
     }
     if (start.eq(e.view.state.doc)) return null;
-    // A step someone wrote over stays, with the steps that share its paragraphs: what they did is
-    // still in the document.
-    if (left > 0) return null;
+    // A step a peer wrote over since goes back over it and comes again over the peer's write
+    // (design §2: last writer wins), so the document can differ: no word typed goes, and a
+    // block both show reads the same.
+    const blocks = (doc: Node) => {
+      const out = new Map<string, string>();
+      doc.descendants((node) => {
+        if (node.isTextblock) out.set(node.attrs.id, node.textContent);
+      });
+      return out;
+    };
+    const was = blocks(start);
+    const now = blocks(e.view.state.doc);
+    const all = (map: Map<string, string>) => [...map.values()].join("|");
+    const lost = [...all(was).matchAll(/q[AB]\d+/g)].map(([word]) => word).filter((word) => !all(now).includes(word));
+    const changed = [...was].filter(([id, text]) => now.has(id) && now.get(id) !== text);
+    if (lost.length === 0 && changed.length === 0) {
+      chainsOverPeers++;
+      return null;
+    }
+    if (lost.length > 0) return `${when}: ${ran} Undos and Redos lost ${lost.join(" ")}`;
     const at = start.content.findDiffStart(e.view.state.doc.content) ?? 0;
     const block = (doc: Node) =>
       JSON.stringify(doc.resolve(Math.min(at, doc.content.size)).parent.toJSON()).slice(0, 600);
@@ -924,8 +934,8 @@ function racedRemovals(): string[] {
   const ownRooms: Record<string, Own> = {
     // Seed 414: B joins x into p, so p holds a copy of x's text and x is removed; A,
     // not having seen it, deletes across x and y. B's removal did not read A's ops in x, so the
-    // import restores x and takes B's copy out of p. A's Ctrl+Z goes back: x's text shows once.
-    // (Before the copy went with the restore, the Ctrl+Z stayed, or it showed beside B's copy.)
+    // import restores x. A's Ctrl+Z goes back: no word is lost; x's text may show beside B's copy
+    // in p (design §2: text twice is the accepted cost of a clash).
     "a peer's join took away text A deleted across": {
       room: () => room([p("p", "Pre."), p("x", "Mid qA8 word."), p("y", "Tail text.")]),
       run: (r) => {
@@ -935,26 +945,26 @@ function racedRemovals(): string[] {
         r.a.history.endStep();
         syncAll(r);
         runHistory(r.a, "undo");
-        return settle(r, "join/delete-across then A Undo", once("qA8"));
+        return settle(r, "join/delete-across then A Undo", showsAll("qA8", "Pre.", "Tail text."));
       },
     },
-    // Rule 2 of design §1's copies: B joins x into p, so p holds a copy of x's text; A, not
-    // having seen it, types in x. B's removal did not read A's typing, so the import restores x,
-    // and the restore takes B's copy out of p: x's words show once, A's typing with them.
-    "a join that did not read A's typing gives the block back without its copy": {
+    // B joins x into p, so p holds a copy of x's text; A, not having seen it, types in x. B's
+    // removal did not read A's typing, so the import restores x: x's words show in p and in x,
+    // A's typing with them (design §1: a restore only puts the block back).
+    "a join that did not read A's typing gives the block back": {
       room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
       run: (r) => {
         r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
         r.b.history.endStep();
         r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
         r.a.history.endStep();
-        return settle(r, "join against unread typing", once("Mid word."), once("qA9"), once("Pre."));
+        return settle(r, "join against unread typing", showsAll("Pre.Mid word.|qA9 Mid word."), once("qA9"));
       },
     },
     // Review p19056: B joins x into p, then splits p where x began, so x's words move again, into
-    // a block of their own. A, not having seen either, types in x. The restore of x takes out the
-    // copy of a copy: x's words show once.
-    "a join, then a split of its copy, gives the block back without either copy": {
+    // a block of their own. A, not having seen either, types in x. The restore of x shows x's
+    // words beside the copy of a copy.
+    "a join, then a split of its copy, gives the block back": {
       room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
       run: (r) => {
         r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
@@ -962,12 +972,12 @@ function racedRemovals(): string[] {
         split(r.b, "p", 4, "p2");
         r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
         r.a.history.endStep();
-        return settle(r, "join, split, unread typing", once("Mid word."), once("qA9"), once("Pre."));
+        return settle(r, "join, split, unread typing", showsAll("Pre.|Mid word.|qA9 Mid word."), once("qA9"));
       },
     },
     // Review p19057: B joins y into x, then x into p, so p holds a copy of x's copy of y's text. A,
-    // not having seen either, types in y. The restore of y takes the copy out of p too.
-    "two joins in a row give the block back without its copy": {
+    // not having seen either, types in y. The restore of y shows its words beside the copy.
+    "two joins in a row give the block back": {
       room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
       run: (r) => {
         r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "y")));
@@ -976,7 +986,7 @@ function racedRemovals(): string[] {
         r.b.history.endStep();
         r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "y") + 1));
         r.a.history.endStep();
-        return settle(r, "two joins, unread typing", once("Tail text."), once("qA9"), once("Mid word."));
+        return settle(r, "two joins, unread typing", showsAll("Pre.Mid word.Tail text.|qA9 Tail text."), once("qA9"));
       },
     },
     // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
@@ -1006,20 +1016,19 @@ function racedRemovals(): string[] {
           r.a.history.endStep();
           live.importBatch(r.a.docs.exportSince(live.version()));
           const pressed = command((cmd) => applyBlocks(cmd, "all", { liveVersion: live.version() }).pressed);
-          const undo = command((cmd) => undoPress(cmd, pressed));
-          if (undo.stayed.length > 0) return "undone press: the press's Undo stayed";
+          command((cmd) => undoPress(cmd, pressed));
           send(live, r.a);
           send(live, r.b);
           if (shown(r.a) !== "irst.|Last.") return `undone press: A shows "${shown(r.a)}" before its Ctrl+Z`;
-          if (!runHistory(r.a, "undo")) return "undone press: A's Ctrl+Z stayed";
+          if (!runHistory(r.a, "undo")) return "undone press: A's Ctrl+Z did not run";
           return settle(r, "undone press, then A's Ctrl+Z", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
         } finally {
           draft.free();
         }
       },
     },
-    // B's Ctrl+Z of its own delete of A's "F", before it sees A's, puts "F" back: A's Ctrl+Z would
-    // show it twice, so it stays, though B's delete was taken back.
+    // B's Ctrl+Z of its own delete of A's "F", before it sees A's, puts "F" back. A's Ctrl+Z puts
+    // its "F" back too: the text shows twice (design §2), no word is lost.
     "a peer's Undo put back text A deleted": {
       room: () => room([p("a", "First."), p("z", "Last.")]),
       run: (r) => {
@@ -1029,13 +1038,13 @@ function racedRemovals(): string[] {
         }
         runHistory(r.b, "undo");
         syncAll(r);
-        if (runHistory(r.a, "undo")) return "put back by a peer: A's Ctrl+Z ran";
-        return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
+        if (!runHistory(r.a, "undo")) return "put back by a peer: A's Ctrl+Z did not run";
+        return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "FFirst.|Last." ? null : `shows "${t}"`));
       },
     },
     // B Backspaces "f", "e", "d" before it sees A's delete of "f": Loro stores the run as one delete
-    // op with a negative length whose `start_id` is "d", the lowest id. B deleted A's "f" again,
-    // so A's Ctrl+Z stays; read from "d" downwards, the op missed "f" and the Undo put it back.
+    // op with a negative length whose `start_id` is "d", the lowest id. A's Ctrl+Z puts its "f"
+    // back over B's delete of it (design §2: holes are accepted).
     "a peer's Backspace run deleted text A deleted": {
       room: () => room([p("a", "abcdefgh."), p("z", "Last.")]),
       run: (r) => {
@@ -1046,20 +1055,20 @@ function racedRemovals(): string[] {
           r.b.history.endStep();
         }
         syncAll(r);
-        if (runHistory(r.a, "undo")) return "Backspace run: A's Ctrl+Z ran";
-        return settle(r, "a peer's Backspace run deleted text A deleted", (t) => (t === "abcgh.|Last." ? null : `shows "${t}"`));
+        if (!runHistory(r.a, "undo")) return "Backspace run: A's Ctrl+Z did not run";
+        return settle(r, "a peer's Backspace run deleted text A deleted", (t) => (t === "abcfgh.|Last." ? null : `shows "${t}"`));
       },
     },
-    // Seed 477: A and B remove x from one state, so their removal records are equal,
-    // and A's wins (the higher peer). B's Ctrl+Z finds a value A wrote: x stays removed.
-    "a peer's equal removal keeps the block removed": {
+    // Seed 477: A and B remove x from one state, so their removal records are equal, and A's wins
+    // (the higher peer). B's Ctrl+Z puts x back over A's removal (last writer wins).
+    "a peer's equal removal is undone by the other's Ctrl+Z": {
       room: () => room([p("a", "First."), p("x", "Target qA81."), p("z", "Last.")], [2000n, 1000n]),
       run: (r) => {
         remove(r.b, "x");
         remove(r.a, "x");
         syncAll(r);
         runHistory(r.b, "undo");
-        return settle(r, "equal removals then B Undo", showsNone("qA81"));
+        return settle(r, "equal removals then B Undo", once("qA81"));
       },
     },
     // Seed 602: B's caret keeps table t, which A removed; B moves y from before t to
@@ -1185,38 +1194,6 @@ function racedRemovals(): string[] {
         return firstIn(r.a, "c") === "c/empty" ? null : `emptied, A Undo: c shows ${firstIn(r.a, "c")} "${shown(r.a)}", wanted its placeholder`;
       },
     },
-    // Review p18996: the rule reads the edit's author from the edit, not the copy it runs on (a
-    // press's Undo runs on a server copy with a peer of its own). A deletes "world" while B
-    // deletes it too; the same edit judged on A's copy and on a fresh copy gives one answer.
-    "the same edit judged on another copy": {
-      room: () => room([p("a", "hello world"), p("z", "Last.")]),
-      run: (r) => {
-        const doc = () => r.a.docs.textOf("a") as NonNullable<ReturnType<RoomDocs["textOf"]>>;
-        const before = doc().frontiers();
-        const at = posOf(r.a, "a") + 1 + 6;
-        r.a.view.dispatch(r.a.view.state.tr.delete(at, at + 5));
-        r.a.history.endStep();
-        const after = doc().frontiers();
-        const at2 = posOf(r.b, "a") + 1 + 6;
-        r.b.view.dispatch(r.b.view.state.tr.delete(at2, at2 + 5));
-        r.b.history.endStep();
-        syncAll(r);
-        const edit: Edit = {
-          peer: r.a.docs.peer,
-          values: new Map(),
-          texts: new Map([["a", { before, after, ops: opsBetween(doc(), before, after, r.a.docs.peer) }]]),
-          leaving: new Map(),
-          arriving: new Set(),
-          shown: new Set(),
-          structureAt: r.a.docs.structure.frontiers(),
-        };
-        const fresh = r.agent();
-        const here = editStays(r.a.docs, edit);
-        const there = editStays(fresh, edit);
-        if (here === null || here !== there) return `author: A's copy says ${here}, a fresh copy ${there}`;
-        return null;
-      },
-    },
     // Review p18998: B's batch between each of A's keys splits A's one typing step into an item
     // per key, more than a manager kept; its Undo left the first key.
     "a typing step of more items than the step limit": {
@@ -1314,9 +1291,8 @@ function racedRemovals(): string[] {
       runHistory(r.b, "undo");
       return settle(r, "an Undo of a join of a split word keeps both halves", showsAll("qA|163"));
     },
-    // Rule 2 of design §1's copies, by the caret rule: A joins x into the block before while B's
-    // caret rests in x. B keeps x on screen beside A's copy; B's typing brings x back, and the
-    // restore takes A's copy out of B's screen as well as its docs.
+    // The caret rule: A joins x into the block before while B's caret rests in x. B keeps x on
+    // screen beside A's copy; B's typing brings x back, beside the copy (design §1).
     "typing in a block a peer joined away": (r) => {
       caret(r.b, "x", 14);
       r.a.view.dispatch(r.a.view.state.tr.join(posOf(r.a, "x")));
@@ -1324,7 +1300,7 @@ function racedRemovals(): string[] {
       sync(r.a, r.b);
       if (!keptOf(r.b).has("x")) return `joined-away case: B does not keep x: "${shown(r.b)}"`;
       type(r.b, "[third]");
-      return settle(r, "typing in a block a peer joined away", once("Delete-target"), once("[third]"));
+      return settle(r, "typing in a block a peer joined away", showsAll("First.Delete-target before after.|Delete-target [third]before after."), once("[third]"));
     },
     // The usual online case (a phase 1 prober's 120 ms typing): the removal reaches B between two
     // of its keys. B's caret keeps the block on screen, and B's next keys bring it back.
@@ -1422,10 +1398,9 @@ function racedRemovals(): string[] {
       caret(r.b, "x", 14);
       type(r.b, " more");
       sync(r.b, r.a);
-      // B typed in the block since A's Undo, so the Redo would take B's words off the screen:
-      // it stays, and leaves the history.
-      if (runHistory(r.a, "redo")) return "Redo case: the Redo ran over B's typing";
-      if (r.a.history.canRedo()) return "Redo case: a Redo is still offered";
+      // B typed in the block since A's Undo: the Redo removes it again, and rule 1 brings it back
+      // for B's words, which the removal did not read.
+      if (!runHistory(r.a, "redo")) return "Redo case: the Redo did not run";
       return settle(r, "Redo of a delete after the peer typed", showsAll("Delete-target  morebefore after."));
     },
     // A Redo of a delete with nothing typed since still lands, with a record of what A reads now.
@@ -1456,7 +1431,8 @@ function racedRemovals(): string[] {
       return settle(r, "two levels of Undo and Redo", showsNone("Delete-target", "Cell one."));
     },
     // The model's S5: B's Ctrl+Z in a block a removal read changes hidden text, and a later batch
-    // that removes something else does not bring the block back.
+    // that removes something else does not bring the block back; B's Redo puts the text back, and
+    // with it the block.
     "Ctrl+Z of typing in a block a peer removed, then an unrelated batch": (r) => {
       caret(r.b, "x", 14);
       type(r.b, "foo");
@@ -1474,7 +1450,7 @@ function racedRemovals(): string[] {
       runHistory(r.b, "redo");
       const typed = inText(r.b.docs.textOf("x") as never, (t) => t.toString());
       if (!typed.includes("foo")) return `S5: B's Redo did not give foo back: ${typed}`;
-      return settle(r, "Redo in a removed block", showsNone("Delete-target"));
+      return settle(r, "Redo in a removed block", once("foo"));
     },
     // Seeds 289 and 55: A and B move one block at once and B's move wins (B wrote more structure
     // first, so on any peer ids). B's Ctrl+Z puts the key back where both moves found it. A's
@@ -1500,23 +1476,24 @@ function racedRemovals(): string[] {
         t.startsWith(start) ? null : `shows "${t}", wanted "${start}…"`,
       );
     },
-    // A peer's move, retype or delete after A's step is a later write: A's Ctrl+Z and Redo leave it.
-    "a peer's later move survives A's Ctrl+Z": (r) => {
+    // A peer's move, retype or delete after A's step is a later write: A's Ctrl+Z puts A's key
+    // back over it and Redo gives A's step again (design §2: last writer wins per key).
+    "A's Ctrl+Z of a move goes back over a peer's later move": (r) => {
+      const before = shown(r.a);
       move(r.a, "x", "c");
       syncAll(r);
+      const moved = shown(r.a);
       move(r.b, "x", "a");
       syncAll(r);
       runHistory(r.a, "undo");
       const undone = settle(r, "later move, A's Ctrl+Z", (t) =>
-        t.startsWith("Delete-target") ? null : `shows "${t}", wanted B's move`,
+        t === before ? null : `shows "${t}", wanted "${before}"`,
       );
       if (undone) return undone;
       runHistory(r.a, "redo");
-      return settle(r, "later move, A's Redo", (t) =>
-        t.startsWith("Delete-target") ? null : `shows "${t}", wanted B's move`,
-      );
+      return settle(r, "later move, A's Redo", (t) => (t === moved ? null : `shows "${t}", wanted "${moved}"`));
     },
-    "a peer's later retype survives A's Ctrl+Z": (r) => {
+    "A's Ctrl+Z of a retype goes back over a peer's later retype": (r) => {
       retype(r.a, "z", "code_block");
       syncAll(r);
       retype(r.b, "z", "jsx_leaf", { name: "Note" });
@@ -1524,23 +1501,25 @@ function racedRemovals(): string[] {
       runHistory(r.a, "undo");
       const undone = settle(r, "later retype, A's Ctrl+Z");
       if (undone) return undone;
-      if (typeOf(r.a, "z") !== "jsx_leaf") return `later retype: A's Ctrl+Z made z a ${typeOf(r.a, "z")}`;
+      if (typeOf(r.a, "z") !== "paragraph") return `later retype: A's Ctrl+Z made z a ${typeOf(r.a, "z")}`;
       runHistory(r.a, "redo");
       const redone = settle(r, "later retype, A's Redo");
       if (redone) return redone;
-      return typeOf(r.b, "z") === "jsx_leaf" ? null : `later retype: A's Redo made z a ${typeOf(r.b, "z")}`;
+      return typeOf(r.b, "z") === "code_block" ? null : `later retype: A's Redo made z a ${typeOf(r.b, "z")}`;
     },
-    "a peer's later delete survives A's Ctrl+Z": (r) => {
+    "A's Ctrl+Z of a move brings back a block a peer deleted since": (r) => {
       move(r.a, "x", "c");
       syncAll(r);
       remove(r.b, "x");
       syncAll(r);
       runHistory(r.a, "undo");
-      const undone = settle(r, "later delete, A's Ctrl+Z", showsNone("Delete-target"));
+      const undone = settle(r, "later delete, A's Ctrl+Z", once("Delete-target"));
       if (undone) return undone;
       runHistory(r.a, "redo");
-      return settle(r, "later delete, A's Redo", showsNone("Delete-target"));
+      return settle(r, "later delete, A's Redo", once("Delete-target"));
     },
+    // An Undo always runs (design §2): A's Ctrl+Z takes its split back over B's move of the new
+    // half, and the text shows once, in the first half.
     "a peer moves the new half of A's split before A undoes": (r) => {
       const splitAt = posOf(r.a, "x") + 1 + 14;
       r.a.view.dispatch(
@@ -1552,16 +1531,8 @@ function racedRemovals(): string[] {
       syncAll(r);
       if (!shown(r.a).startsWith("before after.|First."))
         return `split/move setup: A shows "${shown(r.a)}"`;
-      if (runHistory(r.a, "undo") || stayed !== 1) return "split/move: A's split did not stay";
-      const settled = settle(r, "split/move then A Undo", showsAll("before after."));
-      if (settled) return settled;
-      return posOf(r.a, "x2") >= 0 && posOf(r.a, "x2") < posOf(r.a, "a")
-        ? null
-        : (() => {
-            const v = new StructureView(r.a.docs);
-            const t = inText(r.a.docs.textOf("x2") as never, (text) => text.toString());
-            return `split/move: x2 vanished; order=${JSON.stringify(v.value("order", "x2"))}, parent=${JSON.stringify(v.value("parent", "x2"))}, node=${JSON.stringify(v.value("node", "x2"))}, text=${JSON.stringify(t)}; A shows "${shown(r.a)}"`;
-          })();
+      if (!runHistory(r.a, "undo")) return "split/move: A's Ctrl+Z did not run";
+      return settle(r, "split/move then A Undo", showsAll("Delete-target before after."));
     },
     "a peer deletes the new half of A's split before A undoes": (r) => {
       const splitAt = posOf(r.a, "x") + 1 + 14;
@@ -1572,51 +1543,20 @@ function racedRemovals(): string[] {
       syncAll(r);
       remove(r.b, "x2");
       syncAll(r);
-      if (runHistory(r.a, "undo") || stayed !== 1) return "split/delete: A's split did not stay";
-      const settled = settle(r, "split/delete then A Undo", showsNone("before after."));
-      return settled ?? null;
+      if (!runHistory(r.a, "undo")) return "split/delete: A's Ctrl+Z did not run";
+      return settle(r, "split/delete then A Undo", showsAll("Delete-target before after."));
     },
-    // --- The step rule: a step that set structure goes back whole or stays whole.
-    // B's typing in the new half, undone since, is no one's write: A's Ctrl+Z of the Enter goes
-    // back (design §2, part 2).
+    // --- The step rule: every step runs (design §2, "An Undo always runs").
     "a peer's typing undone since does not keep A's split": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
       caret(r.b, "x2", 0);
       type(r.b, "Zq");
-      if (!runHistory(r.b, "undo")) return "typing undone: B's Ctrl+Z stayed";
+      if (!runHistory(r.b, "undo")) return "typing undone: B's Ctrl+Z did not run";
       away(r.b);
       syncAll(r);
-      if (!runHistory(r.a, "undo")) return "typing undone: A's Ctrl+Z stayed";
+      if (!runHistory(r.a, "undo")) return "typing undone: A's Ctrl+Z did not run";
       return settle(r, "typing undone, then A's Ctrl+Z", showsAll("Delete-target before after."));
-    },
-    // B rewrites a word A typed keeping one of its letters, as a chat's rewrite keeps the letters
-    // it shares: A's Ctrl+Z would take that letter out of B's word and scramble it, so it stays.
-    "a peer's rewrite keeps A's typing": (r) => {
-      caret(r.a, "z", 4);
-      type(r.a, " Owl");
-      syncAll(r);
-      const at = posOf(r.b, "z") + 1 + 5;
-      r.b.view.dispatch(r.b.view.state.tr.insertText("D", at + 2, at + 3).insertText("B", at, at + 1));
-      r.b.history.endStep();
-      syncAll(r);
-      if (runHistory(r.a, "undo")) return "rewrite: A's Ctrl+Z ran over B's rewrite";
-      return settle(r, "rewrite, then A's Ctrl+Z", showsAll("|Last BwD.|"));
-    },
-    // B's Undo of that rewrite puts " Owl" back as new characters: Loro's manager can delete only
-    // A's own, so A's Ctrl+Z would leave "LastOwl."; it stays (review p19027).
-    "a peer's rewrite undone since still keeps A's typing": (r) => {
-      caret(r.a, "z", 4);
-      type(r.a, " Owl");
-      syncAll(r);
-      const at = posOf(r.b, "z") + 1 + 5;
-      r.b.view.dispatch(r.b.view.state.tr.insertText("D", at + 2, at + 3).insertText("B", at, at + 1));
-      r.b.history.endStep();
-      syncAll(r);
-      if (!runHistory(r.b, "undo")) return "rewrite undone: B's Ctrl+Z stayed";
-      syncAll(r);
-      if (runHistory(r.a, "undo")) return "rewrite undone: A's Ctrl+Z ran over put-back text";
-      return settle(r, "rewrite undone, then A's Ctrl+Z", showsAll("|Last Owl.|"));
     },
     "A's own split goes back exactly, and Redo gives it back": (r) => {
       const before = shown(r.a);
@@ -1632,7 +1572,7 @@ function racedRemovals(): string[] {
       return settle(r, "own split, Redo");
     },
     // Opus R7: B joins the halves back (a copy of the tail is B's text in x now). A's Ctrl+Z of
-    // the split leaves it: the tail shows once.
+    // the split puts its tail back beside B's copy: the tail shows twice (design §2).
     "a peer joins A's split back before A undoes": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
@@ -1640,9 +1580,10 @@ function racedRemovals(): string[] {
       r.b.history.endStep();
       syncAll(r);
       runHistory(r.a, "undo");
-      return settle(r, "split/join then A Undo", once("before after."), showsAll("Delete-target before after."));
+      return settle(r, "split/join then A Undo", showsAll("Delete-target before after.before after."));
     },
-    // A saw B's words in the new half: Ctrl+Z of the Enter leaves the Enter, and B's words stay.
+    // A's Ctrl+Z of the Enter runs over B's words in the new half: the half is removed with a
+    // record that did not read them, so it comes back with them alone (design §2).
     "a peer types in the new half of A's split before A undoes": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
@@ -1650,7 +1591,7 @@ function racedRemovals(): string[] {
       type(r.b, "PEER ");
       syncAll(r);
       runHistory(r.a, "undo");
-      return settle(r, "split/type then A Undo", showsAll("Delete-target |before PEER after."), once("before"));
+      return settle(r, "split/type then A Undo", showsAll("Delete-target before after.|PEER "), once("before"), once("PEER"));
     },
     // B's words reach A after A's Ctrl+Z: the removal of the new half did not read them, so the
     // half comes back with them alone, and the tail is in x.
@@ -1662,15 +1603,15 @@ function racedRemovals(): string[] {
       if (!runHistory(r.a, "undo")) return "split/race: Undo did not run";
       return settle(r, "split/race", showsAll("Delete-target before after.|PEER "), once("before"), once("PEER"));
     },
-    // B deletes x (the head) after the split: the tail is on screen in x2, and Ctrl+Z of the
-    // split would put it in a block that does not show.
+    // B deletes x (the head) after the split: A's Ctrl+Z puts the tail back in x, which brings x
+    // back (rule 1 over the Undo's own text), so the tail shows once.
     "a peer deletes the first half of A's split before A undoes": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
       remove(r.b, "x");
       syncAll(r);
       runHistory(r.a, "undo");
-      return settle(r, "split/delete-head then A Undo", showsAll("First.|before after."), showsNone("Delete-target"));
+      return settle(r, "split/delete-head then A Undo", showsAll("First.|Delete-target before after."), once("before after."));
     },
     // B typing in the head does not touch what the split made: the Enter goes back around it.
     "a peer types in the first half of A's split before A undoes": (r) => {
@@ -1693,7 +1634,8 @@ function racedRemovals(): string[] {
       const settled = settle(r, "join/retype then A Undo", showsAll("Inner one.|Inner two."));
       return settled ?? (typeOf(r.a, "i1") === "code_block" ? null : `join/retype: i1 is a ${typeOf(r.a, "i1")}`);
     },
-    // Opus R4: A wraps a and x in a container, B moves x out: the wrap stays whole.
+    // Opus R4: A wraps a and x in a container, B moves x out: A's Ctrl+Z takes the wrap away and
+    // puts both back at the top.
     "a peer moves a block out of A's wrap before A undoes": (r) => {
       const at = posOf(r.a, "a");
       const { state } = r.a.view;
@@ -1708,11 +1650,12 @@ function racedRemovals(): string[] {
       const settled = settle(r, "wrap/move then A Undo", showsAll("First.", "Delete-target before after."));
       if (settled) return settled;
       const parent = (id: string) => new StructureView(r.a.docs).value("parent", id);
-      return parent("a") === "w" && parent("x") === null && posOf(r.a, "w") >= 0
+      return parent("a") === null && parent("x") === null && posOf(r.a, "w") < 0
         ? null
         : `wrap/move: a under ${parent("a")}, x under ${parent("x")}, w at ${posOf(r.a, "w")}`;
     },
-    // Opus R5: A splits, B wraps the new half in a container: the split stays.
+    // Opus R5: A splits, B wraps the new half in a container: A's Ctrl+Z takes the half out, and
+    // the tail shows once, in x.
     "a peer wraps the new half of A's split before A undoes": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
@@ -1723,10 +1666,10 @@ function racedRemovals(): string[] {
       r.b.history.endStep();
       syncAll(r);
       runHistory(r.a, "undo");
-      return settle(r, "split/wrap then A Undo", showsAll("Delete-target |before after."), once("before after."));
+      return settle(r, "split/wrap then A Undo", showsAll("Delete-target before after."), once("before after."));
     },
-    // Opus R6: a move a peer wrote over is skipped, the typing either side of it goes back, and
-    // Redo gives both back: a step with no text to leave standing does not end Redo.
+    // Opus R6: a move a peer wrote over goes back over it, the typing either side of it goes back,
+    // and Redo gives all three back.
     "typing either side of a move a peer wrote over": (r) => {
       caret(r.a, "a", 2);
       type(r.a, "Q");
@@ -1738,16 +1681,17 @@ function racedRemovals(): string[] {
       syncAll(r);
       runHistory(r.a, "undo");
       runHistory(r.a, "undo");
-      if (!shown(r.a).startsWith("Delete-target before after.|First.|"))
-        return `skipped move: two Undos gave "${shown(r.a)}"`;
-      runHistory(r.a, "redo");
-      runHistory(r.a, "redo");
+      runHistory(r.a, "undo");
+      if (!shown(r.a).startsWith("First.|Delete-target before after.|"))
+        return `skipped move: three Undos gave "${shown(r.a)}"`;
+      for (let i = 0; i < 3; i++) runHistory(r.a, "redo");
       if (r.a.history.canRedo()) return "skipped move: a Redo is left";
-      return settle(r, "skipped move, Redo", showsAll("Delete-target before after.|FiQRrst.|"));
+      return settle(r, "skipped move, Redo", showsAll("FiQRrst.|"), showsNone("Delete-target before after.|FiQRrst."));
     },
-    // A step that stays takes the steps of its paragraphs with it: the typing under the split
-    // stays too, and Ctrl+Z finds nothing older. Nothing is written.
-    "a split a peer wrote over takes the typing under it out of the history": (r) => {
+    // A split a peer moved the new half of goes back over the move, and the typing under it goes
+    // back after it.
+    "a split a peer wrote over goes back, and the typing under it": (r) => {
+      const before = shown(r.a);
       caret(r.a, "x", 14);
       type(r.a, "abc def ");
       split(r.a, "x", 18, "x2");
@@ -1757,13 +1701,16 @@ function racedRemovals(): string[] {
       const setup = shown(r.a);
       if (!setup.startsWith("def before after.|First.|Delete-target abc |"))
         return `standing split: setup shows "${setup}"`;
-      if (runHistory(r.a, "undo")) return `standing split: an Undo ran and gave "${shown(r.a)}"`;
-      if (r.a.history.canUndo() || r.a.history.canRedo()) return "standing split: steps are left";
-      return settle(r, "standing split, A Undo", (t) => (t === setup ? null : `shows "${t}"`));
+      if (!runHistory(r.a, "undo")) return "standing split: the Undo did not run";
+      if (!shown(r.a).includes("Delete-target abc def before after."))
+        return `standing split: the Undo gave "${shown(r.a)}"`;
+      runHistory(r.a, "undo");
+      return settle(r, "standing split, A Undo", (t) => (t === before ? null : `shows "${t}", wanted "${before}"`));
     },
     // Review p18993 C2: B types in the new half, C deletes "before " from it, and A presses Ctrl+Z
-    // before C's delete reaches it. The split stays and writes nothing, so C's delete lands.
-    "a peer's deletion in flight while A's split stays": (r) => {
+    // before C's delete reaches it. The Undo puts the tail back in x as new text, so C's delete
+    // of the old finds nothing (a hole, design §2), and the half comes back for B's words.
+    "a peer's deletion in flight while A undoes the split": (r) => {
       const c = r.third();
       split(r.a, "x", 14, "x2");
       syncAll(r);
@@ -1774,11 +1721,10 @@ function racedRemovals(): string[] {
       c.view.dispatch(c.view.state.tr.delete(at, at + 7));
       c.history.endStep();
       runHistory(r.a, "undo");
-      return settle(r, "deletion in flight", showsAll("Delete-target |PEER after."), showsNone("before"));
+      return settle(r, "deletion in flight", showsAll("Delete-target before after.|PEER "), once("PEER"));
     },
-    // Review p18993 C3: a step that stays takes only the steps of its own paragraphs: Redo still
-    // gives back the steps on either side of it, in other blocks.
-    "a step that stays leaves Redo of the steps elsewhere": (r) => {
+    // Review p18993 C3: the steps either side of a split a peer typed in go back and come again.
+    "Undo and Redo either side of a split a peer typed in": (r) => {
       caret(r.a, "a", 2);
       type(r.a, "ONE");
       split(r.a, "x", 14, "x2");
@@ -1788,14 +1734,12 @@ function racedRemovals(): string[] {
       caret(r.b, "x2", 0);
       type(r.b, "PEER ");
       syncAll(r);
-      runHistory(r.a, "undo");
-      runHistory(r.a, "undo");
-      if (shown(r.a).includes("ONE") || shown(r.a).includes("THREE"))
-        return `Redo elsewhere: two Undos gave "${shown(r.a)}"`;
-      runHistory(r.a, "redo");
-      runHistory(r.a, "redo");
+      for (let i = 0; i < 3; i++) runHistory(r.a, "undo");
+      if (shown(r.a).includes("ONE") || shown(r.a).includes("THREE") || !shown(r.a).includes("PEER"))
+        return `Redo elsewhere: three Undos gave "${shown(r.a)}"`;
+      for (let i = 0; i < 3; i++) runHistory(r.a, "redo");
       if (r.a.history.canRedo()) return "Redo elsewhere: a Redo is left";
-      return settle(r, "Redo elsewhere", showsAll("FiONErst.", "THREELast.", "PEER before after."));
+      return settle(r, "Redo elsewhere", showsAll("FiONErst.", "THREELast.", "PEER "), once("PEER"));
     },
     // Review p18993 C4: the writer alone inserts a picture, its upload lands (an untracked write of
     // the writer's own), and Ctrl+Z takes the picture back.
@@ -1823,9 +1767,9 @@ function racedRemovals(): string[] {
       const src = r.a.view.state.doc.nodeAt(posOf(r.a, "pic") + 1)?.attrs.src;
       return src === "https://example.test/1.png" ? settle(r, "picture, Redo") : `picture: Redo gave src ${src}`;
     },
-    // A peer's bold on the new half keeps the Enter: undoing it would bring the original text back
-    // without the bold.
-    "a peer's mark on the new half keeps the split": (r) => {
+    // A peer's bold on the new half: A's Ctrl+Z of the Enter puts the original text back without
+    // the bold (a hole, design §2); the half the bold kept shows empty.
+    "a peer's mark on the new half, then A undoes the split": (r) => {
       split(r.a, "x", 14, "x2");
       syncAll(r);
       const at = posOf(r.b, "x2") + 1;
@@ -1833,15 +1777,10 @@ function racedRemovals(): string[] {
       r.b.history.endStep();
       syncAll(r);
       runHistory(r.a, "undo");
-      const settled = settle(r, "split/mark then A Undo", showsAll("Delete-target |before after."));
-      if (settled) return settled;
-      const bold = r.a.view.state.doc.nodeAt(posOf(r.a, "x2") + 1);
-      return bold?.text === "before" && schema.marks.strong.isInSet(bold.marks)
-        ? null
-        : `split/mark: x2 starts ${JSON.stringify(bold?.toJSON())}`;
+      return settle(r, "split/mark then A Undo", showsAll("Delete-target before after."), once("before after."));
     },
-    // A moves i1 out of the container, B removes the container, A's Ctrl+Z: i1 would go under a
-    // removed block, off the screen with words its removal never read. The move stays.
+    // A moves i1 out of the container, B removes the container, A's Ctrl+Z puts i1 back under
+    // it: a move into a removed block brings it back, with what it held.
     "an Undo that would put a block under a removed container": (r) => {
       move(r.a, "i1", "z");
       syncAll(r);
@@ -1851,7 +1790,7 @@ function racedRemovals(): string[] {
       syncAll(r);
       away(r.b);
       runHistory(r.a, "undo");
-      return settle(r, "move back under a removed container", showsAll("PEER Inner one."), showsNone("Inner two."));
+      return settle(r, "move back under a removed container", showsAll("PEER Inner one.|Inner two."));
     },
     "a peer retypes the new half of A's split before A undoes": (r) => {
       const splitAt = posOf(r.a, "x") + 1 + 14;
@@ -1862,12 +1801,8 @@ function racedRemovals(): string[] {
       syncAll(r);
       retype(r.b, "x2", "code_block");
       syncAll(r);
-      if (runHistory(r.a, "undo") || stayed !== 1) return "split/retype: A's split did not stay";
-      const settled = settle(r, "split/retype then A Undo", showsAll("before after."));
-      if (settled) return settled;
-      return posOf(r.a, "x2") < 0
-        ? `split/retype: peer-retyped x2 vanished; A shows "${shown(r.a)}"`
-        : typeOf(r.a, "x2") === "code_block" ? null : `split/retype: x2 became ${typeOf(r.a, "x2")}`;
+      if (!runHistory(r.a, "undo")) return "split/retype: A's Ctrl+Z did not run";
+      return settle(r, "split/retype then A Undo", showsAll("Delete-target before after."));
     },
     // Review p18966: an agent's text op in a cell of a table B's typing brought back.
     "an agent's text op inside a restored table keeps it": (r) => {
@@ -1953,7 +1888,7 @@ function racedRemovals(): string[] {
     },
   };
   // A draft's Undo deletes its override, so the draft reads Live's key again; Live then moves the
-  // block, and the draft's Redo would hide that move behind the override.
+  // block, and the draft's Redo writes its override over that move (last writer wins).
   const draftRedoAfterLiveWrite = (): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
@@ -1970,12 +1905,10 @@ function racedRemovals(): string[] {
       const beforeRedo = shown(de);
       if (!beforeRedo.startsWith("First.|Cell one."))
         return `draft case: forwarding Live's later move showed "${beforeRedo}"`;
-      // The Undo left the draft reading Live's key for x, and Live wrote another since: the Redo
-      // of the draft's move stays.
-      if (runHistory(de, "redo")) return `draft case: the Redo ran over Live's later move: "${shown(de)}"`;
-      return shown(de).includes("Last.|Delete-target")
+      if (!runHistory(de, "redo")) return "draft case: the Redo did not run";
+      return shown(de).startsWith("Delete-target before after.|First.")
         ? null
-        : `draft case: the draft shows "${shown(de)}", wanted Live's move`;
+        : `draft case: the draft shows "${shown(de)}", wanted the draft's move`;
     } finally {
       de.destroy();
       le.destroy();
@@ -1984,12 +1917,19 @@ function racedRemovals(): string[] {
     }
   };
 
-  // A Draft tab's Ctrl+Z of an edit the writer then applied: the press settled the draft's
-  // values (`d.settled`) and carried its text into Live, and the draft reads Live's, which hold
-  // them now. The step stays, so Ctrl+Z goes on to the step before it. With the press undone
-  // first (`then`), the edit is the draft's alone again: `Restore before` of it takes it back, and
-  // so does Ctrl+Z of an edit that wrote no text. Text the press's Undo returned to the draft is
-  // put-back text, which Loro's manager cannot delete (`Edit.ownTextOnly`): that step stays.
+  // A Draft tab's Ctrl+Z of an edit the writer then applied: the press deleted the draft's
+  // overrides and carried its text into Live, and the draft reads Live's, which hold them now.
+  // Ctrl+Z of text runs: the draft takes its text back, a pending change against Live; Ctrl+Z of
+  // structure finds no override to put back (the draft reads Live's value), so the draft shows
+  // what it applied. With the press undone first (`then`), Ctrl+Z of structure takes it back;
+  // text the press's Undo returned to the draft is new text, which neither Ctrl+Z nor `Restore
+  // before` deletes (they take back the edit's own characters, design §2): it stays, no word lost.
+  /** Whether `text` holds every character of `want`, in order. */
+  const holds = (text: string, want: string) => {
+    let at = 0;
+    for (const ch of text) if (ch === want[at]) at++;
+    return at === want.length;
+  };
   const draftUndoAfterApply = (
     name: string,
     edit: (de: Editor) => void,
@@ -2016,28 +1956,27 @@ function racedRemovals(): string[] {
       const before = shown(de);
       const since = draft.shownVersion();
       edit(de);
-      const stored = editSince(draft, since, draft.peer, draft.version().keys());
+      const stored = editSince(draft, since, draft.version().keys());
       const pressed = command((cmd) => applyBlocks(cmd, "all", { liveVersion: live.version() }).pressed);
       if (then === "nothing") {
         const applied = shown(de);
-        if (runHistory(de, "undo")) return `applied ${name}: the Draft tab's Ctrl+Z ran`;
-        if (shown(de) !== applied) return `applied ${name}: the draft shows "${shown(de)}"`;
-        const pending = changedBlocks(draft);
-        return pending.length ? `applied ${name}: ${pending.length} changes pending` : null;
+        const ran = runHistory(de, "undo");
+        if (!writesText) return shown(de) === applied ? null : `applied ${name}: the draft shows "${shown(de)}"`;
+        if (!ran) return `applied ${name}: the Draft tab's Ctrl+Z did not run`;
+        if (!holds(shown(de), before)) return `applied ${name}: Ctrl+Z gave "${shown(de)}", wanted "${before}"`;
+        return changedBlocks(draft).length ? null : `applied ${name}: Ctrl+Z left nothing pending`;
       }
       const undone = command((cmd) => undoPress(cmd, pressed));
-      if (undone.stayed.length) return `applied ${name}, then undone: the press's Undo stayed`;
       if (then === "Ctrl+Z") {
         const pending = shown(de);
-        const ran = runHistory(de, "undo");
+        runHistory(de, "undo");
         if (writesText)
-          return ran || shown(de) !== pending
-            ? `applied ${name}, then undone: Ctrl+Z ran over put-back text: "${shown(de)}"`
-            : null;
-        if (!ran) return `applied ${name}, then undone: Ctrl+Z stayed`;
+          return holds(shown(de), before) ? null : `applied ${name}, undone, then Ctrl+Z lost text: "${shown(de)}" from "${pending}"`;
       } else {
         const back = command((cmd) => undoEdits(cmd, [stored]));
-        if (back.stayed.size) return `applied ${name}, then undone: Restore before stayed`;
+        if (back.compacted.size) return `applied ${name}, then undone: Restore before found no history`;
+        if (writesText)
+          return holds(shown(de), before) ? null : `applied ${name}, undone, then Restore before gave "${shown(de)}"`;
       }
       return shown(de) === before
         ? null
@@ -2123,6 +2062,6 @@ if (process.env.HANDLES && unfreed.size > 0) {
   for (const [where, n] of groups) process.stderr.write(`FAIL unfreed handles: ${n} × ${where}\n`);
 }
 process.stdout.write(
-  failed ? `${failed} failed\n` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}\n`,
+  `${failed ? `${failed} failed` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}`}; ${chainsOverPeers} Undo chains and ${overPeers} words or marks put back over a peer's write, ${shownTwice} words shown twice\n`,
 );
 process.exitCode = failed ? 1 : 0;

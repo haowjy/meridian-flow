@@ -322,7 +322,7 @@ export function createEditorExtensions({
     // rather than in the standalone set.
     UndoRedoKeymapExtension.configure({ history }),
     // Text kept in place: a paragraph deleted under the caret, an edit Undo left.
-    KeptExtension.configure({ presence }),
+    KeptExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),

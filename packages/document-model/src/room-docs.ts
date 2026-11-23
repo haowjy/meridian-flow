@@ -312,7 +312,7 @@ export class RoomDocs {
 
   /**
    * Calls `listener` each time ops from elsewhere are about to go into this copy (`importBatch`,
-   * `forward`): an Undo history takes what its last step left here. Returns the stop.
+   * `forward`). Returns the stop.
    */
   beforeImport(listener: () => void): () => void {
     this.importListeners.add(listener);

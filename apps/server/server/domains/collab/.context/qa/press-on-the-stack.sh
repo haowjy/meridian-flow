@@ -65,20 +65,23 @@ send "$c2" "$tmp/d2.json"
 check "$(sql "select pending_document_count from drafts where id = '$D2'")" 1 "the second draft counts its pending document"
 check "$(sql "select pending_document_count from works where id = '$W'")" 2 "the Work counts both drafts'"
 
-# Apply all at work scope lands both drafts; its Undo, with nobody writing over, takes both back.
+# Apply all at work scope lands both drafts; its Undo takes both back.
 all=$(uuid)
 press "$all" "{\"kind\":\"work\",\"work\":\"$W\"}" >/dev/null
 check "$(./mf doc read "manuscript://$two" | tail -3 | tr '\n' '|')" "The first paragraph, by draft one.||The second paragraph, by draft two.|" \
   "Apply all lands both drafts"
 check "$(sql "select count(*) from document_forks where draft_id in ('$D1','$D2') and pending")" 0 "Apply all leaves no fork pending"
 check "$(sql "select pending_document_count from works where id = '$W'")" 0 "the Work's count is 0"
-check "$(undo "$all" | field "len(d['stayed'])")" 0 "its Undo leaves nothing"
+check "$(undo "$all" | field "d['status']")" unpressed "its Undo runs"
 check "$(./mf doc read "manuscript://$two" | tail -3 | tr '\n' '|')" "The first paragraph.||The second paragraph.|" \
   "the Undo gives Live its text back"
 check "$(sql "select count(*) from document_forks where draft_id in ('$D1','$D2') and document_id = '$CH2' and pending")" 2 \
   "both forks are pending again"
 
-# A chat writes over an applied change: the Undo leaves it whole and names the chat.
+# A chat writes over an applied change: the Undo still runs (design §2). It deletes what is left
+# of the press's characters and puts back the text the press deleted; every word the chat
+# typed that is not one of the press's characters stays.
+words() { python3 -c "import sys; t=sys.argv[1]; print(all(w in t for w in sys.argv[2].split()))" "$1" "$2"; }
 three="Probe $run three"
 put "$three" $'# Three\n\nThe only paragraph of chapter three.' >/dev/null
 write "$tmp/d3.json" "manuscript://$three" "The only paragraph of chapter three." "Chapter three, rewritten by its draft."
@@ -87,23 +90,8 @@ pressed=$(uuid)
 press "$pressed" "{\"kind\":\"draft\",\"draft\":\"$D1\"}" >/dev/null
 write "$tmp/l3.json" "manuscript://$three" "Chapter three, rewritten by its draft." "Night falls on chapter three."
 send "$live" "$tmp/l3.json"
-ref=$(sql "select ref from threads where id = '$live'")
-answer=$(undo "$pressed")
-check "$(echo "$answer" | field "[s['by'] for s in d['stayed']]")" "[[{'kind': 'chat', 'ref': '$ref'}]]" "the Undo names the chat that wrote over"
-check "$(echo "$answer" | field "all(s['change'] for s in d['stayed'])")" True "each change it left is named by an id"
-check "$(last "$three")" "Night falls on chapter three." "the chat's text stays"
-
-# The same with a rewrite that keeps letters of the change: its Undo would scramble the chat's words.
-four="Probe $run four"
-put "$four" $'# Four\n\nThe second paragraph of chapter four.' >/dev/null
-write "$tmp/d4.json" "manuscript://$four" "The second paragraph of chapter four." "Chapter four closes at dusk, rewritten by the draft."
-send "$c1" "$tmp/d4.json"
-pressed=$(uuid)
-press "$pressed" "{\"kind\":\"draft\",\"draft\":\"$D1\"}" >/dev/null
-write "$tmp/l4.json" "manuscript://$four" "Chapter four closes at dusk, rewritten by the draft." "Night falls on chapter four."
-send "$live" "$tmp/l4.json"
-check "$(undo "$pressed" | field "len(d['stayed'])")" 1 "a change whose letters a chat's rewrite kept stays"
-check "$(last "$four")" "Night falls on chapter four." "and Live keeps the chat's text"
-
+check "$(undo "$pressed" | field "d['status']")" unpressed "the Undo over a chat's write runs"
+check "$(words "$(./mf doc read "manuscript://$three" | tail -3 | tr '\n' ' ')" "Night falls The only paragraph of")" True \
+  "the chat's own words stay and the text the press replaced comes back"
 echo "$fails failed"
 exit $((fails > 0))
