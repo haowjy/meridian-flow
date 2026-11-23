@@ -32,6 +32,8 @@ import {
   sameValue,
   setCommentBody,
   structureValues,
+  emptyParagraphOf,
+  isDerivedEmpty,
   takeBack,
   textUnits,
   undoPress,
@@ -39,6 +41,7 @@ import {
   versionOf,
 } from "@meridian/document-model";
 import { EditorState } from "prosemirror-state";
+import { blockOf } from "../../src/codec.js";
 import { readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
 import { Gen, randomEdit, schema, TOKEN } from "./block-changes.gen.ts";
 
@@ -224,9 +227,9 @@ let idCounter = 0;
 function fixBlockIds(tr, rng, skip = () => false) {
   const seen = new Set();
   const A = "0123456789abcdefghijklmnopqrstuvwxyz";
-  tr.doc.descendants((node, pos) => {
-    if (node.type.spec.attrs?.id === undefined || skip(node, pos)) return !node.isTextblock;
-    if (node.attrs.id == null || seen.has(node.attrs.id)) {
+  tr.doc.descendants((node, pos, parent) => {
+    if (node.type.spec.attrs?.id === undefined || skip(node, parent)) return !node.isTextblock;
+    if (node.attrs.id == null || seen.has(node.attrs.id) || emptyParagraphOf(node.attrs.id) !== undefined) {
       let id = "";
       for (let i = 0; i < 10; i++) id += A[Math.floor(rng() * 36)];
       tr.setNodeAttribute(pos, "id", id + (idCounter++).toString(36));
@@ -244,12 +247,13 @@ function edit(d, fn, { rng, message } = {}) {
   const state = EditorState.create({ schema, doc: read(d) });
   const tr = fn(state.tr, state.doc);
   if (!tr || !tr.docChanged) return [];
-  const virtual = new Set();
-  state.doc.descendants((node, pos) => {
-    if (node.type.name === "paragraph" && (node.attrs.id == null || node.attrs.id.endsWith("/empty")) && !node.content.size)
-      virtual.add(tr.mapping.map(pos));
+  // The binding's placeholder rule (design §1): `<container>/empty` stays only on its container's
+  // one empty paragraph; anywhere else the node takes a fresh id before the write.
+  fixBlockIds(tr, rng, (node, parent) => {
+    if (typeof node.attrs.id !== "string" || emptyParagraphOf(node.attrs.id) === undefined) return false;
+    const under = parent === tr.doc ? null : parent.attrs.id;
+    return parent.childCount === 1 && isDerivedEmpty(blockOf(node), under);
   });
-  fixBlockIds(tr, rng, (node, pos) => virtual.has(pos) && node.type.name === "paragraph" && !node.content.size);
   return writeProseMirror(d, tr.doc, { message, random: rng });
 }
 
