@@ -1,6 +1,7 @@
 /**
- * What a commit's message says (design §2 and §5): who wrote it, for attribution, and, for a commit
- * that takes an edit back, what it puts back and which ops it takes back. Every commit message is
+ * What a commit's message says (design §2 and §5): who wrote it, for attribution; for a commit
+ * that takes an edit back, what it puts back and which ops it takes back; and for a commit that
+ * carries a block's text into another block, which characters it copies. Every commit message is
  * written by `commitMessage` and read by `readCommitMessage`.
  */
 
@@ -26,14 +27,25 @@ export interface TakeBackNote {
   ops: OpSpans;
 }
 
+/**
+ * Text a split or a join carries into another block (design §1): Loro has no move, so the text is
+ * new characters, and each one this commit inserts stands for the character of block `from`'s text
+ * doc at the same place in `for`. When `from` shows again, its copies go (`removals.ts`).
+ */
+export interface CopyNote {
+  from: string;
+  for: StandsFor;
+}
+
 export interface CommitNote {
   by?: CommitAuthor;
   undo?: TakeBackNote;
+  copy?: CopyNote;
 }
 
 /** The message a commit carrying `note` is committed under; none for an empty note. */
 export function commitMessage(note: CommitNote): string | undefined {
-  if (!note.by && !note.undo) return undefined;
+  if (!note.by && !note.undo && !note.copy) return undefined;
   return JSON.stringify(note);
 }
 
@@ -52,6 +64,8 @@ export function readCommitMessage(message: string | undefined): CommitNote {
   if (by) note.by = by;
   const undo = takeBackOf(said.undo);
   if (undo) note.undo = undo;
+  const copy = copyOf(said.copy);
+  if (copy) note.copy = copy;
   return note;
 }
 
@@ -65,16 +79,7 @@ function authorOf(by: unknown): CommitAuthor | null {
 function takeBackOf(undo: unknown): TakeBackNote | null {
   if (!isObject(undo)) return null;
   const { for: runs, ops } = undo;
-  if (!Array.isArray(runs) || !isObject(ops) || Array.isArray(ops)) return null;
-  for (const run of runs)
-    if (
-      !Array.isArray(run) ||
-      run.length !== 3 ||
-      typeof run[0] !== "string" ||
-      !Number.isInteger(run[1]) ||
-      !Number.isInteger(run[2])
-    )
-      return null;
+  if (!isStandsFor(runs) || !isObject(ops) || Array.isArray(ops)) return null;
   for (const span of Object.values(ops))
     if (
       !Array.isArray(span) ||
@@ -83,8 +88,25 @@ function takeBackOf(undo: unknown): TakeBackNote | null {
       !Number.isInteger(span[1])
     )
       return null;
-  return { for: runs as StandsFor, ops: ops as OpSpans };
+  return { for: runs, ops: ops as OpSpans };
 }
+
+function copyOf(copy: unknown): CopyNote | null {
+  if (!isObject(copy)) return null;
+  const { from, for: runs } = copy;
+  return typeof from === "string" && isStandsFor(runs) ? { from, for: runs } : null;
+}
+
+const isStandsFor = (runs: unknown): runs is StandsFor =>
+  Array.isArray(runs) &&
+  runs.every(
+    (run) =>
+      Array.isArray(run) &&
+      run.length === 3 &&
+      typeof run[0] === "string" &&
+      Number.isInteger(run[1]) &&
+      Number.isInteger(run[2]),
+  );
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;

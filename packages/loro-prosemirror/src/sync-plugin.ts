@@ -2,6 +2,7 @@ import {
   type BlockId,
   commentVisibility,
   type DocChange,
+  type DocKey,
   emptyParagraphOf,
   isDerivedEmpty,
   type NodeRule,
@@ -105,6 +106,10 @@ const NONE: ReadonlySet<BlockId> = new Set();
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs, history } = options;
   const tracked = options.origin ?? "editor";
+  // The text docs a restore in `apply` changed besides the blocks it brought back (a join's copy
+  // it took out, `restore`): the editor's document still shows them as they were, and
+  // `appendTransaction` reads them again.
+  let restoredTexts: DocKey[] = [];
   return new Plugin<LoroSyncState>({
     key: loroSyncKey,
     filterTransaction(tr) {
@@ -126,6 +131,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
             // ordinary block (design §1, rule 2).
             const restored = restore(docs, kept);
             if (restored.length) options.onLocalWrite?.(restored);
+            restoredTexts = restored.map(({ key }) => key).filter((key) => key !== STRUCTURE_KEY);
             kept = NONE;
           }
           const recorded = tr.getMeta("addToHistory") !== false;
@@ -154,7 +160,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
                 previous: oldState.doc,
                 kept,
                 view,
-                pieces: docs.draft ? movedPieces(tr) : undefined,
+                moved: movedPieces(tr),
               });
           if (recorded) history?.record(changes);
           if (changes.length > 0) options.onLocalWrite?.(changes);
@@ -172,8 +178,9 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       const since = {
         doc: newState.doc,
         comments: visibleComments(docs),
-        changed: new Set([STRUCTURE_KEY]),
+        changed: new Set<DocKey>([STRUCTURE_KEY, ...restoredTexts]),
       };
+      restoredTexts = [];
       const tr = remoteTransaction(docs, newState, selectionCursors(docs, newState), since, kept);
       return tr?.setMeta(KEPT_META, kept) ?? null;
     },

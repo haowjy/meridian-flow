@@ -181,6 +181,15 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
       for (const [key, { before, left, base }] of keys) {
         if (sameValue(before, left)) continue;
         if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
+        // A press settled the value it wrote: the draft reads Live's, which holds it now, so
+        // taking it back would change nothing on screen. It stays, as a write over it would.
+        if (name.startsWith("d.") && name !== SETTLED_MAP && left !== undefined) {
+          const settled = settledKey(baseName(name), key);
+          const by = inMap(docs.structure, SETTLED_MAP, (entries) =>
+            sameValue(entries.get(settled), left) ? entries.getLastEditor(settled) : undefined,
+          );
+          if (by !== undefined && by !== peer) return `${name}[${key}] was settled by a press`;
+        }
         // A settled override someone wrote since without seeing the press (which writes no op on
         // the settled entry) holds another value now.
         if (name === SETTLED_MAP && left !== undefined) {
@@ -271,14 +280,17 @@ export function putBackValues(
   const before = structure.frontiers();
   const read = view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
-  for (const { name, key, value, at } of puts) {
-    if (at === undefined) {
-      inMap(structure, name, (map) => {
-        if (value === undefined) map.delete(key);
-        else map.set(key, value as never);
-      });
+  const write = ({ name, key, value }: Put) =>
+    inMap(structure, name, (map) => {
+      if (value === undefined) map.delete(key);
+      else map.set(key, value as never);
+    });
+  for (const put of puts) {
+    const { name, key, at } = put;
+    if (at === undefined && name !== SETTLED_MAP) {
+      write(put);
       // A write of an override takes back a press's settling of it, as `StructureWriter`'s does.
-      if (name.startsWith("d.") && name !== SETTLED_MAP)
+      if (name.startsWith("d."))
         inMap(structure, SETTLED_MAP, (map) => {
           const settled = settledKey(baseName(name), key);
           if (map.get(settled) !== undefined) map.delete(settled);
@@ -294,8 +306,11 @@ export function putBackValues(
       docs,
       removals.length < puts.length ? new StructureView(docs) : read,
     );
-    for (const { key, at } of removals) writer.remove(key, at ?? undefined);
+    for (const { key, at, moved } of removals) writer.remove(key, at ?? undefined, moved);
   }
+  // Settled entries last: an edit that wrote an override and its entry together (a write that
+  // dropped an override matching Live) gets both back, and the writes above unsettle the key.
+  for (const put of puts) if (put.name === SETTLED_MAP) write(put);
   const change = commitStructure(docs, before, { by });
   for (const [name, keys] of back)
     inMap(structure, name, (map) => {
@@ -307,12 +322,16 @@ export function putBackValues(
   return { change, values: back };
 }
 
-/** A write of a put-back: `at` set makes it a removal of block `key` (null: at its key now). */
+/**
+ * A write of a put-back: `at` set makes it a removal of block `key` (null: at its key now), naming
+ * where a join carried its text (`moved`) as the record it puts back did.
+ */
 interface Put {
   name: string;
   key: string;
   value: unknown;
   at?: string | null;
+  moved?: BlockId;
 }
 
 function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] {
@@ -336,9 +355,21 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
         continue;
       }
       if (name !== order && membersOf(name, key).every((id) => made.has(id))) continue;
-      const removal = name === order ? removalOf(before) : null;
+      // A record a press settled is not in force (it reads Live's): it goes back as stored, so it
+      // equals its entry again.
+      const settled =
+        name === order &&
+        docs.draft &&
+        sameValue(
+          values.get(SETTLED_MAP)?.get(settledKey("order", key))?.before ??
+            view.settledValue("order", key),
+          before,
+        );
+      const removal = name === order && !settled ? removalOf(before) : null;
       puts.push(
-        removal ? { name, key, value: before, at: removal.at } : { name, key, value: before },
+        removal
+          ? { name, key, value: before, at: removal.at, moved: removal.moved }
+          : { name, key, value: before },
       );
     }
   return puts;
@@ -362,35 +393,47 @@ function screenAfter(
   shows(id: BlockId): boolean;
 } {
   const { shape } = docs;
-  const puts = new Map<string, unknown>();
+  type ScreenMap = "order" | "parent" | "node";
+  const onScreen = (map: string): map is ScreenMap =>
+    map === "order" || map === "parent" || map === "node";
+  // What the run writes of each value, and of each settled entry (`putBackValues`: a write of an
+  // override deletes its entry, and an entry put back is written after).
+  const wrote = new Map<string, { map: ScreenMap; key: string; value: unknown }>();
+  const settles = new Map<string, unknown>();
   const touched = new Set<BlockId>();
   for (const { name, key, value, at } of planOf(docs, view, values)) {
-    // A settled entry put back changes what its override reads as: in force again when deleted,
-    // Live's value when set.
     if (name === SETTLED_MAP) {
       const [map, target] = settledTarget(key);
-      if (map !== "order" && map !== "parent" && map !== "node") continue;
+      if (!onScreen(map)) continue;
       touched.add(target);
-      puts.set(
-        `${map}\u0000${target}`,
-        (value === undefined ? view.rawOverride(map, target) : undefined) ??
-          view.baseValue(map, target),
-      );
+      settles.set(`${map}\u0000${target}`, value);
       continue;
     }
     const map = baseName(name);
-    if (map !== "order" && map !== "parent" && map !== "node") continue;
+    if (!onScreen(map)) continue;
     touched.add(key);
-    // A removal reads as any value that is not a key; a deleted override reads Live's value.
-    puts.set(
-      `${map}\u0000${key}`,
-      at !== undefined
-        ? "{}"
-        : value === undefined && docs.draft
-          ? view.baseValue(map, key)
-          : value,
-    );
+    // A removal reads as any value that is not a key.
+    wrote.set(`${map}\u0000${key}`, { map, key, value: at !== undefined ? "{}" : value });
   }
+  const puts = new Map<string, unknown>();
+  for (const id of touched)
+    for (const map of ["order", "parent", "node"] as const) {
+      const at = `${map}\u0000${id}`;
+      if (!wrote.has(at) && !settles.has(at)) continue;
+      const value = wrote.get(at)?.value;
+      if (!docs.draft) {
+        puts.set(at, value);
+        continue;
+      }
+      // In a draft, the override after the run, unless it equals its settled entry: Live's then.
+      const raw = wrote.has(at) ? value : view.rawOverride(map, id);
+      const settled = settles.has(at)
+        ? settles.get(at)
+        : wrote.has(at)
+          ? undefined
+          : view.settledValue(map, id);
+      puts.set(at, raw === undefined || sameValue(raw, settled) ? view.baseValue(map, id) : raw);
+    }
   const valueAfter = (map: "parent" | "node", id: BlockId) => {
     const key = `${map}\u0000${id}`;
     return puts.has(key) ? puts.get(key) : view.value(map, id);
@@ -748,6 +791,39 @@ function putBy(doc: LoroDoc, text: LoroText, pos: number, memo: StandsForMemo): 
 
 type StandsForMemo = Map<string, Set<string> | null>;
 
+/**
+ * The stretches `[from, to)` of `doc`'s text that are copies of block `of`'s text (`CopyNote`): a
+ * character a split or a join wrote as a copy of `of`, or one an Undo put back for such a
+ * character, followed through the take-back chain.
+ */
+export function copiesIn(doc: LoroDoc, of: BlockId): [number, number][] {
+  const memo: StandsForMemo = new Map();
+  const notes = new Map<string, boolean>();
+  const isCopy = (id: string) => {
+    const at = parseId(id);
+    const change = changeAt(doc, at);
+    if (!change) return false;
+    const key = `${change.counter}@${change.peer}`;
+    let copies = notes.get(key);
+    if (copies === undefined) {
+      copies = readCommitMessage(change.message).copy?.from === of;
+      notes.set(key, copies);
+    }
+    return copies;
+  };
+  return inText(doc, (text) => {
+    const out: [number, number][] = [];
+    for (let pos = 0; pos < text.length; pos++) {
+      const id = idAt(text, pos);
+      if (!id || !(isCopy(id) || [...(chainOf(doc, id, memo) ?? [])].some(isCopy))) continue;
+      const last = out.at(-1);
+      if (last && last[1] === pos) last[1]++;
+      else out.push([pos, pos + 1]);
+    }
+    return out;
+  });
+}
+
 function chainOf(doc: LoroDoc, id: string, memo: StandsForMemo): Set<string> | null {
   if (memo.has(id)) return memo.get(id) ?? null;
   memo.set(id, null);
@@ -901,12 +977,14 @@ function deletedAgain(
  * Per text doc, what each removal record a peer other than `peer` wrote since `since` (structure
  * frontiers) read of it, whether the removal still stands or a restore answered it. A removal
  * takes the text it read off the screen, as a delete would: a join copies a block's text into the
- * block before and removes it.
+ * block before and removes it. A join's record a restore answered does not count: the restore
+ * took its copy out (`restore`), so the text shows once again.
  */
 function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocKey, DocVersion[]> {
   const out = new Map<DocKey, DocVersion[]>();
   const order = docs.draft ? overrideMap("order") : "order";
   const then = plainVersion(docs.structure.frontiersToVV(since));
+  const answered = (id: BlockId) => isOrderKey(inMap(docs.structure, order, (map) => map.get(id)));
   for (const [other, counter] of docVersion(docs.structure)) {
     const from = then.get(other) ?? 0;
     if (other === peer || counter <= from) continue;
@@ -918,6 +996,7 @@ function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocK
       for (const { container, content } of change.ops) {
         if (content.type !== "insert" || mapName(container) !== order) continue;
         const removal = removalOf((content as { value: unknown }).value);
+        if (removal?.moved !== undefined && answered((content as { key: string }).key)) continue;
         for (const [key, seen] of removal?.seen ?? [])
           out.set(key, [...(out.get(key) ?? []), seen]);
       }

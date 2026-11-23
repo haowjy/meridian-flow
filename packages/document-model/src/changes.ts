@@ -460,7 +460,7 @@ export function applyBlocks(
       const at = isOrderKey(liveView.baseValue("order", id))
         ? (liveView.baseValue("order", id) as string)
         : removal.at;
-      writer.set("order", id, encodeRemoval({ at, seen }));
+      writer.set("order", id, encodeRemoval({ at, seen, moved: removal.moved }));
     }
   for (const comment of comments)
     writer.set("comments", comment, forkView.override("comments", comment) ?? null);

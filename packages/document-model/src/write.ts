@@ -1,5 +1,10 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, commitMessage } from "./commit-message.js";
+import {
+  type CommitAuthor,
+  type CommitNote,
+  commitMessage,
+  type StandsFor,
+} from "./commit-message.js";
 import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
@@ -32,7 +37,7 @@ import {
   storedAttrs,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
-import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
+import { patchStyles, replaceUnits, type TextRules, type WantedUnit, wantedUnits } from "./text.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
@@ -84,11 +89,36 @@ export interface WriteOptions {
   kept?: ReadonlySet<BlockId>;
   /** The read of the structure with `kept` as it is now, when the caller already took it. */
   view?: StructureView;
-  /**
-   * The pairs of blocks this write moved text between (a split, a join): the writer knows them
-   * from the edit it is writing, and a draft records them so the two are one change (design §2).
-   */
-  pieces?: readonly (readonly [BlockId, BlockId])[];
+  /** What this write moved between blocks: the writer knows it from the edit it is writing. */
+  moved?: Moved;
+}
+
+/**
+ * What one write moved between blocks (a split, a join, a paste, a drop). A draft records each
+ * pair so the two blocks are one change (design §2). Each stretch of text carried whole goes in
+ * as a copy that names the characters it stands for (`CopyNote`), and a block whose text a join
+ * carried off names where it went in its removal record, so the block coming back takes its copy
+ * out (design §1).
+ */
+export interface Moved {
+  pieces: readonly (readonly [BlockId, BlockId])[];
+  copies: readonly MovedText[];
+}
+
+/** `length` units of `from` at `was` now stand in `into` at `at`, as the editor counts units. */
+export interface MovedText {
+  from: BlockId;
+  into: BlockId;
+  was: number;
+  at: number;
+  length: number;
+}
+
+/** A copy for `writeText`: the units at `at` it writes stand for `for`, in `from`'s text doc. */
+interface Copy {
+  from: BlockId;
+  at: number;
+  for: StandsFor;
 }
 
 /**
@@ -144,7 +174,7 @@ export class StructureWriter {
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
    * they remove. `at` is given when an Undo writes a removal record back (`putBackValues`).
    */
-  remove(id: BlockId, at = this.view.order(id) as string): void {
+  remove(id: BlockId, at = this.view.order(id) as string, moved?: BlockId): void {
     const seen = new Map<DocKey, DocVersion>();
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
@@ -152,7 +182,7 @@ export class StructureWriter {
       // holds ops it never showed.
       if (doc) seen.set(key, plainVersion(doc.version()));
     }
-    this.set("order", id, encodeRemoval({ at, seen }));
+    this.set("order", id, encodeRemoval({ at, seen, moved }));
   }
 
   /**
@@ -303,6 +333,9 @@ export function writeDocument(
   const random = options.random ?? Math.random;
   const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
+  const copies = options.moved?.copies.length
+    ? copiesOf(docs, read, options.moved.copies)
+    : new Map<BlockId, Copy[]>();
   const written = new Set<BlockId>();
   const take = (id: BlockId) => {
     if (written.has(id)) throw new Error(`block id ${id} appears twice`);
@@ -359,6 +392,7 @@ export function writeDocument(
           block.inline,
           { rule, shape, visibleComment },
           options,
+          copies.get(block.id),
         );
         if (change) changes.push(change);
       }
@@ -372,10 +406,13 @@ export function writeDocument(
       // A block under a removed block hides with it, and comes back with it.
       const parent = read().parent(id);
       const goesWithParent = typeof parent === "string" && !written.has(parent);
-      if (!written.has(id) && !goesWithParent) structure().remove(id);
+      if (!written.has(id) && !goesWithParent) {
+        const into = [...copies].find(([, list]) => list.some((copy) => copy.from === id))?.[0];
+        structure().remove(id, undefined, into);
+      }
     }
   if (docs.draft) {
-    for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
+    for (const [a, b] of options.moved?.pieces ?? []) structure().pieces(a, b);
     // A block shown after the write with other text than Live's is changed; a typed block left
     // with Live's text is the only one a keystroke can settle.
     const shown = (id: BlockId) => written.has(id) && !options.kept?.has(id);
@@ -438,28 +475,83 @@ export function writeText(
   inline: readonly InlineItem[],
   rules: TextRules,
   options: WriteOptions,
+  copies: readonly Copy[] = [],
 ): DocChange | null {
   const wantedItems = normalizeInline(inline);
   const current = readInline(docs.textOf(id), rules.rule, rules.shape, rules.visibleComment);
   if (sameValue(current, wantedItems)) return null;
   const { doc, before } = docs.writableText(id);
   const wanted = wantedUnits(wantedItems);
-  const shown = shownUnits(doc, rules.rule, rules.shape);
-  const splice = spliceOf(
-    shown.map((unit) => unit.ch).join(""),
-    wanted.map((unit) => unit.ch).join(""),
-  );
-  replaceUnits(
-    doc,
-    rules,
-    splice.index,
-    splice.index + splice.remove,
-    wanted.slice(splice.index, splice.index + splice.insert),
-  );
-  inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), wanted, rules));
-  doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
+  const write = (target: readonly WantedUnit[], note: CommitNote) => {
+    const shown = shownUnits(doc, rules.rule, rules.shape);
+    const splice = spliceOf(
+      shown.map((unit) => unit.ch).join(""),
+      target.map((unit) => unit.ch).join(""),
+    );
+    replaceUnits(
+      doc,
+      rules,
+      splice.index,
+      splice.index + splice.remove,
+      target.slice(splice.index, splice.index + splice.insert),
+    );
+    inText(doc, (text) =>
+      patchStyles(text, shownUnits(doc, rules.rule, rules.shape), target, rules),
+    );
+    doc.commit({ message: commitMessage(note), origin: options.origin });
+  };
+  // Each copy goes in by a commit of its own, whose note names what its characters stand for:
+  // first the text without them, then each copy in order.
+  const placed = copies
+    .filter((copy) => copy.at >= 0 && copy.at + lengthOf(copy.for) <= wanted.length)
+    .sort((a, b) => a.at - b.at)
+    .filter((copy, i, all) => i === 0 || all[i - 1].at + lengthOf(all[i - 1].for) <= copy.at);
+  const without = (from: number) =>
+    wanted.filter(
+      (_, at) =>
+        !placed.some((copy, i) => i >= from && copy.at <= at && at < copy.at + lengthOf(copy.for)),
+    );
+  write(without(0), { by: options.by });
+  for (const [i, copy] of placed.entries())
+    write(without(i + 1), { by: options.by, copy: { from: copy.from, for: copy.for } });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
+}
+
+const lengthOf = (runs: StandsFor) => runs.reduce((sum, [, , length]) => sum + length, 0);
+
+/**
+ * The copies `moved` makes, by the block they go into: the characters of each stretch read from
+ * the text it was carried from, before the write changes it. A stretch whose units do not all
+ * read there (the caller's document and the docs disagree) is written as plain text.
+ */
+function copiesOf(docs: RoomDocs, view: () => StructureView, moved: readonly MovedText[]) {
+  const out = new Map<BlockId, Copy[]>();
+  for (const { from, into, was, at, length } of moved) {
+    const doc = docs.textOf(from);
+    const rule = doc && docs.shape.node(view().node(from) ?? "");
+    if (!doc || !rule || length <= 0) continue;
+    const units = shownUnits(doc, rule, docs.shape).slice(was, was + length);
+    if (units.length !== length) continue;
+    const runs = inText(doc, (text) => {
+      const out: StandsFor = [];
+      for (const unit of units) {
+        const cursor = text.getCursor(unit.pos, 0);
+        const id = cursor?.pos();
+        cursor?.free();
+        if (!id) return null;
+        const last = out.at(-1);
+        if (last && last[0] === id.peer && last[1] + last[2] === id.counter) last[2]++;
+        else out.push([id.peer, id.counter, 1]);
+      }
+      return out;
+    });
+    if (!runs) continue;
+    const list = out.get(into) ?? [];
+    list.push({ from, at, for: runs });
+    out.set(into, list);
+  }
+  return out;
 }
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */

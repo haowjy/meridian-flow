@@ -61,7 +61,9 @@ of the chat's words), and still keeps it once the peer has undone the rewrite: t
 A's text back as new characters, which Loro's manager can't delete, so A's Ctrl+Z left "LastOwl."
 (review p19027).
 From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
-deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); a
+deleted across two blocks unseen, the import restores the block and takes the join's copy out, and
+A's Ctrl+Z then goes back, the text once (seed 414; before the restore took the copy out, the
+Ctrl+Z stayed rather than show it twice); a
 draft that also deleted A's "F" is pressed into Live and the press undone, and A's Ctrl+Z goes
 back, the undone delete counting as never made (review p19017); B's Ctrl+Z of its own delete of
 that "F", before it sees A's, puts it back, and A's Ctrl+Z stays rather than show it twice; two
@@ -75,7 +77,12 @@ caret in it, never shows B's deleted words again (seed 953); typing into the pla
 peer emptied the container is a new paragraph without the removed one's words, and one Ctrl+Z
 brings the placeholder back. From review p18996: one edit judged on its author's copy and on
 a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
-Live has moved the block since. From review p18998: B's batch between each of A's 1,001 keys splits A's
+Live has moved the block since. A Draft tab's Ctrl+Z of a split, a move or a retype the writer
+then applied stays, and the draft shows the applied edit with nothing pending: the press settled
+its values (`d.settled`). A join that did not read a peer's typing gives the block back without
+its copy, whether the typing arrives after the join (rule 1) or the typer's caret kept the block
+(the caret rule). A peer's Backspace run (one delete op with a negative `len`) over text A deleted
+keeps A's Ctrl+Z. From review p18998: B's batch between each of A's 1,001 keys splits A's
 one typing step into an item per key, and its Undo takes back every key.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document

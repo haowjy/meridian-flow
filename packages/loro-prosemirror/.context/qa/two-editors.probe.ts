@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import {
   applyBlocks,
   applyOps,
+  changedBlocks,
   type DocKey,
   encodeEnvelope,
   freshPeerId,
@@ -921,7 +922,8 @@ function racedRemovals(): string[] {
   const ownRooms: Record<string, Own> = {
     // Seed 414: B joins x into p, so p holds a copy of x's text and x is removed; A,
     // not having seen it, deletes across x and y. B's removal did not read A's ops in x, so the
-    // import restores x. A's Ctrl+Z would put x's old text back beside B's copy: it stays.
+    // import restores x and takes B's copy out of p. A's Ctrl+Z goes back: x's text shows once.
+    // (Before the copy went with the restore, the Ctrl+Z stayed, or it showed beside B's copy.)
     "a peer's join took away text A deleted across": {
       room: () => room([p("p", "Pre."), p("x", "Mid qA8 word."), p("y", "Tail text.")]),
       run: (r) => {
@@ -932,6 +934,19 @@ function racedRemovals(): string[] {
         syncAll(r);
         runHistory(r.a, "undo");
         return settle(r, "join/delete-across then A Undo", once("qA8"));
+      },
+    },
+    // Rule 2 of design §1's copies: B joins x into p, so p holds a copy of x's text; A, not
+    // having seen it, types in x. B's removal did not read A's typing, so the import restores x,
+    // and the restore takes B's copy out of p: x's words show once, A's typing with them.
+    "a join that did not read A's typing gives the block back without its copy": {
+      room: () => room([p("p", "Pre."), p("x", "Mid word."), p("y", "Tail text.")]),
+      run: (r) => {
+        r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
+        r.b.history.endStep();
+        r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
+        r.a.history.endStep();
+        return settle(r, "join against unread typing", once("Mid word."), once("qA9"), once("Pre."));
       },
     },
     // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
@@ -1268,6 +1283,18 @@ function racedRemovals(): string[] {
       if (!shown(r.b).includes("qA163")) return `join case: the join did not make the word: ${shown(r.b)}`;
       runHistory(r.b, "undo");
       return settle(r, "an Undo of a join of a split word keeps both halves", showsAll("qA|163"));
+    },
+    // Rule 2 of design §1's copies, by the caret rule: A joins x into the block before while B's
+    // caret rests in x. B keeps x on screen beside A's copy; B's typing brings x back, and the
+    // restore takes A's copy out of B's screen as well as its docs.
+    "typing in a block a peer joined away": (r) => {
+      caret(r.b, "x", 14);
+      r.a.view.dispatch(r.a.view.state.tr.join(posOf(r.a, "x")));
+      r.a.history.endStep();
+      sync(r.a, r.b);
+      if (!keptOf(r.b).has("x")) return `joined-away case: B does not keep x: "${shown(r.b)}"`;
+      type(r.b, "[third]");
+      return settle(r, "typing in a block a peer joined away", once("Delete-target"), once("[third]"));
     },
     // The usual online case (a phase 1 prober's 120 ms typing): the removal reaches B between two
     // of its keys. B's caret keeps the block on screen, and B's next keys bring it back.
@@ -1927,6 +1954,37 @@ function racedRemovals(): string[] {
     }
   };
 
+  // A Draft tab's Ctrl+Z of an edit the writer then applied: the press settled the draft's
+  // values (`d.settled`) and the draft reads Live's, which hold them now. The step stays, so Ctrl+Z
+  // goes on to the step before it, as it did when the press deleted the overrides.
+  const draftUndoAfterApply = (name: string, edit: (de: Editor) => void): string | null => {
+    const live = RoomDocs.create(shape, freshPeerId());
+    writeProseMirror(live, schema.topNodeType.create(null, start()));
+    const draft = RoomDocs.draftOf(live, freshPeerId());
+    const de = editor("Draft", draft);
+    try {
+      edit(de);
+      const cmd = draft.fork(freshPeerId());
+      try {
+        applyBlocks(cmd, "all", { liveVersion: live.version() });
+        live.importBatch((cmd.live as RoomDocs).exportSince(live.version()));
+        const got = draft.importBatch(cmd.exportSince(draft.version()));
+        notifyChanged(draft, [...got.changed, ...draft.forward().changed]);
+      } finally {
+        cmd.free();
+      }
+      const applied = shown(de);
+      if (runHistory(de, "undo")) return `applied ${name}: the Draft tab's Ctrl+Z ran`;
+      if (shown(de) !== applied) return `applied ${name}: the draft shows "${shown(de)}"`;
+      const pending = changedBlocks(draft);
+      return pending.length ? `applied ${name}: ${pending.length} changes pending` : null;
+    } finally {
+      de.destroy();
+      draft.free();
+      live.free();
+    }
+  };
+
   const failures: string[] = [];
   const all: [string, Own][] = [
     ...Object.entries(cases).map(([name, run]): [string, Own] => [name, { room: () => room(), run }]),
@@ -1945,6 +2003,15 @@ function racedRemovals(): string[] {
   }
   const draft = draftRedoAfterLiveWrite();
   if (draft) failures.push(draft);
+  const edits: [string, (de: Editor) => void][] = [
+    ["split", (de) => split(de, "x", 14, "x2")],
+    ["move", (de) => move(de, "x", "a")],
+    ["retype", (de) => retype(de, "x", "heading", { level: 2 })],
+  ];
+  for (const [name, edit] of edits) {
+    const applied = draftUndoAfterApply(name, edit);
+    if (applied) failures.push(applied);
+  }
   return failures;
 }
 

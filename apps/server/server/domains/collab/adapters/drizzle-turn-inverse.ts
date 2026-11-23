@@ -12,7 +12,6 @@ import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
 import {
   changedBlocks,
-  type DocVersion,
   editSince,
   encodeChanges,
   type RoomDocs,

@@ -21,6 +21,7 @@ import type { DocChange } from "./write.js";
 
 /** What an import did to a copy (`RoomDocs.importBatch`). */
 export interface Imported {
+  /** The docs the import changed, the restore's included. */
   changed: DocKey[];
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
@@ -438,8 +439,11 @@ export class RoomDocs {
     return { changed, pending: false, restore: this.answer(before, changed) };
   }
 
-  private answer(before: Frontiers, changed: readonly DocKey[]): DocChange[] {
-    return changed.includes(STRUCTURE_KEY) ? answerRemovals(this, before) : [];
+  private answer(before: Frontiers, changed: DocKey[]): DocChange[] {
+    if (!changed.includes(STRUCTURE_KEY)) return [];
+    const restore = answerRemovals(this, before);
+    for (const { key } of restore) if (!changed.includes(key)) changed.push(key);
+    return restore;
   }
 
   free(): void {

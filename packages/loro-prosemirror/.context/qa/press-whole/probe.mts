@@ -27,9 +27,9 @@ function edit(d, fn) {
   let tr = fn(state);
   if (!tr || !tr.docChanged) return null;
   fixBlockIds(tr, state);
-  const pieces = lp.movedPieces(tr);
-  lp.writeProseMirror(d, tr.doc, { previous: state.doc, pieces });
-  return pieces;
+  const moved = lp.movedPieces(tr);
+  lp.writeProseMirror(d, tr.doc, { previous: state.doc, moved });
+  return moved.pieces;
 }
 function cmd(c, from, to = from) {
   return (state) => {

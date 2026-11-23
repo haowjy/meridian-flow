@@ -256,7 +256,7 @@ function edit(d, fn, { rng, by } = {}) {
     const under = parent === tr.doc ? null : parent.attrs.id;
     return parent.childCount === 1 && isDerivedEmpty(blockOf(node), under);
   });
-  return writeProseMirror(d, tr.doc, { by, random: rng, pieces: process.env.FUZZ_NO_PIECES ? [] : movedPieces(tr) });
+  return writeProseMirror(d, tr.doc, { by, random: rng, moved: process.env.FUZZ_NO_PIECES ? undefined : movedPieces(tr) });
 }
 
 export function runScript(seed, { verbose = false } = {}) {
@@ -291,7 +291,6 @@ export function runScript(seed, { verbose = false } = {}) {
   const liveTokenBlock = new Map();
   const liveTokenIds = new Map();
   const draftDeletedChars = new Set();
-  const splitMoved = process.env.FUZZ_STRICT ? { add() {}, has: () => false } : new Set();
   const resetRestored = new Map();
   const inverseCopies = new Map();
   /** The token each character was first seen in, by block and character id: ids repeat across text docs. */
@@ -480,7 +479,6 @@ export function runScript(seed, { verbose = false } = {}) {
     const before = tokens(d);
     const shown = new StructureView(d).shown;
     const oldIds = new Map([...shown].map((id) => [id, charIds(d.textOf(id))]));
-    const tb0 = e.kind === "split" || e.kind === "join" ? tokenBlocks(d) : null;
     const b0 = d.structure.frontiers();
     const prior = d.draft ? overridesNow(d) : null;
     for (const [id, body] of e.comments ?? []) setCommentBody(d, id, body);
@@ -530,12 +528,6 @@ export function runScript(seed, { verbose = false } = {}) {
         const ids = new Set(e.comments.map(([id]) => id));
         for (const [id, set] of carriers(d)) if ([...set].some((c) => ids.has(c))) touched.add(id);
       }
-    }
-    if (tb0) {
-      const tb1 = tokenBlocks(d);
-      for (const [t, id] of tb1) if (tb0.has(t) && tb0.get(t) !== id) splitMoved.add(t);
-      // A join that glues two tokens into one word ("l28kf32k") moves them out of the token regex's sight.
-      for (const t of tb0.keys()) if (!tb1.has(t)) splitMoved.add(t);
     }
     stats.kinds[e.kind] = (stats.kinds[e.kind] ?? 0) + 1;
     note(`  ${origin} ${e.kind}`);
@@ -653,7 +645,7 @@ export function runScript(seed, { verbose = false } = {}) {
       recordOrigins(tab);
       stats.ctrlz++;
       note("  CTRLZ");
-      check(render(tab) === before, "ctrlz", "tab not back to before edit");
+      check(render(tab) === before, "ctrlz", () => `tab not back to before edit:\n${before}\n${render(tab)}`);
     }
     if (g.chance(0.6)) syncTab();
   }
@@ -1421,7 +1413,8 @@ export function runScript(seed, { verbose = false } = {}) {
         stats.liveTokenDeleted++;
         continue;
       }
-      if (fTokens.get(tok) !== id && !splitMoved.has(tok)) {
+      // A Live split or join since carried the token on: the fork shows it where Live does.
+      if (fTokens.get(tok) !== id && fTokens.get(tok) !== lTokens.get(tok)) {
         const text = textOfDoc(fork.textOf(id));
         let at = 0;
         for (const c of text) if (c === tok[at]) at++;
@@ -1453,7 +1446,7 @@ export function runScript(seed, { verbose = false } = {}) {
       for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
         if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(`${id}|${c}`) && origins.get(`${id}|${c}`) !== m[0])) collisions.add(m[0]);
     }
-    const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t));
+    const dup = final.filter((t, i) => final.indexOf(t) !== i && !collisions.has(t));
     check(!dup.length, "duplicate-text", () => `duplicate tokens ${dup.join(",")}; Live ${render(live)}`);
     const allIds = [];
     read(live).descendants((n) => {

@@ -17,6 +17,7 @@ export {
 export {
   type CommitAuthor,
   type CommitNote,
+  type CopyNote,
   commitMessage,
   type OpSpans,
   readCommitMessage,
@@ -104,6 +105,7 @@ export {
   StructureView,
 } from "./structure.js";
 export {
+  copiesIn,
   deletedBetween,
   type Edit,
   type EditValues,
@@ -137,6 +139,8 @@ export {
   commitStructure,
   type DocChange,
   encodeChanges,
+  type Moved,
+  type MovedText,
   StructureWriter,
   setCommentBody,
   type WriteOptions,
