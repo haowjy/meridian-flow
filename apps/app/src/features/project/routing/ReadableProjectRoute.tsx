@@ -40,6 +40,7 @@ import {
   type ReplayAddress,
   resolveReplayAddress,
 } from "./local-document-address";
+import { type MainReviewControls, reviewOpenedFrom } from "./main-review";
 import {
   type AddressAdmission,
   addressedDocument,
@@ -53,6 +54,7 @@ import {
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
+  withoutDraft,
   withoutReview,
 } from "./project-address";
 import {
@@ -448,7 +450,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
     // `reviewEnded` lets the document say once that the link's draft has ended.
     if (ticket)
-      void navigation.replaceIfCurrent(ticket, withoutReview(address), { reviewEnded: true });
+      void navigation.replaceIfCurrent(ticket, withoutDraft(address), { reviewEnded: true });
   }, [reviewGone, navigation, location, address]);
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
   // The failed reads are what the address waits on; retrying them is the destination's recovery.
@@ -486,6 +488,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       ...address,
       destination: next,
       itemKey: undefined,
+      review: undefined,
       changeId: undefined,
       owner: undefined,
     };
@@ -495,12 +498,48 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
     const { address } = current;
-    // A draft's item key is part of its link, and names the draft.
+    // A draft's item key is part of its link, and names the draft. Review changes is of the
+    // draft it was opened on: another draft, or Live, drops it.
     const next = review
-      ? { ...address, itemKey: review.itemKey, changeId: review.changeId }
-      : withoutReview(address);
+      ? review.itemKey === address.itemKey
+        ? address
+        : { ...withoutReview(address), itemKey: review.itemKey }
+      : withoutDraft(address);
     void current.navigation.replaceIfCurrent(ticket, next);
   }, []);
+  const { history } = useRouter();
+  // Main's Review changes: the address turns it on, and these move within it or leave it.
+  const reviewControls = useMemo<MainReviewControls>(
+    () => ({
+      close: () => {
+        const { navigation, address } = latest.current;
+        if (!navigation || !address.review) return;
+        // Back when this entry was pushed from the plain page of the document it shows; a review
+        // that crossed chapters or arrived by a link closes onto its chapter by replace.
+        const openedFrom = reviewOpenedFrom(history.location.state);
+        if (openedFrom && openedFrom === addressDocumentIdRef.current) {
+          history.back();
+          return;
+        }
+        void navigation.replaceIfCurrent(navigation.capture(), withoutReview(address));
+      },
+      focus: (changeId) => {
+        const { navigation, address } = latest.current;
+        if (!navigation || !address.review || address.changeId === changeId) return;
+        void navigation.replaceIfCurrent(navigation.capture(), { ...address, changeId });
+      },
+      retarget: (review) => {
+        const { navigation, address } = latest.current;
+        if (!navigation || !address.itemKey || address.review === review) return;
+        void navigation.replaceIfCurrent(navigation.capture(), {
+          ...address,
+          review,
+          changeId: undefined,
+        });
+      },
+    }),
+    [history],
+  );
   // Stable, so the document opener built on it outlives a change of what main shows.
   const openTrashed = useCallback<TrashNavigation["open"]>(async (documentId, options) => {
     const { navigation, address } = latest.current;
@@ -604,7 +643,9 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
             activeContextChat={locatorOwner.rootThreadId ?? null}
             reviewItemKey={address.itemKey}
             reviewOwner={reviewOwner}
+            reviewTarget={address.review}
             reviewChangeId={address.changeId}
+            reviewControls={reviewControls}
             reviewAddressDocumentId={addressDocumentId}
             reviewAddressAdmission={
               documentIssue === "error"

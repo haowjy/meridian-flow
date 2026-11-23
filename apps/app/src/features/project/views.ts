@@ -86,7 +86,7 @@ export function shownDraft(input: {
   if (pin && pin.draftId !== scopeDraftId) return pin;
   if (!scopeDraftId || input.choice !== "draft") return undefined;
   const itemKey = draftItemKey(scopeDraftId, input.documentId as DocumentId);
-  return { draftId: scopeDraftId, itemKey, ...(pin?.changeId ? { changeId: pin.changeId } : {}) };
+  return { draftId: scopeDraftId, itemKey };
 }
 
 /**
@@ -129,22 +129,17 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   );
   const pinOwner = pin?.draftId;
   const pinItem = pin?.itemKey;
-  const pinChange = pin?.changeId;
   return useMemo((): DocumentPaint => {
     const base = { scopeDraftId, view };
     if (pinOwner && pinItem)
       return {
         ...base,
         showing: "draft",
-        draft: {
-          draftId: pinOwner,
-          itemKey: pinItem,
-          ...(pinChange ? { changeId: pinChange } : {}),
-        },
+        draft: { draftId: pinOwner, itemKey: pinItem },
         outOfScope: pinOwner !== scopeDraftId,
       };
     return { ...base, showing: "live", draft: null, outOfScope: false };
-  }, [scopeDraftId, view, pinOwner, pinItem, pinChange]);
+  }, [scopeDraftId, view, pinOwner, pinItem]);
 }
 
 /** What a view holds. A chat with no id is a new chat's composer; `about` is the document it attaches. */

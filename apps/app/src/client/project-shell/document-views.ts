@@ -17,8 +17,8 @@ import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import { writeTreeVersionChoice } from "./store";
 
-/** A draft by its id, item, and focused change. */
-export type DraftPin = { draftId: string; itemKey: string; changeId?: string };
+/** The draft a page shows, by its id and item. Whether Review changes is on is the address's. */
+export type DraftPin = { draftId: string; itemKey: string };
 
 export type DocumentView = {
   /**
@@ -49,10 +49,9 @@ const listeners = new Map<string, Set<() => void>>();
 
 function parsePin(value: unknown): DraftPin | undefined {
   if (!isRecord(value)) return undefined;
-  const { draftId, itemKey, changeId } = value;
+  const { draftId, itemKey } = value;
   if (typeof draftId !== "string" || typeof itemKey !== "string") return undefined;
-  if (changeId !== undefined && typeof changeId !== "string") return undefined;
-  return { draftId, itemKey, ...(changeId ? { changeId } : {}) };
+  return { draftId, itemKey };
 }
 
 function parseViews(value: unknown): Views | undefined {
@@ -116,7 +115,7 @@ function patched(view: DocumentView, patch: DocumentViewPatch): DocumentView {
 }
 
 function samePin(a: DraftPin | undefined, b: DraftPin | undefined): boolean {
-  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
+  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey;
 }
 
 export function readDocumentView(

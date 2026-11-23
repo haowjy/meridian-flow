@@ -1,8 +1,9 @@
 /**
- * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
- * the Work page, the version menu, the phone) calls `openItem`: it sets the document's view to
- * that draft, with the clicked change as the pin's change, and opens the document in the pane
- * `place` picks. In main, the route command opens it and writes the address; beside, `place` shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
+ * The two ways to open a document on a draft. `openDraft` opens the plain draft; `openReview` opens
+ * it in Review changes, against Live unless the caller names another reference, at the clicked
+ * change. Every launcher declares which, by how the writer arrived (design §6, item 5). Both set
+ * the document's view to the draft and open it in the pane `place` picks: in main the route command
+ * writes the address (a review pushes); beside, `place` shows it. Latest launch wins.
  */
 
 import { type DocumentId, type DraftId, draftItemKey } from "@meridian/contracts";
@@ -21,6 +22,7 @@ import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import type { ReviewTarget } from "./routing/project-address";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
 import { useShellTreeVersion } from "./tree-version";
@@ -33,7 +35,9 @@ export type ItemLaunchTarget = {
   documentName?: string;
   /** Live doesn't hold the document: the draft created it, or live deleted it. */
   draftOnly?: boolean;
-  /** A projection-local change to focus, only if that projection still paints. */
+  /** Review changes on, against this; omission opens the plain draft. */
+  review?: ReviewTarget;
+  /** The change Review changes opens at. */
   focus?: ReviewFocus;
   /** The writer just made the document: its text takes the caret, as one made on Live does. */
   made?: true;
@@ -85,11 +89,7 @@ export function ReviewLaunchProvider({
       // no other host holding this document switched to the draft.
       const pin = () =>
         setDocumentView(accountId, projectId, target.documentId, {
-          pin: {
-            draftId: target.draftId,
-            itemKey: target.itemKey,
-            ...(target.focus ? { changeId: target.focus.id } : {}),
-          },
+          pin: { draftId: target.draftId, itemKey: target.itemKey },
         });
       const tab = openDocumentFromDraftGroup(target);
       const launch = ++sequence.current;
@@ -108,7 +108,8 @@ export function ReviewLaunchProvider({
               document: tab ?? undefined,
               draftOnly: target.draftOnly,
               itemKey: target.itemKey,
-              changeId: target.focus?.id,
+              review: target.review,
+              changeId: target.review ? target.focus?.id : undefined,
               ...(target.made ? { focus: true as const } : {}),
               canCommit: () => sequence.current === launch,
               afterCommit: pin,
@@ -144,7 +145,7 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
 
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a draft item's document in review, in the pane `place` picks. */
+/** Opens a draft item's document, on its plain page or in Review changes, in the pane `place` picks. */
 function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
   const place = useOptionalPlaceHere();
@@ -158,7 +159,9 @@ function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcom
       const draft = {
         draftId: target.draftId,
         itemKey: target.itemKey,
-        ...(target.focus ? { changeId: target.focus.id } : {}),
+        ...(target.review
+          ? { review: target.review, ...(target.focus ? { changeId: target.focus.id } : {}) }
+          : {}),
       };
       if (place?.({ kind: "document", documentId: target.documentId }, draft) === "side")
         return Promise.resolve(committed(target.documentId));
@@ -176,32 +179,51 @@ function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcom
   );
 }
 
+function fileTarget(row: ReviewFileTarget, draftId: string): ItemLaunchTarget | null {
+  // An item with no address yet (still being written) has nothing to open.
+  if (!row.contextLocation) return null;
+  return {
+    draftId,
+    documentId: row.documentId,
+    itemKey: row.item.itemKey,
+    contextLocation: row.contextLocation,
+    documentName: row.documentName ?? undefined,
+    draftOnly: row.draftOnly,
+  };
+}
+
 export function useItemLauncher() {
   const open = useOpenItem();
-  const openItem = useCallback(
+  /** The plain draft: the draft chip, the toggle, a tree row, a created document, a link. */
+  const openDraft = useCallback(
     (target: ItemLaunchTarget) => {
-      void open(target);
+      void open({ ...target, review: undefined, focus: undefined });
     },
     [open],
   );
-
-  /** Opens a listed item in review. An item with no address yet (still being written) has nothing to open. */
+  /** Review changes: `Review N changes`, a Changes or dock row, a turn's edited chapter. */
+  const openReview = useCallback(
+    (target: ItemLaunchTarget) => {
+      void open({ ...target, review: target.review ?? "live" });
+    },
+    [open],
+  );
+  const openDraftFile = useCallback(
+    (row: ReviewFileTarget, draftId: string) => {
+      const target = fileTarget(row, draftId);
+      if (target) openDraft(target);
+    },
+    [openDraft],
+  );
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, draftId: string, focus?: ReviewFocus) =>
-      row.contextLocation &&
-      openItem({
-        draftId,
-        documentId: row.documentId,
-        itemKey: row.item.itemKey,
-        contextLocation: row.contextLocation,
-        documentName: row.documentName ?? undefined,
-        draftOnly: row.draftOnly,
-        ...(focus ? { focus } : {}),
-      }),
-    [openItem],
+    (row: ReviewFileTarget, draftId: string, focus?: ReviewFocus) => {
+      const target = fileTarget(row, draftId);
+      if (target) openReview({ ...target, ...(focus ? { focus } : {}) });
+    },
+    [openReview],
   );
 
-  return { openItem, openReviewFile };
+  return { openDraft, openReview, openDraftFile, openReviewFile };
 }
 
 /** A document the writer just made: where the version it was made in puts it. */
@@ -224,12 +246,12 @@ export function useOpenCreatedDocument(): (
   opened?: () => void,
 ) => Promise<void> {
   const shell = useShellTreeVersion();
-  const { openItem } = useItemLauncher();
+  const { openDraft } = useItemLauncher();
   const shown = shell?.version.view.draft ?? null;
   return useCallback(
     async (document, live, opened) => {
       if (!shown) return live();
-      openItem({
+      openDraft({
         draftId: shown,
         documentId: document.documentId,
         itemKey: draftItemKey(shown as DraftId, document.documentId as DocumentId),
@@ -240,7 +262,7 @@ export function useOpenCreatedDocument(): (
       });
       opened?.();
     },
-    [shown, openItem],
+    [shown, openDraft],
   );
 }
 

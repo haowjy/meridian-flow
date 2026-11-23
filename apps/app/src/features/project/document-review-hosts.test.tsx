@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
- * One review per document across main and the side: off a document's address main's
+ * One paint per document across main and the side: off a document's address main's
  * frame stays mounted while the side holds the same document.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - main's frame stays mounted off its address, so both hosts call useDocumentReview and
- *   only the host that shows the document reviews it
+ *   only the host that shows the document paints its draft
+ * - painting a draft opens the plain draft, never Review changes
  */
 import "fake-indexeddb/auto";
 
@@ -38,7 +39,7 @@ function Host({ showing, report }: { showing: boolean; report: (review: Document
   return null;
 }
 
-it("reviews a document only in the host that shows it", async () => {
+it("paints a document's draft only in the host that shows it", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(projectQueryKeys.drafts(projectId, owner), {
@@ -62,7 +63,7 @@ it("reviews a document only in the host that shows it", async () => {
   });
   expect(side).toMatchObject({
     paint: { showing: "draft", draft: { itemKey: "item" } },
-    value: { controller: { inlineReview: { documentId: "chapter", itemKey: "item" } } },
+    value: { controller: { inlineReview: null } },
   });
   expect(main).toMatchObject({
     paint: { showing: "live", draft: null },

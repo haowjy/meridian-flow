@@ -81,7 +81,7 @@ export function usePressCommands({
   const treeLists = useOptionalTreeLists();
   const removal = useOptionalContextRemovalCoordinator();
   const presented = useOptionalPresentedDocuments();
-  const { openReviewFile } = useItemLauncher();
+  const { openDraftFile } = useItemLauncher();
   const queryClient = useQueryClient();
   const locked = !draftId || !driver;
   return useMemo(() => {
@@ -199,16 +199,15 @@ export function usePressCommands({
       place(pressed.placement);
       const port: PressPort = {
         unpress: async (commandId) => {
-          // An Apply's Undo takes a created document out of Live, and main with it: main,
-          // read before, follows the document to the Work's review, where it is pending again.
+          // An Apply's Undo takes a created document out of Live: main, read before, follows it to
+          // the draft's plain page, where it is a draft's document again.
           const main = presented?.mainDocumentId(projectId);
           const answer = await unpress(commandId);
           if (answer !== "done")
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
           const created = rows().find((row) => row.documentId === main && row.isNew);
           if (verdict === "apply" && created && taken.some(({ node }) => node === main))
-            for (const file of projectWorkDraftFiles([created], null))
-              openReviewFile(file, draftId);
+            for (const file of projectWorkDraftFiles([created], null)) openDraftFile(file, draftId);
           return { kind: "answered", unpressId: commandId, took: true };
         },
       };
@@ -436,7 +435,7 @@ export function usePressCommands({
     treeLists,
     removal,
     presented,
-    openReviewFile,
+    openDraftFile,
     queryClient,
     locked,
     projectId,

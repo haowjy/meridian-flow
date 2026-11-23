@@ -37,13 +37,19 @@ import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import { DesktopProject } from "./DesktopProject";
-import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentReview";
+import {
+  type MainReviewAddress,
+  MainReviewAddressContext,
+  type ReviewAddressAdmission,
+} from "./DocumentReview";
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
 import type { ChatDisplay } from "./routing/chat-navigation";
+import type { MainReviewControls } from "./routing/main-review";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
+import type { ReviewTarget } from "./routing/project-address";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
@@ -57,7 +63,6 @@ import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
 import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
-import type { ReviewAddressAdmission } from "./use-review-admission";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
@@ -95,7 +100,11 @@ export type ProjectViewProps = {
   reviewItemKey?: string;
   /** The draft the address's item reviews (`addressReviewDraft`). */
   reviewOwner?: string | null;
+  /** Review changes is on, against this (`?review=`); undefined is the plain draft. */
+  reviewTarget?: ReviewTarget;
+  /** The change in focus in Review changes (`?change=`). */
   reviewChangeId?: string;
+  reviewControls?: MainReviewControls;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
   /**
@@ -373,7 +382,6 @@ function HydratedReviewControllers({
     reviewOwner: props.reviewOwner ?? null,
     address: {
       itemKey: props.reviewItemKey,
-      changeId: props.reviewChangeId,
       documentId: main,
       admission: props.reviewAddressAdmission,
     },
@@ -384,8 +392,18 @@ function HydratedReviewControllers({
       documentId: main,
       itemKey: props.reviewItemKey,
       admission: props.reviewAddressAdmission,
+      review: props.reviewTarget,
+      changeId: props.reviewChangeId,
+      controls: props.reviewControls,
     }),
-    [main, props.reviewItemKey, props.reviewAddressAdmission],
+    [
+      main,
+      props.reviewItemKey,
+      props.reviewAddressAdmission,
+      props.reviewTarget,
+      props.reviewChangeId,
+      props.reviewControls,
+    ],
   );
   const scopedProps = { ...props, chatWork, chatCommands };
   return (

@@ -1,26 +1,14 @@
 /**
- * One document host's review: its own controller, room owner and inline runtime, following what
- * that document paints. Every host that holds a document (main, the side, the phone)
- * gets one, so two documents on screen review two drafts without sharing state. Commands stay
- * account-wide and queued per item (`DraftCommandOwner`), so two hosts cannot interleave
- * commands on one item.
+ * One document host's review scope and paint: what the document shows (Live or a draft) and the
+ * draft's list. Every host that holds a document (main, the side, the phone) gets one, so two
+ * documents on screen show two drafts without sharing state. Commands stay account-wide and
+ * queued per item (`DraftCommandOwner`). Painting a draft opens the plain draft; nothing here
+ * turns Review changes on.
  *
- * Admission is the host's too: a closed draft is reconciled with the server, and a hidden one (a
- * Discard in flight) is refused, for this host's document alone.
- *
- * Only a host on screen reviews. The kept document's host and a closed side's host stay mounted
- * hidden: a host that is not showing paints nothing of a draft, admits nothing, holds no draft
- * room and writes no pin, so Discard's Undo lands in the editor the writer sees.
+ * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
+ * mounted hidden and paint Live.
  */
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
@@ -29,17 +17,26 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
+import { useAccountId } from "./context/account-feature-context";
+import type { MainReviewControls } from "./routing/main-review";
+import type { ReviewTarget } from "./routing/project-address";
 import { useShellTreeVersion } from "./tree-version";
-import type { ReviewAddressAdmission } from "./use-review-admission";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
+
+/** The route's verdict on the draft item an address names, asked of the server by owner and item. */
+export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
 
 /** The review main's address names, and the route's verdict on it. Null off a document address. */
 export type MainReviewAddress = {
   documentId: string | undefined;
   itemKey: string | undefined;
   admission: ReviewAddressAdmission | undefined;
+  /** Review changes is on, against this; undefined is the plain draft. */
+  review: ReviewTarget | undefined;
+  /** The change in focus in Review changes. */
+  changeId: string | undefined;
+  controls: MainReviewControls | undefined;
 };
 export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
