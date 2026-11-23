@@ -64,7 +64,8 @@ an unwrap of an emptied container and a peer's concurrent move of it read no id 
 `c/empty`); a peer removes a stored `c/empty`, and typing in the empty paragraph c shows again
 stores it with the new text alone. From review p18996: one edit judged on its author's copy and on
 a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
-Live has moved the block since.
+Live has moved the block since. From review p18998: B's batch between each of A's 1,001 keys splits A's
+one typing step into an item per key, and its Undo takes back every key.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs plus the blocks it keeps (`readProseMirror` without `since`), and

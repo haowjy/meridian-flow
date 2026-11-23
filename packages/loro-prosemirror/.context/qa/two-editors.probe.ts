@@ -1015,6 +1015,28 @@ function racedRemovals(): string[] {
         return null;
       },
     },
+    // Review p18998: B's batch between each of A's keys splits A's one typing step into an item
+    // per key, more than a manager kept; its Undo left the first key.
+    "a typing step of more items than the step limit": {
+      room: () => room([p("x", "base")]),
+      run: (r) => {
+        caret(r.a, "x", 0);
+        caret(r.b, "x", 0);
+        for (let i = 0; i < 1001; i++) {
+          r.a.view.dispatch(r.a.view.state.tr.insertText("A"));
+          r.b.view.dispatch(r.b.view.state.tr.insertText("b"));
+          sync(r.b, r.a);
+        }
+        r.a.history.endStep();
+        r.b.history.endStep();
+        const count = (e: Editor, ch: string) => shown(e).split(ch).length - 1;
+        if (count(r.a, "A") !== 1001 || count(r.a, "b") !== 1002)
+          return `long step: A shows ${count(r.a, "A")} A and ${count(r.a, "b")} b`;
+        const ran = runHistory(r.a, "undo");
+        if (!ran || count(r.a, "A") !== 0) return `long step: Undo left ${count(r.a, "A")} of 1001 A`;
+        return settle(r, "long step undone", (t) => (t.includes("A") ? `shows "${t}", wanted no A` : null));
+      },
+    },
   };
   const cases: Record<string, (r: Room) => string | null> = {
     // The prober's case: B's first keys land before the removal reaches it, the rest after.

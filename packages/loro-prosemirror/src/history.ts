@@ -25,7 +25,10 @@ export { UNTRACKED_ORIGIN };
 
 /** Writes closer than this join one step. */
 const GROUP_MS = 500;
-/** Steps kept; each doc's manager keeps twice as many items (a step is one or two per doc). */
+/**
+ * Steps kept. A step can be any number of items on a manager (a peer's import splits typing into
+ * one per commit), so the managers keep every item, and a step leaves the history whole (`forget`).
+ */
 const DEPTH = 500;
 
 type End = "anchor" | "head";
@@ -60,8 +63,7 @@ export interface HistoryRun {
  * (the structure doc has no manager).
  *
  * A step goes back whole or stays whole (design §2, "An Undo takes an edit back whole"): before a
- * run, `editStays` tests it, and every manager it wrote must still hold its items on top. A step
- * that fails writes nothing; Loro's managers cannot
+ * run, `editStays` tests it. A step that fails writes nothing; Loro's managers cannot
  * drop one item, so the managers of its text docs start again empty, and every step with an item
  * in one of them leaves the history too, as does every step that set one of its keys, through
  * all they share. Ctrl+Z then goes on to the step before. A write that sets structure is a step
@@ -143,8 +145,8 @@ export class UndoHistory {
     const { edit } = step;
     if (edit.texts.size === 0 && edit.values.size === 0) {
       this.undoSteps.push(step);
-      if (this.undoSteps.length > DEPTH) this.undoSteps.shift();
       this.clearRedo();
+      if (this.undoSteps.length > DEPTH) this.forget(this.undoSteps.shift() as Step);
     }
     for (const { key, doc, before, after } of changes) {
       if (key === STRUCTURE_KEY) {
@@ -227,13 +229,7 @@ export class UndoHistory {
           | Tag
           | undefined;
       };
-      // A manager that dropped the step's items (its depth) would put the structure back without
-      // the text: the step stays.
-      const whole = [...step.edit.texts.keys()].every((key) => top(key)?.step === step.id);
-      if (
-        !whole ||
-        editStays(this.docs, step.edit, step.edit.values.size > 0 ? read() : undefined)
-      ) {
+      if (editStays(this.docs, step.edit, step.edit.values.size > 0 ? read() : undefined)) {
         stayed += this.drop(step);
         continue;
       }
@@ -321,13 +317,28 @@ export class UndoHistory {
             grew = true;
           }
     }
-    for (const key of docs) {
-      const watched = this.watched.get(key);
-      if (!watched) continue;
-      watched.manager.free();
-      watched.manager = this.manager(key, watched.doc);
-    }
+    for (const key of docs) this.restart(key);
     return dropped;
+  }
+
+  /**
+   * `step` leaves the history as it fell off its end. Its items stay at the bottom of its docs'
+   * managers, under every kept step's, where no run reaches them; a manager no kept step has items
+   * on starts again empty, so they are freed.
+   */
+  private forget(step: Step): void {
+    this.unnoted.delete(step);
+    const kept = (key: DocKey) =>
+      [this.undoSteps, this.redoSteps].some((list) => list.some(({ edit }) => edit.texts.has(key)));
+    for (const key of step.edit.texts.keys()) if (!kept(key)) this.restart(key);
+  }
+
+  /** The manager of doc `key` starts again empty. */
+  private restart(key: DocKey): void {
+    const watched = this.watched.get(key);
+    if (!watched) return;
+    watched.manager.free();
+    watched.manager = this.manager(key, watched.doc);
   }
 
   /** A step's selection, each end moved to the cursor its doc's popped item carried back. */
@@ -359,7 +370,8 @@ export class UndoHistory {
   private manager(key: DocKey, doc: LoroDoc): UndoManager {
     return new UndoManager(doc, {
       mergeInterval: 0,
-      maxUndoSteps: DEPTH * 2,
+      // The history keeps steps, not items (`DEPTH`): Loro would drop the oldest item of a step.
+      maxUndoSteps: Number.POSITIVE_INFINITY,
       excludeOriginPrefixes: [UNTRACKED_ORIGIN],
       // Loro keeps the cursors an item is pushed with and hands them back moved through its
       // inverse, so a selection over deleted text covers the text the Undo puts back.
