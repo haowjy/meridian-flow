@@ -192,7 +192,8 @@ function executePlan(
     case "ops": {
       const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
-      for (const other of plan.edit.tookFrom ?? []) model.recordPieces(doc, plan.edit.block, other);
+      for (const { block: other, words } of plan.edit.tookFrom ?? [])
+        model.recordPieces(doc, plan.edit.block, other, words);
       // After the write: writing into an empty document's paragraph gives it a new id.
       accumulator.touchedHashes.add(model.getBlockId(plan.edit.block));
       break;

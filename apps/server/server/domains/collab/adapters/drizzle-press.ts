@@ -46,11 +46,8 @@ import {
   applyBlocks,
   type ChangeSelection,
   type DocChange,
-  type DocKey,
   type DocVersion,
-  decodeRoomVersion,
   discardBlocks,
-  docCovers,
   editSince,
   encodeChanges,
   frontiersOf,
@@ -58,11 +55,10 @@ import {
   memberOf,
   type PeerId,
   type PressedChange,
-  plainVersion,
   type RoomDocs,
   type RoomVersion,
-  restoreBefore,
-  STRUCTURE_KEY,
+  type StoredEdit,
+  undoEdits,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -304,9 +300,8 @@ export function createDrizzlePress(
   }
 
   /**
-   * A Draft chat turn's `Restore before` in one fork (design §2): each doc the turn wrote goes back
-   * to its first write's `before`, merged with Live's version, and the structure's overrides the
-   * turn set go back key by key, keeping a key written since (`restoreBefore`). Live is untouched.
+   * A Draft chat turn's `Restore before` in one fork (design §2): the turn's stored writes are
+   * taken back newest-first by the same whole-edit rule as every other Undo. Live is untouched.
    * The restore is one edit, stored in `press_changes` as a fork-side change, so the press's Undo
    * takes it back by the one rule. A doc the room cut below the turn's start is left as it is.
    */
@@ -318,7 +313,7 @@ export function createDrizzlePress(
   ): Promise<boolean> {
     const room = { kind: "fork" as const, draftId: draft, documentId };
     const parts = await tx()
-      .select({ before: documentEditParts.before, after: documentEditParts.after })
+      .select({ edit: documentEditParts.edit })
       .from(documentEditParts)
       .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
       .where(
@@ -330,32 +325,18 @@ export function createDrizzlePress(
         ),
       )
       .orderBy(asc(documentEditParts.id));
-    const before = new Map<DocKey, DocVersion>();
-    for (const part of parts)
-      for (const [key, at] of decodeRoomVersion(new Uint8Array(part.before as Buffer)))
-        if (!before.has(key)) before.set(key, at);
-    const last = parts.at(-1)?.after;
-    const after = last
-      ? (decodeRoomVersion(new Uint8Array(last)).get(STRUCTURE_KEY) ?? null)
-      : null;
     const copy = await deps.rooms.read(room);
     try {
       const forward = copy.forward().restore;
-      // Cut since the turn: its start is gone, and so is the restore.
-      for (const [key, at] of before) {
-        const doc = copy.doc(key) ?? copy.live?.textOf(key);
-        if (doc?.isShallow() && !docCovers(at, plainVersion(doc.shallowSinceVV())))
-          before.delete(key);
-      }
       const since = copy.shownVersion();
-      const changes = restoreBefore(
+      const changes = undoEdits(
         copy,
-        { before, after: before.has(STRUCTURE_KEY) ? after : null },
-        { message: `press:${envelope.commandId}` },
-      );
+        parts.flatMap(({ edit }) => (edit ? [edit as StoredEdit] : [])).reverse(),
+        `press:${envelope.commandId}`,
+      ).changes;
       const committed = await commitCopy(room, {
         live: [],
-        fork: [...(forward ? [forward] : []), ...changes],
+        fork: [...forward, ...changes],
       });
       await markFork(tx(), room, copy);
       if (changes.length) {

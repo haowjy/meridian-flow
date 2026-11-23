@@ -1,4 +1,4 @@
-import type { Frontiers, LoroDoc } from "loro-crdt";
+import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
@@ -31,6 +31,9 @@ import {
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
+
+export type MovedPiece = readonly [BlockId, BlockId, number, number];
+export type Piece = readonly [BlockId, BlockId] | MovedPiece;
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -85,7 +88,7 @@ export interface WriteOptions {
    * The pairs of blocks this write moved text between (a split, a join): the writer knows them
    * from the edit it is writing, and a draft records them so the two are one change (design §2).
    */
-  pieces?: readonly (readonly [BlockId, BlockId])[];
+  pieces?: readonly Piece[];
 }
 
 /**
@@ -124,7 +127,11 @@ export class StructureWriter {
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
    * they remove. `at` is given when an Undo writes a removal record back (`putBackValues`).
    */
-  remove(id: BlockId, at = this.view.order(id) as string): void {
+  remove(
+    id: BlockId,
+    at = this.view.order(id) as string,
+    moved?: [BlockId, [PeerID, number, number][]],
+  ): void {
     const seen = new Map<DocKey, DocVersion>();
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
@@ -132,7 +139,7 @@ export class StructureWriter {
       // holds ops it never showed.
       if (doc) seen.set(key, plainVersion(doc.version()));
     }
-    this.set("order", id, encodeRemoval({ at, seen }));
+    this.set("order", id, encodeRemoval({ at, seen, ...(moved ? { moved } : {}) }));
   }
 
   /**
@@ -349,7 +356,15 @@ export function writeDocument(
       // A block under a removed block hides with it, and comes back with it.
       const parent = read().parent(id);
       const goesWithParent = typeof parent === "string" && !written.has(parent);
-      if (!written.has(id) && !goesWithParent) structure().remove(id);
+      if (!written.has(id) && !goesWithParent) {
+        const piece = (options.pieces ?? []).find(
+          (candidate): candidate is MovedPiece => candidate.length === 4 && candidate[0] === id,
+        );
+        const moved = piece
+          ? movedCharacters(docs.textOf(piece[1]), piece[2], piece[3])
+          : undefined;
+        structure().remove(id, undefined, piece && moved?.length ? [piece[1], moved] : undefined);
+      }
     }
   if (docs.draft) for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
   const committed = commitStructure(docs, before, options);
@@ -378,6 +393,28 @@ function indexOf(previous: readonly ShapeBlock[]) {
 
 const sameIds = (a: readonly BlockId[], b: readonly BlockId[]) =>
   a.length === b.length && a.every((id, i) => id === b[i]);
+
+function movedCharacters(
+  doc: LoroDoc | undefined,
+  start: number,
+  end: number,
+): [PeerID, number, number][] {
+  if (!doc || end <= start) return [];
+  return inText(doc, (text) => {
+    const runs: [PeerID, number, number][] = [];
+    for (let at = Math.max(0, start); at < Math.min(end, text.length); at++) {
+      const cursor = text.getCursor(at, 0);
+      if (!cursor) continue;
+      const id = cursor.pos();
+      cursor.free();
+      if (!id) continue;
+      const last = runs.at(-1);
+      if (last && last[0] === id.peer && last[1] + last[2] === id.counter) last[2]++;
+      else runs.push([id.peer, id.counter, 1]);
+    }
+    return runs;
+  });
+}
 
 export function commitStructure(
   docs: RoomDocs,

@@ -6,8 +6,6 @@ import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts
 import {
   applyBlocks,
   type ChangeSelection,
-  type DocKey,
-  type DocVersion,
   discardBlocks,
   encodeChanges,
   encodeEnvelope,
@@ -15,8 +13,6 @@ import {
   freshServerPeerId,
   type RoomDocs,
   readDocument,
-  restoreBefore,
-  STRUCTURE_KEY,
   undoEdits,
   writeDocument,
 } from "@meridian/document-model";
@@ -304,19 +300,25 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
           r.turnId === turnId &&
           loroRoomName(r.room) === loroRoomName(room),
       );
-      const before = new Map<DocKey, DocVersion>();
-      for (const write of writes)
-        for (const [key, at] of write.before) if (!before.has(key)) before.set(key, at);
       const docs = await rooms.read(room);
       try {
-        const changes = restoreBefore(
+        const forwarded = docs.forward().restore;
+        const { changes } = undoEdits(
           docs,
-          { before, after: writes.at(-1)?.after.get(STRUCTURE_KEY) ?? null },
-          { message: `restore:turn:${turnId}` },
+          writes
+            .slice()
+            .reverse()
+            .map((write) => write.edit),
+          `restore:turn:${turnId}`,
         );
-        if (changes.length)
+        if (forwarded.length || changes.length)
           await command(() =>
-            rooms.commit(inCommand(), room, encodeChanges(changes), "server:restore-before"),
+            rooms.commit(
+              inCommand(),
+              room,
+              encodeChanges([...forwarded, ...changes]),
+              "server:restore-before",
+            ),
           );
       } finally {
         docs.free();

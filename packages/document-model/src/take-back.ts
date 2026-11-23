@@ -9,7 +9,7 @@ import {
   type StructureMap,
   sameValue,
 } from "./shape.js";
-import { isOrderKey, removalOf, StructureView, showRule } from "./structure.js";
+import { isOrderKey, type Removal, removalOf, StructureView, showRule } from "./structure.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -264,7 +264,7 @@ export function putBackValues(
       docs,
       removals.length < puts.length ? new StructureView(docs) : read,
     );
-    for (const { key, at } of removals) writer.remove(key, at ?? undefined);
+    for (const { key, at, moved } of removals) writer.remove(key, at ?? undefined, moved);
   }
   const change = commitStructure(docs, before, { message });
   for (const [name, keys] of back)
@@ -283,6 +283,7 @@ interface Put {
   key: string;
   value: unknown;
   at?: string | null;
+  moved?: Removal["moved"];
 }
 
 function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] {
@@ -308,7 +309,9 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
       if (name !== order && made.has(memberOf(name, key))) continue;
       const removal = name === order ? removalOf(before) : null;
       puts.push(
-        removal ? { name, key, value: before, at: removal.at } : { name, key, value: before },
+        removal
+          ? { name, key, value: before, at: removal.at, moved: removal.moved }
+          : { name, key, value: before },
       );
     }
   return puts;

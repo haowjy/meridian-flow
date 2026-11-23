@@ -127,7 +127,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
             // The writer acts in a block a peer removed: it comes back first, and is then an
             // ordinary block (design §1, rule 2).
             const restored = restore(docs, kept);
-            if (restored) options.onLocalWrite?.([restored]);
+            if (restored.length) options.onLocalWrite?.(restored);
             kept = NONE;
           }
           const message = options.messageOf?.(tr);

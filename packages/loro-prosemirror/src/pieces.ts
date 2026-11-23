@@ -1,4 +1,4 @@
-import type { BlockId } from "@meridian/document-model";
+import type { MovedPiece } from "@meridian/document-model";
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
 
@@ -9,7 +9,7 @@ import type { Transaction } from "prosemirror-state";
  * same characters and never a guess from what the text spells. A draft's write records the pairs,
  * and the two blocks are one change (design §2).
  */
-export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
+export function movedPieces(tr: Transaction): MovedPiece[] {
   const { before, doc, mapping } = tr;
   // What the steps replaced, in the old document's positions.
   const replaced: [number, number][] = [];
@@ -28,7 +28,7 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
     for (const [from, to] of ranges) replaced.push([back(from, -1), back(to, 1)]);
   });
   if (replaced.length === 0) return [];
-  const pairs = new Map<string, [BlockId, BlockId]>();
+  const pairs = new Map<string, MovedPiece>();
   const seen = new Set<Node>();
   for (const [from, to] of replaced)
     before.nodesBetween(
@@ -52,8 +52,11 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
           if (now.deleted || mapping.map(at + 1, -1) !== now.pos + 1) continue;
           const parent = doc.resolve(now.pos).parent;
           const id = parent.attrs.id;
-          if (parent.isTextblock && typeof id === "string" && id !== was)
-            pairs.set(`${was}\u0000${id}`, [was, id]);
+          if (parent.isTextblock && typeof id === "string" && id !== was) {
+            const length = points[i + 1] - at;
+            const start = doc.resolve(now.pos).parentOffset;
+            pairs.set(`${was}\u0000${id}`, [was, id, start, start + length]);
+          }
         }
         return false;
       },

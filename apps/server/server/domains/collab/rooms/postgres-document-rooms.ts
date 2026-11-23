@@ -404,7 +404,7 @@ export function createPostgresDocumentRooms(input: {
     }
     markDirty(loaded, changed);
     if (batch) emitTo(loaded.room, batch, origin);
-    if (restore) emitTo(loaded.room, encodeChanges([restore]), "server:restore");
+    if (restore.length) emitTo(loaded.room, encodeChanges(restore), "server:restore");
     if (loaded.room.kind === "live")
       for (const fork of forksOf(loaded.room.documentId))
         imported(fork, fork.docs.forward(), null, origin);
@@ -560,7 +560,7 @@ export function createPostgresDocumentRooms(input: {
             merged = true;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
-            const result = { changed: merge.changed, pending: false, restore: null };
+            const result = { changed: merge.changed, pending: false, restore: [] };
             imported(loaded, result, merge.delta, "server:merge");
           }
           // Taken here, after the merge and right before the export, so a batch landing during
@@ -867,7 +867,7 @@ export function createPostgresDocumentRooms(input: {
         let restore: Uint8Array | null = null;
         try {
           const result = copy.importBatch(entries);
-          if (result.restore) restore = encodeChanges([result.restore]);
+          if (result.restore.length) restore = encodeChanges(result.restore);
           await writeRows(tx, room, copy, result.changed);
         } finally {
           copy.free();

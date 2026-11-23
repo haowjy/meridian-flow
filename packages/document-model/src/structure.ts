@@ -28,6 +28,8 @@ type MapValues = Readonly<Record<string, unknown>>;
 export interface Removal {
   at: string;
   seen: ReadonlyMap<DocKey, DocVersion>;
+  /** The copy of this block's text a join put in another block, by character id. */
+  moved?: [BlockId, [PeerId, number, number][]];
 }
 
 /**
@@ -39,7 +41,11 @@ export function isOrderKey(value: unknown): value is string {
   return typeof value === "string" && !value.startsWith("{");
 }
 
-type StoredRemoval = { at?: unknown; seen?: Record<DocKey, Record<PeerId, number>> };
+type StoredRemoval = {
+  at?: unknown;
+  seen?: Record<DocKey, Record<PeerId, number>>;
+  moved?: [unknown, unknown][];
+};
 
 /** The record an `order` value holds, or null: a key, or a removal written without one. */
 export function removalOf(value: unknown): Removal | null {
@@ -60,13 +66,31 @@ export function removalOf(value: unknown): Removal | null {
         new Map(Object.entries(version)) as DocVersion,
       ]),
     ),
+    ...(Array.isArray(parsed.moved) &&
+    typeof parsed.moved[0] === "string" &&
+    Array.isArray(parsed.moved[1])
+      ? {
+          moved: [
+            parsed.moved[0],
+            parsed.moved[1].flatMap((run) =>
+              Array.isArray(run) &&
+              typeof run[0] === "string" &&
+              typeof run[1] === "number" &&
+              typeof run[2] === "number"
+                ? [[run[0], run[1], run[2]] as [PeerId, number, number]]
+                : [],
+            ),
+          ] as [BlockId, [PeerId, number, number][]],
+        }
+      : {}),
   };
 }
 
-export const encodeRemoval = ({ at, seen }: Removal): string =>
+export const encodeRemoval = ({ at, seen, moved }: Removal): string =>
   JSON.stringify({
     at,
     seen: Object.fromEntries([...seen].map(([key, version]) => [key, Object.fromEntries(version)])),
+    ...(moved ? { moved } : {}),
   });
 
 /**
