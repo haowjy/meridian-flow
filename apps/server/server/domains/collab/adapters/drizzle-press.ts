@@ -23,10 +23,9 @@ import type {
 } from "@meridian/contracts";
 import { parseDraftItemKey } from "@meridian/contracts";
 import type {
+  PressAction,
   PressOverwriter,
-  PressRequest,
   PressResult,
-  PressScope,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
@@ -97,7 +96,7 @@ import type { UsageEvents } from "./usage-events.js";
 export type PressCommand = {
   envelope: CommandEnvelope;
   /** `liveVersions` decoded: the Live version each document's tab showed. */
-  request: Omit<PressRequest, "commandId" | "saw" | "liveVersions"> & {
+  request: PressAction & {
     saw?: TreeCut;
     liveVersions?: ReadonlyMap<DocumentId, RoomVersion>;
   };
@@ -158,7 +157,7 @@ export function createDrizzlePress(
   ];
 
   /** The drafts a scope presses, in draft id order, each with what it takes. */
-  async function partsOf(scope: PressScope, projectId: ProjectId): Promise<DraftPart[]> {
+  async function partsOf(scope: PressAction["scope"], projectId: ProjectId): Promise<DraftPart[]> {
     if (scope.kind === "turn") {
       const rows = await tx()
         .selectDistinct({ origin: documentEditParts.origin, documentId: documentEdits.documentId })
@@ -414,14 +413,14 @@ export function createDrizzlePress(
 
   async function press(command: PressCommand): Promise<PressResult> {
     const { envelope, request } = command;
+    const { saw: _saw, liveVersions: _shown, ...action } = request;
     const lists = listsOf(envelope);
     const parts = await partsOf(request.scope, envelope.projectId as ProjectId);
     const draftIds = parts.map((part) => part.draft);
     const answer = (documents: Set<string>, tree: Set<string>, trashed: string[]): PressResult => ({
       status: "pressed",
       commandId: envelope.commandId as CommandId,
-      verdict: request.verdict,
-      scope: request.scope,
+      ...action,
       documents: [...documents].sort() as DocumentId[],
       items: [...tree].sort().map((node) => ({ node, tree: true as const })),
       ...(trashed.length > 0 ? { trashed } : {}),

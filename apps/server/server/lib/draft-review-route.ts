@@ -111,10 +111,19 @@ const RoomVersionBody = z.base64().transform((value, context) => {
     return z.NEVER;
   }
 });
-const PressBody = z
-  .strictObject({
-    commandId: CommandIdSchema,
-    verdict: z.enum(["apply", "discard", "restore"]),
+const pressFields = {
+  commandId: CommandIdSchema,
+  saw: SawBody.optional(),
+  liveVersions: z
+    .array(z.strictObject({ documentId: z.string().uuid(), version: RoomVersionBody }))
+    .max(2000)
+    .optional(),
+};
+/** `PressRequest`: a verdict and the scopes it takes, so no other pair parses. */
+const PressBody = z.union([
+  z.strictObject({
+    ...pressFields,
+    verdict: z.enum(["apply", "discard"]),
     scope: z.discriminatedUnion("kind", [
       z.strictObject({
         kind: z.literal("change"),
@@ -124,16 +133,14 @@ const PressBody = z
       z.strictObject({ kind: z.literal("document"), item: z.string().min(1).max(256) }),
       z.strictObject({ kind: z.literal("draft"), draft: z.string().min(1).max(128) }),
       z.strictObject({ kind: z.literal("work"), work: z.string().uuid() }),
-      z.strictObject({ kind: z.literal("turn"), turn: z.string().uuid() }),
     ]),
-    saw: SawBody.optional(),
-    liveVersions: z
-      .array(z.strictObject({ documentId: z.string().uuid(), version: RoomVersionBody }))
-      .max(2000)
-      .optional(),
-  })
-  // `Restore before` acts on a turn, and a turn takes nothing else.
-  .refine((body) => (body.verdict === "restore") === (body.scope.kind === "turn"));
+  }),
+  z.strictObject({
+    ...pressFields,
+    verdict: z.literal("restore"),
+    scope: z.strictObject({ kind: z.literal("turn"), turn: z.string().uuid() }),
+  }),
+]);
 const PressUndoBody = z.strictObject({
   commandId: CommandIdSchema,
   pressCommandId: CommandIdSchema,
@@ -282,13 +289,12 @@ export async function handlePressRequest(
 ): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const { commandId, liveVersions, ...request } = parseBody(PressBody, input.request, "press");
-  const scope = request.scope as PressScope;
   // A turn's drafts are read from its writes, in this project only (`drizzle-press.ts`).
-  if (scope.kind === "turn") await requireProjectOwned(deps, input);
+  if (request.verdict === "restore") await requireProjectOwned(deps, input);
   else {
     const { stored } = await draftOfProject(deps, {
       ...input,
-      draft: await draftNamed(deps, scope),
+      draft: await draftNamed(deps, request.scope as PressScope),
     });
     if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
   }
@@ -301,7 +307,6 @@ export async function handlePressRequest(
       envelope,
       request: {
         ...request,
-        scope,
         ...(liveVersions
           ? {
               liveVersions: new Map(
@@ -315,10 +320,7 @@ export async function handlePressRequest(
 }
 
 /** A draft the scope names, which says whose project it is: a Work's is its default. */
-async function draftNamed(
-  deps: DraftRouteServices,
-  scope: Exclude<PressScope, { kind: "turn" }>,
-): Promise<string> {
+async function draftNamed(deps: DraftRouteServices, scope: PressScope): Promise<string> {
   if (scope.kind === "change" || scope.kind === "document") {
     const item = parseDraftItemKey(scope.item);
     if (!item) throw createError({ statusCode: 400, message: "Invalid item" });

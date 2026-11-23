@@ -13,7 +13,7 @@ import {
   draftItemKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type { PressRequest, PressScope, PressVerdict, TreeSaw } from "@meridian/contracts/drafts";
+import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -25,7 +25,12 @@ import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
 
-export type PressBody = { projectId: string } & Omit<PressRequest, "commandId">;
+/** `PressRequest` without its id, one member per verdict, so a body still pairs a verdict with its scope. */
+export type PressBody = { projectId: string } & (PressRequest extends infer R
+  ? R extends PressRequest
+    ? Omit<R, "commandId">
+    : never
+  : never);
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 /**
@@ -37,14 +42,18 @@ export type PressGate = (documents: readonly DocumentId[] | null) => Promise<voi
 /** One draft's presses and Undos go in the order the writer made them; a Work's press orders after its drafts'. */
 const pressLane = (key: string) => `press:${key}`;
 
-/** The draft a scope presses on; a Work's press names its Work. */
-export function pressLaneKey(scope: PressScope): string {
+/**
+ * The draft a scope presses on; a Work's press names its Work, and a turn's Restore before its turn
+ * (the turn's draft is the server's to find).
+ */
+export function pressLaneKey(scope: PressAction["scope"]): string {
+  if (scope.kind === "turn") return `turn:${scope.turn}`;
   if (scope.kind === "draft") return scope.draft;
   if (scope.kind === "work") return `work:${scope.work}`;
   return parseDraftItemKey(scope.item)?.draftId ?? scope.item;
 }
 
-function scopeDocuments(scope: PressScope): DocumentId[] | null {
+function scopeDocuments(scope: PressAction["scope"]): DocumentId[] | null {
   if (scope.kind !== "change" && scope.kind !== "document") return null;
   const parsed = parseDraftItemKey(scope.item);
   return parsed ? [parsed.documentId] : null;
@@ -54,7 +63,7 @@ function scopeDocuments(scope: PressScope): DocumentId[] | null {
 type PressBodyV1 = {
   projectId: string;
   draft: DraftId;
-  verdict: PressVerdict;
+  verdict: "apply" | "discard";
   items: { node: string }[] | "all";
   saw?: TreeSaw;
 };
