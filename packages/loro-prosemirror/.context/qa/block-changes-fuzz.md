@@ -125,12 +125,12 @@ transform already uses. The two runs are concurrent inserts at one gap (Live nev
 re-created words), and Loro orders those itself; an insert by index cannot choose a side.
 
 Every word counts at the end: a word a split or a join moved is a duplicate like any other, and a
-Live token counts as lost only when the fork shows it neither where Live typed it nor where Live
-holds it now (a Live split carries it on). At 10,000 seeds (2026-11-23, gate press-whole) 9,993
-pass. The rest are open classes, not grouping:
+Live token counts as lost only when the fork shows it nowhere whole, nor in pieces where Live typed
+it (a split, Live's or the draft's, carries it on). At 12,010 seeds (2026-11-23, #1858's fix round)
+11,999 pass. The rest are open classes, not grouping:
 - `duplicate-text`, Live and the draft or a chat each split or joined the same text (class C of
   [gate/press-whole](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/gate/press-whole/README.md),
-  part 3's rules 1 and 3): 583, 1116, 1187, 1661, 3285, 3792.
+  part 3's rules 1 and 3): 583, 1116, 1187, 1661, 3285, 3792, 10807, 11524, 11619, 11640.
 - `stale-discarded-back` 6611: a stale Draft tab's insert anchored inside text a Discard deleted
   lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k f22k"); no
   character comes back. Two inserts at one gap, open in the gate.
