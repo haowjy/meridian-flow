@@ -44,14 +44,6 @@ const RECOGNIZED_QUERY = new Set(["owner", "item", "review", "change", "settings
 
 export type { ReviewTarget };
 
-/** The reference a review target names. */
-export function parseReviewTarget(
-  target: ReviewTarget,
-): { kind: "live" } | { kind: "draft"; draftId: string } | { kind: "file"; documentId: string } {
-  if (target === "live") return { kind: "live" };
-  if (target.startsWith("file:")) return { kind: "file", documentId: target.slice(5) };
-  return { kind: "draft", draftId: target };
-}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {

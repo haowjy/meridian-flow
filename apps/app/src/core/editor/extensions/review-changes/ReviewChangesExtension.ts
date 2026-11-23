@@ -12,7 +12,6 @@
  */
 import { type RoomDocs, readDocument, type ShapeBlock } from "@meridian/document-model";
 import { blocksOf, inlineNodes, loroSyncKey, nodeOf } from "@meridian/loro-prosemirror";
-import { newBlockId } from "@meridian/prosemirror-schema";
 import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
@@ -24,6 +23,8 @@ import {
   type ReviewParagraph,
   type ReviewRow,
   reviewRows,
+  takenBlockId,
+  textHash,
 } from "./review-rows";
 
 export type ReviewVerdict = "apply" | "discard";
@@ -37,7 +38,11 @@ export type ReviewChangesConfig = {
    * and until it is open.
    */
   against: "live" | "draft" | "file";
+  /** The target as the address names it (`ReviewTarget`): `live`, a draft id, or `file:<id>`. */
+  target: string;
   reference: RoomDocs | null;
+  /** The draft this editor shows. */
+  draftId: string;
   /** The change in focus (the address's `change`); null is none yet. */
   focus: string | null;
   /** Changes pressed and not yet answered: the page shows them gone. */
@@ -148,6 +153,28 @@ function referenceElement(paragraph: ReviewParagraph): HTMLElement {
     }
   else element.textContent = blockText(live);
   return element;
+}
+
+/**
+ * What a row's widget draws: its target, the reference's text, the words marked, the actions and
+ * their labels. A widget whose key holds still is reused as it is, click handlers included, so
+ * anything it draws must be in the key.
+ */
+function drawnKey(row: ReviewRow, config: ReviewChangesConfig, focused: boolean): string {
+  const parts = [
+    config.target,
+    String(focused),
+    String(row.removed),
+    ...Object.values(config.labels),
+  ];
+  for (const paragraph of row.paragraphs) {
+    const reference = paragraph.reference;
+    parts.push(paragraph.id, paragraph.kind, paragraph.before ?? "");
+    if (reference)
+      parts.push(reference.node, String(reference.attrs.level ?? ""), blockText(reference));
+    for (const word of paragraph.words) parts.push(word.kind, word.text);
+  }
+  return `${row.id}:${textHash(parts.join("\u0000")).toString(36)}`;
 }
 
 /** The row's actions: a press's pair against Live, `Take` against another draft, none against a file. */
@@ -278,13 +305,13 @@ function buildDecorations(
     if (config.hidden.has(row.id)) continue;
     const focused = row.id === config.focus;
     const tone = focused ? " is-focused" : "";
-    const shape = row.paragraphs.map((p) => `${p.kind}${p.words.length}`).join();
+    const drawn = drawnKey(row, config, focused);
     if (!side) {
       const at = row.anchor ? positions.get(row.anchor) : undefined;
       decorations.push(
         Decoration.widget(at ?? doc.content.size, rowWidget(row, config, focused), {
           side: -1,
-          key: `review:${row.id}:${focused}:${shape}`,
+          key: `review:${drawn}`,
           ignoreSelection: true,
         }),
       );
@@ -294,7 +321,7 @@ function buildDecorations(
         const before = paragraph.before === null ? undefined : positions.get(paragraph.before);
         const at = before ?? doc.content.size;
         const removed = paragraph.kind === "removed";
-        const key = `review:${row.id}:${paragraph.id}:${focused}:${shape}`;
+        const key = `review:${paragraph.id}:${drawn}`;
         const cell = sideCell(row, paragraph, config, focused, index === 0);
         decorations.push(
           Decoration.widget(at, cell, {
@@ -339,10 +366,11 @@ function buildDecorations(
     doc.forEach((node, offset) => {
       const id = node.attrs.id;
       if (typeof id === "string" && rowed.has(id)) return;
+      const text = live.get(id) ?? node.textContent;
       decorations.push(
-        Decoration.widget(offset, sideReference(live.get(id) ?? node.textContent, node), {
+        Decoration.widget(offset, sideReference(text, node), {
           side: -1,
-          key: `same:${id}`,
+          key: `same:${id}:${node.type.name}${node.attrs.level ?? ""}:${textHash(text).toString(36)}`,
           ignoreSelection: true,
         }),
       );
@@ -373,7 +401,11 @@ function readRows(state: EditorState, config: ReviewChangesConfig): ReviewRow[] 
   const reference = referenceOf(state, config);
   if (!reference) return [];
   const fork = blocksOf(state.doc);
-  if (config.against === "draft") return draftDifferenceRows(readDocument(reference), fork);
+  if (config.against === "draft")
+    return draftDifferenceRows(readDocument(reference), fork, {
+      own: config.draftId,
+      other: config.target,
+    });
   if (config.against === "file") return fileDifferenceRows(readDocument(reference), fork);
   return reviewRows(docs, readDocument(reference), fork);
 }
@@ -385,17 +417,19 @@ function positionOf(doc: Node, id: string): number | null {
 
 /**
  * `Take`: the row's paragraph becomes the other draft's, as an edit in this editor that Ctrl+Z
- * takes back. A paragraph only the other draft has comes in with a fresh id, so two drafts never
- * share a text doc Live doesn't; one only this draft has goes.
+ * takes back. A paragraph only the other draft has comes in under `takenBlockId`; one only this
+ * draft has goes. A row already taken changes nothing.
  */
-export function takeRow(view: EditorView, row: ReviewRow): void {
+export function takeRow(view: EditorView, row: ReviewRow, draftId: string): void {
   const { schema } = view.state;
   const tr = view.state.tr;
   for (const paragraph of [...row.paragraphs].reverse()) {
     const doc = tr.doc;
     if (paragraph.kind === "removed" && paragraph.reference) {
+      const id = takenBlockId(paragraph.id, draftId);
+      if (positionOf(doc, id) !== null) continue;
       const before = paragraph.before === null ? null : positionOf(doc, paragraph.before);
-      const node = nodeOf(schema, { ...paragraph.reference, id: newBlockId() });
+      const node = nodeOf(schema, { ...paragraph.reference, id });
       tr.insert(before ?? doc.content.size, node);
       continue;
     }
@@ -408,6 +442,7 @@ export function takeRow(view: EditorView, row: ReviewRow): void {
     }
     const reference = paragraph.reference;
     if (!reference) continue;
+    if (nodeOf(schema, { ...reference, id: node.attrs.id }).eq(node)) continue;
     tr.replaceWith(pos + 1, pos + node.nodeSize - 1, inlineNodes(schema, reference.inline));
     tr.setNodeMarkup(pos, schema.nodes[reference.node], { ...reference.attrs, id: node.attrs.id });
   }
@@ -429,7 +464,12 @@ export const ReviewChangesExtension = Extension.create({
           apply(tr, prior, _old, next) {
             const meta = tr.getMeta(reviewChangesKey) as ReviewMeta | undefined;
             if (meta && "config" in meta) {
-              const rows = meta.config ? prior.rows : [];
+              // Rows read against another target are not this one's.
+              const same =
+                meta.config &&
+                prior.config?.target === meta.config.target &&
+                prior.config.reference === meta.config.reference;
+              const rows = same ? prior.rows : [];
               return {
                 config: meta.config,
                 rows,
@@ -495,7 +535,7 @@ export const ReviewChangesExtension = Extension.create({
               const turnedOn =
                 config !== null &&
                 (shownConfig === null ||
-                  shownConfig.against !== config.against ||
+                  shownConfig.target !== config.target ||
                   shownConfig.reference !== config.reference);
               shownConfig = config;
               watch(view, config ? referenceOf(view.state, config) : null);

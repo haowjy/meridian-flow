@@ -109,17 +109,49 @@ function paragraphOf(
   return null;
 }
 
+/** A 53-bit hash of `text`, as a number (cyrb53). */
+export function textHash(text: string): number {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/**
+ * The id `Take` gives a paragraph it copies from another draft into `draft`: one Live and the
+ * other draft never hold, so applying both drafts can't merge two paragraphs into one text, and
+ * the same on every Take, so the copy pairs with where it came from (`draftDifferenceRows`).
+ */
+export function takenBlockId(source: BlockId, draft: string): BlockId {
+  return `t${textHash(`${draft}\u0000${source}`).toString(36)}`;
+}
+
 /**
  * The draft's differences from another draft of the document, a row per differing paragraph in
  * reading order, aligned by block id: both drafts fork the same Live, so a paragraph keeps its id
- * in each.
+ * in each, and one either draft took from the other has its source's id in `takenBlockId`.
  */
 export function draftDifferenceRows(
   reference: readonly ShapeBlock[],
   fork: readonly ShapeBlock[],
+  drafts: { own: string; other: string },
 ): ReviewRow[] {
-  const referenceText = textBlocks(reference);
   const forkText = textBlocks(fork);
+  const takenByOther = new Map<BlockId, BlockId>();
+  for (const id of forkText.keys()) takenByOther.set(takenBlockId(id, drafts.other), id);
+  // Keyed by the draft paragraph each pairs with.
+  const referenceText = new Map<BlockId, TextBlock>();
+  for (const [id, block] of textBlocks(reference)) {
+    const copy = takenBlockId(id, drafts.own);
+    const pair = forkText.has(id) ? id : forkText.has(copy) ? copy : (takenByOther.get(id) ?? id);
+    referenceText.set(pair, block);
+  }
   const { merged, anchorFrom } = readingOrder(referenceText, forkText);
   const rows: ReviewRow[] = [];
   merged.forEach((id, index) => {

@@ -2,11 +2,12 @@
  * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
  * presses a change from its margin pair (or takes another draft's paragraph), moves the focus to
  * the next change after a press, and closes Review changes against Live when the chapter has none
- * left (design §6, item 5).
+ * left, and compares against Live when its target is gone (design §6, item 5).
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef, useState } from "react";
+import { useProjectTrees } from "@/client/query/useProjectTrees";
 import {
   type ReviewChangesConfig,
   type ReviewVerdict,
@@ -21,7 +22,8 @@ import {
   useReviewMode,
   useReviewSurface,
 } from "@/features/draft-review/review-mode";
-import { useReviewReference } from "@/features/draft-review/use-review-reference";
+import { referenceOf, useReviewReference } from "@/features/draft-review/use-review-reference";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 
 /** The editor's width at which Review changes offers two columns. */
 const SIDE_BY_SIDE_MIN_PX = 720;
@@ -38,6 +40,8 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   latest.current = { mode, review, pressed };
   const page = useDraftPage();
   const documentId = page?.documentId ?? null;
+  const draftId = page?.draftId ?? null;
+  const target = mode?.target ?? "live";
   const changeId = mode?.changeId ?? null;
   // A plain draft page reads the rows against Live for its header's count; Review changes paints
   // them against its target.
@@ -56,17 +60,26 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   };
   useEffect(closeIfEmpty, [mode?.listed]);
 
+  // A target that is gone (a deleted draft, a file no longer in the project) compares against Live.
+  const gone = useTargetGone(mode);
   useEffect(() => {
-    if (!active || !documentId || editor.isDestroyed) return;
+    if (gone) latest.current.mode?.retarget("live");
+  }, [gone]);
+
+  useEffect(() => {
+    if (!active || !documentId || !draftId || editor.isDestroyed) return;
     const shown = (all: readonly ReviewRow[]) =>
       all.filter((row) => !latest.current.pressed.has(row.id));
+    const nextAfter = (row: ReviewRow) => {
+      const before = shown(rows.current ?? []);
+      const index = before.findIndex((each) => each.id === row.id);
+      return before[index + 1] ?? before[index - 1];
+    };
     const press = (verdict: ReviewVerdict, row: ReviewRow) => {
       const { mode, review } = latest.current;
       if (!mode || !review || review.controller.dispositionLocked) return;
       const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
-      const before = shown(rows.current ?? []);
-      const index = before.findIndex((each) => each.id === row.id);
-      const next = before[index + 1] ?? before[index - 1];
+      const next = nextAfter(row);
       setPressed((prior) => new Set(prior).add(row.id));
       // The writer stays in this chapter's editor, so Ctrl+Z still reaches the press.
       if (next) mode.focus(next.id);
@@ -83,13 +96,20 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     const config: ReviewChangesConfig = {
       layout: reviewing ? layout : "count",
       against,
+      target,
       reference: referenceDocs,
+      draftId,
       focus: changeId,
       hidden: pressed,
       labels: { apply: t`Apply`, discard: t`Discard`, restore: t`Restore`, take: t`Take` },
       press,
       take: (row) => {
-        if (!editor.isDestroyed) takeRow(editor.view, row);
+        if (editor.isDestroyed) return;
+        const next = nextAfter(row);
+        takeRow(editor.view, row, draftId);
+        // As after a press: on to the next difference, the caret in the text so Ctrl+Z reaches the Take.
+        if (next) latest.current.mode?.focus(next.id);
+        editor.view.focus();
       },
       focusRow: (row) => latest.current.mode?.focus(row.id),
       onRows: (all) => {
@@ -124,8 +144,10 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     active,
     reviewing,
     against,
+    target,
     referenceDocs,
     documentId,
+    draftId,
     editor,
     layout,
     changeId,
@@ -170,4 +192,19 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     return () => cancelAnimationFrame(frame);
   }, [editor, focus]);
   return null;
+}
+
+function useTargetGone(mode: ReturnType<typeof useReviewMode>): boolean {
+  const drafts = useShellTreeVersion()?.workDrafts?.drafts ?? null;
+  const trees = useProjectTrees(mode?.projectId ?? "");
+  if (!mode) return false;
+  const target = referenceOf(mode.target);
+  if (target.kind === "file") return trees.isComplete && trees.find(target.documentId) === null;
+  // Only a draft of the shown Work knows its sibling drafts.
+  return (
+    target.kind === "draft" &&
+    drafts !== null &&
+    drafts.some((draft) => draft.id === mode.draftId) &&
+    !drafts.some((draft) => draft.id === target.draftId)
+  );
 }
