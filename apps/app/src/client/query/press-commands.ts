@@ -1,10 +1,14 @@
 /**
- * The press: Apply or Discard on documents, folders or a whole Work, and its Undo,
- * as commands the driver delivers (resent under one id until the server stores an answer). The
- * server runs both halves; an open document's text changes when its update arrives on the socket.
+ * The press: Apply or Discard on a change, a document, a draft or every draft of a Work, and its
+ * Undo, as commands the driver delivers (resent under one id until the server stores an answer).
+ * Each is journaled and shown at once and leaves once the rooms of what it presses have
+ * acknowledged every batch this tab sent (`ready`), so the server presses what the writer saw
+ * (design §4). The server runs both halves; an open document's text changes when its update
+ * arrives on the socket.
  */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
-import type { TreePressRequest } from "@meridian/contracts/drafts";
+import { type DocumentId, parseDraftItemKey } from "@meridian/contracts";
+import type { PressRequest, PressScope } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -16,13 +20,32 @@ import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
 
-export type PressBody = { projectId: string } & Omit<TreePressRequest, "commandId">;
+export type PressBody = { projectId: string } & Omit<PressRequest, "commandId">;
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
-/** One Work's presses and Undos go in the order the writer made them. */
-const pressLane = (draft: string) => `press:${draft}`;
+/**
+ * Settles once the rooms of these documents (each fork and Live room this tab holds) acknowledged
+ * every batch it sent; null is every room the tab holds.
+ */
+export type PressGate = (documents: readonly DocumentId[] | null) => Promise<void>;
 
-export function pressDomain(client: QueryClient): CommandDomain {
+/** One draft's presses and Undos go in the order the writer made them; a Work's press orders after its drafts'. */
+const pressLane = (key: string) => `press:${key}`;
+
+/** The draft a scope presses on; a Work's press names its Work. */
+export function pressLaneKey(scope: PressScope): string {
+  if (scope.kind === "draft") return scope.draft;
+  if (scope.kind === "work") return `work:${scope.work}`;
+  return parseDraftItemKey(scope.item)?.draftId ?? scope.item;
+}
+
+function scopeDocuments(scope: PressScope): DocumentId[] | null {
+  if (scope.kind !== "change" && scope.kind !== "document") return null;
+  const parsed = parseDraftItemKey(scope.item);
+  return parsed ? [parsed.documentId] : null;
+}
+
+export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
   // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
   // own reads of drafts all begin after it opened, so a press settled before then is in them;
   // only the Works the server read for the page may predate it. A turn card follows its chat's
@@ -48,6 +71,7 @@ export function pressDomain(client: QueryClient): CommandDomain {
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };
       },
+      ready: (record) => gate(scopeDocuments((record.body as PressBody).scope)),
       onSettled: settled,
     },
     [PRESS_UNDO_KIND]: {
@@ -61,6 +85,7 @@ export function pressDomain(client: QueryClient): CommandDomain {
           body: { pressCommandId },
         };
       },
+      ready: () => gate(null),
       onSettled: settled,
     },
   };
@@ -76,10 +101,14 @@ export function pressDomain(client: QueryClient): CommandDomain {
 }
 
 export function submitPress(driver: CommandDriver, body: PressBody) {
-  return submitCommand(driver, { kind: PRESS_KIND, lanes: [pressLane(body.draft)], body });
+  return submitCommand(driver, {
+    kind: PRESS_KIND,
+    lanes: [pressLane(pressLaneKey(body.scope))],
+    body,
+  });
 }
 
-/** `draft` orders the Undo after the press it names. */
-export function submitPressUndo(driver: CommandDriver, draft: string, body: PressUndoBody) {
-  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(draft)], body });
+/** `lane` (the press's `pressLaneKey`) orders the Undo after the press it names. */
+export function submitPressUndo(driver: CommandDriver, lane: string, body: PressUndoBody) {
+  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(lane)], body });
 }

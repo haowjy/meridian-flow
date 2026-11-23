@@ -1,7 +1,7 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, type ReactNode, Suspense, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -29,7 +29,10 @@ import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import { ImportsProvider } from "@/features/import/ImportsProvider";
-import { AccountFeatureComposition } from "@/features/project/context/account-feature-context";
+import {
+  AccountFeatureComposition,
+  useLiveDocumentSessionRegistry,
+} from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
@@ -141,24 +144,34 @@ function AuthenticatedAccountProviderTree({
 }) {
   return (
     <AccountFeatureComposition accountId={user.userId}>
-      <CommandDriverProvider
-        domains={(client) =>
-          combineDomains(
-            workDomain(client),
-            projectDomain(client),
-            threadOverridesDomain(client),
-            pressDomain(client),
-          )
-        }
-      >
+      <AccountCommandDriver>
         <AccountSettingsProvider
           serverValue={user.accountSettings}
           serverReadGeneration={user.accountSettingsReadGeneration}
         >
           <AuthenticatedProviderTree now={now} user={user} />
         </AccountSettingsProvider>
-      </CommandDriverProvider>
+      </AccountCommandDriver>
     </AccountFeatureComposition>
+  );
+}
+
+/** The account's command driver; a press waits on the account's document rooms. */
+function AccountCommandDriver({ children }: { children: ReactNode }) {
+  const registry = useLiveDocumentSessionRegistry();
+  return (
+    <CommandDriverProvider
+      domains={(client) =>
+        combineDomains(
+          workDomain(client),
+          projectDomain(client),
+          threadOverridesDomain(client),
+          pressDomain(client, (documents) => registry.whenSentAcknowledged(documents)),
+        )
+      }
+    >
+      {children}
+    </CommandDriverProvider>
   );
 }
 

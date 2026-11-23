@@ -45,10 +45,10 @@ export interface LiveDocumentSessionRegistry {
    */
   openRoomVersion(documentId: DocumentId): Uint8Array | null;
   /**
-   * Settles once the server holds the typing in this tab's live session of the document; at once
-   * when the tab holds none or it is not connected.
+   * Settles once every room of these documents this tab holds (forks and Live) acknowledged every
+   * batch it sent; null is every room. A room not connected is not waited for.
    */
-  whenLiveHeld(documentId: DocumentId): Promise<void>;
+  whenSentAcknowledged(documentIds: readonly DocumentId[] | null): Promise<void>;
   restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

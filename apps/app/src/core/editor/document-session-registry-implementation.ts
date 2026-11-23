@@ -180,8 +180,11 @@ export class DocumentSessionRegistry {
     return this.rooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  whenLiveHeld(documentId: DocumentId): Promise<void> {
-    return this.rooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve();
+  async whenSentAcknowledged(documentIds: readonly DocumentId[] | null): Promise<void> {
+    const keys = documentIds
+      ? documentIds.flatMap((id) => this.roomsOf(id))
+      : [...this.rooms.keys()];
+    await Promise.all(keys.map((key) => this.rooms.get(key)?.session?.whenSentAcknowledged()));
   }
 
   async restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean> {

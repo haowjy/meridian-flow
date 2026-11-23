@@ -617,34 +617,21 @@ export class DocumentSession {
     return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
   }
 
+  /**
+   * Settles once the server acknowledged every batch this session sent so far, and at once while
+   * it is not connected. A fork's copy holds the Live ops it forwards, which its room never
+   * acknowledges, so a press waits on this (design §4).
+   */
+  whenSentAcknowledged(): Promise<void> {
+    return this.transportProvider?.whenSentAcknowledged() ?? Promise.resolve();
+  }
+
   /** Captured now; later typing does not move this barrier. */
   whenCurrentChangesAcknowledged(): Promise<void> {
     const provider = this.transportProvider;
     if (!provider) return Promise.reject(new Error("Document session has no transport"));
     if (this.access === "read") return Promise.resolve();
     return provider.whenCurrentChangesAcknowledged();
-  }
-
-  /**
-   * Settles once the server holds what this room holds now, or at once while the room is not
-   * synced or is read-admitted, and when it stops being synced or becomes read.
-   */
-  whenServerHoldsLocalChanges(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      let stop = () => {};
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        stop();
-        resolve();
-      };
-      stop = this.subscribe((snapshot) => {
-        if (snapshot.status !== "synced" || snapshot.access === "read") done();
-      });
-      if (settled) stop();
-      else this.whenCurrentChangesAcknowledged().then(done, done);
-    });
   }
 
   /** Whether this copy holds words a read-admitting server will never take. */

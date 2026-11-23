@@ -491,6 +491,8 @@ export class CommandDriver {
       const stored = found.status === 200 ? (found.body as CommandLookupResponse) : null;
       if (stored?.status === "stored") return this.settle(record, outcomeOf(stored.outcome));
     }
+    await kind.ready?.(record, signal);
+    if (signal.aborted) return;
     const attempt = await this.markAttempt(record, kind);
     if (!attempt?.request) return;
     const { method, path, body } = attempt.request;
