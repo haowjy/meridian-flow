@@ -179,6 +179,15 @@ function createInMemoryDraftStub(): CollabDrafts {
   };
   return {
     presses: { press: unsupported, undo: unsupported },
+    workDrafts: {
+      list: async () => [],
+      create: unsupported,
+      rename: unsupported,
+      remove: unsupported,
+      restore: unsupported,
+      setChatDraft: unsupported,
+      purgeDeleted: async () => 0,
+    },
     draftReview: {
       async purgeDiscards() {
         return 0;

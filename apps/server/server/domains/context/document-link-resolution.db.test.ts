@@ -28,6 +28,7 @@ import {
 import { accountUserSource } from "../../test-support/draft-tree-seeds.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
+import { defaultDraftOf } from "../../test-support/work-rows.js";
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
@@ -454,14 +455,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: draftId } });
         return id;
       };
-      const draftOf = async (workId: string) => {
-        const [row] = await db
-          .select({ draftId: works.draftId })
-          .from(works)
-          .where(eq(works.id, workId));
-        if (!row?.draftId) throw new Error(`Work ${workId} names no draft`);
-        return row.draftId;
-      };
+      const draftOf = (workId: string) => defaultDraftOf(db, workId);
       const draftA = await draftOf(a);
       const draftB = await draftOf(b);
       const created = await hidden("created", draftA);

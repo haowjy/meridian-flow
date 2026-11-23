@@ -30,6 +30,8 @@ export function createInMemoryDraftStore(namedDraft: NamedDraft): DraftStore {
       const row = rows.get(draft.id) ?? {
         id: draft.id,
         projectId: draft.projectId,
+        workId: owner.kind === "work" ? owner.workId : null,
+        deletedAt: null,
         createdBy: "",
         createdAt: new Date(),
       };

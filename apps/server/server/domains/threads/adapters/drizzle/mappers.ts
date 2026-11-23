@@ -40,7 +40,7 @@ export function mapThread(
     agentDefinitionRevisionId?: string | null;
     agentName?: string | null;
     pendingWriteMode?: AiWriteMode | null;
-    lineageDraftId: string;
+    chatDraftId: string;
   },
 ): Thread {
   return {
@@ -63,7 +63,7 @@ export function mapThread(
     originType: row.originType as Thread["originType"],
     originTurnId: row.originTurnId,
     rootThreadId: row.rootThreadId,
-    draftId: row.lineageDraftId,
+    draftId: row.chatDraftId,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     totalCostUsd: decimalString(row.totalCostUsd),

@@ -130,6 +130,7 @@ export async function createThreadForProject(
         return deps.threads.create({
           id: args.id,
           ...(args.draftId ? { draftId: args.draftId } : {}),
+          workId: work.id,
           userId: args.userId,
           projectId: args.projectId,
           title: args.title ?? null,

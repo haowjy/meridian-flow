@@ -28,11 +28,14 @@ A document tombstone has a non-null deletion reason exactly when it has
 `deleted_at`. User, Work and system-cause fields identify its actor; legacy
 actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
 remains its restore marker. Restore clears all removal fields. A draft has no status: it is
-deleted with its Work or its document's content, never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
+deleted with its Work, or by `Delete draft` (`deleted_at`, purged 30 days later), never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
 been released after the retention window; placement and the removal record remain.
 
-A `drafts` row is one draft. A Work names it (`works.draft_id`) or a root chat does
-(`threads.draft_id`), minted in the same insert; the draft names no owner.
+A `drafts` row is one draft. A Work owns several (`drafts.work_id`, cascade), one of them
+`is_default`, minted with the Work (`mint_work_default_draft` for a raw insert); a No Work
+lineage's draft has no `work_id` and is minted with its root chat (`mint_named_draft`). Every
+root chat names its draft in `threads.draft_id`. `works` has no draft column, so the two tables
+have no reference cycle.
 `drafts.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its drafts.
 A draft is its tree records; phase 1 has no text drafts, and phase 2 brings them back as fork

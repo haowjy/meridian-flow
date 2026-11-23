@@ -6,6 +6,7 @@
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
+import { carryRootDraft } from "../../../../shared/draft-owner.js";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks } from "../../../../shared/thread-work-lock.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -78,6 +79,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             target: [schema.threadWorks.threadId, schema.threadWorks.workId],
             set: { projectId, isPrimary },
           });
+        if (isPrimary) await carryRootDraft(db, threadId, workId);
       });
     },
 
@@ -105,6 +107,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             target: [schema.threadWorks.threadId, schema.threadWorks.workId],
             set: { projectId, isPrimary: true },
           });
+        await carryRootDraft(db, threadId, workId);
         return { previousWorkId: currentWorkId, changed: true };
       });
     },
@@ -139,6 +142,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
           target: [schema.threadWorks.threadId, schema.threadWorks.workId],
           set: { projectId: thread.projectId, isPrimary: true },
         });
+      await carryRootDraft(db, threadId, workId);
     },
 
     async listByThread(threadId: ThreadId) {

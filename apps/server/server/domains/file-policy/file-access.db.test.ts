@@ -3,7 +3,7 @@
  * grant covers the document it writes.
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, projects, threads, turns, users, works } from "@meridian/database/schema";
+import { contextSources, projects, threads, turns, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   requireAgentWriteGrant,
@@ -11,6 +11,7 @@ import {
 } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
+import { insertWorks } from "../../test-support/work-rows.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -60,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(u, "agent-journal-grant"));
       await db.insert(projects).values({ id: p, userId: u, name: "Probe", slug: "probe" });
-      await db.insert(works).values({
+      await insertWorks(db, {
         id: w,
         projectId: p,
         createdByUserId: u,

@@ -14,7 +14,6 @@ import {
   projects,
   threads,
   users,
-  works,
 } from "@meridian/database/schema";
 import { LIVE as TREE_LIVE } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -23,6 +22,7 @@ import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
@@ -141,7 +141,7 @@ if (!RUN) {
         slug: "scratch",
         deletedAt: new Date(),
       });
-      await db.insert(works).values({
+      await insertWorks(db, {
         id: WORK,
         projectId: PROJECT,
         createdByUserId: USER,

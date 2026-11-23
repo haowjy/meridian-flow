@@ -21,6 +21,7 @@ import {
   LineageDraftsUnavailableError,
   lockLineageOwners,
   type OwnerLocks,
+  workDefaultDraftSql,
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
@@ -307,7 +308,7 @@ export function createWorkProjectionMutation(input: {
             or(ne(works.pendingDocumentCount, documents), ne(works.pendingFolderCount, folders)),
           ),
         )
-        .returning({ projectId: works.projectId, draftId: works.draftId });
+        .returning({ projectId: works.projectId, draftId: workDefaultDraftSql() });
       for (const work of movedWorks) if (work.draftId) wake(work.projectId, work.draftId);
     }
     input.draftOwnerHints.publishDraftHints([...hints.values()]);

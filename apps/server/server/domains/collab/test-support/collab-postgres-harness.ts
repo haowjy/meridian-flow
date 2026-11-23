@@ -18,6 +18,7 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
@@ -171,7 +172,7 @@ export async function seedDatabase(
     name: "Atomicity",
     slug: `atomicity-${PROJECT_ID}`,
   });
-  await db.insert(schema.works).values({
+  await insertWorks(db, {
     id: WORK_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,

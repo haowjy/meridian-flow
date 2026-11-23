@@ -1,8 +1,8 @@
 /** Proof that drafted writes lock a Work's draft behind the Work, and the resolver's surface. */
 import { createDb, type Database } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
-import { users, works } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { users } from "@meridian/database/schema";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   approveDraftWriteJoin,
@@ -12,6 +12,7 @@ import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { defaultDraftOf } from "../../../test-support/work-rows.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createDrizzleDraftStore, createDrizzleDraftWriteBoundary } from "./drizzle-drafts.js";
 
@@ -56,10 +57,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scenario = await draftTreeScenario(root);
       const work = await scenario.work("Ascension", "draft");
       const owner = { kind: "work", workId: work.id } as const;
+      const named = await defaultDraftOf(root, work.id);
 
       // An ambient transaction the command boundary didn't approve is refused, not joined.
       await expect(
-        runInRootDrizzleTransaction(first, () => resolverOn(first).lockForWrite(owner)),
+        runInRootDrizzleTransaction(first, () => resolverOn(first).lockForWrite(owner, named)),
       ).rejects.toBeInstanceOf(DraftWriteJoinRefusedError);
 
       // The first write's command transaction locks the draft and stays open.
@@ -73,13 +75,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const firstWrite = runInRootDrizzleTransaction(first, async () => {
         approveDraftWriteJoin();
-        const draft = await resolverOn(first).lockForWrite(owner);
+        const draft = await resolverOn(first).lockForWrite(owner, named);
         locked();
         await held;
         return draft;
       });
       await lockedSignal;
-      const secondWrite = resolverOn(second).lockForWrite(owner);
+      const secondWrite = resolverOn(second).lockForWrite(owner, named);
       const secondOrder = await Promise.race([
         secondWrite.then(
           () => "settled" as const,
@@ -90,11 +92,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       release();
       const [made, joined] = await Promise.all([firstWrite, secondWrite]);
 
-      const [named] = await root
-        .select({ draftId: works.draftId })
-        .from(works)
-        .where(eq(works.id, work.id));
-      expect(made.id).toBe(named?.draftId);
+      expect(made.id).toBe(named);
       expect(joined.id).toBe(made.id);
       // The second write waited on the Work row rather than reading around it.
       expect(secondOrder).toBe("waiting");

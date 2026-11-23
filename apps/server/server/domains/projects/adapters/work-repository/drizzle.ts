@@ -1,3 +1,5 @@
+import type { DraftId } from "@meridian/contracts";
+import { newDraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
@@ -6,8 +8,9 @@ import {
   type Work,
 } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import { contextSources, projects, treeNodes, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { contextSources, drafts, projects, treeNodes, works } from "@meridian/database/schema";
+import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { workDefaultDraftSql } from "../../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -35,7 +38,12 @@ import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME } from "./shared.js";
 
-type WorkRow = typeof works.$inferSelect;
+/** A Work's row and the draft a new chat of it names: its default (`drafts.is_default`). */
+const workColumns = {
+  ...getTableColumns(works),
+  draftId: workDefaultDraftSql(),
+};
+type WorkRow = typeof works.$inferSelect & { draftId: DraftId | null };
 function mapWork(row: WorkRow): Work {
   const handle = row.isNoWork ? null : decodeWorkHandle(row.handle);
   if (!row.isNoWork && !handle) throw new Error(`Persisted Work ${row.id} has an invalid handle`);
@@ -115,13 +123,17 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
   async function findWorkById(id: WorkId): Promise<Work | null> {
     if (!isUuid(id)) return null;
-    const [row] = await currentDrizzleDb(db).select().from(works).where(eq(works.id, id)).limit(1);
+    const [row] = await currentDrizzleDb(db)
+      .select(workColumns)
+      .from(works)
+      .where(eq(works.id, id))
+      .limit(1);
     return row ? mapWork(row) : null;
   }
 
   async function findNoWorkRow(projectId: ProjectId): Promise<Work | null> {
     const [row] = await currentDrizzleDb(db)
-      .select()
+      .select(workColumns)
       .from(works)
       .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
       .limit(1);
@@ -145,7 +157,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         .update(works)
         .set({ ...patch, entityRevision: sql`${works.entityRevision} + 1`, updatedAt: new Date() })
         .where(and(eq(works.id, id), isNull(works.deletedAt)))
-        .returning();
+        .returning(workColumns);
       if (!row) throw new Error(`Work not found: ${id}`);
       return mapWork(row);
     });
@@ -176,23 +188,32 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         const handle = formatWorkHandle(
           await allocateHandleNumber(activeDb, input.projectId, "work"),
         );
+        const createdBy =
+          project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000";
+        // The Work's default draft, under the id the client may have minted; inserted first, so
+        // the Work's insert finds it (`mint_work_default_draft`).
+        const draftId = (input.draftId ?? newDraftId()) as DraftId;
+        await activeDb.insert(drafts).values({
+          id: draftId,
+          projectId: input.projectId,
+          workId: id,
+          isDefault: true,
+          createdBy,
+        });
         const [row] = await activeDb
           .insert(works)
           .values({
             id,
             projectId: input.projectId,
-            createdByUserId:
-              project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
+            createdByUserId: createdBy,
             name: input.name,
             handle,
-            // Null mints the Work's draft in the insert (`mint_named_draft`).
-            draftId: input.draftId ?? null,
             goal: input.goal ?? null,
           })
           .returning();
         if (!row) throw new Error("Failed to create work");
         await provisionWorkScratch(db, row.id);
-        return mapWork(row);
+        return mapWork({ ...row, draftId });
       });
     },
     async findById(id: WorkId): Promise<Work | null> {
@@ -202,7 +223,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
       const [row] = await currentDrizzleDb(db)
-        .select()
+        .select(workColumns)
         .from(works)
         .where(and(eq(works.projectId, projectId), eq(works.handle, handle)))
         .limit(1);
@@ -235,7 +256,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           })
           .returning();
         if (!row) throw new Error("Failed to create No Work");
-        return mapWork(row);
+        return mapWork({ ...row, draftId: null });
       });
     },
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
@@ -250,7 +271,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         opts?.includeNoWork ? undefined : eq(works.isNoWork, false),
       );
       const rows = await currentDrizzleDb(db)
-        .select()
+        .select(workColumns)
         .from(works)
         .where(where)
         .orderBy(desc(works.updatedAt), desc(works.id));
@@ -352,7 +373,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: restoredAt,
           })
           .where(eq(works.id, id))
-          .returning();
+          .returning(workColumns);
         if (!row) throw new Error(`Work not found: ${id}`);
         await cascadeRestore(db, {
           projectId: existing.projectId,
@@ -395,7 +416,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async touch(id: WorkId): Promise<void> {
       const activeDb = currentDrizzleDb(db);
-      const [existing] = await activeDb.select().from(works).where(eq(works.id, id)).limit(1);
+      const [existing] = await activeDb
+        .select(workColumns)
+        .from(works)
+        .where(eq(works.id, id))
+        .limit(1);
       if (!existing || existing.deletedAt) return;
       await projectionMutation.touchWorks([id], new Date());
     },

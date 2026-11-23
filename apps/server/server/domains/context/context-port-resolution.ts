@@ -7,7 +7,6 @@ import type { DocumentVersion } from "@meridian/agent-edit";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
-import { draftOf } from "@meridian/contracts/works";
 import { chatOwner } from "../../shared/draft-owner.js";
 import type { FileDestination } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
@@ -90,11 +89,7 @@ export function contextPortForThread(
 ): ContextPort {
   const authority = resolution.primaryWorkAuthority;
   if (!authority) throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
-  const owner = {
-    id: authority.workId,
-    isNoWork: authority.workHandle === null,
-    draftId: resolution.primaryWork?.draftId ?? null,
-  };
+  const owner = { id: authority.workId, isNoWork: authority.workHandle === null };
   return contextPorts.forWork(
     authority,
     resolution.thread.projectId,
@@ -106,7 +101,7 @@ export function contextPortForThread(
       threadId: resolution.thread.id,
       draftOwner: {
         owner: chatOwner(resolution.thread, owner),
-        draftId: draftOf(resolution.thread, owner),
+        draftId: resolution.thread.draftId,
         handle: authority.workHandle,
       },
       writeMode: resolution.thread.aiWriteMode,

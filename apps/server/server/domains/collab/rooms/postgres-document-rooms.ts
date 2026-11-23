@@ -93,6 +93,8 @@ export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
    * document with a row keeps its rows here: its row's delete, or the purge, takes them.
    */
   end(documentIds: readonly DocumentId[]): Promise<void>;
+  /** Ends these rooms as `end` does, without saving: a purged draft's forks. */
+  endRooms(rooms: readonly DocumentRoom[]): Promise<void>;
   /**
    * The retention pass over forks (design §2): each fork whose flag was last read 30 days ago, or
    * that has been empty that long, is read again (forwarded) and its flag set from the read; one
@@ -715,6 +717,27 @@ export function createPostgresDocumentRooms(input: {
     return shrinks ? stored - shallow.byteLength : 0;
   }
 
+  /** Frees the loaded rooms `match` picks, forks first, dropping what they have not saved. */
+  async function endLoaded(match: (room: DocumentRoom) => boolean) {
+    // A load in flight would register its room after this one ended.
+    await Promise.allSettled([...loading.values()]);
+    const victims = [...rooms.values()]
+      .filter((r) => match(r.room))
+      .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
+    for (const loaded of victims) {
+      if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
+      if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+      loaded.idleTimer = loaded.saveTimer = null;
+      loaded.dirty = new Set();
+      loaded.firstDirtyAt = 0;
+      if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+      // A save already running finishes with the docs it started on.
+      await loaded.queue;
+      loaded.docs.free();
+      settleIfIdle(loaded);
+    }
+  }
+
   /**
    * A private copy of `room` for a caller inside a transaction: the loaded room's state plus the
    * rows the transaction sees that it lacks, or, unloaded, the rows alone.
@@ -849,24 +872,8 @@ export function createPostgresDocumentRooms(input: {
 
     async end(documentIds) {
       if (documentIds.length === 0) return;
-      // A load in flight would register its room after this one ended.
-      await Promise.allSettled([...loading.values()]);
       const ending = new Set<string>(documentIds);
-      const victims = [...rooms.values()]
-        .filter((r) => ending.has(r.room.documentId))
-        .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
-      for (const loaded of victims) {
-        if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
-        if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
-        loaded.idleTimer = loaded.saveTimer = null;
-        loaded.dirty = new Set();
-        loaded.firstDirtyAt = 0;
-        if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
-        // A save already running finishes with the docs it started on.
-        await loaded.queue;
-        loaded.docs.free();
-        settleIfIdle(loaded);
-      }
+      await endLoaded((room) => ending.has(room.documentId));
       await currentDrizzleDb(db).execute(sql`
         delete from document_snapshots s
         where s.room_key in (${sql.join(
@@ -874,6 +881,11 @@ export function createPostgresDocumentRooms(input: {
           sql`, `,
         )})
           and not exists (select 1 from documents d where 'live:' || d.id::text = s.room_key)`);
+    },
+
+    async endRooms(ended) {
+      const names = new Set(ended.map(loroRoomName));
+      if (names.size > 0) await endLoaded((room) => names.has(loroRoomName(room)));
     },
 
     async retireEmptyForks(now = new Date()) {

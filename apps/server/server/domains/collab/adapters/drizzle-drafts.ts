@@ -1,11 +1,11 @@
 /**
- * Drizzle adapter for drafts. A draft is minted with the Work or root chat that names it (the
- * `mint_named_draft` trigger), so nothing here creates one; an owner's draft is its pointer.
+ * Drizzle adapter for drafts. A Work's default draft is minted with the Work and a No Work
+ * lineage's with its root chat (`mint_named_draft`); the Work's others by `Drafts.create`.
  */
 import type { DraftId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { drafts, threads, works } from "@meridian/database/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { drafts, threads } from "@meridian/database/schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { draftOfOwnerSql, draftOwnerSql, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -16,6 +16,8 @@ import type { Draft, DraftStore, DraftWriteBoundary } from "../domain/ports/draf
 const draftColumns = {
   id: drafts.id,
   projectId: drafts.projectId,
+  workId: drafts.workId,
+  deletedAt: drafts.deletedAt,
   createdBy: drafts.createdBy,
   createdAt: drafts.createdAt,
 };
@@ -43,17 +45,21 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
       const [found] = await tx()
         .select({
           ...draftColumns,
-          workId: owner.workId,
-          rootThreadId: owner.rootThreadId,
+          ownerWorkId: owner.workId,
+          ownerRootThreadId: owner.rootThreadId,
           handle: owner.handle,
         })
         .from(drafts)
         .where(eq(drafts.id, draftId));
       if (!found) return null;
-      const { handle, workId, rootThreadId, ...draft } = found;
+      const { handle, ownerWorkId, ownerRootThreadId, ...draft } = found;
       return {
         draft,
-        owner: ownerOfColumns({ projectId: draft.projectId, workId, rootThreadId }),
+        owner: ownerOfColumns({
+          projectId: draft.projectId,
+          workId: ownerWorkId,
+          rootThreadId: ownerRootThreadId,
+        }),
         handle,
       };
     },
@@ -67,14 +73,17 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
     async namedBy({ workId, lineageRootIds }) {
       const roots = lineageRootIds.filter(isUuid);
       const named = await tx()
-        .select({ id: works.draftId })
-        .from(works)
-        .where(eq(works.id, workId))
+        .select({ id: drafts.id })
+        .from(drafts)
+        .where(eq(drafts.workId, workId))
         .union(
           tx()
-            .select({ id: threads.draftId })
+            .select({ id: drafts.id })
             .from(threads)
-            .where(roots.length ? inArray(threads.id, roots) : sql`false`),
+            .innerJoin(drafts, eq(drafts.id, threads.draftId))
+            .where(
+              roots.length ? and(inArray(threads.id, roots), isNull(drafts.workId)) : sql`false`,
+            ),
         );
       return named.flatMap((entry) => (entry.id ? [entry.id] : []));
     },

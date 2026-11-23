@@ -44,6 +44,7 @@ import {
 import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import {
   closeDatabase,
   createTestDatabase,
@@ -94,7 +95,7 @@ describe("the tree list store (postgres)", () => {
       },
       { id: UNFILED, projectId: PROJECT, slug: "unfiled", scope: "project" },
     ]);
-    await db.insert(works).values({
+    await insertWorks(db, {
       id: WORK,
       projectId: PROJECT,
       createdByUserId: ACCOUNT,

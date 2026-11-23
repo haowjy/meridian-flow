@@ -1,7 +1,6 @@
 import type {
   ContextSourceId,
   DocumentId,
-  DraftId,
   ProjectId,
   ProjectSettings,
   ThreadId,
@@ -12,7 +11,6 @@ import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/wo
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -27,7 +25,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { drafts } from "./drafts";
 import { users } from "./users";
 
 export const projects = pgTable(
@@ -86,16 +83,7 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    /**
-     * The Work's draft, minted with it; null only on No Work, which owns nothing. Phase 2b drops it for `drafts.work_id`
-     * and `drafts.is_default`; until then it and `drafts.work_id` reference each other, so it is deferrable
-     * (`sql/baseline.sql`) for the test reset's child-first order.
-     */
-    draftId: text("draft_id")
-      .$type<DraftId>()
-      .unique("works_draft_id")
-      .references((): AnyPgColumn => drafts.id),
-    // The Works badge: documents the Work's draft changes, as the collab pending
+    // The Works badge: documents the Work's drafts change, as the collab pending
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
@@ -122,7 +110,6 @@ export const works = pgTable(
       "works_no_work_handle",
       sql`(${table.isNoWork} AND ${table.handle} IS NULL) OR (NOT ${table.isNoWork} AND ${table.handle} IS NOT NULL)`,
     ),
-    check("works_draft_unless_no_work", sql`${table.isNoWork} = (${table.draftId} IS NULL)`),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
     // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.

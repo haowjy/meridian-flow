@@ -26,10 +26,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
       const named = sql.join(
         [
           workIds.length
-            ? sql`SELECT w.draft_id FROM works w WHERE w.id IN (${ids(workIds)}) AND w.draft_id IS NOT NULL`
+            ? sql`SELECT d.id FROM drafts d WHERE d.work_id IN (${ids(workIds)}) AND d.deleted_at IS NULL`
             : null,
           rootThreadIds.length
-            ? sql`SELECT t.draft_id FROM threads t WHERE t.id IN (${ids(rootThreadIds)}) AND t.draft_id IS NOT NULL`
+            ? sql`SELECT t.draft_id FROM threads t JOIN drafts d ON d.id = t.draft_id
+                WHERE t.id IN (${ids(rootThreadIds)}) AND d.work_id IS NULL`
             : null,
         ].filter((clause) => clause !== null),
         sql` UNION `,
@@ -44,8 +45,9 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         folders: number;
       }>(sql`
         SELECT b.id AS draft_id, b.project_id::text AS project_id,
-               (SELECT w.id::text FROM works w WHERE w.draft_id = b.id) AS work_id,
-               (SELECT t.id::text FROM threads t WHERE t.draft_id = b.id) AS root_thread_id,
+               b.work_id::text AS work_id,
+               (SELECT t.id::text FROM threads t WHERE t.draft_id = b.id AND b.work_id IS NULL
+                 LIMIT 1) AS root_thread_id,
                coalesce(d.count, 0)::int AS documents, coalesce(f.count, 0)::int AS folders
         FROM drafts b
         LEFT JOIN (
@@ -90,11 +92,12 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           rootTitle: lineageRoot.title,
         })
         .from(drafts)
-        .leftJoin(works, eq(works.draftId, drafts.id))
-        .leftJoin(lineageRoot, eq(lineageRoot.draftId, drafts.id))
+        .leftJoin(works, eq(works.id, drafts.workId))
+        .leftJoin(lineageRoot, and(eq(lineageRoot.draftId, drafts.id), isNull(drafts.workId)))
         .where(
           and(
             eq(drafts.projectId, projectId),
+            isNull(drafts.deletedAt),
             isNull(works.deletedAt),
             or(isNotNull(works.id), isNotNull(lineageRoot.id)),
             sql`${drafts.id} in (SELECT p.draft_id FROM (${pendingDocuments(inProject, documentId as DocumentId)}) p)`,

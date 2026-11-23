@@ -72,6 +72,7 @@ import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal.js";
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
+import { createDrizzleWorkDrafts } from "./adapters/drizzle-work-drafts.js";
 import { createDrizzleWriteOrdinals } from "./adapters/drizzle-write-ordinals.js";
 import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
@@ -315,13 +316,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
+  const ownDrafts = createDrizzleWorkDrafts(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
+    endRooms: (ended) => rooms.endRooms(ended),
+  });
   const discardPurge = createDrizzleDiscardPurge(deps.db, {
     workProjection: deps.workProjectionMutation,
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
   });
   const drafts = createWorkDraftReviewService({
-    // Press rows and empty forks share the 30-day retention pass.
-    purgeDiscards: async () => (await discardPurge.purge()) + (await rooms.retireEmptyForks()),
+    // Press rows, deleted drafts and empty forks share the 30-day retention pass.
+    purgeDiscards: async () =>
+      (await discardPurge.purge()) +
+      (await ownDrafts.purgeDeleted()) +
+      (await rooms.retireEmptyForks()),
     reviewItems,
     identity,
     commands,
@@ -423,6 +432,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     effectiveReader,
     drafts: {
       ...drafts,
+      workDrafts: ownDrafts,
       presses: createDrizzlePress(deps.db, {
         workProjection: deps.workProjectionMutation,
         drafts: workDrafts,

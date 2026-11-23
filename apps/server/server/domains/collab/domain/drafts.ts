@@ -15,13 +15,14 @@ export interface Drafts {
   /**
    * The write boundary only: locks the owner (the Work row, or the lineage lock) under the
    * caller's `WorkWriteOptions`, by default refusing an archived, deleted or frozen one (archive
-   * and Trash stop new AI writes), then the draft it names, row-locked. With no ambient
+   * and Trash stop new AI writes), then the draft the write names, row-locked: `draftId` while
+   * it is still the owner's and not deleted, else the owner's default. With no ambient
    * transaction it runs in its own. Inside one it joins only a transaction the ContextFS command
    * boundary approved (`approveDraftWriteJoin`: it has locked nothing but owners); any other
    * ambient caller gets `DraftWriteJoinRefusedError`, so it never takes the owner lock after
    * namespace or document locks.
    */
-  lockForWrite(owner: DraftOwner, options?: WorkWriteOptions): Promise<Draft>;
+  lockForWrite(owner: DraftOwner, draftId: DraftId, options?: WorkWriteOptions): Promise<Draft>;
   /** No lock. The draft and who names it, as it reads now. */
   ownerOf(draftId: DraftId): Promise<DraftOwnerView | null>;
   /** No lock. The draft this owner names; null when the owner is gone. */
@@ -58,12 +59,14 @@ export function createDrafts(deps: { store: DraftStore; boundary: DraftWriteBoun
       const draft = await store.ofOwner(owner);
       return draft ? { kind: "draft", draftId: draft.id } : { kind: "live" };
     },
-    lockForWrite(owner, options) {
+    lockForWrite(owner, draftId, options) {
       return deps.boundary.withActiveOwnerLocked(
         owner,
         async () => {
-          const named = await store.ofOwner(owner);
-          const locked = named ? await store.lock(named.id) : null;
+          const named = await store.lock(draftId);
+          if (named && !named.deletedAt && ownedBy(named, owner)) return named;
+          const fallback = await store.ofOwner(owner);
+          const locked = fallback ? await store.lock(fallback.id) : null;
           if (!locked) throw new OwnerWithoutDraftError(owner);
           return locked;
         },
@@ -78,3 +81,6 @@ export function createDrafts(deps: { store: DraftStore; boundary: DraftWriteBoun
     namedBy: (input) => store.namedBy(input),
   };
 }
+
+const ownedBy = (draft: Draft, owner: DraftOwner) =>
+  owner.kind === "work" ? draft.workId === owner.workId : draft.workId === null;

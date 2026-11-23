@@ -16,10 +16,16 @@ back as a fork room of the document.
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
 (`domain/agent-edit-router.ts`), which routes every one to the Live core. A draft's owner is the
-chat's Work, or for a chat with no Work its lineage (the first chat, its forks and subagents; a
-handoff starts a new one). `shared/draft-owner.ts`
-is the one reader of a draft's owner and lifecycle (`draftOwnerSql`). A lineage is writable
-while some chat in it is live. Scratch and upload content is always live.
+Work it belongs to (`drafts.work_id`; a Work has several and one default), or for a chat with no
+Work its lineage (the first chat, its forks and subagents; a handoff starts a new one). A chat
+writes into the draft its root names (`threads.draft_id`, read through `Thread.draftId`, which
+falls back to the Work's default when the root's draft is deleted or of another Work).
+`shared/draft-owner.ts` is the one reader of a draft's owner and lifecycle (`draftOwnerSql`) and
+holds the move rule (`carryRootDraft`: a chat that changes Work carries an unshared draft and
+names the destination's default otherwise). A Work's drafts are listed, made, renamed, deleted
+(`deleted_at`, Undo restores, purged 30 days later with its forks) and picked for a chat in
+`adapters/drizzle-work-drafts.ts`. A lineage is writable while some chat in it is live. Scratch
+and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows the
 writes before it.

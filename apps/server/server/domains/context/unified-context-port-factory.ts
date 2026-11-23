@@ -445,7 +445,10 @@ export function createProductionUnifiedContextPortFactory(options: {
             afterWorkLocks: async () => {
               if (!draftWrite) return;
               approveDraftWriteJoin();
-              command.draft = await options.drafts.lockForWrite(draftWrite.owner);
+              command.draft = await options.drafts.lockForWrite(
+                draftWrite.owner,
+                draftWrite.draftId,
+              );
             },
           });
           const draft = command.draft;
