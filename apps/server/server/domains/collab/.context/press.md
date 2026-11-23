@@ -55,33 +55,37 @@ never makes one.
 A turn that wrote in several drafts is one press per draft, each in that draft's lane on the tab
 (`press:<draft>`), so it is ordered after an Apply or Discard pressed on the same draft before it.
 The plan (`adapters/drizzle-restore-before.ts`, `restorePlan`) is read once and shared with the
-card's offer (`TurnReceiptChip.restore`, `restorableDrafts`):
+card (`restoreStates`): `TurnReceiptChip.restore` offers it in the drafts where pressing would
+change something now (a write of the turn would go back, or a node it created would go to Trash),
+so a turn already restored or undone there is not offered, and `restored` names the restore press
+in force per draft (the latest done `restore` press that changed something and has no done
+`unpress`), so every tab and a reload read the same state.
 
 - **Rooms.** The turn's parts whose `origin` names the draft: its fork of a document, or the Live
   room of a document only the draft still holds (a Draft chat writes such a document there). A
   document the turn wrote while only the draft held it, and the writer has since applied, is the
   manuscript's: it stays.
-- **Per room**, `turnSpan` takes each doc at its version as the turn's first write into it began,
-  and the structure at the turn's last write into it; a fork copy is carried forward to today's
-  Live first; `restoreBefore` (`@meridian/document-model`) puts each text doc back (merged with
-  Live's version in a fork) and each structure value the turn set back where it still holds what
-  the turn left. Live's manuscript is never written, so text an Apply already put there stays.
+- **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
+  first, taken back by design §2's Undo rule (`undoInRooms`, `whyEditStays`): each goes back whole,
+  or stays whole when someone wrote over it since or the room cut its history (§4's cutoff). A fork
+  copy is carried forward to today's Live first. Live's manuscript is never written, so text an
+  Apply already put there stays, and a value a press settled stays in the draft.
 - **The nodes the turn created** in the draft that only the draft still holds go to Trash, by the
   Discard's tree half (`discardTreeRecords` with `trash`): the draft read without them before the
   turn. Their text goes with them, so no room of theirs is restored. Other tree changes the turn
   drafted (moves, renames, deletes) stay.
-- **All or nothing.** If any room no longer holds the history its span needs (`holdsSpan`, cut at
-  design §4's cutoff), nothing is restored, text or tree, and the result says `compacted: true`.
-  The card's offer reads the same plan, so it stops offering Restore before for that draft.
+- **What stayed** is counted in the answer (`kept: { written_over, compacted }`), which names only
+  the documents the press changed: a press that changed nothing names none and makes no Undo step.
+  The card says nothing of what stayed, as the turn Undo does.
 
 Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
 for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is
 the press's `unpress` (`undoPress` in a fork, `undoEdits` in a Live room), and the created nodes
 come back by `restoreDiscard`; pressing again is the Redo.
 
-The press design lead's draft (`loro-build/gate/press-whole/`, part 3) replaces the per-doc
-frontier restore with `undoEdits` over the turn's stored edits in the draft. The rooms, the lane,
-the all-or-nothing decision and the Undo above carry over.
+It replaced (2026-11-23, `loro-build/gate/press-whole/`) a frontier restore that put each text doc
+back to the turn's first version, which reversed whatever came after in those docs (half of a later
+split) and nothing beside them.
 
 ## Discard, and what goes to Trash
 
