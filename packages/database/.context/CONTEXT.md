@@ -38,8 +38,8 @@ root chat names its draft in `threads.draft_id`. `works` has no draft column, so
 have no reference cycle.
 `drafts.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its drafts.
-A draft is its tree records; phase 1 has no text drafts, and phase 2 brings them back as fork
-rooms (`document_forks`). `commands` holds one row
+A draft is its tree records and its fork rooms, one per document it changed (`document_forks`,
+with the rows under `fork:<draft>:<document>` in `document_snapshots`). `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.

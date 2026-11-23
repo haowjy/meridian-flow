@@ -162,6 +162,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink ?? createNoopEventSink(),
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
     onLiveSaved: (documentId) => liveAdvanced(documentId as DocumentId),
+    // A save holds no Work lock: the draft's owners recount once it commits.
+    onForkPendingChanged: async (draftId) =>
+      deps.workProjectionMutation.recountAfterCommit(
+        await deps.workProjectionMutation.ownersOf({ drafts: [draftId] }),
+      ),
     bounds: deps.roomBounds,
   });
   const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>

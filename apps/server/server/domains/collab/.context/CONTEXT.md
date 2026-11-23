@@ -138,6 +138,13 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 
 - **Press and unpress** take the order of [the press](press.md): Works, drafts in ID order, lists,
   documents in ID order, then writes (each document's Live room, then its fork's).
+- **A fork's save** (a tab's typing, or a command's commit into a fork) takes its document's key
+  alone, and reads the draft's row with no lock to skip a purged draft: a row lock there would
+  follow the document key, against every press. Under a document key nothing locks a row from an
+  earlier step of this list, beyond the key-share lock the fork row's foreign key takes on its
+  draft, which waits only on the draft's delete.
+- **The purge of a deleted draft** takes its Work, its draft row, its tree lists, then its forks'
+  document keys in ID order, and only then deletes: each save lands wholly before or after it.
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` takes none: it throws when the transaction does not hold the

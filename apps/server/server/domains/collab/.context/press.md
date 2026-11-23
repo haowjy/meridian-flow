@@ -81,10 +81,12 @@ closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree
 document, `undoPress` reads the press's `press_changes` rows: each change goes back whole or stays
 whole (`editStays`), each room its own, committed under `press:<undo id>`. A change that stays is
 in the answer's `stayed`, with who wrote over it, read from the commit messages on its text since
-the press: no message is the writer, `turn:<id>` a chat (by its ref), `press:` another press.
+the press: a tab's commit (no message) is the writer, `turn:<id>` a chat (by its ref), `press:`
+another press; a server write with no message (a restore, a copy) names no one.
 Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard) on that draft's part, with
-the Trash deletes whose nodes its creates made. A deleted draft's text has nothing to come back
-to; a purged draft's rows went with it.
+the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
+other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing
+to come back to.
 
 A document or folder a draft created is the draft's again after the
 Undo of the press that put it in Live or in Trash: pending in the Work, in no Live row and no

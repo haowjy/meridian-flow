@@ -1,4 +1,4 @@
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
@@ -135,10 +135,17 @@ type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
 /**
  * Writes a fork's row, or sets what it says from a read of the fork now (`docs`, a draft copy):
  * whether it is pending, Live's version under its removals, and whether the writer typed in it.
+ * Under the document's lock. Answers whether the pending flag changed: the draft's count moves.
  */
-export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs) {
+export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs): Promise<boolean> {
   const changes = changedBlocks(docs);
   const pending = changes.length > 0;
+  const [before] = await tx
+    .select({ pending: documentForks.pending })
+    .from(documentForks)
+    .where(
+      and(eq(documentForks.draftId, room.draftId), eq(documentForks.documentId, room.documentId)),
+    );
   const removals = pending ? pendingRemovalVersion(docs, changes) : new Map();
   const state = {
     pending,
@@ -161,6 +168,7 @@ export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs) {
         emptySince: pending ? null : sql`coalesce(${documentForks.emptySince}, now())`,
       },
     });
+  return (before?.pending ?? false) !== pending;
 }
 
 /**
@@ -206,6 +214,11 @@ export function createPostgresDocumentRooms(input: {
   schemaVersion: number;
   /** A save of a Live room's rows committed: its text moved for everyone who derives from it. */
   onLiveSaved?(documentId: DocumentId): void;
+  /**
+   * In the save's transaction: a fork's pending flag changed, so its draft's review count moved.
+   * A save that leaves the flag as it was (most keystrokes) does not call it.
+   */
+  onForkPendingChanged?(draftId: DraftId): Promise<void>;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
   const { db, shape, eventSink, schemaVersion } = input;
@@ -492,7 +505,8 @@ export function createPostgresDocumentRooms(input: {
     const bytes = await writeSnapshots(tx, rows);
     // The fork's row comes with its first rows, whichever door wrote them (design §2), and every
     // save sets whether it is pending from the docs in hand, forwarded.
-    if (room.kind === "fork") await markFork(tx, room, docs);
+    if (room.kind === "fork" && (await markFork(tx, room, docs)))
+      await input.onForkPendingChanged?.(room.draftId);
     await tx
       .update(documents)
       .set({
@@ -952,7 +966,7 @@ export function createPostgresDocumentRooms(input: {
             await lockRoom(tx, room);
             const docs = await copyInTransaction(tx, room, freshServerPeerId());
             try {
-              await markFork(tx, room, docs);
+              if (await markFork(tx, room, docs)) await input.onForkPendingChanged?.(draftId);
             } finally {
               docs.free();
             }
