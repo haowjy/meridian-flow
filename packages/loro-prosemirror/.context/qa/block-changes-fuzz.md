@@ -45,11 +45,13 @@ stored as JSON and read back.
   newest first and in random order.
 - Live and Draft deletions and replacements over a press's text before its Undo (the later write
   of design §2's edit rule), retypes that hold the press's text or are held by it ("house" pressed,
-  then "household" or "hous"), and typing right after it, which in a chain is often text a later
-  press's Undo put back. These are written by position, as the editor's typing is (`replaceText`),
-  so every character a retype types is new and can spell the press's text without being it.
+  then "household" or "hous"), typing right after it, which in a chain is often text a later
+  press's Undo put back, and a rewrite that keeps one of the press's characters inside its own text,
+  as a chat's rewrite keeps the letters it shares. These are written by position, as the editor's
+  typing is (`replaceText`), so every character a retype types is new and can spell the press's text
+  without being it.
 - A draft that replaces one word or two in a block, pressed alone, then one of its replacements
-  overwritten: the press Undo takes the whole change back, as Ctrl+Z does.
+  overwritten: the change stays whole, as a Ctrl+Z step does.
 - A Work's `Apply all` over two drafts that both rewrite one paragraph, on a copy of the Live room:
   pressed in draft order, sometimes with Live typing between, and undone draft by draft, newest
   first.
@@ -69,9 +71,12 @@ stored as JSON and read back.
 - **An Undo takes a change back whole, or leaves it whole** (`wholeChecks`): for each text doc of a
   change that did not stay, the Undo put back every character the press deleted, in order, and left
   none of the press's characters in Live. Ctrl+Z is held to the first half too.
-- **No Undo puts back text a later write removed** (`replacedChecks`): where a press's change to a
-  text doc was one replacement and a later write removed every character it put in, the change stays
-  and that doc is unchanged, neither the old text back nor the later write taken out.
+- **No Undo puts back text a later write removed** (`replacedChecks`): where a later write removed any
+  character a press put in a text doc, the change stays and that doc is unchanged: neither the old
+  text back beside or inside the later write, nor the press's characters it kept taken out of it.
+  The check once covered only a press's one replacement removed whole, and checked a change that went
+  back against the press's own characters alone, so a rewrite keeping some of them, scrambled by the
+  Undo, passed (#1854).
 - Identity is by character id, from the probe's own record of what each Undo put back (the
   characters it inserted, lined up with the ones the edit deleted), never from the take-back messages
   the model reads, and never by what the text spells.
@@ -88,11 +93,6 @@ stored as JSON and read back.
   no write touched, except the accepted copies (below).
 
 ## Accepted, and counted rather than failed
-
-A press that replaced text at two places in one doc, one of which a later write retyped whole, goes
-back whole for the other (design §2's edit rule, part 4): the retyped place's old text returns beside
-the retype ("the fox went home" pressed as "the dog went house", "dog" retyped "cat": "the foxcat went
-home"), as Ctrl+Z's does. Tokens it doubles are not counted as duplicates (`besideRetype`).
 
 Text or marks that a Discard, an Undo or a restore puts back are new operations by the fork, since
 Loro has no undelete. A later Live delete or unmark inside that span leaves the fork's copy, which
