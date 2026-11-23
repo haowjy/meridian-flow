@@ -267,7 +267,7 @@ export function runScript(seed, { verbose = false } = {}) {
     edits: 0, presses: 0, pressUndos: 0, discards: 0, discardUndos: 0, discardAlls: 0, discardAllUndos: 0,
     restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
     chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0, wholeChecks: 0, besideRetype: 0,
-    tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsStayed: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
+    tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsGained: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
     resetCopyObserved: 0, kinds: {},
   };
   const outcomes = [];
@@ -778,9 +778,10 @@ export function runScript(seed, { verbose = false } = {}) {
       const kept = new Set(charIds(d.textOf(id)));
       deletedBy.push(new Set(original.filter((c) => !kept.has(c))));
     }
-    // Both drafts deleted one character: the second press's import deleted it again, so by the Undo rule's part 4
-    // the first press's change stays (design §2), even with the second press undone.
-    const bothDeleted = [...deletedBy[0]].some((c) => deletedBy[1].has(c));
+    // Characters both drafts deleted: the second press's import deleted them again, but its Undo took that back, so
+    // the first press goes back too (design §2), and puts them back into Live as new characters the second draft
+    // never deleted.
+    const bothDeleted = [...deletedBy[0]].filter((c) => deletedBy[1].has(c)).length;
     const before = render(room);
     const draftsBefore = drafts.map((d) => {
       d.forward();
@@ -793,39 +794,23 @@ export function runScript(seed, { verbose = false } = {}) {
       if (i === 1 && liveTyped) typeIn(room, id, liveToken);
       pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }), (r) => stored(r.pressed)));
     }
-    const pressedTexts = drafts.map((d) => {
-      d.forward();
-      return textOfDoc(d.textOf(id));
-    });
     for (const d of drafts) {
+      d.forward();
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
-    const stays = [];
     for (let i = drafts.length - 1; i >= 0; i--) {
       const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { message: `work press undo ${i}` }));
-      stays[i] = stayed.length > 0;
-      check(!stays[i] || (i === 0 && bothDeleted), "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
+      check(!stayed.length, "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
     }
-    if (stays[0]) stats.twoDraftsStayed++;
     const liveIds = new Set(charIds(room.textOf(id)));
     for (const [i, d] of drafts.entries()) {
       d.forward();
       const changes = changedBlocks(d);
-      if (stays[i]) {
-        check(!changes.length, "two-drafts", () => `draft ${i}, whose press stayed, pending ${JSON.stringify(changes)}`);
-        continue;
-      }
       check(changes.length === 1 && same(changes[0].blocks, [id]), "two-drafts", () => `draft ${i} pending ${JSON.stringify(changes)} after the Undo, not ${id}`);
       // The draft's text is back (as new characters of its own: the return to pending). Beside it are only Live's
       // characters: its typing, and text both drafts deleted that the other press's Undo put back as new
       // characters, which this draft never deleted (the accepted copy of design §2: Loro has no undelete).
       const text = textOfDoc(d.textOf(id));
-      if (stays[0]) {
-        // The first press stayed in Live, so this draft reads its deletions too, and Live is as the presses left it
-        // but for this draft's own change: its text is unchanged by its press's Undo (design §2).
-        check(text === pressedTexts[i], "two-drafts", () => `draft ${i} changed by the Undo: ${JSON.stringify(pressedTexts[i])} -> ${JSON.stringify(text)}`);
-        continue;
-      }
       const ids = charIds(d.textOf(id));
       const live = (at) => liveIds.has(ids[at]);
       if (!withExtras(draftsBefore[i], text, live)) {
@@ -840,12 +825,17 @@ export function runScript(seed, { verbose = false } = {}) {
         }
         stats.twoDraftsMoved++;
       }
-      if (!liveTyped) check(text.length === draftsBefore[i].length, "two-drafts", () => `draft ${i} gained text from the Undo: ${draftsBefore[i]} -> ${text}`);
+      if (!liveTyped) {
+        // Text both drafts deleted, which the first press's Undo put back, shows in the second draft (counted, not
+        // failed: design §2, "Text both drafts deleted"); nothing else may come in.
+        const gained = text.length - draftsBefore[i].length;
+        check(gained === 0 || (i === 1 && gained <= bothDeleted), "two-drafts", () => `draft ${i} gained text from the Undo: ${draftsBefore[i]} -> ${text}`);
+        if (gained > 0) stats.twoDraftsGained++;
+      }
     }
     const liveText = textOfDoc(room.textOf(id));
     if (liveTyped) check(liveText.includes(liveToken), "two-drafts", "Live typing between the presses lost by the Undo");
-    if (stays[0]) check(liveText.includes(`d0${seed}k`) && !liveText.includes(`d1${seed}k`), "two-drafts", () => `Live after the second press's Undo, the first staying: ${liveText}`);
-    else if (!liveTyped) check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
+    if (!liveTyped) check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
     stats.twoDrafts++;
     note("  TWO DRAFTS");
   }

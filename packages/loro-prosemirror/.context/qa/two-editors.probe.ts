@@ -13,6 +13,7 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import {
+  applyBlocks,
   applyOps,
   type DocKey,
   encodeEnvelope,
@@ -29,6 +30,7 @@ import {
   STRUCTURE_KEY,
   StructureView,
   setCommentBody,
+  undoPress,
   visibleComments,
 } from "@meridian/document-model";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -930,6 +932,60 @@ function racedRemovals(): string[] {
         syncAll(r);
         runHistory(r.a, "undo");
         return settle(r, "join/delete-across then A Undo", once("qA8"));
+      },
+    },
+    // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
+    // deletes the "F" A deleted. Its press carries that delete into Live; the press's Undo takes it
+    // back, so it counts as never made, and A's Ctrl+Z goes back.
+    "a press undone since does not keep A's step": {
+      room: () => room([p("a", "First."), p("z", "Last.")]),
+      run: (r) => {
+        const live = r.agent();
+        const draft = RoomDocs.draftOf(live, freshPeerId());
+        const command = <T,>(run: (cmd: RoomDocs) => T): T => {
+          const cmd = draft.fork(freshPeerId());
+          try {
+            const out = run(cmd);
+            live.importBatch((cmd.live as RoomDocs).exportSince(live.version()));
+            draft.importBatch(cmd.exportSince(draft.version()));
+            draft.forward();
+            return out;
+          } finally {
+            cmd.free();
+          }
+        };
+        try {
+          const state = EditorState.create({ schema, doc: readProseMirror(draft, schema) });
+          writeProseMirror(draft, state.tr.insertText("B rewrote f", 1, 2).doc);
+          r.a.view.dispatch(r.a.view.state.tr.delete(posOf(r.a, "a") + 1, posOf(r.a, "a") + 2));
+          r.a.history.endStep();
+          live.importBatch(r.a.docs.exportSince(live.version()));
+          const pressed = command((cmd) => applyBlocks(cmd, "all", { liveVersion: live.version() }).pressed);
+          const undo = command((cmd) => undoPress(cmd, pressed));
+          if (undo.stayed.length > 0) return "undone press: the press's Undo stayed";
+          send(live, r.a);
+          send(live, r.b);
+          if (shown(r.a) !== "irst.|Last.") return `undone press: A shows "${shown(r.a)}" before its Ctrl+Z`;
+          if (!runHistory(r.a, "undo")) return "undone press: A's Ctrl+Z stayed";
+          return settle(r, "undone press, then A's Ctrl+Z", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
+        } finally {
+          draft.free();
+        }
+      },
+    },
+    // B's Ctrl+Z of its own delete of A's "F", before it sees A's, puts "F" back: A's Ctrl+Z would
+    // show it twice, so it stays, though B's delete was taken back.
+    "a peer's Undo put back text A deleted": {
+      room: () => room([p("a", "First."), p("z", "Last.")]),
+      run: (r) => {
+        for (const e of [r.a, r.b]) {
+          e.view.dispatch(e.view.state.tr.delete(posOf(e, "a") + 1, posOf(e, "a") + 2));
+          e.history.endStep();
+        }
+        runHistory(r.b, "undo");
+        syncAll(r);
+        if (runHistory(r.a, "undo")) return "put back by a peer: A's Ctrl+Z ran";
+        return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
       },
     },
     // Seed 477: A and B remove x from one state, so their removal records are equal,

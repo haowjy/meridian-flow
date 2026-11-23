@@ -313,7 +313,7 @@ export class UndoHistory {
         const before = doc.frontiers();
         // Loro commits an Undo and a Redo alike under the origin `undo`: the message says what
         // each character the commit puts back stands for, so it can be told from typing.
-        const message = takeBackMessage(deletedBetween(doc, span.before, span.after));
+        const message = takeBackMessage(deletedBetween(doc, span.before, span.after), span.ops);
         // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
         const unstamp = doc.subscribePreCommit(({ modifier }) => {
           modifier.setMessage(message).free();

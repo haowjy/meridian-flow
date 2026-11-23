@@ -77,11 +77,10 @@ stored as JSON and read back.
   the model reads, and never by what the text spells.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
-- After the two drafts' Undo: Live is back (or holds the typing between), each draft has only that
-  paragraph pending, and no character of either draft's text is lost. When both drafts deleted one
-  character, the second press's import deleted it again, so the first press's change stays (part 4
-  of the rule, `twoDraftsStayed`): Live keeps the first draft's rewrite, that draft has nothing
-  pending, and the second draft still holds its own rewrite.
+- After the two drafts' Undo: neither press stays, Live is back (or holds the typing between), each
+  draft has only that paragraph pending, and no character of either draft's text is lost. When both
+  drafts deleted one character, the second press's import deleted it again, and its Undo took that
+  delete back, so the first press goes back too (part 4 of the rule).
 - After `Restore before`: the fork's text and overrides are what they were before the turn, with
   Live's changes since kept.
 - At the end, after `Apply all`: Live, the fork and both tabs converge; nothing is pending; every
@@ -98,8 +97,9 @@ home"), as Ctrl+Z's does. Tokens it doubles are not counted as duplicates (`besi
 Text or marks that a Discard, an Undo or a restore puts back are new operations by the fork, since
 Loro has no undelete. A later Live delete or unmark inside that span leaves the fork's copy, which
 then shows as a pending change the writer can Discard again (design §1, gate 5's N7). The summary
-counts these as `resetCopyObserved`. Text both drafts deleted no longer comes back into a draft:
-the first press's change stays (`twoDraftsStayed`), and the check fails if a draft gains text.
+counts these as `resetCopyObserved`. Text both drafts deleted comes back into the second draft: the
+first press's Undo puts it back into Live as new characters that draft never deleted
+(`twoDraftsGained`, design §2, open). The check fails if a draft gains any other text.
 
 **Accepted cost** (design §2, "the order of put-back text"): in the two-drafts case, text the first
 draft deleted around the second's rewrite comes back with the first press's Undo as one run of new

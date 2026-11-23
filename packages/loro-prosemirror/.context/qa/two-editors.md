@@ -57,7 +57,10 @@ steps either side of it in other blocks (C3); with nobody else writing, Ctrl+Z t
 picture whose upload landed as an untracked write (C4). A split a peer wrote over takes the typing
 under it out of the history; a peer's deletion of part of A's typing stays through A's Ctrl+Z.
 From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
-deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); two
+deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); a
+draft that also deleted A's "F" is pressed into Live and the press undone, and A's Ctrl+Z goes
+back, the undone delete counting as never made (review p19017); B's Ctrl+Z of its own delete of
+that "F", before it sees A's, puts it back, and A's Ctrl+Z stays rather than show it twice; two
 equal removals of one block, and the Ctrl+Z of the one that lost finds the other's value and stays
 (477, with fixed peer ids); a move beside a block the caret keeps leaves that block removed (602);
 the placeholder id `c/empty` (design §1): typing into it stores a fresh id, so an unwrap of the

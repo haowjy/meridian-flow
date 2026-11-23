@@ -174,8 +174,8 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
         return `text it deleted in ${key} left with a block another peer removed`;
     }
     if (!othersWrote(doc, then, peer)) continue;
-    if (deletedAgain(doc, then, deleted, peer))
-      return `text it deleted in ${key} was deleted again`;
+    const again = deletedAgain(doc, before, after, deleted, peer);
+    if (again) return `text it deleted in ${key} was ${again}`;
     const { left, touched, restyled } = leftOf(doc, before, after);
     if (restyled) return `a style it set in ${key} was set again`;
     // An edit that set structure moved text between blocks by copy, and its Undo brings the
@@ -611,7 +611,7 @@ function chainOf(doc: LoroDoc, id: string, memo: StandsForMemo): Set<string> | n
   memo.set(id, null);
   const at = parseId(id);
   const change = changeAt(doc, at);
-  const runs = takenBack(change?.message);
+  const runs = takenBack(change?.message)?.for;
   const root = change && runs ? nthOf(runs, insertedBefore(doc, change, at.counter)) : null;
   let chain: Set<string> | null = null;
   if (root) {
@@ -664,15 +664,22 @@ function forEachDeleted(
       counter: from,
       length: end - from,
     }))
-      for (const { content } of change.ops) {
-        if (content.type !== "delete") continue;
-        const { start_id: startId, len } = content as { start_id: string; len: number };
-        const first = parseId(startId);
-        const step = len < 0 ? -1 : 1;
-        for (let k = 0; k < Math.abs(len); k++)
-          each({ peer: first.peer, counter: first.counter + step * k });
-      }
+      for (const { content } of change.ops)
+        if (content.type === "delete") forDeleteOp(content as DeleteContent, each);
   }
+}
+
+type DeleteContent = { start_id: string; len: number };
+
+/** Each character one delete op deleted, by id. */
+function forDeleteOp(
+  { start_id: startId, len }: DeleteContent,
+  each: (id: { peer: PeerID; counter: number }) => void,
+): void {
+  const first = parseId(startId);
+  const step = len < 0 ? -1 : 1;
+  for (let k = 0; k < Math.abs(len); k++)
+    each({ peer: first.peer, counter: first.counter + step * k });
 }
 
 /** The characters the ops in `spans` deleted in `doc`, by id (`counter@peer`). */
@@ -683,20 +690,72 @@ function deletedBy(doc: LoroDoc, spans: OpSpans): Set<string> {
 }
 
 /**
- * Whether another peer deleted, since `then`, a character the edit deleted (`deleted`): the Undo
- * would put back text that peer took away (a split of it into another block then shows it twice).
+ * Whether text the edit deleted (`deleted`, by id) was, since its `after`, deleted again by another
+ * peer, itself or a character put back for it, or is shown again as one put back for it: its Undo
+ * would put back what that peer took away (a split of it into another block then shows it twice),
+ * or show it twice. A delete that a take-back commit since names among the ops it takes back
+ * counts as never made: the edit it was part of has been undone (design §2). Returns why, or null.
  */
-function deletedAgain(doc: LoroDoc, then: DocVersion, deleted: Set<string>, peer: PeerID): boolean {
-  if (deleted.size === 0) return false;
-  const others: OpSpans = {};
-  for (const [other, counter] of docVersion(doc))
-    if (other !== peer && counter > (then.get(other) ?? 0))
-      others[other] = [then.get(other) ?? 0, counter];
-  let again = false;
-  forEachDeleted(doc, others, (id) => {
-    again ||= deleted.has(`${id.counter}@${id.peer}`);
+function deletedAgain(
+  doc: LoroDoc,
+  before: Frontiers,
+  after: Frontiers,
+  deleted: ReadonlySet<string>,
+  peer: PeerID,
+): string | null {
+  if (deleted.size === 0) return null;
+  const changes = opsBetween(doc, after, doc.frontiers());
+  const undone: OpSpans[] = [];
+  const deletes: { peer: PeerID; counter: number; ids: string[] }[] = [];
+  for (const [by, [from, to]] of Object.entries(changes))
+    for (const change of doc.exportJsonInIdSpan({
+      peer: by as PeerID,
+      counter: from,
+      length: to - from,
+    })) {
+      const ops = takenBack(change.msg ?? undefined)?.ops;
+      if (ops) undone.push(ops);
+      if (by === peer) continue;
+      for (const op of change.ops) {
+        if (op.content.type !== "delete") continue;
+        const ids: string[] = [];
+        forDeleteOp(op.content as DeleteContent, (id) => ids.push(`${id.counter}@${id.peer}`));
+        deletes.push({ peer: by as PeerID, counter: op.counter, ids });
+      }
+    }
+  const memo: StandsForMemo = new Map();
+  const isDeleted = (id: string) =>
+    deleted.has(id) || [...(chainOf(doc, id, memo) ?? [])].some((was) => deleted.has(was));
+  const takenBackSince = (by: PeerID, counter: number) =>
+    undone.some((ops) => {
+      const span = ops[by];
+      return span !== undefined && counter >= span[0] && counter < span[1];
+    });
+  for (const op of deletes)
+    if (!takenBackSince(op.peer, op.counter) && op.ids.some(isDeleted)) return "deleted again";
+  // What the Undo puts back: the characters the edit deleted that showed at its `before`.
+  let putBack: Set<string> | null = null;
+  let shown = false;
+  inText(doc, (text) => {
+    let now = 0;
+    for (const op of textDiff(doc, after, doc.frontiers())) {
+      if (op.retain != null) now += op.retain;
+      if (op.insert == null) continue;
+      for (let k = 0; k < op.insert.length && !shown; k++) {
+        const chain = putBy(doc, text, now + k, memo);
+        if (!chain) continue;
+        putBack ??= new Set(
+          deletedBetween(doc, before, after).flatMap(([by, counter, length]) =>
+            Array.from({ length }, (_, i) => `${counter + i}@${by}`),
+          ),
+        );
+        const back = putBack;
+        shown = [...chain].some((was) => deleted.has(was) && back.has(was));
+      }
+      now += op.insert.length;
+    }
   });
-  return again;
+  return shown ? "put back by another Undo" : null;
 }
 
 /**
@@ -788,22 +847,26 @@ const TAKE_BACK = "undo";
 /**
  * The message of a commit that puts text back (a tab's Undo or Redo, a press's Undo, a draft's
  * return to pending): the character each one it inserts stands for (`deletedBetween`), so text it
- * puts back can be told from typing (`textSince`), whatever it spells.
+ * puts back can be told from typing (`textSince`), whatever it spells; and the ops of the edit it
+ * takes back (`ops`), so a delete among them no longer counts as anyone's (`deletedAgain`).
  */
-export function takeBackMessage(standsFor: StandsFor): string {
-  return `${TAKE_BACK} ${JSON.stringify(standsFor)}`;
+export function takeBackMessage(standsFor: StandsFor, ops: OpSpans): string {
+  return `${TAKE_BACK} ${JSON.stringify({ for: standsFor, ops })}`;
 }
 
-/** What a commit's message says its inserted characters stand for, or null. Messages come from any peer. */
-function takenBack(message: string | undefined): StandsFor | null {
+/** What a take-back commit's message says. Messages come from any peer: null unless well formed. */
+function takenBack(message: string | undefined): { for: StandsFor; ops: OpSpans } | null {
   if (!message?.startsWith(`${TAKE_BACK} `)) return null;
-  let runs: unknown;
+  let said: unknown;
   try {
-    runs = JSON.parse(message.slice(TAKE_BACK.length + 1));
+    said = JSON.parse(message.slice(TAKE_BACK.length + 1));
   } catch {
     return null;
   }
-  if (!Array.isArray(runs)) return null;
+  if (typeof said !== "object" || said === null) return null;
+  const { for: runs, ops } = said as { for?: unknown; ops?: unknown };
+  if (!Array.isArray(runs) || typeof ops !== "object" || ops === null || Array.isArray(ops))
+    return null;
   for (const run of runs)
     if (
       !Array.isArray(run) ||
@@ -813,7 +876,15 @@ function takenBack(message: string | undefined): StandsFor | null {
       !Number.isInteger(run[2])
     )
       return null;
-  return runs as StandsFor;
+  for (const span of Object.values(ops))
+    if (
+      !Array.isArray(span) ||
+      span.length !== 2 ||
+      !Number.isInteger(span[0]) ||
+      !Number.isInteger(span[1])
+    )
+      return null;
+  return { for: runs as StandsFor, ops: ops as OpSpans };
 }
 
 /**

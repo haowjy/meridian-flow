@@ -694,7 +694,7 @@ export function undoPress(
     const doc = draft.texts.get(key) as LoroDoc;
     const after = doc.frontiers();
     if (sameValue(at, after)) continue;
-    const message = takeBackMessage(deletedBetween(doc, at, after));
+    const message = takeBackMessage(deletedBetween(doc, at, after), opsBetween(doc, at, after));
     doc.applyDiff(doc.diff(after, at, false));
     doc.commit({ message });
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
