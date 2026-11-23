@@ -8,13 +8,13 @@ import type { ReviewTarget } from "./routing/project-address";
 import { type DocumentPaint, useOwnerDraftRows } from "./views";
 
 /** The route's verdict on the draft item an address names, asked of the server by owner and item. */
-export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
+export type DraftAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
 
 /** The review main's address names, and the route's verdict on it. Null off a document address. */
 export type MainReviewAddress = {
   documentId: string | undefined;
   itemKey: string | undefined;
-  admission: ReviewAddressAdmission | undefined;
+  admission: DraftAddressAdmission | undefined;
   /** Review changes is on, against this; undefined is the plain draft. */
   review: ReviewTarget | undefined;
   /** The change in focus in Review changes. */

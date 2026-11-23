@@ -8,11 +8,8 @@
  * a remembered draft would hide a later draft of the same owner, because an item names the
  * draft and the document, not one draft.
  */
-import { parseDraftItemKey } from "@meridian/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
-import { projectQueryKeys } from "../query/project-query-keys";
-import { tabChangeCounts, withTabChangeCounts } from "../query/tab-change-counts";
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import { writeTreeVersionChoice } from "./store";
@@ -181,52 +178,6 @@ export function endPin(accountId: string, projectId: string, pin: DraftPin): voi
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
-}
-
-const verifying = new Map<string, Promise<void>>();
-const verifyKey = (projectId: string, draftId: string, itemKey: string) =>
-  JSON.stringify([projectId, draftId, itemKey]);
-
-/**
- * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
- * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
- * draft has ended (Applied, Discarded, or gone in another tab). The read is taken as this tab
- * knows it: a document open here is listed by its editor's changes (`withTabChangeCounts`), and a
- * draft this browser's create makes (`created`) stays, since the server may not have heard of it.
- * A failed read clears nothing. Concurrent calls for one item share one read.
- */
-export function verifyPin(
-  queryClient: QueryClient,
-  accountId: string,
-  projectId: string,
-  pin: DraftPin,
-  created: (itemKey: string) => boolean,
-): void {
-  const key = verifyKey(projectId, pin.draftId, pin.itemKey);
-  if (verifying.has(key)) return;
-  const queryKey = projectQueryKeys.drafts(projectId, pin.draftId);
-  const documentId = parseDraftItemKey(pin.itemKey)?.documentId;
-  const held = documentId ? tabChangeCounts().get(documentId) : undefined;
-  // An editor here holding the document with none of the owner's changes in it has already
-  // answered: a read could only bring the server's older word.
-  const read =
-    held && !held[pin.draftId] ? Promise.resolve() : queryClient.refetchQueries({ queryKey });
-  const check = read.then(() => {
-    // A failed refetch keeps the old rows and sets status "error": it proves nothing.
-    if (queryClient.getQueryState(queryKey)?.status !== "success") return;
-    if (
-      created(pin.itemKey) ||
-      withTabChangeCounts(
-        cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? [],
-        pin.draftId,
-        tabChangeCounts(),
-      ).some((row) => row.itemKey === pin.itemKey)
-    )
-      return;
-    endPin(accountId, projectId, pin);
-  });
-  verifying.set(key, check);
-  void check.finally(() => verifying.delete(key));
 }
 
 function subscribe(accountId: string, projectId: string, listener: () => void) {

@@ -56,12 +56,12 @@ import {
 } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
+import { useDraftAddressSync } from "./use-draft-address-sync";
 import { useMainArrival } from "./use-main-arrival";
-import { useReviewAddressSync } from "./use-review-address-sync";
 import {
+  type DraftAddressAdmission,
   type MainReviewAddress,
   MainReviewAddressContext,
-  type ReviewAddressAdmission,
 } from "./use-review-mode";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
@@ -97,28 +97,28 @@ export type ProjectViewProps = {
   /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
-  reviewItemKey?: string;
-  /** The draft the address's item reviews (`addressReviewDraft`). */
-  reviewOwner?: string | null;
+  draftItemKey?: string;
+  /** The draft the address's item reviews (`addressDraftOwner`). */
+  draftOwner?: string | null;
   /** Review changes is on, against this (`?review=`); undefined is the plain draft. */
   reviewTarget?: ReviewTarget;
   /** The change in focus in Review changes (`?change=`). */
   reviewChangeId?: string;
   reviewControls?: MainReviewControls;
   /** Document the Editor address resolved to; a review follows it through a rename. */
-  reviewAddressDocumentId?: string;
+  mainAddressDocumentId?: string;
   /**
    * The document the answered address names: from its draft row when live lacks it (a page a
    * draft created), else the server's answer.
    */
   addressedDocument?: AddressedDocument;
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
-  reviewAddressAdmission?: ReviewAddressAdmission;
+  draftAddressAdmission?: DraftAddressAdmission;
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewItemKey: (review: DraftPin | null) => void;
+  onSetEditorDraftItemKey: (review: DraftPin | null) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -374,32 +374,32 @@ function HydratedReviewControllers({
   // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
   const { notices } = useDraftCommandOwner();
   useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
-  const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
-  useReviewAddressSync({
+  const main = props.chatDisplay === null ? props.mainAddressDocumentId : undefined;
+  useDraftAddressSync({
     projectId: props.projectId,
     chatThreadId,
     locationKey: props.routeLocationKey,
-    reviewOwner: props.reviewOwner ?? null,
+    draftOwner: props.draftOwner ?? null,
     address: {
-      itemKey: props.reviewItemKey,
+      itemKey: props.draftItemKey,
       documentId: main,
-      admission: props.reviewAddressAdmission,
+      admission: props.draftAddressAdmission,
     },
-    writeItemKey: props.onSetEditorReviewItemKey,
+    writeItemKey: props.onSetEditorDraftItemKey,
   });
   const mainAddress = useMemo<MainReviewAddress>(
     () => ({
       documentId: main,
-      itemKey: props.reviewItemKey,
-      admission: props.reviewAddressAdmission,
+      itemKey: props.draftItemKey,
+      admission: props.draftAddressAdmission,
       review: props.reviewTarget,
       changeId: props.reviewChangeId,
       controls: props.reviewControls,
     }),
     [
       main,
-      props.reviewItemKey,
-      props.reviewAddressAdmission,
+      props.draftItemKey,
+      props.draftAddressAdmission,
       props.reviewTarget,
       props.reviewChangeId,
       props.reviewControls,

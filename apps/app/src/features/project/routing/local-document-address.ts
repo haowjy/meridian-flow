@@ -198,10 +198,9 @@ export function resolveReplayAddress(input: {
  */
 export function draftOnlyTarget(
   result: DocumentAddressResult | undefined,
-  view: "live" | "review",
   draftList: { files: ReviewFileTarget[] | null },
 ): ReviewFileTarget | undefined {
-  if (view !== "review" || !result || result.kind === "unavailable") return undefined;
+  if (!result || result.kind === "unavailable") return undefined;
   const file = draftList.files?.find(
     (candidate) => candidate.documentId === result.document.documentId,
   );

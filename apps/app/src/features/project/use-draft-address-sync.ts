@@ -19,7 +19,7 @@ import {
 } from "@/client/project-shell/document-views";
 import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useAccountId } from "./context/account-feature-context";
-import type { ReviewAddressAdmission } from "./use-review-mode";
+import type { DraftAddressAdmission } from "./use-review-mode";
 import { useScopeDraftOwner } from "./use-work-scope";
 import { useShownDraft } from "./views";
 
@@ -51,11 +51,11 @@ function arrivalOf(history: RouterHistory, key: string): string {
   return inherited.get(key) ?? key;
 }
 
-export function useReviewAddressSync({
+export function useDraftAddressSync({
   projectId,
   chatThreadId,
   locationKey: entryKey,
-  reviewOwner,
+  draftOwner,
   address,
   writeItemKey,
 }: {
@@ -64,13 +64,13 @@ export function useReviewAddressSync({
   chatThreadId: string | null;
   /** The rendered history entry's key. */
   locationKey: string | undefined;
-  /** The draft the address's item reviews (`addressReviewDraft`); null without one. */
-  reviewOwner: string | null;
+  /** The draft the address's item reviews (`addressDraftOwner`); null without one. */
+  draftOwner: string | null;
   address: {
     itemKey: string | undefined;
     /** Main's document, as the address resolved it; undefined when main holds no document. */
     documentId: string | undefined;
-    admission: ReviewAddressAdmission | undefined;
+    admission: DraftAddressAdmission | undefined;
   };
   writeItemKey: (review: DraftPin | null) => void;
 }) {
@@ -91,17 +91,17 @@ export function useReviewAddressSync({
 
   useLayoutEffect(() => {
     if (locationKey === undefined || !documentId || arrived.current === locationKey) return;
-    if (address.itemKey && (address.admission !== "admitted" || !reviewOwner)) return;
+    if (address.itemKey && (address.admission !== "admitted" || !draftOwner)) return;
     arrived.current = locationKey;
     const next =
-      address.itemKey && reviewOwner ? { draftId: reviewOwner, itemKey: address.itemKey } : null;
+      address.itemKey && draftOwner ? { draftId: draftOwner, itemKey: address.itemKey } : null;
     // An address naming the scope's draft is the toggle's Draft: every page shows its draft.
     if (next && next.draftId === scopeDraftId)
       writeTreeVersionChoice(accountId, projectId, "draft");
     const current = readDocumentView(accountId, projectId, documentId).pin;
     if (samePin(next, current) || (!next && !current)) return;
     setDocumentView(accountId, projectId, documentId, next ? { pin: next } : { version: "live" });
-  }, [documentId, locationKey, reviewOwner, address, accountId, projectId, scopeDraftId]);
+  }, [documentId, locationKey, draftOwner, address, accountId, projectId, scopeDraftId]);
 
   useEffect(() => {
     if (!documentId || arrived.current !== locationKey) return;
