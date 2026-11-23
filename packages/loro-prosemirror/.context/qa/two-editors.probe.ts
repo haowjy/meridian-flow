@@ -380,8 +380,8 @@ function run(seed: number): string | null {
     return keptOf(e).size === 0;
   };
   // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
-  // same document. A Redo can take two steps when one of them now changes nothing (a peer wrote
-  // the key it set since), so the Redos are not counted.
+  // same document. A Redo can take two steps when one of them now changes nothing (a peer deleted
+  // the text it puts back), so the Redos are not counted.
   const chain = (e: Editor, when: string) => {
     if (e.history.canRedo() || !release(e)) return null;
     const start = e.view.state.doc;
@@ -625,6 +625,21 @@ function racedRemovals(): string[] {
     e.view.dispatch(state.tr.delete(at, at + (state.doc.nodeAt(at) as Node).nodeSize));
     e.history.endStep();
   };
+  /** Move block `id` to just before block `before`, as a drag does: the same node, elsewhere. */
+  const move = (e: Editor, id: string, before: string) => {
+    const at = posOf(e, id);
+    const { state } = e.view;
+    const node = state.doc.nodeAt(at) as Node;
+    const tr = state.tr.delete(at, at + node.nodeSize);
+    e.view.dispatch(tr.insert(tr.mapping.map(posOf(e, before)), node));
+    e.history.endStep();
+  };
+  /** Set a top block's type and attributes, as a heading or code-block command does. */
+  const retype = (e: Editor, id: string, type: string, attrs: Record<string, unknown> = {}) => {
+    e.view.dispatch(e.view.state.tr.setNodeMarkup(posOf(e, id), schema.nodes[type], { id, ...attrs }));
+    e.history.endStep();
+  };
+  const typeOf = (e: Editor, id: string) => e.view.state.doc.nodeAt(posOf(e, id))?.type.name;
   /** One transaction per key, as ProseMirror makes for typed text. */
   const type = (e: Editor, text: string) => {
     for (const ch of text) e.view.dispatch(e.view.state.tr.insertText(ch));
@@ -880,6 +895,71 @@ function racedRemovals(): string[] {
       const typed = inText(r.b.docs.textOf("x") as never, (t) => t.toString());
       if (!typed.includes("foo")) return `S5: B's Redo did not give foo back: ${typed}`;
       return settle(r, "Redo in a removed block", showsNone("Delete-target"));
+    },
+    // Seeds 289 and 55: A and B move one block at once and B's move wins (B wrote more structure
+    // first, so on any peer ids). B's Ctrl+Z puts the key back where both moves found it. A's
+    // Ctrl+Z of its move finds a later write there and leaves it, so it takes back A's step
+    // before (typing), and Redo gives that back.
+    "a peer's Ctrl+Z put the key back where A's step found it": (r) => {
+      caret(r.a, "a", 2);
+      type(r.a, "Q");
+      retype(r.b, "z", "paragraph", { level: 2 });
+      retype(r.b, "z", "paragraph");
+      move(r.a, "x", "c");
+      move(r.b, "x", "a");
+      syncAll(r);
+      runHistory(r.b, "undo");
+      syncAll(r);
+      const start = "FiQrst.|Delete-target before after.|";
+      if (!shown(r.a).startsWith(start)) return `put-back case: A starts "${shown(r.a)}"`;
+      if (!runHistory(r.a, "undo")) return "put-back case: A's Ctrl+Z found nothing";
+      if (!shown(r.a).startsWith("First.|Delete-target"))
+        return `put-back case: A's Ctrl+Z gave "${shown(r.a)}", wanted its typing gone and x left where it is`;
+      if (!runHistory(r.a, "redo")) return "put-back case: no Redo after A's Ctrl+Z";
+      return settle(r, "a peer's Ctrl+Z put the key back", (t) =>
+        t.startsWith(start) ? null : `shows "${t}", wanted "${start}…"`,
+      );
+    },
+    // A peer's move, retype or delete after A's step is a later write: A's Ctrl+Z and Redo leave it.
+    "a peer's later move survives A's Ctrl+Z": (r) => {
+      move(r.a, "x", "c");
+      syncAll(r);
+      move(r.b, "x", "a");
+      syncAll(r);
+      runHistory(r.a, "undo");
+      const undone = settle(r, "later move, A's Ctrl+Z", (t) =>
+        t.startsWith("Delete-target") ? null : `shows "${t}", wanted B's move`,
+      );
+      if (undone) return undone;
+      runHistory(r.a, "redo");
+      return settle(r, "later move, A's Redo", (t) =>
+        t.startsWith("Delete-target") ? null : `shows "${t}", wanted B's move`,
+      );
+    },
+    "a peer's later retype survives A's Ctrl+Z": (r) => {
+      retype(r.a, "z", "code_block");
+      syncAll(r);
+      retype(r.b, "z", "jsx_leaf", { name: "Note" });
+      syncAll(r);
+      runHistory(r.a, "undo");
+      const undone = settle(r, "later retype, A's Ctrl+Z");
+      if (undone) return undone;
+      if (typeOf(r.a, "z") !== "jsx_leaf") return `later retype: A's Ctrl+Z made z a ${typeOf(r.a, "z")}`;
+      runHistory(r.a, "redo");
+      const redone = settle(r, "later retype, A's Redo");
+      if (redone) return redone;
+      return typeOf(r.b, "z") === "jsx_leaf" ? null : `later retype: A's Redo made z a ${typeOf(r.b, "z")}`;
+    },
+    "a peer's later delete survives A's Ctrl+Z": (r) => {
+      move(r.a, "x", "c");
+      syncAll(r);
+      remove(r.b, "x");
+      syncAll(r);
+      runHistory(r.a, "undo");
+      const undone = settle(r, "later delete, A's Ctrl+Z", showsNone("Delete-target"));
+      if (undone) return undone;
+      runHistory(r.a, "redo");
+      return settle(r, "later delete, A's Redo", showsNone("Delete-target"));
     },
     // Review p18966: an agent's text op in a cell of a table B's typing brought back.
     "an agent's text op inside a restored table keeps it": (r) => {

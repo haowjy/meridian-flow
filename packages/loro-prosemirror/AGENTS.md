@@ -30,13 +30,18 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   lean on the invariant above: a `previous` or `since.doc` that is not what the docs read as
   writes or shows the wrong thing.
 - Ctrl+Z is `UndoHistory` (`history.ts`), passed to the plugin as `history`: one Loro
-  `UndoManager` per doc the copy writes, and editor steps over them. Don't build an inverse of our
-  own: Loro's manager keeps inverses as positions carried through later edits, which is what a
-  chain of dependent steps needs (design §6). A manager records only commits made after it
-  exists, so it is created at the doc's first write (`RoomDocs.beforeTextWrite`); every local
-  write into the copy that no Ctrl+Z should take back commits under `UNTRACKED_ORIGIN`, or it
-  becomes an item that blocks the steps below it on that doc. `destroy()` the history before
-  freeing the docs: each manager is WASM memory.
+  `UndoManager` per text doc the copy writes, and editor steps over them. Don't build a text
+  inverse of our own: Loro's manager keeps inverses as positions carried through later edits,
+  which is what a chain of dependent steps needs (design §6). A manager records only commits
+  made after it exists, so it is created at the doc's first write (`RoomDocs.beforeTextWrite`);
+  every local write into the copy that no Ctrl+Z should take back commits under
+  `UNTRACKED_ORIGIN`, or it becomes an item that blocks the steps below it on that doc.
+  `destroy()` the history before freeing the docs: each manager is WASM memory.
+- The structure doc has no manager: Loro's map undo writes the old value over a peer's later
+  write. Each step keeps, per structure key it set, the value before and the value it left, and
+  Undo or Redo writes a key back only while it still holds what the step left (design §2's
+  rule, the press's too); a key written since leaves the step. Any local structure write that is
+  not the step's own counts as a later write, so it needs no origin to stay out of a step.
 - The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the
   selection's head, or a block above it, the editor keeps every removed block on that path in its
   document. A local transaction with a step inside a kept block restores them (`restore`, which

@@ -37,7 +37,11 @@ docs and kept on B's screen. Undo: a Redo of a delete after the peer typed stand
 it brings the block back, Redo items under a re-stamped removal survive, B's Ctrl+Z in a block a
 removal read followed by a batch removing something else leaves the block removed, and an agent's
 text op or delete op (`applyOps` on a server copy) inside a container B's typing brought back keeps
-it, through B's Ctrl+Z.
+it, through B's Ctrl+Z. Ctrl+Z never overwrites a later write to a structure key: a peer's later
+move, retype (`code_block` to `jsx_leaf`) and delete of the block each survive A's Ctrl+Z and
+Redo, and seeds 289 and 55's shape (A and B move one block at once, B's move wins, B's Ctrl+Z puts
+the key back where both found it) makes A's Ctrl+Z skip its move for the typing before it, which
+Redo gives back. These four fail on Loro's map undo, which the structure used before.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs plus the blocks it keeps (`readProseMirror` without `since`), and
@@ -59,8 +63,8 @@ have re-read (`readDocument`'s `since`). For Undo it checks three more things:
   gives back the one after it; between the edits a write no Ctrl+Z takes back (a comment body
   under `UNTRACKED_ORIGIN`) lands and must stay out of every step;
 - from an empty Redo, up to six Ctrl+Z then Redo until none is left give back the document. A
-  Redo can take two steps there: a step whose key a peer wrote since undoes to an op that
-  changes nothing, so its Redo is nothing and the press goes on to the next.
+  step whose every key a peer wrote since is skipped by Ctrl+Z for the one before it, so the
+  Redos are not counted.
 
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold
 and italic on and off, a heading level, a delete across two blocks, moving a block (the same node

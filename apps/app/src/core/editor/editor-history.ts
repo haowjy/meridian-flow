@@ -1,8 +1,8 @@
 /**
  * The document's Undo (design §6, "Ctrl+Z is Loro's, grouped by us"): the binding's
- * `UndoHistory`, which keeps one Loro `UndoManager` per doc the tab changes and groups one editor
- * step across them, so Ctrl+Z takes back the writer's change and leaves a peer's or the model's
- * alone. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
+ * `UndoHistory`, which keeps one Loro `UndoManager` per text doc the tab changes and the
+ * structure values each step set, and groups one editor step across them, so Ctrl+Z takes back
+ * the writer's change and leaves a peer's or the model's alone. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
  * editor attaches while it shows the document.
  */
 import type { DocChange, RoomDocs } from "@meridian/document-model";
