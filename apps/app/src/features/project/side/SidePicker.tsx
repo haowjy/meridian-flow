@@ -102,6 +102,7 @@ function SidePickerLists({
 }) {
   const main = useMainForSide();
   const place = usePlace();
+  const shown = useSideItem().item;
   const choose = (item: PlacedItem) => {
     place(item);
     onDone();
@@ -111,6 +112,7 @@ function SidePickerLists({
   return mainMode(main) === "chat" ? (
     <DocumentChoices
       projectId={projectId}
+      current={shown?.kind === "document" ? shown.documentId : null}
       searchRef={searchRef}
       choose={(documentId) => choose({ kind: "document", documentId })}
     />

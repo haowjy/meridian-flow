@@ -36,6 +36,7 @@ export function useCreationComposer(projectId: string) {
       context: {
         workId: string;
         workAiWriteMode: AiWriteMode;
+        workDraftId: string | null;
         aiWriteMode?: AiWriteMode;
         agent: CreationAgent;
         overrides: ThreadOverrides;
@@ -55,6 +56,7 @@ export function useCreationComposer(projectId: string) {
           overrides: context.overrides,
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
+          workDraftId: context.workDraftId,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
           threadId: draft.chatId,
           draftScope,

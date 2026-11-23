@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
@@ -33,6 +33,25 @@ export function useDraftNotice(draftId: string): DraftNotice | null {
   return useSyncExternalStore(
     notices.subscribe,
     () => (draftId ? notices.get(draftId) : null),
+    () => null,
+  );
+}
+
+/**
+ * The notice a surface acting on several drafts shows (`WorkDraftCommands.noticeKeys`): a press
+ * ends the surface's last notice, so at most one of them holds one.
+ */
+export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => {
+      for (const key of keys) {
+        const notice = notices.get(key);
+        if (notice) return notice;
+      }
+      return null;
+    },
     () => null,
   );
 }
@@ -121,6 +140,24 @@ export function DraftNoticeLine({
   useLingui();
   const openDocument = useOpenProjectDocument(notice.projectId);
   const landed = useLandedNow(notice);
+  if (notice.kind === "stayed") {
+    // The line says where; the rows and the editor's mark say who.
+    const [only] = notice.kept;
+    const documents = new Set(notice.kept.map((fact) => fact.documentId)).size;
+    return (
+      <ActionNotice
+        data-command-notice="stayed"
+        sentence={
+          documents === 1 && only
+            ? (name: string) => t`Undone, except in ${name}, written over since.`
+            : t`Undone, except in ${documents} documents written over since.`
+        }
+        name={documents === 1 ? (only?.name ?? null) : null}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
+    );
+  }
   if (notice.kind === "applied") {
     if (landed.length === 0) return null;
     const [only] = landed;
@@ -154,9 +191,9 @@ export function DraftNoticeLine({
   const onUndo = () => void notice.undo();
   const sentence =
     subject.kind === "drafts"
-      ? t`${subject.count} discarded.`
+      ? plural(subject.count, { one: "# document discarded.", other: "# documents discarded." })
       : subject.kind === "deletes"
-        ? t`${subject.count} items deleted.`
+        ? plural(subject.count, { one: "# item deleted.", other: "# items deleted." })
         : subject.kind === "deleted"
           ? (name: string) => t`${name} deleted.`
           : (name: string) => t`${name} discarded.`;
@@ -190,6 +227,19 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   useLingui();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
+  if (notice.kind === "stayed") {
+    // A change an Undo left in place keeps its row, with who wrote over it.
+    const factOf = (id: string) => notice.kept.find((fact) => fact.documentId === id);
+    return {
+      held: (id) => factOf(id) !== undefined,
+      word: (id) => {
+        const fact = factOf(id);
+        return fact ? (
+          <RowWord tone="note" word={<Trans>Kept</Trans>} sentence={fact.label} />
+        ) : null;
+      },
+    };
+  }
   if (notice.kind === "applied") {
     // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
     const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);

@@ -13,6 +13,7 @@ import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { draftCommandsDomain } from "@/client/query/draft-commands";
 import { pressDomain } from "@/client/query/press-commands";
 import { projectDomain } from "@/client/query/project-commands";
 import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
@@ -166,6 +167,7 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
           workDomain(client),
           projectDomain(client),
           threadOverridesDomain(client),
+          draftCommandsDomain(client),
           pressDomain(client, (documents) => registry.whenSentAcknowledged(documents)),
         )
       }

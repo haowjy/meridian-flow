@@ -6,20 +6,6 @@ import type { DraftId, ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
 
-/**
- * The draft a chat writes into, for a chat the browser may have made before the server answered:
- * with No Work the lineage's, else the Work's default. A chat the server sent carries its own
- * (`Thread.draftId`), which can be another of its Work's drafts.
- */
-export function draftOf(
-  thread: { draftId: DraftId },
-  work: { draftId: DraftId | null; isNoWork: boolean },
-): DraftId {
-  if (work.isNoWork) return thread.draftId;
-  if (!work.draftId) throw new Error("A named Work names its draft");
-  return work.draftId;
-}
-
 export interface Work {
   id: WorkId;
   projectId: ProjectId;

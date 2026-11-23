@@ -18,57 +18,61 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { parseContextUri } from "@/lib/context-uri";
 import { useTreeList } from "./useProjectTree";
-import { useProjectTrees } from "./useProjectTrees";
+import { useProjectTreesAt } from "./useProjectTrees";
 
-/** The draft's pending document creates the server has not listed, as list rows. */
+/**
+ * Each draft's pending document creates the server has not listed, as list rows, keyed by draft.
+ * `listed` holds the drafts whose server list has come, with its rows.
+ */
 export function useCreatedDrafts(
   projectId: string,
-  draftId: string | null,
-  listed: readonly DraftItem[] | undefined,
-): readonly DraftItem[] {
+  listed: ReadonlyMap<string, readonly DraftItem[]>,
+): ReadonlyMap<string, readonly DraftItem[]> {
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
   const account = useTreeList(projectId ? { kind: "account", userId: accountId } : null);
-  const candidates = useMemo(() => {
-    if (!draftId) return [];
-    const known = new Set(listed?.map((row) => row.documentId));
-    return [project.snapshot, account.snapshot].flatMap((snapshot) =>
-      snapshot
-        ? createdDocuments(snapshot.doc, draftId).filter((documentId) => !known.has(documentId))
-        : [],
-    );
-  }, [draftId, listed, project.snapshot, account.snapshot]);
-  const version = draftId && candidates.length > 0 ? draftTreeVersion(draftId) : undefined;
-  const trees = useProjectTrees(projectId, { version });
+  const treesAt = useProjectTreesAt(projectId);
   return useMemo(() => {
-    if (!draftId || !version) return NONE;
-    return candidates.map((documentId): DraftItem => {
-      // The row is the record's: a place the trees have not drawn yet is no address, not no row.
-      const uri = trees.find(documentId)?.file.uri;
-      const location = uri ? parseContextUri(uri) : null;
-      return {
+    const created = new Map<string, readonly DraftItem[]>();
+    for (const [draftId, rows] of listed) {
+      const known = new Set(rows.map((row) => row.documentId));
+      const candidates = [project.snapshot, account.snapshot].flatMap((snapshot) =>
+        snapshot
+          ? createdDocuments(snapshot.doc, draftId).filter((documentId) => !known.has(documentId))
+          : [],
+      );
+      if (candidates.length === 0) continue;
+      const trees = treesAt(draftTreeVersion(draftId).view);
+      created.set(
         draftId,
-        itemKey: draftItemKey(draftId, documentId),
-        documentId,
-        pending: false,
-        liveVersion: null,
-        changeCount: 0,
-        origin: "created",
-        isNew: true,
-        binary: false,
-        wholeItem: true,
-        documentName: uri ? documentTitleFromUri(uri) : null,
-        contextLocation: location ? { scheme: location.scheme, path: location.path } : null,
-        tree: null,
-        actorThreads: [],
-        unattributed: false,
-        updatedAt: new Date(0).toISOString(),
-      };
-    });
-  }, [draftId, version, candidates, trees]);
+        candidates.map((documentId): DraftItem => {
+          // The row is the record's: a place the trees have not drawn yet is no address, not no row.
+          const uri = trees.find(documentId)?.file.uri;
+          const location = uri ? parseContextUri(uri) : null;
+          return {
+            draftId,
+            itemKey: draftItemKey(draftId, documentId),
+            documentId,
+            pending: false,
+            liveVersion: null,
+            changeCount: 0,
+            origin: "created",
+            isNew: true,
+            binary: false,
+            wholeItem: true,
+            documentName: uri ? documentTitleFromUri(uri) : null,
+            contextLocation: location ? { scheme: location.scheme, path: location.path } : null,
+            tree: null,
+            actorThreads: [],
+            unattributed: false,
+            updatedAt: new Date(0).toISOString(),
+          };
+        }),
+      );
+    }
+    return created;
+  }, [listed, project.snapshot, account.snapshot, treesAt]);
 }
-
-const NONE: readonly DraftItem[] = [];
 
 /** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
 function createdDocuments(doc: LoroDoc, draftId: string): string[] {

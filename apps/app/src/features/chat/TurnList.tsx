@@ -39,6 +39,7 @@ import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
 import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
 import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
+import { TurnCardDraftsProvider } from "./turn-card-drafts";
 import { UserTurn } from "./UserTurn";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { ChatStop } from "./useChatStop";
@@ -390,42 +391,44 @@ export function TurnList({
         className="chat-scroll-fade-bottom outline-none size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
-          <ol
-            aria-label="Chat turns"
-            data-chat-virtual-list
-            data-settled-turn-count={visibleTurns.length}
-            className="relative w-full list-none"
-            style={{ height: virtualizer.getTotalSize() }}
-          >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const row = listRows[virtualItem.index];
-              if (!row) return null;
-              const transcriptRow =
-                row.kind === "queued-controls" || row.kind === "inherited-failed" ? null : row;
-              return (
-                <li
-                  key={virtualItem.key}
-                  data-index={virtualItem.index}
-                  data-chat-turn-row={transcriptRow ? "settled" : row.kind}
-                  data-chat-turn-role={transcriptRow?.turn.role}
-                  data-chat-turn-kind={row.kind}
-                  // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
-                  data-turn-id={
-                    transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
-                      ? transcriptRow.turn.id
-                      : undefined
-                  }
-                  data-chat-turn-continues={transcriptRow?.continuing ? "" : undefined}
-                  data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
-                  ref={virtualizer.measureElement}
-                  className="absolute inset-x-0 top-0"
-                  style={{ transform: `translateY(${virtualItem.start}px)` }}
-                >
-                  {renderRow(row, virtualItem.index)}
-                </li>
-              );
-            })}
-          </ol>
+          <TurnCardDraftsProvider threadId={threadId}>
+            <ol
+              aria-label="Chat turns"
+              data-chat-virtual-list
+              data-settled-turn-count={visibleTurns.length}
+              className="relative w-full list-none"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const row = listRows[virtualItem.index];
+                if (!row) return null;
+                const transcriptRow =
+                  row.kind === "queued-controls" || row.kind === "inherited-failed" ? null : row;
+                return (
+                  <li
+                    key={virtualItem.key}
+                    data-index={virtualItem.index}
+                    data-chat-turn-row={transcriptRow ? "settled" : row.kind}
+                    data-chat-turn-role={transcriptRow?.turn.role}
+                    data-chat-turn-kind={row.kind}
+                    // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
+                    data-turn-id={
+                      transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
+                        ? transcriptRow.turn.id
+                        : undefined
+                    }
+                    data-chat-turn-continues={transcriptRow?.continuing ? "" : undefined}
+                    data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
+                    ref={virtualizer.measureElement}
+                    className="absolute inset-x-0 top-0"
+                    style={{ transform: `translateY(${virtualItem.start}px)` }}
+                  >
+                    {renderRow(row, virtualItem.index)}
+                  </li>
+                );
+              })}
+            </ol>
+          </TurnCardDraftsProvider>
         </ChatColumn>
       </div>
 

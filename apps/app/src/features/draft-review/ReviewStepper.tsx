@@ -1,6 +1,6 @@
 /**
  * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order, bringing each into
- * view. Before any change is focused it reads the count. The review line's ladder
+ * view; when it crosses chapters, through the whole draft's, counted across them. Before any change is focused it reads the count. The review line's ladder
  * (`fitReviewLine`) swaps `2 of 6` for `2/6`, then hides the count; `touch` makes both arrows 44px
  * targets. The group takes the focus when Review changes opens.
  */
@@ -33,7 +33,7 @@ export function ReviewStepper({
   return (
     <fieldset
       data-review-stepper
-      aria-label={t`Changes in this chapter`}
+      aria-label={crosses ? t`Changes in this draft` : t`Changes in this chapter`}
       tabIndex={-1}
       className="focus-ring m-0 flex min-w-0 items-center gap-0.5 rounded-sm border-0 p-0"
     >

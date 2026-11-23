@@ -168,6 +168,7 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
           turn={turn}
           documents={editedDocuments}
           receipt={liveLineage.receipt}
+          receiptReadAt={liveLineage.readAt}
           workReceipts={workReceipts}
         />
       ) : null}

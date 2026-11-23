@@ -19,7 +19,11 @@ import {
   readDocumentView,
   useDocumentView,
 } from "@/client/project-shell/document-views";
-import { type TreeVersionChoice, useTreeVersionChoice } from "@/client/project-shell/store";
+import {
+  readTreeVersionChoice,
+  type TreeVersionChoice,
+  useTreeVersionChoice,
+} from "@/client/project-shell/store";
 import { unwrapListQuery } from "@/client/query/list-query";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
@@ -99,6 +103,8 @@ export function useShownDraft(
 ): (documentId: string) => DraftPin | undefined {
   const accountId = useAccountId();
   const scopeDraftId = useScopeDraftOwner(projectId, chatThreadId).draftId || null;
+  // Re-made when the toggle moves, and reads it when called: an address's arrival writes the
+  // toggle in the same commit as the follow that calls this.
   const choice = useTreeVersionChoice(accountId, projectId);
   return useCallback(
     (documentId) =>
@@ -106,7 +112,7 @@ export function useShownDraft(
         pin: readDocumentView(accountId, projectId, documentId).pin,
         scopeDraftId,
         documentId,
-        choice,
+        choice: readTreeVersionChoice(accountId, projectId),
       }),
     [accountId, projectId, scopeDraftId, choice],
   );

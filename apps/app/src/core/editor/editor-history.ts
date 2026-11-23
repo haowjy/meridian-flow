@@ -17,7 +17,7 @@ import {
 } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection } from "@tiptap/pm/state";
-import { showKept } from "./extensions/KeptExtension";
+import { showKept, showStayed } from "./extensions/KeptExtension";
 
 const HISTORY_META = "meridian-editor-history";
 
@@ -61,6 +61,11 @@ export class DocumentHistory {
     this.active = false;
     this.steps.destroy();
     this.listeners.clear();
+  }
+
+  /** Marks blocks a press's Undo left in place, in every editor showing the document. */
+  showStayed(labels: ReadonlyMap<string, string>): void {
+    for (const editor of this.editors) if (!editor.isDestroyed) showStayed(editor.view, labels);
   }
 
   /** Whether an editor shows the document now: a press made then goes on its Ctrl+Z. */

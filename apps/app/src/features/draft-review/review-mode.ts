@@ -8,6 +8,7 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { browserStorage } from "@/client/storage/browser-record";
 import type { ReviewRow } from "@/core/editor/extensions/review-changes/review-rows";
+import type { PanePlace } from "@/features/project/pane-place";
 import { createPreferenceSubscribers } from "@/lib/preference-subscribers";
 
 /** What Review changes compares the draft against: Live, another draft by id, or another file. */
@@ -49,6 +50,27 @@ export function useReviewMode(): ReviewMode | null {
 }
 
 /**
+ * The chapter each pane's step back is opening: its review opens at its last change, not its
+ * first. Kept per pane, not by a host's `ReviewSurface`: the chapter opens in a new one. It holds
+ * until the chapter's address names a change, since reads come again before the focus lands.
+ */
+const landingOnLast = new Map<PanePlace, string>();
+
+export function landOnLast(pane: PanePlace, documentId: string): void {
+  landingOnLast.set(pane, documentId);
+}
+
+/** Where a chapter's review opens in `pane` without a `change`: its first change or its last. */
+export function landingOf(pane: PanePlace, documentId: string): "first" | "last" {
+  return landingOnLast.get(pane) === documentId ? "last" : "first";
+}
+
+/** The chapter's review in `pane` is at a change: a step back has landed. */
+export function landed(pane: PanePlace, documentId: string): void {
+  if (landingOnLast.get(pane) === documentId) landingOnLast.delete(pane);
+}
+
+/**
  * What the host's editor reads of Review changes, for the chrome above it: the rows (the stepper's
  * and "Review N changes"'s count) and whether the pane is wide enough for Side by side. One per
  * host (`useDocumentReview`), so two documents on screen keep their own.
@@ -56,8 +78,6 @@ export function useReviewMode(): ReviewMode | null {
 export class ReviewSurface {
   private rowsNow: readonly ReviewRow[] | null = null;
   private wideNow = false;
-  /** A step back into another chapter: its review opens at its last change, not its first. */
-  private landing: "last" | null = null;
   private readonly listeners = new Set<() => void>();
 
   get rows(): readonly ReviewRow[] | null {
@@ -78,17 +98,6 @@ export class ReviewSurface {
     if (wide === this.wideNow) return;
     this.wideNow = wide;
     this.notify();
-  }
-
-  landOnLast(): void {
-    this.landing = "last";
-  }
-
-  /** Where the next chapter's review opens without a `change`, once: its first change or its last. */
-  takeLanding(): "first" | "last" {
-    const landing = this.landing ?? "first";
-    this.landing = null;
-    return landing;
   }
 
   subscribe = (listener: () => void): (() => void) => {
