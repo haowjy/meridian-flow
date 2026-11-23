@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { type CommitAuthor, commitMessage } from "./commit-message.js";
 import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
@@ -60,8 +61,8 @@ function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
 }
 
 export interface WriteOptions {
-  /** The commit message: `turn:<id>`, `press:<id>`, or none for the writer's own typing. */
-  message?: string;
+  /** Who the write is by (its commit message, `commitMessage`); none is the writer's own typing. */
+  by?: CommitAuthor;
   /** The commit origin local subscribers see (the binding skips its own). */
   origin?: string;
   random?: Random;
@@ -359,7 +360,7 @@ export function commitStructure(
   before: Frontiers,
   options: WriteOptions,
 ): DocChange | null {
-  docs.structure.commit({ message: options.message, origin: options.origin });
+  docs.structure.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
   const after = docs.structure.frontiers();
   return sameValue(before, after)
     ? null
@@ -397,7 +398,7 @@ export function writeText(
     wanted.slice(splice.index, splice.index + splice.insert),
   );
   inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), wanted, rules));
-  doc.commit({ message: options.message, origin: options.origin });
+  doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
 }

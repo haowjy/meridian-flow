@@ -1,8 +1,8 @@
 import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
-import type { RoomDocs, RoomVersion } from "@meridian/document-model";
+import type { RoomDocs, RoomVersion, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
-import type { StoredDelta } from "../content-merge/stands.js";
+import type { StoredDelta } from "../content-merge/delta.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
 import type { DocumentEditRequest, ModelInverseCommand } from "./document-edits.js";
 
@@ -36,8 +36,8 @@ export interface AgentRoomRead {
 /**
  * What a write did, as the host stores it beside the write's batch (`document_edit_parts`): the
  * write's identity and author, the room it merged into, and its `delta`, the blocks it changed
- * before and after there. The delta is the whole record: turn Undo and the model's undo and revert
- * read it against the room's text by content, never by CRDT ids (design §5, "Receipts").
+ * before and after there, which the card and the model's list of its edits read, and the write as
+ * an edit of the one Undo rule (design §2), which every inverse of it runs on.
  */
 export interface AgentWriteRecord {
   documentId: string;
@@ -53,6 +53,12 @@ export interface AgentWriteRecord {
    * `Restore before` keeps a structure key anyone wrote after its turn's last write's `after`.
    */
   after: RoomVersion;
+  /**
+   * The write as one edit of design §2's Undo rule, noted as it landed in the call's copy: the
+   * turn Undo and the model's undo and revert test it with `editStays` and take it back whole
+   * (`takeBack`), or leave it whole when someone wrote over it.
+   */
+  edit: StoredEdit;
   /** Stable write id (`turn:<turn>:tool:<call>`), and its ordinal, rendered `e<N>`. */
   writeId: string;
   wId: number;

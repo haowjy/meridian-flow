@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { type CommitAuthor, commitMessage } from "./commit-message.js";
 import { commonEnds } from "./common-ends.js";
 import { inMap } from "./handles.js";
 import { frontiersOf, loadEdit, type StoredEdit, storeEdit, takeBack } from "./invert.js";
@@ -27,13 +28,14 @@ import {
   opsBetween,
   putBackValues,
   type TextSpan,
-  takeBackMessage,
   valuesOf,
 } from "./take-back.js";
 import {
   type DocVersion,
+  docCovers,
   docVersion,
   mergeVersion,
+  plainVersion,
   type RoomVersion,
   withVector,
 } from "./version.js";
@@ -387,8 +389,8 @@ export interface PressChanges {
 }
 
 export interface PressOptions {
-  /** The commit message: `press:<commandId>`. */
-  message?: string;
+  /** Who its commits are by: the press. */
+  by?: CommitAuthor;
 }
 
 export interface ApplyOptions extends PressOptions {
@@ -478,7 +480,7 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
  * fork's text ops for the blocks the fork wrote (`importBatch`; a block the draft created becomes
  * Live's own doc), and copy the comment bodies the change carries. A block the draft removed is
  * removed in Live by a new record (`ApplyOptions.liveVersion`), never the fork's. A selection whose
- * changes are already empty changes nothing. Both copies are committed under `message`; the fork
+ * changes are already empty changes nothing. Both copies are committed by `by`; the fork
  * is forwarded again, so it reads as before. Run it on a command's own copy, so the press's
  * writes have a peer of their own (`PressedChange`).
  */
@@ -567,7 +569,7 @@ export function applyBlocks(
     }
   for (const comment of comments)
     writer.set("comments", comment, forkView.override("comments", comment) ?? null);
-  const liveCommit = commitStructure(live, liveStructure, { message: options.message });
+  const liveCommit = commitStructure(live, liveStructure, { by: options.by });
   if (liveCommit) result.live.push(liveCommit);
 
   const forkStructure = draft.structure.frontiers();
@@ -576,7 +578,7 @@ export function applyBlocks(
       inMap(draft.structure, overrideMap(name), (map) => map.delete(key));
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
-  const forkCommit = commitStructure(draft, forkStructure, { message: options.message });
+  const forkCommit = commitStructure(draft, forkStructure, { by: options.by });
   if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
   result.pressed = pressedOf(result.chosen, [
@@ -614,7 +616,7 @@ export function discardBlocks(
     if (!text || !base) continue;
     const before = text.frontiers();
     text.applyDiff(text.diff(before, base.frontiers(), false));
-    text.commit({ message: options.message });
+    text.commit({ message: commitMessage({ by: options.by }) });
     if (sameValue(before, text.frontiers())) continue;
     const change = { key: id, doc: text, before, after: text.frontiers() };
     result.fork.push(change);
@@ -629,7 +631,7 @@ export function discardBlocks(
   }
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
-  const commit = commitStructure(draft, structure, { message: options.message });
+  const commit = commitStructure(draft, structure, { by: options.by });
   if (commit) result.fork.push(commit);
   result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);
   return result;
@@ -679,7 +681,7 @@ export function undoPress(
     if (onLive) liveEdits.push(onLive);
     if (onFork) forkEdits.push(onFork);
   }
-  result.live = takeBack(live, liveEdits, liveView, options.message);
+  result.live = takeBack(live, liveEdits, liveView, options.by);
   // The text Live's Undo took out comes back in the fork as the fork's own edit: put-back text
   // that stands for what Live's Undo deleted.
   const pending = new Map<DocKey, Frontiers>();
@@ -692,66 +694,124 @@ export function undoPress(
     const doc = draft.texts.get(key) as LoroDoc;
     const after = doc.frontiers();
     if (sameValue(at, after)) continue;
-    const message = takeBackMessage(deletedBetween(doc, at, after));
+    const message = commitMessage({
+      by: options.by,
+      undo: { for: deletedBetween(doc, at, after), ops: opsBetween(doc, at, after) },
+    });
     doc.applyDiff(doc.diff(after, at, false));
     doc.commit({ message });
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
   }
-  result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.message));
+  result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.by));
   return result;
+}
+
+/** One write of a turn into a room: each doc it wrote, at its version as the write began and as it landed. */
+export interface TurnWrite {
+  before: RoomVersion;
+  after: RoomVersion;
+}
+
+/**
+ * Where `Restore before` takes a room back to, from the turn's writes into it in order: each doc
+ * at its version as the turn's first write into it began, and the structure's version as the
+ * turn's last write into the structure landed. A write names only the docs it wrote, so each is
+ * taken per doc.
+ */
+export interface TurnSpan {
+  before: RoomVersion;
+  after: DocVersion | null;
+}
+
+export function turnSpan(writes: readonly TurnWrite[]): TurnSpan {
+  const before = new Map<DocKey, DocVersion>();
+  let after: DocVersion | null = null;
+  for (const write of writes) {
+    for (const [key, at] of write.before) if (!before.has(key)) before.set(key, at);
+    after = write.after.get(STRUCTURE_KEY) ?? after;
+  }
+  return { before, after };
+}
+
+/**
+ * The docs `restoreBefore` goes back in: the room's own text docs the turn wrote, and the
+ * structure when the turn wrote it.
+ */
+function restoredDocs(docs: RoomDocs, span: TurnSpan): [DocKey, LoroDoc, DocVersion][] {
+  const out: [DocKey, LoroDoc, DocVersion][] = [];
+  for (const [key, start] of span.before) {
+    if (start.size === 0) continue;
+    if (key === STRUCTURE_KEY) {
+      if (span.after) out.push([key, docs.structure, start]);
+      continue;
+    }
+    const doc = docs.texts.get(key);
+    if (doc) out.push([key, doc, start]);
+  }
+  return out;
+}
+
+/**
+ * Whether `docs` still hold the history `restoreBefore` reads for `span`: no doc it goes back in
+ * was cut below the turn's start (design §4's cutoff). A caller restores every room of a turn or
+ * none (design §2).
+ */
+export function holdsSpan(docs: RoomDocs, span: TurnSpan): boolean {
+  return restoredDocs(docs, span).every(
+    ([, doc, start]) => !doc.isShallow() || docCovers(start, plainVersion(doc.shallowSinceVV())),
+  );
 }
 
 /**
  * `Restore before` a Draft-mode turn (design §2): each doc the turn wrote goes back to where it
- * stood before the turn's first write into it, on today's Live. `before` is each doc's version as
- * the turn's first write into it began (the write's `DocChange.before`), `after` the structure's
- * version at the turn's last write. A text doc goes to `before` merged with Live's version of it,
- * so Live's edits forwarded since stay; the structure's overrides go back key by key
- * (`putBackValues`), keeping a key anyone wrote after the turn. A block the turn created goes as
- * a removal. Returns the fork's changes, committed.
+ * stood before the turn's first write into it (`span`, from `turnSpan`). In a draft's fork, a text
+ * doc goes to that version merged with Live's version of it, so Live's edits forwarded since stay,
+ * and the turn wrote only the structure's overrides. In a document only the draft holds, whose
+ * text is in its own Live room, the docs go back as they are. The structure's values go back key
+ * by key (`putBackValues`), keeping a key anyone wrote after the turn; a block the turn created
+ * goes as a removal. The caller checks `holdsSpan` first. Returns the changes, committed.
  */
 export function restoreBefore(
-  draft: RoomDocs,
-  turn: { before: RoomVersion; after: DocVersion | null },
+  docs: RoomDocs,
+  span: TurnSpan,
   options: PressOptions = {},
 ): DocChange[] {
-  const live = draft.live;
-  if (!live) throw new Error("restoreBefore needs a draft copy");
+  const { live } = docs;
   const out: DocChange[] = [];
-  forwarded(draft, out);
-  for (const [key, start] of turn.before) {
-    if (key === STRUCTURE_KEY || start.size === 0) continue;
-    const doc = draft.texts.get(key);
-    if (!doc) continue;
+  if (live) forwarded(docs, out);
+  for (const [key, doc, start] of restoredDocs(docs, span)) {
+    if (key === STRUCTURE_KEY) continue;
     const target = new Map([[key, start]]);
-    const base = live.textOf(key);
+    const base = live?.textOf(key);
     if (base) mergeVersion(target, new Map([[key, docVersion(base)]]));
     const head = doc.frontiers();
     doc.applyDiff(doc.diff(head, frontiersOf(doc, target.get(key) as DocVersion), false));
-    doc.commit({ message: options.message });
+    doc.commit({ message: commitMessage({ by: options.by }) });
     if (!sameValue(head, doc.frontiers()))
       out.push({ key, doc, before: head, after: doc.frontiers() });
   }
-  const start = turn.before.get(STRUCTURE_KEY);
-  if (start && turn.after) {
-    const { structure } = draft;
+  const start = span.before.get(STRUCTURE_KEY);
+  if (start && span.after) {
+    const { structure } = docs;
     const values = valuesOf(
       structure,
       frontiersOf(structure, start),
-      frontiersOf(structure, turn.after),
+      frontiersOf(structure, span.after),
     );
-    // The turn wrote only overrides: Live's keys in the range came with a forward.
+    // In a fork the turn wrote only overrides: Live's keys in the range came with a forward.
+    const maps = live ? OVERRIDE_MAPS : BASE_MAPS;
     for (const [name, keys] of values) {
-      if (!OVERRIDE_MAPS.has(name)) values.delete(name);
+      if (!maps.has(name)) values.delete(name);
       else
         inMap(structure, name, (map) => {
           for (const [key, { left }] of keys) if (!sameValue(map.get(key), left)) keys.delete(key);
         });
     }
-    const { change } = putBackValues(draft, values, undefined, options.message);
+    const { change } = putBackValues(docs, values, undefined, options.by);
     if (change) out.push(change);
   }
   return out;
 }
 
+const BASE_MAPS: ReadonlySet<string> = new Set(STRUCTURE_MAPS);
 const OVERRIDE_MAPS: ReadonlySet<string> = new Set(STRUCTURE_MAPS.map(overrideMap));

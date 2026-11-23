@@ -11,6 +11,7 @@ import {
   encodeRoomVersion,
   freshPeerId,
   RoomDocs,
+  readCommitMessage,
   readDocument,
   STRUCTURE_KEY,
   sameValue,
@@ -113,7 +114,7 @@ const fixtures: Record<string, () => { doc: Node; comments?: string[] }> = {
 function seed(doc: Node, comments: string[] = []): RoomDocs {
   const docs = track(RoomDocs.create(shape, freshPeerId()));
   for (const id of comments) setCommentBody(docs, id, { body: `body ${id}`, author: "u", resolved: false });
-  writeProseMirror(docs, doc, { message: "seed" });
+  writeProseMirror(docs, doc);
   return docs;
 }
 
@@ -163,7 +164,7 @@ for (const [name, make] of Object.entries(fixtures)) {
   check(`${name}: fresh draft reads Live`, readProseMirror(draft, schema).eq(doc));
   const liveBefore = live.structure.oplogVersion();
   const edited = editFirstText(read, " (draft)");
-  writeProseMirror(draft, edited, { message: "draft" });
+  writeProseMirror(draft, edited);
   check(`${name}: draft shows its edit`, readProseMirror(draft, schema).eq(edited), () => ({ want: show(edited), got: show(readProseMirror(draft, schema)) }));
   check(`${name}: Live untouched by the draft`, live.structure.oplogVersion().compare(liveBefore) === 0 && readProseMirror(live, schema).eq(doc));
   check(
@@ -173,7 +174,7 @@ for (const [name, make] of Object.entries(fixtures)) {
     ),
   );
   // Writing Live's content back into the draft deletes its overrides (matching overrides are dropped).
-  writeProseMirror(draft, doc, { message: "back" });
+  writeProseMirror(draft, doc);
   check(`${name}: draft back to Live content shows Live`, readProseMirror(draft, schema).eq(doc));
   check(
     `${name}: no override left after writing Live's content`,
@@ -297,7 +298,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
       { kind: "insert", parent: null, after: p2.id, blocks: [{ kind: "text", id: "newblock01", node: "paragraph", attrs: {}, inline: [{ kind: "text", text: "Inserted.", marks: { em: {} } }] }] },
       { kind: "delete", block: p3.id },
     ],
-    { message: "turn:t1", newBlockId },
+    { by: { turn: "t1" }, newBlockId },
   );
   check("applyOps ok", result.ok, () => result);
   const out = readProseMirror(live, schema);
@@ -314,7 +315,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   );
   const bad = applyOps(live, [{ kind: "text", block: p1.id, splices: [{ from: 0, to: 999, content: [] }], formats: [] }], { newBlockId });
   check("applyOps refuses an out-of-range splice before writing", !bad.ok);
-  check("the change carries the message", result.ok && result.changes.every((c) => c.doc.getChangeAt(c.after[0]).message === "turn:t1"));
+  check("the change carries its author", result.ok && result.changes.every((c) => JSON.stringify(readCommitMessage(c.doc.getChangeAt(c.after[0]).message).by) === JSON.stringify({ turn: "t1" })));
 }
 
 // The binding: typing on the fast path, structure edits on the full path, a remote batch held during
@@ -459,7 +460,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const forked = track(await rooms.read(fork));
   check("a fork room loaded is forwarded to Live", readProseMirror(forked, schema).child(0).textContent.endsWith(" Typed."));
   const cmd = track(await rooms.read(room));
-  writeProseMirror(cmd, editFirstText(readProseMirror(cmd, schema), " Pressed."), { message: "press:x" });
+  writeProseMirror(cmd, editFirstText(readProseMirror(cmd, schema), " Pressed."), { by: { press: "x" } });
   const pending = encodeEnvelope(cmd.exportSince(copy.version()));
   let sawBeforeCommit = false;
   await rooms.transaction(async (tx) => {

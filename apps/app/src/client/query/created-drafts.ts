@@ -55,6 +55,7 @@ export function useCreatedDrafts(
             documentId,
             pending: false,
             liveVersion: null,
+            changeCount: 0,
             origin: "created",
             isNew: true,
             binary: false,

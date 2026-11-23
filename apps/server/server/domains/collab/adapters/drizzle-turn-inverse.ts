@@ -6,19 +6,23 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { captureDelta } from "@meridian/agent-edit/content-merge";
-import { editHandle, type WriteOrdinals } from "@meridian/agent-edit/integration";
-import type { DocumentId, DraftId, EditOrigin, UserId } from "@meridian/contracts";
-import type { DocumentRoom } from "@meridian/contracts/protocol";
+import { editHandle, undoInRooms, type WriteOrdinals } from "@meridian/agent-edit/integration";
+import type { DocumentId, DraftId, EditOrigin, ThreadId, UserId } from "@meridian/contracts";
+import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
 import {
-  encodeEnvelope,
+  changedBlocks,
+  type DocVersion,
+  editSince,
+  encodeChanges,
   type RoomDocs,
+  type RoomVersion,
   readDocument,
-  writeDocument,
+  type StoredEdit,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { blocksOf, nodeOf } from "@meridian/loro-prosemirror";
-import { eq, inArray } from "drizzle-orm";
+import { nodeOf } from "@meridian/loro-prosemirror";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Node as PMNode } from "prosemirror-model";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { draftOwnerSql, mergeOwnerLocks, type OwnerLocks } from "../../../shared/draft-owner.js";
@@ -42,9 +46,11 @@ import {
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { currentDestination } from "../domain/agent-destination.js";
+import { inverseSchema } from "../domain/edit-excerpt.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
-import { inverseSchema, takeBack } from "../domain/inverse-text.js";
+import { type UndoablePart, undoable } from "../domain/model-reversal-planner.js";
 import {
+  type CapturedRoom,
   createTurnInverseService,
   type InverseDocument,
   type PreparedDocumentInverse,
@@ -53,11 +59,11 @@ import {
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
-import { recordDocumentEdit } from "./drizzle-document-edits.js";
+import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
+import { restorableDrafts } from "./drizzle-restore-before.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-inverse.js";
-import { originOf } from "./loro-agent-edit-host.js";
 
 type Dependencies = {
   db: Database;
@@ -108,16 +114,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     ].sort();
   }
   /**
-   * The room an inverse of this document reads and commits into: the model's own undo and revert
-   * run where its chat writes now (its draft's fork in a Draft chat); a card's Undo takes back Live
-   * writes (a Draft-mode turn's card restores the fork instead).
+   * The room the chat writes `documentId` in now (`agentRoomFor`): the model's answer names it, and
+   * its batches there join the reply's frontier. A card's query has no chat destination: Live.
    */
-  const roomOf = (query: Pick<TurnInverseQuery, "model">, documentId: DocumentId) =>
+  const currentRoomOf = (query: Pick<TurnInverseQuery, "model">, documentId: DocumentId) =>
     query.model && currentDestination().kind === "draft"
       ? agentRoomFor(db(), documentId)
       : Promise.resolve(liveRoomOf(documentId));
-  /** The documents' parts written into `room`, in order: an inverse is planned in one room. */
-  async function history(documentIds: DocumentId[], room: (id: DocumentId) => DocumentRoom) {
+  /**
+   * The documents' parts an inverse of `threadId` reads, in order, each in the room it was written
+   * in: the chat's own, and every Undo and revert (which name the parts they took). A fork part
+   * whose draft is gone has nothing to come back to.
+   */
+  async function history(documentIds: DocumentId[], threadId: string) {
     if (!documentIds.length) return [];
     const rows = await db()
       .select({
@@ -127,48 +136,47 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ordinal: documentEditParts.ordinal,
           targets: documentEditParts.targets,
           delta: documentEditParts.delta,
+          edit: documentEditParts.edit,
           origin: documentEditParts.origin,
         },
         edit: documentEdits,
       })
       .from(documentEditParts)
       .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
-      .where(inArray(documentEdits.documentId, documentIds))
+      .where(
+        and(
+          inArray(documentEdits.documentId, documentIds),
+          or(eq(documentEdits.threadId, threadId as ThreadId), ne(documentEdits.kind, "write")),
+          sql`(${documentEditParts.origin}->>'kind' = 'live' OR EXISTS (
+            SELECT 1 FROM ${drafts} WHERE ${drafts.id} = ${documentEditParts.origin}->>'draftId'))`,
+        ),
+      )
       .orderBy(documentEditParts.id);
-    return rows
-      .filter(({ part, edit }) => sameOrigin(part.origin, originOf(room(edit.documentId))))
-      .map(({ part, edit }) => ({
-        ...part,
-        kind: edit.kind,
-        actionId: edit.actionId,
-        documentId: edit.documentId,
-        threadId: edit.threadId,
-        turnId: edit.turnId,
-        responseId: edit.responseId,
-        toolCallId: edit.toolCallId,
-        actor: edit.actor,
-        wId: edit.wId,
-      }));
-  }
-  async function readBlocks(room: DocumentRoom): Promise<readonly PMNode[]> {
-    const docs = await input.rooms.read(room);
-    try {
-      return blocksIn(docs);
-    } finally {
-      docs.free();
-    }
+    return rows.map(({ part, edit }) => ({
+      ...part,
+      room: roomOfOrigin(part.origin, edit.documentId),
+      edit: part.edit as StoredEdit | null,
+      kind: edit.kind,
+      actionId: edit.actionId,
+      documentId: edit.documentId,
+      threadId: edit.threadId,
+      turnId: edit.turnId,
+      responseId: edit.responseId,
+      toolCallId: edit.toolCallId,
+      actor: edit.actor,
+      wId: edit.wId,
+    }));
   }
   /**
-   * Every affected document as the plan will see it: Live and the history. Taken with no lock, so
-   * it only chooses the steps; each step reads the committed text it writes.
+   * Every affected document as the plan will see it: the history, and each room the chat's writes
+   * landed in (and the one it writes in now) as read now. Taken with no lock, so it only chooses
+   * the steps; each step reads the committed text it writes. The rooms' copies go into `held` as
+   * they are read, for the attempt to free.
    */
-  async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
+  async function capture(query: TurnInverseQuery, held: RoomDocs[]): Promise<InverseCapture> {
     const createdDocuments = await createdDocumentsOf(query);
     const ids = await selectedDocuments(query);
-    const rooms = new Map<DocumentId, DocumentRoom>();
-    for (const id of ids) rooms.set(id, await roomOf(query, id));
-    const roomById = (id: DocumentId) => rooms.get(id) ?? liveRoomOf(id);
-    const parts: StoredInversePart[] = await history(ids, roomById);
+    const parts: StoredInversePart[] = await history(ids, query.threadId);
     const partsByDocument = new Map<string, StoredInversePart[]>();
     for (const part of parts) {
       const list = partsByDocument.get(part.documentId);
@@ -179,17 +187,26 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const removals = await input.removals.lookup(ids);
     for (const documentId of ids) {
       const removal = removals.get(documentId) ?? null;
-      const room = roomById(documentId);
-      const availability = await input.fileAccess.destinationAvailability(
-        room.kind === "fork"
-          ? { kind: "draft", documentId, draftId: room.draftId }
-          : { kind: "document", documentId },
-        room.kind === "fork"
-          ? { kind: "draft", draftId: room.draftId, ownerHandle: null }
-          : { kind: "live" },
-      );
-      // A delete keeps the document's rooms: its inverse plans over the retained text.
-      const live = await readBlocks(room);
+      const room = await currentRoomOf(query, documentId);
+      const history = partsByDocument.get(documentId) ?? [];
+      const wanted = new Map([[loroRoomName(room), room]]);
+      for (const part of history)
+        if (part.threadId === query.threadId) wanted.set(loroRoomName(part.room), part.room);
+      const rooms = new Map<string, CapturedRoom>();
+      for (const [name, one] of wanted) {
+        const availability = await input.fileAccess.destinationAvailability(
+          one.kind === "fork"
+            ? { kind: "draft", documentId, draftId: one.draftId }
+            : { kind: "document", documentId },
+          one.kind === "fork"
+            ? { kind: "draft", draftId: one.draftId, ownerHandle: null }
+            : { kind: "live" },
+        );
+        // A delete keeps the document's rooms: its inverse plans over the retained text.
+        const docs = await input.rooms.read(one);
+        held.push(docs);
+        rooms.set(name, { room: one, docs, closed: availability.closed });
+      }
       await testHook("inverse.afterCaptureRead");
       documents.push({
         documentId,
@@ -199,12 +216,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           query.path ??
           (await input.resolveLastDocumentUri(documentId)) ??
           documentId,
-        live,
-        removal,
         room,
+        rooms,
+        removal,
         createdInTurn: createdDocuments.has(documentId),
-        history: partsByDocument.get(documentId) ?? [],
-        destination: { kind: "live", closed: availability.closed, removed: removal !== null },
+        history,
       });
     }
     return { ids, documents };
@@ -220,10 +236,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T> {
     const deliveries: (() => Promise<void>)[] = [];
-    const captured = await capture(query);
-    const result = await attemptStorage.run({ ...captured, deliveries }, () =>
-      run(captured.documents),
-    );
+    const held: RoomDocs[] = [];
+    let result: T;
+    try {
+      const captured = await capture(query, held);
+      result = await attemptStorage.run({ ...captured, deliveries }, () => run(captured.documents));
+    } finally {
+      for (const docs of held) docs.free();
+    }
     // Delivery reads the documents through their coordinators: only once the attempt completed.
     const deliver = async () => {
       for (const delivery of deliveries) await delivery();
@@ -257,6 +277,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
+    restorableDrafts: (query) =>
+      query.turnId ? restorableDrafts(db(), input.rooms, query.turnId) : Promise.resolve([]),
     treeDraftStates: (query) =>
       query.model || !query.turnId
         ? Promise.resolve({})
@@ -268,10 +290,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         taken: tree.taken.length + tree.undoneByCard,
       };
     },
-    readHistory: async (documentId) => {
-      const room = await roomOf({ model: true }, documentId);
-      return history([documentId], () => room);
-    },
+    readHistory: (documentId, threadId) => history([documentId], threadId),
     async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
@@ -284,8 +303,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             plan,
             documentId: plan.document.documentId,
             room: plan.document.room,
+            docs: new Map(),
             updates: [],
+            wrote: false,
             reversed: 0,
+            stayed: 0,
+            compacted: 0,
+            inManuscript: false,
           },
         ]),
       );
@@ -315,7 +339,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const operation = async () => {
         // Each step plans again on the text it finds here, under the document key, so Live is
         // read now, not as the capture saw it.
-        for (const entry of documents) entry.docs = await input.rooms.read(entry.room);
+        for (const entry of documents)
+          for (const [name, { room }] of entry.plan.document.rooms)
+            entry.docs.set(name, await input.rooms.read(room));
         const runText = async () => {
           for (const { plan, step } of sequence) {
             const entry = planned.get(plan);
@@ -362,7 +388,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           operation,
         });
       } finally {
-        for (const entry of documents) entry.docs?.free();
+        for (const entry of documents) for (const docs of entry.docs.values()) docs.free();
       }
       if (!admitted.ok) throw admitted.refusal;
       attempt.deliveries.push(...deliveries);
@@ -372,6 +398,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         updates: documents.flatMap((entry) => entry.updates),
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
+        stayed: new Map(documents.map((entry) => [entry.documentId, entry.stayed])),
+        compacted: new Map(documents.map((entry) => [entry.documentId, entry.compacted])),
+        inManuscript: documents.some((entry) => entry.inManuscript),
       };
     },
   };
@@ -390,15 +419,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       string,
       { documentId: DocumentId; draftId: DraftId | null; restore: boolean }
     >();
-    for (const { plan } of sequence) {
-      const { documentId, room } = plan.document;
-      const draftId = room.kind === "fork" ? room.draftId : null;
-      requirements.set(`${documentId}:${draftId ?? "live"}:content`, {
-        documentId,
-        draftId,
-        restore: false,
-      });
-    }
+    for (const { step } of sequence)
+      for (const { documentId, room } of step.parts) {
+        const draftId = room.kind === "fork" ? room.draftId : null;
+        requirements.set(`${documentId}:${draftId ?? "live"}:content`, {
+          documentId,
+          draftId,
+          restore: false,
+        });
+      }
     // A tree change is taken back where it was made, by the one who may edit that document; a
     // live document in Trash may only be restored.
     for (const { documentId, draftId, restore } of treeDocuments)
@@ -443,10 +472,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * One step inside the commit scope: each of its changes that still stands in Live is taken out
-   * by content, committed into the room as one batch, and one receipt of kind `undo` or `revert`
-   * names the parts it took, with the model's chat and write ordinal or the writer. A change that
-   * stopped standing between the capture and the lock is left whole.
+   * One step inside the commit scope: its parts taken back on the committed rooms, each in the room
+   * it was written in, by design §2's Undo rule, newest first (`undoInRooms`: a part someone wrote
+   * over between the capture and the lock stays whole), each room's changes committed into it as
+   * one batch, and one receipt of kind `undo` or `revert` with a part per room, naming the parts it
+   * took there, with the model's chat and write ordinal or the writer.
    */
   async function commitStep(
     entry: PlannedInverse,
@@ -454,24 +484,73 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<{ handle: string; parts: number }> {
-    const { documentId, docs, room } = entry;
-    if (!docs) throw new Error("A step runs inside the commit scope");
-    const before = blocksIn(docs);
-    const back = takeBack(before, step.parts);
-    if (!back.taken.length) return { handle: "", parts: 0 };
-    const since = docs.shownVersion();
+    const { documentId } = entry;
+    const docsOf = (room: DocumentRoom) => {
+      const docs = entry.docs.get(loroRoomName(room));
+      if (!docs) throw new Error("A step runs inside the commit scope, in a captured room");
+      return docs;
+    };
+    const parts = step.parts.filter(undoable);
+    const seen = new Map<
+      string,
+      { since: RoomVersion; blocks: PMNode[] | null; pending: Set<string> | null }
+    >();
+    for (const { room } of parts) {
+      const name = loroRoomName(room);
+      if (seen.has(name)) continue;
+      const docs = docsOf(room);
+      seen.set(name, {
+        since: docs.shownVersion(),
+        blocks: query.model ? blocksIn(docs) : null,
+        pending: room.kind === "fork" ? pendingBlocks(docs) : null,
+      });
+    }
     // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
-    const message = query.model && query.turnId ? `turn:${query.turnId}` : undefined;
-    writeDocument(docs, blocksOf(inverseSchema.topNodeType.create(null, [...back.live])), {
-      ...(message ? { message } : {}),
-    });
-    const update = docs.exportSince(since);
-    if (update.size === 0) return { handle: "", parts: 0 };
-    const batch = encodeEnvelope(update);
-    await input.rooms.commit(db(), room, batch, "server:inverse");
-    entry.updates.push(batch);
-    // The model's inverse is an edit on its stack: it takes the next write ordinal, as a write
-    // does, and records its delta, which a later Undo or revert reads back.
+    const by = query.model && query.turnId ? { turn: query.turnId } : undefined;
+    const undone = undoInRooms(parts, docsOf, by);
+    const taken = parts.filter((part) => !undone.stayed.has(part));
+    for (const why of undone.stayed.values())
+      if (why.kind === "compacted") entry.compacted++;
+      else entry.stayed++;
+    if (!taken.length || !undone.rooms.length) return { handle: "", parts: 0 };
+    const receipts: ReceiptWrite["receipts"] = [];
+    for (const { room, changes } of undone.rooms) {
+      const name = loroRoomName(room);
+      const docs = docsOf(room);
+      const batch = encodeChanges(changes);
+      await input.rooms.commit(db(), room, batch, "server:inverse");
+      entry.wrote = true;
+      // The reply's later writes plan on the batches the room it writes in holds: its own, and
+      // Live's in a fork, whose texts read Live's.
+      if (name === loroRoomName(entry.room) || (room.kind === "live" && entry.room.kind === "fork"))
+        entry.updates.push(batch);
+      const before = seen.get(name);
+      // A draft that now differs from Live where it didn't: Live still holds what came out.
+      if (before?.pending && [...pendingBlocks(docs)].some((id) => !before.pending?.has(id)))
+        entry.inManuscript = true;
+      const written = [...new Set(changes.map((change) => change.key))];
+      const versionOf = (version: ReadonlyMap<string, DocVersion>) =>
+        new Map([...version].filter(([key]) => written.includes(key)));
+      const here = taken.filter((part) => loroRoomName(part.room) === name);
+      receipts.push({
+        // The parts' own origin: the room, and the draft a Live room's text was written for.
+        origin: (here[0] as UndoablePart).origin,
+        targets: here.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
+        // The model's inverse is an edit on its stack: it records its delta and its edit, which a
+        // later Undo or revert reads back.
+        ...(before?.blocks
+          ? {
+              delta: captureDelta(before.blocks, blocksIn(docs)),
+              write: {
+                before: versionOf(before.since),
+                after: versionOf(docs.shownVersion()),
+                edit: editSince(docs, before.since, docs.peer, written),
+              },
+            }
+          : {}),
+      });
+    }
+    // It takes the next write ordinal, as a write does.
     const wId = query.model
       ? await input.ordinals.reserveWriteOrdinal(documentId, query.threadId)
       : undefined;
@@ -490,18 +569,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       actorUserId: userId,
       kind: step.actionKind,
       actionId: step.actionId,
-      receipts: [
-        {
-          origin: originOf(room),
-          targets: back.taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
-          delta: query.model ? captureDelta(before, blocksIn(docs)) : null,
-        },
-      ],
+      receipts,
     });
-    entry.reversed += back.taken.length;
+    entry.reversed += taken.length;
     return {
       handle: wId === undefined ? "" : editHandle(wId),
-      parts: back.taken.length,
+      parts: taken.length,
     };
   }
 
@@ -512,7 +585,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     query: TurnInverseQuery,
     deliveries: (() => Promise<void>)[],
   ): Promise<void> {
-    if (!entry.updates.length) return;
+    if (!entry.wrote) return;
     const { documentId } = entry;
     deliveries.push(async () => {
       await input.refreshDocument(documentId);
@@ -536,24 +609,38 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
 const liveRoomOf = (documentId: DocumentId): DocumentRoom => ({ kind: "live", documentId });
 
-const sameOrigin = (a: EditOrigin, b: EditOrigin) =>
-  a.kind === "live" ? b.kind === "live" : b.kind === "fork" && a.draftId === b.draftId;
+const roomOfOrigin = (origin: EditOrigin, documentId: DocumentId): DocumentRoom =>
+  origin.kind === "fork"
+    ? { kind: "fork", draftId: origin.draftId as DraftId, documentId }
+    : liveRoomOf(documentId);
 
 const blocksIn = (docs: RoomDocs) =>
   readDocument(docs).map((block) => nodeOf(inverseSchema, block));
+
+/** The blocks a draft's copy holds a change in (`changedBlocks`). */
+const pendingBlocks = (docs: RoomDocs) =>
+  new Set(changedBlocks(docs).flatMap((change) => change.blocks));
 
 /** What a commit builds up for one document: what its steps wrote, for delivery and the answer. */
 type PlannedInverse = {
   plan: PreparedDocumentInverse;
   documentId: DocumentId;
-  /** Where the steps read and commit: the document's `room`. */
+  /** The room the chat writes the document in now. */
   room: DocumentRoom;
-  /** The batches the steps committed into the room. */
+  /** Each captured room as the commit scope found it, by room name, which the steps write through; freed at the scope's end. */
+  docs: Map<string, RoomDocs>;
+  /** The batches the steps committed that the chat's room holds: the reply's frontier takes them. */
   updates: Uint8Array[];
-  /** The room as the commit scope found it, which the steps write through; freed at the scope's end. */
-  docs?: RoomDocs;
+  /** Whether the steps committed anything, in any room. */
+  wrote: boolean;
   /** Text parts the steps took. */
   reversed: number;
+  /** Text parts the steps found written over under the locks, and left whole. */
+  stayed: number;
+  /** Text parts whose history the room cut, left as they are. */
+  compacted: number;
+  /** A step took text out of a draft that Live still holds (an Apply put it there). */
+  inManuscript: boolean;
 };
 
 type InverseCapture = {

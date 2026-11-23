@@ -44,8 +44,27 @@ bash apps/server/server/domains/collab/.context/qa/press-on-the-stack.sh
 | Apply all lands both drafts, leaves no fork pending, the Work's count is 0 | The `work` scope presses each draft in id order |
 | Its Undo leaves nothing and gives Live its text back; both forks are pending again | The Undo, draft by draft, newest first |
 | The Undo names the chat that wrote over; each change it left is named by an id; the chat's text stays | `stayed[].by` from the commit messages on the change's text |
-| A change a chat replaced stays, and Live keeps the chat's text | **Fails today.** When the chat's rewrite shares letters with the pressed text ("Chapter four closes at dusk…" to "Night falls on chapter four."), `editStays` in `document-model`'s `take-back.ts` judges the change undoable and the Undo interleaves the two: `NightThefalls onchpersecondparagraphofchapterfourfour.` Open, with the two-drafts Undo, in `take-back.ts` |
+| A change whose letters a chat's rewrite kept stays, and Live keeps the chat's text | `editStays` part 4: a later write that deleted any of what the change put in keeps it ("Chapter four closes at dusk…" to "Night falls on chapter four." once came back as `NightThefalls onchpersecondparagraphofchapterfourfour.`) |
 
 Not covered here: a tab's typing over a pressed change (`by: writer`) needs a socket client, and a
 server write with no commit message (a restore, a copy) names no one; both are read in
 `overwriters` in `drizzle-press.ts`.
+
+### Restore before and the turn Undo
+
+[`restore-before-on-the-stack.sh`](restore-before-on-the-stack.sh) runs on the same kind of stack,
+in a new Work each run. Writer typing is `./mf doc edit`, which types into one block's text as a tab
+does.
+
+```sh
+MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev
+bash apps/server/server/domains/collab/.context/qa/restore-before-on-the-stack.sh
+```
+
+| Check | What it shows |
+|---|---|
+| A: Restore before returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
+| B: after one of the turn's changes was applied, Restore before leaves it in Live and the draft reads as Live | The restore carries the fork forward to today's Live first, and never writes Live |
+| C: the card's Undo of a Live turn whose first paragraph the writer retyped answers `partial`, keeps the writer's text and undoes the other paragraph | The turn Undo on design §2's rule: a write someone wrote over stays whole |
+| D: the model's `undo` of an edit the writer retyped says it was written over, and changes nothing | `cant_undo_changed` with the rule's words |
+| E: a chat that read in Draft, switched to Live, writes over the writer's Live typing without losing it | The write plans on the chat's latest read in any of the document's rooms (`frontierLookup` per document) |

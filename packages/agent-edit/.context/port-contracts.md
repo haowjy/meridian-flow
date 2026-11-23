@@ -7,12 +7,13 @@ must do that the types can't say.
 
 `save(room, batch, record)` runs inside the host's command: `commit` the batch, then
 `recordWrite` the record and the batch in the same transaction, so a write and its Undo record
-land or fail together. The record's `delta` is the write's before and after text by block; turn
-Undo and the model's `undo` and `revert` take it back by content (`takeBack`) in the record's
-`room`, never by replaying ops, so the writer's later edits stay. Its `before` and `after` are each
-written doc's version as the write began and once it landed: a Draft turn's `Restore before` goes
-back to its first write's `before` and keeps a structure key written after its last write's
-`after`. The record is self-describing; the batch is for storage, not to be decoded again.
+land or fail together. The record's `delta` is the write's before and after text by block, which
+the card and the edits list show; its `edit` is what turn Undo and the model's `undo` and `revert`
+take back, whole or not at all, by design §2's Undo rule (`undoInRooms`) in the record's `room`, so
+the writer's later edits stay. Its `before` and `after` are each written doc's version as the write
+began and once it landed: a Draft turn's `Restore before` goes back, per doc, to the first `before`
+that names it, and keeps a structure key written after the last `after` that names the structure
+(`turnSpan`). The record is self-describing; the batch is for storage, not to be decoded again.
 `readRoom` returns a copy the core frees; it holds none between calls.
 
 `roomFor` is the one place that picks a chat's room: a Draft chat's fork room from its first read,
@@ -27,7 +28,8 @@ document in any of its rooms (Live or any draft's fork), as recorded, with the r
 switches between Live and Draft, and the core decides whether the room it writes in can check that
 read out. `planningShown` takes a document id and answers every block the planning blocks showed of
 it in full, from every room, oldest first. On the server each is a per-document query over
-`observation_frontiers` (the room column names the document); until 2b it asks Live's room only.
+`observation_frontiers`: its rooms are the document's Live room and its fork room in every
+draft of the project (`drizzle-model-evidence.ts`).
 
 ## `AgentEditCodec`
 

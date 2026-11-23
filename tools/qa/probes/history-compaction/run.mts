@@ -186,7 +186,7 @@ try {
     const forkBase = press.version();
     const result = applyBlocks(press, [openingId], {
       liveVersion: new Map(),
-      message: "press:probe",
+      by: { press: "probe" },
     });
     await rooms.commit(db, live, encodeEnvelope(pressLive.exportSince(liveBase)), "press:probe");
     await rooms.commit(db, fork, encodeEnvelope(press.exportSince(forkBase)), "press:probe");
@@ -260,7 +260,7 @@ try {
         formats: [],
       },
     ],
-    { message: "turn:probe", newBlockId },
+    { by: { turn: "probe" }, newBlockId },
   );
   await rooms.commit(db, live, encodeEnvelope(agent.exportSince(agentBase)), "turn:probe");
   agent.free();
@@ -310,7 +310,7 @@ try {
   check((await forkRow(emptyDraft))?.pending === true, "a second draft's fork is pending");
   const discard = await rooms.read(emptyFork);
   const discardBase = discard.version();
-  discardBlocks(discard, "all", { message: "press:probe-discard" });
+  discardBlocks(discard, "all", { by: { press: "probe-discard" } });
   await rooms.commit(
     db,
     emptyFork,

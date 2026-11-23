@@ -45,9 +45,10 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
 - **A write plans on what the model read**, so a word the writer deleted after that read stays
   deleted. The read's frontier is a per-doc map (`loro-frontier.ts`, `encodeFrontierMap`), the
   reply's own batches merged in by their end version; the write plans on `docs.at(frontiers)`,
-  exports one batch (`exportSince(shownVersion())`) with the commit message `turn:<turnId>` and
-  saves it through `rooms.save` with an `AgentWriteRecord` whose `delta` (`captureDelta`) is what
-  Undo takes back by content (`takeBack`).
+  exports one batch (`exportSince(shownVersion())`) by its turn (`commitMessage`, `{by: {turn}}`) and
+  saves it through `rooms.save` with an `AgentWriteRecord`: its `edit` (`editSince` in
+  `@meridian/document-model`) is what Undo judges and takes back, and its `delta` (`captureDelta`)
+  the blocks before and after, which the card's rows and the edit listing show.
 - **A Draft chat reads and writes its draft's fork room** (`AgentEditRooms.readRoom`, the host's
   `roomFor`) from its first read; nothing in the core branches on Live or fork beyond `format:
   "changes"`. The host's lookups answer by document: the chat's latest read of it in any of its
@@ -66,7 +67,7 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   ops into Live, so the fork reads as it did; Discard takes the draft's change back by content, so
   a write planned on the read merges like an offline peer's and the Discard stands. Planning on the
   fork as it is instead would bring back what the writer discarded. The report names a press
-  (`press:<id>`) as `the user's Apply or Discard`.
+  (a commit by a press) as `the user's Apply or Discard`.
 - **A write the view already holds** answers `unchanged` and lands nothing: on the model's view it
   is a no-op, as an offline peer's would be. When the room no longer holds it (someone changed
   those blocks since the read, a turn Undo of the chat's own words included), the answer says the
@@ -82,9 +83,10 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   came after the read is what the fallback loses; a block deleted since answers `not_found` with
   the current text.
 - **Who changed what** (`tool/loro-observation.ts`) comes from the docs that changed since the
-  recorded frontier and their commit messages: `turn:<id>` is a chat (`authorOfTurn`), the
-  reader's own turn is skipped, `press:<id>` is the writer's Apply or Discard, and any other
-  message (none, a take-back) is the user. A structure change credits every
+  recorded frontier and who their commit messages say wrote them (`authorsSince`, by
+  `readCommitMessage`): a turn is a chat (`authorOfTurn`), the reader's own turn is skipped, a
+  press is the writer's Apply or Discard, and a commit by no one (typing, a tab's Undo) is the
+  user. A structure change credits every
   author of the structure doc since the read with every structural change: coarse, never wrong
   about who touched the document.
 - Write handles (`e<N>`) come from the host's `WriteOrdinals` (`ports/write-ordinals.ts`), one
@@ -92,25 +94,26 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
 
 The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
 this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
-commit's transaction, and the model's `undo` and `revert` go through `LoroDocumentEdits`, which
-takes back by content and returns the batches it committed so the reply's frontier covers them.
-Until phase 2b, the server routes every chat to Live: its `roomFor` returns Live, its lookups ask
-Live's room only, and its inverse (`drizzle-turn-inverse.ts`) commits into Live and stores parts as
-Live's, ignoring the record's `room`, `before` and `after`. The in-memory host (`test-support`)
-already does what 2b brings, for a Live or a Draft chat: the inverse runs in the record's room, a
-change someone wrote over since stays whole and the answer says so, an edit already taken back is
-skipped, and the writer's Apply, Discard and `Restore before` run as the server's press does. Probe: [loro-write](qa/loro-write.md).
+commit's transaction (`room`, `before`, `after` and `edit` on the part), and the model's `undo`
+and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
+frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
+document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each
+part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
+over `undoEdits`): a write someone wrote over since stays whole and the answer says so, one whose
+room cut its history stays and the answer says that, and a part already taken back is skipped. The
+in-memory host (`test-support`) calls the same `undoInRooms`, and `turnSpan`, `holdsSpan` and
+`restoreBefore` for `Restore before`, and runs the writer's Apply, Discard and `Restore before` as the
+server's press does. Probe: [loro-write](qa/loro-write.md).
 
 ## What an Undo reads
 
-Each AI write records its `delta` (the blocks it changed, before and after), and Undo, revert and
-the card's state read that against the text as it is now
-([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands)); the model's inverse
-picks the parts that changed text by their `delta`.
+Each AI write records its Loro `edit` (`AgentWriteRecord.edit`, a `StoredEdit`), and Undo, revert
+and the card's state judge it with `editStays` and take it back with `takeBack`, the rule a press's
+Undo uses (design §2): whole, or left whole when someone has written over it. Typing inside the
+AI's words leaves some of what it put in, so the write still goes back around the writer's words.
 
 A block write keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
-word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
-therefore lands as a replacement, and Undo leaves it alone.
+word never has letters of two authors.

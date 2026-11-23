@@ -6,6 +6,7 @@ import type { CommandId, DocumentId } from "@meridian/contracts";
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -74,6 +75,8 @@ export const documentForks = pgTable(
      * `DraftItem.liveVersion`, so a press from the list reads no room.
      */
     liveVersion: byteaColumn("live_version"),
+    /** How many changes the fork has (`changedBlocks`' groups, Review changes' steps), set with `pending`. */
+    changeCount: integer("change_count").notNull().default(0),
     /** Whether the writer typed a pending change into the fork (a non-server peer's op), set with `pending`. */
     writerWrote: boolean("writer_wrote").notNull().default(false),
     createdAt: createdAt(),

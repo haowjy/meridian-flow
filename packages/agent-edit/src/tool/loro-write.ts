@@ -3,6 +3,7 @@
 // record, and record what the result showed.
 import {
   decodeEnvelope,
+  editSince,
   encodeEnvelope,
   encodeRoomVersion,
   freshServerPeerId,
@@ -20,8 +21,8 @@ import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
+import { captureDelta } from "../content-merge/delta.js";
 import { contentMerge } from "../content-merge/merge.js";
-import { captureDelta } from "../content-merge/stands.js";
 import type { ShownBlock } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { SpliceFallback } from "../links/find-splice.js";
@@ -86,7 +87,7 @@ export interface LoroEditCoreOptions {
   links: DocumentLinksPort;
   documentEdits?: LoroDocumentEdits;
   /**
-   * The chat a `turn:<id>` commit message names, as the model reads it (`agent (c15)`); null for a
+   * The chat a commit by a turn (`CommitAuthor`) names, as the model reads it (`agent (c15)`); null for a
    * turn the host can't trace. Absent: every turn but the reader's own is `another agent`.
    */
   authorOfTurn?(turnId: string): Promise<string | null>;
@@ -104,11 +105,6 @@ export interface LoroEditCore {
 }
 
 type Address = Extract<ReturnType<typeof parseFileAddress>, { ok: true }>;
-
-/** The commit message a write's ops carry: who the concurrent-change report names (design §5). */
-function commitMessageOf(actor: MutationActor): string | undefined {
-  return actor.kind === "agent" ? `turn:${actor.turnId}` : undefined;
-}
 
 export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   const { schema, rooms } = options;
@@ -708,7 +704,8 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
     const textBefore = blocksOf(copy);
     const since = read.docs.shownVersion();
-    planDoc.write = { message: commitMessageOf(actor) };
+    // Who the concurrent-change report names (design §5): none is the writer.
+    planDoc.write = actor.kind === "agent" ? { by: { turn: actor.turnId } } : {};
     let changed: string[] = [];
     let deleted: string[] = [];
     let inserted: string[] = [];
@@ -755,6 +752,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       room: read.room,
       before,
       after,
+      edit: editSince(copy.docs, since, planDoc.docs.peer, written),
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),

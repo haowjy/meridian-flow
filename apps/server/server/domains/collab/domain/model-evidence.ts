@@ -1,6 +1,6 @@
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ShownLink, StoredEvidence } from "../../../shared/model-evidence.js";
+import type { FrontierRooms, ShownLink, StoredEvidence } from "../../../shared/model-evidence.js";
 
 /**
  * What the model was shown of documents, kept for its next write: a frontier per result block
@@ -15,11 +15,17 @@ export interface ModelEvidence {
    * transaction: an edit records its own inside its command, a read's after its block is stored.
    */
   resultStored(evidence: StoredEvidence): Promise<void>;
-  /** The latest-recorded frontier for `room` among `blockIds`, or null. */
-  latestFrontier(room: string, blockIds: readonly string[]): Promise<ObservationFrontier | null>;
-  /** Every row for `room` among `blockIds`, oldest recorded first: the names shown. */
+  /**
+   * The latest-recorded frontier among `blockIds` in any room of the document, tagged with its
+   * room, or null.
+   */
+  latestFrontier(
+    documentId: string,
+    blockIds: readonly string[],
+  ): Promise<ObservationFrontier | null>;
+  /** Every row in `rooms` among `blockIds`, oldest recorded first. */
   frontiersIn(
-    room: string,
+    rooms: FrontierRooms,
     blockIds: readonly string[],
   ): Promise<{ blockId: string; recordedSeq: number; snapshot: Uint8Array }[]>;
   /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */

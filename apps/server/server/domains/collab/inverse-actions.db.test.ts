@@ -74,8 +74,9 @@ it("the card's Undo leaves a change of the model's that the writer altered as it
         turnId: currentTurn,
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "expired" });
-    // The writer changed the model's one change (two touching blocks), so it no longer stands.
+    ).toMatchObject({ status: "cant_undo_changed" });
+    // The writer retyped one block of the model's one edit (two blocks): it stays whole, and the
+    // answer says so (design §2's Undo rule).
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, currentTurn)).toMatchObject({
       control: "view_change",

@@ -1,6 +1,6 @@
 /**
  * What the model was shown of documents, kept by the document side: the frontier each result
- * block showed (per room: `live:<documentId>`) and
+ * block showed (per room: `live:<documentId>`, `fork:<draft>:<documentId>`) and
  * the links it was shown. The runtime never writes the tables. An edit's evidence is recorded by
  * the document side in the edit's own transaction; a read's, and a writer turn's reference
  * blocks', are handed over with `resultStored` once their blocks are stored. Every lookup names the
@@ -8,6 +8,7 @@
  */
 import type {
   FrontierLookup,
+  FrontierRooms,
   ObservationFrontier,
   ReplyMutations,
   ShownBlock,
@@ -17,10 +18,16 @@ import type {
 export interface DocumentEvidence {
   /** Records what stored blocks showed the model. Joins an ambient transaction. */
   resultStored(evidence: StoredEvidence): Promise<void>;
-  /** The latest-recorded frontier for `room` among `blockIds`, or null. */
-  latestFrontier(room: string, blockIds: readonly string[]): Promise<ObservationFrontier | null>;
-  /** Every row for `room` among `blockIds`, oldest recorded first: the names shown. */
-  frontiersIn(room: string, blockIds: readonly string[]): Promise<RecordedFrontier[]>;
+  /**
+   * The latest-recorded frontier among `blockIds` in any room of the document, tagged with its
+   * room, or null.
+   */
+  latestFrontier(
+    documentId: string,
+    blockIds: readonly string[],
+  ): Promise<ObservationFrontier | null>;
+  /** Every row in `rooms` among `blockIds`, oldest recorded first. */
+  frontiersIn(rooms: FrontierRooms, blockIds: readonly string[]): Promise<RecordedFrontier[]>;
 }
 
 /** One block's row in a room, with the order it was recorded in. */
