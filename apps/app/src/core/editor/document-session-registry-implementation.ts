@@ -7,6 +7,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
+import { deferred } from "@/core/cross-context-locks";
 import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
@@ -341,14 +342,18 @@ export class DocumentSessionRegistry {
    * A session on the room's current incarnation, and the hold on it. The words an older incarnation
    * held that the server lacks are dropped once the session has
    * synced, and it goes. A copy is never deleted on one session's say-so: a session that `replaced`
-   * another retires it by the same path, once its editors have gone and its hold is released, so
-   * words another tab wrote into the same copy meanwhile come back too.
+   * another retires it by the same path, once its editors have gone, `after` has settled and its
+   * hold is released, so words another tab wrote into the same copy meanwhile come back too.
    */
   private openCopy(
     room: DocumentRoom,
     copyKey: string,
-    replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
-  ): { session: DocumentSession; hold: Promise<CopyHold> } {
+    replaced?: {
+      session: DocumentSession;
+      hold: Promise<CopyHold> | null | undefined;
+      after?: Promise<unknown>;
+    },
+  ): { session: DocumentSession; hold: Promise<CopyHold>; retired: Promise<void> } {
     const incarnation = this.copies.current(copyKey);
     // Named from the incarnation just read: another tab can advance the pointer in between.
     const name = incarnationName(copyKey, incarnation);
@@ -359,17 +364,17 @@ export class DocumentSessionRegistry {
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
+    let retired = Promise.resolve();
     if (replaced) {
-      void this.teardownOwner
-        .retireReplaced(replaced.session)
+      retired = Promise.resolve(replaced.after)
+        .then(() => this.teardownOwner.retireReplaced(replaced.session))
         .catch((error: unknown) => reportError(error))
-        .then(async () => (await replaced.hold)?.release())
-        .then(() => this.dropOlder(session, copyKey, incarnation))
-        .catch(reportError);
+        .then(async () => (await replaced.hold)?.release());
+      void retired.then(() => this.dropOlder(session, copyKey, incarnation)).catch(reportError);
     } else if (incarnation > 0) {
       void this.dropOlder(session, copyKey, incarnation).catch(reportError);
     }
-    return { session, hold };
+    return { session, hold, retired };
   }
 
   private async dropOlder(
@@ -463,14 +468,52 @@ export class DocumentSessionRegistry {
     if (!this.isRoomSession(old)) return;
     const state = this.rooms.get(old.roomKey);
     if (!state) return;
-    const { session, hold } = this.openCopy(old.room, copy.key, {
+    // A fork reads through its Live session's docs: each fork over this room is rebuilt over the
+    // new one, and the old Live session retires only after the old forks have.
+    const forks = old.room.kind === "live" ? this.forkStatesOver(old.documentId) : [];
+    const forksRetired = deferred<unknown>();
+    this.installReplacement(
+      state,
+      this.openCopy(old.room, copy.key, {
+        session: old,
+        hold: state.hold,
+        after: forksRetired.promise,
+      }),
+    );
+    forksRetired.resolve(Promise.all(forks.map((fork) => this.rebuildFork(fork))));
+  }
+
+  private forkStatesOver(documentId: DocumentId): RoomState[] {
+    return [...this.rooms.values()].filter(
+      ({ session }) => session?.room.kind === "fork" && session.documentId === documentId,
+    );
+  }
+
+  /** On the same copy: only the Live session under the fork changed. */
+  private rebuildFork(state: RoomState): Promise<void> {
+    const old = state.session;
+    if (!old) return Promise.resolve();
+    this.replacing.add(old);
+    void old.makeInert().catch(reportError);
+    const opened = this.openCopy(old.room, this.copyOfSession(old).key, {
       session: old,
       hold: state.hold,
     });
+    this.installReplacement(state, opened);
+    return opened.retired;
+  }
+
+  private installReplacement(
+    state: RoomState,
+    { session, hold }: { session: DocumentSession; hold: Promise<CopyHold> },
+  ): void {
     state.session = session;
     state.hold = hold;
+    // A pending teardown watched the old session; the new one is judged afresh.
+    this.cancelPendingTeardown(session.roomKey);
     this.attachSessionTransport(session);
-    this.notifyReplacement(old.roomKey, session);
+    this.notifyReplacement(session.roomKey, session);
+    this.scheduleTeardownIfUnretained(session.roomKey);
   }
 
   /** Calls `observer` with the session that replaces a document's room. */

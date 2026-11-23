@@ -520,5 +520,9 @@ holds them by definition. Either way the registry replaces the room
   older ones no tab holds once it has joined, drops what they hold beyond it (with the pill), and
   deletes each one. Holders follow through `observeReplacement`; a mount keeps its reading
   position across it, because the store is keyed by room (`use-reading-position.ts`).
+- A fork session reads through its Live session's docs, so replacing a Live room rebuilds every
+  fork session over it on the fork's same copy (its own words are intact), and the old Live
+  session retires only after the old forks have: the same forks-first order as `invalidateAll` and
+  `clearLocalCopy`. The rebuilt forks reach their editors through `observeReplacement` too.
 - A read-admitted connection sends no `DocUpdate`. Nothing is stored about a drop: the copies are
   working storage only, and a drop that is told twice shows the one pill under its key.
