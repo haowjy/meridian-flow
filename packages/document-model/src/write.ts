@@ -19,6 +19,7 @@ import {
   type DocKey,
   type InlineItem,
   overrideMap,
+  pieceKey,
   type ShapeBlock,
   STRUCTURE_KEY,
   type StructureMap,
@@ -78,6 +79,11 @@ export interface WriteOptions {
   kept?: ReadonlySet<BlockId>;
   /** The read of the structure with `kept` as it is now, when the caller already took it. */
   view?: StructureView;
+  /**
+   * The pairs of blocks this write moved text between (a split, a join): the writer knows them
+   * from the edit it is writing, and a draft records them so the two are one change (design §2).
+   */
+  pieces?: readonly (readonly [BlockId, BlockId])[];
 }
 
 /**
@@ -122,6 +128,14 @@ export class StructureWriter {
       if (doc) seen.set(key, plainVersion(doc.version()));
     }
     this.set("order", id, encodeRemoval({ at, seen }));
+  }
+
+  /**
+   * Record that this write moved text between `a` and `b`, so a draft's review takes them as one
+   * change. Live keeps no record: nothing reviews it.
+   */
+  pieces(a: BlockId, b: BlockId): void {
+    if (this.docs.draft && a !== b) this.set("pieces", pieceKey(a, b), true);
   }
 
   /**
@@ -327,6 +341,7 @@ export function writeDocument(
       const goesWithParent = typeof parent === "string" && !written.has(parent);
       if (!written.has(id) && !goesWithParent) structure().remove(id);
     }
+  if (docs.draft) for (const [a, b] of options.pieces ?? []) structure().pieces(a, b);
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;

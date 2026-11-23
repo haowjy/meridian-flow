@@ -67,6 +67,8 @@ export {
   markNameOf,
   type NodeRule,
   overrideMap,
+  pieceEnds,
+  pieceKey,
   SENTINEL,
   type ShapeBlock,
   type ShapeSchema,

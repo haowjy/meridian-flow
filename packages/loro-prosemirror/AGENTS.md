@@ -14,6 +14,10 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   them through `forwardLocalWrite`. The import answers a removal the batch brings that did not read
   this copy's typing before any editor reads it; the caller's `publish` sends that restore, and a
   draft's forward restore goes out through the `publish` it was registered with.
+- A draft's write records the blocks its transaction moved text between (`movedPieces`, from the
+  steps' position maps: Enter inside a paragraph, a join, a delete or a paste across a paragraph
+  boundary), so review takes them as one change. Any other caller of `writeProseMirror` on a draft
+  that splits or joins blocks passes `pieces` too.
 - Every block the editor hands the binding has a unique `id`. The app's block-id fixer gives a
   split or a paste its ids inside the same transaction; the binding throws on a missing or
   duplicate id rather than inventing one. The one id the binding changes is an empty container's
