@@ -12,7 +12,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { asLiveAgentEditCore } from "./agent-edit-cores.js";
+import type { AgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
@@ -59,19 +59,17 @@ export function createAgentEditRuntime<Tx>(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const liveCore = asLiveAgentEditCore(
-    createLoroEditCore({
-      rooms: input.loro.rooms,
-      ordinals: input.loro.ordinals,
-      schema,
-      codec,
-      codecFor,
-      links: createScopedDocumentLinks({ scopes: input.links, registrar: input.aheadRefs }),
-      documentEdits: input.loro.documentEdits,
-      authorOfTurn: input.loro.authorOfTurn,
-      ...input.observability,
-    }),
-  );
+  const core: AgentEditCore = createLoroEditCore({
+    rooms: input.loro.rooms,
+    ordinals: input.loro.ordinals,
+    schema,
+    codec,
+    codecFor,
+    links: createScopedDocumentLinks({ scopes: input.links, registrar: input.aheadRefs }),
+    documentEdits: input.loro.documentEdits,
+    authorOfTurn: input.loro.authorOfTurn,
+    ...input.observability,
+  });
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       schema,
@@ -109,7 +107,7 @@ export function createAgentEditRuntime<Tx>(input: {
     codecFor,
     linkBinder,
     importBinder,
-    liveCore,
+    core,
     markdownDocuments,
     markupCodec,
   };

@@ -78,6 +78,7 @@ import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
+import { currentDestination } from "./domain/agent-destination.js";
 import { createAgentEditRouter } from "./domain/agent-edit-router.js";
 import { createAgentEditRuntime } from "./domain/agent-edit-runtime.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
@@ -262,19 +263,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
-  const agentEditRouter = createAgentEditRouter({ liveCore: runtime.liveCore });
+  const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    liveCore: runtime.liveCore,
+    core: runtime.core,
     fileAccess: deps.fileAccess,
-    // The seam a Live write enters before it reads, so the room it plans on is the one it
+    // The seam a write enters before it reads, so the room it plans on is the one it
     // commits to: its grants, the Works, then the document's lock.
-    enterLiveSeam: async (documentId) => {
+    enterSeam: async (documentId) => {
       await requireAgentWriteGrant([documentId]);
       await lockSeamWorks(deps.db, []);
+      // A fork's save holds its draft's row; taken here, it comes before the document's lock.
+      const destination = currentDestination();
+      if (destination.kind === "draft") await workDrafts.share(destination.draftId);
       await lockDocumentMutation(currentDrizzleDb(deps.db), documentId);
     },
   });

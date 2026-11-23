@@ -1,11 +1,10 @@
 # Draft with the model
 
 A writer asks the model for a chapter, watches it work, then reviews what it drafted and applies it
-or throws it away. Phase 1 of the move to Loro has no text drafts: every model write lands in the
-live document whatever the chat's mode chip says, and the writer can undo it. A Work's draft holds
-its tree changes only (new documents, renames, moves, deletes), which the writer applies or discards.
-Text drafts come back in phase 2 as fork rooms; until then "Review a draft in the document" and
-the text half of "Apply or discard" describe phase 2.
+or throws it away. In Draft mode the model's writes land in the chat's draft: its tree changes (new
+documents, renames, moves, deletes) and, per document, a fork room of the text. Phase 2 of the move to
+Loro is bringing the text half back: the server writes forks now, and the press's text half and the
+browser's review land with the rest of phase 2.
 
 ## Pick the Work
 

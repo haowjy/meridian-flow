@@ -306,7 +306,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   const projections = { refresh: runDocumentWriteHook };
   // Scoped as composition scopes it, so a real link scope sees every model call.
-  const agentEditRouter = createAgentEditRouter({ liveCore: runtime.liveCore });
+  const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
   const modelEvidence = createDrizzleModelEvidence(db);
@@ -315,9 +315,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
-          liveCore: runtime.liveCore,
+          core: runtime.core,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-          enterLiveSeam: async (documentId) => {
+          enterSeam: async (documentId) => {
             await lockSeamWorks(db, []);
             await lockDocumentMutation(currentDrizzleDb(db), documentId);
           },

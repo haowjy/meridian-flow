@@ -1,9 +1,10 @@
 /**
  * The server's `DocumentLinksPort` for agent-edit's core: the core names a document and its write
- * context, and this turns them into a holder in Live (drafts are off) over the operation's
- * document-link scope (contract §4.3–4.4).
+ * context, and this turns them into a holder in the context's view (Live, or the Draft chat's
+ * draft, whose tree its links spell in) over the operation's document-link scope (contract
+ * §4.3–4.4).
  */
-import type { AheadMint, DocumentLinksPort } from "@meridian/agent-edit/integration";
+import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { parseLinkRef } from "@meridian/contracts";
 import { cutRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
@@ -14,18 +15,21 @@ export function createScopedDocumentLinks(input: {
   registrar: AheadRefRegistrar;
 }): DocumentLinksPort {
   const { scopes } = input;
-  const holder = (documentId: string) => ({ documentId, view: { kind: "live" } as const });
+  const holder = (documentId: string, context?: WriteContext) => ({
+    documentId,
+    view: context?.linkView ?? ({ kind: "live" } as const),
+  });
   return {
     prepare: (request) =>
       scopes.prepare({
-        holders: [holder(request.documentId)],
+        holders: [holder(request.documentId, request.context)],
         written: request.written,
         ...(request.context?.uploadsChat ? { uploadsChat: request.context.uploadsChat } : {}),
         stored: request.stored,
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
         addresses: request.addresses,
       }),
-    scopeFor: (documentId) => scopes.holder(holder(documentId)),
+    scopeFor: (documentId, context) => scopes.holder(holder(documentId, context)),
     async registerAhead(mints) {
       if (mints.length === 0) return;
       const registrations = aheadRegistrations(mints);

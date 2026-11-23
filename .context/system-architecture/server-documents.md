@@ -33,7 +33,7 @@ flowchart LR
 
 Live documents: Loro rooms, their history, receipts and the inverses Undo applies, and the press of a Work's tree draft.
 
-Holds each document's Live text in a Loro room stored as `document_snapshots` rows (`DocumentRooms`), serves it on `/ws/loro` with presence, and cuts old history once a room's rows pass about 5 MB. Every read, write, seed, copy and derivation goes through the room. A model's write commits its batch and receipt in its command's transaction; a tab's batch is acked at once and stored within seconds, and after a server restart the tab resends what the room lost. Phase 1 lands every agent write live.
+Holds each document's Live text in a Loro room stored as `document_snapshots` rows (`DocumentRooms`), serves it on `/ws/loro` with presence, and cuts old history once a room's rows pass about 5 MB. Every read, write, seed, copy and derivation goes through the room. A model's write commits its batch and receipt in its command's transaction; a tab's batch is acked at once and stored within seconds, and after a server restart the tab resends what the room lost. A Draft chat's writes land in its draft's fork room of the document (`fork:<draft>:<document>`).
 
 - Kind: domain
 - Paths: `apps/server/server/domains/collab`

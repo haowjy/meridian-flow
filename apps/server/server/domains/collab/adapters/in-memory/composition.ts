@@ -82,7 +82,7 @@ export function createInMemoryCollabDomain(
     store: createInMemoryDraftStore(namedDraft),
     boundary: createInMemoryDraftWriteBoundary(),
   });
-  const agentEdit = createAgentEditRouter({ liveCore: runtime.liveCore });
+  const agentEdit = createAgentEditRouter({ core: runtime.core });
   const projections = { refresh: runDocumentWriteHook };
   const lineage = createTurnLiveLineageReadModel({
     store: IN_MEMORY_TURN_LIVE_LINEAGE,

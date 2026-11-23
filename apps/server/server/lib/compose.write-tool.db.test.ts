@@ -1,12 +1,14 @@
 /**
- * Production-composed model `write` tool in a Work's chat: copies of a section, of a text file's
- * properties and of a binary file, and a write that changes nothing, against real repositories.
+ * Production-composed model `write` tool in a Work's chat: a Draft chat's writes land in its draft
+ * (the chapter's fork, a drafted create) while scratch stays live; copies of a section, of a text
+ * file's properties and of a binary file; and a write that changes nothing, against real
+ * repositories.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - no-op write suppression
- * - phase 1 of the Loro move is Live-only: a draft-mode chat's writes land Live
  */
 
+import { splitHashline } from "@meridian/agent-edit";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -110,6 +112,65 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const text = (result: { content: ToolContentPart[] }) => toolContentText(result.content);
 
+    it("drafts kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
+      const script = await startWithChapter("Writer live content.\n\nWriter aside.");
+      const first = await script.begin();
+      let call = first.call;
+
+      const liveBefore = await call("read", { path: CHAPTER, version: "live" });
+      const asideLine = text(liveBefore)
+        .split("\n")
+        .find((line: string) => line.endsWith("|Writer aside."));
+      const liveHash = splitHashline(asideLine ?? "")?.hash;
+      expect(liveHash).toBeTruthy();
+      await call("read", { path: CHAPTER });
+      await call("write", { command: "remove", path: CHAPTER, in: liveHash });
+      const drafted = await call("write", {
+        command: "replace",
+        path: CHAPTER,
+        find: "Writer live content.",
+        content: "Model draft content.",
+      });
+      expect(drafted.result).toMatchObject({ destination: "draft" });
+      const lore = await call("write", {
+        command: "create",
+        path: "kb://lore",
+        content: "Drafted lore needle.",
+      });
+      expect(lore.result).toMatchObject({ destination: "draft" });
+      // Scratch is live in every Work.
+      const notes = await call("write", {
+        command: "create",
+        path: "scratch://notes",
+        content: "Scratch needle notes.",
+      });
+      expect(notes.result).toMatchObject({ destination: "live" });
+
+      call = (await script.begin()).call;
+      const draftRead = await call("read", { path: CHAPTER });
+      expect(draftRead.result).toMatchObject({ read: { version: "draft" } });
+      expect(toolContentText(draftRead.content)).toContain("Model draft content.");
+      const liveRead = await call("read", { path: CHAPTER, version: "live" });
+      expect(toolContentText(liveRead.content)).toContain("Writer live content.");
+      expect(toolContentText(liveRead.content)).not.toContain("Model draft content.");
+
+      // The last read was the draft, so the stale live hash reaches the resolver.
+      await call("read", { path: CHAPTER });
+      const stale = await call("write", {
+        command: "replace",
+        path: CHAPTER,
+        in: liveHash,
+        content: "Never lands.",
+      });
+      expect(stale.isError).toBe(true);
+
+      const loreHits = await call("grep", { pattern: "lore needle" });
+      expect(text(loreHits)).toContain("kb://lore");
+      const listedLive = await call("ls", { path: "kb://", version: "live" });
+      expect(text(listedLive)).toMatch(/^kb:\/\//);
+      expect(text(listedLive)).not.toContain("lore");
+    });
+
     it("copies the section a #fragment names", async () => {
       const script = await startWithChapter(
         "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\n# Aftermath\n\nQuiet.",
@@ -161,11 +222,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       expect(copied.isError).toBeFalsy();
+      // A Draft chat's copy is a drafted create.
       const [copy] = await db
         .select({ metadata: schema.documents.metadata })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "gate-copy"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -222,12 +284,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "kb://scan-copy.pdf",
       });
 
-      expect(copied.result).toMatchObject({ status: "success", destination: "live" });
+      expect(copied.result).toMatchObject({ status: "success", destination: "draft" });
       const [copy] = await db
         .select({ storageUrl: schema.documents.storageUrl })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "scan-copy.pdf"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
       const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
       const stored = await runtime.ports.objectStore.get(key);

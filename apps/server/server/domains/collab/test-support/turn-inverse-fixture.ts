@@ -31,7 +31,7 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { modelResponseId: responseId },
-    // Drafts are off until phase 2: a chat reads and writes Live.
+    // A Live chat: the card's Undo takes back Live writes.
     grant: testFileGrant({ kind: "live" }, ALPHA_ID),
   };
   const target = {

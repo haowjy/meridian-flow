@@ -7,6 +7,7 @@ import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian
 import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
+  DocumentRoom,
   ReversalOutcome,
   TurnDraftState,
   TurnReceiptChip,
@@ -71,7 +72,9 @@ export type TurnInverseQuery = {
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
-  /** Live's blocks as the capture read them, in `inverseSchema`. */
+  /** The room the inverse reads and commits into: Live, or the Draft chat's fork. */
+  room: DocumentRoom;
+  /** The room's blocks as the capture read them, in `inverseSchema`. */
   live: readonly PMNode[];
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;

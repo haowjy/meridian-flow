@@ -597,7 +597,7 @@ CREATE TABLE "document_edit_parts" (
 	"before" "bytea",
 	"after" "bytea",
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
-	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' = 'live')
+	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' = 'live' OR ("document_edit_parts"."origin"->>'kind' = 'fork' AND "document_edit_parts"."origin"->>'draftId' IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "document_edits" (
