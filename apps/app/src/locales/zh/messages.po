@@ -402,6 +402,7 @@ msgstr ""
 msgid "{files, plural, one {{received} of # file} other {{received} of # files}}"
 msgstr ""
 
+#: src/features/chat/ChatDraftControl.tsx
 #: src/features/draft-review/work-draft-menu.tsx
 #: src/features/import/import-presentation.ts
 msgid "{files, plural, one {# file} other {# files}}"
@@ -525,7 +526,6 @@ msgid "{name} connected"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-#: src/features/draft-review/work-draft-menu.tsx
 msgid "{name} deleted."
 msgstr ""
 
@@ -2636,6 +2636,14 @@ msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
+msgstr ""
+
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Draft this chat writes into"
+msgstr ""
+
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Draft this chat writes into: {name}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -6100,7 +6108,6 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/connections/ConnectionRow.tsx
 #: src/features/draft-review/CommandNotice.tsx
-#: src/features/draft-review/work-draft-menu.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6520,6 +6527,10 @@ msgstr ""
 
 #: src/features/project/shell/MainModeSwitch.tsx
 msgid "Write or chat"
+msgstr ""
+
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Writes into"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
