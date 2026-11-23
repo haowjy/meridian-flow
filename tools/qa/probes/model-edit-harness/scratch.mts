@@ -127,8 +127,12 @@ export async function openHarness(url: string) {
         insert into project_handle_counters(project_id,kind,n) values (${ids.project},'work',1)
         on conflict (project_id,kind) do update set n=project_handle_counters.n+1 returning n`;
       const handle = `w${counter.n}`;
-      await raw`insert into drafts(id,project_id,work_id,is_default,created_by) values (${draftId},${ids.project},${workId},true,${ids.user})`;
-      await raw`insert into works(id,project_id,created_by_user_id,name,handle) values (${workId},${ids.project},${ids.user},${label},${handle})`;
+      // One transaction: the draft's Work key is checked at commit, and a Work inserted with no
+      // default draft would mint its own.
+      await raw.begin(async (tx) => {
+        await tx`insert into drafts(id,project_id,work_id,is_default,created_by) values (${draftId},${ids.project},${workId},true,${ids.user})`;
+        await tx`insert into works(id,project_id,created_by_user_id,name,handle) values (${workId},${ids.project},${ids.user},${label},${handle})`;
+      });
       await raw`insert into threads(id,root_thread_id,project_id,created_by_user_id,title,kind,ai_write_mode,draft_id) values (${threadId},${threadId},${ids.project},${ids.user},${label},'primary','draft',${draftId})`;
       await raw`insert into turns(id,thread_id,position,role,origin,status) values (${turnId},${threadId},1,'assistant','assistant','complete')`;
       await raw`insert into thread_works(thread_id,work_id,project_id,is_primary) values (${threadId},${workId},${ids.project},true)`;
