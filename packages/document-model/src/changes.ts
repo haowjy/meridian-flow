@@ -11,10 +11,12 @@ import {
   type NodeRule,
   overrideMap,
   pieceEnds,
+  SETTLED_MAP,
   STRUCTURE_KEY,
   STRUCTURE_MAPS,
   type StructureMap,
   sameValue,
+  settledKey,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
 import {
@@ -353,7 +355,7 @@ export interface ApplyOptions extends PressOptions {
   liveVersion: RoomVersion;
 }
 
-/** The overrides the fork holds for block `id`, by map: what Apply copies and Discard deletes. */
+/** The unsatisfied raw overrides the fork holds for block `id`, by map: what a press settles. */
 function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][] {
   const out: [StructureMap, string][] = [];
   for (const name of BLOCK_MAPS)
@@ -372,6 +374,20 @@ function deletePieces(draft: RoomDocs, view: StructureView, blocks: readonly Blo
     inMap(draft.structure, overrideMap("pieces"), (map) => {
       for (const key of keys) map.delete(key);
     });
+}
+
+/** Mask the raw overrides a press read; Undo deletes these records and reveals them again. */
+function settleOverrides(
+  draft: RoomDocs,
+  view: StructureView,
+  entries: readonly (readonly [StructureMap, string])[],
+): void {
+  inMap(draft.structure, SETTLED_MAP, (settled) => {
+    for (const [name, key] of entries) {
+      const value = view.rawOverride(name, key);
+      if (value !== undefined) settled.set(settledKey(name, key), value as never);
+    }
+  });
 }
 
 function forwarded(draft: RoomDocs, into: DocChange[]): void {
@@ -420,7 +436,9 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
           // A `pieces` record goes with the change that holds one of its blocks.
           const member = name.endsWith("pieces")
             ? pieceEnds(key).find((id) => index.has(id))
-            : memberOf(name, key);
+            : name === SETTLED_MAP
+              ? settledMember(key)
+              : memberOf(name, key);
           const { values } = edits[index.get(member as string) as number];
           const into = values.get(name) ?? new Map();
           values.set(name, into.set(key, value));
@@ -440,9 +458,14 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
   }));
 }
 
+function settledMember(key: string): string {
+  const slash = key.indexOf("/");
+  return memberOf(key.slice(0, slash), key.slice(slash + 1));
+}
+
 /**
  * Apply (design §2, "Apply is an import"): forward, then for each chosen change set in Live the
- * value of each override the fork holds and delete the override in the fork, have Live import the
+ * value of each override the fork holds and mask that override with a settled record, have Live import the
  * fork's text ops for the blocks the fork wrote (`importBatch`; a block the draft created becomes
  * Live's own doc), and copy the comment bodies the change carries. A block the draft removed is
  * removed in Live by a new record (`ApplyOptions.liveVersion`), never the fork's. A selection whose
@@ -466,6 +489,7 @@ export function applyBlocks(
 
   const forkView = new StructureView(draft);
   const liveView = new StructureView(live);
+  const settled = blocks.flatMap((id) => overridesOf(forkView, id));
   const liveBefore = new Map<DocKey, Frontiers>();
   // Live's version of each doc the import below writes, before it: empty for a doc Live lacks.
   const held = new Map<DocKey, DocVersion>();
@@ -525,6 +549,8 @@ export function applyBlocks(
         writer.set(name, key, value);
         continue;
       }
+      // Live already removed this block: applying the fork's removal only settles its override.
+      if (removalOf(liveView.baseValue("order", id))) continue;
       const seen = new Map<DocKey, DocVersion>();
       for (const under of new Set([...forkView.textKeysUnder(id), ...liveView.textKeysUnder(id)]))
         if (draft.textOf(under)) seen.set(under, seenOf(under));
@@ -539,12 +565,13 @@ export function applyBlocks(
   if (liveCommit) result.live.push(liveCommit);
 
   const forkStructure = draft.structure.frontiers();
-  for (const id of blocks)
-    for (const [name, key] of overridesOf(forkView, id))
-      inMap(draft.structure, overrideMap(name), (map) => map.delete(key));
+  settleOverrides(draft, forkView, settled);
   deletePieces(draft, forkView, blocks);
-  for (const comment of comments)
-    inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  settleOverrides(
+    draft,
+    forkView,
+    comments.map((comment) => ["comments", comment] as const),
+  );
   const forkCommit = commitStructure(draft, forkStructure, { message: options.message });
   if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
@@ -557,9 +584,8 @@ export function applyBlocks(
 
 /**
  * Discard (design §2, "Discard is an edit in the one fork"): forward, then for each chosen change
- * delete the fork's overrides of its blocks (a block Live lacks gets `d.order` null, since it has
- * no Live value to show), have each text doc the fork wrote take Live's content as its own edit,
- * and delete the comment bodies it carries. Live is not touched; nothing is unlinked.
+ * settle the fork's overrides of its blocks, have each text doc the fork wrote take Live's content
+ * as its own edit, and settle the comment bodies it carries. Live is not touched; nothing is unlinked.
  */
 export function discardBlocks(
   draft: RoomDocs,
@@ -576,6 +602,7 @@ export function discardBlocks(
   if (blocks.length + comments.length === 0) return result;
 
   const view = new StructureView(draft);
+  const settled = blocks.flatMap((id) => overridesOf(view, id));
   const texts = new Map<DocKey, TextSpan>();
   for (const id of blocks) {
     const text = draft.texts.get(id);
@@ -590,15 +617,13 @@ export function discardBlocks(
     texts.set(id, spanOf(change));
   }
   const structure = draft.structure.frontiers();
-  for (const id of blocks) {
-    for (const [name, key] of overridesOf(view, id))
-      inMap(draft.structure, overrideMap(name), (map) => map.delete(key));
-    if (view.baseValue("order", id) === undefined)
-      inMap(draft.structure, overrideMap("order"), (map) => map.set(id, null as never));
-  }
+  settleOverrides(draft, view, settled);
   deletePieces(draft, view, blocks);
-  for (const comment of comments)
-    inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  settleOverrides(
+    draft,
+    view,
+    comments.map((comment) => ["comments", comment] as const),
+  );
   const commit = commitStructure(draft, structure, { message: options.message });
   if (commit) result.fork.push(commit);
   result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);

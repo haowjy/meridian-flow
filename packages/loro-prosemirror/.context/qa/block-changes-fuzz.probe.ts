@@ -342,10 +342,15 @@ export function runScript(seed, { verbose = false } = {}) {
       if (l !== f || f !== t) say(`     ${id.slice(0, 4)} L ${l}\n          F ${f}${t !== f ? `\n          T ${t}` : ""}`);
     }
   };
-  const overrides = () =>
-    fork
-      ? STRUCTURE_MAPS.flatMap((n) => inMap(fork.structure, overrideMap(n), (m) => Object.entries(m.toJSON())).map(([k, v]) => `${n}:${k.slice(0, 4)}${k.includes("/") ? k.slice(k.indexOf("/")) : ""}=${JSON.stringify(v)?.slice(0, 12)}`)).join(" ")
-      : "";
+  const overrides = () => {
+    if (!fork) return "";
+    const view = new StructureView(fork);
+    return STRUCTURE_MAPS.flatMap((name) =>
+      view.overrideKeys(name).map((key) =>
+        `${name}:${key.slice(0, 4)}${key.includes("/") ? key.slice(key.indexOf("/")) : ""}=${JSON.stringify(view.override(name, key))?.slice(0, 12)}`,
+      ),
+    ).join(" ");
+  };
   const note = (s) => {
     if (!verbose) return;
     say(s);

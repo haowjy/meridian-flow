@@ -14,6 +14,10 @@ export const STRUCTURE_MAPS = ["parent", "order", "node", "attrs", "comments", "
 export type StructureMap = (typeof STRUCTURE_MAPS)[number];
 export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 
+/** The fork's press records: a settled key masks the equal raw override until Undo deletes it. */
+export const SETTLED_MAP = "d.settled" as const;
+export const settledKey = (name: StructureMap, key: string) => `${name}/${key}`;
+
 /**
  * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
  * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A

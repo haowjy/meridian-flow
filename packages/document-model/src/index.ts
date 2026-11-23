@@ -79,6 +79,7 @@ export {
   pieceEnds,
   pieceKey,
   SENTINEL,
+  SETTLED_MAP,
   type ShapeBlock,
   type ShapeSchema,
   STRUCTURE_KEY,
@@ -86,6 +87,7 @@ export {
   type StructureMap,
   type StyleExpand,
   sameValue,
+  settledKey,
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";

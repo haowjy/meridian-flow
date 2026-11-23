@@ -62,39 +62,8 @@ export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | n
  * the parents are indexed once, for the first container asked about.
  */
 function keysUnder(docs: RoomDocs): (id: BlockId) => BlockId[] {
-  const values = structureValues(docs);
-  let below: Map<BlockId, BlockId[]> | undefined;
-  const index = () => {
-    const parents: Record<BlockId, unknown> = inMap(docs.structure, "parent", (map) =>
-      map.toJSON(),
-    );
-    if (docs.draft)
-      Object.assign(
-        parents,
-        inMap(docs.structure, overrideMap("parent"), (map) => map.toJSON()),
-      );
-    const out = new Map<BlockId, BlockId[]>();
-    for (const [child, parent] of Object.entries(parents)) {
-      if (typeof parent !== "string") continue;
-      const list = out.get(parent);
-      if (list) list.push(child);
-      else out.set(parent, [child]);
-    }
-    return out;
-  };
-  return (id) => {
-    const out: BlockId[] = [];
-    const walk = (at: BlockId) => {
-      if (out.includes(at)) return;
-      out.push(at);
-      const node = values.value("node", at);
-      if (typeof node === "string" && docs.shape.node(node)?.textblock) return;
-      below ??= index();
-      for (const child of below.get(at) ?? []) walk(child);
-    };
-    walk(id);
-    return out;
-  };
+  const view = new StructureView(docs);
+  return (id) => view.textKeysUnder(id);
 }
 
 /**

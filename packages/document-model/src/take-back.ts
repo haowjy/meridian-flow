@@ -1,7 +1,14 @@
 import type { Change, Delta, Frontiers, LoroDoc, LoroText, PeerID } from "loro-crdt";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
-import { type BlockId, type DocKey, overrideMap, type StructureMap, sameValue } from "./shape.js";
+import {
+  type BlockId,
+  type DocKey,
+  overrideMap,
+  SETTLED_MAP,
+  type StructureMap,
+  sameValue,
+} from "./shape.js";
 import { isOrderKey, removalOf, StructureView, showRule } from "./structure.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
@@ -95,6 +102,10 @@ export function valuesOf(
 
 /** In a draft, Live's value an override `name[key]` that holds `left` reads through, if absent. */
 function baseThrough(doc: LoroDoc, name: string, key: string, left: unknown): unknown {
+  if (name === SETTLED_MAP) {
+    const slash = key.indexOf("/");
+    return inMap(doc, key.slice(0, slash), (map) => map.get(key.slice(slash + 1)));
+  }
   if (left !== undefined || !name.startsWith("d.")) return undefined;
   return inMap(doc, baseName(name), (map) => map.get(key));
 }
@@ -149,10 +160,19 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
         if (sameValue(before, left)) continue;
         if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
         // An absent override reads Live's value: Live writing another one since writes over it.
-        if (map.get(key) === undefined && name.startsWith("d.")) {
-          const through = inMap(docs.structure, baseName(name), (live) =>
-            sameValue(live.get(key), base) ? null : live.getLastEditor(key),
-          );
+        if (name === SETTLED_MAP || (map.get(key) === undefined && name.startsWith("d."))) {
+          const through =
+            name === SETTLED_MAP
+              ? (() => {
+                  const slash = key.indexOf("/");
+                  const target = key.slice(slash + 1);
+                  return inMap(docs.structure, key.slice(0, slash), (live) =>
+                    sameValue(live.get(target), base) ? null : live.getLastEditor(target),
+                  );
+                })()
+              : inMap(docs.structure, baseName(name), (live) =>
+                  sameValue(live.get(key), base) ? null : live.getLastEditor(key),
+                );
           if (through && through !== peer) return `${baseName(name)}[${key}] was written over`;
         }
       }
@@ -315,6 +335,16 @@ function screenAfter(
   const puts = new Map<string, unknown>();
   const touched = new Set<BlockId>();
   for (const { name, key, value, at } of planOf(docs, view, values)) {
+    if (name === SETTLED_MAP) {
+      const slash = key.indexOf("/");
+      const targetName = key.slice(0, slash) as StructureMap;
+      const targetKey = key.slice(slash + 1);
+      if (value === undefined) {
+        touched.add(targetKey);
+        puts.set(`${targetName}\u0000${targetKey}`, view.rawOverride(targetName, targetKey));
+      }
+      continue;
+    }
     const map = baseName(name);
     if (map !== "order" && map !== "parent" && map !== "node") continue;
     touched.add(key);

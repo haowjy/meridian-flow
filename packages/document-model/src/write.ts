@@ -20,10 +20,12 @@ import {
   type InlineItem,
   overrideMap,
   pieceKey,
+  SETTLED_MAP,
   type ShapeBlock,
   STRUCTURE_KEY,
   type StructureMap,
   sameValue,
+  settledKey,
   storedAttrs,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
@@ -89,7 +91,8 @@ export interface WriteOptions {
 /**
  * Writes structure values the way every writer must (design §1): Live's copy writes Live's maps;
  * a draft's fork writes only its `d.*` overrides, and deletes an override whose value equals Live's
- * instead of writing it, so a matching override never hides Live's later edits of the key.
+ * instead of writing it, so a matching override never hides Live's later edits of the key. Any
+ * writer of a draft override clears the press record that masks that key in the same commit.
  * Comparisons read the `StructureView` taken before the write.
  */
 export class StructureWriter {
@@ -105,7 +108,9 @@ export class StructureWriter {
       if (!sameValue(base, value)) inMap(structure, name, (map) => map.set(key, value as never));
       return;
     }
-    const override = this.view.override(name, key);
+    if (inMap(structure, SETTLED_MAP, (map) => map.get(settledKey(name, key))) !== undefined)
+      inMap(structure, SETTLED_MAP, (map) => map.delete(settledKey(name, key)));
+    const override = this.view.rawOverride(name, key);
     const baseRead = name === "attrs" ? (base ?? null) : base;
     if (sameValue(baseRead, value)) {
       if (override !== undefined) inMap(structure, overrideMap(name), (map) => map.delete(key));
@@ -185,14 +190,17 @@ export class StructureWriter {
         const id = [...left].find((candidate) => sameOrderAsBase(now, candidate));
         if (id === undefined) break;
         orders.delete(id);
+        inMap(structure, SETTLED_MAP, (settled) => settled.delete(settledKey("order", id)));
         left.delete(id);
       }
     });
     const after = new StructureView(this.docs, this.view.kept);
     inMap(structure, overrideMap("comments"), (comments) => {
       for (const key of after.overrideKeys("comments"))
-        if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
+        if (sameValue(after.baseValue("comments", key), after.override("comments", key))) {
           comments.delete(key);
+          inMap(structure, SETTLED_MAP, (settled) => settled.delete(settledKey("comments", key)));
+        }
     });
   }
 }
