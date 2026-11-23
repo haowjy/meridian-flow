@@ -465,6 +465,7 @@ export interface StandingOps {
   peer: PeerID;
   from: number;
   to: number;
+  lamport: number;
   undo?: TakeBackNote;
   note: ReturnType<typeof readCommitMessage>;
 }
@@ -496,14 +497,11 @@ export function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | n
   changes.sort((a, b) => b.lamport - a.lamport || (a.peer < b.peer ? 1 : -1));
   const cancelled = new Map<string, [number, number][]>();
   const out: StandingOps[] = [];
-  for (const { peer, from, to, undo } of changes) {
+  for (const { peer, from, to, lamport, undo, note } of changes) {
     let stood = false;
     const piece = (start: number, end: number) => {
       if (start >= end) return;
-      const note =
-        changes.find((change) => change.peer === peer && change.from <= start && change.to >= end)
-          ?.note ?? {};
-      out.push({ peer, from: start, to: end, note, ...(undo ? { undo } : {}) });
+      out.push({ peer, from: start, to: end, lamport, note, ...(undo ? { undo } : {}) });
       stood = true;
     };
     let at = from;

@@ -42,7 +42,7 @@ export interface CommitNote {
 
 /** The message a commit carrying `note` is committed under; none for an empty note. */
 export function commitMessage(note: CommitNote): string | undefined {
-  if (!note.by && !note.undo) return undefined;
+  if (!note.by && !note.undo && !note.copy && !note.clash) return undefined;
   return JSON.stringify(note);
 }
 

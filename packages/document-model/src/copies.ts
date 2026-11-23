@@ -131,10 +131,12 @@ export function oneCopy(
   const when = new Map<Id, number>();
   const links = standsFor(doc, when);
   if (links.size === 0) return { change: null, removed: 0 };
-  const deleted = new Set<Id>();
+  // A concurrent delete cannot have followed a copy it had not seen. It remains a delete of the
+  // original character, but it must not erase the Undo copy that restores that character.
+  const deleted = new Map<Id, number>();
   for (const piece of standingSince(doc, new Map()) ?? [])
     for (const op of opsIn(doc, piece.peer, piece.from, piece.to))
-      for (const id of op.deleted ?? []) deleted.add(id);
+      for (const id of op.deleted ?? []) deleted.set(id, piece.lamport + op.from - piece.from);
   const shown = idsAt(doc, doc.frontiers());
   const showing = new Set(shown);
   const go = new Set<Id>();
@@ -142,7 +144,7 @@ export function oneCopy(
   for (const id of shown) {
     const chain = chainOf(links, id);
     if (chain.length === 0) continue;
-    if (chain.some((was) => deleted.has(was))) {
+    if (chain.some((was) => (deleted.get(was) ?? -1) > (when.get(id) ?? -1))) {
       go.add(id);
       continue;
     }

@@ -269,7 +269,7 @@ export function runScript(seed, { verbose = false } = {}) {
     restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
     chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0, wholeChecks: 0,
     tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsGained: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
-    resetCopyObserved: 0, kinds: {},
+    resetCopyObserved: 0, clashes: 0, putBack: 0, liveRewrites: 0, kinds: {},
   };
   const outcomes = [];
   const track = (d) => (all.push(d), d);
@@ -291,6 +291,7 @@ export function runScript(seed, { verbose = false } = {}) {
   };
   const liveTokenBlock = new Map();
   const liveTokenIds = new Map();
+  const liveTokenClash = new Set();
   const draftDeletedChars = new Set();
   const splitMoved = new Set();
   const resetRestored = new Map();
@@ -396,7 +397,11 @@ export function runScript(seed, { verbose = false } = {}) {
   }
   /** A press's changes as `press_changes` stores them: JSON. */
   const stored = (pressed) => JSON.parse(JSON.stringify(pressed));
-  const fwdLive = () => fork.forward();
+  const fwdLive = () => {
+    const result = fork.forward();
+    stats.putBack += result.answers.length;
+    return result;
+  };
   function syncLive() {
     sync(liveTab, live);
     if (fork) fwdLive();
@@ -509,6 +514,11 @@ export function runScript(seed, { verbose = false } = {}) {
     if (d === liveTab) {
       liveWrites++;
       const bs = tokenBlocks(d);
+      const liveDeleted = new Set();
+      for (const [id, beforeIds] of oldIds) {
+        const afterIds = new Set(charIds(d.textOf(id)));
+        for (const charId of beforeIds) if (charId && !afterIds.has(charId)) liveDeleted.add(charId);
+      }
       for (const token of after)
         if (!before.includes(token) && token.startsWith("l")) {
           const id = bs.get(token);
@@ -516,6 +526,10 @@ export function runScript(seed, { verbose = false } = {}) {
           const pos = textOfDoc(td).indexOf(token);
           liveTokenBlock.set(token, id);
           if (pos >= 0) liveTokenIds.set(token, charIds(td).slice(pos, pos + token.length));
+          if ([...liveDeleted].some((id) => draftDeletedChars.has(id))) {
+            liveTokenClash.add(token);
+            stats.clashes++;
+          }
         }
     } else {
       for (const [id, beforeIds] of oldIds) {
@@ -1335,6 +1349,43 @@ export function runScript(seed, { verbose = false } = {}) {
     check(pendingIds().includes(b), "pieces", () => `Apply of ${a} did not leave ${b} pending`);
   }
 
+  /** Live replaces a phrase the draft replaced: narrower, equal and wider, once in a commit and once by key. */
+  function liveRewrite() {
+    const paragraphs = cleanParagraphs();
+    const candidate = paragraphs.find((p) => p && [...p[1].textContent.matchAll(/\S+/g)].length >= 3);
+    if (!candidate) return;
+    const [id, node] = candidate;
+    const words = [...node.textContent.matchAll(/\S+/g)];
+    const draftCount = 1 + g.int(2);
+    const liveCount = draftCount === 1 ? (g.chance(0.5) ? 1 : 2) : g.pick([1, 2, 3]);
+    const at = 1;
+    const draftText = g.tok("f");
+    const liveText = g.tok("l");
+    const span = (count) => ({ from: words[at].index, to: words[at + count - 1].index + words[at + count - 1][0].length });
+    const draftSpan = span(draftCount);
+    if (!userEdit(tab, "f", { edit: { kind: "liveRewriteDraft", write: typeOver(id, shape.node("paragraph"), [{ ...draftSpan, text: draftText }]) } })) return;
+    syncTab();
+    const liveSpan = span(Math.min(liveCount, words.length - at));
+    const keyed = g.chance(0.5);
+    if (!keyed) {
+      userEdit(liveTab, "l", { edit: { kind: "liveRewrite", write: typeOver(id, shape.node("paragraph"), [{ ...liveSpan, text: liveText }]) } });
+    } else {
+      userEdit(liveTab, "l", { edit: { kind: "liveRewrite", write: typeOver(id, shape.node("paragraph"), [{ ...liveSpan, text: liveText[0] }]) } });
+      for (let i = 1; i < liveText.length; i++)
+        userEdit(liveTab, "l", { edit: { kind: "liveRewrite", write: typeOver(id, shape.node("paragraph"), [{ from: liveSpan.from + i, to: liveSpan.from + i, text: liveText[i] }]) } });
+    }
+    const outside = g.tok("l");
+    userEdit(liveTab, "l", { edit: { kind: "liveTyping", write: typeOver(id, shape.node("paragraph"), [{ from: textOfDoc(liveTab.textOf(id)).length, to: textOfDoc(liveTab.textOf(id)).length, text: ` ${outside}` }]) } });
+    syncLive();
+    const draftRead = textOfDoc(fork.textOf(id));
+    check(draftRead.includes(draftText), "live-rewrite", () => `draft lost its words: ${draftRead}`);
+    check(!draftRead.includes(liveText), "live-rewrite", () => `Live replacement leaked into draft: ${draftRead}`);
+    stats.liveRewrites++;
+    command(fork, (cmd) => applyBlocks(cmd, [id], { liveVersion: live.version() }));
+    syncTab();
+    syncLive();
+  }
+
   try {
     writeProseMirror(live, withIds(g.initialDoc(), g.rng), { random: g.rng });
     if (g.chance(0.6)) {
@@ -1417,6 +1468,7 @@ export function runScript(seed, { verbose = false } = {}) {
         if (g.chance(0.5)) writerEdit();
       }
     }
+    liveRewrite();
     // After the seeded steps, so a seed's script up to here is what it was before these cases.
     halves();
     neighbours();
@@ -1455,6 +1507,7 @@ export function runScript(seed, { verbose = false } = {}) {
       check(touched.has(id) || copied.has(id) || fv.override("comments", id) !== undefined, "spurious-pending", () => `untouched block ${id} pending: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
     for (const [tok, id] of liveTokenBlock) {
       if (deleted.has(tok) || !lTokens.has(tok) || !fv.shown.has(id)) continue;
+      if (liveTokenClash.has(tok)) continue;
       const ids = liveTokenIds.get(tok) ?? [];
       const present = new Set(charIds(fork.textOf(id)));
       const missing = ids.filter((c) => c && !present.has(c));

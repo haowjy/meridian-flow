@@ -49,8 +49,8 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
   record) and its ancestors show. A removed block comes back only by a write of its key:
   `restore`, an Undo's `putBackValues`, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
-  import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
-  holder sends and saves it like a local write (`encodeChanges`). They are the only ways ops enter
+  import, before any reader: they return every answer the copy wrote (`Imported.answers`), and its
+  holder sends and saves them like a local write (`encodeChanges`). They are the only ways ops enter
   a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
   every Undo history. Never move the record into a second map: an Undo can then delete it while
   another peer's removal stands.
