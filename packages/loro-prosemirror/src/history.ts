@@ -3,10 +3,12 @@ import {
   type DocChange,
   type DocKey,
   deletedBetween,
+  docVersion,
   type Edit,
   editStays,
   noteEdit,
   opsBetween,
+  plainVersion,
   putBackValues,
   type RoomDocs,
   STRUCTURE_KEY,
@@ -360,8 +362,8 @@ export class UndoHistory {
     for (const [key, { after }] of edit.texts) {
       const doc = this.docs.textOf(key);
       if (!doc) continue;
-      const then = doc.frontiersToVV(after).toJSON();
-      for (const [peer, counter] of doc.version().toJSON())
+      const then = plainVersion(doc.frontiersToVV(after));
+      for (const [peer, counter] of docVersion(doc))
         if (peer !== edit.peer && counter > (then.get(peer) ?? 0)) by = peer;
     }
     return { blocks: [...edit.texts.keys()], by };
