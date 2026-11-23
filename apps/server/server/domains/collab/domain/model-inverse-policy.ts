@@ -115,7 +115,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!textPlan.selection.length)
           return {
             status: "cant_undo_changed",
-            message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
+            message: `Can't undo ${entry.handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
           };
         apply(entry, textPlan.selection, textPlan.actionKind);
       }
@@ -146,7 +146,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           }
         : {
             status: "cant_undo_changed",
-            message: `Can't undo ${first?.handle}: none of that edit remains unchanged. Nothing was changed.`,
+            message: `Can't undo ${first?.handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
           };
     }
     const performed = (kind: "undo" | "revert") => [
