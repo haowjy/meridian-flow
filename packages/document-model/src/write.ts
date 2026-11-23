@@ -360,7 +360,17 @@ export function writeDocument(
         if (change) {
           changes.push(change);
           for (const move of prepared)
-            if (move.from === block.id) move.ops = ownOps(change.doc, change.before, change.after);
+            if (move.from === block.id)
+              move.ops = deleteOpsFor(
+                change.doc,
+                change.before,
+                change.after,
+                new Set(
+                  move.for.flatMap(([peer, counter, length]) =>
+                    Array.from({ length }, (_, i) => `${counter + i}@${peer}`),
+                  ),
+                ),
+              );
         }
       }
     }
@@ -521,12 +531,42 @@ function runsOf(ids: readonly string[]): StandsFor {
   return out;
 }
 
-function ownOps(doc: LoroDoc, before: Frontiers, after: Frontiers): OpSpans {
+function deleteOpsFor(
+  doc: LoroDoc,
+  before: Frontiers,
+  after: Frontiers,
+  targets: ReadonlySet<string>,
+): OpSpans {
   const from = plainVersion(doc.frontiersToVV(before));
   const out: OpSpans = {};
-  for (const [peer, counter] of plainVersion(doc.frontiersToVV(after)))
-    if (counter > (from.get(peer) ?? 0)) out[peer] = [[from.get(peer) ?? 0, counter]];
+  for (const [peer, counter] of plainVersion(doc.frontiersToVV(after))) {
+    const start = from.get(peer) ?? 0;
+    if (counter <= start) continue;
+    for (const change of doc.exportJsonInIdSpan({ peer, counter: start, length: counter - start }))
+      for (const op of change.ops) {
+        const content = op.content;
+        if (content.type !== "delete" || !("start_id" in content) || !("len" in content)) continue;
+        const first = parseId(content.start_id);
+        const length = Math.abs(content.len);
+        const deleted = Array.from({ length }, (_, i) => `${first.counter + i}@${first.peer}`);
+        if (!deleted.some((id) => targets.has(id))) continue;
+        let spans = out[peer];
+        if (!spans) {
+          spans = [];
+          out[peer] = spans;
+        }
+        const last = spans.at(-1);
+        const end = op.counter + length;
+        if (last && last[1] === op.counter) last[1] = end;
+        else spans.push([op.counter, end]);
+      }
+  }
   return out;
+}
+
+function parseId(id: string): { counter: number; peer: string } {
+  const at = id.indexOf("@");
+  return { counter: Number(id.slice(0, at)), peer: id.slice(at + 1) };
 }
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */
