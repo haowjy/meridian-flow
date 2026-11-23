@@ -8,7 +8,7 @@ import { type ReactNode, useRef } from "react";
 import type { OpenDocument } from "@/client/stores";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
-import { ReviewBar } from "@/features/draft-review/ReviewBar";
+import { fitReviewLine, ReviewBar } from "@/features/draft-review/ReviewBar";
 import { useReviewMode } from "@/features/draft-review/review-mode";
 import {
   type ManuscriptState,
@@ -40,6 +40,8 @@ export function MobileDocumentReview({
         <div ref={topFocus} className="contents">
           {mode ? (
             <div
+              ref={fitReviewLine}
+              data-review-line
               className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-subtle bg-review"
               style={{
                 paddingLeft: "calc(0.5rem + env(safe-area-inset-left))",

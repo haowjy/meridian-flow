@@ -1,7 +1,7 @@
 /**
- * Review changes' controls (design §6, item 3), in the toolbar row where "Review N changes" sits:
- * Inline or Side by side where the pane fits two columns, the chapter's Discard · Apply, the
- * stepper, and Close in the button's place. The stepper walks this chapter's changes, then the
+ * Review changes' controls (design §6, item 3), on the review line above the toolbar: Inline or
+ * Side by side where the pane fits two columns, the chapter's Discard · Apply, the stepper, and
+ * Close, with the stepper between the chapter's × and Close. The stepper walks this chapter's changes, then the
  * draft's next changed chapter in the Changes list's order, wrapping at the ends; ‹ into the
  * previous chapter lands on its last change. Only the stepper crosses chapters, and it replaces
  * the review's history entry as it does.
@@ -71,7 +71,11 @@ export function ReviewBar() {
   };
 
   return (
-    <div data-review-bar={mode.documentId} className="flex min-w-0 shrink-0 items-center gap-1.5">
+    <div
+      data-review-bar={mode.documentId}
+      data-draft-review-controls
+      className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5"
+    >
       {wide ? (
         <IconButton
           size="xs"
@@ -85,7 +89,6 @@ export function ReviewBar() {
       ) : null}
       <ReviewActions
         scope="document"
-        density="full"
         labels={{
           discard: deleted ? t`Restore this chapter` : t`Discard this chapter`,
           apply: t`Apply this chapter`,
@@ -96,15 +99,16 @@ export function ReviewBar() {
         onDiscard={() => pressChapter("discard")}
         onApply={() => pressChapter("apply")}
       />
-      <ReviewStepper
-        count={rows.length}
-        crosses={files.filter((file) => file.item.pending).length > 1}
-        focusedIndex={focused}
-        disabled={rows.length === 0}
-        onStep={step}
-        short={!wide}
-        touch={touch}
-      />
+      <span data-review-secondary className="contents">
+        <ReviewStepper
+          count={rows.length}
+          crosses={files.filter((file) => file.item.pending).length > 1}
+          focusedIndex={focused}
+          disabled={rows.length === 0}
+          onStep={step}
+          touch={touch}
+        />
+      </span>
       {wide ? (
         <Button type="button" size="sm" variant="quiet" onClick={mode.close}>
           <X aria-hidden />
@@ -118,3 +122,35 @@ export function ReviewBar() {
     </div>
   );
 }
+
+/**
+ * The review line's ref: it gives up, in order, only while the controls don't fit the line's
+ * width: the stepper's short count and tighter gaps, then no count, then Discard and Apply as
+ * icons, then (a finger only) the stepper (`ACTIONS_DENSITY`, document-identity-row.css).
+ */
+export function fitReviewLine(line: HTMLDivElement) {
+  const fit = () => {
+    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
+    const style = getComputedStyle(line);
+    const available =
+      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
+    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
+      line.dataset.collapse = String(level);
+      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
+      if (!controls || controls.getBoundingClientRect().width <= available) break;
+    }
+  };
+  fit();
+  const resize = new ResizeObserver(fit);
+  resize.observe(line);
+  const mutations = new MutationObserver(fit);
+  mutations.observe(line, { childList: true, subtree: true, characterData: true });
+  return () => {
+    resize.disconnect();
+    mutations.disconnect();
+  };
+}
+
+/** The review actions' form at each collapse level. */
+const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;

@@ -75,8 +75,8 @@ Each document host (main, the side, the phone) has its own review
 desktop and phone alike, beside "Review N changes" on a plain draft. Review changes paints in the
 editor (`core/editor/extensions/review-changes`, mounted by `surfaces/review`): Live's text of each
 changed paragraph above the draft's (Inline) or beside every paragraph (Side by side), with the
-change's pair in the right margin. Its controls (`ReviewBar`) take the place of "Review N
-changes" in the toolbar row. Commands and their Undo belong to
+change's pair in the right margin. Its controls take the review line above the toolbar
+(`ReviewBar`). Commands and their Undo belong to
 [`draft-review`](../../draft-review/.context/draft-review.md).
 
 `PaintHold` retains finished paint across lifecycle handoffs. Same-entry URL replacements

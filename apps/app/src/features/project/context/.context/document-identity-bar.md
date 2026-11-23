@@ -18,15 +18,19 @@ leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
-A review's controls sit in the toolbar row, in the place "Review N changes" holds on a plain
-draft (lead's call in the #1853 review, design §6): the layout toggle on a wide pane, the
-chapter's `Discard` · `Apply`, the stepper, then Close, which takes the button's place. This
-reverses the owner's 2026-11-12 call to give them a line of their own so the formatting controls
-stay whole; the owner has it to confirm. A pane under 720px offers Inline only, shows the short
-stepper count and an icon-only Close. A draft's notice takes a line above the toolbar
-(`[data-review-line]`), one rule for main and the side; it never sits in the toolbar row, which a
-narrow pane can't widen. In the notice only the document's name shortens: the verb and Undo
-always show. The phone's review header gives the
+A review's controls take a line of their own above the toolbar (the review line), one rule for
+main and the side. The owner tried them on the toolbar's row (2026-11-12) and went back: the
+formatting controls must stay whole, and a lone notice must not take their room. The line sits on
+the document's page, as the side has its own page, and is a strip row (`--strip-row`, the chat's
+draft dock and edits receipt). It holds the layout toggle (a pane of 720px or more; a narrower one
+offers Inline only), the chapter's `Discard` · `Apply` (bare verbs on screen, "this chapter" in
+their names), the stepper, and Close, with the stepper between the chapter's × and Close. A line
+too narrow for the controls gives up in steps (`fitReviewLine` in `features/draft-review/ReviewBar.tsx`,
+`document-identity-row.css`): the stepper's short count and tighter gaps, then no step count, then
+Discard and Apply as icons, then (a finger only) the stepper. The phone's review row uses the same
+ladder. A Discard's notice takes that line when the Discard ends the review, and shares it,
+wrapping, when it does not; it never sits in the toolbar row, which a narrow pane can't widen. In
+the notice only the document's name shortens: the verb and Undo always show. The phone's review header gives the
 notice a row of its own under its first row. Coarse pointers give each control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, the sidebar's sources, phone
 browser); see the KB's path-navigates-lists-edit page.

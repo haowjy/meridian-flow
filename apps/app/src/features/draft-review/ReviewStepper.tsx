@@ -1,7 +1,8 @@
 /**
  * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order, bringing each into
- * view. Before any change is focused it reads the count. `short` is a narrow pane's `2/6`; `touch`
- * makes both arrows 44px targets. The group takes the focus when Review changes opens.
+ * view. Before any change is focused it reads the count. The review line's ladder
+ * (`fitReviewLine`) swaps `2 of 6` for `2/6`, then hides the count; `touch` makes both arrows 44px
+ * targets. The group takes the focus when Review changes opens.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -16,7 +17,6 @@ export function ReviewStepper({
   disabled,
   onStep,
   touch = false,
-  short = false,
   crosses = false,
 }: {
   count: number;
@@ -25,7 +25,6 @@ export function ReviewStepper({
   disabled: boolean;
   onStep: (direction: 1 | -1) => void;
   touch?: boolean;
-  short?: boolean;
   /** A step past either end goes on to another chapter: the stepper shows even for one change. */
   crosses?: boolean;
 }) {
@@ -49,26 +48,25 @@ export function ReviewStepper({
       </IconButton>
       <span
         className={cn(
-          "whitespace-nowrap px-1 text-center text-xs text-muted-foreground tabular-nums",
+          "identity-step-count whitespace-nowrap px-1 text-center text-xs text-muted-foreground tabular-nums",
           touch && "text-sm",
         )}
         aria-live="polite"
       >
-        {focusedIndex >= 0 ? (
-          short ? (
-            `${position}/${count}`
-          ) : (
+        <span className="identity-count-long">
+          {focusedIndex >= 0 ? (
             <Trans>
               {position} of {count}
             </Trans>
-          )
-        ) : short ? (
-          count
-        ) : count === 1 ? (
-          <Trans>1 change</Trans>
-        ) : (
-          <Trans>{count} changes</Trans>
-        )}
+          ) : count === 1 ? (
+            <Trans>1 change</Trans>
+          ) : (
+            <Trans>{count} changes</Trans>
+          )}
+        </span>
+        <span aria-hidden className="identity-count-short hidden">
+          {focusedIndex >= 0 ? `${position}/${count}` : count}
+        </span>
       </span>
       <IconButton
         size="xs"

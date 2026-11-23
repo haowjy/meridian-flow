@@ -1,8 +1,8 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, "Review N changes" or Review changes' controls in its place). They portal into the
- * document's state slot in the toolbar row; a draft's notice takes a line above it.
+ * move, "Review N changes"). They portal into the document's state slot in the toolbar row;
+ * Review changes' controls and a draft's notice take a line of their own above the toolbar.
  */
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -12,7 +12,7 @@ import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
-import { ReviewBar } from "@/features/draft-review/ReviewBar";
+import { fitReviewLine, ReviewBar } from "@/features/draft-review/ReviewBar";
 import { ReviewChangesButton } from "@/features/draft-review/ReviewChangesButton";
 import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -76,17 +76,22 @@ export function DocumentIdentityBar({
   const lineFocus = useRef<HTMLDivElement>(null);
   useFocusSuccession(lineFocus);
 
+  // Reviewing a draft is a mode, not a notice: its controls take a line of their own above the
+  // toolbar, so the formatting controls stay whole. A Discard's notice takes that line when it
+  // ends the review, and shares it, wrapping, when it does not.
   return (
     <>
       {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
           Undo and an Undo's back to the controls. */}
       <div ref={lineFocus} className="contents">
-        {notice ? (
+        {mode || notice ? (
           <div
+            ref={fitReviewLine}
             data-review-line
             className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
           >
-            <DraftNoticeLine notice={notice} className="flex-auto px-0" />
+            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
+            {mode ? <ReviewBar /> : null}
           </div>
         ) : null}
       </div>
@@ -117,7 +122,7 @@ export function DocumentIdentityBar({
             onChooseHome={() => setFieldOpen(true)}
           />
           <AgentFileState projectId={projectId} document={document} />
-          {mode ? <ReviewBar /> : <ReviewChangesButton document={document} />}
+          <ReviewChangesButton document={document} />
           <DocumentVersionMenu projectId={projectId} document={document} />
         </div>
       </DocumentStatePortal>

@@ -9,14 +9,14 @@ until the server answers. How it fits review is in [draft-review.md](draft-revie
 
 Not a store: the host's address (main) or stored slot (the side) holds it, and
 `useHostReviewMode` reads it. The rows its editor last read sit in the host's `ReviewSurface`
-(`review-mode.ts`), which the toolbar row reads for "Review N changes" and the stepper.
+(`review-mode.ts`), which "Review N changes" and the review line's stepper read.
 
 ```mermaid
 stateDiagram-v2
   [*] --> plain: a draft page
   plain --> reviewing: Review N changes (push)
   reviewing --> reviewing: the stepper, a press, Retarget (replace)
-  reviewing --> plain: Close in the toolbar row, or Esc (Back, or replace)
+  reviewing --> plain: Close on the review line, or Esc (Back, or replace)
   reviewing --> plain: the last change pressed (at once)
   reviewing --> plain: a read finds no change and the list agrees
   reviewing --> other_chapter: a step past either end

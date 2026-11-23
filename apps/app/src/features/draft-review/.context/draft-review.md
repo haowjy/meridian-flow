@@ -17,13 +17,15 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   entry is the page's own, and otherwise replace. The stepper, a press and the target picker
   replace. Esc is one handler per host (`ReviewEscapeScope`) at page scope, after any menu, dialog
   or field that handles it.
-- **The controls** sit in the toolbar row, where "Review N changes" was: the layout toggle, the
-  chapter's `Discard` · `Apply` (named "this chapter" for assistive tech), the stepper and Close.
-  A pane under 720px shows Inline only, the short stepper and an icon Close.
+- **The controls** (`ReviewBar`) take the review line above the toolbar, so the formatting
+  controls stay whole: the layout toggle, the chapter's `Discard` · `Apply` (named "this chapter"
+  for assistive tech), the stepper and Close. A pane under 720px offers Inline only and an icon
+  Close; a line too narrow gives up in steps (`fitReviewLine`,
+  [the identity bar](../../project/context/.context/document-identity-bar.md)).
 - **The rows** are the editor's: `ReviewChangesExtension` (`core/editor/extensions/review-changes`)
   reads `changedBlocks` of the fork against Live 150 ms after typing pauses, or after Live's copy
   imports (a press, Live typed in elsewhere), and maps its decorations through the typing in
-  between. It publishes the rows to the host's `ReviewSurface` for the toolbar row. The layout
+  between. It publishes the rows to the host's `ReviewSurface` for the review line and "Review N changes". The layout
   (Inline or Side by side) is a device preference, not in the address; Side by side gives every
   row both columns, an empty cell where one side has nothing.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
@@ -42,7 +44,7 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   in count mode, which paints nothing.
 
 The tree half of a reviewed document is its row in the pane (`ReviewTreeRow`): Deleted, New, or
-"Was <path>". The chapter's pair is in the toolbar row.
+"Was <path>". The chapter's pair is on the review line.
 
 ## Presses
 
