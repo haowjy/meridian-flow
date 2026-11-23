@@ -11,7 +11,6 @@ import {
   type ShownBlock,
 } from "@meridian/agent-edit/integration";
 import type { ProjectId, TurnBlockId } from "@meridian/contracts";
-import { loroRoomName } from "@meridian/contracts/protocol";
 import type { Block } from "@meridian/contracts/threads";
 import {
   evidenceFrontiers,
@@ -96,9 +95,10 @@ export function shownNamesLookup(
       for (const id of loaded) if (!carried.has(id)) loaded.delete(id);
       const fresh = ids.filter((id) => !loaded.has(id));
       if (fresh.length > 0) {
-        rows = [...rows, ...(await deps.documentEvidence.frontiersIn(TREE_NAMES_ROOM, fresh))].sort(
-          (a, b) => a.recordedSeq - b.recordedSeq,
-        );
+        rows = [
+          ...rows,
+          ...(await deps.documentEvidence.frontiersIn({ room: TREE_NAMES_ROOM }, fresh)),
+        ].sort((a, b) => a.recordedSeq - b.recordedSeq);
         for (const id of fresh) loaded.add(id);
       }
       return rows.map((row) => row.snapshot);
@@ -116,9 +116,8 @@ export function shownNamesLookup(
 }
 
 /**
- * The model's latest frontier for a document among `blockIds`, read when called. The port asks
- * for the latest read in any of the document's rooms; every chat reads Live until phase 2b routes
- * Draft chats to their fork, so this asks Live's.
+ * The model's latest frontier for a document among `blockIds`, read when called: its latest read
+ * in any of the document's rooms, Live's or a draft's fork, tagged with that room (design §5).
  */
 export function frontierLookup(
   deps: FrontierRecordingDeps,
@@ -127,10 +126,7 @@ export function frontierLookup(
 ): FrontierLookup {
   return async (documentId) => {
     try {
-      return await deps.documentEvidence.latestFrontier(
-        loroRoomName({ kind: "live", documentId }),
-        await blockIds(),
-      );
+      return await deps.documentEvidence.latestFrontier(documentId, await blockIds());
     } catch (error) {
       emitEvent(deps.eventSink, {
         level: "warn",
@@ -146,8 +142,8 @@ export function frontierLookup(
 
 /**
  * What the blocks among `blockIds` that showed a document showed of it in full, oldest first: the
- * text a write plans on when its frontier's content was collected. Live's only, as
- * `frontierLookup`. Each block's result is read from the run's own blocks, a tool result's or a
+ * text a write plans on when its frontier's content was collected, from every room of the
+ * document, as `frontierLookup` reads. Each block's result is read from the run's own blocks, a tool result's or a
  * reference read's. A failed lookup is logged and answers nothing shown, so the write plans on the
  * room.
  */
@@ -159,10 +155,7 @@ export function shownLookup(
 ): (documentId: string) => Promise<ShownBlock[]> {
   return async (documentId) => {
     try {
-      const rows = await deps.documentEvidence.frontiersIn(
-        loroRoomName({ kind: "live", documentId }),
-        await blockIds(),
-      );
+      const rows = await deps.documentEvidence.frontiersIn({ documentId }, await blockIds());
       const byId = new Map(blocks().map((block) => [block.id as string, block]));
       return rows.flatMap((row) => shownIn(byId.get(row.blockId)));
     } catch (error) {

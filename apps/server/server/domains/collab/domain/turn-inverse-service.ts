@@ -12,12 +12,11 @@ import type {
   TurnDraftState,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import type { Node as PMNode } from "prosemirror-model";
+import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { InverseDestination, InverseStep } from "./inverse-stream.js";
-import { takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -41,8 +40,10 @@ export type StoredInversePart = {
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
-  /** The edit's recorded delta (an AI write only); what its changes are read from. */
+  /** The edit's recorded delta (an AI write only): the card's and the model's list's words. */
   delta: StoredDelta | null;
+  /** An AI write as an edit of design §2's Undo rule: what an inverse tests and takes back. */
+  edit: StoredEdit | null;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -74,8 +75,8 @@ export type InverseDocument = {
   uri: string;
   /** The room the inverse reads and commits into: Live, or the Draft chat's fork. */
   room: DocumentRoom;
-  /** The room's blocks as the capture read them, in `inverseSchema`. */
-  live: readonly PMNode[];
+  /** The room as the capture read it: a private copy, freed when the attempt ends. */
+  docs: RoomDocs;
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   /** The card's Undo deletes this created document, leaving its text intact. */
@@ -88,6 +89,8 @@ export type PreparedDocumentInverse = {
   document: InverseDocument;
   /** The document's steps, in the order they plan and run. */
   steps: InverseStep[];
+  /** The turn's parts someone wrote over since, which the steps leave whole (a card's plan). */
+  stayed?: number;
 };
 export interface TurnInverseStore {
   /**
@@ -131,6 +134,8 @@ export interface TurnInverseStore {
     treeReversed: number;
     /** Text parts committed, by document. */
     reversed: ReadonlyMap<DocumentId, number>;
+    /** Text parts a step planned that someone wrote over before the commit, by document. */
+    stayed?: ReadonlyMap<DocumentId, number>;
   }>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
@@ -157,50 +162,55 @@ async function prepare(
     // The server answers its other requests between documents.
     await setImmediate();
     const entryPlanner = createCapturedReversalPlanner(document, query);
-    const targets = document.history.filter((part) => {
-      if (!targetsTurn(part, query)) return false;
-      const takenBy = entryPlanner.takenBy(part);
-      if (takenBy) {
-        undoneByWriter ||= takenBy.some((action) =>
-          action.parts.every((undo) => undo.actor === "human"),
-        );
-        return false;
+    try {
+      const targets = document.history.filter((part) => {
+        if (!targetsTurn(part, query)) return false;
+        const takenBy = entryPlanner.takenBy(part);
+        if (takenBy) {
+          undoneByWriter ||= takenBy.some((action) =>
+            action.parts.every((undo) => undo.actor === "human"),
+          );
+          return false;
+        }
+        return !document.createdInTurn;
+      });
+      // The originals in step order: one edit's targeted parts each.
+      const byEdit = new Map<string, StoredInversePart[]>();
+      for (const part of targets)
+        byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
+      const originals = [...byEdit.values()]
+        .map((parts) => ({
+          at: Math.max(...parts.map((part) => part.id)),
+          parts: parts.sort((a, b) => b.id - a.id),
+        }))
+        .sort((a, b) => b.at - a.at);
+      const steps: InverseStep[] = [];
+      let stayed = 0;
+      // Each step is judged on what the steps before it leave, as its commit will find it.
+      for (const { at, parts } of originals) {
+        const entry = {
+          id: parts[0]?.editId ?? "",
+          handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
+          parts,
+        };
+        const planned = entryPlanner.turnTextPlan(entry, query);
+        if (!planned) continue;
+        const taken = entryPlanner.planTakeOut(planned.selection);
+        stayed += planned.selection.length - taken.length;
+        if (taken.length)
+          steps.push({
+            parts: taken,
+            destination: planned.destination,
+            actionId,
+            actionKind: planned.actionKind,
+            at,
+          });
       }
-      return !document.createdInTurn;
-    });
-    // The originals in step order: one edit's targeted parts each.
-    const byEdit = new Map<string, StoredInversePart[]>();
-    for (const part of targets) byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
-    const originals = [...byEdit.values()]
-      .map((parts) => ({
-        at: Math.max(...parts.map((part) => part.id)),
-        parts: parts.sort((a, b) => b.id - a.id),
-      }))
-      .sort((a, b) => b.at - a.at);
-    const steps: InverseStep[] = [];
-    // The text each step is judged on is what the steps before it leave, as its commit will find it.
-    let manuscript: readonly PMNode[] = document.live;
-    for (const { at, parts } of originals) {
-      const entry = {
-        id: parts[0]?.editId ?? "",
-        handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
-        parts,
-      };
-      const planned = entryPlanner.turnTextPlan(entry, query);
-      if (!planned) continue;
-      const back = takeBack(manuscript, planned.selection);
-      manuscript = back.live;
-      if (back.taken.length)
-        steps.push({
-          parts: back.taken,
-          destination: planned.destination,
-          actionId,
-          actionKind: planned.actionKind,
-          at,
-        });
+      steps.sort((a, b) => b.at - a.at);
+      return { document, steps, stayed };
+    } finally {
+      entryPlanner.free();
     }
-    steps.sort((a, b) => b.at - a.at);
-    return { document, steps };
   };
   const plans: PreparedDocumentInverse[] = [];
   for (const document of documents) plans.push(await planOf(document));
@@ -270,26 +280,45 @@ export function createTurnInverseService(store: TurnInverseStore) {
                 query,
                 userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
               })
-            : { treeReversed: 0, reversed: new Map<DocumentId, number>() };
+            : { treeReversed: 0, reversed: new Map<DocumentId, number>(), stayed: undefined };
         const accepted =
           committed.treeReversed + [...committed.reversed.values()].reduce((n, m) => n + m, 0);
-        // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
+        // An AI edit someone wrote over since stays whole (design §2), and the answer says so:
+        // planned with no step, or found written over under the locks.
+        const stayedIn = (plan: PreparedDocumentInverse) =>
+          (plan.stayed ?? 0) + (committed.stayed?.get(plan.document.documentId) ?? 0);
+        const stayed = plans.some((plan) => stayedIn(plan) > 0);
         return {
-          status: accepted || undoneByWriter ? "reversed" : "expired",
-          // One row per document whose text the steps reversed; a document with no text to
-          // reverse (it left, or comes back, with its node) has none.
-          documents: plans.flatMap((plan): DocumentReversalResult[] =>
-            (committed.reversed.get(plan.document.documentId) ?? 0) > 0
-              ? [
-                  {
-                    documentId: plan.document.documentId,
-                    uri: plan.document.uri,
-                    destination: { kind: "live" as const },
-                    status: "reversed" as const,
-                  },
-                ]
-              : [],
-          ),
+          // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
+          status: accepted
+            ? stayed
+              ? "partial"
+              : "reversed"
+            : undoneByWriter
+              ? "reversed"
+              : stayed
+                ? "cant_undo_changed"
+                : "expired",
+          // One row per document whose text the steps reversed or left; a document with no text
+          // to reverse (it left, or comes back, with its node) has none.
+          documents: plans.flatMap((plan): DocumentReversalResult[] => {
+            const reversed = committed.reversed.get(plan.document.documentId) ?? 0;
+            const left = stayedIn(plan);
+            if (!reversed && !left) return [];
+            return [
+              {
+                documentId: plan.document.documentId,
+                uri: plan.document.uri,
+                destination: { kind: "live" as const },
+                status: left ? (reversed ? "partial" : "cant_undo_changed") : "reversed",
+                ...(left
+                  ? {
+                      text: `${left} of the reply's edits ${left === 1 ? "stays" : "stay"}: someone has written over ${left === 1 ? "it" : "them"} since.`,
+                    }
+                  : {}),
+              },
+            ];
+          }),
         };
       });
     },

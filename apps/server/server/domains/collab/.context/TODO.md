@@ -16,9 +16,6 @@
   determine what remains of [#931].
 - A closed Work's dropped create of a Work-only document is no longer ended client-side by
   `watchBounces`, so its Live room can retry `DOCUMENT_UNKNOWN` until the tab closes it.
-- The Live turn inverse can't undo a word edit grouped with a block the same AI edit moved:
-  `editChanges` (agent-edit `content-merge/stands.ts`) skips every group that holds a move, and
-  `changeGroups` joins hunks within three words, so `a b c` → `c a b′` is one skipped group.
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931

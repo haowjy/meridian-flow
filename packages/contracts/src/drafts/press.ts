@@ -1,11 +1,5 @@
-import type { CommandId, DocumentId, DraftId, DraftItemKey, WorkId } from "../ids.js";
+import type { CommandId, DocumentId, DraftId, DraftItemKey, TurnId, WorkId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
-
-/**
- * Apply or Discard, pressed on one change, a document, a draft or every draft of a Work. One recorded command; one Undo
- * (`PressUndoRequest`) takes it back; pressing again is the Redo.
- */
-export type PressVerdict = "apply" | "discard";
 
 /**
  * What a press takes. A document of a draft is its `DraftItemKey`. A change is named by the id of any one of its members
@@ -22,10 +16,20 @@ export type PressScope =
    */
   | { kind: "work"; work: WorkId };
 
-export type PressRequest = {
+/**
+ * What a press does, and to what. Apply or Discard on one change, a document, a draft or every draft of a Work; or a
+ * Draft chat turn card's `Restore before` on a turn: every document the turn wrote in a draft's fork goes back to before
+ * the turn's first write into it, on today's Live (design §2), and Live is untouched, so text an Apply already put there
+ * stays. One recorded command; one Undo (`PressUndoRequest`) takes it back; pressing again is the Redo.
+ */
+export type PressAction =
+  | { verdict: "apply" | "discard"; scope: PressScope }
+  | { verdict: "restore"; scope: { kind: "turn"; turn: TurnId } };
+
+export type PressVerdict = PressAction["verdict"];
+
+export type PressRequest = PressAction & {
   commandId: CommandId;
-  verdict: PressVerdict;
-  scope: PressScope;
   /**
    * The tree cut the press was drawn from: records admitted after it stay pending, as do records it saw that the
    * server has not received yet.
@@ -41,11 +45,9 @@ export type PressRequest = {
   liveVersions?: { documentId: DocumentId; version: string }[];
 };
 
-export type PressResult = {
+export type PressResult = PressAction & {
   status: "pressed";
   commandId: CommandId;
-  verdict: PressVerdict;
-  scope: PressScope;
   /**
    * Every document whose rooms the press committed to, in Live or a fork: text, structure or a comment body. What its
    * Undo takes back. Empty when the scope had no change.

@@ -292,7 +292,7 @@ export function runScript(seed, { verbose = false } = {}) {
   const liveTokenBlock = new Map();
   const liveTokenIds = new Map();
   const draftDeletedChars = new Set();
-  const splitMoved = new Set();
+  const splitMoved = process.env.FUZZ_STRICT ? { add() {}, has: () => false } : new Set();
   const resetRestored = new Map();
   const inverseCopies = new Map();
   /** The token each character was first seen in, by block and character id: ids repeat across text docs. */

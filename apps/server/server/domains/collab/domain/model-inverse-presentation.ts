@@ -21,7 +21,7 @@ export function textPlanRefusal(
     };
   return {
     status: `cant_undo_changed`,
-    message: `Can't undo ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
+    message: `Can't undo ${handle}: someone has written over it since, so it stays as they left it. Nothing was changed in ${uri}.`,
   };
 }
 
@@ -35,7 +35,7 @@ export function textOmission(
 ) {
   const words = {
     already_removed: "already removed",
-    edited_since: "edited since",
+    edited_since: "written over since, so it stays",
     draft_archived: "draft archived",
   } as const;
   const fact = `part ${omission.ordinal + 1}: ${words[omission.cause]}`;

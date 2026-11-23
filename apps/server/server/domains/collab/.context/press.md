@@ -3,12 +3,15 @@
 A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its pending tree
 records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
 a document, a draft or every draft of a Work, is one command, `press`
-(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). There is
-no folder scope.
+(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). So is a
+Draft chat turn card's Restore before. There is no folder scope.
 
 ## What a press does
 
-`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`. A
+`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`, where
+`PressAction` pairs the verdict with the scopes it takes: `apply` and `discard` take the review
+scopes below, and `restore` takes only `{ kind: "turn", turn }`. The route's schema is the same
+union, so a mismatched pair does not parse. A
 `change` or `document` scope names its document by `DraftItemKey`; `draft` names one draft;
 `work` takes every living draft of the Work, one after another in draft id order, each on Live as
 the one before left it. Every Work and root chat has its draft from its creation, so a press
@@ -45,6 +48,20 @@ never makes one.
 - Lock order is the Apply click's: Works, drafts in id order, lists, documents in id order, then
   writes.
   Deliveries run after commit.
+
+## Restore before
+
+`restore` on a turn returns each document the turn wrote in a draft's fork to how it read before
+the turn's first write into it, as one press. The turn's drafts are read from its parts
+(`document_edit_parts.origin`, a fork room, with a `before`), in this project only. Per document
+the fork copy is first carried forward to today's Live, then `restoreBefore` (`@meridian/document-model`) puts each text doc the
+turn wrote back to its first `before` merged with Live's text now, and sets each override the
+turn set (between its first `before` and last `after`) back to its earlier value where it still
+holds what the turn left. Live is never written, so text an Apply already put there stays, and
+the draft then reads as Live there and stops being pending. A text doc whose history the room
+compacted below the turn's start is left as it is. The press stores one `PressedChange` per
+document with `live: null` and the fork's edit, so its Undo is the press's `unpress`, judged by
+the same rule; pressing Restore before again is the Redo. It touches no tree records.
 
 ## Discard, and what goes to Trash
 

@@ -1,8 +1,14 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
-import type { Node as PMNode } from "prosemirror-model";
+import {
+  editStays,
+  freshServerPeerId,
+  holdsEdit,
+  loadEdit,
+  type RoomDocs,
+  undoEdits,
+} from "@meridian/document-model";
 import { partKey as key } from "./inverse-actions.js";
-import { takeBack } from "./inverse-text.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import type {
   InverseDocument,
@@ -12,7 +18,33 @@ import type {
 
 export type ModelInverseQuery = TurnInverseQuery & { model: true };
 
-/** One immutable capture's reversal policy. A retry creates a new planner from a new capture. */
+/**
+ * Whether `part`'s write would go back on `docs` now, by design §2's Undo rule: nobody has written
+ * over it since (`editStays`), and the room still holds its history.
+ */
+export function standsIn(docs: RoomDocs, part: StoredInversePart): boolean {
+  const { edit } = part;
+  return !!edit && holdsEdit(docs, edit) && editStays(docs, loadEdit(docs, edit)) === null;
+}
+
+/**
+ * `parts`, newest first, taken back on `docs` by the Undo rule, each judged on what the ones before
+ * it left. Returns the changes, committed, and the parts that went.
+ */
+export function takeOut(docs: RoomDocs, parts: readonly StoredInversePart[], message?: string) {
+  const held = parts.filter((part) => part.edit);
+  const { changes, stayed } = undoEdits(
+    docs,
+    held.map((part) => part.edit as NonNullable<StoredInversePart["edit"]>),
+    message,
+  );
+  return { changes, taken: held.filter((_, i) => !stayed.has(i)) };
+}
+
+/**
+ * One immutable capture's reversal policy. A retry creates a new planner from a new capture. The
+ * caller frees it: it takes planned steps back on a private copy of the captured room.
+ */
 export function createCapturedReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
   const { destination } = document;
   const own = entries(document.history, query.threadId);
@@ -27,20 +59,21 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   const takenBy = (part: StoredInversePart) => actions.actions.byPart.get(key(part));
   const taken = (part: StoredInversePart) => takenBy(part) !== undefined;
   /**
-   * Live's text after the steps planned so far, so a later step of one command is judged on what
-   * the earlier ones leave, as its commit will.
+   * The room after the steps planned so far, so a later step of one command is judged on what
+   * the earlier ones leave, as its commit will: the capture until the first step, then a copy.
    */
-  let text: readonly PMNode[] = document.live;
-  const textNow = () => text;
-  /** Whether a change of the part still stands in Live. */
-  const stands = (part: StoredInversePart) => takeBack(textNow(), [part]).taken.length > 0;
-  /** Records that `parts` were chosen to be taken out of Live. */
+  let planned: RoomDocs | null = null;
+  const docsNow = () => planned ?? document.docs;
+  /** Whether the part's write would still go back. */
+  const stands = (part: StoredInversePart) => standsIn(docsNow(), part);
+  /** Takes `parts` back on the planned copy; returns those that went. */
   const planTakeOut = (parts: readonly StoredInversePart[]) => {
-    text = takeBack(textNow(), parts).live;
+    planned ??= document.docs.fork(freshServerPeerId());
+    return takeOut(planned, parts).taken;
   };
-  /** A part whose text no longer reads as the edit wrote it. */
+  /** A part whose write someone has written over since. */
   const changed = (part: StoredInversePart) => !stands(part);
-  /** Why a part is not available: the text no longer holds it. */
+  /** Why a part is not available: an Undo took it, or someone wrote over it. */
   const unavailableCause = (part: StoredInversePart) =>
     taken(part) ? ("already_removed" as const) : ("edited_since" as const);
   function refusal(part: StoredInversePart): TextFailure | null {
@@ -109,5 +142,14 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return { selection, skipped };
   }
-  return { own, actions, textPlan, turnTextPlan, takenBy, planTakeOut, changed };
+  return {
+    own,
+    actions,
+    textPlan,
+    turnTextPlan,
+    takenBy,
+    planTakeOut,
+    changed,
+    free: () => planned?.free(),
+  };
 }

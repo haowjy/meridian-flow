@@ -17,7 +17,16 @@ export {
 } from "./changes.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
-export { frontiersOf, type StoredEdit, takeBack, versionOf } from "./invert.js";
+export {
+  editSince,
+  frontiersOf,
+  holdsEdit,
+  loadEdit,
+  type StoredEdit,
+  takeBack,
+  undoEdits,
+  versionOf,
+} from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,
@@ -91,6 +100,7 @@ export {
   type Edit,
   type EditValues,
   editStays,
+  memberOf,
   noteEdit,
   type OpSpans,
   opsBetween,

@@ -59,15 +59,16 @@ pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo ge
 
  where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
-only this reply's own changes, applied ones included, and sends nothing else: the server reads each
-change of an edit from the text (a drafted change that stands, or an applied change the Apply's
-`carried` names and that still stands in the manuscript) and takes out what stands, leaving a
-word the writer typed over it. The card never takes back a whole Apply; a Changes row's Undo and
-Ctrl+Z do. Undo is offered only while a press would take something back. A change the writer typed
-inside is not taken, and the card has no Undo for it. The receipt immediately shows Undoing while the command runs;
+only this reply's own changes, applied ones included, and sends nothing else: the server takes back each of the
+reply's writes that nobody has written over since, whole, in the room it was written in (Live or
+the draft's fork), and leaves whole the ones someone has. The card never takes back a whole Apply; a Changes row's Undo and
+Ctrl+Z do. Undo is offered only while a press would take something back. A write the writer has written
+over (deleted or retyped all of what it put in) stays, and the card's answer is `partial`, or
+`cant_undo_changed` when every write stayed; typing inside the AI's words leaves some of it, so
+it still goes back around the writer's words. The receipt immediately shows Undoing while the command runs;
 the Live room publishes the edit after durable commit and failures stay on the card.
-Eligibility is the text's: a change stands when taking it out merges cleanly
-(`content-merge/stands.ts`). The word "Undone" counts only the writer's own Undo, text and
+Eligibility is design §2's one Undo rule (`editStays`), the one a press's Undo uses
+(server [reversal](../../../../../server/server/domains/collab/.context/reversal.md)). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. A Discard takes the draft's pending changes out as one
 appended update in the same room; it is not receipt Undo, and the draft stays open. Only a purge
