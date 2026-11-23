@@ -1,29 +1,26 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
 import { type CommitAuthor, commitMessage } from "./commit-message.js";
-import { commonEnds } from "./common-ends.js";
+import { Groups } from "./groups.js";
 import { inMap } from "./handles.js";
 import { frontiersOf, loadEdit, type StoredEdit, storeEdit, takeBack } from "./invert.js";
-import { commentVisibility, readInline, shownStyleKeys } from "./read.js";
+import { deletePieces, linkedPieces, piecesOf } from "./pieces.js";
 import type { Imported, RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
-  COMMENT_STYLE_PREFIX,
   type DocKey,
-  type InlineItem,
-  type NodeRule,
+  membersOf,
   overrideMap,
-  SENTINEL,
   STRUCTURE_KEY,
   STRUCTURE_MAPS,
   type StructureMap,
   sameValue,
 } from "./shape.js";
+import { blockDiffers, Side } from "./side.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
 import {
   deletedBetween,
   type Edit,
   editStays,
-  memberOf,
   noteEdit,
   opsBetween,
   putBackValues,
@@ -56,15 +53,12 @@ export type ChangeSelection = readonly string[] | "all";
 
 const BLOCK_MAPS = ["parent", "order", "node", "attrs"] as const satisfies readonly StructureMap[];
 
-/** A run of at least this many characters one block lost and the other gained makes them one change. */
-const MOVED_RUN = 3;
-
 /**
  * The pending changes of a draft copy against its `live` (design §2): a block is changed when it
  * shows on one side only, or on both with a different `parent`, `order`, `node`, attributes or
  * normalized text. Changes group: a block under an inserted or removed ancestor goes with the
- * ancestor; two changed neighbours in the merged sibling order between which text moved (a split
- * or join) are one change; a comment body only the fork's text carries goes with every shown block
+ * ancestor; blocks an edit moved text between (a split or a join, recorded by the write in
+ * `d.pieces`) are one change; a comment body only the fork's text carries goes with every shown block
  * carrying it, and a body some Live text carries is a change of its own.
  *
  * Read-only: call it on a copy already forwarded (a server room's copy is; a tab forwards in its
@@ -132,41 +126,17 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       break;
     }
 
-  // The merged sibling order, of the parents that hold a changed block only.
-  const shownIn = (id: BlockId) => (F.shown.has(id) ? F : L);
-  const parentOf = (id: BlockId) => shownIn(id).value("parent", id);
-  const parents = new Set(
-    groups
-      .members()
-      .filter((id) => L.shown.has(id) || F.shown.has(id))
-      .map(parentOf),
-  );
-  const siblings = new Map<unknown, BlockId[]>();
-  for (const id of new Set([...L.shown, ...F.shown])) {
-    const parent = parentOf(id);
-    if (!parents.has(parent)) continue;
-    const list = siblings.get(parent);
-    if (list) list.push(id);
-    else siblings.set(parent, [id]);
-  }
-  const key = (id: BlockId) => String(shownIn(id).value("order", id));
-  for (const list of siblings.values()) {
-    list.sort((a, b) => {
-      const ka = key(a);
-      const kb = key(b);
-      return ka < kb ? -1 : ka > kb ? 1 : a < b ? -1 : a > b ? 1 : 0;
-    });
-    for (let i = 0; i + 1 < list.length; i++) {
-      const [a, b] = [list[i], list[i + 1]];
-      if (!groups.has(a) || !groups.has(b)) continue;
-      const [la, fa, lb, fb] = [
-        sides.live.plain(a),
-        sides.fork.plain(a),
-        sides.live.plain(b),
-        sides.fork.plain(b),
-      ];
-      if (textMoved(la, fa, lb, fb) || textMoved(lb, fb, la, fa)) groups.join(a, b);
-    }
+  // Changed blocks the `d.pieces` records connect are one change. A block that is no change only
+  // connects: a half split off and joined into the next paragraph, or a paragraph whose text
+  // left and came back. It is no member, so no press writes anything of it.
+  const linked = linkedPieces(F.overrideKeys("pieces"));
+  const first = new Map<BlockId, BlockId>();
+  for (const id of groups.members()) {
+    if (!linked.has(id)) continue;
+    const root = linked.find(id);
+    const earlier = first.get(root);
+    if (earlier === undefined) first.set(root, id);
+    else groups.join(earlier, id);
   }
 
   // The blocks the fork can read a mark on that Live's read of them does not show: any other
@@ -212,7 +182,7 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
 function overriddenBlocks(view: StructureView): Set<BlockId> {
   const out = new Set<BlockId>();
   for (const name of BLOCK_MAPS)
-    for (const key of view.overrideKeys(name)) out.add(memberOf(name, key));
+    for (const key of view.overrideKeys(name)) for (const id of membersOf(name, key)) out.add(id);
   return out;
 }
 
@@ -248,117 +218,6 @@ export function pendingRemovalVersion(
       }
     }
   return out;
-}
-
-/** One side's structure read and its blocks' normalized text, read once each. */
-class Side {
-  readonly view: StructureView;
-  private readonly visible: (comment: string) => boolean;
-  private readonly inlines = new Map<BlockId, InlineItem[]>();
-  private readonly carriedBy = new Map<BlockId, ReadonlySet<string>>();
-
-  constructor(readonly docs: RoomDocs) {
-    this.view = new StructureView(docs);
-    this.visible = commentVisibility(this.view);
-  }
-
-  rule(id: BlockId): NodeRule | undefined {
-    const node = this.view.node(id);
-    return node === undefined ? undefined : this.docs.shape.node(node);
-  }
-
-  inline(id: BlockId): InlineItem[] {
-    let items = this.inlines.get(id);
-    if (!items) {
-      const rule = this.rule(id);
-      items = rule?.textblock
-        ? readInline(this.docs.textOf(id), rule, this.docs.shape, this.visible)
-        : [];
-      this.inlines.set(id, items);
-    }
-    return items;
-  }
-
-  /** The block's text as a reader sees it, an inline node as U+FFFC; empty where it does not show. */
-  plain(id: BlockId): string {
-    if (!this.view.shown.has(id)) return "";
-    return this.inline(id)
-      .map((item) => (item.kind === "text" ? item.text : SENTINEL))
-      .join("");
-  }
-
-  /**
-   * The comments whose mark the block's text holds on a shown unit. By the stored text, not the
-   * read: a block retyped to one that shows no marks (a `code_block`) still carries the comment it
-   * shows again when its type goes back, and Live text keeps a mark whose body an Undo took back,
-   * which a draft's body for it would show again.
-   */
-  carried(id: BlockId): ReadonlySet<string> {
-    const known = this.carriedBy.get(id);
-    if (known) return known;
-    const comments = new Set<string>();
-    const rule = this.rule(id);
-    if (rule?.textblock)
-      for (const key of shownStyleKeys(this.docs.textOf(id), rule, this.docs.shape))
-        if (key.startsWith(COMMENT_STYLE_PREFIX))
-          comments.add(key.slice(COMMENT_STYLE_PREFIX.length));
-    this.carriedBy.set(id, comments);
-    return comments;
-  }
-}
-
-function blockDiffers(live: Side, fork: Side, id: BlockId): boolean {
-  for (const name of ["parent", "order", "node"] as const)
-    if (!sameValue(live.view.value(name, id), fork.view.value(name, id))) return true;
-  if (!sameValue(live.view.attrs(id), fork.view.attrs(id))) return true;
-  return live.rule(id)?.textblock === true && !sameValue(live.inline(id), fork.inline(id));
-}
-
-/** Whether a run of `MOVED_RUN` characters `source` lost from Live to the fork appears in what `dest` gained. */
-function textMoved(sourceLive: string, sourceFork: string, destLive: string, destFork: string) {
-  const lost = removedPart(sourceLive, sourceFork);
-  const gained = insertedPart(destLive, destFork);
-  for (let i = 0; i + MOVED_RUN <= lost.length; i++)
-    if (gained.includes(lost.slice(i, i + MOVED_RUN))) return true;
-  return false;
-}
-
-const removedPart = (a: string, b: string) => {
-  const { start, end } = commonEnds(a, b);
-  return a.slice(start, a.length - end);
-};
-const insertedPart = (a: string, b: string) => {
-  const { start, end } = commonEnds(a, b);
-  return b.slice(start, b.length - end);
-};
-
-/** Union-find over changed block ids. */
-class Groups {
-  private readonly parent = new Map<BlockId, BlockId>();
-  constructor(ids: Iterable<BlockId>) {
-    for (const id of ids) this.parent.set(id, id);
-  }
-  has(id: BlockId) {
-    return this.parent.has(id);
-  }
-  add(id: BlockId) {
-    if (!this.parent.has(id)) this.parent.set(id, id);
-  }
-  members() {
-    return [...this.parent.keys()];
-  }
-  find(id: BlockId): BlockId {
-    const up = this.parent.get(id) as BlockId;
-    if (up === id) return id;
-    const root = this.find(up);
-    this.parent.set(id, root);
-    return root;
-  }
-  join(a: BlockId, b: BlockId) {
-    const ra = this.find(a);
-    const rb = this.find(b);
-    if (ra !== rb) this.parent.set(rb, ra);
-  }
 }
 
 /**
@@ -408,7 +267,7 @@ function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][]
   const out: [StructureMap, string][] = [];
   for (const name of BLOCK_MAPS)
     for (const key of view.overrideKeys(name))
-      if (memberOf(name, key) === id) out.push([name, key]);
+      if (membersOf(name, key)[0] === id) out.push([name, key]);
   return out;
 }
 
@@ -434,7 +293,11 @@ function spanOf({ doc, before, after }: DocChange): TextSpan {
  * each key and text doc belongs to and noted now, as the press left the room. The author is the
  * room copy's peer: a command's copy has a fresh one, so every later write is someone else's.
  */
-function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): PressedChange[] {
+function pressedOf(
+  chosen: readonly BlockChange[],
+  rooms: (Wrote | null)[],
+  retired: ReadonlyMap<string, BlockId>,
+): PressedChange[] {
   const index = new Map<string, number>();
   chosen.forEach((change, i) => {
     for (const id of [...change.blocks, ...change.comments]) index.set(id, i);
@@ -455,7 +318,10 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
       const { doc, before, after } = wrote.structure;
       for (const [name, keys] of valuesOf(doc, before, after))
         for (const [key, value] of keys) {
-          const { values } = edits[index.get(memberOf(name, key)) as number];
+          // A `pieces` record goes with the change that holds one of its blocks, or else with
+          // the change its component connects to.
+          const member = membersOf(name, key).find((id) => index.has(id)) ?? retired.get(key);
+          const { values } = edits[index.get(member as string) as number];
           const into = values.get(name) ?? new Map();
           values.set(name, into.set(key, value));
         }
@@ -578,13 +444,19 @@ export function applyBlocks(
       inMap(draft.structure, overrideMap(name), (map) => map.delete(key));
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  const retired = piecesOf(draft, blocks);
+  deletePieces(draft, retired.keys());
   const forkCommit = commitStructure(draft, forkStructure, { by: options.by });
   if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
-  result.pressed = pressedOf(result.chosen, [
-    { docs: live, texts: liveTexts, structure: liveCommit },
-    { docs: draft, texts: new Map(), structure: forkCommit },
-  ]);
+  result.pressed = pressedOf(
+    result.chosen,
+    [
+      { docs: live, texts: liveTexts, structure: liveCommit },
+      { docs: draft, texts: new Map(), structure: forkCommit },
+    ],
+    retired,
+  );
   return result;
 }
 
@@ -631,9 +503,15 @@ export function discardBlocks(
   }
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
+  const retired = piecesOf(draft, blocks);
+  deletePieces(draft, retired.keys());
   const commit = commitStructure(draft, structure, { by: options.by });
   if (commit) result.fork.push(commit);
-  result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);
+  result.pressed = pressedOf(
+    result.chosen,
+    [null, { docs: draft, texts, structure: commit }],
+    retired,
+  );
   return result;
 }
 
