@@ -1,7 +1,6 @@
 // The model's `read` and `write` on Loro (design §5): read the room fresh, plan on a view at the
 // frontiers the model read, lower with `applyOps`, save the view's update as one batch with its
 // record, and record what the result showed.
-import { loroRoomName } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
   encodeEnvelope,
@@ -27,7 +26,7 @@ import type { ShownBlock } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
-import { decodeFrontierMap, planningFrontiers } from "../loro-frontier.js";
+import { latestRead, planningFrontiers } from "../loro-frontier.js";
 import { fullHashForBlockId } from "../model/block-hash.js";
 import {
   LoroDocument,
@@ -47,6 +46,7 @@ import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { copySummary } from "./copy-receipt.js";
 import { createDocumentRenderer, type ParseForCommandResult } from "./document-renderer.js";
+import { draftChangeLines } from "./draft-changes.js";
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
 import { recordLoroObservation } from "./loro-observation.js";
 import type { AgentEditResultCommand } from "./model-result.js";
@@ -253,6 +253,23 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const address = parseFileAddress(command) as Address;
     return withRoom(address.documentId, "read", async (room, copy) => {
       const commandLinks = await links(address.documentId, copy, context);
+      if (command.format === "changes") {
+        const lines = room.docs.draft
+          ? draftChangeLines(room.docs, schema, model, commandLinks.codec)
+          : null;
+        return withEvidence(commandLinks, room, copy, address.documentId, context, {
+          status: "success",
+          phase: "committed",
+          model: {
+            message: !lines
+              ? "No changes: this chat writes to live, so nothing waits for review."
+              : lines.length
+                ? lines.join("\n")
+                : "No changes: this chat's draft of the document reads as live.",
+            read: { format: "changes" },
+          },
+        });
+      }
       const selection = renderer.selectReadBlocks(toLoroHandle(copy), command, address);
       if (!selection.ok)
         return errorResponse(
@@ -318,12 +335,13 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }
 
   /**
-   * The document a write plans on: a view of the room at the frontiers the model read plus the
-   * reply's own writes since (`RoomDocs.at`), or the room copy itself when no read was recorded (a
-   * utility write, or a write to a document the model never read), or an empty view for a document
-   * this reply created. `uncomparable` when the model read the room but its frontiers can no longer
-   * be checked out (below the history cutoff): a replace then plans on the transcript. The caller
-   * frees `view`.
+   * The document a write plans on: a view of the room at the frontiers the model last read the
+   * document at (in any of its rooms: `latestRead`) plus the reply's own writes since
+   * (`RoomDocs.at`), or the room copy itself when no read was recorded (a utility write, or a write
+   * to a document the model never read), or an empty view for a document this reply created.
+   * `uncomparable` when the model read the document but this room can't check that read out (below
+   * the history cutoff, or a draft's read of text Live doesn't hold): a replace then plans on the
+   * transcript. The caller frees `view`.
    */
   async function planningDoc(
     read: AgentRoomRead,
@@ -338,9 +356,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         throw new Error(`A reply's write to ${documentId} carries no planning frontier`);
       return { doc: copy, view: null };
     }
-    const room = loroRoomName(read.room);
-    const frontier = await lookups.planning(room);
-    const recorded = frontier?.room === room ? decodeFrontierMap(frontier.snapshot) : null;
+    const recorded = await latestRead(lookups.planning, documentId);
     const own = lookups.reply?.updates(documentId) ?? [];
     const at = recorded ? planningFrontiers(read.docs, recorded, own) : null;
     const created = !at && Boolean(lookups.reply?.created(documentId));
@@ -481,12 +497,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           command.find === undefined &&
           command.content !== undefined
         ) {
-          const view = context.linkView?.kind === "draft" ? "draft" : "live";
-          const shownBlocks =
-            (await context.frontiers?.planningShown?.(loroRoomName(read.room))) ?? [];
           const merged = transcriptMerge(
             copy,
-            shownBlocks.filter((block) => block.view === view),
+            (await context.frontiers?.planningShown?.(address.documentId)) ?? [],
             commandLinks,
             params,
             linkAssigner(address.documentId, commandLinks, shown, context),
@@ -545,15 +558,34 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
             ? withCurrentText(failed, read, copy, commandLinks, address, context)
             : failed;
         }
-        if (resolved.edits.length === 0)
+        if (resolved.edits.length === 0) {
+          const unchanged = formatUnchangedSuccess();
+          // The view already holds this content, but the room doesn't: someone changed these
+          // blocks since the read (a turn Undo that took the chat's own words out, say). On the
+          // model's view the write is a no-op, as an offline peer's would be, and writing on the
+          // room would undo edits the model never saw, so nothing lands; the answer shows the
+          // text as it stands, and the next write plans on it.
+          if (planDoc !== copy) {
+            const now = await resolveOn(copy);
+            if (now.resolved.ok && now.resolved.edits.length > 0)
+              return withCurrentText(
+                { ...unchanged, model: { ...unchanged.model, message: CHANGED_SINCE_READ } },
+                read,
+                copy,
+                commandLinks,
+                address,
+                context,
+              );
+          }
           return await withEvidence(
             commandLinks,
             read,
             copy,
             address.documentId,
             context,
-            formatUnchangedSuccess(),
+            unchanged,
           );
+        }
         return await finish({
           command,
           session,
@@ -710,8 +742,19 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       batch = encodeEnvelope(copy.docs.exportSince(since));
     copy.forget();
     const textAfter = blocksOf(copy);
+    const written = [...decodeEnvelope(batch).keys()];
+    const before = new Map(
+      written.flatMap((key) => {
+        const at = since.get(key);
+        return at ? [[key, at] as const] : [];
+      }),
+    );
+    const after = new Map([...copy.docs.shownVersion()].filter(([key]) => written.includes(key)));
     await rooms.save(read.room, batch, {
       documentId: docId,
+      room: read.room,
+      before,
+      after,
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
@@ -763,7 +806,8 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     return recordLoroObservation(result, {
       copy,
       model,
-      room: loroRoomName(read.room),
+      room: read.room,
+      documentId,
       recording: context.frontiers?.recording,
       ownTurn: context.turnId ?? null,
       ownRemoved: own.ownRemoved ?? new Set(),
@@ -861,5 +905,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     };
   }
 }
+
+const CHANGED_SINCE_READ = "It has been edited since you read it; below is how it reads now.";
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";

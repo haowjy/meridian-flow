@@ -63,9 +63,9 @@ const READ_FIELDS = {
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
   format: z
-    .enum(["full", "outline", "edits"])
+    .enum(["full", "outline", "edits", "changes"])
     .describe(
-      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands. Not with `in`, `around` or `version`. Handles are for you; never show them to the user.",
+      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands; `changes`, your draft's changes as CriticMarkup. Neither takes `in`, `around` or `version`. Handles are for you; never show them to the user.",
     )
     .optional(),
 };
@@ -176,7 +176,7 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. An applied edit, text or tree, is reverted in live; discarded parts stay unchanged.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. In draft mode the undo waits for review, as your writes do.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
@@ -291,15 +291,16 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
         version?: string;
         before?: string;
       };
-      if (fields.format === "edits") {
+      if (fields.format === "edits" || fields.format === "changes") {
         for (const field of ["in", "around", "version"] as const)
           if (fields[field] !== undefined)
             ctx.addIssue({
               code: "custom",
               path: [field],
-              message: "edits is not available with in, around or version",
+              message: `${fields.format} is not available with in, around or version`,
             });
-      } else if (fields.before !== undefined)
+      }
+      if (fields.format !== "edits" && fields.before !== undefined)
         ctx.addIssue({ code: "custom", path: ["before"], message: "before pages edits only" });
     });
 }
