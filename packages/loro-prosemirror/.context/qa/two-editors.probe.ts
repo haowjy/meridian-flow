@@ -883,7 +883,7 @@ function racedRemovals(): string[] {
     e.history.endStep();
   };
   const ownRooms: Record<string, Own> = {
-    // Seed 414 (p18995 R1): B joins x into p, so p holds a copy of x's text and x is removed; A,
+    // Seed 414: B joins x into p, so p holds a copy of x's text and x is removed; A,
     // not having seen it, deletes across x and y. B's removal did not read A's ops in x, so the
     // import restores x. A's Ctrl+Z would put x's old text back beside B's copy: it stays.
     "a peer's join took away text A deleted across": {
@@ -898,7 +898,7 @@ function racedRemovals(): string[] {
         return settle(r, "join/delete-across then A Undo", once("qA8"));
       },
     },
-    // Seed 477 (p18995 R2): A and B remove x from one state, so their removal records are equal,
+    // Seed 477: A and B remove x from one state, so their removal records are equal,
     // and A's wins (the higher peer). B's Ctrl+Z finds a value A wrote: x stays removed.
     "a peer's equal removal keeps the block removed": {
       room: () => room([p("a", "First."), p("x", "Target qA81."), p("z", "Last.")], [2000n, 1000n]),
@@ -910,7 +910,7 @@ function racedRemovals(): string[] {
         return settle(r, "equal removals then B Undo", showsNone("qA81"));
       },
     },
-    // Seed 602 (p18995 W1): B's caret keeps table t, which A removed; B moves y from before t to
+    // Seed 602: B's caret keeps table t, which A removed; B moves y from before t to
     // after it. The writer gives y a new key around t's: t stays removed in the docs.
     "a move beside a kept block leaves it removed": {
       room: () => {
