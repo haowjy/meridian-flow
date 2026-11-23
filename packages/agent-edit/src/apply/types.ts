@@ -26,7 +26,7 @@ export type ResolvedEdit = {
        * Neighbours whose text at the shared boundary this block took, word for word. The write
        * records each with it as pieces of one text, like a split or a join.
        */
-      tookFrom?: readonly BlockRef[];
+      tookFrom?: readonly { block: BlockRef; words: string }[];
     }
   | {
       kind: "insert";

@@ -6,6 +6,7 @@ import {
   type BlockId,
   COMMENT_MARK,
   COMMENT_STYLE_PREFIX,
+  type PeerId,
   type RoomDocs,
   readDocument,
   type ShapeBlock,
@@ -27,6 +28,8 @@ export class LoroDocument {
   private blocks: ShapeBlock[] | null = null;
   private hashes: Map<BlockId, string> | null = null;
   private readonly refs = new Map<BlockId, LoroBlock>();
+  /** Join copies found by the resolver, waiting for its following delete edit. */
+  readonly pendingMoves = new Map<BlockId, [BlockId, [PeerId, number, number][]]>();
 
   constructor(
     readonly docs: RoomDocs,
@@ -167,14 +170,26 @@ export function loroModel(schema: Schema): LoroDocumentModel {
     },
 
     deleteBlock(doc, ref) {
-      const result = loroDocumentOf(doc).apply([{ kind: "delete", block: blockOf(ref).id }]);
+      const document = loroDocumentOf(doc);
+      const block = blockOf(ref).id;
+      const result = document.apply([
+        {
+          kind: "delete",
+          block,
+          ...(document.pendingMoves.has(block) ? { moved: document.pendingMoves.get(block) } : {}),
+        },
+      ]);
       if (!result.ok) throw new Error(result.message);
+      document.pendingMoves.delete(block);
     },
 
-    recordPieces(doc, a, b) {
-      const result = loroDocumentOf(doc).apply([
-        { kind: "pieces", blocks: [blockOf(a).id, blockOf(b).id] },
-      ]);
+    recordPieces(doc, a, b, words) {
+      const document = loroDocumentOf(doc);
+      const destination = blockOf(a).id;
+      const source = blockOf(b).id;
+      const moved = words ? movedWordRuns(document, destination, source, words) : undefined;
+      if (moved?.length) document.pendingMoves.set(source, [destination, moved]);
+      const result = document.apply([{ kind: "pieces", blocks: [destination, source] }]);
       if (!result.ok) throw new Error(result.message);
     },
 
@@ -209,6 +224,57 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       );
     },
   };
+}
+
+function movedWordRuns(
+  document: LoroDocument,
+  destination: BlockId,
+  source: BlockId,
+  words: string,
+): [PeerId, number, number][] {
+  const destinationText = document.shape(destination);
+  const sourceText = document.shape(source);
+  if (
+    destinationText?.kind !== "text" ||
+    !sourceText ||
+    sourceText.kind !== "text" ||
+    words.length === 0
+  )
+    return [];
+  const target = destinationText.inline
+    .filter((item) => item.kind === "text")
+    .map((item) => item.text)
+    .join("");
+  const original = sourceText.inline
+    .filter((item) => item.kind === "text")
+    .map((item) => item.text)
+    .join("");
+  const start =
+    original.endsWith(words) && target.startsWith(words)
+      ? 0
+      : original.startsWith(words) && target.endsWith(words)
+        ? target.length - words.length
+        : -1;
+  if (start < 0) return [];
+  const doc = document.docs.textOf(destination);
+  if (!doc) return [];
+  const text = doc.getText("text");
+  try {
+    const runs: [PeerId, number, number][] = [];
+    for (let at = start; at < start + words.length; at++) {
+      const cursor = text.getCursor(at, 0);
+      if (!cursor) continue;
+      const id = cursor.pos();
+      cursor.free();
+      if (!id) continue;
+      const last = runs.at(-1);
+      if (last && last[0] === id.peer && last[1] + last[2] === id.counter) last[2]++;
+      else runs.push([id.peer as PeerId, id.counter, 1]);
+    }
+    return runs;
+  } finally {
+    text.free();
+  }
 }
 
 function invalid(message: string) {

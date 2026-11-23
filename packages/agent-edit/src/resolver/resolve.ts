@@ -705,17 +705,20 @@ function replaceScope(
         anchor = oldBlocks[step.old];
         insertionRun = {};
         const tookFrom = after.isTextblock
-          ? [step.old - 1, step.old + 1].filter((at) => {
+          ? [step.old - 1, step.old + 1].flatMap((at) => {
               const other = oldNodes[at];
-              if (!other?.isTextblock) return false;
+              if (!other?.isTextblock) return [];
               const [was, now] = [before.textContent, after.textContent];
               const left = stays.get(at);
+              let run = "";
               if (at < step.old) {
-                const run = edgeRun(other.textContent, now);
-                return run !== "" && !was.startsWith(run) && !left?.endsWith(run);
+                run = edgeRun(other.textContent, now);
+                if (run === "" || was.startsWith(run) || left?.endsWith(run)) return [];
+              } else {
+                run = edgeRun(now, other.textContent);
+                if (run === "" || was.endsWith(run) || left?.startsWith(run)) return [];
               }
-              const run = edgeRun(now, other.textContent);
-              return run !== "" && !was.endsWith(run) && !left?.startsWith(run);
+              return [{ block: oldBlocks[at], words: run }];
             })
           : [];
         if (lowered.length > 0)
@@ -726,7 +729,7 @@ function replaceScope(
             structuralBoundary: step.structuralBoundary,
             kind: "ops",
             ops: lowered,
-            ...(tookFrom.length > 0 ? { tookFrom: tookFrom.map((at) => oldBlocks[at]) } : {}),
+            ...(tookFrom.length > 0 ? { tookFrom } : {}),
           });
         break;
       }

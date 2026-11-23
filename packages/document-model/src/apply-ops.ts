@@ -1,5 +1,6 @@
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
+import type { PeerId } from "./peer.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
@@ -41,7 +42,12 @@ export type ShapeOp =
    */
   | { kind: "insert"; parent: BlockId | null; after: BlockId | null; blocks: readonly ShapeBlock[] }
   /** The block goes, with every block shown under it. */
-  | { kind: "delete"; block: BlockId }
+  | {
+      kind: "delete";
+      block: BlockId;
+      /** Character ids the removed block's join put in another block. */
+      moved?: [BlockId, [PeerId, number, number][]];
+    }
   /** Set (or with null clear) attributes of the block, or of its inline node at `unit`. */
   | { kind: "attrs"; block: BlockId; attrs: Attrs; unit?: number }
   /**
@@ -250,7 +256,8 @@ export function applyOps(
     record(writeText(docs, block.id, block.inline, { rule, shape, visibleComment }, options));
   }
 
-  for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
+  for (const op of of("delete"))
+    if (view.shown.has(op.block)) writer.remove(op.block, undefined, op.moved);
   for (const op of of("pieces")) writer.pieces(...op.blocks);
 
   const structure = commitStructure(docs, before, options);
