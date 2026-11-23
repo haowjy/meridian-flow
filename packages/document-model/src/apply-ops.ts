@@ -1,6 +1,11 @@
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
-import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
+import {
+  checkEmptyParagraphId,
+  commentVisibility,
+  derivedEmptyParent,
+  shownUnits,
+} from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
@@ -210,6 +215,7 @@ export function applyOps(
     if (end) chained.set(chain, end.id);
   }
   function insertBlock(block: ShapeBlock, parent: BlockId | null, key: string) {
+    checkEmptyParagraphId(block.id, parent);
     writer.set("order", block.id, key);
     writer.block(block.id, parent, block.node, block.attrs, true);
     if (block.kind === "container") {

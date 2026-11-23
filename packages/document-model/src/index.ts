@@ -12,6 +12,7 @@ export {
   commentVisibility,
   derivedEmptyParent,
   emptyParagraphId,
+  emptyParagraphOf,
   isDerivedEmpty,
   normalizeInline,
   normalizeMarks,
@@ -26,7 +27,6 @@ export {
 } from "./read.js";
 export {
   removedOnPath,
-  restampRemovals,
   restore,
   UNTRACKED_ORIGIN,
 } from "./removals.js";
@@ -68,6 +68,23 @@ export {
   removalOf,
   StructureView,
 } from "./structure.js";
+export {
+  type Edit,
+  type EditValues,
+  editStays,
+  leftOf,
+  noteEdit,
+  opsBetween,
+  putBackValues,
+  type SetValue,
+  type TakenBack,
+  type TextOp,
+  type TextSpan,
+  takeBackMessage,
+  takenBack,
+  textSince,
+  valuesOf,
+} from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";
 export {
   type DocVersion,

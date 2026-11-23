@@ -131,6 +131,7 @@ export class RoomDocs {
   /** A copy of Live this copy made for itself (`fork`, `at`), freed with it. */
   private ownedLive: RoomDocs | null = null;
   private readonly textWriteListeners = new Set<(id: BlockId, doc: LoroDoc) => void>();
+  private readonly importListeners = new Set<() => void>();
   private freed = false;
 
   private constructor(shape: ShapeSchema, peer: PeerId, structure: LoroDoc, live: RoomDocs | null) {
@@ -298,6 +299,15 @@ export class RoomDocs {
     return () => this.textWriteListeners.delete(listener);
   }
 
+  /**
+   * Calls `listener` each time ops from elsewhere are about to go into this copy (`importBatch`,
+   * `forward`): an Undo history takes what its last step left here. Returns the stop.
+   */
+  beforeImport(listener: () => void): () => void {
+    this.importListeners.add(listener);
+    return () => this.importListeners.delete(listener);
+  }
+
   /** The owned doc of `key`. */
   doc(key: DocKey): LoroDoc | undefined {
     return key === STRUCTURE_KEY ? this.structure : this.texts.get(key);
@@ -378,6 +388,7 @@ export class RoomDocs {
       const target = this.doc(key) ?? this.live?.textOf(key);
       if (target) checkCutoff(key, target, bytes, meta);
     }
+    for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
     let pending = false;
@@ -404,6 +415,7 @@ export class RoomDocs {
   forward(): Imported {
     const live = this.live;
     if (!live) return { changed: [], pending: false, restore: null };
+    for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
@@ -433,6 +445,7 @@ export class RoomDocs {
     this.texts.clear();
     this.ownedLive?.free();
     this.textWriteListeners.clear();
+    this.importListeners.clear();
     this.freed = true;
   }
 

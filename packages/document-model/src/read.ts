@@ -27,6 +27,24 @@ import { StructureView } from "./structure.js";
  */
 export const emptyParagraphId = (parent: BlockId | null) => `${parent ?? ""}/empty`;
 
+/**
+ * The parent whose empty paragraph `id` names (null: the document), or undefined for any other id.
+ * Such an id is stored only under that parent (design §1): elsewhere it would read twice once the
+ * parent shows empty again. Where ids are given, a block moved out takes a fresh one.
+ */
+export function emptyParagraphOf(id: BlockId): BlockId | null | undefined {
+  const suffix = emptyParagraphId(null);
+  if (!id.endsWith(suffix)) return undefined;
+  return id.length === suffix.length ? null : id.slice(0, -suffix.length);
+}
+
+/** Throws when `id` names another parent's empty paragraph: no writer stores one under `parent`. */
+export function checkEmptyParagraphId(id: BlockId, parent: BlockId | null): void {
+  const owner = emptyParagraphOf(id);
+  if (owner !== undefined && owner !== parent)
+    throw new Error(`block id ${id} names the empty paragraph of ${owner ?? "the document"}`);
+}
+
 const derivedEmpty = (parent: BlockId | null): ShapeBlock => ({
   kind: "text",
   id: emptyParagraphId(parent),
@@ -46,9 +64,8 @@ export function derivedEmptyParent(
   shape: ShapeSchema,
   id: BlockId,
 ): BlockId | null | undefined {
-  const suffix = emptyParagraphId(null);
-  if (!id.endsWith(suffix) || view.shown.has(id)) return undefined;
-  const parent = id.length === suffix.length ? null : id.slice(0, -suffix.length);
+  const parent = emptyParagraphOf(id);
+  if (parent === undefined || view.shown.has(id)) return undefined;
   if (parent !== null && !view.shown.has(parent)) return undefined;
   const node = parent === null ? shape.root : view.node(parent);
   if (node === undefined || !shape.node(node)?.fillable) return undefined;

@@ -34,42 +34,78 @@ export function compareOrder(keyA: string, idA: string, keyB: string, idB: strin
 /**
  * Keys for `list`, in order, given each id's current key among these siblings (absent for a block
  * new to this parent). The longest run already in order keeps its keys; only the rest get new ones.
+ * A `pinned` block keeps its key whatever the run (a removed block the editor still shows, design
+ * §1's caret rule: a new key would bring it back), so the blocks around it take new keys instead.
  */
 export function orderKeys(
   list: readonly string[],
   current: ReadonlyMap<string, string | undefined>,
   random: Random,
+  pinned: ReadonlySet<string> = new Set(),
 ): Map<string, string> {
-  // The longest run of current keys in strictly increasing order, by patience sorting: `tails[k]`
-  // is the index ending the best run of length k + 1 found so far.
   const n = list.length;
-  const previous = new Array<number>(n).fill(-1);
-  const tails: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const key = current.get(list[i]);
-    if (typeof key !== "string") continue;
-    let lo = 0;
-    let hi = tails.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if ((current.get(list[tails[mid]]) as string) < key) lo = mid + 1;
-      else hi = mid;
-    }
-    previous[i] = lo > 0 ? tails[lo - 1] : -1;
-    tails[lo] = i;
-  }
+  const keyOf = (i: number) => current.get(list[i]);
   const keep = new Set<number>();
-  for (let i = tails.at(-1) ?? -1; i >= 0; i = previous[i]) keep.add(i);
+  let segment: number[] = [];
+  let low: string | null = null;
+  // Between two pinned blocks, the longest run of keys that fit between theirs.
+  const close = (high: string | null) => {
+    const fits = segment.filter((i) => {
+      const key = keyOf(i) as string;
+      return (low === null || key > low) && (high === null || key < high);
+    });
+    for (const i of longestRun(fits, keyOf)) keep.add(i);
+    segment = [];
+  };
+  for (let i = 0; i < n; i++) {
+    const key = keyOf(i);
+    if (typeof key !== "string") continue;
+    if (!pinned.has(list[i])) {
+      segment.push(i);
+      continue;
+    }
+    close(key);
+    keep.add(i);
+    low = key;
+  }
+  close(null);
   const upper = new Array<string | null>(n);
   for (let i = n - 1, next: string | null = null; i >= 0; i--) {
     upper[i] = next;
-    if (keep.has(i)) next = current.get(list[i]) as string;
+    if (keep.has(i)) next = keyOf(i) as string;
   }
   const result = new Map<string, string>();
   let lower: string | null = null;
   for (let i = 0; i < n; i++) {
-    lower = keep.has(i) ? (current.get(list[i]) as string) : keyBetween(lower, upper[i], random);
+    lower = keep.has(i) ? (keyOf(i) as string) : keyBetween(lower, upper[i], random);
     result.set(list[i], lower);
   }
   return result;
+}
+
+/**
+ * The longest run of `indices` whose keys strictly increase, by patience sorting: `tails[k]` is the
+ * index ending the best run of length k + 1 found so far.
+ */
+function longestRun(
+  indices: readonly number[],
+  keyOf: (i: number) => string | undefined,
+): number[] {
+  const previous = new Map<number, number>();
+  const tails: number[] = [];
+  for (const i of indices) {
+    const key = keyOf(i) as string;
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((keyOf(tails[mid]) as string) < key) lo = mid + 1;
+      else hi = mid;
+    }
+    previous.set(i, lo > 0 ? tails[lo - 1] : -1);
+    tails[lo] = i;
+  }
+  const run: number[] = [];
+  for (let i = tails.at(-1) ?? -1; i >= 0; i = previous.get(i) ?? -1) run.push(i);
+  return run;
 }

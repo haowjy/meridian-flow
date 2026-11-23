@@ -60,7 +60,9 @@ synchronously, then drains transports and leases.
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other
   half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
-  paste or drop keeps it. The id rides the clipboard as `data-block-id`. Remote transactions
+  paste or drop keeps it. A container's empty paragraph `<container>/empty` keeps that id only
+  under that container: an unwrap or a move out gives it a fresh one, or the container shown
+  empty again would read the id twice (the binding throws on one elsewhere). The id rides the clipboard as `data-block-id`. Remote transactions
   are left alone: their blocks already have ids. A block's id is its text doc's key, so a block
   is found by id (`findBlock` in `loro-points.ts`), never by a stored position.
 - Caret across a remote write: the binding carries the selection as Loro cursors. A
@@ -121,8 +123,8 @@ identity in anchors or holds.
   behavior supplies the contract. `editor-history.ts` is the document's history: its
   `DocumentHistory` is owned by the `DocumentSession`, and each editor attaches to it while
   mounted. It wraps the binding's `UndoHistory`, which the sync plugin records every write into:
-  one Loro `UndoManager` per doc the tab changes (the structure's at once, a text doc's at its
-  first write, through `RoomDocs.beforeTextWrite`), each Undo item tagged with the editor step
+  one Loro `UndoManager` per text doc the tab changes (made at its first write, through
+  `RoomDocs.beforeTextWrite`), each Undo item tagged with the editor step
   it belongs to. Ctrl+Z runs exactly the managers the newest step touched until their top item
   is another step's, and publishes what they wrote as one local batch. Loro keeps each inverse
   as positions moved through every edit since and records only this peer's commits, so a chain
@@ -134,9 +136,14 @@ identity in anchors or holds.
   `UNTRACKED_ORIGIN`, as `session.writeDocument` does; meta-only transactions are not
   boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
   carries through its inverse (a deleted selection comes back over the restored text); Redo puts
-  back the one Undo was pressed from. Ctrl+Z of a value (a heading level, an image width) puts the
-  step's old value back even over a peer's later write of it: that is Loro's map undo, chosen with
-  the manager (design §6), not a bug to guard. Destroying an editor only detaches it: the history lasts
+  back the one Undo was pressed from. Structure values (order, parent, node type, attributes,
+  comment bodies) are not Loro's: each step keeps the values it set. A step goes back whole or
+  stays whole (design §2, "An Undo takes an edit back whole"): when another peer wrote over any of
+  it (a key, the new half of an Enter, a word it typed, a style it set), Ctrl+Z leaves it, writes
+  nothing, drops it and every step sharing its paragraphs from the history, and goes on to the
+  step before; `run`'s result counts the steps that stayed, and what the app shows for them is
+  open (design §9). Typing joins the open step; any other write starts one, and a write that sets
+  structure ends it, so an Enter is a step of its own. Destroying an editor only detaches it: the history lasts
   as long as the session, so a tab's undo survives its editor; the session frees its managers
   before its docs. Reload resets it. With drafts off, a press Apply has no Undo entry.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole

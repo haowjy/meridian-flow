@@ -3,15 +3,17 @@ import {
   commentVisibility,
   type DocChange,
   emptyParagraphId,
+  type NodeRule,
   type RoomDocs,
   removedOnPath,
   replaceText,
   restore,
   STRUCTURE_KEY,
+  StructureView,
   structureValues,
   visibleComments,
 } from "@meridian/document-model";
-import type { Node, Slice } from "prosemirror-model";
+import type { Fragment, Node, Slice } from "prosemirror-model";
 import {
   type EditorState,
   NodeSelection,
@@ -105,17 +107,27 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           }
           const message = options.messageOf?.(tr);
           const recorded = tr.getMeta("addToHistory") !== false;
-          if (recorded) history?.beforeWrite(oldState);
+          const typing = typingOf(docs, oldState, newState, tr);
+          // One read of the structure, if anything takes it, serves the history and the write.
+          let view: StructureView | undefined;
+          const read = () => {
+            view ??= new StructureView(docs, kept);
+            return view;
+          };
+          // Typing joins the open Undo step; any other write starts one (design §2).
+          if (recorded)
+            history?.beforeWrite(oldState, typing !== null, kept.size === 0 ? read : undefined);
           else history?.endStep();
           const origin = recorded ? tracked : UNTRACKED_ORIGIN;
-          const changes =
-            typingWrite(docs, oldState, newState, tr, origin, message) ??
-            writeProseMirror(docs, newState.doc, {
-              origin,
-              message,
-              previous: oldState.doc,
-              kept,
-            });
+          const changes = typing
+            ? writeTyping(docs, typing, origin, message)
+            : writeProseMirror(docs, newState.doc, {
+                origin,
+                message,
+                previous: oldState.doc,
+                kept,
+                view,
+              });
           if (recorded) history?.record(changes);
           if (changes.length > 0) options.onLocalWrite?.(changes);
         }
@@ -216,19 +228,20 @@ function rangeOf(step: Transaction["steps"][number]): { from: number; to: number
   return pos === undefined ? null : { from: pos, to: pos + 1 };
 }
 
+/** Typing: one replace step of inline content inside one textblock. */
+type Typing = { id: string; rule: NodeRule; from: number; to: number; content: Fragment };
+
 /**
  * The text fast path: one replace step of inline content inside one textblock, written with
- * `replaceText` into that block's text doc alone (so typing inside bold is one op). Returns null to
- * fall back to the full write.
+ * `replaceText` into that block's text doc alone (so typing inside bold is one op). Null when the
+ * transaction needs the full write.
  */
-function typingWrite(
+function typingOf(
   docs: RoomDocs,
   oldState: EditorState,
   newState: EditorState,
   tr: Transaction,
-  origin: string,
-  message: string | undefined,
-): DocChange[] | null {
+): Typing | null {
   if (tr.steps.length !== 1) return null;
   const step = tr.steps[0].toJSON() as { stepType?: string; from?: number; to?: number };
   if (step.stepType !== "replace" || step.from === undefined || step.to === undefined) return null;
@@ -251,14 +264,23 @@ function typingWrite(
     !sameAttrs($after.parent, block)
   )
     return null;
-  const { doc, before } = docs.writableText(id);
   const from = $from.parentOffset;
+  return { id, rule, from, to: from + step.to - step.from, content: slice.content };
+}
+
+function writeTyping(
+  docs: RoomDocs,
+  { id, rule, from, to, content }: Typing,
+  origin: string,
+  message: string | undefined,
+): DocChange[] {
+  const { doc, before } = docs.writableText(id);
   replaceText(
     doc,
     { rule, shape: docs.shape, visibleComment: commentVisibility(structureValues(docs)) },
     from,
-    from + step.to - step.from,
-    inlineOf(slice.content),
+    to,
+    inlineOf(content),
   );
   doc.commit({ origin, message });
   return [{ key: id, doc, before, after: doc.frontiers() }];

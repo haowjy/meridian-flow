@@ -30,21 +30,35 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   lean on the invariant above: a `previous` or `since.doc` that is not what the docs read as
   writes or shows the wrong thing.
 - Ctrl+Z is `UndoHistory` (`history.ts`), passed to the plugin as `history`: one Loro
-  `UndoManager` per doc the copy writes, and editor steps over them. Don't build an inverse of our
-  own: Loro's manager keeps inverses as positions carried through later edits, which is what a
-  chain of dependent steps needs (design §6). A manager records only commits made after it
-  exists, so it is created at the doc's first write (`RoomDocs.beforeTextWrite`); every local
-  write into the copy that no Ctrl+Z should take back commits under `UNTRACKED_ORIGIN`, or it
-  becomes an item that blocks the steps below it on that doc. `destroy()` the history before
-  freeing the docs: each manager is WASM memory.
+  `UndoManager` per text doc the copy writes, and editor steps over them. Don't build a text
+  inverse of our own: Loro's manager keeps inverses as positions carried through later edits,
+  which is what a chain of dependent steps needs (design §6). A manager records only commits
+  made after it exists, so it is created at the doc's first write (`RoomDocs.beforeTextWrite`);
+  every local write into the copy that no Ctrl+Z should take back commits under
+  `UNTRACKED_ORIGIN`, or it becomes an item that blocks the steps below it on that doc.
+  `destroy()` the history before freeing the docs: each manager is WASM memory.
+- The structure doc has no manager. A step goes back whole or stays whole (design §2, "An Undo
+  takes an edit back whole"): `UndoHistory` keeps what each step did as a `document-model`
+  `Edit` (structure values, text spans, what its next run takes off or brings onto the screen)
+  and runs a step only while `editStays` finds nobody else wrote over it; `putBackValues` then
+  writes its values back, a block it made going as a removal. That rule is `document-model`'s
+  (`take-back.ts`), shared with the press's Undo: change it there, not here. A step that stays
+  writes nothing: the managers of its text docs are made again, so it and every step sharing a
+  doc or a structure key with it leave the history (Loro can't drop one item). "Someone else" is
+  another peer: this copy's own untracked writes never keep a step. The history keeps steps
+  (500), not manager items: a manager has no item limit, since one typing step split by a peer's
+  batches is an item per key, and a limit would drop part of it. Typing joins the open step; any
+  other write starts one, and a write that sets structure ends it. A step's note is taken late, just before the next import
+  (`RoomDocs.beforeImport`), the next write that is not typing (sharing that write's read of the
+  structure), or a run: an Enter pays one read of the structure, not two.
+- Every Undo and Redo commit in a text doc carries `takeBackMessage` (the ops it takes back), set
+  in `subscribePreCommit`: `textSince` reads text it put back as the text it deleted by it.
 - The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the
   selection's head, or a block above it, the editor keeps every removed block on that path in its
   document. A local transaction with a step inside a kept block restores them (`restore`, which
   publishes) and then writes as usual; any other write leaves them removed in the docs. The head
   leaving them ends it, and `appendTransaction` reads them off the screen. A local import
-  (`notifyChanged`: an Undo, a command) keeps nothing new. After an Undo or Redo run changes the
-  structure, `UndoHistory` writes again every removal record the run replayed
-  (`restampRemovals`), in the run's batch.
+  (`notifyChanged`: an Undo, a command) keeps nothing new.
 - Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
   docs still alive.
 

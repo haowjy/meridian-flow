@@ -24,7 +24,12 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
   delta raw to decide what a document shows. Every text write goes through `replaceText`, which
   addresses shown units; the unstored empty paragraph is `derivedEmptyParent` / `isDerivedEmpty`
-  for every writer, and only when it is its container's one block (`storedOf`). A local write
+  for every writer, and only when it is its container's one block (`storedOf`). Its id
+  `<parent>/empty` is stored only under that parent: where ids are given (the app's block-id fixer,
+  the probe's), a block moved out takes a fresh one, and `writeDocument` and `applyOps` throw on
+  one elsewhere (`checkEmptyParagraphId`), or the parent shown empty again reads the id twice.
+  Which blocks show is one function, `showRule`: `StructureView` runs it over every block and an
+  Undo's test over the blocks its run changes. Don't write a second copy of it. A local write
   into a text doc takes the doc from `writableText`, which tells `beforeTextWrite` listeners
   first: the editor's Undo starts its Loro `UndoManager` for the doc there.
 - `writeDocument`'s `previous` and `readDocument`'s `since` make a write or a read cost what
@@ -34,10 +39,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
 - A removal is a record in `order[id]`, JSON text of `{ at, seen }`: the key the block had and the
   `DocVersion` the remover's copy showed of every text doc under it (its state's, not its oplog's:
   a view checked out at a read holds ops it never showed). `StructureWriter.remove`
-  is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
+  is its one writer, on the topmost removed block only. A write that re-keys siblings never
+  re-keys a removed block the editor keeps (`orderKeys`' `pinned`): a new key would bring it back. What shows is the structure doc's alone: a
   block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
   record) and its ancestors show. A removed block comes back only by a write of its key:
-  `restore`, Undo's replay, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
+  `restore`, an Undo's `putBackValues`, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
   import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
   holder sends and saves it like a local write (`encodeChanges`). They are the only ways ops enter
   a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
@@ -52,6 +58,14 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.
+- Every Undo, the editor's Ctrl+Z and a press's, follows one rule (`take-back.ts`, design §2 "An
+  Undo takes an edit back whole, or leaves it whole"): `editStays` tests an `Edit` (`valuesOf`,
+  its text spans, `noteEdit` after each write or run and before the next import), and only then
+  does the caller take its text back and `putBackValues` write its structure. Don't add a second
+  test beside it. "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's
+  peer: a press's Undo runs on a server copy with a peer of its own. Every
+  commit that takes ops back says which in its message (`takeBackMessage`), so `textSince` can
+  read text an Undo put back as the text it deleted, by character id.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s
