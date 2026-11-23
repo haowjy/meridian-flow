@@ -2,7 +2,7 @@
  * A Work's drafts (design §2, "The draft row stays, and a Work has several"): the list the version
  * chip shows, `+ New draft`, rename, `Delete draft` and its Undo, which draft a chat writes into,
  * and the purge of a draft deleted 30 days ago. Lock order: the Work's row first (the owner slot),
- * then the draft rows; the purge then takes the draft's tree lists.
+ * then the draft rows; the purge then takes the draft's tree lists, then its forks' documents.
  */
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import { newDraftId } from "@meridian/contracts";
@@ -10,10 +10,11 @@ import type { WorkDraft } from "@meridian/contracts/drafts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { documentForks, drafts, threads, works } from "@meridian/database/schema";
+import { documentForks, drafts, threads, threadWorks, works } from "@meridian/database/schema";
 import { newId } from "@meridian/project-tree";
 import { and, asc, desc, eq, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
@@ -181,23 +182,35 @@ export function createDrizzleWorkDrafts(
       }),
 
     async setChatDraft({ threadId, draftId }) {
-      return runInDrizzleTransaction(db, async () => {
-        const [chat] = await tx()
-          .select({ root: threads.rootThreadId })
+      const [chat] = await tx()
+        .select({ root: threads.rootThreadId, workId: threadWorks.workId })
+        .from(threads)
+        .leftJoin(
+          threadWorks,
+          and(eq(threadWorks.threadId, threads.rootThreadId), eq(threadWorks.isPrimary, true)),
+        )
+        .where(eq(threads.id, threadId));
+      if (!chat) return null;
+      const named = async () => {
+        const [root] = await tx()
+          .select({ draftId: threads.draftId })
           .from(threads)
-          .where(eq(threads.id, threadId));
-        if (!chat) return null;
+          .where(eq(threads.id, chat.root));
+        return root?.draftId ?? null;
+      };
+      if (!chat.workId) return named();
+      // Under the Work's row, as `remove` takes it: a draft deleted after this read is not named.
+      const workId = chat.workId as WorkId;
+      const chosen = await withWork(workId, async () => {
         await tx().execute(sql`
           UPDATE threads root SET draft_id = d.id
           FROM thread_works tw, drafts d
           WHERE root.id = ${chat.root}::uuid AND tw.thread_id = root.id AND tw.is_primary
+            AND tw.work_id = ${workId}::uuid
             AND d.id = ${draftId} AND d.work_id = tw.work_id AND d.deleted_at IS NULL`);
-        const [after] = await tx()
-          .select({ draftId: threads.draftId })
-          .from(threads)
-          .where(eq(threads.id, chat.root));
-        return after?.draftId ?? null;
+        return named();
       });
+      return chosen;
     },
 
     async purgeDeleted(now = new Date()) {
@@ -223,7 +236,11 @@ export function createDrizzleWorkDrafts(
           const rooms = await tx()
             .select({ documentId: documentForks.documentId })
             .from(documentForks)
-            .where(eq(documentForks.draftId, id));
+            .where(eq(documentForks.draftId, id))
+            .orderBy(asc(documentForks.documentId));
+          // A fork's save checks the draft under its document's key: holding the keys, the
+          // delete lands before or after each save, never under one.
+          for (const { documentId } of rooms) await lockDocumentMutation(tx(), documentId);
           // Its forks, their snapshots (by trigger), its press rows and tree rows go with it.
           await tx().delete(drafts).where(eq(drafts.id, id));
           return rooms.map(

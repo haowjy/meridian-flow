@@ -218,9 +218,14 @@ export async function rootDraftFor(
  * and a Work it leaves without a default gets a fresh one; when others name it, the chat names
  * the destination's default instead, or a fresh lineage draft with No Work. Nothing in a document
  * changes: a fork is named by its draft. A non-root chat writes its root's draft and has nothing
- * to carry. Call it in the binding's transaction, after the new primary row.
+ * to carry. Call it in the binding's transaction, after the new primary row. Answers the Works a
+ * draft left or joined: their pending totals, the sum of their drafts', moved.
  */
-export async function carryRootDraft(db: DrizzleDb, threadId: string, workId: string) {
+export async function carryRootDraft(
+  db: DrizzleDb,
+  threadId: string,
+  workId: string,
+): Promise<string[]> {
   const tx = currentDrizzleDb(db);
   const [row] = await tx.execute<{
     draft_id: string;
@@ -237,8 +242,8 @@ export async function carryRootDraft(db: DrizzleDb, threadId: string, workId: st
       EXISTS (SELECT 1 FROM threads o WHERE o.draft_id = t.draft_id AND o.id <> t.id) AS shared
     FROM threads t JOIN drafts d ON d.id = t.draft_id, works w
     WHERE t.id = ${threadId}::uuid AND t.root_thread_id = t.id AND w.id = ${workId}::uuid
-    FOR UPDATE OF d`);
-  if (!row || row.draft_work === row.dest) return;
+    FOR NO KEY UPDATE OF d`);
+  if (!row || row.draft_work === row.dest) return [];
   if (!row.shared) {
     await tx.execute(sql`
       UPDATE drafts SET work_id = ${row.dest}::uuid,
@@ -253,7 +258,7 @@ export async function carryRootDraft(db: DrizzleDb, threadId: string, workId: st
         isDefault: true,
         createdBy: row.created_by as UserId,
       });
-    return;
+    return [row.draft_work, row.dest].filter((work) => work !== null);
   }
   let next: string | null = null;
   if (row.dest) {
@@ -275,4 +280,5 @@ export async function carryRootDraft(db: DrizzleDb, threadId: string, workId: st
       .update(threads)
       .set({ draftId: next as DraftId })
       .where(eq(threads.id, threadId as ThreadId));
+  return [];
 }

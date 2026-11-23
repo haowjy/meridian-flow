@@ -24,7 +24,6 @@ import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentDraftOrigin } from "../domains/collab/domain/ports/work-draft-pending-store.js";
-import { PressUnsynced } from "../domains/collab/domain/press.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-draft-review-service.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
@@ -264,13 +263,6 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     return await promise;
   } catch (cause) {
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
-    // The press is ahead of what the server holds; nothing was stored and the client sends it again.
-    if (cause instanceof PressUnsynced)
-      throw createError({
-        statusCode: 503,
-        message: "The press is waiting for the documents to sync",
-        data: { retryable: true },
-      });
     throw cause;
   }
 }

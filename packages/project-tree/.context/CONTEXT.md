@@ -232,7 +232,8 @@ the replay uses them (package `AGENTS.md`).
   is in no plan: the view after Apply must hold both with it and, for what stands, without it, as
   live will show it (a waiting move can put a node inside a delete's cascade). A Discard all takes
   waiting records with the rest.
-  `covers(doc, saw)` says whether a copy holds the state the writer saw.
+  `saw` past what the copy holds counts only what it holds (`recordsAdmittedAfter`): a record
+  the writer saw that has not arrived stays pending.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { closed })` writes each landed copy's opposite record through `takeBackAll` (a create's
   opposite is a delete that keeps what others put inside standing), then puts back to pending the
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored

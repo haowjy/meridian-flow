@@ -104,7 +104,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await resolver.viewForOwner(owner)).toEqual({ kind: "draft", draftId: made.id });
       expect(await resolver.byIds([made.id])).toMatchObject([{ id: made.id }]);
       await runInRootDrizzleTransaction(root, async () => {
-        expect(await resolver.share(made.id)).toMatchObject({ id: made.id });
         expect(await resolver.lock(made.id)).toMatchObject({ id: made.id });
       });
     });

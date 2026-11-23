@@ -47,6 +47,8 @@ import {
   discardBlocks,
   encodeChanges,
   frontiersOf,
+  isServerPeer,
+  type PeerId,
   type PressedChange,
   type RoomDocs,
   type RoomVersion,
@@ -385,25 +387,32 @@ export function createDrizzlePress(
     return withTreeOwners(db, sources, run);
   }
 
-  /** Each Undo copy's commit since `after`, by a peer other than the Undo's own: its message. */
-  function messagesOver(doc: LoroDoc, after: Frontiers) {
+  /**
+   * The commits since `after` by a peer other than the Undo copy's own, into `seen`: each one's
+   * message, and whether a tab committed (a tab's commit carries none). A server write with no
+   * message (a restore, a copy) names no author.
+   */
+  function commitsOver(
+    doc: LoroDoc,
+    after: Frontiers,
+    seen: { messages: Set<string>; tab: boolean },
+  ) {
     const own = doc.peerIdStr;
-    const out: (string | undefined)[] = [];
     for (const span of doc.findIdSpansBetween(after, doc.frontiers()).forward) {
       if (span.peer === own) continue;
       let counter = span.counter;
       while (counter < span.counter + span.length) {
         const change = doc.getChangeAt({ peer: span.peer, counter });
-        out.push(change.message || undefined);
+        if (change.message) seen.messages.add(change.message);
+        else if (!isServerPeer(span.peer as PeerId)) seen.tab = true;
         counter = change.counter + change.length;
       }
     }
-    return out;
   }
 
   /** Who wrote over a change that stayed, from the commits on its text since the press. */
   async function overwriters(copy: RoomDocs, change: PressedChange): Promise<PressOverwriter[]> {
-    const messages = new Set<string | undefined>();
+    const seen = { messages: new Set<string>(), tab: false };
     for (const [side, stored] of [
       [copy.live, change.live],
       [copy, change.fork],
@@ -413,13 +422,14 @@ export function createDrizzlePress(
         const doc = side.doc(key);
         if (!doc) continue;
         const after = frontiersOf(doc, new Map(Object.entries(span.after)) as DocVersion);
-        for (const message of messagesOver(doc, after)) messages.add(message);
+        commitsOver(doc, after, seen);
       }
     }
-    const by: PressOverwriter[] = messages.has(undefined) ? [{ kind: "writer" }] : [];
+    const { messages } = seen;
+    const by: PressOverwriter[] = seen.tab ? [{ kind: "writer" }] : [];
     // A message is the room's content, which any client writes: a turn id that isn't one names no chat.
     const turnIds = [...messages].flatMap((message) => {
-      const id = message?.startsWith("turn:") ? message.slice("turn:".length) : null;
+      const id = message.startsWith("turn:") ? message.slice("turn:".length) : null;
       return id && isUuid(id) ? [id] : [];
     });
     if (turnIds.length > 0) {
@@ -430,7 +440,7 @@ export function createDrizzlePress(
         .where(inArray(turns.id, turnIds as never[]));
       for (const { ref } of chats) if (ref) by.push({ kind: "chat", ref });
     }
-    if ([...messages].some((message) => message?.startsWith("press:"))) by.push({ kind: "press" });
+    if ([...messages].some((message) => message.startsWith("press:"))) by.push({ kind: "press" });
     return by;
   }
 
@@ -519,7 +529,7 @@ export function createDrizzlePress(
                     for (const change of undone.stayed)
                       stayed.push({
                         documentId,
-                        change: change.members[0] ?? "",
+                        change: change.members[0],
                         by: await overwriters(copy, change),
                       });
                   } finally {

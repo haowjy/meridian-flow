@@ -9,9 +9,9 @@ their shared rules.
 `CollabDomain` supplies the Postgres adapters around `@meridian/agent-edit` and
 `@meridian/document-model`. A document's Live text is its Loro room (`DocumentRooms`,
 `rooms/postgres-document-rooms.ts`, on `document_snapshots`): a structure doc and a text doc per
-block. Phase 1 has no text drafts: every AI write lands Live, a named Work's included, and the
-press works on a Work's pending tree records only ([the press](press.md)). Phase 2 brings a draft
-back as a fork room of the document.
+block. A draft's text is a fork room of the document (`fork:<draft>:<document>`, with its
+`document_forks` row): a drafted write lands there, and the press applies or discards its changes
+into Live with its tree records ([the press](press.md)).
 
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
@@ -54,8 +54,10 @@ result commit together, and live rooms receive the write only after commit, so a
 invisible to open editors. The grant is confirmed once per write and a write whose Work lost
 access is refused.
 
-A chat's write mode (`threads.ai_write_mode`) is kept but sends nothing to a draft in phase 1: the
-file grant's `destinationAt` answers Live for every write.
+A chat's write mode (`threads.ai_write_mode`) picks where a write lands: the file grant's
+`destinationAt` answers the chat's draft for a drafted source in Draft mode or where the place asks
+for review, and Live otherwise. At a draft the agent-edit host reads and writes the draft's fork
+room, except for a document only the draft holds, whose text is in its Live room (`agentRoomFor`).
 
 A write into a room where the model has no frontier plans on the current room. A write with a
 usable frontier plans on the room at that frontier and merges onto the current room. A write that

@@ -2,7 +2,7 @@
  * Drizzle adapter for drafts. A Work's default draft is minted with the Work and a No Work
  * lineage's with its root chat (`mint_named_draft`); the Work's others by `Drafts.create`.
  */
-import type { DraftId, DraftOwner } from "@meridian/contracts";
+import type { DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { drafts, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -24,12 +24,6 @@ const draftColumns = {
 
 export function createDrizzleDraftStore(db: Database): DraftStore {
   const tx = () => currentDrizzleDb(db);
-
-  async function row(draftId: DraftId, strength?: "no key update" | "share") {
-    const query = tx().select(draftColumns).from(drafts).where(eq(drafts.id, draftId));
-    const [found] = await (strength ? query.for(strength) : query);
-    return found ?? null;
-  }
 
   return {
     async ofOwner(owner: DraftOwner): Promise<Draft | null> {
@@ -63,8 +57,14 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
         handle,
       };
     },
-    lock: (draftId) => row(draftId, "no key update"),
-    share: (draftId) => row(draftId, "share"),
+    async lock(draftId) {
+      const [found] = await tx()
+        .select(draftColumns)
+        .from(drafts)
+        .where(eq(drafts.id, draftId))
+        .for("no key update");
+      return found ?? null;
+    },
     async byIds(draftIds) {
       const ids = [...new Set(draftIds)];
       if (ids.length === 0) return [];

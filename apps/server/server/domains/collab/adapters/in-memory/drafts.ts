@@ -40,7 +40,6 @@ export function createInMemoryDraftStore(namedDraft: NamedDraft): DraftStore {
       return row;
     },
     lock: async (draftId) => rows.get(draftId) ?? null,
-    share: async (draftId) => rows.get(draftId) ?? null,
     byIds: async (draftIds) => draftIds.flatMap((id) => rows.get(id) ?? []),
     async namedBy({ workId, lineageRootIds }) {
       return [...named.values()]

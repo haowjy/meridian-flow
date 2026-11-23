@@ -474,13 +474,14 @@ export function createPostgresDocumentRooms(input: {
       .from(documents)
       .where(eq(documents.id, room.documentId));
     if (row?.purgedAt) return { bytes: 0, docs: 0 };
-    // A purged draft's fork has no rows to write; holding its row keeps a purge waiting on us.
+    // A purged draft's fork has no rows to write. The purge deletes the draft under this
+    // document's lock, so the read needs no row lock: one would follow the document key, against
+    // the lock order every press takes.
     if (room.kind === "fork") {
       const [draft] = await tx
         .select({ id: drafts.id })
         .from(drafts)
-        .where(eq(drafts.id, room.draftId))
-        .for("share");
+        .where(eq(drafts.id, room.draftId));
       if (!draft) return { bytes: 0, docs: 0 };
     }
     const rows = [...keys].flatMap((docKey) => {
@@ -687,7 +688,17 @@ export function createPostgresDocumentRooms(input: {
             }
           }
           for (const [docKey, mark] of marks) {
-            if (held.has(docKey)) continue;
+            // Kept at its mark, and ripe again only `historyMs` from now: each unload until the
+            // fork moves on would otherwise rebuild Live and its forks for nothing.
+            if (held.has(docKey)) {
+              await tx
+                .update(documentSnapshots)
+                .set({ historyMarkAt: sql`now()` })
+                .where(
+                  and(eq(documentSnapshots.roomKey, name), eq(documentSnapshots.docKey, docKey)),
+                );
+              continue;
+            }
             const saved = await cutRow(tx, name, docKey, liveDocs.doc(docKey), mark);
             after -= saved;
             if (saved > 0) cut++;

@@ -4,7 +4,8 @@ A Live room whose rows pass about 5 MB cuts each doc's history on unload, where 
 its history mark was set at least seven days earlier (`document_snapshots.history_mark`, design §4
 "History cutoff"). Before the cut, each fork of the document is forwarded to Live and cut at Live's
 marks, and a Live text doc a fork holds ops of that Live lacks is not cut: Apply imports those ops,
-which depend on Live's history. A fork's row is written by its room's first save, and every save
+which depend on Live's history. Its row keeps its mark and is ripe again a `historyMs` later, so
+unloads in between rebuild nothing for it. A fork's row is written by its room's first save, and every save
 sets `document_forks.pending`; the retention pass deletes a fork empty for 30 days. This probe runs the real Postgres adapter on a scratch database, with the bounds lowered so
 that a small room compacts and a mark ripens in 600 ms.
 

@@ -13,7 +13,6 @@ import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
 import {
   applyDraft,
-  covers,
   LIVE,
   pendingRecords,
   recordsOfItem,
@@ -24,7 +23,7 @@ import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizz
 import type { TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import { PressUnsynced, type TreeCut } from "../domain/press.js";
+import type { TreeCut } from "../domain/press.js";
 import { treeListOfNode } from "./drizzle-draft-tree-lists.js";
 
 /** One item of an Apply as the tree half reads it. */
@@ -101,8 +100,6 @@ export function createApplyTreeOperations(input: {
           const { writer } = end;
           const list = lists[at] as TreeList;
           const saw = cutOf(click.saw, list.kind, end);
-          // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
-          if (saw && !covers(writer.doc, saw)) throw new PressUnsynced();
           const pending = pendingRecords(writer.doc, draftId);
           const draft = writer.view({ draft: draftId });
           const mine = items.filter((it) => it.list === list);

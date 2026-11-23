@@ -366,7 +366,8 @@ class Groups {
  * takes both back or neither. JSON, as `press_changes` stores it.
  */
 export interface PressedChange {
-  members: string[];
+  /** Never empty: every change has a block or a comment body. */
+  members: [string, ...string[]];
   live: StoredEdit | null;
   fork: StoredEdit | null;
 }
@@ -465,7 +466,7 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
     });
   });
   return chosen.map((change, i) => ({
-    members: [...change.blocks, ...change.comments],
+    members: [...change.blocks, ...change.comments] as PressedChange["members"],
     live: sides[0]?.[i] ?? null,
     fork: sides[1]?.[i] ?? null,
   }));

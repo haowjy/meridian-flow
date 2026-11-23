@@ -26,7 +26,10 @@ never makes one.
   counts as never shown, so a removal there does not land.
 - **The tree half.** A `document` scope takes that node's pending records; `draft` and `work`
   take every pending record of each draft; a `change` takes none. `saw` is the cut of the lists
-  the review was drawn from: records admitted after it stay pending. Apply is the tree Apply
+  the review was drawn from: records admitted after it stay pending. A `saw` past what the
+  server's list holds counts what the server holds of it, as `liveVersions` counts only the Live
+  the server holds: a record the tab saw that has not reached the server is not there to land, and
+  stays pending when it arrives. The press never waits for the tab's sync. Apply is the tree Apply
   (`createApplyTreeOperations`, the same judge, locks and `apply_command_trees` rows); Discard is
   `discardTreeRecords`. The tree lists take a command name once, so each draft's part is named
   `<command>_<draft>` there.

@@ -32,11 +32,6 @@ export interface Drafts {
    * missing. The press and purge take this.
    */
   lock(draftId: DraftId): Promise<Draft | null>;
-  /**
-   * Caller's transaction, before any namespace lock: `FOR SHARE`, for a writer that needs the
-   * draft to stay without changing it (ahead registration); null when missing.
-   */
-  share(draftId: DraftId): Promise<Draft | null>;
   /** No lock. These drafts. */
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
   /** Purge only: the drafts a Work and these lineages' roots name. */
@@ -76,7 +71,6 @@ export function createDrafts(deps: { store: DraftStore; boundary: DraftWriteBoun
     ownerOf: (draftId) => store.ownerOf(draftId),
     ofOwner: (owner) => store.ofOwner(owner),
     lock: (draftId) => store.lock(draftId),
-    share: (draftId) => store.share(draftId),
     byIds: (draftIds) => store.byIds(draftIds),
     namedBy: (input) => store.namedBy(input),
   };

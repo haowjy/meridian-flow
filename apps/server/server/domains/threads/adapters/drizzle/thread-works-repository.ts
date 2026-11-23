@@ -9,6 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { carryRootDraft } from "../../../../shared/draft-owner.js";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks } from "../../../../shared/thread-work-lock.js";
+import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import {
   ThreadMembershipUnavailableError,
@@ -17,7 +18,16 @@ import {
 } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
-export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadWorksRepository {
+export function createDrizzleThreadWorksRepository(
+  db: DrizzleDatabase,
+  workCounts: Pick<WorkProjectionMutation, "recountAfterCommit"> | null,
+): ThreadWorksRepository {
+  /** The chat's root draft follows it; the Works it left and joined recount after commit. */
+  async function carry(threadId: ThreadId, workId: WorkId) {
+    const moved = await carryRootDraft(db, threadId, workId);
+    if (moved.length > 0) workCounts?.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
+  }
+
   async function mutateMembership<T>(
     threadId: ThreadId,
     targetWorkId: WorkId,
@@ -79,7 +89,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             target: [schema.threadWorks.threadId, schema.threadWorks.workId],
             set: { projectId, isPrimary },
           });
-        if (isPrimary) await carryRootDraft(db, threadId, workId);
+        if (isPrimary) await carry(threadId, workId);
       });
     },
 
@@ -107,7 +117,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             target: [schema.threadWorks.threadId, schema.threadWorks.workId],
             set: { projectId, isPrimary: true },
           });
-        await carryRootDraft(db, threadId, workId);
+        await carry(threadId, workId);
         return { previousWorkId: currentWorkId, changed: true };
       });
     },
@@ -142,7 +152,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
           target: [schema.threadWorks.threadId, schema.threadWorks.workId],
           set: { projectId: thread.projectId, isPrimary: true },
         });
-      await carryRootDraft(db, threadId, workId);
+      await carry(threadId, workId);
     },
 
     async listByThread(threadId: ThreadId) {

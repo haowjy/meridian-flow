@@ -26,7 +26,10 @@ export type PressRequest = {
   commandId: CommandId;
   verdict: PressVerdict;
   scope: PressScope;
-  /** The tree cut the press was drawn from: records admitted after it stay pending. */
+  /**
+   * The tree cut the press was drawn from: records admitted after it stay pending, as do records it saw that the
+   * server has not received yet.
+   */
   saw?: TreeSaw;
   /**
    * For an Apply, the Live text the writer was shown, per document: an encoded `RoomVersion` (`encodeRoomVersion`) of
@@ -55,9 +58,9 @@ export type PressResult = {
 };
 
 /**
- * Who wrote over a pressed change since the press, read from the commits on its text: the writer (a commit with no
- * message), a chat (`turn:<id>`, named by its ref, `c12`), or another press. Empty when only its structure was written
- * over, which names no author.
+ * Who wrote over a pressed change since the press, read from the commits on its text: the writer (a tab's commit, which
+ * has no message), a chat (`turn:<id>`, named by its ref, `c12`), or another press. A server write with no message (a
+ * restore, a copy) names no one. Empty when only its structure was written over, which names no author.
  */
 export type PressOverwriter =
   | { kind: "writer" }

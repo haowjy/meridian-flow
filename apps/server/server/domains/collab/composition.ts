@@ -78,7 +78,6 @@ import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
-import { currentDestination } from "./domain/agent-destination.js";
 import { createAgentEditRouter } from "./domain/agent-edit-router.js";
 import { createAgentEditRuntime } from "./domain/agent-edit-runtime.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
@@ -276,9 +275,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     enterSeam: async (documentId) => {
       await requireAgentWriteGrant([documentId]);
       await lockSeamWorks(deps.db, []);
-      // A fork's save holds its draft's row; taken here, it comes before the document's lock.
-      const destination = currentDestination();
-      if (destination.kind === "draft") await workDrafts.share(destination.draftId);
       await lockDocumentMutation(currentDrizzleDb(deps.db), documentId);
     },
   });

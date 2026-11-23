@@ -29,8 +29,6 @@ export interface DraftStore {
   ofOwner(owner: DraftOwner): Promise<Draft | null>;
   /** Caller's transaction, after the owner locks: `FOR NO KEY UPDATE`; null when missing. */
   lock(draftId: DraftId): Promise<Draft | null>;
-  /** `FOR SHARE`: a writer that needs the draft to stay without changing it. */
-  share(draftId: DraftId): Promise<Draft | null>;
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
   /** Purge only: a Work's drafts, deleted ones included, and those these lineages' roots name. */
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
