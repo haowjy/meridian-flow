@@ -93,6 +93,9 @@ export interface DocumentModel {
    * Delete a block. Clears text instead of removing when it is the last block.
    */
   deleteBlock(doc: DocHandle, block: BlockRef): void;
+
+  /** Record that an edit moved text between two blocks (a split, a join); `b` may be about to go. */
+  recordPieces(doc: DocHandle, a: BlockRef, b: BlockRef): void;
 }
 
 /**
