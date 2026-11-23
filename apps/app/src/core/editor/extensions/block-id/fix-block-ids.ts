@@ -3,19 +3,25 @@
  * both halves and a paste brings the copied blocks' ids along, so after a local change a block can
  * have no id or share one. The block that was already there keeps the id: the one the old document's
  * block maps to. A split's first half is that block, except when Enter was pressed at the start and
- * left it empty, where the half that holds the text is.
+ * left it empty, where the half that holds the text is. A block holding another parent's
+ * empty-paragraph id (`c/empty` after an unwrap of `c`) takes a fresh one: that id names only `c`'s
+ * empty paragraph, which every peer derives again whenever `c` shows empty (design §1).
  */
 
+import { emptyParagraphOf } from "@meridian/document-model";
 import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import { hasBlockId, newBlockId } from "@meridian/prosemirror-schema";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { AddMarkStep, RemoveMarkStep, ReplaceStep } from "@tiptap/pm/transform";
 
-function blocksOf(doc: ProseMirrorNode): Array<{ node: ProseMirrorNode; pos: number }> {
-  const out: Array<{ node: ProseMirrorNode; pos: number }> = [];
-  doc.descendants((node, pos) => {
-    if (hasBlockId(node)) out.push({ node, pos });
+type Placed = { node: ProseMirrorNode; pos: number; parent: string | null };
+
+function blocksOf(doc: ProseMirrorNode): Placed[] {
+  const out: Placed[] = [];
+  doc.descendants((node, pos, parent) => {
+    if (hasBlockId(node))
+      out.push({ node, pos, parent: parent === doc ? null : (parent?.attrs.id ?? null) });
     return !node.isTextblock;
   });
   return out;
@@ -84,9 +90,13 @@ export function fixBlockIds(transaction: Transaction, oldState: EditorState): vo
   }
 
   const claimed = new Set<string>();
-  for (const { node, pos } of blocksOf(transaction.doc)) {
+  for (const { node, pos, parent } of blocksOf(transaction.doc)) {
     const id = node.attrs.id as string | null;
-    const owner = id != null && (owners.get(id) === pos || (!owners.has(id) && !claimed.has(id)));
+    const derived = id == null ? undefined : emptyParagraphOf(id);
+    const owner =
+      id != null &&
+      (derived === undefined || derived === parent) &&
+      (owners.get(id) === pos || (!owners.has(id) && !claimed.has(id)));
     if (owner) claimed.add(id as string);
     else transaction.setNodeAttribute(pos, "id", newBlockId());
   }

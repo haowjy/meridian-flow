@@ -9,6 +9,7 @@ import {
   replaceText,
   restore,
   STRUCTURE_KEY,
+  StructureView,
   structureValues,
   visibleComments,
 } from "@meridian/document-model";
@@ -107,8 +108,15 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           const message = options.messageOf?.(tr);
           const recorded = tr.getMeta("addToHistory") !== false;
           const typing = typingOf(docs, oldState, newState, tr);
+          // One read of the structure, if anything takes it, serves the history and the write.
+          let view: StructureView | undefined;
+          const read = () => {
+            view ??= new StructureView(docs, kept);
+            return view;
+          };
           // Typing joins the open Undo step; any other write starts one (design §2).
-          if (recorded) history?.beforeWrite(oldState, typing !== null);
+          if (recorded)
+            history?.beforeWrite(oldState, typing !== null, kept.size === 0 ? read : undefined);
           else history?.endStep();
           const origin = recorded ? tracked : UNTRACKED_ORIGIN;
           const changes = typing
@@ -118,6 +126,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
                 message,
                 previous: oldState.doc,
                 kept,
+                view,
               });
           if (recorded) history?.record(changes);
           if (changes.length > 0) options.onLocalWrite?.(changes);

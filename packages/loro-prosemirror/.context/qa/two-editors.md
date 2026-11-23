@@ -56,6 +56,15 @@ stays takes only the steps of its own paragraphs out of the history, so Redo sti
 steps either side of it in other blocks (C3); with nobody else writing, Ctrl+Z takes back a
 picture whose upload landed as an untracked write (C4). A split a peer wrote over takes the typing
 under it out of the history; a peer's deletion of part of A's typing stays through A's Ctrl+Z.
+From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
+deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); two
+equal removals of one block, and the Ctrl+Z of the one that lost finds the other's value and stays
+(477, with fixed peer ids); a move beside a block the caret keeps leaves that block removed (602);
+an unwrap of an emptied container and a peer's concurrent move of it read no id twice (the derived
+`c/empty`); a peer removes a stored `c/empty`, and typing in the empty paragraph c shows again
+stores it with the new text alone. From review p18996: one edit judged on its author's copy and on
+a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
+Live has moved the block since.
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs plus the blocks it keeps (`readProseMirror` without `since`), and
@@ -67,8 +76,8 @@ block it should have written (`writeDocument`'s `previous`) and a read that kept
 have re-read (`readDocument`'s `since`). For Undo it checks more:
 
 - an Undo keeps every word the other editor typed (each editor types words of its own, `qA3`,
-  and they are looked for in the text of every doc, shown or hidden). Enter and paste cut a block
-  between words, never inside one: a split word could be joined back from copies by the other
+  and they are looked for in the text of every doc, shown or hidden). Typing, Enter and paste go
+  between words, never inside one (a word typed inside another reads as deleting it, seed 457): a split word could be joined back from copies by the other
   editor's Join, and that editor's Undo of the Join would look like it took the word (seed 85
   failed this way with peer salt 19; a raced case now runs it);
 - after every Undo and Redo: no block is left with an `order` key and no `node` or `parent` (half a
@@ -77,7 +86,9 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
   word a peer's edit took off this editor's screen comes back; and no mark a peer set or cleared
   on a word is undone. A change a batch made is the peer's when the peer's screen shows it too,
   else it came of two edits meeting (a block moved into a container the other removed), which an
-  Undo may bring back. The editor's screen counts, kept blocks included;
+  Undo may bring back; a kept block leaving on a click counts the same way (seed 415). A Redo
+  may take off the screen only words typed since the editor's Redo was last emptied, by any edit,
+  in a burst too (seeds 460 and 483). The editor's screen counts, kept blocks included;
 - a burst of edits with no batch between (and the chain below), started with the caret off any
   kept block, so the editor shows the docs' read, undone until the document is the one from
   before the burst gives it back exactly, and as many Redos give back the one after it; between
@@ -89,7 +100,8 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets
-structure ends it. `WHY=1` prints why each step stayed, `TRACE=1` both screens after every step.
+structure ends it. `WHY=1` prints how many steps each run left, `TRACE=1` both screens after
+every step.
 
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold
 and italic on and off, a heading level, a delete across two blocks, moving a block (the same node
@@ -102,7 +114,7 @@ The burst check fails on Undo by character id at the change's own frontier (the 
 1f): 9 of 10 seeds at 400 steps. PR #1848's first history (a structure key goes back while it
 holds what the step left, each doc and key alone) fails 11 of the step rule's cases and 66 of 100
 seeds at 400 steps under the Undo checks
-([q14](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/probe/scripts/q14-step-rule/README.md)). Not covered: drafts (off until phase 2), a real IME composition (the
+([q14](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/probe/scripts/q14-step-rule/README.md)). Not covered: drafts beyond the one Redo case (off until phase 2), a real IME composition (the
 browser matrix; the raced cases dispatch the commit's transaction), the selection Undo puts back (the app sets it; checked by hand in the browser).
-The block-id fixer here gives a fresh id to any taken one; the app's keeps the id on the half that
-was there.
+The block-id fixer here gives a fresh id to any taken one and to another parent's
+`<parent>/empty`; the app's keeps the id on the half that was there.

@@ -3,6 +3,7 @@ import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
+  checkEmptyParagraphId,
   commentVisibility,
   normalizeInline,
   readInline,
@@ -74,6 +75,8 @@ export interface WriteOptions {
    * write reads the docs as `readDocument` does with them, so it leaves them as they are.
    */
   kept?: ReadonlySet<BlockId>;
+  /** The read of the structure with `kept` as it is now, when the caller already took it. */
+  view?: StructureView;
 }
 
 /**
@@ -229,7 +232,7 @@ export function writeDocument(
   const known = options.previous && indexOf(options.previous);
   // With `previous`, the structure is read only when the write changes it: a change to text alone
   // reads and writes only the text docs it changed.
-  let view: StructureView | undefined;
+  let view = options.view;
   let writer: StructureWriter | undefined;
   const read = () => {
     view ??= new StructureView(docs, options.kept);
@@ -244,13 +247,14 @@ export function writeDocument(
   const visibleComment = commentVisibility(known ? structureValues(docs) : read());
   const changes: DocChange[] = [];
   const written = new Set<BlockId>();
-  const take = (id: BlockId) => {
+  const take = (id: BlockId, parent: BlockId | null) => {
     if (written.has(id)) throw new Error(`block id ${id} appears twice`);
+    checkEmptyParagraphId(id, parent);
     written.add(id);
   };
-  const keep = (block: ShapeBlock) => {
-    take(block.id);
-    if (block.kind === "container") for (const child of block.children) keep(child);
+  const keep = (block: ShapeBlock, parent: BlockId | null) => {
+    take(block.id, parent);
+    if (block.kind === "container") for (const child of block.children) keep(child, block.id);
   };
 
   const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
@@ -267,8 +271,8 @@ export function writeDocument(
           return [block.id, typeof order === "string" ? order : undefined] as const;
         }),
       );
-      // A key as read is left as stored: a kept block's is the key its record holds.
-      for (const [id, key] of orderKeys(ids, current, random))
+      // A key as read is left as stored: a kept block's is the key its record holds, and stays.
+      for (const [id, key] of orderKeys(ids, current, random, read().kept))
         if (key !== current.get(id)) structure().set("order", id, key);
     }
     for (const block of stored) {
@@ -279,10 +283,10 @@ export function writeDocument(
       const was = known?.blocks.get(block.id);
       const inPlace = !moved && was !== undefined && was.parent === parent;
       if (inPlace && was.block === block) {
-        keep(block);
+        keep(block, parent);
         continue;
       }
-      take(block.id);
+      take(block.id, parent);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
         structure().block(block.id, parent, block.node, block.attrs, moved);
       if (block.kind === "container") walk(block.children, block.id);

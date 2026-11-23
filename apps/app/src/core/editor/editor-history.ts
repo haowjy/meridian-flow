@@ -7,7 +7,13 @@
  * editor attaches while it shows the document.
  */
 import type { DocChange, RoomDocs } from "@meridian/document-model";
-import { loroSyncKey, notifyChanged, resolveCursor, UndoHistory } from "@meridian/loro-prosemirror";
+import {
+  type HistoryRun,
+  loroSyncKey,
+  notifyChanged,
+  resolveCursor,
+  UndoHistory,
+} from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection } from "@tiptap/pm/state";
 
@@ -73,11 +79,12 @@ export class DocumentHistory {
   }
 
   /**
-   * Undo or Redo the newest step that can go back whole, synchronously. Returns whether the
-   * history had a step to try: steps someone else wrote over stay, and leave the history.
+   * Undo or Redo the newest step that can go back whole, synchronously. Returns the run, with how
+   * many steps someone else wrote over stayed and left the history, or null when the history had
+   * no step to try.
    */
-  run(direction: "undo" | "redo", editor: Editor): boolean {
-    if (this.docs.isFreed) return false;
+  run(direction: "undo" | "redo", editor: Editor): HistoryRun | null {
+    if (this.docs.isFreed) return null;
     const ran =
       direction === "undo" ? this.steps.undo(editor.state) : this.steps.redo(editor.state);
     if (ran && ran.changes.length > 0) {
@@ -102,7 +109,7 @@ export class DocumentHistory {
         );
     }
     this.changed();
-    return ran !== null;
+    return ran;
   }
 
   private shown = "";
@@ -138,11 +145,11 @@ export function editorHistory(editor: Editor): DocumentHistory | null {
 }
 
 export function undoEditorHistory(editor: Editor): boolean {
-  return histories.get(editor)?.run("undo", editor) ?? false;
+  return (histories.get(editor)?.run("undo", editor) ?? null) !== null;
 }
 
 export function redoEditorHistory(editor: Editor): boolean {
-  return histories.get(editor)?.run("redo", editor) ?? false;
+  return (histories.get(editor)?.run("redo", editor) ?? null) !== null;
 }
 
 export function canUndoEditorHistory(editor: Editor): boolean {

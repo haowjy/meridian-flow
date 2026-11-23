@@ -60,7 +60,9 @@ synchronously, then drains transports and leases.
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other
   half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
-  paste or drop keeps it. The id rides the clipboard as `data-block-id`. Remote transactions
+  paste or drop keeps it. A container's empty paragraph `<container>/empty` keeps that id only
+  under that container: an unwrap or a move out gives it a fresh one, or the container shown
+  empty again would read the id twice (the binding throws on one elsewhere). The id rides the clipboard as `data-block-id`. Remote transactions
   are left alone: their blocks already have ids. A block's id is its text doc's key, so a block
   is found by id (`findBlock` in `loro-points.ts`), never by a stored position.
 - Caret across a remote write: the binding carries the selection as Loro cursors. A

@@ -45,8 +45,11 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   (`take-back.ts`), shared with the press's Undo: change it there, not here. A step that stays
   writes nothing: the managers of its text docs are made again, so it and every step sharing a
   doc or a structure key with it leave the history (Loro can't drop one item). "Someone else" is
-  another peer: this copy's own untracked writes never keep a step. Typing joins the open step;
-  any other write starts one, and a write that sets structure ends it.
+  another peer: this copy's own untracked writes never keep a step. So does a step whose items a
+  manager no longer holds on top. Typing joins the open step; any other write starts one, and a
+  write that sets structure ends it. A step's note is taken late, just before the next import
+  (`RoomDocs.beforeImport`), the next write that is not typing (sharing that write's read of the
+  structure), or a run: an Enter pays one read of the structure, not two.
 - Every Undo and Redo commit in a text doc carries `takeBackMessage` (the ops it takes back), set
   in `subscribePreCommit`: `textSince` reads text it put back as the text it deleted by it.
 - The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the

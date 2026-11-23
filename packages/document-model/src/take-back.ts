@@ -2,7 +2,7 @@ import type { Delta, Frontiers, LoroDoc, LoroText, PeerID } from "loro-crdt";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, type DocKey, overrideMap, type StructureMap, sameValue } from "./shape.js";
-import { isOrderKey, removalOf, StructureView } from "./structure.js";
+import { isOrderKey, removalOf, StructureView, showRule } from "./structure.js";
 import { type DocVersion, docVersion, plainVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -14,10 +14,14 @@ import { commitStructure, type DocChange, StructureWriter } from "./write.js";
  * editor, an inverse on the server).
  */
 
-/** A structure value an edit set: what the key held before the edit, and what the edit left. */
+/**
+ * A structure value an edit set: what the key held before the edit, and what the edit left. In a
+ * draft, an override the edit left absent reads Live's value through it: `base` is that value.
+ */
 export interface SetValue {
   before: unknown;
   left: unknown;
+  base?: unknown;
 }
 
 /** An edit's structure values, by stored map name (`order`, a draft's `d.order`) then key. */
@@ -29,8 +33,16 @@ export interface TextSpan {
   after: Frontiers;
 }
 
-/** What the rule needs of an edit. `noteEdit` fills `leaving` and `shown` after each write or run. */
+/**
+ * What the rule needs of an edit. `noteEdit` fills `leaving`, `arriving`, `shown` and `structureAt`
+ * after each write or run, before the copy imports anything.
+ */
 export interface Edit {
+  /**
+   * Who wrote it: every write by another peer is "someone else's". Not the copy's peer: a press's
+   * Undo runs on a server copy with a peer of its own.
+   */
+  peer: PeerID;
   values: EditValues;
   texts: Map<DocKey, TextSpan>;
   /**
@@ -42,11 +54,14 @@ export interface Edit {
   arriving: Set<BlockId>;
   /** The text docs it wrote whose blocks showed. */
   shown: Set<DocKey>;
+  /** The structure doc's frontiers when noted: a peer's removal since may have taken its text. */
+  structureAt: Frontiers;
 }
 
 /**
  * Add to `into` the structure keys the commits from `before` to `after` set: for a key not in it
- * yet the value before them, and for every key the value they left.
+ * yet the value before them, and for every key the value they left. Called just after the commits,
+ * so a draft override they left absent reads Live's value now (`SetValue.base`).
  */
 export function valuesOf(
   doc: LoroDoc,
@@ -61,26 +76,39 @@ export function valuesOf(
     const was = old.get(container);
     const keys = keysOf(into, name);
     for (const [key, left] of Object.entries(diff.updated)) {
-      const value = keys.get(key);
-      if (value) value.left = left;
-      else keys.set(key, { before: was?.type === "map" ? was.updated[key] : undefined, left });
+      const value = keys.get(key) ?? {
+        before: was?.type === "map" ? was.updated[key] : undefined,
+        left,
+      };
+      value.left = left;
+      value.base = baseThrough(doc, name, key, left);
+      keys.set(key, value);
     }
   }
   return into;
+}
+
+/** In a draft, Live's value an override `name[key]` that holds `left` reads through, if absent. */
+function baseThrough(doc: LoroDoc, name: string, key: string, left: unknown): unknown {
+  if (left !== undefined || !name.startsWith("d.")) return undefined;
+  return inMap(doc, baseName(name), (map) => map.get(key));
 }
 
 /**
  * Note, after the edit was written or run, what its next run would take off the screen and bring
  * onto it, and which of its text docs show. A block leaves with its text as the removal record the
  * run puts back read it (typing that record did not read brought the block back, and must keep
- * it), or as it is now. An edit that set no structure takes nothing away and needs no note.
+ * it), or as it is now. An edit that set no structure takes nothing away. Nothing in the note
+ * changes with this copy's own typing, so a caller may take it late, but before an import or a
+ * write of its own that may set structure. `view`, if given, reads the docs as they are.
  */
-export function noteEdit(docs: RoomDocs, edit: Edit): void {
+export function noteEdit(docs: RoomDocs, edit: Edit, view?: StructureView): void {
+  edit.structureAt = docs.structure.frontiers();
   edit.leaving.clear();
   edit.arriving.clear();
   edit.shown.clear();
   if (edit.values.size === 0) return;
-  const view = new StructureView(docs);
+  view ??= new StructureView(docs);
   const after = screenAfter(docs, view, edit.values);
   const order = edit.values.get(docs.draft ? overrideMap("order") : "order");
   const read = (id: BlockId): DocVersion | undefined => {
@@ -97,35 +125,51 @@ export function noteEdit(docs: RoomDocs, edit: Edit): void {
 }
 
 /**
- * Why `edit` must stay, or null when it can go back whole: every key it set holds what it left
- * (1); every block its run would take off the screen is one it would have taken when noted, with
- * no one else's write in its text since, and the blocks it would bring onto the screen the ones
- * it would have brought (2: a block a peer removed since, with what is under it, stays removed);
- * no style it set was set again over the same text, and no text it deleted was deleted again; every text doc it wrote that showed still shows or
- * leaves with it (3); and of the text it put in, some is left, or for an edit that set structure
- * all of it, untouched (4). "Written over" is by another peer: this copy's own untracked writes
- * (an upload landing, a restore) never keep an edit. `view`, if given, reads the docs as they are.
+ * Why `edit` must stay, or null when it can go back whole: every key it set holds a value its
+ * author wrote last (1: a peer's removal can equal the edit's own, so not by value); every block
+ * its run would take off the screen is one it would have taken when noted, with no one else's
+ * write in its text since, and the blocks it would bring onto the screen the ones it would have
+ * brought (2: a block a peer removed since, with what is under it, stays removed); every text doc
+ * it wrote that showed still shows or leaves with it (3); of the text it put in, some is left, or
+ * for an edit that set structure all of it, untouched; no style it set was set again over the same
+ * text, and no text it deleted was taken away again, by a delete or by a removal of its block that
+ * read it (4). "Written over" is by a peer other than the author: the author's own untracked
+ * writes (an upload landing, a restore) never keep an edit. `view`, if given, reads the docs as
+ * they are.
  */
 export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): string | null {
-  const self = docs.peer;
+  const { peer } = edit;
   for (const [name, keys] of edit.values) {
     const why = inMap(docs.structure, name, (map) => {
-      for (const [key, { before, left }] of keys)
-        if (
-          !sameValue(before, left) &&
-          !sameValue(map.get(key), left) &&
-          map.getLastEditor(key) !== self
-        )
-          return `${name}[${key}] was written over`;
+      for (const [key, { before, left, base }] of keys) {
+        if (sameValue(before, left)) continue;
+        if (map.getLastEditor(key) !== peer) return `${name}[${key}] was written over`;
+        // An absent override reads Live's value: Live writing another one since writes over it.
+        if (map.get(key) === undefined && name.startsWith("d.")) {
+          const through = inMap(docs.structure, baseName(name), (live) =>
+            sameValue(live.get(key), base) ? null : live.getLastEditor(key),
+          );
+          if (through && through !== peer) return `${baseName(name)}[${key}] was written over`;
+        }
+      }
       return null;
     });
     if (why) return why;
   }
   const structural = edit.values.size > 0;
+  let removals: Map<DocKey, DocVersion[]> | undefined;
   for (const [key, { before, after }] of edit.texts) {
     const doc = docs.textOf(key);
-    if (!doc || !othersWrote(doc, plainVersion(doc.frontiersToVV(after)), self)) continue;
-    if (deletedAgain(doc, before, after, self))
+    if (!doc) continue;
+    const then = plainVersion(doc.frontiersToVV(after));
+    const deleted = deletedBy(doc, before, after, peer);
+    if (deleted.size > 0) {
+      removals ??= removalsSince(docs, edit.structureAt, peer);
+      if (readAny(removals.get(key) ?? [], deleted, peer, then.get(peer) ?? 0))
+        return `text it deleted in ${key} left with a block another peer removed`;
+    }
+    if (!othersWrote(doc, then, peer)) continue;
+    if (deletedAgain(doc, then, deleted, peer))
       return `text it deleted in ${key} was deleted again`;
     const { left, touched, restyled } = leftOf(doc, before, after);
     if (restyled) return `a style it set in ${key} was set again`;
@@ -140,7 +184,7 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   for (const id of after.hidden) {
     if (!edit.leaving.has(id)) return `it would take ${id} off the screen`;
     const doc = docs.textOf(id);
-    if (doc && othersWrote(doc, edit.leaving.get(id) ?? new Map(), self))
+    if (doc && othersWrote(doc, edit.leaving.get(id) ?? new Map(), peer))
       return `${id}, which it would take away, was written in`;
   }
   // A block comes back only from under removals the edit itself put back: one a peer removed
@@ -187,7 +231,10 @@ export function putBackValues(
   const change = commitStructure(docs, before, {});
   for (const [name, keys] of back)
     inMap(structure, name, (map) => {
-      for (const [key, value] of keys) value.left = map.get(key);
+      for (const [key, value] of keys) {
+        value.left = map.get(key);
+        value.base = baseThrough(structure, name, key, value.left);
+      }
     });
   return { change, values: back };
 }
@@ -230,11 +277,11 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
 }
 
 /**
- * The screen once `values` are put back, worked out from `view` around the blocks the plan
- * touches: only they, the blocks under them and the containers above them can change. `hidden` is
- * every block shown now that would not show, `arriving` every block not shown that would,
- * `touched` the blocks whose order, parent or node the plan writes, and `shows` whether a block
- * would.
+ * The screen once `values` are put back, by `showRule` over the blocks the plan touches with its
+ * writes laid over `view`: only they, the blocks under them and the containers above them can
+ * change. `hidden` is every block shown now that would not show, `arriving` every block not shown
+ * that would, `touched` the blocks whose order, parent or node the plan writes, and `shows`
+ * whether a block would.
  */
 function screenAfter(
   docs: RoomDocs,
@@ -263,10 +310,9 @@ function screenAfter(
           : value,
     );
   }
-  const valueAfter = (map: "order" | "parent" | "node", id: BlockId) => {
+  const valueAfter = (map: "parent" | "node", id: BlockId) => {
     const key = `${map}\u0000${id}`;
-    if (puts.has(key)) return puts.get(key);
-    return map === "parent" ? view.parent(id) : view.value(map, id);
+    return puts.has(key) ? puts.get(key) : view.value(map, id);
   };
   const near = new Set<BlockId>();
   for (const id of touched) {
@@ -275,59 +321,26 @@ function screenAfter(
       for (let at = start; typeof at === "string" && !near.has(at); at = view.parent(at))
         near.add(at);
   }
-  // A container's children after: those shown now, and every block near it, shown or not, that
-  // the plan leaves under it (a hidden row comes back with the table it is in).
-  const nearChildren = new Map<BlockId, BlockId[]>();
-  for (const id of near) {
-    const parent = valueAfter("parent", id);
-    if (typeof parent === "string")
-      nearChildren.set(parent, [...(nearChildren.get(parent) ?? []), id]);
-  }
-  // As `StructureView` reads: a block shows when its order is a key, its node is known and its
-  // parent shows; then orphans and required containers left with nothing go, until none does.
-  const memo = new Map<BlockId, boolean>();
-  const placed = (id: BlockId): boolean => {
-    if (!near.has(id)) return view.shown.has(id);
-    const known = memo.get(id);
-    if (known !== undefined) return known;
-    // A cycle the plan would make reads as hidden: the edit then stays.
-    memo.set(id, false);
-    const node = valueAfter("node", id);
-    const parent = valueAfter("parent", id);
-    const ok =
-      isOrderKey(valueAfter("order", id)) &&
-      typeof node === "string" &&
-      shape.node(node) !== undefined &&
-      (parent === null || (typeof parent === "string" && placed(parent)));
-    memo.set(id, ok);
-    return ok;
-  };
-  const after = new Set([...near].filter(placed));
-  const shows = (id: BlockId) => (near.has(id) ? after.has(id) : view.shown.has(id));
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const id of after) {
-      const parent = valueAfter("parent", id);
-      const rule = shape.node(valueAfter("node", id) as string);
-      const orphan = typeof parent === "string" && !shows(parent);
-      const empty =
-        rule?.required === true &&
-        !rule.fillable &&
-        ![...view.children(id), ...(nearChildren.get(id) ?? [])].some(
-          (child) =>
-            valueAfter("parent", child) === id &&
-            shows(child) &&
-            rule.accepts(valueAfter("node", child) as string),
-        );
-      if (orphan || empty) {
-        after.delete(id);
-        changed = true;
-      }
-    }
-  }
+  // A block outside `near` reads as it does now, and so does its parent: the run changes nothing
+  // above or under it that the view would read differently.
+  const order = `order\u0000`;
+  const { shown } = showRule(shape, [...near], {
+    placed: (id) =>
+      puts.has(order + id) ? isOrderKey(puts.get(order + id)) : typeof view.order(id) === "string",
+    parent: (id) => valueAfter("parent", id) as BlockId | null | undefined,
+    node: (id) => {
+      const node = valueAfter("node", id);
+      return typeof node === "string" ? node : undefined;
+    },
+    outside: {
+      shows: (id) => view.shown.has(id),
+      children: (id) => view.children(id).filter((child) => !near.has(child)),
+    },
+  });
+  const shows = (id: BlockId) => (near.has(id) ? shown.has(id) : view.shown.has(id));
   return {
-    hidden: [...near].filter((id) => view.shown.has(id) && !after.has(id)),
-    arriving: [...after].filter((id) => !view.shown.has(id)),
+    hidden: [...near].filter((id) => view.shown.has(id) && !shown.has(id)),
+    arriving: [...shown].filter((id) => !view.shown.has(id)),
     touched,
     shows,
   };
@@ -568,27 +581,79 @@ function forEachDeleted(
   }
 }
 
-/**
- * Whether another peer deleted, since `after`, a character `self` deleted from `before` to
- * `after`: the Undo would put back text that peer took away (a split of it into another block
- * then shows it twice).
- */
-function deletedAgain(doc: LoroDoc, before: Frontiers, after: Frontiers, self: PeerID): boolean {
-  const mine = new Set<string>();
-  forEachDeleted(doc, opsBetween(doc, before, after, self), (id) =>
-    mine.add(`${id.counter}@${id.peer}`),
+/** The characters `peer` deleted in `doc` from `before` to `after`, by id (`counter@peer`). */
+function deletedBy(doc: LoroDoc, before: Frontiers, after: Frontiers, peer: PeerID): Set<string> {
+  const ids = new Set<string>();
+  forEachDeleted(doc, opsBetween(doc, before, after, peer), (id) =>
+    ids.add(`${id.counter}@${id.peer}`),
   );
-  if (mine.size === 0) return false;
-  const then = plainVersion(doc.frontiersToVV(after));
+  return ids;
+}
+
+/**
+ * Whether another peer deleted, since `then`, a character the edit deleted (`deleted`): the Undo
+ * would put back text that peer took away (a split of it into another block then shows it twice).
+ */
+function deletedAgain(doc: LoroDoc, then: DocVersion, deleted: Set<string>, peer: PeerID): boolean {
+  if (deleted.size === 0) return false;
   const others: TakenBack = {};
-  for (const [peer, counter] of docVersion(doc))
-    if (peer !== self && counter > (then.get(peer) ?? 0))
-      others[peer] = [then.get(peer) ?? 0, counter];
+  for (const [other, counter] of docVersion(doc))
+    if (other !== peer && counter > (then.get(other) ?? 0))
+      others[other] = [then.get(other) ?? 0, counter];
   let again = false;
   forEachDeleted(doc, others, (id) => {
-    again ||= mine.has(`${id.counter}@${id.peer}`);
+    again ||= deleted.has(`${id.counter}@${id.peer}`);
   });
   return again;
+}
+
+/**
+ * Per text doc, what each removal record a peer other than `peer` wrote since `since` (structure
+ * frontiers) read of it, whether the removal still stands or a restore answered it. A removal
+ * takes the text it read off the screen, as a delete would: a join copies a block's text into the
+ * block before and removes it.
+ */
+function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocKey, DocVersion[]> {
+  const out = new Map<DocKey, DocVersion[]>();
+  const order = docs.draft ? overrideMap("order") : "order";
+  const then = plainVersion(docs.structure.frontiersToVV(since));
+  for (const [other, counter] of docVersion(docs.structure)) {
+    const from = then.get(other) ?? 0;
+    if (other === peer || counter <= from) continue;
+    for (const change of docs.structure.exportJsonInIdSpan({
+      peer: other,
+      counter: from,
+      length: counter - from,
+    }))
+      for (const { container, content } of change.ops) {
+        if (content.type !== "insert" || mapName(container) !== order) continue;
+        const removal = removalOf((content as { value: unknown }).value);
+        for (const [key, seen] of removal?.seen ?? [])
+          out.set(key, [...(out.get(key) ?? []), seen]);
+      }
+  }
+  return out;
+}
+
+/**
+ * Whether a removal that read `reads` took off the screen a character the edit deleted
+ * (`deleted`): it read the character and not the deletion (the author's ops up to `deletedTo`),
+ * so an Undo would put back text that peer took away.
+ */
+function readAny(
+  reads: readonly DocVersion[],
+  deleted: ReadonlySet<string>,
+  peer: PeerID,
+  deletedTo: number,
+): boolean {
+  for (const seen of reads) {
+    if ((seen.get(peer) ?? 0) >= deletedTo) continue;
+    for (const id of deleted) {
+      const { counter, peer: by } = parseId(id);
+      if (counter < (seen.get(by) ?? 0)) return true;
+    }
+  }
+  return false;
 }
 
 /** The change holding op `id`, or null where a shallow snapshot cut it. */

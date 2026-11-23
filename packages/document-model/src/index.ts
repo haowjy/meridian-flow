@@ -12,6 +12,7 @@ export {
   commentVisibility,
   derivedEmptyParent,
   emptyParagraphId,
+  emptyParagraphOf,
   isDerivedEmpty,
   normalizeInline,
   normalizeMarks,
