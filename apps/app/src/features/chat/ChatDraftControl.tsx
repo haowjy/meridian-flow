@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
+import { LabelNote } from "@/components/ui/marks";
 import { workDraftName } from "@/features/draft-review/draft-names";
 
 export function useChatDraftToolbarControl({
@@ -93,9 +94,9 @@ export function useChatDraftToolbarControl({
               >
                 <span className="min-w-0 flex-1 truncate text-left">{workDraftName(draft)}</span>
                 {files > 0 ? (
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <LabelNote className="shrink-0">
                     {plural(files, { one: "# file", other: "# files" })}
-                  </span>
+                  </LabelNote>
                 ) : null}
               </Button>
             );
