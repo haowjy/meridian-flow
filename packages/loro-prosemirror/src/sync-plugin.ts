@@ -43,8 +43,6 @@ export interface LoroSyncOptions {
   docs: RoomDocs;
   /** The commit origin of the editor's tracked writes (default `editor`). */
   origin?: string;
-  /** A transaction's commit message; none is the writer's own typing (design §5's attribution). */
-  messageOf?: (tr: Transaction) => string | undefined;
   /** A fresh block id, for the empty paragraph a local transaction is the first write into. */
   newBlockId: () => BlockId;
   /** Every local write's doc changes with their frontiers: what the copy publishes. */
@@ -130,7 +128,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
             if (restored) options.onLocalWrite?.([restored]);
             kept = NONE;
           }
-          const message = options.messageOf?.(tr);
           const recorded = tr.getMeta("addToHistory") !== false;
           const typing = typingOf(docs, oldState, newState, tr);
           // Typing into an empty paragraph stores it: typing for the history, a full write.
@@ -151,10 +148,9 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           else history?.endStep();
           const origin = recorded ? tracked : UNTRACKED_ORIGIN;
           const changes = fast
-            ? writeTyping(docs, fast, origin, message)
+            ? writeTyping(docs, fast, origin)
             : writeProseMirror(docs, newState.doc, {
                 origin,
-                message,
                 previous: oldState.doc,
                 kept,
                 view,
@@ -356,7 +352,6 @@ function writeTyping(
   docs: RoomDocs,
   { id, rule, from, to, content }: Typing,
   origin: string,
-  message: string | undefined,
 ): DocChange[] {
   const { doc, before } = docs.writableText(id);
   replaceText(
@@ -366,7 +361,7 @@ function writeTyping(
     to,
     inlineOf(content),
   );
-  doc.commit({ origin, message });
+  doc.commit({ origin });
   return [{ key: id, doc, before, after: doc.frontiers() }];
 }
 

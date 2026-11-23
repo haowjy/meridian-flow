@@ -1,4 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { type CommitAuthor, commitMessage } from "./commit-message.js";
 import { inMap } from "./handles.js";
 import { frontiersOf, loadEdit, type StoredEdit, storeEdit, takeBack } from "./invert.js";
 import { commentVisibility, readInline, shownStyleKeys } from "./read.js";
@@ -26,7 +27,6 @@ import {
   opsBetween,
   putBackValues,
   type TextSpan,
-  takeBackMessage,
   valuesOf,
 } from "./take-back.js";
 import {
@@ -341,8 +341,8 @@ export interface PressChanges {
 }
 
 export interface PressOptions {
-  /** The commit message: `press:<commandId>`. */
-  message?: string;
+  /** Who its commits are by: the press. */
+  by?: CommitAuthor;
 }
 
 export interface ApplyOptions extends PressOptions {
@@ -448,7 +448,7 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
  * fork's text ops for the blocks the fork wrote (`importBatch`; a block the draft created becomes
  * Live's own doc), and copy the comment bodies the change carries. A block the draft removed is
  * removed in Live by a new record (`ApplyOptions.liveVersion`), never the fork's. A selection whose
- * changes are already empty changes nothing. Both copies are committed under `message`; the fork
+ * changes are already empty changes nothing. Both copies are committed by `by`; the fork
  * is forwarded again, so it reads as before. Run it on a command's own copy, so the press's
  * writes have a peer of their own (`PressedChange`).
  */
@@ -537,7 +537,7 @@ export function applyBlocks(
     }
   for (const comment of comments)
     writer.set("comments", comment, forkView.override("comments", comment) ?? null);
-  const liveCommit = commitStructure(live, liveStructure, { message: options.message });
+  const liveCommit = commitStructure(live, liveStructure, { by: options.by });
   if (liveCommit) result.live.push(liveCommit);
 
   const forkStructure = draft.structure.frontiers();
@@ -547,7 +547,7 @@ export function applyBlocks(
   deletePieces(draft, forkView, blocks);
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
-  const forkCommit = commitStructure(draft, forkStructure, { message: options.message });
+  const forkCommit = commitStructure(draft, forkStructure, { by: options.by });
   if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
   result.pressed = pressedOf(result.chosen, [
@@ -585,7 +585,7 @@ export function discardBlocks(
     if (!text || !base) continue;
     const before = text.frontiers();
     text.applyDiff(text.diff(before, base.frontiers(), false));
-    text.commit({ message: options.message });
+    text.commit({ message: commitMessage({ by: options.by }) });
     if (sameValue(before, text.frontiers())) continue;
     const change = { key: id, doc: text, before, after: text.frontiers() };
     result.fork.push(change);
@@ -601,7 +601,7 @@ export function discardBlocks(
   deletePieces(draft, view, blocks);
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
-  const commit = commitStructure(draft, structure, { message: options.message });
+  const commit = commitStructure(draft, structure, { by: options.by });
   if (commit) result.fork.push(commit);
   result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);
   return result;
@@ -651,7 +651,7 @@ export function undoPress(
     if (onLive) liveEdits.push(onLive);
     if (onFork) forkEdits.push(onFork);
   }
-  result.live = takeBack(live, liveEdits, liveView, options.message);
+  result.live = takeBack(live, liveEdits, liveView, options.by);
   // The text Live's Undo took out comes back in the fork as the fork's own edit: put-back text
   // that stands for what Live's Undo deleted.
   const pending = new Map<DocKey, Frontiers>();
@@ -664,12 +664,15 @@ export function undoPress(
     const doc = draft.texts.get(key) as LoroDoc;
     const after = doc.frontiers();
     if (sameValue(at, after)) continue;
-    const message = takeBackMessage(deletedBetween(doc, at, after));
+    const message = commitMessage({
+      by: options.by,
+      undo: { for: deletedBetween(doc, at, after), ops: opsBetween(doc, at, after) },
+    });
     doc.applyDiff(doc.diff(after, at, false));
     doc.commit({ message });
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
   }
-  result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.message));
+  result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.by));
   return result;
 }
 
@@ -753,7 +756,7 @@ export function restoreBefore(
     if (base) mergeVersion(target, new Map([[key, docVersion(base)]]));
     const head = doc.frontiers();
     doc.applyDiff(doc.diff(head, frontiersOf(doc, target.get(key) as DocVersion), false));
-    doc.commit({ message: options.message });
+    doc.commit({ message: commitMessage({ by: options.by }) });
     if (!sameValue(head, doc.frontiers()))
       out.push({ key, doc, before: head, after: doc.frontiers() });
   }
@@ -774,7 +777,7 @@ export function restoreBefore(
           for (const [key, { left }] of keys) if (!sameValue(map.get(key), left)) keys.delete(key);
         });
     }
-    const { change } = putBackValues(docs, values, undefined, options.message);
+    const { change } = putBackValues(docs, values, undefined, options.by);
     if (change) out.push(change);
   }
   return out;

@@ -497,7 +497,7 @@ function hasState(docs: RoomDocs): boolean {
 
 /** An agent's write carries its turn as the commit message: who changed what reads it (design §5). */
 function writeOptionsOf(origin: RuntimeOrigin): WriteOptions {
-  return origin.type === "agent" ? { message: `turn:${origin.actorTurnId}` } : {};
+  return origin.type === "agent" ? { by: { turn: origin.actorTurnId } } : {};
 }
 
 function roomOriginOf(origin: RuntimeOrigin): RoomOrigin {

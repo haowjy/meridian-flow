@@ -70,10 +70,18 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   test beside it. "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's
   peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
   its span's (`TextSpan.ops`): the author's in the editor, every peer's for a press, which imports
-  its draft's ops. Every commit that puts text back says, in its message, the character each one it
-  inserts stands for (`takeBackMessage(deletedBetween(doc, before, after))`), so `textSince` reads
-  put-back text as the text it deleted, by character id. Read the message before the write: a fork
-  of the doc commits its pending ops, without the message.
+  its draft's ops. Every commit message is `commit-message.ts`'s, one JSON note: who wrote it
+  (`by`: a turn or a press; none is the writer), and for a commit that puts text back the
+  character each one it inserts stands for and the ops it takes back (`undo: { for:
+  deletedBetween(doc, before, after), ops: span.ops }`). So `textSince` reads put-back text as the
+  text it deleted, by character id, `editStays` counts ops an Undo took back as never made
+  (`standingSince`: a delete, and typing in a block the run would take away), and attribution
+  still reads who took it back. The rule and the runner that takes the edit back must agree on
+  "whole": a press's inverse deletes text an Undo put back for the press's characters
+  (`putBackOf`), but Loro's manager, which runs a Ctrl+Z step, deletes only the step's own
+  characters, so a step carries `Edit.ownTextOnly` and part 4 reads put-back text as deleted for
+  it. Read the message before the write: a fork of the doc commits its pending ops, without the
+  message.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`
   constructor enforces: a press writes both rooms from one copy, and one peer would mint the same

@@ -1,3 +1,4 @@
+import { commitMessage } from "./commit-message.js";
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
@@ -66,7 +67,7 @@ export type ApplyOpsResult =
 
 /**
  * Apply `ops` to the docs (in a draft, as overrides and forked text docs) and commit every doc they
- * touched under `options.message`. Every op is checked against the docs before anything changes,
+ * touched under a commit by `options.by`. Every op is checked against the docs before anything changes,
  * so a write that does not fit leaves them alone. Text and attributes go first, then inserts,
  * then deletes.
  *
@@ -185,7 +186,7 @@ export function applyOps(
     // Right to left, so earlier offsets stay where they were planned.
     for (const { from, to, content } of [...op.splices].reverse())
       replaceText(doc, rules, from, to, content);
-    doc.commit({ message: options.message, origin: options.origin });
+    doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
     record({ key: block, doc, before: start, after: doc.frontiers() });
   }
 
@@ -207,7 +208,7 @@ export function applyOps(
         attrs,
       } as never),
     );
-    doc.commit({ message: options.message, origin: options.origin });
+    doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 

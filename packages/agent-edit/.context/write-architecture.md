@@ -87,7 +87,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 
 - A call reads one copy of the room's docs (`AgentEditRooms.readRoom`) and frees it at the call's
   end; every write is planned on that copy at the read's frontiers (`docs.at`), with a fresh peer.
-- Forward-write attribution comes from the commit message (`turn:<turnId>`) and the immutable
+- Forward-write attribution comes from the commit message (`by: {turn}`, `commitMessage`) and the immutable
   receipt, never transaction-origin identity.
 
 ## Results and lifecycle

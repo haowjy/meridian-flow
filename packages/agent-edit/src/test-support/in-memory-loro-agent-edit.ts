@@ -6,6 +6,7 @@ import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts
 import {
   applyBlocks,
   type ChangeSelection,
+  type CommitAuthor,
   discardBlocks,
   type EditStayed,
   encodeChanges,
@@ -153,16 +154,12 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
    * `parts` taken back, each in the room it landed in, newest first as given, by the planner the
    * server runs (`undoInRooms`). Returns the parts that went, and why each that stayed did.
    */
-  const takeBackIn = async (parts: readonly AgentWriteRecord[], message: string) => {
+  const takeBackIn = async (parts: readonly AgentWriteRecord[], by?: CommitAuthor) => {
     const held = new Map<string, RoomDocs>();
     try {
       for (const { room } of parts)
         if (!held.has(loroRoomName(room))) held.set(loroRoomName(room), await rooms.read(room));
-      const undone = undoInRooms(
-        parts,
-        (room) => held.get(loroRoomName(room)) as RoomDocs,
-        message,
-      );
+      const undone = undoInRooms(parts, (room) => held.get(loroRoomName(room)) as RoomDocs, by);
       for (const { room, changes } of undone.rooms)
         await command(() => rooms.commit(inCommand(), room, encodeChanges(changes), "server:undo"));
       const taken = parts.filter((part) => !undone.stayed.has(part));
@@ -204,7 +201,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
           message: `${editHandle(chosen[0].wId)} is already taken back.`,
         };
       // The model's inverse names its turn, as its writes do.
-      const { taken, stayed } = await takeBackIn(chosen, `turn:${context.turnId ?? "model"}`);
+      const { taken, stayed } = await takeBackIn(chosen, { turn: context.turnId ?? "model" });
       const names = (parts: readonly AgentWriteRecord[]) =>
         parts.map((r) => editHandle(r.wId)).join(", ");
       const kept = (kind: EditStayed["kind"]) => chosen.filter((r) => stayed.get(r)?.kind === kind);
@@ -271,14 +268,14 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const room = fork(documentId, draftId);
       const docs = await rooms.read(room);
       try {
-        const message = `press:${++presses}`;
+        const by = { press: String(++presses) };
         const pressed =
           kind === "apply"
             ? applyBlocks(docs, selection, {
-                message,
+                by,
                 liveVersion: (docs.live as RoomDocs).version(),
               })
-            : discardBlocks(docs, selection, { message });
+            : discardBlocks(docs, selection, { by });
         await command(async () => {
           if (pressed.live.length)
             await rooms.commit(
@@ -308,7 +305,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const docs = await rooms.read(room);
       try {
         if (!holdsSpan(docs, span)) return false;
-        const changes = restoreBefore(docs, span, { message: `restore:turn:${turnId}` });
+        const changes = restoreBefore(docs, span, { by: { press: String(++presses) } });
         if (changes.length)
           await command(() =>
             rooms.commit(inCommand(), room, encodeChanges(changes), "server:restore-before"),
@@ -336,7 +333,8 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const parts = records
         .filter((r) => r.documentId === documentId && r.turnId === turnId && !takenBack.has(r))
         .reverse();
-      return { taken: (await takeBackIn(parts, `undo:turn:${turnId}`)).taken.length };
+      // The writer's card Undo is the writer's.
+      return { taken: (await takeBackIn(parts)).taken.length };
     },
     close: () => rooms.close(),
   };

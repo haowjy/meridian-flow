@@ -2,6 +2,7 @@
 // the room copy it rendered from, and a write plans on a view of the room at them.
 
 import {
+  type CommitAuthor,
   type DocKey,
   type DocVersion,
   decodeEnvelope,
@@ -9,6 +10,7 @@ import {
   encodeEnvelope,
   plainVersion,
   type RoomDocs,
+  readCommitMessage,
   STRUCTURE_KEY,
   updateEnd,
   withVector,
@@ -138,19 +140,22 @@ function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
 }
 
 /**
- * The commit messages of the changes in `doc` between `from` (a recorded frontier, or none for a
- * doc the read never saw) and now, one per change: `turn:<id>`, `press:<id>`, or undefined for
- * the writer's own typing (design §5).
+ * Who wrote each change in `doc` between `from` (a recorded frontier, or none for a doc the read
+ * never saw) and now, by its commit message: a chat's turn, a press, or undefined for the writer
+ * (design §5).
  */
-export function messagesSince(doc: LoroDoc, from: Frontiers | undefined): (string | undefined)[] {
-  const messages: (string | undefined)[] = [];
+export function authorsSince(
+  doc: LoroDoc,
+  from: Frontiers | undefined,
+): (CommitAuthor | undefined)[] {
+  const authors: (CommitAuthor | undefined)[] = [];
   for (const span of doc.findIdSpansBetween(from ?? [], doc.frontiers()).forward) {
     let counter = span.counter;
     while (counter < span.counter + span.length) {
       const change = doc.getChangeAt({ peer: span.peer, counter });
-      messages.push(change.message || undefined);
+      authors.push(readCommitMessage(change.message).by);
       counter = change.counter + change.length;
     }
   }
-  return messages;
+  return authors;
 }
