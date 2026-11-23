@@ -590,6 +590,10 @@ msgstr ""
 msgid "{name} was removed. Save to stop using it."
 msgstr ""
 
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "{name} wrote over this since. Undo left it as it is."
+msgstr ""
+
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
 msgstr ""
@@ -899,8 +903,8 @@ msgid "Address"
 msgstr ""
 
 #: src/features/draft-review/ReviewBar.tsx
-msgid "against Live"
-msgstr ""
+#~ msgid "against Live"
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
@@ -1036,7 +1040,6 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/draft-review/ReviewTreeRow.tsx
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Apply"
 msgstr ""
@@ -1056,6 +1059,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply draft of {name}"
+msgstr ""
+
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Apply this chapter"
 msgstr ""
 
 #. placeholder {0}: file.name
@@ -1407,6 +1414,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in {name}"
+msgstr ""
+
+#: src/features/draft-review/ReviewStepper.tsx
+msgid "Changes in this chapter"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -2492,7 +2503,11 @@ msgid "Deleted just now"
 msgstr ""
 
 #: src/core/editor/extensions/KeptRemovedExtension.ts
-msgid "Deleted on another device. It stays while you're in it."
+#~ msgid "Deleted on another device. It stays while you're in it."
+#~ msgstr ""
+
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "Deleted while you were in it. It stays until you leave it."
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -2582,6 +2597,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Discard draft of {name}"
+msgstr ""
+
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Discard this chapter"
 msgstr ""
 
 #. placeholder {0}: file.name
@@ -4872,7 +4891,7 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
-#: src/features/draft-review/ReviewTreeRow.tsx
+#: src/features/draft-review/ReviewBar.tsx
 #: src/features/editor/InTrashStatus.tsx
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 #: src/features/project/context/ContextEntryActions.tsx
@@ -4897,6 +4916,10 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore before {sibling}"
+msgstr ""
+
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Restore this chapter"
 msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
@@ -6600,6 +6623,10 @@ msgstr "写作中"
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Writing the handoff brief"
+msgstr ""
+
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "Written over since. Undo left it as it is."
 msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx

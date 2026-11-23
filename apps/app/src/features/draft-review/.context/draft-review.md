@@ -13,12 +13,19 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
 `ReviewMode` per host, and nothing else records whether a pane is reviewing.
 
 - **Opening** a review pushes a history entry marked with where it came from
-  (`reviewOpenedFromMark`); **Close** and Esc go Back when that entry is the page's own, and
-  otherwise replace. The stepper, a press and the target picker replace.
+  (`reviewOpenedFromMark`) and moves the focus to the stepper; **Close** and Esc go Back when that
+  entry is the page's own, and otherwise replace. The stepper, a press and the target picker
+  replace. Esc is one handler per host (`ReviewEscapeScope`) at page scope, after any menu, dialog
+  or field that handles it.
+- **The controls** sit in the toolbar row, where "Review N changes" was: the layout toggle, the
+  chapter's `Discard` · `Apply` (named "this chapter" for assistive tech), the stepper and Close.
+  A pane under 720px shows Inline only, the short stepper and an icon Close.
 - **The rows** are the editor's: `ReviewChangesExtension` (`core/editor/extensions/review-changes`)
-  reads `changedBlocks` of the fork against Live 150 ms after typing pauses and maps its
-  decorations through the typing in between. It publishes the rows (`publishReviewRows`) for the
-  bar's stepper. The layout (Inline or Side by side) is a device preference, not in the address.
+  reads `changedBlocks` of the fork against Live 150 ms after typing pauses, or after Live's copy
+  imports (a press, Live typed in elsewhere), and maps its decorations through the typing in
+  between. It publishes the rows to the host's `ReviewSurface` for the toolbar row. The layout
+  (Inline or Side by side) is a device preference, not in the address; Side by side gives every
+  row both columns, an empty cell where one side has nothing.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
   focus moves to the next row.
 - **Every press is a Ctrl+Z step** in each editor open on its documents, pushed as it is made in
@@ -26,13 +33,16 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   `EditorPressStep`. Its Undo waits for the press's answer, then sends the press's Undo; Redo
   presses again. An Undo from the sidebar or a notice ends the press (`PressEntries`), which
   takes the editor's step away too; one Ctrl+Z took back stays for Redo.
-- **An empty read closes the review** only once the draft's list agrees (`ReviewMode.listed`): a
-  fork still syncing reads empty before the list does.
+- **Pressing the last change closes the review** at once. A read that comes back empty closes
+  it only once the draft's list agrees (`ReviewMode.listed`): a fork still syncing reads empty
+  before the list does.
+- **The stepper crosses chapters**: past either end it opens the next or previous chapter with
+  changes, ‹ at its last change.
 - **A plain draft** shows "Review N changes" (`ReviewChangesButton`), counted by the same extension
   in count mode, which paints nothing.
 
 The tree half of a reviewed document is its row in the pane (`ReviewTreeRow`): Deleted, New, or
-"Was <path>", with the document's pair while reviewing against Live.
+"Was <path>". The chapter's pair is in the toolbar row.
 
 ## Presses
 
@@ -67,9 +77,7 @@ changes.
 
 ## Not covered yet
 
-- The server's press over `PressRequest` scopes (lane 2b): until it lands, a press 400s and its
-  row comes back.
-- The Changes list's pending flag for fork changes (2b), the draft switcher's drafts, New draft,
-  Delete draft, and a Draft chat's turn cards (2d).
-- The target picker offers Live only; the stepper counts only this chapter's changes.
-- A stayed edit's mark naming who wrote over it, and changes to comment bodies.
+- The draft switcher's drafts, New draft, Delete draft, and a Draft chat's turn cards (2d).
+- The target picker offers Live only.
+- A press Undo's changes it left (`PressUndoResult.stayed`) get no mark yet; Ctrl+Z's do
+  (`showKept`). Changes to comment bodies are not reviewed.
