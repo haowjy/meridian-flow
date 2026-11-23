@@ -12,6 +12,7 @@ import type {
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
 import { useId, useState } from "react";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
+import { useItemLauncher } from "@/features/project/review-launch";
 import {
   type CanOpenContextUri,
   type OpenContextUri,
@@ -234,6 +236,16 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
+  // A chapter the turn drafted that still has changes opens in Review changes; any other row
+  // opens as a link does.
+  const projectId = useProjectDocumentNavigationProjectId();
+  const draftId = document.scope === "draft" ? document.draft : null;
+  const drafted = useOwnerDrafts(projectId ?? null, draftId).fileForDocument(document.documentId);
+  const { openReviewFile } = useItemLauncher();
+  const open = () => {
+    if (draftId && drafted?.item.pending) openReviewFile(drafted, draftId);
+    else onOpenContextUri?.(document.uri);
+  };
   // A folder has no document to open or drag: its row names where it is.
   if (document.folder && !document.tree)
     return (
@@ -261,7 +273,7 @@ function DocumentRow({
     <button
       type="button"
       {...drag}
-      onClick={() => onOpenContextUri(document.uri)}
+      onClick={open}
       onAuxClick={(event) => {
         if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
       }}
