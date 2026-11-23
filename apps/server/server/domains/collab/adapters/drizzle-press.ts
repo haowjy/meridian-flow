@@ -340,7 +340,8 @@ export function createDrizzlePress(
       : null;
     const copy = await deps.rooms.read(room);
     try {
-      const forward = copy.forward().restore;
+      const forwarded = copy.forward({ settle: true });
+      const forward = forwarded.restore;
       // Cut since the turn: its start is gone, and so is the restore.
       for (const [key, at] of before) {
         const doc = copy.doc(key) ?? copy.live?.textOf(key);
@@ -355,7 +356,7 @@ export function createDrizzlePress(
       );
       const committed = await commitCopy(room, {
         live: [],
-        fork: [...(forward ? [forward] : []), ...changes],
+        fork: [...forwarded.changes, ...(forward ? [forward] : []), ...changes],
       });
       await markFork(tx(), room, copy);
       if (changes.length) {

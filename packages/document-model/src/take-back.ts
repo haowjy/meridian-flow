@@ -433,6 +433,46 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
 
 export type TextOp = Delta<string>;
 
+/** A text unit at a frontier, including the character id used for identity-based transforms. */
+export interface TextSnapshotUnit {
+  id: string;
+  ch: string;
+  attributes?: TextOp["attributes"];
+  /** The original character ids this unit stands for through one or more take-backs. */
+  standsFor?: string[];
+}
+
+/** The text units (and their ids) at `frontiers`. */
+export function textUnitsAt(doc: LoroDoc, frontiers: Frontiers): TextSnapshotUnit[] {
+  const view = doc.fork();
+  try {
+    view.checkout(frontiers);
+    return inText(view, (text) => {
+      const out: TextSnapshotUnit[] = [];
+      const memo: StandsForMemo = new Map();
+      let pos = 0;
+      for (const op of text.toDelta() as TextOp[]) {
+        if (op.insert == null) continue;
+        for (const ch of (op.insert as string).split("")) {
+          const id = idAt(text, pos++);
+          if (id) {
+            const standsFor = chainOf(view, id, memo);
+            out.push({
+              id,
+              ch,
+              attributes: op.attributes,
+              standsFor: standsFor ? [...standsFor] : undefined,
+            });
+          }
+        }
+      }
+      return out;
+    });
+  } finally {
+    view.free();
+  }
+}
+
 /**
  * What became of a write (`before` → `after`) to `doc`'s text: whether all the text it put in is
  * there now (`whole`; text an Undo deleted and an Undo put back counts as there, by `textSince`),

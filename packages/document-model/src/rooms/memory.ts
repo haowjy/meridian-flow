@@ -56,7 +56,7 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     const live = room.kind === "fork" ? load(liveRoomOf(room)).docs : null;
     const rows = new Map([...(stored.get(name) ?? [])].map(([key, row]) => [key, row.snapshot]));
     const docs = RoomDocs.load(shape, freshServerPeerId(), rows, live);
-    const loaded = { room, docs, dirty: new Set(docs.forward().changed) };
+    const loaded = { room, docs, dirty: new Set(docs.forward({ settle: true }).changed) };
     loadedRooms.set(name, loaded);
     return loaded;
   };
@@ -73,9 +73,10 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
 
   // As the Postgres adapter: what an import changed is saved and sent, and a restore the room's
   // copy wrote on it (design §1, rule 1) goes out after the batch as the room's own.
-  const landed = (loaded: Loaded, { changed, restore }: Imported) => {
+  const landed = (loaded: Loaded, { changed, restore, changes }: Imported) => {
     for (const key of changed) loaded.dirty.add(key);
     if (restore) relay(loaded, encodeChanges([restore]), "server:restore");
+    if (changes.length > 0) relay(loaded, encodeChanges(changes), "server:restore");
   };
 
   const importInto = (loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) => {
@@ -83,7 +84,8 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     relay(loaded, batch, origin);
     landed(loaded, imported);
     if (loaded.room.kind === "live")
-      for (const fork of forks(loaded.room.documentId)) landed(fork, fork.docs.forward());
+      for (const fork of forks(loaded.room.documentId))
+        landed(fork, fork.docs.forward({ settle: true }));
     return { pending: imported.pending };
   };
 

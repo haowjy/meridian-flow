@@ -275,7 +275,7 @@ export function createPostgresDocumentRooms(input: {
       new Map(rows.map((row) => [row.docKey, row.snapshot])),
       live,
     );
-    docs.forward();
+    docs.forward({ settle: true });
     return docs;
   }
 
@@ -321,7 +321,7 @@ export function createPostgresDocumentRooms(input: {
         room,
         name,
         docs,
-        dirty: new Set(docs.forward().changed),
+        dirty: new Set(docs.forward({ settle: true }).changed),
         firstDirtyAt: 0,
         saveTimer: null,
         settleSave: null,
@@ -393,7 +393,7 @@ export function createPostgresDocumentRooms(input: {
    */
   function imported(
     loaded: Loaded,
-    { changed, pending, restore }: Imported,
+    { changed, pending, restore, changes }: Imported,
     batch: Uint8Array | null,
     origin: RoomOrigin,
   ) {
@@ -405,9 +405,10 @@ export function createPostgresDocumentRooms(input: {
     markDirty(loaded, changed);
     if (batch) emitTo(loaded.room, batch, origin);
     if (restore) emitTo(loaded.room, encodeChanges([restore]), "server:restore");
+    if (changes.length > 0) emitTo(loaded.room, encodeChanges(changes), "server:restore");
     if (loaded.room.kind === "live")
       for (const fork of forksOf(loaded.room.documentId))
-        imported(fork, fork.docs.forward(), null, origin);
+        imported(fork, fork.docs.forward({ settle: true }), null, origin);
   }
 
   function importInto(loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) {
@@ -560,7 +561,7 @@ export function createPostgresDocumentRooms(input: {
             merged = true;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
-            const result = { changed: merge.changed, pending: false, restore: null };
+            const result = { changed: merge.changed, pending: false, restore: null, changes: [] };
             imported(loaded, result, merge.delta, "server:merge");
           }
           // Taken here, after the merge and right before the export, so a batch landing during
@@ -833,7 +834,7 @@ export function createPostgresDocumentRooms(input: {
   async function mergeIntoCopy(tx: DrizzleDb, room: DocumentRoom, copy: RoomDocs) {
     if (copy.live) {
       await mergeStored(tx, loroRoomName(liveRoomOf(room)), copy.live);
-      copy.forward();
+      copy.forward({ settle: true });
     }
     await mergeStored(tx, loroRoomName(room), copy);
   }

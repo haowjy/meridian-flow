@@ -1,5 +1,6 @@
-import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
+import { decodeImportBlobMeta, type Frontiers, LoroDoc, type LoroText } from "loro-crdt";
 import type { Envelope } from "./envelope.js";
+import { inText } from "./handles.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
 import {
@@ -9,6 +10,14 @@ import {
   type ShapeSchema,
   STRUCTURE_KEY,
 } from "./shape.js";
+import {
+  opsBetween,
+  type TextOp,
+  type TextSnapshotUnit,
+  takeBackMessage,
+  textSince,
+  textUnitsAt,
+} from "./take-back.js";
 import {
   type DocVersion,
   docCovers,
@@ -25,6 +34,8 @@ export interface Imported {
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange | null;
+  /** Other untracked writes made while settling an import (currently forward's text take-backs). */
+  changes: DocChange[];
 }
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
@@ -408,7 +419,7 @@ export class RoomDocs {
       if (status.pending) pending = true;
       if (!sameFrontiers(doc.oplogFrontiers(), at)) changed.push(key);
     }
-    return { changed, pending, restore: this.answer(before, changed) };
+    return { changed, pending, restore: this.answer(before, changed), changes: [] };
   }
 
   /**
@@ -416,9 +427,9 @@ export class RoomDocs {
    * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
    * needs nothing. An import like any other (`importBatch`); it never waits on ops.
    */
-  forward(): Imported {
+  forward(options: { settle?: boolean } = {}): Imported {
     const live = this.live;
-    if (!live) return { changed: [], pending: false, restore: null };
+    if (!live) return { changed: [], pending: false, restore: null, changes: [] };
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
@@ -431,11 +442,20 @@ export class RoomDocs {
       if (!sameFrontiers(into.oplogFrontiers(), at)) changed.push(key);
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
+    const settles: TextSettlement[] = [];
     for (const [id, doc] of this.texts) {
       const base = live.textOf(id);
-      if (base) pull(id, base, doc);
+      if (!base) continue;
+      if (options.settle) {
+        const settlement = prepareTextSettlement(doc, base);
+        if (settlement) settles.push({ key: id, ...settlement });
+      }
+      pull(id, base, doc);
     }
-    return { changed, pending: false, restore: this.answer(before, changed) };
+    const settled = options.settle ? settleText(this, live, settles) : [];
+    for (const change of settled) changed.push(change.key);
+    const restore = this.answer(before, changed);
+    return { changed, pending: false, restore, changes: settled };
   }
 
   private answer(before: Frontiers, changed: readonly DocKey[]): DocChange | null {
@@ -461,6 +481,223 @@ export class RoomDocs {
     doc.setPeerId(this.peer);
     return configureDoc(doc, this.shape);
   }
+}
+
+type TextHunk = {
+  from: number;
+  to: number;
+  inserted: number;
+  deleted: number;
+  insertAt: number[];
+};
+
+type TextSettlement = {
+  key: DocKey;
+  at: Frontiers;
+  draftBase: TextSnapshotUnit[];
+  draftNow: TextSnapshotUnit[];
+  liveBase: TextSnapshotUnit[];
+  liveNow: TextSnapshotUnit[];
+  draftHunks: TextHunk[];
+  liveHunks: TextHunk[];
+};
+
+/** The shared version and frontier for two copies of one text doc. */
+function sharedTextFrontier(a: LoroDoc, b: LoroDoc): Frontiers {
+  const av = docVersion(a);
+  const bv = docVersion(b);
+  const common = new Map<PeerId, number>();
+  for (const [peer, counter] of av) {
+    const held = Math.min(counter, bv.get(peer) ?? 0);
+    if (held > 0) common.set(peer, held);
+  }
+  return withVector(common, (vector) => a.vvToFrontiers(vector));
+}
+
+/** Non-retain runs of a delta, measured as stretches of the shared base text. */
+function hunks(delta: readonly TextOp[]): TextHunk[] {
+  const out: TextHunk[] = [];
+  let base = 0;
+  let current: TextHunk | null = null;
+  const finish = () => {
+    if (current) out.push(current);
+    current = null;
+  };
+  for (const op of delta) {
+    if (op.retain != null) {
+      finish();
+      base += op.retain;
+      continue;
+    }
+    current ??= { from: base, to: base, inserted: 0, deleted: 0, insertAt: [] };
+    if (op.delete != null) {
+      current.deleted += op.delete;
+      current.to += op.delete;
+      base += op.delete;
+    } else if (op.insert != null) {
+      current.inserted += (op.insert as string).length;
+      current.insertAt.push(base);
+    }
+  }
+  finish();
+  return out;
+}
+
+/** Put-back inserts are retained by `textSince`; expose their original stretch for clash rules. */
+function putBackHunks(
+  base: readonly TextSnapshotUnit[],
+  now: readonly TextSnapshotUnit[],
+): TextHunk[] {
+  const positions = new Map(base.map((unit, index) => [unit.id, index]));
+  const baseIds = new Set(base.map((unit) => unit.id));
+  const out: TextHunk[] = [];
+  for (const unit of now) {
+    if (!unit.standsFor || baseIds.has(unit.id)) continue;
+    const at = unit.standsFor
+      .map((id) => positions.get(id))
+      .filter((position): position is number => position !== undefined);
+    if (at.length === 0) continue;
+    const from = Math.min(...at);
+    const to = Math.max(...at) + 1;
+    if (!out.some((hunk) => hunk.from === from && hunk.to === to))
+      out.push({ from, to, inserted: 1, deleted: 0, insertAt: [from] });
+  }
+  return out;
+}
+
+/** A non-empty hunk overlaps, while an insertion clashes only with a deletion across its place. */
+function overlaps(a: TextHunk, b: TextHunk): boolean {
+  if (a.from === a.to && b.from === b.to) return false;
+  if (a.from === a.to) return b.from < a.from && a.from < b.to;
+  if (b.from === b.to) return a.from < b.from && b.from < a.to;
+  return Math.max(a.from, b.from) < Math.min(a.to, b.to);
+}
+
+function prepareTextSettlement(draft: LoroDoc, live: LoroDoc): Omit<TextSettlement, "key"> | null {
+  const at = sharedTextFrontier(draft, live);
+  const draftBase = textUnitsAt(draft, at);
+  const draftNow = textUnitsAt(draft, draft.frontiers());
+  const liveBase = textUnitsAt(live, at);
+  const liveNow = textUnitsAt(live, live.frontiers());
+  const draftHunks = [...hunks(textSince(draft, at)), ...putBackHunks(draftBase, draftNow)];
+  const liveHunks = [...hunks(textSince(live, at)), ...putBackHunks(liveBase, liveNow)];
+  if (draftHunks.length === 0 || liveHunks.length === 0) return null;
+  if (!liveHunks.some((liveHunk) => draftHunks.some((draftHunk) => overlaps(liveHunk, draftHunk))))
+    return null;
+  return { at, draftBase, draftNow, liveBase, liveNow, draftHunks, liveHunks };
+}
+
+function standsFor(units: readonly TextSnapshotUnit[]): [string, number, number][] {
+  const out: [string, number, number][] = [];
+  for (const unit of units) {
+    const split = unit.id.indexOf("@");
+    if (split < 0) continue;
+    const peer = unit.id.slice(split + 1);
+    const counter = Number(unit.id.slice(0, split));
+    const last = out.at(-1);
+    if (last && last[0] === peer && last[1] + last[2] === counter) last[2]++;
+    else out.push([peer, counter, 1]);
+  }
+  return out;
+}
+
+function insertUnits(text: LoroText, at: number, units: readonly TextSnapshotUnit[]) {
+  let pos = at;
+  for (const unit of units) {
+    text.applyDelta([
+      { retain: pos },
+      { insert: unit.ch, ...(unit.attributes ? { attributes: unit.attributes } : {}) },
+    ]);
+    pos++;
+  }
+}
+
+function settleText(
+  docs: RoomDocs,
+  live: RoomDocs,
+  settlements: readonly TextSettlement[],
+): DocChange[] {
+  const changes: DocChange[] = [];
+  for (const settlement of settlements) {
+    const doc = docs.texts.get(settlement.key);
+    const liveDoc = live.textOf(settlement.key);
+    if (!doc || !liveDoc) continue;
+    const clashing = settlement.liveHunks.filter((liveHunk) =>
+      settlement.draftHunks.some((draftHunk) => overlaps(liveHunk, draftHunk)),
+    );
+    if (clashing.length === 0) continue;
+    const draftIds = new Set(settlement.draftNow.map((unit) => unit.id));
+    const liveBaseIds = new Set(settlement.liveBase.map((unit) => unit.id));
+    const liveInserted = new Set<string>();
+    const restore: TextSnapshotUnit[] = [];
+    for (const hunk of clashing) {
+      for (const unit of settlement.liveNow)
+        if (
+          !liveBaseIds.has(unit.id) &&
+          unit.standsFor?.some((id) => {
+            const at = settlement.liveBase.findIndex((base) => base.id === id);
+            return at >= hunk.from && at < hunk.to;
+          })
+        )
+          liveInserted.add(unit.id);
+      let final = 0;
+      let base = 0;
+      for (const op of textSince(liveDoc, settlement.at)) {
+        if (op.retain != null) {
+          final += op.retain;
+          base += op.retain;
+        } else if (op.delete != null) {
+          base += op.delete;
+        } else if (op.insert != null) {
+          if (hunk.insertAt.includes(base))
+            for (const unit of settlement.liveNow.slice(
+              final,
+              final + (op.insert as string).length,
+            ))
+              liveInserted.add(unit.id);
+          final += (op.insert as string).length;
+        }
+      }
+      const deleted = settlement.liveBase.slice(hunk.from, hunk.to);
+      for (const unit of deleted) if (draftIds.has(unit.id)) restore.push(unit);
+    }
+    const before = doc.frontiers();
+    inText(doc, (text) => {
+      const now = textUnitsAt(doc, doc.frontiers());
+      const positions = now
+        .map((unit, index) => (liveInserted.has(unit.id) ? index : -1))
+        .filter((index) => index >= 0)
+        .sort((a, b) => b - a);
+      for (const position of positions) text.delete(position, 1);
+      if (restore.length === 0) return;
+      const current = textUnitsAt(doc, doc.frontiers());
+      let insertion = current.length;
+      for (let i = settlement.liveBase.length - 1; i >= 0; i--) {
+        const pos = current.findIndex((unit) => unit.id === settlement.liveBase[i].id);
+        if (pos >= 0) {
+          insertion = pos + 1;
+          break;
+        }
+      }
+      if (insertion === current.length)
+        for (let i = 0; i < settlement.liveBase.length; i++) {
+          const pos = current.findIndex((unit) => unit.id === settlement.liveBase[i].id);
+          if (pos >= 0) {
+            insertion = pos;
+            break;
+          }
+        }
+      insertUnits(text, insertion, restore);
+    });
+    if (sameFrontiers(before, doc.frontiers())) continue;
+    const message = takeBackMessage(
+      standsFor(restore),
+      opsBetween(liveDoc, settlement.at, liveDoc.frontiers()),
+    );
+    doc.commit({ message });
+    changes.push({ key: settlement.key, doc, before, after: doc.frontiers() });
+  }
+  return changes;
 }
 
 /** A fresh peer in `peer`'s range (server or tab), for the Live copy a draft copy owns. */

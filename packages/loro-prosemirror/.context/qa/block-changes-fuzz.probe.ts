@@ -779,7 +779,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const bothDeleted = [...deletedBy[0]].filter((c) => deletedBy[1].has(c)).length;
     const before = render(room);
     const draftsBefore = drafts.map((d) => {
-      d.forward();
+      d.forward({ settle: true });
       return textOfDoc(d.textOf(id));
     });
     const liveToken = `y${seed}0wk`;
@@ -790,7 +790,7 @@ export function runScript(seed, { verbose = false } = {}) {
       pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }), (r) => stored(r.pressed)));
     }
     for (const d of drafts) {
-      d.forward();
+      d.forward({ settle: true });
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
     for (let i = drafts.length - 1; i >= 0; i--) {
@@ -799,7 +799,7 @@ export function runScript(seed, { verbose = false } = {}) {
     }
     const liveIds = new Set(charIds(room.textOf(id)));
     for (const [i, d] of drafts.entries()) {
-      d.forward();
+      d.forward({ settle: true });
       const changes = changedBlocks(d);
       check(changes.length === 1 && same(changes[0].blocks, [id]), "two-drafts", () => `draft ${i} pending ${JSON.stringify(changes)} after the Undo, not ${id}`);
       // The draft's text is back (as new characters of its own: the return to pending). Beside it are only Live's

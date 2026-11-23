@@ -374,8 +374,9 @@ function deletePieces(draft: RoomDocs, view: StructureView, blocks: readonly Blo
     });
 }
 
-function forwarded(draft: RoomDocs, into: DocChange[]): void {
-  const imported: Imported = draft.forward();
+function forwarded(draft: RoomDocs, into: DocChange[], settle = false): void {
+  const imported: Imported = draft.forward({ settle });
+  into.push(...imported.changes);
   if (imported.restore) into.push(imported.restore);
 }
 

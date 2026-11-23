@@ -107,9 +107,11 @@ export {
   putBackValues,
   type SetValue,
   type TextOp,
+  type TextSnapshotUnit,
   type TextSpan,
   takeBackMessage,
   textSince,
+  textUnitsAt,
   valuesOf,
 } from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";
