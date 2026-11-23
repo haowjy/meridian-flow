@@ -28,7 +28,11 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   the first write into it stores a paragraph under a fresh id (the binding renames the editor's
   node in the same transaction; `applyOps` takes `newBlockId`), so the id never leaves its parent
   and never names a removed block. `writeDocument` skips it only as its container's one empty
-  block (`storedOf`, `isDerivedEmpty`); `applyOps` addresses it through `derivedEmptyParent`.
+  block (`storedOf`, `isDerivedEmpty`), and throws if it would store a new block under one;
+  `applyOps` addresses it through `derivedEmptyParent` and returns the fresh id it stored each
+  placeholder under (`renamed`). A caller that goes on addressing the paragraph after the call
+  must follow `renamed`: agent-edit moves the paragraph's ref onto the fresh id
+  (`LoroDocument.apply`), or a later edit in the same command finds no block.
   Which blocks show is one function, `showRule`: `StructureView` runs it over every block and an
   Undo's test over the blocks its run changes. Don't write a second copy of it. A local write
   into a text doc takes the doc from `writableText`, which tells `beforeTextWrite` listeners
