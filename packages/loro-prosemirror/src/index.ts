@@ -15,11 +15,13 @@ export {
 export {
   attachCompositionHold,
   type EditorListener,
+  forwardLocalWrite,
   heldUpdateCount,
   importRemoteUpdate,
   listenToImports,
   notifyChanged,
   type PublishWrite,
+  registerDraft,
 } from "./composition-hold.js";
 export {
   cursorAt,

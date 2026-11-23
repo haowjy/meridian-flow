@@ -1,5 +1,6 @@
 /** Structural, lease-qualified session-registry surfaces. */
-import type { AccountId } from "@meridian/contracts/protocol";
+import type { DraftId } from "@meridian/contracts";
+import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession } from "./document-session";
 
@@ -8,19 +9,28 @@ export type RetainedLiveDocumentReference = Readonly<{
   documentId: DocumentId;
 }>;
 
-/** The account's right to hold one document's live session; `get` and `retain` take it. */
-export type LiveDocumentSessionLease = Readonly<{
+/**
+ * The account's right to hold one document room's session (its Live room, or a draft's fork
+ * room of it); `get` and `retain` take it.
+ */
+export type DocumentSessionLease = Readonly<{
   accountId: AccountId;
   projectId: ProjectId;
   documentId: DocumentId;
+  room: DocumentRoom;
 }>;
 
 export interface LiveDocumentSessionRegistry {
-  admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
+  /**
+   * The lease of the document's Live room, or with `draftId` of that draft's fork room. A fork
+   * room's session is built over the document's Live session, which the registry keeps open as long
+   * as the fork's session lives.
+   */
+  admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease;
   /**
    * The document's local copy can no longer come back to this account (its node was purged, or
-   * its project, Work or chat was deleted for good, or the account left the project): the
-   * session closes and the copy is deleted, unless another tab holds it open, which clears it
+   * its project, Work or chat was deleted for good, or the account left the project): its
+   * sessions (Live and every fork) close and the copies are deleted, unless another tab holds it open, which clears it
    * itself. Resolves once this tab is done.
    */
   clearLocalCopy(documentId: DocumentId): Promise<void>;
@@ -28,7 +38,7 @@ export interface LiveDocumentSessionRegistry {
   settleUnsentEdits(timeoutMs: number): Promise<boolean>;
   /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
-  get(lease: LiveDocumentSessionLease): DocumentSession;
+  get(lease: DocumentSessionLease): DocumentSession;
   /**
    * The room version (`encodeRoomVersion`) of the document's live session in this tab, typing the
    * server hasn't acknowledged included; null when this tab holds no such session.
@@ -39,10 +49,10 @@ export interface LiveDocumentSessionRegistry {
    * when the tab holds none or it is not connected.
    */
   whenLiveHeld(documentId: DocumentId): Promise<void>;
-  restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
+  restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,
-    leases: Iterable<LiveDocumentSessionLease>,
+    leases: Iterable<DocumentSessionLease>,
     options?: { detachedDocumentIds?: Iterable<DocumentId> },
   ): void;
   /**
@@ -65,4 +75,9 @@ export interface LiveDocumentSessionRegistry {
    * holders bind it and their editors remount. Not called for a room retired the ordinary way.
    */
   observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void;
+  /**
+   * The open fork session of `draftId`'s fork of the document in this tab, if any: a command that
+   * waits on the fork room's acknowledgement reads it, and opens none.
+   */
+  openSession(room: DocumentRoom): DocumentSession | null;
 }

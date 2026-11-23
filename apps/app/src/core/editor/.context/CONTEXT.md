@@ -6,11 +6,23 @@ boundaries. The app schema must remain structurally aligned with
 
 ## Sessions and local copies
 
-`DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's live
-sessions: one per document id, held by retain/release, closed after a grace once no host wants
-it and its unsent edits are acknowledged. A lease is only the account's right to hold one
-document's session (`{accountId, projectId, documentId}`): nothing orders or fences it, because
-the project's list says whether a document is there.
+`DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's
+document sessions: one per room, keyed by `sessionRoomKey` (the bare document id for a Live room,
+`fork:<draft>:<document>` for a draft's fork room), held by retain/release, closed after a grace
+once no host wants it and its unsent edits are acknowledged. A lease is only the account's right
+to hold one room's session (`{accountId, projectId, documentId, room}`): nothing orders or fences
+it, because the project's list says whether a document is there.
+
+A fork session (design §6, "The session lifecycle") is the same `DocumentSession` class on the
+fork room, built over its document's Live session: its docs are `RoomDocs.draftOf` the Live
+copy, it has its own socket, store, presence and `UndoHistory`, and it registers its docs with
+the binding (`registerDraft`) so every batch the Live session imports, and every local write it
+publishes (`forwardLocalWrite`), forwards the fork, whether or not an editor shows it. Admitting a
+fork admits its Live room; the Live room counts as retained while any fork session of it lives,
+and is torn down after them (`clearLocalCopy` and account close retire forks first). A draft
+page opens its fork room whether or not the draft has changed the document: there is no path that
+binds Live and swaps at the first keystroke. A document the draft created has no fork: its page
+binds its own Live room.
 
 A session owns one `RoomDocs` (the structure doc and one `LoroDoc` per textblock, local-first
 design §1) and frees it at teardown; nothing else frees it. Every local write leaves by one path,
@@ -20,11 +32,12 @@ server or another tab, arrives by `importRemote`, which calls the binding's `imp
 and so goes through its composition guard: a batch is held, as bytes, while any editor on the
 room is composing.
 
-The browser's local copy of a live document is the IndexedDB database
-`documentSessionPersistenceKey(accountId, documentId)` (`local-document-copies.ts`, store layout in
+The browser's local copy of a room is the IndexedDB database
+`documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
 `local-copy-store.ts`): a snapshot per doc key, a log of envelope batches folded into snapshots
 every `COMPACT_EVERY` batches and at open, and a `meta` store holding the room version the server
-is known to hold (`SERVER_META`). It is
+is known to hold (`SERVER_META`). A fork room's copy is named under its document's, so a document's
+copies (Live and every fork) are found and deleted together. It is
 deleted only when it cannot come back to this account: the node's `purge`, the project, Work
 or chat deleted for good, the account removed from the project, or sign-out. A `delete` (a
 document in Trash) touches nothing: the server's text room admits a document in Trash until its
@@ -81,8 +94,8 @@ synchronously, then drains transports and leases.
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- The editor shows Live only. Drafts, suggestion paint, review marks and peer marks are gone
-  until drafts come back as Loro forks (phase 2). Schema 4.0.0 has no suggestion marks or attrs.
+- The editor binds one session's docs: a Live room's, or a draft's fork room's, which reads Live's
+  text for every block the draft has not written. No suggestion marks or attrs exist (schema 4.0.0).
 - Builds on Yjs kept document copies in IndexedDB; `core/stale-yjs-copies.ts` deletes them once
   per signed-in load (`routes/_authenticated.tsx`).
 
@@ -150,7 +163,7 @@ identity in anchors or holds.
   open (design §9). Typing joins the open step; any other write starts one, and a write that sets
   structure ends it, so an Enter is a step of its own. Destroying an editor only detaches it: the history lasts
   as long as the session, so a tab's undo survives its editor; the session frees its managers
-  before its docs. Reload resets it. With drafts off, a press Apply has no Undo entry.
+  before its docs. Reload resets it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

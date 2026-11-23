@@ -20,8 +20,9 @@ the headless seams here.
 - Only `local-presence.ts` writes the presence `EphemeralStore`; don't expose the raw store
   to an extension. Cursor colors are design tokens, resolved to concrete RGB hex before
   publication.
-- The editor shows Live only. Drafts, suggestion paint and peer marks are gone until phase 2
-  brings drafts back as Loro forks; don't add a second attribute view.
+- A draft is a fork room with a session of its own, built over the Live session
+  ([session contract](.context/CONTEXT.md)): an editor binds one session's docs, Live's or a
+  fork's, and there is never a second editor on one room. Don't add an attribute view or marks.
 - Undo is the binding's `UndoHistory` (`editor-history.ts` wraps it): a step's text goes back
   through a Loro `UndoManager` per text doc the tab changes, its structure values through the
   rule in `document-model`'s `take-back.ts`, so Ctrl+Z after a collaborator's edit undoes only
@@ -47,7 +48,8 @@ the headless seams here.
 - A picture enters as a document node before upload; see
   [`images/AGENTS.md`](images/AGENTS.md).
 - Every `RoomDocs` has one owner, the `DocumentSession`, which frees it on close; nothing else
-  calls `free()` on it ([session contract](.context/CONTEXT.md)).
+  calls `free()` on it ([session contract](.context/CONTEXT.md)). A fork session is freed before
+  the Live session it reads through.
 
 Child areas: [chrome](chrome/AGENTS.md), [objects](objects/AGENTS.md),
 [images](images/AGENTS.md), [links](links/AGENTS.md),

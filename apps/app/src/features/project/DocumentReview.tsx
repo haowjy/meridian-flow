@@ -31,11 +31,7 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
-import {
-  type ReviewAddressAdmission,
-  type ReviewAdmissionPort,
-  useReviewAdmission,
-} from "./use-review-admission";
+import type { ReviewAddressAdmission } from "./use-review-admission";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
 
@@ -103,51 +99,6 @@ export function useDocumentReview(
     showLive,
   });
 
-  const draftCommands = useDraftCommandOwner();
-  const queryClient = useQueryClient();
-  const reviewedItemKey = paint.draft?.itemKey ?? "";
-  const hidden = () => draftCommands.state(reviewedItemKey).hidden;
-  // The end of a press that hid the item is a new port: admission retries what it refused (a
-  // failed Discard leaves the draft pending).
-  const itemHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
-  const enterInlineReview = value.controller.enterInlineReview;
-  const port = useMemo<ReviewAdmissionPort>(
-    () => ({
-      write: (review) => {
-        if (documentId) setDocumentView(accountId, projectId, documentId, { pin: review });
-      },
-      // A draft a press has in flight has already left its review; admitting it again would
-      // re-open what the provider just closed, every render.
-      admit: async (target) => {
-        if (draftCommands.state(target.itemKey).hidden) return false;
-        enterInlineReview(target.documentId, target.itemKey);
-        return true;
-      },
-    }),
-    [accountId, projectId, documentId, enterInlineReview, draftCommands, queryClient, itemHidden],
-  );
-
-  const main = useContext(MainReviewAddressContext);
-  // An address naming this review is admitted by the route's answer; every other review is the
-  // view's own.
-  const admission: ReviewAddressAdmission =
-    main?.itemKey && main.documentId === documentId && paint.draft?.itemKey === main.itemKey
-      ? (main.admission ?? "pending")
-      : "admitted";
-  const presented = useMemo(
-    () =>
-      tab
-        ? {
-            documentId: tab.documentId,
-            scheme: tab.kind === "new" ? null : tab.scheme,
-            path: tab.kind === "new" ? null : tab.path,
-            review: paint.draft,
-            draftView: paint.view.version === "draft",
-          }
-        : null,
-    [tab, paint.draft, paint.view.version],
-  );
-  useReviewAdmission({ review: value, presented, admission, port });
   return { value, paint };
 }
 

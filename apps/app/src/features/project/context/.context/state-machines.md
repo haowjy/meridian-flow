@@ -4,18 +4,19 @@
 
 One host's hold on an open document (`LiveDocumentBindingState` in
 `use-live-document-binding.ts`). A host is a pane that shows a document. It asks the opener
-(`ProjectDocumentLiveOpener`) to admit the document, then binds the admission: the live
-document session plus a `release()`.
+(`ProjectDocumentLiveOpener`) to admit the document's room, then binds the admission: the
+room's session plus a `release()`. The room is the document's Live room, or on a draft page the
+draft's fork room (`draftId`), whose session the registry builds over the Live one.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> absent: no document id
+  [*] --> absent: no document id, or the room is not known yet
   [*] --> opening: a document id
   absent --> opening: a document id arrives
   opening --> opened: the document is admitted and this host binds it
   opening --> failed: unavailable, or the open threw
   failed --> opening: retry
-  opened --> opening: the document id changes
+  opened --> opening: the document id or the draft changes
   opening --> absent: the document id is cleared
   opened --> absent: the document id is cleared
   failed --> absent: the document id is cleared
