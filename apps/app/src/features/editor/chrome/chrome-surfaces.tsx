@@ -23,6 +23,7 @@ import { FormattingMenu } from "../surfaces/formatting";
 import { ImageIngressOverlay } from "../surfaces/images";
 import { AtReferenceMenu, FollowOutcomeDialog, LinkSurfaces } from "../surfaces/link";
 import { ObjectControls } from "../surfaces/objects";
+import { ReviewChangesSurface } from "../surfaces/review/ReviewChangesSurface";
 import { SlashMenu } from "../surfaces/slash";
 import { TableChrome } from "../surfaces/table";
 
@@ -59,4 +60,6 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
     id: "image-ingress",
     render: ({ editor }) => <ImageIngressOverlay editor={editor} />,
   },
+  // Review changes on a draft page: the paint and the presses from its margin.
+  { id: "review-changes", render: ({ editor }) => <ReviewChangesSurface editor={editor} /> },
 ];

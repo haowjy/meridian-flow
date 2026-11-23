@@ -20,6 +20,7 @@ export function useDocumentLiveness(projectId: string, tab: OpenDocument | null)
   if (!pin) return "live";
   if (row?.isNew) return "draft-only";
   // A pinned item the list lacks waits, as its paint does: the row can still be on its way (a
-  // reader that just mounted, a draft just made), and a stale pin ends (`verifyPin`).
+  // reader that just mounted, a draft just made), and a link to a gone draft leaves it
+  // (`useDraftStanding`).
   return rows.status === "loading" || (rows.status === "ready" && !row) ? "pending" : "live";
 }

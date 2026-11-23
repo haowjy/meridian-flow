@@ -27,6 +27,7 @@ export function useLiveDocumentBinding({
   owner,
   trashed,
   workOnly,
+  draftId,
 }: {
   projectId: string;
   documentId: string | null;
@@ -35,6 +36,8 @@ export function useLiveDocumentBinding({
   trashed?: true;
   /** Suggestion mode: the document exists only in the Work under review (`ProjectDocumentLiveOpener`). */
   workOnly?: true;
+  /** The draft whose fork room the host shows; absent for Live. */
+  draftId?: string;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
@@ -62,6 +65,7 @@ export function useLiveDocumentBinding({
           documentId,
           trashed,
           workOnly,
+          ...(draftId ? { draftId } : {}),
           signal: abort.signal,
         });
         // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
@@ -101,7 +105,7 @@ export function useLiveDocumentBinding({
       stopSession();
       binding?.release();
     };
-  }, [documentId, opener, projectId, retryGeneration, trashed, workOnly]);
+  }, [documentId, draftId, opener, projectId, retryGeneration, trashed, workOnly]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   return useMemo(() => ({ state, retry }), [retry, state]);

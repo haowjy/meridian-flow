@@ -40,7 +40,7 @@ export function openDocumentInEditor(
 
 /** The route options that open a document on its view's draft; none for Live. */
 export function reviewRouteOptions(review: DraftPin | null | undefined) {
-  return review ? { itemKey: review.itemKey, changeId: review.changeId } : {};
+  return review ? { itemKey: review.itemKey } : {};
 }
 
 export function useOpenDocumentInEditor() {

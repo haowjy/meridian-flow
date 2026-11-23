@@ -6,8 +6,14 @@ import {
   canonicalDocumentPath,
   projectAddressMatchesContextTarget,
 } from "./local-document-address";
+import { reviewOpenedFromMark } from "./main-review";
 import type { OpenContextRoute } from "./ProjectNavigationContext";
-import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
+import {
+  type ProjectAddress,
+  type ProjectDestination,
+  type ReviewTarget,
+  scratchOwnerKey,
+} from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
 import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
@@ -66,28 +72,41 @@ export function createEditorDocumentCommand({
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
       const itemKey = options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined);
+      // The same document on the same draft keeps its review unless the open names one.
+      const keepsReview =
+        options?.review === undefined &&
+        sameDocument &&
+        !!itemKey &&
+        itemKey === current.address.itemKey &&
+        options?.itemKey === undefined;
+      const review = options?.review ?? (keepsReview ? current.address.review : undefined);
       const next = prepareEditorDestination(
         current.address,
         target,
         itemKey,
-        options?.changeId ??
-          (sameDocument && (!itemKey || itemKey === current.address.itemKey)
-            ? current.address.changeId
-            : undefined),
+        review,
+        options?.changeId ?? (keepsReview ? current.address.changeId : undefined),
       );
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
         const focused = target.documentId ?? preparedTab?.documentId;
         if (options?.focus && focused) armEditorFocus(focused);
       };
+      // Review changes is a destination: turning it on pushes, even on the page already shown.
+      const opensReview = !!next.review && !current.address.review;
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
-        sameDocument
+        sameDocument &&
+        !opensReview
       ) {
         // The address already carries this review: the owner that settles its path may have
         // moved the URL since this command read it, and writing the stale path back would flip it.
-        const carriesReview = !!itemKey && itemKey === current.address.itemKey;
+        const carriesReview =
+          !!itemKey &&
+          itemKey === current.address.itemKey &&
+          next.review === current.address.review &&
+          next.changeId === current.address.changeId;
         const result = carriesReview
           ? { kind: "replaced" as const }
           : await navigation.replaceIfCurrent(ticket, next);
@@ -103,9 +122,15 @@ export function createEditorDocumentCommand({
           return { kind: "failed", error, ticket: navigation.capture(), stage: "workspace-commit" };
         }
       }
+      const replace = options?.replace ?? false;
+      // The push records the page it was opened from, so closing goes Back there (`main-review`).
+      const state =
+        opensReview && !replace && current.addressDocumentId
+          ? reviewOpenedFromMark(current.addressDocumentId)
+          : undefined;
       return navigation.transition(
         next,
-        { replace: options?.replace ?? false },
+        { replace, ...(state ? { state } : {}) },
         {
           isCurrent: () => options?.canCommit?.() !== false,
           commit,
@@ -131,6 +156,7 @@ export function prepareEditorDestination(
   address: ProjectAddress,
   target: ContextRouteRequest,
   itemKey?: string,
+  review?: ReviewTarget,
   changeId?: string,
 ) {
   const destination: ProjectDestination = target.path
@@ -142,14 +168,16 @@ export function prepareEditorDestination(
       ? scratchOwnerKey({ workId: target.workId ?? "", rootThreadId: target.rootThreadId })
       : undefined;
   const owner = target.path ? scratchOwner : undefined;
-  const review = target.path ? itemKey : undefined;
+  const item = target.path ? itemKey : undefined;
+  const reviewing = item ? review : undefined;
   const { owner: _previousOwner, ...previous } = address;
   return {
     ...previous,
     destination,
     ...(owner ? { owner } : {}),
-    itemKey: review,
-    changeId: review ? changeId : undefined,
+    itemKey: item,
+    review: reviewing,
+    changeId: reviewing ? changeId : undefined,
   } as ProjectAddress;
 }
 /** A prepared tab states the locator the route will use, not the one it was built from. */

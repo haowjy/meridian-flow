@@ -408,16 +408,16 @@ export function SourcesBody({
   };
   useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
-  const { openReviewFile } = useItemLauncher();
-  // On Draft a document the Work drafts opens on its draft, as its Changes row does.
+  const { openDraftFile } = useItemLauncher();
+  // On Draft a document the Work drafts opens on its plain draft.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
     (scheme, file, options) => {
       const draft = drafting && shell ? shell.draftOf(file.documentId) : null;
       if (!draft || !shell) return onSelectFile(scheme, file, options);
-      openReviewFile(draft, shell.draftId);
+      openDraftFile(draft, shell.draftId);
       onPicked?.();
     },
-    [drafting, shell, onSelectFile, openReviewFile, onPicked],
+    [drafting, shell, onSelectFile, openDraftFile, onPicked],
   );
   // A deleted Work's tree, on Draft, takes no change. An archived one offers its controls as an
   // active one does, and the server bounces what they change ("Work was closed").
@@ -644,8 +644,6 @@ function TreeVersionChip() {
           onSelect: () => shell.show("draft"),
         },
       ]}
-      draftOnly={false}
-      disabled={false}
       onShowLive={() => shell.show("live")}
       touch={touch}
     />

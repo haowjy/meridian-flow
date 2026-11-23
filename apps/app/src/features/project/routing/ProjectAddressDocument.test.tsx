@@ -143,7 +143,7 @@ it("keeps a review address out of the live view and repairs only its review addr
         destination: { kind: "document", scheme: "manuscript", path: "doc" },
       }}
       result={result}
-      reviewItemKey="draft-1"
+      draftItemKey="draft-1"
       workId={noWorkId}
       navigation={navigation}
       onAdmission={onAdmission}

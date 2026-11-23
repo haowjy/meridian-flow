@@ -11,11 +11,13 @@ import {
   type HistoryRun,
   loroSyncKey,
   notifyChanged,
+  type OutsideStep,
   resolveCursor,
   UndoHistory,
 } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection } from "@tiptap/pm/state";
+import { showKept } from "./extensions/KeptExtension";
 
 const HISTORY_META = "meridian-editor-history";
 
@@ -59,6 +61,30 @@ export class DocumentHistory {
     this.active = false;
     this.steps.destroy();
     this.listeners.clear();
+  }
+
+  /** Whether an editor shows the document now: a press made then goes on its Ctrl+Z. */
+  get open(): boolean {
+    return this.editors.size > 0;
+  }
+
+  /**
+   * A press goes on the Ctrl+Z (design §6, "Ctrl+Z is Loro's") as it is made: Undo sends the
+   * press's Undo, Redo presses again.
+   */
+  pushOutside(step: OutsideStep): void {
+    this.steps.pushOutside(step);
+    this.changed();
+  }
+
+  removeOutside(step: OutsideStep): void {
+    this.steps.removeOutside(step);
+    this.changed();
+  }
+
+  restoreOutside(step: OutsideStep): void {
+    this.steps.restoreOutside(step);
+    this.changed();
   }
 
   hasEntries(): boolean {
@@ -108,6 +134,7 @@ export class DocumentHistory {
             .scrollIntoView(),
         );
     }
+    if (ran?.kept.length) showKept(editor.view, ran.kept);
     this.changed();
     return ran;
   }

@@ -30,9 +30,7 @@ export type StoredDocumentCommandResult =
   | ReverseTurnCommandResult
   | CopyCommandResult
   | import("./press.js").PressResult
-  | import("./press.js").PressUndoResult
-  | import("./press.js").TreePressResult
-  | import("./press.js").TreePressUndoResult;
+  | import("./press.js").PressUndoResult;
 
 /** A chat card's Undo or Redo: always `done`; the outcome says what changed and what each target left. */
 export type ReverseTurnCommandResult = {

@@ -45,6 +45,8 @@ type ReviewActionsProps = {
   scope: ReviewScope;
   /** Names, where the scope's name doesn't say all the buttons act on. */
   labels?: { apply: string; discard: string };
+  /** Words on screen in place of the bare verbs: `Restore` for a deleted document's Discard. */
+  words?: { discard?: string };
   /** Nothing beside the pair names its scope: the words on screen are the full names. */
   named?: boolean;
   density?: ReviewDensity;
@@ -64,6 +66,7 @@ type ReviewActionsProps = {
 export function ReviewActions({
   scope,
   labels,
+  words,
   named = false,
   density,
   onDiscard,
@@ -77,7 +80,8 @@ export function ReviewActions({
   const names = (action: "apply" | "discard") => {
     const scoped = reviewActionNames(action, scope);
     const name = labels?.[action] ?? scoped.name;
-    return { word: named ? name : scoped.word, name };
+    const word = action === "discard" ? words?.discard : undefined;
+    return { word: word ?? (named ? name : scoped.word), name };
   };
   return (
     <span

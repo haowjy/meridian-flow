@@ -17,7 +17,8 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { AgentFileState } from "@/features/agents/AgentFileState";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { ReviewEscapeScope } from "@/features/draft-review/ReviewEscapeScope";
+import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import {
   DocumentStatePortal,
@@ -34,10 +35,7 @@ import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import { EndedWorkNotice } from "../work/EndedWorkNotice";
-import {
-  useContextRemovalCoordinator,
-  useOptionalPresentedDocuments,
-} from "./account-feature-context";
+import { useOptionalPresentedDocuments } from "./account-feature-context";
 import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
@@ -70,13 +68,6 @@ export type DocumentHostProps = {
   /** The band above the page: main's header or the side's. On the phone only the sheet has one. */
   header?: ReactNode;
   editorWorkId: string | null;
-  /**
-   * The draft whose review controls take the focus when they show (desktop): the draft an Apply
-   * or Next document from another document's review opens. Held above the hosts, since each
-   * document has its own.
-   */
-  focusReview?: string | null;
-  onFocusReview?: (itemKey: string | null) => void;
 };
 
 export function DocumentHost(props: DocumentHostProps) {
@@ -87,23 +78,25 @@ export function DocumentHost(props: DocumentHostProps) {
   return (
     <PanePlaceContext.Provider value={place === "side" ? "side" : "main"}>
       <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
-        {place === "main" && props.main ? (
-          <MainDocumentBinding projectId={projectId} document={tab} />
-        ) : null}
-        {props.presentation === "phone" ? (
-          place === "main" ? (
-            <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
-          ) : (
-            <div className="flex h-full min-h-0 flex-col">
-              {props.header}
-              <div className="min-h-0 flex-1">
-                <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+        <ReviewEscapeScope>
+          {place === "main" && props.main ? (
+            <MainDocumentBinding projectId={projectId} document={tab} />
+          ) : null}
+          {props.presentation === "phone" ? (
+            place === "main" ? (
+              <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+            ) : (
+              <div className="flex h-full min-h-0 flex-col">
+                {props.header}
+                <div className="min-h-0 flex-1">
+                  <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+                </div>
               </div>
-            </div>
-          )
-        ) : (
-          <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
-        )}
+            )
+          ) : (
+            <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
+          )}
+        </ReviewEscapeScope>
       </DocumentReviewProvider>
     </PanePlaceContext.Provider>
   );
@@ -171,8 +164,6 @@ function DesktopDocumentFrame({
   header,
   onScreen,
   editorWorkId,
-  focusReview,
-  onFocusReview,
 }: DocumentHostProps & { onScreen: boolean }) {
   return (
     <div
@@ -192,8 +183,6 @@ function DesktopDocumentFrame({
               document={document}
               place={place}
               editorWorkId={editorWorkId}
-              focusReview={focusReview}
-              onFocusReview={onFocusReview}
             />
             {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
@@ -249,20 +238,14 @@ function DesktopDocumentChrome({
   document,
   place,
   editorWorkId,
-  focusReview,
-  onFocusReview,
 }: {
   projectId: string;
   document: OpenDocument;
   place: DocumentPlace;
   editorWorkId: string | null;
-  focusReview?: string | null;
-  onFocusReview?: (itemKey: string | null) => void;
 }) {
   const freeze = useDocumentFreeze(projectId, document);
-  const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
-  const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
   // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
   // reviewed file itself may be project-owned, so only its own Work's archive freezes its
   // identity row.
@@ -295,9 +278,6 @@ function DesktopDocumentChrome({
         editorWorkId={editorWorkId}
         document={document}
         readOnly={Boolean(fileInWork && freeze)}
-        onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
-        focusReview={focusReview}
-        onFocusReview={onFocusReview}
         onCommitted={onCommitted}
         onOpenExisting={(scheme, path, owner) => {
           void openRoute?.(
@@ -328,8 +308,6 @@ function PhoneDocumentFrame({
   document: OpenDocument;
   local: boolean;
 }) {
-  const removal = useContextRemovalCoordinator();
-  const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
   const name = document.name;
   return (
     <PaintHold
@@ -344,12 +322,7 @@ function PhoneDocumentFrame({
           <PhoneEditor projectId={projectId} document={document} />
         </div>
       ) : (
-        <MobileDocumentReview
-          projectId={projectId}
-          document={document}
-          // A draft-only document has no live version to return to: its review closes it.
-          onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
-        >
+        <MobileDocumentReview projectId={projectId} document={document}>
           <PhoneEditor projectId={projectId} document={document}>
             <PassageNotice documentId={document.documentId} />
           </PhoneEditor>
@@ -369,11 +342,11 @@ function PhoneEditor({
   children?: ReactNode;
 }) {
   const freeze = useDocumentFreeze(projectId, document);
-  const review = useDraftReview().controller.inlineReview;
+  const review = useReviewMode();
   return (
     <DocumentStateSlotProvider>
-      {/* The version chip lives at the toolbar row's end, as on a desktop; a review, painted or on
-          its way, shows its own chip in its header. */}
+      {/* The version chip lives at the toolbar row's end, as on a desktop; Review changes has its
+          own bar instead. */}
       {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
           <AgentFileState projectId={projectId} document={document} touch />

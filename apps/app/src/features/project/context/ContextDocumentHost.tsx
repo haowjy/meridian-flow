@@ -25,11 +25,10 @@ import type {
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isTreeOnly } from "@/features/draft-review/tree-line";
-import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { useHostDocumentPaint } from "../DocumentReview";
+import { useOwnerDraftRows } from "../views";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { OpenDocumentSessionBoundary } from "./open-document-session";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
@@ -59,30 +58,20 @@ export function ContextDocumentHost({
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
   inMain = false,
 }: ContextDocumentHostProps) {
-  const { controller, fileForDocument } = useDraftReview();
+  const { fileForDocument } = useDraftReview();
   const bindingKeys = useRef(new WeakMap<object, string>());
-  // The host's own review: the one it has open, else the draft its view paints. While the paint
-  // is held (the pinned owner's list is loading) the pin already names the item, so the live
-  // text stays covered rather than painting Live first.
   const paint = useHostDocumentPaint();
-  const inline = controller.inlineReview;
-  const selectedReviewItemKey =
-    inline?.documentId === document.documentId
-      ? inline.itemKey
-      : paint?.showing === "pending"
-        ? (paint.view.pin?.itemKey ?? null)
-        : (paint?.draft?.itemKey ?? null);
-  const selectedReviewFile =
-    selectedReviewItemKey && typeof fileForDocument === "function"
-      ? fileForDocument(document.documentId)
-      : null;
-  const treeOnlyReview =
-    selectedReviewFile?.item.itemKey === selectedReviewItemKey &&
-    isTreeOnly(selectedReviewFile.item);
-  const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
-  // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
+  const shownDraftId = paint?.draft?.draftId ?? null;
+  // A document the draft created has no fork: its text is plain in its own Live room (design §2),
+  // which the page binds. Every other draft page binds the draft's fork room, changed or not. Until
+  // the draft's list says which, the page waits rather than open the wrong room.
+  const draftRows = useOwnerDraftRows(projectId, shownDraftId);
+  const draftRow = draftRows.rows.find((row) => row.documentId === document.documentId);
+  const roomKnown = shownDraftId === null || draftRows.status !== "loading";
+  const forkDraftId = shownDraftId !== null && !draftRow?.isNew ? shownDraftId : undefined;
+  // The draft's list could not be read: say so here rather than open a room that may be wrong.
   const queryClient = useQueryClient();
-  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.draftId ?? null) : null;
+  const pinnedOwner = draftRows.status === "failed" ? shownDraftId : null;
   const retryDraftList = pinnedOwner
     ? () =>
         void queryClient.refetchQueries({
@@ -102,7 +91,7 @@ export function ContextDocumentHost({
     const failed = sessionFailed || retryDraftList !== null;
     const retry = retryDraftList ?? retrySession;
     const failureReason = retryDraftList ? null : sessionFailure;
-    const hosted = session !== null || Boolean(selectedReviewItemKey);
+    const hosted = session !== null;
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
@@ -153,16 +142,6 @@ export function ContextDocumentHost({
                   readOnly={readOnly}
                 />
               ) : null}
-              <ActiveReviewBinding
-                documentId={document.documentId}
-                liveSession={session}
-                active={active}
-                inReview={Boolean(
-                  presentation.presenceSuspendsOn === "requested-review"
-                    ? selectedReviewItemKey
-                    : reviewItemKey,
-                )}
-              />
               <EditorView
                 projectId={projectId}
                 documentId={document.documentId}
@@ -175,15 +154,11 @@ export function ContextDocumentHost({
                 active={active}
                 editable={editable}
                 showToolbar={editable}
-                reviewReadOnly={presentation.reviewReadOnly}
                 detached={document.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={document.kind === "tracked" ? document.schemaType : "document"}
                 filetype={document.kind === "tracked" ? document.filetype : undefined}
                 showCollaborationDecorations={presentation.collaborationDecorations}
-                // The intent, not the resolved room: the live editor goes
-                // read-only from the click, while the room is still resolving.
-                reviewItemKey={selectedReviewItemKey}
               />
             </>
           )}
@@ -197,17 +172,16 @@ export function ContextDocumentHost({
       documentId={document.documentId}
       // A document only a Work has is plain text in its Live room, open while the Work has it: a
       // Discard closes the room, and its Undo opens it again.
-      workOnly={fileForDocument(document.documentId)?.item.isNew === true}
+      workOnly={
+        draftRow?.isNew === true || fileForDocument(document.documentId)?.item.isNew === true
+      }
+      draftId={forkDraftId}
+      held={!roomKnown}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
     </OpenDocumentSessionBoundary>
   );
-}
-
-function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]) {
-  useActiveReviewBinding(props);
-  return null;
 }
 
 /**

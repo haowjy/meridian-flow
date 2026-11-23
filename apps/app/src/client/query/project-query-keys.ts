@@ -33,6 +33,9 @@ export const projectQueryKeys = {
   /** One draft's list of changed documents. */
   drafts: (projectId: string, draft: string) => ["projects", projectId, "drafts", draft] as const,
   draftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,
+  /** A Work's drafts (a Work has several). */
+  workDrafts: (projectId: string, workId: string) =>
+    ["projects", projectId, "work-drafts", workId] as const,
   /** The drafts with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,

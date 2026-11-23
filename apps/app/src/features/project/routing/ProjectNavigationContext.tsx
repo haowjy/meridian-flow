@@ -1,6 +1,7 @@
 /** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext } from "react";
 import type { OpenDocument } from "@/client/stores";
+import type { ReviewTarget } from "./project-address";
 import type { NavigationSettlement } from "./project-navigation";
 import type { ContextRouteRequest, ProjectRouteCommands } from "./project-route";
 
@@ -15,8 +16,11 @@ export type OpenContextOptions = {
   focus?: true;
   /** Runs only once the navigation committed. */
   afterCommit?: () => void;
-  /** Persist an inline review in this Editor history entry; its key names the draft. Omission opens live. */
+  /** The draft the page shows; its key names the draft. Omission opens Live. */
   itemKey?: string;
+  /** Review changes on, against this; omission opens the plain draft. */
+  review?: ReviewTarget;
+  /** The change in focus in Review changes. */
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;

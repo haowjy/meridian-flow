@@ -15,11 +15,13 @@ export {
 export {
   attachCompositionHold,
   type EditorListener,
+  forwardLocalWrite,
   heldUpdateCount,
   importRemoteUpdate,
   listenToImports,
   notifyChanged,
   type PublishWrite,
+  registerDraft,
 } from "./composition-hold.js";
 export {
   cursorAt,
@@ -28,7 +30,13 @@ export {
   type SelectionCursors,
   selectionCursors,
 } from "./cursors.js";
-export { type HistoryRun, UNTRACKED_ORIGIN, UndoHistory } from "./history.js";
+export {
+  type HistoryRun,
+  type KeptEdit,
+  type OutsideStep,
+  UNTRACKED_ORIGIN,
+  UndoHistory,
+} from "./history.js";
 export {
   type LoroSyncOptions,
   type LoroSyncState,

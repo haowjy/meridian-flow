@@ -32,6 +32,7 @@ import {
   blocksOf,
   heldUpdateCount,
   importRemoteUpdate,
+  registerDraft,
   loroSyncPlugin,
   readProseMirror,
   shapeSchemaOf,
@@ -412,6 +413,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const tabLive = track(RoomDocs.create(shape, freshPeerId()));
   tabLive.importBatch(live.exportSince());
   const tabDraft = track(RoomDocs.draftOf(tabLive, freshPeerId()));
+  const unregister = registerDraft(tabDraft, () => {});
   const plugin = loroSyncPlugin({ docs: tabDraft, newBlockId });
   const view = {
     state: EditorState.create({ schema, doc: readProseMirror(tabDraft, schema), plugins: [plugin] }),
@@ -435,6 +437,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("a Live batch shows in the Draft editor", view.state.doc.lastChild?.textContent === "Live edited this.", () => show(view.state.doc));
   check("and keeps the draft's own typing", view.state.doc.firstChild?.textContent === "Draft me. Now.");
   handle.destroy?.();
+  unregister();
 }
 
 // The in-memory rooms: write, subscribe, commit after the transaction, a fork room forwarded.

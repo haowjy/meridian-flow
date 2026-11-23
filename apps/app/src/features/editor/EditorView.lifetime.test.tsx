@@ -41,11 +41,7 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 /** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
-const controller = {
-  inlineReview: null as
-    | import("@/features/draft-review/draft-review-session").InlineDraftReview
-    | null,
-};
+const controller = { draftId: "" };
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({

@@ -7,7 +7,7 @@
  */
 import type { Work } from "@meridian/contracts/works";
 import type { OpenDocument } from "@/client/stores";
-import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
+import { ReviewTreeRow } from "@/features/draft-review/ReviewTreeRow";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { EndedWorkNotice } from "../work/EndedWorkNotice";
 import { DocumentProperties } from "./DocumentProperties";
@@ -29,7 +29,7 @@ export function DocumentPaneChrome({ projectId, document, freeze }: DocumentPane
         <EndedWorkNotice projectId={projectId} work={freeze} className="px-4 pt-3" />
       ) : null}
       <DocumentProperties projectId={projectId} document={document} />
-      <DraftedDeleteNotice documentId={document.documentId} />
+      <ReviewTreeRow documentId={document.documentId} />
     </>
   );
 }
