@@ -591,6 +591,31 @@ function planSplicedGroup(
   }
 }
 
+/** `text` without its closing punctuation: a word carried off a sentence's end leaves its stop. */
+const unclosed = (text: string) => text.replace(/\p{P}+$/u, "");
+
+/** Whether `text` ends with `run`, its closing punctuation set aside or not. */
+const endsWithRun = (text: string, run: string) =>
+  text.endsWith(run) || unclosed(text).endsWith(run);
+
+/**
+ * The longest run of whole words that starts `second` and ends `first` (its closing punctuation
+ * set aside or not): the same words at the facing edges of two neighbouring paragraphs. Any length:
+ * a short run taken for a carry only makes a change larger, never wrong.
+ */
+function edgeRun(first: string, second: string): string {
+  for (let size = second.length; size > 0; size--) {
+    const run = second.slice(0, size);
+    if (/\s/.test(run[size - 1]) || (size < second.length && !/\s/.test(second[size]))) continue;
+    if (!/[\p{L}\p{N}]/u.test(run)) continue;
+    for (const end of [first, unclosed(first)]) {
+      const at = end.length - size;
+      if (at >= 0 && end.endsWith(run) && (at === 0 || /\s/.test(end[at - 1]))) return run;
+    }
+  }
+  return "";
+}
+
 /**
  * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
  * left alone, a changed block keeps its identity and is changed in place, and
@@ -614,6 +639,7 @@ function replaceScope(
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
   let structuralBoundary: object | undefined;
+  let pieceOf: number | undefined;
   let insertionRun = {};
 
   const flushStructural = () => {
@@ -627,6 +653,7 @@ function replaceScope(
         ),
         structuralBoundary,
         insertionRun,
+        ...(pieceOf === undefined ? {} : { pieceOf: oldBlocks[pieceOf] }),
       });
     }
     for (const block of pendingDelete) {
@@ -636,23 +663,35 @@ function replaceScope(
         kind: "delete",
         block,
         structuralBoundary,
+        ...(pieceOf === undefined ? {} : { pieceOf: oldBlocks[pieceOf] }),
       });
     }
     pendingInsert = [];
     pendingDelete = [];
     structuralBoundary = undefined;
+    pieceOf = undefined;
   };
 
-  for (const step of alignBlocks(oldNodes, newBlocks)) {
+  const steps = alignBlocks(oldNodes, newBlocks);
+  // The new text of each old block that stays, to tell a neighbour that lost what this one gained.
+  const stays = new Map<number, string>();
+  for (const step of steps)
+    if (step.kind === "keep" || step.kind === "change")
+      stays.set(step.old, newBlocks[step.next].textContent);
+  for (const step of steps) {
     switch (step.kind) {
       case "remove":
-        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        if (structuralBoundary !== step.structuralBoundary || pieceOf !== step.pieceOf)
+          flushStructural();
         structuralBoundary = step.structuralBoundary;
+        pieceOf = step.pieceOf;
         pendingDelete.push(oldBlocks[step.old]);
         break;
       case "add":
-        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        if (structuralBoundary !== step.structuralBoundary || pieceOf !== step.pieceOf)
+          flushStructural();
         structuralBoundary = step.structuralBoundary;
+        pieceOf = step.pieceOf;
         pendingInsert.push(newBlocks[step.next]);
         break;
       case "change": {
@@ -671,6 +710,20 @@ function replaceScope(
         });
         anchor = oldBlocks[step.old];
         insertionRun = {};
+        const tookFrom = after.isTextblock
+          ? [step.old - 1, step.old + 1].filter((at) => {
+              const other = oldNodes[at];
+              if (!other?.isTextblock) return false;
+              const [was, now] = [before.textContent, after.textContent];
+              const left = stays.get(at);
+              if (at < step.old) {
+                const run = edgeRun(other.textContent, now);
+                return run !== "" && !was.startsWith(run) && !(left && endsWithRun(left, run));
+              }
+              const run = edgeRun(now, other.textContent);
+              return run !== "" && !endsWithRun(was, run) && !left?.startsWith(run);
+            })
+          : [];
         if (lowered.length > 0)
           edits.push({
             documentId: params.documentAddress.documentId,
@@ -679,6 +732,7 @@ function replaceScope(
             structuralBoundary: step.structuralBoundary,
             kind: "ops",
             ops: lowered,
+            ...(tookFrom.length > 0 ? { tookFrom: tookFrom.map((at) => oldBlocks[at]) } : {}),
           });
         break;
       }
