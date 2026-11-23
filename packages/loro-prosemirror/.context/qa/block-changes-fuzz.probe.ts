@@ -14,6 +14,7 @@ import {
   applyBlocks,
   changedBlocks,
   commentVisibility,
+  decodeEnvelope,
   discardBlocks,
   editStays,
   frontiersOf,
@@ -33,6 +34,7 @@ import {
   setCommentBody,
   structureValues,
   emptyParagraphOf,
+  encodeChanges,
   isDerivedEmpty,
   takeBack,
   textUnits,
@@ -373,19 +375,29 @@ export function runScript(seed, { verbose = false } = {}) {
   }
   /**
    * Run a press or its Undo on a command's own copy of draft room `d`, as the server does: each side gets a fresh
-   * peer, so every later write is someone else's. Then send what it wrote, Live's docs first.
+   * peer, so every later write is someone else's. Then each room imports only the changes the press returned,
+   * Live's first, encoded as the server commits them (`encodeChanges`): a write the press made but did not
+   * return never reaches a room. `view` reads what the caller keeps while the copy's docs still live.
    */
-  function command(d, run) {
+  function command(d, run, view = (r) => r) {
     const cmd = d.fork(next());
     try {
       const r = run(cmd);
-      send(cmd.live, d.live);
-      send(cmd, d);
+      commit(d.live, r.live);
+      // A room forwards its forks on every Live commit, before the fork's own batch lands.
       d.forward();
-      return r;
+      commit(d, r.fork);
+      d.forward();
+      return view(r);
     } finally {
       cmd.free();
     }
+  }
+  function commit(to, changes) {
+    if (changes.length === 0) return;
+    const imported = to.importBatch(decodeEnvelope(encodeChanges(changes)));
+    check(!imported.pending, "pending-import", "a press's changes waited on ops the room lacks");
+    if (to === live && imported.restore) liveWrites++;
   }
   /** A press's changes as `press_changes` stores them: JSON. */
   const stored = (pressed) => JSON.parse(JSON.stringify(pressed));
@@ -779,7 +791,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const pressed = [];
     for (const [i, d] of drafts.entries()) {
       if (i === 1 && liveTyped) typeIn(room, id, liveToken);
-      pressed.push(command(d, (cmd) => stored(applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }).pressed)));
+      pressed.push(command(d, (cmd) => applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }), (r) => stored(r.pressed)));
     }
     const pressedTexts = drafts.map((d) => {
       d.forward();
@@ -873,10 +885,11 @@ export function runScript(seed, { verbose = false } = {}) {
     const fromTab = g.chance(0.5);
     if (fromTab) stats.tabVersionPresses++;
     const liveVersion = fromTab ? tabLive.version() : live.version();
-    const { r, written } = command(fork, (cmd) => {
-      const r = applyBlocks(cmd, chosen, { message: `press:${stats.presses}`, liveVersion });
-      return { r, written: textWrites(r.live) };
-    });
+    const { r, written } = command(
+      fork,
+      (cmd) => applyBlocks(cmd, chosen, { message: `press:${stats.presses}`, liveVersion }),
+      (r) => ({ r, written: textWrites(r.live) }),
+    );
     const liveKeys = [...written.keys()];
     const replaced = replacements(written);
     const ids = r.chosen.flatMap((c) => [...c.blocks, ...c.comments]);
@@ -938,11 +951,15 @@ export function runScript(seed, { verbose = false } = {}) {
     );
     const liveBefore = snapshotIds(live);
     const forkBefore = snapshotIds(fork);
-    const { stayed, undone } = command(fork, (cmd) => {
-      const u = undoPress(cmd, p.pressed, { message: "press undo" });
-      markCopies(u.fork);
-      return { stayed: u.stayed, undone: textWrites(u.live) };
-    });
+    const { stayed, undone } = command(
+      fork,
+      (cmd) => {
+        const u = undoPress(cmd, p.pressed, { message: "press undo" });
+        markCopies(u.fork);
+        return u;
+      },
+      (u) => ({ stayed: u.stayed, undone: textWrites(u.live) }),
+    );
     stats.stayedChanges += stayed.length;
     if (stayed.length) kept++;
     const stayedIds = new Set(stayed.flatMap((c) => c.members));
@@ -1153,11 +1170,15 @@ export function runScript(seed, { verbose = false } = {}) {
     const oldBlocks = blockValues(fork);
     const oldTextTokens = new Map([...fork.texts].map(([id, d]) => [id, new Set(tokensOf(textOfDoc(d)))]));
     const ids = snapshotIds(fork);
-    const r = command(fork, (cmd) => {
-      const r = discardBlocks(cmd, chosen, { message: all ? "discard all" : "discard" });
-      markCopies(r.fork);
-      return { chosen: r.chosen, pressed: stored(r.pressed), textKeys: r.fork.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key) };
-    });
+    const r = command(
+      fork,
+      (cmd) => {
+        const r = discardBlocks(cmd, chosen, { message: all ? "discard all" : "discard" });
+        markCopies(r.fork);
+        return r;
+      },
+      (r) => ({ chosen: r.chosen, pressed: stored(r.pressed), textKeys: r.fork.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key) }),
+    );
     rememberAll(fork, ids);
     recordOrigins(fork);
     toTab();

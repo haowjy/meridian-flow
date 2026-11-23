@@ -18,6 +18,7 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
@@ -27,7 +28,6 @@ import {
 } from "../adapters/drizzle-drafts.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
-import { createDrizzlePress } from "../adapters/drizzle-press.js";
 import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import { createDrizzleWriteOrdinals } from "../adapters/drizzle-write-ordinals.js";
@@ -171,7 +171,7 @@ export async function seedDatabase(
     name: "Atomicity",
     slug: `atomicity-${PROJECT_ID}`,
   });
-  await db.insert(schema.works).values({
+  await insertWorks(db, {
     id: WORK_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
@@ -305,7 +305,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   const projections = { refresh: runDocumentWriteHook };
   // Scoped as composition scopes it, so a real link scope sees every model call.
-  const agentEditRouter = createAgentEditRouter({ liveCore: runtime.liveCore });
+  const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
   const modelEvidence = createDrizzleModelEvidence(db);
@@ -314,9 +314,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
-          liveCore: runtime.liveCore,
+          core: runtime.core,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-          enterLiveSeam: async (documentId) => {
+          enterSeam: async (documentId) => {
             await lockSeamWorks(db, []);
             await lockDocumentMutation(currentDrizzleDb(db), documentId);
           },
@@ -370,12 +370,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
-  const presses = createDrizzlePress(db, {
-    workProjection: createTestWorkProjectionMutation(db),
-    drafts: workDrafts,
-    treeLists,
-    onCommitted: async () => {},
-  });
   // Tests mint a destination grant without a target; a write's grant names its document. A
   // write is the model's tool call as the chat loop sends it: one command, one transaction.
   const testAgentEdit = {
@@ -407,7 +401,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...drafts,
-    presses,
   };
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {

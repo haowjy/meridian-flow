@@ -88,15 +88,6 @@ export const documentBlockRooms = pgTable(
     /** The top-level blocks' ids in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
-    /**
-     * By draft id, what it has pending in the cut: its review's change count, the chats that
-     * wrote them, and whether one is no chat's. The blocks hold Live's text, so a reader in one
-     * of these drafts' views reads the document itself.
-     */
-    pendingChanges: jsonb("pending_changes")
-      .$type<Record<string, { changes: number; chats: string[]; writer: boolean }>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     /** The document's `content_seq` the derivation read. */
@@ -104,11 +95,7 @@ export const documentBlockRooms = pgTable(
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
   },
-  (table) => [
-    uniqueIndex("document_block_rooms_document").on(table.documentId),
-    // A draft's documents with suggestions: `pending_changes ? <draft id>`.
-    index("document_block_rooms_pending_changes").using("gin", table.pendingChanges),
-  ],
+  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
 );
 
 /** One row per top-level block of a room, keyed by its block id. */
@@ -159,14 +146,14 @@ export const commands = pgTable(
     index("commands_thread").on(table.threadId),
     check(
       "commands_kind_valid",
-      sql`${table.kind} IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')`,
+      sql`${table.kind} IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress', 'draft_create', 'draft_rename', 'draft_delete', 'draft_restore', 'chat_draft')`,
     ),
   ],
 );
 
 /**
- * The tree half of a press Apply: one row per list the command settled records in, with the
- * list's version vector right after (its Undo is allowed only while the list still has it).
+ * The tree half of a press Apply: one row per draft and list the command settled records in. Its
+ * Undo reads which drafts and lists to take back.
  */
 export const applyCommandTrees = pgTable(
   "apply_command_trees",
@@ -178,9 +165,6 @@ export const applyCommandTrees = pgTable(
     draftId: draftIdColumn("draft_id").notNull(),
     /** The project's list, or its owner's account list (`user://`). */
     scope: text("scope").$type<"project" | "account">().notNull(),
-    mark: byteaColumn("mark").notNull(),
-    /** The nodes whose live copies this Apply made in this list: what its Undo writes. */
-    nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
+  (table) => [primaryKey({ columns: [table.commandId, table.draftId, table.scope] })],
 );

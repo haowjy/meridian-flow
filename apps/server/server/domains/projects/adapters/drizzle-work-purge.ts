@@ -26,6 +26,7 @@ import {
 } from "@meridian/database/schema";
 import { LIVE, type TrashEntry, type TreeWriter } from "@meridian/project-tree";
 import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { workDefaultDraftSql } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { releaseDocumentContent } from "../../context/index.js";
@@ -150,7 +151,7 @@ export function createDrizzleWorkPurger(deps: {
         .select({
           id: works.id,
           projectId: works.projectId,
-          draftId: works.draftId,
+          draftId: workDefaultDraftSql(),
           deletedAt: works.deletedAt,
         })
         .from(works)

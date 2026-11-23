@@ -2,7 +2,6 @@ export { type Admission, admit, type Connection } from "./admission.js";
 export {
   type ApplyResult,
   applyDraft,
-  covers,
   type DiscardedBy,
   discardDraft,
   discardedBy,

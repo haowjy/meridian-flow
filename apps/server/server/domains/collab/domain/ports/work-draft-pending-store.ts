@@ -13,20 +13,20 @@ export type DocumentDraftOrigin = {
   originLabel: string | null;
 };
 
-/**
- * A document the draft's owner has suggestions in, as the document's derivation counted them
- * (`document_block_rooms.pending_changes`).
- */
+/** A document the draft has a pending fork of (`document_forks.pending`). */
 export type WorkDraftTextChanges = {
   documentId: DocumentId;
   draftId: DraftId;
+  /** When the fork's flag was last read: its room's last save. */
   updatedAt: Date;
+  /** Live's version under the fork's removals, base64 (`DraftItem.liveVersion`); null when it removes none. */
+  liveVersion: string | null;
   /** The chats that wrote them, and whether one is no chat's (the writer's typing). */
   writers: { threadIds: string[]; unattributed: boolean };
 };
 
 export type WorkDraftPendingStore = {
-  /** Every document the draft's owner has suggestions in (only these documents' when given). */
+  /** Every document the draft has a pending fork of (only these documents' when given). */
   listDraftTextChanges(
     draftId: DraftId,
     documentIds?: readonly DocumentId[],

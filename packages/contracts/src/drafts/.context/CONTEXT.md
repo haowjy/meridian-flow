@@ -16,10 +16,10 @@ id. `change=` names a suggestion id in that document.
 
 - `DraftItem` rows are current reviewable work only; completed review is not a
   durable list receipt. Their `contextLocation` keeps the scheme and the path's leading slash.
-- `actorThreads` lists chats whose suggestions are in the item, newest first, then the creating
-  chat if absent.
-- `textChanges` counts the item's suggestions; 0 means it has none (a created, moved or deleted
-  document with no suggestions in its text).
+- `actorThreads` lists chats whose writes landed in the draft's fork of the item (their receipts
+  name the fork), then the creating chat if absent.
+- `pending` says the draft's fork differs from Live; false means the item is only a created, moved
+  or deleted document. No count of text changes is listed (design §6).
 - A draft id the server has not stored yet (a Work or chat whose create is still on its way)
   lists as empty, so the browser reads the draft it minted at once. A press needs the stored draft.
 

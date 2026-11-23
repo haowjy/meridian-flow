@@ -2,10 +2,14 @@
 import type { DraftId, DraftOwner, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import type { WorkWriteOptions } from "../../../projects/index.js";
 
-/** A draft: everything pending in it. It names no owner; a Work or a root chat names it. */
+/** A draft: everything pending in it. A Work's names the Work; a No Work lineage's root chat names its. */
 export type Draft = {
   id: DraftId;
   projectId: ProjectId;
+  /** The Work it belongs to; null for a No Work lineage's draft. */
+  workId: WorkId | null;
+  /** `Delete draft` ran: it is listed nowhere and takes no writes until its Undo. */
+  deletedAt: Date | null;
   createdBy: UserId;
   createdAt: Date;
 };
@@ -25,10 +29,8 @@ export interface DraftStore {
   ofOwner(owner: DraftOwner): Promise<Draft | null>;
   /** Caller's transaction, after the owner locks: `FOR NO KEY UPDATE`; null when missing. */
   lock(draftId: DraftId): Promise<Draft | null>;
-  /** `FOR SHARE`: a writer that needs the draft to stay without changing it. */
-  share(draftId: DraftId): Promise<Draft | null>;
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
-  /** Purge only: the drafts a Work and these lineages' roots name. */
+  /** Purge only: a Work's drafts, deleted ones included, and those these lineages' roots name. */
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
 }
 

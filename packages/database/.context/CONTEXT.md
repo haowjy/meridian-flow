@@ -28,15 +28,18 @@ A document tombstone has a non-null deletion reason exactly when it has
 `deleted_at`. User, Work and system-cause fields identify its actor; legacy
 actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
 remains its restore marker. Restore clears all removal fields. A draft has no status: it is
-deleted with its Work or its document's content, never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
+deleted with its Work, or by `Delete draft` (`deleted_at`, purged 30 days later), never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
 been released after the retention window; placement and the removal record remain.
 
-A `drafts` row is one draft. A Work names it (`works.draft_id`) or a root chat does
-(`threads.draft_id`), minted in the same insert; the draft names no owner.
+A `drafts` row is one draft. A Work owns several (`drafts.work_id`, cascade), one of them
+`is_default`, minted with the Work (`mint_work_default_draft` for a raw insert); a No Work
+lineage's draft has no `work_id` and is minted with its root chat (`mint_named_draft`). Every
+root chat names its draft in `threads.draft_id`. `works` has no draft column, so the two tables
+have no reference cycle.
 `drafts.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its drafts.
-A draft is its tree records; phase 1 has no text drafts, and phase 2 brings them back as fork
-rooms (`document_forks`). `commands` holds one row
+A draft is its tree records and its fork rooms, one per document it changed (`document_forks`,
+with the rows under `fork:<draft>:<document>` in `document_snapshots`). `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.
@@ -45,7 +48,9 @@ its project and chat, so a resend of a create cannot create twice.
 `doc_key`), so a save writes only the docs that changed. Rows have no foreign key, so a document's
 text can exist before its `documents` row (an import); the `*_delete_room_snapshots` triggers
 delete a room's rows with its document, fork, project or account. `document_forks` names a
-draft's fork of a document (unused in phase 1).
+draft's fork of a document: whether it differs from Live (`pending`), Live's version under its
+removals (`live_version`) and whether the writer typed in it (`writer_wrote`), all set by each
+save of the fork's room, so the Changes list and the counts read rows and load no room.
 
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather

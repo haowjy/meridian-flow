@@ -223,6 +223,31 @@ export function selectChanges(changes: readonly BlockChange[], selection: Change
   );
 }
 
+/**
+ * Live's version of the text docs under the blocks the draft removes in `changes` (design §2,
+ * `DraftItem.liveVersion`): what a press from a list that shows no text carries as the Live the
+ * writer was shown. Empty when the draft removes nothing.
+ */
+export function pendingRemovalVersion(
+  draft: RoomDocs,
+  changes: readonly BlockChange[] = changedBlocks(draft),
+): RoomVersion {
+  const live = draft.live;
+  if (!live) throw new Error("pendingRemovalVersion needs a draft copy");
+  const forkView = new StructureView(draft);
+  const liveView = new StructureView(live);
+  const out = new Map<DocKey, DocVersion>();
+  for (const change of changes)
+    for (const id of change.blocks) {
+      if (!removalOf(forkView.override("order", id))) continue;
+      for (const key of liveView.textKeysUnder(id)) {
+        const doc = live.textOf(key);
+        if (doc) out.set(key, docVersion(doc));
+      }
+    }
+  return out;
+}
+
 /** One side's structure read and its blocks' normalized text, read once each. */
 class Side {
   readonly view: StructureView;
@@ -341,7 +366,8 @@ class Groups {
  * takes both back or neither. JSON, as `press_changes` stores it.
  */
 export interface PressedChange {
-  members: string[];
+  /** Never empty: every change has a block or a comment body. */
+  members: [string, ...string[]];
   live: StoredEdit | null;
   fork: StoredEdit | null;
 }
@@ -440,7 +466,7 @@ function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): Pre
     });
   });
   return chosen.map((change, i) => ({
-    members: [...change.blocks, ...change.comments],
+    members: [...change.blocks, ...change.comments] as PressedChange["members"],
     live: sides[0]?.[i] ?? null,
     fork: sides[1]?.[i] ?? null,
   }));
@@ -494,7 +520,8 @@ export function applyBlocks(
     if (imported.restore) result.live.push(imported.restore);
   }
   const liveTexts = new Map<DocKey, TextSpan>();
-  for (const [key, at] of liveBefore) {
+  for (const key of batch.keys()) {
+    const at = liveBefore.get(key) ?? [];
     const doc = live.texts.get(key);
     if (!doc || sameValue(at, doc.frontiers())) continue;
     const change = { key, doc, before: at, after: doc.frontiers() };

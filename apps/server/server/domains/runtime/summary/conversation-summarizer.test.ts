@@ -236,7 +236,7 @@ describe("conversation summarizer", () => {
 
   it("preflights block splits with room for a CJK running summary", async () => {
     const rig = setup({
-      models: [threadModel, { ...cheapModel, contextWindow: 2400 }],
+      models: [threadModel, { ...cheapModel, contextWindow: 2450 }],
       async *events() {
         yield { type: "end", result: reply("漢".repeat(100)) };
       },

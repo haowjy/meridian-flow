@@ -9,17 +9,23 @@ their shared rules.
 `CollabDomain` supplies the Postgres adapters around `@meridian/agent-edit` and
 `@meridian/document-model`. A document's Live text is its Loro room (`DocumentRooms`,
 `rooms/postgres-document-rooms.ts`, on `document_snapshots`): a structure doc and a text doc per
-block. Phase 1 has no text drafts: every AI write lands Live, a named Work's included, and the
-press works on a Work's pending tree records only ([the press](press.md)). Phase 2 brings a draft
-back as a fork room of the document.
+block. A draft's text is a fork room of the document (`fork:<draft>:<document>`, with its
+`document_forks` row): a drafted write lands there, and the press applies or discards its changes
+into Live with its tree records ([the press](press.md)).
 
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
 (`domain/agent-edit-router.ts`), which routes every one to the Live core. A draft's owner is the
-chat's Work, or for a chat with no Work its lineage (the first chat, its forks and subagents; a
-handoff starts a new one). `shared/draft-owner.ts`
-is the one reader of a draft's owner and lifecycle (`draftOwnerSql`). A lineage is writable
-while some chat in it is live. Scratch and upload content is always live.
+Work it belongs to (`drafts.work_id`; a Work has several and one default), or for a chat with no
+Work its lineage (the first chat, its forks and subagents; a handoff starts a new one). A chat
+writes into the draft its root names (`threads.draft_id`, read through `Thread.draftId`, which
+falls back to the Work's default when the root's draft is deleted or of another Work).
+`shared/draft-owner.ts` is the one reader of a draft's owner and lifecycle (`draftOwnerSql`) and
+holds the move rule (`carryRootDraft`: a chat that changes Work carries an unshared draft and
+names the destination's default otherwise). A Work's drafts are listed, made, renamed, deleted
+(`deleted_at`, Undo restores, purged 30 days later with its forks) and picked for a chat in
+`adapters/drizzle-work-drafts.ts`. A lineage is writable while some chat in it is live. Scratch
+and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows the
 writes before it.
@@ -48,8 +54,10 @@ result commit together, and live rooms receive the write only after commit, so a
 invisible to open editors. The grant is confirmed once per write and a write whose Work lost
 access is refused.
 
-A chat's write mode (`threads.ai_write_mode`) is kept but sends nothing to a draft in phase 1: the
-file grant's `destinationAt` answers Live for every write.
+A chat's write mode (`threads.ai_write_mode`) picks where a write lands: the file grant's
+`destinationAt` answers the chat's draft for a drafted source in Draft mode or where the place asks
+for review, and Live otherwise. At a draft the agent-edit host reads and writes the draft's fork
+room, except for a document only the draft holds, whose text is in its Live room (`agentRoomFor`).
 
 A write into a room where the model has no frontier plans on the current room. A write with a
 usable frontier plans on the room at that frontier and merges onto the current room. A write that
@@ -108,7 +116,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    (`lockThreadAsRuntime`: the thread's asks, the inbox advisory lock, the row), since its Work
    step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
    the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
-   takes), then the draft row.
+   takes), then the draft rows, in ID order.
 3. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
@@ -128,8 +136,15 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
 
-- **Press and unpress** take the order of [the press](press.md): Works, draft, lists, documents
-  in ID order, then writes.
+- **Press and unpress** take the order of [the press](press.md): Works, drafts in ID order, lists,
+  documents in ID order, then writes (each document's Live room, then its fork's).
+- **A fork's save** (a tab's typing, or a command's commit into a fork) takes its document's key
+  alone, and reads the draft's row with no lock to skip a purged draft: a row lock there would
+  follow the document key, against every press. Under a document key nothing locks a row from an
+  earlier step of this list, beyond the key-share lock the fork row's foreign key takes on its
+  draft, which waits only on the draft's delete.
+- **The purge of a deleted draft** takes its Work, its draft row, its tree lists, then its forks'
+  document keys in ID order, and only then deletes: each save lands wholly before or after it.
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` takes none: it throws when the transaction does not hold the
@@ -178,7 +193,7 @@ sent but the room has not saved yet can be in a cut, and that save makes the cut
 sweeps stale rooms and retries failures without advancing certification.
 
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
-`pending_changes`, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its block id: `text`,
 `content_hash`). A block row never holds its position, so inserting a
 paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
@@ -197,9 +212,8 @@ reader trusts a room only when its `cut_content_seq` and `cut_location_version` 
 document's and its
 `extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
 reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
-blocks hold Live's text. A Loro room holds no suggestions, so a derivation writes
-`pending_changes` empty, and `grepTexts` still leaves a document out for a reader in a Work that
-column names. Phase 2's forks replace it. The
+blocks hold Live's text, so `grepTexts` leaves a document out for a reader whose draft has a fork
+of it (`document_forks`): that reader reads the fork. The
 sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
 newer extractor certified, because builds overlap in a deploy, the older build's certify
 refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
@@ -220,8 +234,8 @@ fence (`grepBlockText` in agent-edit). Sizes are therefore destination-free byte
 Stored text is never substituted for the Live room when serving document content, with one
 exception: `grep` matches a document's stored text (the blocks' `text` joined with `\n`
 in `block_order`, in one statement with the freshness check, and equal byte for byte to
-the room-copy path's text) when the room is current and the reader's own Work has no
-suggestions in the document. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
+the room-copy path's text) when the room is current and the reader's own draft has no fork of
+the document. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
 Nothing else reads stored markdown: `ls -v` word counts come from `BlockText.wordCounts`
 (current rooms only); everything else reads the room through the engine
 (`domain/markdown-document.ts`), where a document with no stored rows reads as empty.

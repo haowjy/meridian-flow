@@ -155,8 +155,9 @@ export function createDrizzleDocumentTrash(deps: {
       SELECT DISTINCT p.document_id::text,
              coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
       FROM (${retentionHolds(ids)}) p
-      LEFT JOIN ${works} w ON w.draft_id = p.draft_id
-      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id
+      JOIN drafts d ON d.id = p.draft_id
+      LEFT JOIN ${works} w ON w.id = d.work_id
+      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id AND d.work_id IS NULL
       WHERE (w.id IS NOT NULL OR t.id IS NOT NULL)
       ORDER BY p.document_id::text, 3, 2
     `);

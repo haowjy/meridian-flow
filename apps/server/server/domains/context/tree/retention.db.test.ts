@@ -11,7 +11,7 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentBlockRooms,
+  documentForks,
   documents,
   draftTreeNodes,
   projects,
@@ -25,6 +25,7 @@ import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js"
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
+import { defaultDraftOf } from "../../../test-support/work-rows.js";
 import { createDrizzleDocumentPurgeDisposal } from "../../collab/adapters/drizzle-document-purge-disposal.js";
 import { discardTreeRecords } from "../../collab/adapters/drizzle-work-tree-discard.js";
 import { createDrizzleDocumentTrash } from "./drizzle-document-trash.js";
@@ -65,11 +66,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     await db
       .insert(works)
       .values({ id: WORK, projectId: PROJECT, createdByUserId: USER, name: "W", handle: "w1" });
-    const [work] = await db
-      .select({ draftId: works.draftId })
-      .from(works)
-      .where(eq(works.id, WORK));
-    draftId = work?.draftId as DraftId;
+    draftId = await defaultDraftOf(db, WORK);
   });
 
   const draftRow = async (id: string) =>
@@ -109,23 +106,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     expect(await draftRow(id)).toMatchObject({ existsOnlyInDraft: true });
   });
 
-  it("keeps a trashed document an archived Work still has suggestions in", async () => {
+  it("keeps a trashed document an archived Work still has a pending fork of", async () => {
     const id = (await seed.document(SOURCE, "live.md")) as DocumentId;
-    const [work] = await db
-      .select({ draftId: works.draftId })
-      .from(works)
-      .where(eq(works.id, WORK));
-    // The document's derivation counted one change of the Work's draft.
-    await db.insert(documentBlockRooms).values({
-      documentId: id,
-      blockOrder: [],
-      wordCount: 0,
-      pendingChanges: { [`${work?.draftId}`]: { changes: 1, chats: [], writer: true } },
-      documentHash: Buffer.alloc(32),
-      cutContentSeq: -1n,
-      cutLocationVersion: -1n,
-      extractorVersion: 0,
-    });
+    // The Work's draft has a pending fork of the document.
+    await db.insert(documentForks).values({ draftId, documentId: id, pending: true });
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
     await treeLists.submit({
       lists: [await treeListOfSource(db, SOURCE)],

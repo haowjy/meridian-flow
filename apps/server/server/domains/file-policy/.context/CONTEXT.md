@@ -27,11 +27,9 @@ first, never from a draft's view, or a draft move of a file out of a `deny` fold
 the source's fixed rule (`FIXED_AI_ACCESS`, empty), then `auto-apply`. `ask` on a source that can't
 hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the review it asks for.
 
-- **Destination.** `Principal.agent` always has `draftOwner` and `writeMode`. Phase 1 of the Loro
-  move is Live-only: `destinationAt` sends every agent write live, an `ask` place's included, and
-  only an explicit draft target reaches a draft. Phase 2 restores the rule, on forks: a write goes
-  to a draft when the chat's mode is draft or the place asks, and the source is drafted; otherwise
-  live.
+- **Destination.** `Principal.agent` always has `draftOwner` and `writeMode`. A write goes to the
+  chat's draft (its fork of the document) when the chat's mode is draft or the place asks, and the
+  source is drafted; otherwise live.
   `destinationFor` decides it per document from facts; `sourceDestination` decides it per source for
   creates and tree views, from the fixed rule alone. Everything that has a document (revisions,
   reads, lists) reads the destination from its decision or grant, never from the chat's mode. A stored per-folder setting needs creates to ask per path, and `placementFor`

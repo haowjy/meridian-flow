@@ -72,6 +72,7 @@ import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal.js";
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
+import { createDrizzleWorkDrafts } from "./adapters/drizzle-work-drafts.js";
 import { createDrizzleWriteOrdinals } from "./adapters/drizzle-write-ordinals.js";
 import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
@@ -161,6 +162,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink ?? createNoopEventSink(),
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
     onLiveSaved: (documentId) => liveAdvanced(documentId as DocumentId),
+    // A save holds no Work lock: the draft's owners recount once it commits.
+    onForkPendingChanged: async (draftId) =>
+      deps.workProjectionMutation.recountAfterCommit(
+        await deps.workProjectionMutation.ownersOf({ drafts: [draftId] }),
+      ),
     bounds: deps.roomBounds,
   });
   const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>
@@ -261,17 +267,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
-  const agentEditRouter = createAgentEditRouter({ liveCore: runtime.liveCore });
+  const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    liveCore: runtime.liveCore,
+    core: runtime.core,
     fileAccess: deps.fileAccess,
-    // The seam a Live write enters before it reads, so the room it plans on is the one it
+    // The seam a write enters before it reads, so the room it plans on is the one it
     // commits to: its grants, the Works, then the document's lock.
-    enterLiveSeam: async (documentId) => {
+    enterSeam: async (documentId) => {
       await requireAgentWriteGrant([documentId]);
       await lockSeamWorks(deps.db, []);
       await lockDocumentMutation(currentDrizzleDb(deps.db), documentId);
@@ -315,12 +321,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
+  const ownDrafts = createDrizzleWorkDrafts(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
+    endRooms: (ended) => rooms.endRooms(ended),
+  });
   const discardPurge = createDrizzleDiscardPurge(deps.db, {
     workProjection: deps.workProjectionMutation,
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
   });
   const drafts = createWorkDraftReviewService({
-    purgeDiscards: () => discardPurge.purge(),
+    // Press rows, deleted drafts and empty forks share the 30-day retention pass.
+    purgeDiscards: async () =>
+      (await discardPurge.purge()) +
+      (await ownDrafts.purgeDeleted()) +
+      (await rooms.retireEmptyForks()),
     reviewItems,
     identity,
     commands,
@@ -422,9 +437,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     effectiveReader,
     drafts: {
       ...drafts,
+      workDrafts: ownDrafts,
       presses: createDrizzlePress(deps.db, {
         workProjection: deps.workProjectionMutation,
         drafts: workDrafts,
+        rooms,
         arrivals: deps.arrivals,
         treeLists: deps.treeLists,
         onCommitted: async (documentId) => {

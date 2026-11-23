@@ -1,20 +1,16 @@
 /**
- * agent-edit's Loro core on the server's `DocumentRooms`: the room a call reads, its writes
- * committed in the model edit's command transaction with their receipts, and the chat a turn's
- * commit message names.
+ * agent-edit's Loro core on the server's `DocumentRooms`: the room a call reads (`agentRoomFor`, at
+ * the call's destination), its writes committed in the model edit's command transaction with
+ * their receipts, each naming the room it merged into, and the chat a turn's commit message names.
  */
-import {
-  type AgentEditRooms,
-  type AgentWriteRecord,
-  agentEditRooms,
-  DocumentNotFoundError,
-} from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { AgentEditRooms, AgentWriteRecord } from "@meridian/agent-edit/integration";
+import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
-import { type Database, documents, threads, turns } from "@meridian/database";
+import { type Database, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { agentRoomFor } from "./drizzle-agent-room.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
 export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRooms<DrizzleDb> }): {
@@ -24,24 +20,17 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
 } {
   const db = () => currentDrizzleDb(input.db);
   return {
-    rooms: agentEditRooms(input.rooms, {
-      // Drafts are off until phase 2: every chat reads and writes Live.
-      async roomFor(documentId): Promise<DocumentRoom> {
-        const [row] = await db()
-          .select({ id: documents.id })
-          .from(documents)
-          .where(
-            and(eq(documents.id, documentId as DocumentId), isNull(documents.contentPurgedAt)),
-          );
-        if (!row) throw new DocumentNotFoundError(documentId);
-        return { kind: "live", documentId };
+    rooms: {
+      async readRoom(documentId) {
+        const room = await agentRoomFor(db(), documentId);
+        return { room, docs: await input.rooms.read(room) };
       },
-      transaction: db,
-      origin: "server:agent",
-      recordWrite: async (tx, record) => {
-        await recordWrite(tx, record);
+      async save(room, batch, record) {
+        const tx = db();
+        await input.rooms.commit(tx, room, batch, "server:agent");
+        if (record) await recordWrite(tx, record, originOf(room));
       },
-    }),
+    },
     async authorOfTurn(turnId) {
       const [row] = await db()
         .select({ ref: threads.ref })
@@ -53,8 +42,11 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
   };
 }
 
-/** One write's receipt: an edit of kind `write` and its one part, its delta. */
-function recordWrite(tx: DrizzleDb, record: AgentWriteRecord) {
+export const originOf = (room: DocumentRoom): EditOrigin =>
+  room.kind === "fork" ? { kind: "fork", draftId: room.draftId } : { kind: "live" };
+
+/** One write's receipt: an edit of kind `write` and its one part, its delta, in its room. */
+function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, origin: EditOrigin) {
   const { actor } = record;
   return recordDocumentEdit(tx, {
     documentId: record.documentId as DocumentId,
@@ -67,7 +59,7 @@ function recordWrite(tx: DrizzleDb, record: AgentWriteRecord) {
     actorUserId: actor.kind === "human" ? (actor.userId as UserId) : null,
     receipts: [
       {
-        origin: { kind: "live" },
+        origin,
         delta: record.delta,
       },
     ],

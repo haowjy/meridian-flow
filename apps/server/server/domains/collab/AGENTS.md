@@ -2,11 +2,11 @@
 
 Coordination and persistence for live documents. A document's Live text lives in its Loro room
 (`DocumentRooms` on `document_snapshots`, `rooms/postgres-document-rooms.ts`); every read, write,
-seed, copy and derivation goes through it. Phase 1 is Live-only: the file grant sends every agent
-write Live (`file-policy/domain/policy.ts`, `destinationAt`), whatever the chat's write mode, and
-a press works on a Work's tree records only.
+seed, copy and derivation goes through it. A draft's text is a fork room of the document
+(`fork:<draft>:<document>`): the file grant sends a Draft chat's write there (`destinationAt`), and
+the agent-edit host picks the room from the call's destination (`agentRoomFor`).
 
-- A model write is one `modelEdits().write` in its command transaction: it commits a Loro batch through `DocumentRooms` ([model edits](.context/model-edits.md#live-edits-on-loro-rooms)). Nothing holds a write for a later save.
+- A model write is one `modelEdits().write` in its command transaction: it commits a Loro batch through `DocumentRooms` ([model edits](.context/model-edits.md#edits-on-loro-rooms)). Nothing holds a write for a later save.
 - Every room copy (`DocumentRooms.read`, a `RoomDocs`) has one owner that frees it.
 - Derive read models from a cut of the Live room taken under the document's lock and stamped with
   `documents.content_seq`, which every committed Live save bumps. Anything that rewrites room rows

@@ -20,16 +20,11 @@ export type RoutedWriteOutcome = WriteOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
 
-declare const liveAgentEditCoreBrand: unique symbol;
-
-/** The model's reads and writes of Live: agent-edit's Loro core on the server's rooms. */
-export type LiveAgentEditCore = Pick<LoroEditCore, "read" | "write"> & {
-  readonly [liveAgentEditCoreBrand]: "live-agent-edit-core";
-};
-
-export function asLiveAgentEditCore(core: Pick<LoroEditCore, "read" | "write">): LiveAgentEditCore {
-  return core as LiveAgentEditCore;
-}
+/**
+ * The model's reads and writes: agent-edit's Loro core on the server's rooms, one for every chat.
+ * The call's destination (`runAtDestination`) picks Live or the chat's draft fork.
+ */
+export type AgentEditCore = Pick<LoroEditCore, "read" | "write">;
 
 export function sameDestination(left: FileDestination, right: FileDestination): boolean {
   if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;

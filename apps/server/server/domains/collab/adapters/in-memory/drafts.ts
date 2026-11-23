@@ -30,6 +30,8 @@ export function createInMemoryDraftStore(namedDraft: NamedDraft): DraftStore {
       const row = rows.get(draft.id) ?? {
         id: draft.id,
         projectId: draft.projectId,
+        workId: owner.kind === "work" ? owner.workId : null,
+        deletedAt: null,
         createdBy: "",
         createdAt: new Date(),
       };
@@ -38,7 +40,6 @@ export function createInMemoryDraftStore(namedDraft: NamedDraft): DraftStore {
       return row;
     },
     lock: async (draftId) => rows.get(draftId) ?? null,
-    share: async (draftId) => rows.get(draftId) ?? null,
     byIds: async (draftIds) => draftIds.flatMap((id) => rows.get(id) ?? []),
     async namedBy({ workId, lineageRootIds }) {
       return [...named.values()]

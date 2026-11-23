@@ -1,6 +1,6 @@
 # App: documents
 
-The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Loro socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A Work's draft is its tree changes (phase 1 has no text drafts): `draft-review` reads its Changes from the owner's draft list (5). Back to the [app](app.md).
+The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Loro socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A Work's draft is its tree changes and its fork rooms, one per document it changed: `draft-review` reads its Changes from the owner's draft list (5). Back to the [app](app.md).
 
 ```mermaid
 flowchart LR

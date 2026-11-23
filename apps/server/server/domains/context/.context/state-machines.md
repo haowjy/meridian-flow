@@ -24,8 +24,8 @@ stateDiagram-v2
   the browser retries until its create is admitted.
 - **Held** is not a state: it stops either way out of `released`. A document is held while any
   kept view shows it (a `draft_tree_nodes` row), an unsettled record for a kept Work names it
-  in the list, or a draft that has not ended has text changes counted in it
-  (`tree/retention-holds.ts`; `pending_changes`, which nothing writes in phase 1). A kept Work is one that can still come back: open, archived, or
+  in the list, or a draft not yet purged has a pending fork of it
+  (`tree/retention-holds.ts`, `document_forks.pending`). A kept Work is one that can still come back: open, archived, or
   deleted and restorable; only a draft that ended (a whole Discard, a Work purged for good)
   stops being kept. Ask before the purge: a purge removes the rows the question reads.
 - **`in_no_view_since`** is written by the rows' sync (`adapters/tree-list-rows.ts`): null while

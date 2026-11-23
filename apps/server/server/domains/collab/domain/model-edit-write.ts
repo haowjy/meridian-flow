@@ -13,7 +13,8 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess } from "../../file-policy/index.js";
-import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
+import { runAtDestination } from "./agent-destination.js";
+import type { AgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
@@ -24,46 +25,53 @@ type GivenContext = Omit<ModelEditWriteContext, "grant">;
 
 /** What a model edit's write needs from the rest of collab; the seams here are the adapters'. */
 export type ModelEditWriteDeps = {
-  liveCore: LiveAgentEditCore;
+  core: AgentEditCore;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
-  /** The seam a Live write enters first: the grants' Works, then the document's lock. */
-  enterLiveSeam(documentId: DocumentId): Promise<void>;
+  /** The seam a write enters first: the grants' Works, then the document's lock. */
+  enterSeam(documentId: DocumentId): Promise<void>;
 };
 
 /**
- * Every write lands in Live while drafts are off: a grant whose destination is a draft (an explicit
- * draft target) writes Live too, as `destinationAt` sends every other one (phase 2 routes it to the
- * draft's fork).
+ * A write lands at its grant's destination: Live, or the chat's draft, whose fork room the host
+ * picks (`agentRoomFor`). Links spell in that destination's tree.
  */
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
-  async function live(
+  async function write(
     command: WriteCommand,
     given: GivenContext,
     documentId: DocumentId | null,
   ): Promise<WriteOutcome> {
     if (documentId) {
-      await deps.enterLiveSeam(documentId);
+      await deps.enterSeam(documentId);
       await testHook("command.afterLock");
     }
-    return deps.liveCore.write(command, { ...given, linkView: { kind: "live" } });
+    return deps.core.write(command, given);
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
-    const { grant, ...given } = routed;
+    const { grant, ...rest } = routed;
+    const { destination } = grant;
+    const given = {
+      ...rest,
+      linkView:
+        destination.kind === "draft"
+          ? ({ kind: "draft", draftId: destination.draftId } as const)
+          : ({ kind: "live" } as const),
+    };
     const documentId = documentIdFromCommand(command);
-    return runInLockedWrite(async () => {
-      // An inverse takes its own locks in the turn-inverse service.
-      if (command.command === "undo" || command.command === "revert") {
-        return runWithInversePrincipal(grant.principal, () =>
-          deps.liveCore.write(command, { ...given, linkView: { kind: "live" } }),
+    return runInLockedWrite(() =>
+      runAtDestination(destination, async () => {
+        // An inverse takes its own locks in the turn-inverse service.
+        if (command.command === "undo" || command.command === "revert") {
+          return runWithInversePrincipal(grant.principal, () => deps.core.write(command, given));
+        }
+        const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
+          write(command, given, documentId),
         );
-      }
-      const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
-        live(command, given, documentId),
-      );
-      if (!confirmed.ok) throw confirmed.refusal;
-      return confirmed.value;
-    });
+        if (!confirmed.ok) throw confirmed.refusal;
+        return confirmed.value;
+      }),
+    );
   };
 }
 

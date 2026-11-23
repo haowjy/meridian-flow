@@ -6,23 +6,24 @@
  */
 
 import type { CommandId, DraftId } from "@meridian/contracts";
-import { draftItemKey, isDraftId } from "@meridian/contracts";
+import { draftItemKey, isDraftId, parseDraftItemKey } from "@meridian/contracts";
 import { CommandIdSchema } from "@meridian/contracts/commands";
 import type {
   DocumentDraftHint,
   DocumentDraftHintsResponse,
   DraftItem,
   DraftItemsResponse,
-  TreePressResult,
-  TreePressUndoResult,
+  PressResult,
+  PressScope,
+  PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import { decodeRoomVersion } from "@meridian/document-model";
 import { VersionVector } from "loro-crdt";
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentDraftOrigin } from "../domains/collab/domain/ports/work-draft-pending-store.js";
-import { PressUnsynced } from "../domains/collab/domain/press.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-draft-review-service.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
@@ -38,7 +39,10 @@ import { throwWorkMutationHttpError } from "./work-http.js";
 type DraftRouteServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
   fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
-  documentSync: Pick<AppServices["documentSync"], "draftReview" | "presses" | "drafts">;
+  documentSync: Pick<
+    AppServices["documentSync"],
+    "draftReview" | "presses" | "drafts" | "workDrafts"
+  >;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
@@ -98,19 +102,33 @@ const SawBody = z.strictObject({
   project: ScopeCutBody.optional(),
   account: ScopeCutBody.optional(),
 });
+/** A shown Live version, decoded here once: one that isn't a `RoomVersion` is a 400. */
+const RoomVersionBody = z.base64().transform((value, context) => {
+  try {
+    return decodeRoomVersion(new Uint8Array(Buffer.from(value, "base64")));
+  } catch {
+    context.addIssue({ code: "custom", message: "Invalid version" });
+    return z.NEVER;
+  }
+});
 const PressBody = z.strictObject({
   commandId: CommandIdSchema,
-  draft: z.string().min(1).max(128),
   verdict: z.enum(["apply", "discard"]),
-  items: z.union([
-    z.literal("all"),
-    z
-      .array(z.strictObject({ node: z.string().uuid() }))
-      .min(1)
-      .max(2000)
-      .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
+  scope: z.discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("change"),
+      item: z.string().min(1).max(256),
+      change: z.string().min(1).max(128),
+    }),
+    z.strictObject({ kind: z.literal("document"), item: z.string().min(1).max(256) }),
+    z.strictObject({ kind: z.literal("draft"), draft: z.string().min(1).max(128) }),
+    z.strictObject({ kind: z.literal("work"), work: z.string().uuid() }),
   ]),
   saw: SawBody.optional(),
+  liveVersions: z
+    .array(z.strictObject({ documentId: z.string().uuid(), version: RoomVersionBody }))
+    .max(2000)
+    .optional(),
 });
 const PressUndoBody = z.strictObject({
   commandId: CommandIdSchema,
@@ -216,7 +234,7 @@ export function toWireItem(
     itemKey: item.itemKey,
     documentId: item.documentId,
     pending: item.pending,
-    liveVersion: null,
+    liveVersion: item.liveVersion,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,
@@ -245,48 +263,70 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     return await promise;
   } catch (cause) {
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
-    // The press is ahead of what the server holds; nothing was stored and the client sends it again.
-    if (cause instanceof PressUnsynced)
-      throw createError({
-        statusCode: 503,
-        message: "The press is waiting for the documents to sync",
-        data: { retryable: true },
-      });
     throw cause;
   }
 }
 
 /**
- * The press: Apply or Discard on documents, folders or a whole draft, one command
- * (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and the
- * draft, and the press writes only that draft's suggestions.
+ * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, one
+ * command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
+ * the drafts, and the press writes only those drafts' changes.
  */
 export async function handlePressRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<TreePressResult> {
+): Promise<PressResult> {
   const { presses } = deps.documentSync;
-  const request = parseBody(PressBody, input.request, "press");
-  const { stored } = await draftOfProject(deps, { ...input, draft: request.draft });
+  const { commandId, liveVersions, ...request } = parseBody(PressBody, input.request, "press");
+  const scope = request.scope as PressScope;
+  const { stored } = await draftOfProject(deps, { ...input, draft: await draftNamed(deps, scope) });
   if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
-  const envelope = pressEnvelope(input, "press", request.commandId, input.request);
+  const envelope = pressEnvelope(input, "press", commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  const recorded = storedAnswer<TreePressResult>(first, request.commandId);
+  const recorded = storedAnswer<PressResult>(first, commandId);
   if (recorded) return recorded;
-  return callDraftReview(presses.press({ envelope, request }));
+  return callDraftReview(
+    presses.press({
+      envelope,
+      request: {
+        ...request,
+        scope,
+        ...(liveVersions
+          ? {
+              liveVersions: new Map(
+                liveVersions.map((entry) => [entry.documentId as DocumentId, entry.version]),
+              ),
+            }
+          : {}),
+      },
+    }),
+  );
+}
+
+/** A draft the scope names, which says whose project it is: a Work's is its default. */
+async function draftNamed(deps: DraftRouteServices, scope: PressScope): Promise<string> {
+  if (scope.kind === "change" || scope.kind === "document") {
+    const item = parseDraftItemKey(scope.item);
+    if (!item) throw createError({ statusCode: 400, message: "Invalid item" });
+    return item.draftId;
+  }
+  if (scope.kind === "draft") return scope.draft;
+  const [first] = await deps.documentSync.workDrafts.list(scope.work);
+  if (!first) throw createError({ statusCode: 404, message: "Draft not found" });
+  return first.id;
 }
 
 /** Take back one press, both halves: the press's own records say what it did. */
 export async function handlePressUndoRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<TreePressUndoResult> {
+): Promise<PressUndoResult> {
   const { presses } = deps.documentSync;
   await requireProjectOwned(deps, input);
   const request = parseBody(PressUndoBody, input.request, "Undo");
   const envelope = pressEnvelope(input, "unpress", request.commandId, request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  const recorded = storedAnswer<TreePressUndoResult>(first, request.commandId);
+  const recorded = storedAnswer<PressUndoResult>(first, request.commandId);
   if (recorded) return recorded;
   return callDraftReview(presses.undo({ envelope, pressCommandId: request.pressCommandId }));
 }

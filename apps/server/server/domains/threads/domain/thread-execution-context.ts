@@ -1,19 +1,19 @@
 /** Thread execution policy: the chat's write mode over its locked primary Work. */
 import type { Thread } from "@meridian/contracts/threads";
-import { draftOf, type ThreadExecutionContext, type Work } from "@meridian/contracts/works";
+import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
 
 /**
- * A chat's drafts, in draft mode or where a place asks for review, go into the draft its owner
- * names at the time of the call: the Work it is bound to, or its conversation lineage when that
- * Work is No Work. Every chat has one; its write mode says whether all its writes draft.
+ * A chat's drafts, in draft mode or where a place asks for review, go into the chat's draft
+ * (`Thread.draftId`: its root's, while that is one of its Work's, else the Work's default). Every
+ * chat has one; its write mode says whether all its writes draft.
  */
 export function threadExecutionContext(
-  work: Pick<Work, "id" | "handle" | "isNoWork" | "draftId">,
+  work: Pick<Work, "id" | "handle">,
   thread: Pick<Thread, "draftId" | "aiWriteMode">,
 ): ThreadExecutionContext {
   return {
     scope: { workId: work.id, workHandle: work.handle },
     aiWriteMode: thread.aiWriteMode,
-    draftId: draftOf(thread, work),
+    draftId: thread.draftId as ThreadExecutionContext["draftId"],
   };
 }

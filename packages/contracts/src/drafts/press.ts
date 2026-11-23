@@ -26,7 +26,10 @@ export type PressRequest = {
   commandId: CommandId;
   verdict: PressVerdict;
   scope: PressScope;
-  /** The tree cut the press was drawn from: records admitted after it stay pending. */
+  /**
+   * The tree cut the press was drawn from: records admitted after it stay pending, as do records it saw that the
+   * server has not received yet.
+   */
   saw?: TreeSaw;
   /**
    * For an Apply, the Live text the writer was shown, per document: an encoded `RoomVersion` (`encodeRoomVersion`) of
@@ -54,6 +57,16 @@ export type PressResult = {
   trashed?: string[];
 };
 
+/**
+ * Who wrote over a pressed change since the press, read from the commits on its text: the writer (a tab's commit, which
+ * has no message), a chat (`turn:<id>`, named by its ref, `c12`), or another press. A server write with no message (a
+ * restore, a copy) names no one. Empty when only its structure was written over, which names no author.
+ */
+export type PressOverwriter =
+  | { kind: "writer" }
+  | { kind: "chat"; ref: string }
+  | { kind: "press" };
+
 export type PressUndoRequest = { commandId: CommandId; pressCommandId: CommandId };
 
 export type PressUndoResult = {
@@ -64,9 +77,9 @@ export type PressUndoResult = {
   documents: DocumentId[];
   /**
    * The changes someone wrote over since the press, which the Undo left whole, each named by the id of one of its members
-   * (as `PressScope`'s `change`). An Undo takes a change back whole or not at all (design §2).
+   * (as `PressScope`'s `change`) and by who wrote over it. An Undo takes a change back whole or not at all (design §2).
    */
-  stayed: { documentId: DocumentId; change: string }[];
+  stayed: { documentId: DocumentId; change: string; by: PressOverwriter[] }[];
   /** The nodes whose tree change came back. */
   tree: string[];
 };

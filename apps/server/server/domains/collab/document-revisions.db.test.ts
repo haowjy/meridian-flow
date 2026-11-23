@@ -108,7 +108,7 @@ async function fixture(
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
-    threadWorks: createDrizzleThreadWorksRepository(db),
+    threadWorks: createDrizzleThreadWorksRepository(db, null),
   });
   const core = f.collab.agentEdit();
   const context = {

@@ -215,11 +215,23 @@ const standingShape = (projection: TreeProjection) =>
 
 /**
  * The ids of the records in the structs of the list a copy at state `saw` lacks: what was
- * admitted after the press. Read from the encoded update without applying it.
+ * admitted after the press. Read from the encoded update without applying it. A `saw` past what
+ * this copy holds (a tab's records the server has not received yet) counts only what this copy
+ * holds of it: the rest is not here to land, and stays pending when it arrives.
  */
 export function recordsAdmittedAfter(doc: LoroDoc, saw: Uint8Array): Set<string> {
   // The records the copy held at `saw`, against what it holds now: the list never deletes.
-  const at = VersionVector.decode(saw);
+  const own = doc.oplogVersion();
+  const have = own.toJSON();
+  own.free();
+  const seen = VersionVector.decode(saw);
+  const held = new Map<`${number}`, number>();
+  for (const [peer, counter] of seen.toJSON()) {
+    const shared = Math.min(counter, have.get(peer) ?? 0);
+    if (shared > 0) held.set(peer, shared);
+  }
+  seen.free();
+  const at = new VersionVector(held);
   const then = doc.forkAt(doc.vvToFrontiers(at));
   at.free();
   try {
@@ -227,20 +239,6 @@ export function recordsAdmittedAfter(doc: LoroDoc, saw: Uint8Array): Set<string>
     return new Set(listRecords(doc).flatMap((record) => (had.has(record.id) ? [] : [record.id])));
   } finally {
     then.free();
-  }
-}
-
-/** Whether the copy `doc` holds has everything a copy at version `saw` held. */
-export function covers(doc: LoroDoc, saw: Uint8Array): boolean {
-  const own = doc.oplogVersion();
-  const have = own.toJSON();
-  own.free();
-  const at = VersionVector.decode(saw);
-  try {
-    for (const [peer, counter] of at.toJSON()) if ((have.get(peer) ?? 0) < counter) return false;
-    return true;
-  } finally {
-    at.free();
   }
 }
 

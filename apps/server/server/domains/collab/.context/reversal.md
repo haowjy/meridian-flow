@@ -13,8 +13,8 @@ manuscript records its `delta` (the blocks it changed, before and after:
 (`content-merge/stands.ts`). It **stands** in a text when the text holds it and merges it out
 cleanly (`changeStateIn`). The Live inverse writes only a change that stands; the card's offer uses that same test.
 
-Phase 1 has no text drafts, so every AI write is Live text. The card's Undo takes a change out of
-Live with one operation, `takeOut`, the merge of its inverse. It plans (`prepare` in
+A Draft chat's writes land in its draft's fork room, and their receipts name it (`origin`). The
+card's Undo takes a Live write's change out of Live with one operation, `takeOut`, the merge of its inverse. It plans (`prepare` in
 `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps
 before it leave.
 
@@ -103,8 +103,8 @@ or current text. Undo refuses `cant_undo_changed` only when nothing of a text-on
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port; its excerpt of each edit is
 read from the part's `delta` (`deltaExcerpt`), and its state from the text as for any write
-(`changed` or `live`), or `undone` when an undo receipt names the part. With no text drafts in
-phase 1, the listing has no `applied`, `discarded` or `pending` state. Model actions
+(`changed` or `live`), or `undone` when an undo receipt names the part. The listing
+shows only the parts written in the room the chat writes now: Live's, or its draft's fork. Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack

@@ -1,5 +1,5 @@
 import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
-import type { RoomDocs } from "@meridian/document-model";
+import type { RoomDocs, RoomVersion } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/stands.js";
@@ -35,12 +35,24 @@ export interface AgentRoomRead {
 
 /**
  * What a write did, as the host stores it beside the write's batch (`document_edit_parts`): the
- * write's identity and author, and its `delta`, the blocks it changed before and after in the room
- * it merged into. The delta is the whole record: turn Undo and the model's list of its edits read
- * it against the text by content, never by CRDT ids (design §5, "Receipts").
+ * write's identity and author, the room it merged into, and its `delta`, the blocks it changed
+ * before and after there. The delta is the whole record: turn Undo and the model's undo and revert
+ * read it against the room's text by content, never by CRDT ids (design §5, "Receipts").
  */
 export interface AgentWriteRecord {
   documentId: string;
+  /** Live, or the chat's draft fork: where the model's undo and revert of this write run. */
+  room: DocumentRoom;
+  /**
+   * Each doc the batch writes, at the version the write started from (absent: a doc it created).
+   * A Draft-mode turn's `Restore before` returns the fork to its first write's (design §2).
+   */
+  before: RoomVersion;
+  /**
+   * Each doc the batch writes, at its version once the write landed in the call's copy.
+   * `Restore before` keeps a structure key anyone wrote after its turn's last write's `after`.
+   */
+  after: RoomVersion;
   /** Stable write id (`turn:<turn>:tool:<call>`), and its ordinal, rendered `e<N>`. */
   writeId: string;
   wId: number;
@@ -62,9 +74,10 @@ export interface AgentWriteRecord {
  */
 export interface AgentEditRooms {
   /**
-   * A private copy of the room this call reads `documentId` from: the chat's draft fork when one
-   * exists, else Live (a Draft chat with no fork yet reads Live). A document with no state yet
-   * reads empty. Rejects with `DocumentNotFoundError` when the document is missing.
+   * A private copy of the room this call reads `documentId` from: a Draft chat's draft fork, from
+   * its first read (a fork with nothing stored reads as Live, design §2), else Live. A document
+   * with no state yet reads empty. Rejects with `DocumentNotFoundError` when the document is
+   * missing.
    */
   readRoom(documentId: string): Promise<AgentRoomRead>;
 
@@ -77,14 +90,21 @@ export interface AgentEditRooms {
 
 /** What a host supplies to run agent-edit over its `DocumentRooms`. */
 export interface AgentEditRoomsHost<Tx> {
-  /** The room a read of `documentId` goes to for this call's chat. */
+  /**
+   * The room a read of `documentId` goes to for this call's chat: the draft's fork room for a
+   * Draft chat, whether or not the draft has written there, and the Live room for a Live chat or a
+   * document only the draft holds. Never "does the fork exist".
+   */
   roomFor(documentId: string): Promise<DocumentRoom>;
   /** The transaction of the command this call runs in. */
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /** Store a write's record in `tx`, beside its committed batch. */
-  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
+  /**
+   * Store a write's record in `tx`, beside its committed batch. The record says all an inverse
+   * needs; the batch is there to store, not to read back.
+   */
+  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -99,7 +119,7 @@ export function agentEditRooms<Tx>(
     async save(room, batch, record) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record);
+      if (record) await host.recordWrite(tx, record, batch);
     },
   };
 }

@@ -1,16 +1,23 @@
 /**
- * Production-composed model `write` tool in a Work's chat: copies of a section, of a text file's
- * properties and of a binary file, and a write that changes nothing, against real repositories.
+ * Production-composed model `write` tool in a Work's chat: a Draft chat's writes land in its draft
+ * (the chapter's fork, a drafted create) while scratch stays live, and a later auto-apply chat still
+ * reads the kept draft when asked; a chat's write-mode switch; a Draft chat's create refused in an
+ * archived Work; copies of a section, of a text file's properties and of a binary file; and a
+ * write that changes nothing, against real repositories.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - queued mode switches
  * - no-op write suppression
- * - phase 1 of the Loro move is Live-only: a draft-mode chat's writes land Live
  */
 
+import { splitHashline } from "@meridian/agent-edit";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { processDetachedWork } from "../shared/detached-work.js";
+import type { ToolCall } from "../test-support/composed-runtime.js";
+import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
 import { treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -26,7 +33,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
-    const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { bindEditAgent, useComposedRuntimes } = await import(
+      "../test-support/composed-runtime.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -110,6 +119,302 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const text = (result: { content: ToolContentPart[] }) => toolContentText(result.content);
 
+    it("drafts kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
+      const script = await startWithChapter("Writer live content.\n\nWriter aside.");
+      const first = await script.begin();
+      let call = first.call;
+
+      const liveBefore = await call("read", { path: CHAPTER, version: "live" });
+      const asideLine = text(liveBefore)
+        .split("\n")
+        .find((line: string) => line.endsWith("|Writer aside."));
+      const liveHash = splitHashline(asideLine ?? "")?.hash;
+      expect(liveHash).toBeTruthy();
+      await call("read", { path: CHAPTER });
+      await call("write", { command: "remove", path: CHAPTER, in: liveHash });
+      const drafted = await call("write", {
+        command: "replace",
+        path: CHAPTER,
+        find: "Writer live content.",
+        content: "Model draft content.",
+      });
+      expect(drafted.result).toMatchObject({ destination: "draft" });
+      const lore = await call("write", {
+        command: "create",
+        path: "kb://lore",
+        content: "Drafted lore needle.",
+      });
+      expect(lore.result).toMatchObject({ destination: "draft" });
+      // Scratch is live in every Work.
+      const notes = await call("write", {
+        command: "create",
+        path: "scratch://notes",
+        content: "Scratch needle notes.",
+      });
+      expect(notes.result).toMatchObject({ destination: "live" });
+
+      call = (await script.begin()).call;
+      const draftRead = await call("read", { path: CHAPTER });
+      expect(draftRead.result).toMatchObject({ read: { version: "draft" } });
+      expect(toolContentText(draftRead.content)).toContain("Model draft content.");
+      const liveRead = await call("read", { path: CHAPTER, version: "live" });
+      expect(toolContentText(liveRead.content)).toContain("Writer live content.");
+      expect(toolContentText(liveRead.content)).not.toContain("Model draft content.");
+
+      // The last read was the draft, so the stale live hash reaches the resolver.
+      await call("read", { path: CHAPTER });
+      const stale = await call("write", {
+        command: "replace",
+        path: CHAPTER,
+        in: liveHash,
+        content: "Never lands.",
+      });
+      expect(stale.isError).toBe(true);
+
+      const loreHits = await call("grep", { pattern: "lore needle" });
+      expect(text(loreHits)).toContain("kb://lore");
+      const listedLive = await call("ls", { path: "kb://", version: "live" });
+      expect(text(listedLive)).toMatch(/^kb:\/\//);
+      expect(text(listedLive)).not.toContain("lore");
+    });
+
+    // auto-apply writes live, but an explicit `draft` still reads what the Work kept.
+    it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
+      const script = await startWithChapter("Writer live content.");
+      const first = await script.begin();
+      await first.call("read", { path: CHAPTER });
+      await first.call("write", {
+        command: "replace",
+        path: CHAPTER,
+        find: "Writer live content.",
+        content: "Kept draft content.",
+      });
+      await db
+        .update(schema.threads)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.threads.id, THREAD.threadId));
+
+      const { call } = await script.begin();
+      const kept = await call("read", { path: CHAPTER, version: "draft" });
+      expect(kept.result).toMatchObject({ read: { version: "draft" } });
+      expect(toolContentText(kept.content)).toContain("Kept draft content.");
+      const destination = await call("read", { path: CHAPTER });
+      expect(destination.result).toMatchObject({ read: { version: "live" } });
+      expect(toolContentText(destination.content)).toContain("Writer live content.");
+      const notes = await call("write", {
+        command: "create",
+        path: "scratch://notes",
+        content: "Notes.",
+      });
+      expect(notes.isError).toBeFalsy();
+      const noDraft = await call("read", { path: "scratch://notes", version: "draft" });
+      expect(noDraft.result).toMatchObject({ read: { version: "live" } });
+    });
+
+    describe("write-mode switch", () => {
+      const SIBLING = {
+        threadId: "00000000-0000-4000-8000-000000000e15",
+        turnId: "00000000-0000-4000-8000-000000000e16",
+      };
+      const switchTo = (
+        runtime: Awaited<ReturnType<typeof runtimes.compose>>,
+        mode: "direct" | "draft",
+      ) =>
+        runtime.app.delivery.enqueueControl({
+          threadId: THREAD.threadId,
+          provenance: { kind: "writer", actorId: USER_ID },
+          id: crypto.randomUUID(),
+          control: { kind: "write_mode", mode },
+        });
+      const switchTurns = async () =>
+        (
+          await db.select().from(schema.turns).where(eq(schema.turns.threadId, THREAD.threadId))
+        ).filter(
+          (turn) => (turn.metadata as { kind?: string } | null)?.kind === "write_mode_switch",
+        );
+      const modeOf = async (threadId: string) =>
+        (
+          await db
+            .select({ mode: schema.threads.aiWriteMode })
+            .from(schema.threads)
+            .where(eq(schema.threads.id, threadId))
+        )[0]?.mode;
+      const create = (call: ToolCall, name: string) =>
+        call("write", { command: "create", path: `manuscript://${name}.md`, content: name });
+
+      beforeEach(async () => {
+        // A switch turn chains after the chat's active leaf.
+        await db
+          .update(schema.threads)
+          .set({ activeLeafTurnId: THREAD.turnId })
+          .where(eq(schema.threads.id, THREAD.threadId));
+      });
+
+      it("keeps a reply's mode past a mid-reply switch, which stays pending after the reply", async () => {
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        await db
+          .update(schema.works)
+          .set({ defaultAiWriteMode: "draft" })
+          .where(eq(schema.works.id, WORK_ID));
+        const lease = await runtime.ports.runClaim.startExecution(
+          THREAD.threadId as never,
+          crypto.randomUUID() as never,
+          async () => {},
+        );
+        if (!lease) throw new Error("Expected the reply's run claim");
+        const reply = await script.begin();
+        expect((await create(reply.call, "before")).result).toMatchObject({
+          destination: "draft",
+        });
+
+        const queued = await reply.call("work", { command: "write_mode", mode: "direct" });
+        expect(toolContentText(queued.content)).toBe(
+          "AI write mode will change to direct from the next reply.",
+        );
+        expect(
+          await db
+            .select({
+              body: schema.threadInboxMessages.body,
+              provenance: schema.threadInboxMessages.provenance,
+            })
+            .from(schema.threadInboxMessages)
+            .where(eq(schema.threadInboxMessages.threadId, THREAD.threadId)),
+        ).toMatchObject([
+          {
+            body: { kind: "write_mode", mode: "direct" },
+            provenance: { kind: "agent", threadId: THREAD.threadId },
+          },
+        ]);
+        expect(
+          (
+            await db
+              .select({ mode: schema.works.defaultAiWriteMode })
+              .from(schema.works)
+              .where(eq(schema.works.id, WORK_ID))
+          )[0]?.mode,
+        ).toBe("draft");
+        const writerControlId = crypto.randomUUID();
+        await runtime.app.delivery.enqueueControl({
+          threadId: THREAD.threadId,
+          id: writerControlId,
+          provenance: { kind: "writer", actorId: USER_ID },
+          control: { kind: "write_mode", mode: "direct" },
+        });
+        expect(
+          (
+            await db
+              .select({ mode: schema.works.defaultAiWriteMode })
+              .from(schema.works)
+              .where(eq(schema.works.id, WORK_ID))
+          )[0]?.mode,
+        ).toBe("direct");
+        expect(
+          await runtime.app.delivery.enqueueControl({
+            threadId: THREAD.threadId,
+            id: writerControlId,
+            provenance: { kind: "writer", actorId: USER_ID },
+            control: { kind: "write_mode", mode: "direct" },
+          }),
+        ).toMatchObject({ created: false });
+        expect((await create(reply.call, "after")).result).toMatchObject({
+          destination: "draft",
+        });
+        expect(await switchTurns()).toEqual([]);
+
+        // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
+        await releaseLeaseUnderLock(runtime.ports.db, runtime.ports.runClaim, lease);
+        await runtime.app.runStarter.start(THREAD.threadId as never);
+        await processDetachedWork.drain();
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+
+        const next = await script.begin();
+        expect((await create(next.call, "next")).result).toMatchObject({ destination: "draft" });
+      });
+
+      it("moves the Work default when the writer switches, leaving the chat and a sibling chat in their mode", async () => {
+        await db
+          .update(schema.works)
+          .set({ defaultAiWriteMode: "draft" })
+          .where(eq(schema.works.id, WORK_ID));
+        await db.insert(schema.threads).values({
+          rootThreadId: SIBLING.threadId,
+          id: SIBLING.threadId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Sibling",
+          kind: "primary",
+          aiWriteMode: "draft",
+        });
+        await db.insert(schema.turns).values({
+          id: SIBLING.turnId,
+          threadId: SIBLING.threadId,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: SIBLING.threadId,
+          workId: WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        await bindEditAgent(runtime, THREAD.threadId);
+        const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+
+        const switched = await switchTo(runtime, "direct");
+        expect(switched.response).toMatchObject({
+          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }], mode: "draft" },
+          turnId: null,
+        });
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+        // The Work's default follows the writer's choice at once, so a new chat starts in it.
+        const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(after?.defaultAiWriteMode).toBe("direct");
+        expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
+        // Stopping the pending switch is the writer's latest choice too.
+        await runtime.app.delivery.withdrawControl(THREAD.threadId as never, switched.response.id);
+        const [stopped] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(stopped?.defaultAiWriteMode).toBe("draft");
+
+        expect(await modeOf(SIBLING.threadId)).toBe("draft");
+        const sibling = await runtimes.script(runtime, SIBLING).begin();
+        expect((await create(sibling.call, "sibling")).result).toMatchObject({
+          destination: "draft",
+        });
+      });
+    });
+
+    // a create or copy would make its file in the archived Work's frozen drafts.
+    it("refuses a draft-mode chat's create or copy into its archived Work with the frozen-drafts copy", async () => {
+      const script = await startWithChapter("Writer live content.");
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+      const { call } = await script.begin();
+      const frozen =
+        'Work w1 is archived, so its drafts are frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"w1"})`, or ask the user to switch this chat to auto-apply.';
+
+      for (const args of [
+        { command: "create", path: "manuscript://new", content: "Never lands." },
+        { command: "copy", from: { path: CHAPTER }, path: "manuscript://copy" },
+      ]) {
+        const refused = await call("write", args);
+        expect(refused.isError).toBe(true);
+        expect(refused.result).toMatchObject({
+          status: "permission_denied",
+          reason: "work_archived",
+        });
+        expect(text(refused)).toContain(frozen);
+      }
+    });
+
     it("copies the section a #fragment names", async () => {
       const script = await startWithChapter(
         "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\n# Aftermath\n\nQuiet.",
@@ -161,11 +466,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       expect(copied.isError).toBeFalsy();
+      // A Draft chat's copy is a drafted create.
       const [copy] = await db
         .select({ metadata: schema.documents.metadata })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "gate-copy"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -222,12 +528,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         path: "kb://scan-copy.pdf",
       });
 
-      expect(copied.result).toMatchObject({ status: "success", destination: "live" });
+      expect(copied.result).toMatchObject({ status: "success", destination: "draft" });
       const [copy] = await db
         .select({ storageUrl: schema.documents.storageUrl })
-        .from(schema.treeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.treeNodes.id))
-        .where(eq(schema.treeNodes.name, "scan-copy.pdf"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
       const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
       const stored = await runtime.ports.objectStore.get(key);

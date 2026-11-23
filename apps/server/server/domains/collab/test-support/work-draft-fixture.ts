@@ -8,7 +8,6 @@ import {
   threadWorks,
   turns,
   users,
-  works,
 } from "@meridian/database/schema";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import {
@@ -17,6 +16,7 @@ import {
 } from "../../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
@@ -64,7 +64,7 @@ export function createWorkDraftFixture(db: Database) {
     await db
       .insert(projects)
       .values({ id: PROJECT_ID, userId: USER_ID, name: "Project", slug: "project" });
-    await db.insert(works).values({
+    await insertWorks(db, {
       id: WORK_ID,
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,

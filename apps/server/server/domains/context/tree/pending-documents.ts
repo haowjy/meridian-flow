@@ -8,8 +8,8 @@
  * - any other row the Work changed: it shows the document differently from live (a move,
  *   rename or reorder). A row that differs only in a twin's suffix is not one (`changed` is
  *   false), and a document in Trash in live is in Trash in every Work's view.
- * - the Work's suggestions in the Live document, on a document the Work's tree shows: a drafted
- *   delete, or a document in no view, hides the text changes everywhere.
+ * - the Work's fork of the document has a pending change, on a document the Work's tree shows: a
+ *   drafted delete, or a document in no view, hides the text changes everywhere.
  *
  * A write and its undo net to no changed row, so they net to no item. The Work's review count adds the
  * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
@@ -52,15 +52,12 @@ export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
 }
 
 /**
- * The documents a Work has text changes in, as `(draft_id, document_id)`: the Work's suggestions
- * in the Live document, counted by the document's derivation in
- * `document_block_rooms.pending_changes`.
+ * The documents a Work has text changes in, as `(draft_id, document_id)`: its forks flagged
+ * pending (`document_forks.pending`, set by every save of the fork's room).
  */
 export function pendingText(drafts: SQL): SQL {
-  return sql`SELECT b.id AS draft_id, r.document_id FROM drafts b
-      JOIN document_block_rooms r ON r.pending_changes ? b.id
-      WHERE b.id IN (${drafts})
-        AND (r.pending_changes -> b.id ->> 'changes')::int > 0`;
+  return sql`SELECT f.draft_id, f.document_id FROM document_forks f
+      WHERE f.draft_id IN (${drafts}) AND f.pending`;
 }
 
 /**
