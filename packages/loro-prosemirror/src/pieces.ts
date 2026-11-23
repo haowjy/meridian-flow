@@ -1,6 +1,7 @@
 import type { BlockId } from "@meridian/document-model";
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 
 /**
  * The pairs of blocks `tr` moved text between: text the transaction kept that stands in a
@@ -59,4 +60,24 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
       },
     );
   return [...pairs.values()];
+}
+
+/**
+ * Text that replaces a selection across textblocks without a keypress (`insertText` from
+ * dictation, an autocorrect replacement, CDP): ProseMirror would read it back from the DOM, and its
+ * diff stops at the joined block, whose id is the first block's, so the kept tail is rewritten as
+ * new text and `movedPieces` sees nothing moved. Insert it as ProseMirror's keypress handler does.
+ * Composition text cannot be cancelled and still takes the DOM path.
+ */
+export function insertAcrossBlocks(view: EditorView, event: InputEvent): boolean {
+  const { $from, $to } = view.state.selection;
+  if (event.inputType !== "insertText" && event.inputType !== "insertReplacementText") return false;
+  if ($from.sameParent($to)) return false;
+  const text = event.data ?? event.dataTransfer?.getData("text/plain");
+  if (!text) return false;
+  event.preventDefault();
+  const insert = () => view.state.tr.insertText(text);
+  if (!view.someProp("handleTextInput", (f) => f(view, $from.pos, $to.pos, text, insert)))
+    view.dispatch(insert().scrollIntoView());
+  return true;
 }

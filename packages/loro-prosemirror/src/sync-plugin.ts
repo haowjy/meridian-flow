@@ -34,7 +34,7 @@ import {
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
-import { movedPieces } from "./pieces.js";
+import { insertAcrossBlocks, movedPieces } from "./pieces.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 
@@ -167,6 +167,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
         return kept === value.kept ? value : { docs, kept };
       },
     },
+    props: { handleDOMEvents: { beforeinput: insertAcrossBlocks } },
     // The selection left a kept block: read without it, so it goes from the screen.
     appendTransaction(trs, oldState, newState) {
       if (trs.every((tr) => tr.getMeta(loroSyncKey) === REMOTE_META)) return null;
