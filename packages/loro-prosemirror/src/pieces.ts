@@ -1,4 +1,4 @@
-import type { BlockId } from "@meridian/document-model";
+import type { BlockId, MovedText } from "@meridian/document-model";
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
 
@@ -13,6 +13,15 @@ import type { Transaction } from "prosemirror-state";
  *   inserted into.
  */
 export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
+  return movedText(tr).map(({ from, to }) => [from, to]);
+}
+
+/**
+ * The exact text ranges a transaction kept while moving them between blocks. The ranges are in
+ * the old and new ProseMirror documents; the model turns the old range into Loro character ids
+ * before writing either text doc. A range is emitted only for text that survived the step maps.
+ */
+export function movedText(tr: Transaction): MovedText[] {
   const { before, doc, mapping } = tr;
   // What the steps replaced, in the old document's positions, and what they inserted, in the new.
   const replaced: [number, number][] = [];
@@ -35,8 +44,20 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
   });
   if (replaced.length === 0) return [];
   const pairs = new Map<string, [BlockId, BlockId]>();
+  const spans = new Map<string, MovedText>();
   const pair = (a: BlockId | null, b: BlockId | null) => {
     if (a !== null && b !== null && a !== b) pairs.set(a < b ? `${a}/${b}` : `${b}/${a}`, [a, b]);
+  };
+  const span = (
+    from: BlockId | null,
+    to: BlockId | null,
+    sourceFrom: number,
+    length: number,
+    destinationFrom: number,
+  ) => {
+    if (from === null || to === null || from === to || length <= 0) return;
+    const key = `${from}/${to}/${sourceFrom}/${destinationFrom}`;
+    spans.set(key, { from, to, sourceFrom, length, destinationFrom });
   };
 
   for (const [from, to] of replaced) pair(textblockAt(before, from), textblockAt(before, to));
@@ -62,7 +83,9 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
           // The character after `at` was kept: where it stands now.
           const now = mapping.mapResult(at, 1);
           if (now.deleted || mapping.map(at + 1, -1) !== now.pos + 1) continue;
-          pair(was, textblockAt(doc, now.pos));
+          const into = textblockAt(doc, now.pos);
+          pair(was, into);
+          span(was, into, at - start, points[i + 1] - at, textOffsetAt(doc, now.pos));
         }
         return false;
       },
@@ -73,13 +96,71 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
     const into = textblocksIn(doc, inserted);
     for (const a of from) for (const b of into) pair(a, b);
   }
-  return [...pairs.values()];
+  const dropped = dropSpans(tr, replaced, inserted, pair);
+  const exact = [...spans.values(), ...dropped];
+  return exact.length > 0
+    ? exact
+    : [...pairs.values()].map(([from, to]) => ({
+        from,
+        to,
+        sourceFrom: 0,
+        length: 0,
+        destinationFrom: 0,
+      }));
 }
 
 function textblockAt(doc: Node, pos: number): BlockId | null {
   const parent = doc.resolve(pos).parent;
   const id = parent.attrs.id;
   return parent.isTextblock && typeof id === "string" ? id : null;
+}
+
+function textOffsetAt(doc: Node, pos: number): number {
+  const resolved = doc.resolve(pos);
+  return pos - resolved.start(resolved.depth);
+}
+
+function dropSpans(
+  tr: Transaction,
+  replaced: readonly [number, number][],
+  inserted: readonly [number, number][],
+  pair: (a: BlockId | null, b: BlockId | null) => void,
+): MovedText[] {
+  if (tr.getMeta("uiEvent") !== "drop") return [];
+  const from = rangesInTextblocks(tr.before, replaced);
+  const into = rangesInTextblocks(tr.doc, inserted);
+  const out: MovedText[] = [];
+  for (const source of from)
+    for (const destination of into) {
+      pair(source.id, destination.id);
+      out.push({
+        from: source.id,
+        to: destination.id,
+        sourceFrom: source.from,
+        length: source.length,
+        destinationFrom: destination.from,
+      });
+    }
+  return out;
+}
+
+function rangesInTextblocks(
+  doc: Node,
+  ranges: readonly [number, number][],
+): { id: BlockId; from: number; length: number }[] {
+  const out: { id: BlockId; from: number; length: number }[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock || typeof node.attrs.id !== "string") return false;
+    const start = pos + 1;
+    const end = start + node.content.size;
+    for (const [from, to] of ranges) {
+      const left = Math.max(from, start);
+      const right = Math.min(to, end);
+      if (right > left) out.push({ id: node.attrs.id, from: left - start, length: right - left });
+    }
+    return false;
+  });
+  return out;
 }
 
 /** The ids of the textblocks holding any of `ranges`, an end included. */

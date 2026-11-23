@@ -1452,7 +1452,7 @@ export function runScript(seed, { verbose = false } = {}) {
         stats.liveTokenDeleted++;
         continue;
       }
-      if (fTokens.get(tok) !== id && !splitMoved.has(tok)) {
+      if (fTokens.get(tok) !== id && (process.env.FUZZ_STRICT || !splitMoved.has(tok))) {
         const text = textOfDoc(fork.textOf(id));
         let at = 0;
         for (const c of text) if (c === tok[at]) at++;
@@ -1484,7 +1484,7 @@ export function runScript(seed, { verbose = false } = {}) {
       for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
         if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(`${id}|${c}`) && origins.get(`${id}|${c}`) !== m[0])) collisions.add(m[0]);
     }
-    const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t));
+    const dup = final.filter((t, i) => final.indexOf(t) !== i && (process.env.FUZZ_STRICT || !splitMoved.has(t)) && !collisions.has(t));
     check(!dup.length, "duplicate-text", () => `duplicate tokens ${dup.join(",")}; Live ${render(live)}`);
     const allIds = [];
     read(live).descendants((n) => {

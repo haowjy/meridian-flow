@@ -26,14 +26,22 @@ export interface TakeBackNote {
   ops: OpSpans;
 }
 
+/** Text written into another block, and the source characters it stands for. */
+export interface CopyNote {
+  from: string;
+  for: StandsFor;
+  ops: OpSpans;
+}
+
 export interface CommitNote {
   by?: CommitAuthor;
   undo?: TakeBackNote;
+  copy?: CopyNote;
 }
 
 /** The message a commit carrying `note` is committed under; none for an empty note. */
 export function commitMessage(note: CommitNote): string | undefined {
-  if (!note.by && !note.undo) return undefined;
+  if (!note.by && !note.undo && !note.copy) return undefined;
   return JSON.stringify(note);
 }
 
@@ -52,6 +60,8 @@ export function readCommitMessage(message: string | undefined): CommitNote {
   if (by) note.by = by;
   const undo = takeBackOf(said.undo);
   if (undo) note.undo = undo;
+  const copy = copyOf(said.copy);
+  if (copy) note.copy = copy;
   return note;
 }
 
@@ -84,6 +94,30 @@ function takeBackOf(undo: unknown): TakeBackNote | null {
     )
       return null;
   return { for: runs as StandsFor, ops: ops as OpSpans };
+}
+
+function copyOf(copy: unknown): CopyNote | null {
+  if (!isObject(copy) || typeof copy.from !== "string") return null;
+  const { for: runs, ops } = copy;
+  if (!Array.isArray(runs) || !isObject(ops) || Array.isArray(ops)) return null;
+  for (const run of runs)
+    if (
+      !Array.isArray(run) ||
+      run.length !== 3 ||
+      typeof run[0] !== "string" ||
+      !Number.isInteger(run[1]) ||
+      !Number.isInteger(run[2])
+    )
+      return null;
+  for (const span of Object.values(ops))
+    if (
+      !Array.isArray(span) ||
+      span.length !== 2 ||
+      !Number.isInteger(span[0]) ||
+      !Number.isInteger(span[1])
+    )
+      return null;
+  return { from: copy.from, for: runs as StandsFor, ops: ops as OpSpans };
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>

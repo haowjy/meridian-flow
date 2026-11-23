@@ -22,6 +22,7 @@ export {
 export {
   type CommitAuthor,
   type CommitNote,
+  type CopyNote,
   commitMessage,
   type OpSpans,
   readCommitMessage,
@@ -139,6 +140,7 @@ export {
   commitStructure,
   type DocChange,
   encodeChanges,
+  type MovedText,
   StructureWriter,
   setCommentBody,
   type WriteOptions,

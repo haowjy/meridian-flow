@@ -34,7 +34,7 @@ import {
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
-import { movedPieces } from "./pieces.js";
+import { movedPieces, movedText } from "./pieces.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 
@@ -155,6 +155,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
                 kept,
                 view,
                 pieces: docs.draft ? movedPieces(tr) : undefined,
+                moved: docs.draft ? movedText(tr) : undefined,
               });
           if (recorded) history?.record(changes);
           if (changes.length > 0) options.onLocalWrite?.(changes);

@@ -1,5 +1,11 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, commitMessage } from "./commit-message.js";
+import {
+  type CommitAuthor,
+  type CopyNote,
+  commitMessage,
+  type OpSpans,
+  type StandsFor,
+} from "./commit-message.js";
 import { commonEnds } from "./common-ends.js";
 import { encodeEnvelope } from "./envelope.js";
 import { inMap, inText } from "./handles.js";
@@ -87,6 +93,18 @@ export interface WriteOptions {
    * from the edit it is writing, and a draft records them so the two are one change (design §2).
    */
   pieces?: readonly (readonly [BlockId, BlockId])[];
+  /** Exact text ranges a transaction kept while moving them between block text docs. */
+  moved?: readonly MovedText[];
+  /** A text commit's identity for the characters it carries from another block. */
+  copy?: CopyNote;
+}
+
+export interface MovedText {
+  from: BlockId;
+  to: BlockId;
+  sourceFrom: number;
+  length: number;
+  destinationFrom: number;
 }
 
 /**
@@ -263,6 +281,7 @@ export function writeDocument(
   options: WriteOptions = {},
 ): DocChange[] {
   const { shape } = docs;
+  const prepared = prepareMoved(docs, options.moved ?? []);
   const known = options.previous && indexOf(options.previous);
   // With `previous`, the structure is read only when the write changes it: a change to text alone
   // reads and writes only the text docs it changed.
@@ -309,12 +328,12 @@ export function writeDocument(
         if (key !== current.get(id)) structure().set("order", id, key);
     }
     for (const block of stored) {
-      const moved =
+      const blockMoved =
         reordered &&
         structure().brokenCycle(block.id, parent) &&
         movedAmong(read().children(parent), ids, block.id);
       const was = known?.blocks.get(block.id);
-      const inPlace = !moved && was !== undefined && was.parent === parent;
+      const inPlace = !blockMoved && was !== undefined && was.parent === parent;
       if (inPlace && was.block === block) {
         keep(block);
         continue;
@@ -325,19 +344,24 @@ export function writeDocument(
       if (emptyParagraphOf(block.id) !== undefined && read().node(block.id) === undefined)
         throw new Error(`block id ${block.id} is a placeholder, never stored`);
       if (!inPlace || was.block.node !== block.node || !sameValue(was.block.attrs, block.attrs))
-        structure().block(block.id, parent, block.node, block.attrs, moved);
+        structure().block(block.id, parent, block.node, block.attrs, blockMoved);
       if (block.kind === "container") walk(block.children, block.id);
       else {
         const rule = shape.node(block.node);
         if (!rule) throw new Error(`unknown node ${block.node}`);
+        const copy = copyFor(block.id, prepared, options);
         const change = writeText(
           docs,
           block.id,
           block.inline,
           { rule, shape, visibleComment },
-          options,
+          copy ? { ...options, copy } : options,
         );
-        if (change) changes.push(change);
+        if (change) {
+          changes.push(change);
+          for (const move of prepared)
+            if (move.from === block.id) move.ops = ownOps(change.doc, change.before, change.after);
+        }
       }
     }
   };
@@ -433,9 +457,76 @@ export function writeText(
     wanted.slice(splice.index, splice.index + splice.insert),
   );
   inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), wanted, rules));
-  doc.commit({ message: commitMessage({ by: options.by }), origin: options.origin });
+  doc.commit({
+    message: commitMessage({ by: options.by, copy: options.copy }),
+    origin: options.origin,
+  });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
+}
+
+interface PreparedMove extends MovedText {
+  for: StandsFor;
+  ops: OpSpans;
+}
+
+function prepareMoved(docs: RoomDocs, moves: readonly MovedText[]): PreparedMove[] {
+  return moves.flatMap((move) => {
+    const doc = docs.textOf(move.from);
+    if (!doc || move.length <= 0 || move.sourceFrom < 0) return [];
+    const ids = inText(doc, (text) => {
+      const out: string[] = [];
+      let last: string | undefined;
+      for (let i = 0; i < move.length; i++) {
+        const cursor = text.getCursor(move.sourceFrom + i, 0);
+        const pos = cursor?.pos();
+        cursor?.free();
+        if (!pos) continue;
+        const id = `${pos.counter}@${pos.peer}`;
+        if (id === last) continue;
+        out.push(id);
+        last = id;
+      }
+      return out;
+    });
+    return ids.length === 0 ? [] : [{ ...move, for: runsOf(ids), ops: {} }];
+  });
+}
+
+function copyFor(
+  destination: BlockId,
+  moves: readonly PreparedMove[],
+  options: WriteOptions,
+): CopyNote | undefined {
+  const candidates = moves.filter((move) => move.to === destination && move.for.length > 0);
+  if (candidates.length === 0) return undefined;
+  const [first] = candidates;
+  // One destination commit has one source in the note shape. The binding emits one contiguous
+  // moved range per destination for splits and joins; additional ranges are still recorded as
+  // pieces and are handled by the cross-document answer pass.
+  if (options.copy) return options.copy;
+  return { from: first.from, for: first.for, ops: first.ops };
+}
+
+function runsOf(ids: readonly string[]): StandsFor {
+  const out: StandsFor = [];
+  for (const id of ids) {
+    const at = id.indexOf("@");
+    const counter = Number(id.slice(0, at));
+    const peer = id.slice(at + 1);
+    const last = out.at(-1);
+    if (last && last[0] === peer && last[1] + last[2] === counter) last[2]++;
+    else out.push([peer, counter, 1]);
+  }
+  return out;
+}
+
+function ownOps(doc: LoroDoc, before: Frontiers, after: Frontiers): OpSpans {
+  const from = plainVersion(doc.frontiersToVV(before));
+  const out: OpSpans = {};
+  for (const [peer, counter] of plainVersion(doc.frontiersToVV(after)))
+    if (counter > (from.get(peer) ?? 0)) out[peer] = [from.get(peer) ?? 0, counter];
+  return out;
 }
 
 /** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */
