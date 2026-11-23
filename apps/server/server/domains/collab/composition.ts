@@ -320,7 +320,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
   });
   const drafts = createWorkDraftReviewService({
-    purgeDiscards: () => discardPurge.purge(),
+    // Press rows and empty forks share the 30-day retention pass.
+    purgeDiscards: async () => (await discardPurge.purge()) + (await rooms.retireEmptyForks()),
     reviewItems,
     identity,
     commands,

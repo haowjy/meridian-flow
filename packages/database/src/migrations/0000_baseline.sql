@@ -714,6 +714,8 @@ CREATE TABLE "document_forks" (
 	"draft_id" text NOT NULL,
 	"document_id" uuid NOT NULL,
 	"pending" boolean DEFAULT false NOT NULL,
+	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"empty_since" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")
 );

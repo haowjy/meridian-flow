@@ -60,6 +60,14 @@ export const documentForks = pgTable(
       .references(() => documents.id, { onDelete: "cascade" }),
     /** Whether the fork differs from Live (`changedBlocks` is not empty), set on every save of its room. */
     pending: boolean("pending").notNull().default(false),
+    /**
+     * When `pending` was last set from a read of the fork: its room's last save, or the retention
+     * job's check. A fork not loaded since keeps an old flag; the job reads it again once this is
+     * 30 days old.
+     */
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Since when the fork has had no change; null while it is pending. Retention deletes it 30 days on. */
+    emptySince: timestamp("empty_since", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [

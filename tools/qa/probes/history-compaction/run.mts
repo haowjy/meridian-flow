@@ -9,7 +9,9 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import {
+  applyBlocks,
   applyOps,
+  discardBlocks,
   encodeEnvelope,
   freshPeerId,
   freshServerPeerId,
@@ -72,14 +74,14 @@ try {
   await raw`insert into context_sources(id,project_id,slug,scope) values (${source},${project},'manuscript','project')`;
   await treeSeeder(db).document(source, "chapter.md", { id: documentId });
   await raw`insert into drafts(id,project_id,created_by) values (${draftId},${project},${user})`;
-  await raw`insert into document_forks(draft_id,document_id) values (${draftId},${documentId})`;
   const live = { kind: "live", documentId } as const;
   const fork = { kind: "fork", draftId, documentId } as const;
-  /** The writer retypes the last paragraph `rounds` times: one block, a long history. */
+  /** The writer retypes the first and the last paragraph `rounds` times: long histories. */
   const type = async (rounds: number, label: string) => {
     for (let i = 0; i < rounds; i++)
       await writerEdit(rooms, documentId, (current) => [
-        ...current.slice(0, -1),
+        schema.nodes.paragraph.create(current[0]?.attrs, schema.text(`Opening ${label} ${i}.`)),
+        ...current.slice(1, -1),
         schema.nodes.paragraph.create(
           current.at(-1)?.attrs,
           schema.text(`${label} draft ${i}, retyped.`),
@@ -87,6 +89,11 @@ try {
       ]);
     await rooms.flush(live);
   };
+  const forkRow = async (draft: string) =>
+    (
+      await raw<{ pending: boolean }[]>`
+        select pending from document_forks where draft_id = ${draft} and document_id = ${documentId}`
+    )[0];
   const rows = (roomKey: string) =>
     raw<{ doc_key: string; bytes: number; snapshot: Uint8Array }[]>`
       select doc_key, octet_length(snapshot) as bytes, snapshot from document_snapshots
@@ -103,14 +110,18 @@ try {
   // A tab that joins now and goes offline: its base will fall below the second cut.
   const staleTab = await rooms.read(live, { peer: freshPeerId() });
   // The fork's own paragraph, written into the fork room as a Draft-mode tab would.
+  // It also rewords the opening, whose Live history then grows: the fork holds ops Live lacks.
   const forkTab = await rooms.read(fork, { peer: freshPeerId() });
   const before = forkTab.shownVersion();
+  const [opening, ...rest] = readDocument(forkTab).map((block) => nodeOf(schema, block));
+  const openingId = String(opening?.attrs.id);
   writeDocument(
     forkTab,
     blocksOf(
       withBlockIds(
         schema.topNodeType.create(null, [
-          ...readDocument(forkTab).map((block) => nodeOf(schema, block)),
+          schema.nodes.paragraph.create(opening?.attrs, schema.text("Opening, drafted.")),
+          ...rest,
           schema.nodes.paragraph.create(null, schema.text("Only in the fork.")),
         ]),
       ),
@@ -119,6 +130,10 @@ try {
   await rooms.write(fork, encodeEnvelope(forkTab.exportSince(before)), "probe:fork-tab");
   forkTab.free();
   await rooms.flush(fork);
+  check(
+    (await forkRow(draftId))?.pending === true,
+    "the fork's first save writes its row, pending",
+  );
 
   // Cut 1: the marks set when the rows were made ripen; history before them goes.
   await type(150, "second");
@@ -144,11 +159,50 @@ try {
   check(sizeAfter < sizeBefore, "the second cut shrinks the Live rows");
   check((await liveMarkdown(rooms, documentId)) === text, "the text is the same after the cut");
   check((await seq()) === seqBefore, "a cut does not move content_seq");
-  // A row the cut would not shrink keeps its history; the retyped paragraph's is the big one.
-  const [largest] = (await rows(`live:${documentId}`)).sort((a, b) => b.bytes - a.bytes);
-  const doc = LoroDoc.fromSnapshot(largest?.snapshot ?? new Uint8Array());
-  check(doc.isShallow(), "the retyped paragraph's row is a shallow snapshot");
-  doc.free();
+  // A row the cut would not shrink keeps its history; the retyped last paragraph's is cut. The
+  // retyped opening's is held back: the fork holds ops of it that depend on Live's cut history.
+  const liveRows = await rows(`live:${documentId}`);
+  const shallow = (key: string) => {
+    const doc = LoroDoc.fromSnapshot(
+      liveRows.find((row) => row.doc_key === key)?.snapshot ?? new Uint8Array(),
+    );
+    const out = doc.isShallow();
+    doc.free();
+    return out;
+  };
+  const reader = await rooms.read(live);
+  const lastId = readDocument(reader).at(-1)?.id ?? "";
+  reader.free();
+  check(shallow(lastId), "the retyped paragraph's row is a shallow snapshot");
+  check(!shallow(openingId), "a paragraph a fork wrote ahead of Live keeps Live's history");
+  await rooms.unload(live);
+
+  // An old draft change applies after its Live room compacted (design §4, probe q11).
+  const press = await rooms.read(fork);
+  try {
+    const pressLive = press.live;
+    if (!pressLive) throw new Error("a fork copy has a Live copy");
+    const liveBase = pressLive.version();
+    const forkBase = press.version();
+    const result = applyBlocks(press, [openingId], {
+      liveVersion: new Map(),
+      message: "press:probe",
+    });
+    await rooms.commit(db, live, encodeEnvelope(pressLive.exportSince(liveBase)), "press:probe");
+    await rooms.commit(db, fork, encodeEnvelope(press.exportSince(forkBase)), "press:probe");
+    const drafted = readDocument(press).find((block) => block.id === openingId);
+    const landed = (await liveMarkdown(rooms, documentId)).split("\n\n")[0];
+    console.log(`     applied after the cut: ${JSON.stringify(landed)}`);
+    check(
+      result.chosen.length === 1 &&
+        drafted !== undefined &&
+        landed === nodeOf(schema, drafted).textContent,
+      "an old draft change applies after its Live room compacted",
+    );
+  } finally {
+    press.free();
+  }
+  await rooms.flush(fork);
   await rooms.unload(live);
 
   // The fork was cut at Live's marks: it keeps its paragraph and still imports Live.
@@ -232,6 +286,53 @@ try {
     !(await liveMarkdown(rooms, documentId)).includes("The AI adds this."),
     "a removal that read the AI's text stands",
   );
+
+  // Retention (design §2): a fork empty for 30 days goes with its rows; a pending one stays.
+  const emptyDraft = "probe0000002";
+  await raw`insert into drafts(id,project_id,created_by) values (${emptyDraft},${project},${user})`;
+  const emptyFork = { kind: "fork", draftId: emptyDraft, documentId } as const;
+  const writer = await rooms.read(emptyFork, { peer: freshPeerId() });
+  const writerBase = writer.version();
+  writeDocument(
+    writer,
+    blocksOf(
+      withBlockIds(
+        schema.topNodeType.create(null, [
+          ...readDocument(writer).map((block) => nodeOf(schema, block)),
+          schema.nodes.paragraph.create(null, schema.text("Soon discarded.")),
+        ]),
+      ),
+    ),
+  );
+  await rooms.write(emptyFork, encodeEnvelope(writer.exportSince(writerBase)), "probe:tab");
+  writer.free();
+  await rooms.flush(emptyFork);
+  check((await forkRow(emptyDraft))?.pending === true, "a second draft's fork is pending");
+  const discard = await rooms.read(emptyFork);
+  const discardBase = discard.version();
+  discardBlocks(discard, "all", { message: "press:probe-discard" });
+  await rooms.commit(
+    db,
+    emptyFork,
+    encodeEnvelope(discard.exportSince(discardBase)),
+    "press:probe",
+  );
+  discard.free();
+  check((await forkRow(emptyDraft))?.pending === false, "a Discard of every change clears pending");
+  await rooms.unload(live);
+  await raw`update document_forks set checked_at = now() - interval '40 days',
+    empty_since = case when pending then null else now() - interval '40 days' end
+    where document_id = ${documentId}`;
+  const retired = await rooms.retireEmptyForks();
+  const emptyRows = await rows(`fork:${emptyDraft}:${documentId}`);
+  const kept = await raw<{ fresh: boolean }[]>`
+    select checked_at > now() - interval '1 hour' as fresh from document_forks
+    where draft_id = ${draftId} and document_id = ${documentId}`;
+  check(
+    retired === 1 && !(await forkRow(emptyDraft)) && emptyRows.length === 0,
+    "a fork empty for 30 days is deleted with its rows",
+  );
+  check(kept[0]?.fresh === true, "a pending fork read again stays, its flag fresh");
 } finally {
   await rooms.close();
   await db.close();
