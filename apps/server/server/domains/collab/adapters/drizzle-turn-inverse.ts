@@ -12,7 +12,6 @@ import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
 import {
   changedBlocks,
-  type DocVersion,
   editSince,
   encodeChanges,
   type RoomDocs,
@@ -60,7 +59,7 @@ import {
 } from "../domain/turn-inverse-service.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
-import { restorableDrafts } from "./drizzle-restore-before.js";
+import { restoreStates } from "./drizzle-restore-before.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-inverse.js";
@@ -277,8 +276,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
-    restorableDrafts: (query) =>
-      query.turnId ? restorableDrafts(db(), input.rooms, query.turnId) : Promise.resolve([]),
+    restoreStates: (query) =>
+      query.turnId
+        ? restoreStates(db(), input.rooms, query.turnId)
+        : Promise.resolve({ offered: [], restored: [] }),
     treeDraftStates: (query) =>
       query.model || !query.turnId
         ? Promise.resolve({})
@@ -529,8 +530,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (before?.pending && [...pendingBlocks(docs)].some((id) => !before.pending?.has(id)))
         entry.inManuscript = true;
       const written = [...new Set(changes.map((change) => change.key))];
-      const versionOf = (version: ReadonlyMap<string, DocVersion>) =>
-        new Map([...version].filter(([key]) => written.includes(key)));
       const here = taken.filter((part) => loroRoomName(part.room) === name);
       receipts.push({
         // The parts' own origin: the room, and the draft a Live room's text was written for.
@@ -541,11 +540,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ...(before?.blocks
           ? {
               delta: captureDelta(before.blocks, blocksIn(docs)),
-              write: {
-                before: versionOf(before.since),
-                after: versionOf(docs.shownVersion()),
-                edit: editSince(docs, before.since, docs.peer, written),
-              },
+              write: { edit: editSince(docs, before.since, docs.peer, written) },
             }
           : {}),
       });

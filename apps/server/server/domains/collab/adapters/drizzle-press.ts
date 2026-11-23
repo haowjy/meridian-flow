@@ -12,6 +12,8 @@
  * the tree effect changes, the drafts in id order, the lists' keys, the documents' keys in id
  * order, then writes.
  */
+
+import { undoInRooms } from "@meridian/agent-edit/integration";
 import type {
   CommandId,
   DocumentId,
@@ -28,7 +30,7 @@ import type {
   PressResult,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
-import type { DocumentRoom } from "@meridian/contracts/protocol";
+import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   applyCommandTrees,
@@ -55,7 +57,6 @@ import {
   type RoomDocs,
   type RoomVersion,
   readCommitMessage,
-  restoreBefore,
   type StoredEdit,
   undoEdits,
   undoPress,
@@ -85,7 +86,7 @@ import type { TreeCut } from "../domain/press.js";
 import { markFork } from "../rooms/postgres-document-rooms.js";
 import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
-import { type RestorePlan, readRestore, restorePlan } from "./drizzle-restore-before.js";
+import { type RestorePlan, readRooms, restorePlan } from "./drizzle-restore-before.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 import type { UsageEvents } from "./usage-events.js";
 
@@ -275,37 +276,49 @@ export function createDrizzlePress(
 
   /**
    * A Draft chat turn's `Restore before` in one draft (design §2), from its plan
-   * (`drizzle-restore-before.ts`): each room the turn wrote the draft's text in goes back to the
-   * turn's start (`restoreBefore`), a fork carried forward to today's Live first; Live's
-   * manuscript is untouched. All or nothing: when a room no longer holds the history its span
-   * needs, nothing is restored and the answer says so. Each room's restore is one edit, stored in
-   * `press_changes` on the side of the room it was written in (`fork`, or `live` for a document
-   * only the draft holds), so the press's Undo takes it back by the one rule. Returns the
-   * documents it committed to, and whether the history held.
+   * (`drizzle-restore-before.ts`): the turn's writes into the draft's text go back by the one Undo
+   * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
+   * first (`undoInRooms`); Live's manuscript is untouched. A write someone wrote over since, or
+   * whose history the room cut, stays whole. Each room's restore is one
+   * edit, stored in `press_changes` on the side of the room it was written in (`fork`, or `live`
+   * for a document only the draft holds), so the press's Undo takes it back by the same rule.
+   * Returns the documents whose text it changed.
    */
   async function restoreDraft(
     envelope: CommandEnvelope,
     draft: DraftId,
     plan: RestorePlan,
-  ): Promise<{ documents: DocumentId[]; held: boolean }> {
-    const { copies, held } = await readRestore(deps.rooms, plan);
+  ): Promise<DocumentId[]> {
+    const copies = await readRooms(deps.rooms, plan);
     try {
-      if (!held) return { documents: [], held };
+      const rooms = new Map<
+        string,
+        { room: DocumentRoom; forward: DocChange[]; since: RoomVersion }
+      >();
+      for (const { room } of plan.parts) {
+        const name = loroRoomName(room);
+        if (rooms.has(name)) continue;
+        const copy = copies.get(name) as RoomDocs;
+        const forward = copy.live ? copy.forward().restore : [];
+        rooms.set(name, { room, forward, since: copy.shownVersion() });
+      }
+      const undone = undoInRooms(plan.parts, (room) => copies.get(loroRoomName(room)) as RoomDocs, {
+        press: envelope.commandId,
+      });
+      const taken = new Map(undone.rooms.map(({ room, changes }) => [loroRoomName(room), changes]));
       const documents: DocumentId[] = [];
-      for (const [index, { documentId, room, span }] of plan.rooms.entries()) {
-        const copy = copies[index] as RoomDocs;
-        const forward = room.kind === "fork" ? copy.forward().restore : null;
-        const since = copy.shownVersion();
-        const changes = restoreBefore(copy, span, { by: { press: envelope.commandId } });
-        const written = [...(forward ? [forward] : []), ...changes];
+      for (const [name, { room, forward, since }] of rooms) {
+        const copy = copies.get(name) as RoomDocs;
+        const changes = taken.get(name) ?? [];
+        const written = [...forward, ...changes];
+        const documentId = room.documentId as DocumentId;
         if (room.kind === "fork") {
-          if (await commitCopy(room, { live: [], fork: written })) documents.push(documentId);
+          await commitCopy(room, { live: [], fork: written });
           await markFork(tx(), room, copy);
-        } else if (written.length) {
+        } else if (written.length)
           await deps.rooms.commit(tx(), room, encodeChanges(written), ORIGIN);
-          documents.push(documentId);
-        }
         if (!changes.length) continue;
+        documents.push(documentId);
         const edit = editSince(
           copy,
           since,
@@ -335,9 +348,9 @@ export function createDrizzlePress(
               ] satisfies PressedChange[],
             });
       }
-      return { documents, held };
+      return documents;
     } finally {
-      for (const copy of copies) copy.free();
+      for (const copy of copies.values()) copy.free();
     }
   }
 
@@ -395,7 +408,7 @@ export function createDrizzlePress(
                 restore,
                 nodes: restore ? restore.created : await treeNodes(lists, part),
                 texts: restore
-                  ? restore.rooms.map((room) => room.documentId)
+                  ? [...new Set(restore.parts.map((one) => one.documentId))]
                   : await textDocuments(part),
               });
             }
@@ -403,17 +416,10 @@ export function createDrizzlePress(
             const documents = new Set<string>();
             const tree = new Set<string>();
             const trashed: string[] = [];
-            let compacted = false;
             for (const { part, restore, nodes, texts } of plan) {
-              if (restore) {
-                const restored = await restoreDraft(envelope, part.draft, restore);
-                // History cut since the card offered it: nothing is restored, text or tree.
-                if (!restored.held) {
-                  compacted = true;
-                  continue;
-                }
-                for (const documentId of restored.documents) documents.add(documentId);
-              }
+              if (restore)
+                for (const documentId of await restoreDraft(envelope, part.draft, restore))
+                  documents.add(documentId);
               // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
               if (!restore)
@@ -451,10 +457,7 @@ export function createDrizzlePress(
               }
             }
             judge.assertLocked();
-            return {
-              ...answer(documents, tree, trashed),
-              ...(compacted ? { compacted: true } : {}),
-            };
+            return answer(documents, tree, trashed);
           },
         ),
       );

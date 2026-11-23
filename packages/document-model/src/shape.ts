@@ -15,12 +15,49 @@ export type StructureMap = (typeof STRUCTURE_MAPS)[number];
 export const overrideMap = (name: StructureMap) => `d.${name}` as const;
 
 /**
+ * A fork's record of the overrides a press settled (design §2, "A press settles an override by a
+ * record"): `d.settled["<map>/<key>"]` holds the override value the press read, and the override
+ * reads as absent while it still holds that value. A press sets entries and never writes an
+ * override's key, so a tab's write the press did not read stays a pending change; its Undo
+ * deletes them; every writer of an override deletes the key's entry in the same commit.
+ */
+export const SETTLED_MAP = "d.settled";
+export const settledKey = (name: StructureMap, key: string) => `${name}/${key}`;
+/** The override a `d.settled` key names: its map, and its key there. */
+export const settledTarget = (key: string): [StructureMap, string] => {
+  const slash = key.indexOf("/");
+  return [key.slice(0, slash) as StructureMap, key.slice(slash + 1)];
+};
+
+/**
+ * Whether a draft's override holding `raw` is in force, with its `d.settled` entry `entry`: it is
+ * set, and not the value a press settled it at. One not in force reads Live's value.
+ */
+export const inForce = (raw: unknown, entry: unknown) =>
+  raw !== undefined && !sameValue(entry, raw);
+
+/**
+ * What a stored map of the structure doc holds: Live's values of a structure map (`base`), a
+ * draft's overrides of one (`override`, `overrideMap`), or a press's settling of overrides
+ * (`settled`, `SETTLED_MAP`).
+ */
+export type MapKind = { kind: "base" | "override"; map: StructureMap } | { kind: "settled" };
+
+export function mapKind(name: string): MapKind {
+  if (name === SETTLED_MAP) return { kind: "settled" };
+  return name.startsWith("d.")
+    ? { kind: "override", map: name.slice(2) as StructureMap }
+    : { kind: "base", map: name as StructureMap };
+}
+
+/**
  * A `pieces` key: the two blocks one write moved text between (a split, a join), smaller id first,
  * then the write that says so (`stamp`: its peer and that peer's counter in the structure doc). A
  * key per write, so recording a pair again always writes, and a deletion of the keys a copy read
  * never takes a record made since. Only a draft writes it (`d.pieces`). `changedBlocks` reads the
- * records to group changes; `retirePieces` deletes those no pending change needs, inside the write
- * or the press that settled them; a press's Undo puts back what it deleted (design §2).
+ * records to group changes; a press settles those of the changes it settles (`d.settled`, as any
+ * override), and `retirePieces` deletes those no pending change needs, inside a draft's write
+ * (design §2).
  */
 export const pieceKey = (a: BlockId, b: BlockId, stamp: string) =>
   a < b ? `${a}/${b}/${stamp}` : `${b}/${a}/${stamp}`;
@@ -28,15 +65,21 @@ export const pieceEnds = (key: string) => key.split("/", 2) as [BlockId, BlockId
 
 /**
  * What a structure key belongs to: for a comment body (`comments`, `d.comments`) the comment, for
- * an `attrs` key (`id/name`) its block, for a `pieces` record both its blocks; every other map is
- * keyed by block id.
+ * an `attrs` key (`id/name`) its block, for a `pieces` record both its blocks, for a `d.settled`
+ * entry what its override belongs to; every other map is keyed by block id.
  */
-export const membersOf = (name: string, key: string): string[] =>
-  name.endsWith("attrs")
+export const membersOf = (name: string, key: string): string[] => {
+  const kind = mapKind(name);
+  if (kind.kind === "settled") {
+    const [map, target] = settledTarget(key);
+    return membersOf(map, target);
+  }
+  return kind.map === "attrs"
     ? [key.slice(0, key.lastIndexOf("/"))]
-    : name.endsWith("pieces")
+    : kind.map === "pieces"
       ? pieceEnds(key)
       : [key];
+};
 
 /** The text doc's one container. */
 export const TEXT_KEY = "t";

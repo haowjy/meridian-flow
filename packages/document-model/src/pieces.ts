@@ -1,7 +1,7 @@
 import { Groups } from "./groups.js";
 import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
-import { type BlockId, overrideMap, pieceEnds } from "./shape.js";
+import { type BlockId, overrideMap, pieceEnds, SETTLED_MAP, settledKey } from "./shape.js";
 import { blockPending, Side } from "./side.js";
 
 /** The blocks the `pieces` records connect, one group per connected component. */
@@ -17,9 +17,9 @@ export function linkedPieces(keys: Iterable<string>): Groups {
 }
 
 /**
- * The `d.pieces` records of each connected component holding one of `blocks`, each with the block
- * of `blocks` in its component. A press deletes them all: every changed block of such a component
- * is in the change it settles.
+ * The `d.pieces` records of each connected component holding one of `blocks`, settled or not, each
+ * with the block of `blocks` in its component. A press settles those in force: every changed block
+ * of such a component is in the change it settles.
  */
 export function piecesOf(docs: RoomDocs, blocks: Iterable<BlockId>): Map<string, BlockId> {
   const out = new Map<string, BlockId>();
@@ -36,9 +36,14 @@ export function piecesOf(docs: RoomDocs, blocks: Iterable<BlockId>): Map<string,
   return out;
 }
 
-export function deletePieces(docs: RoomDocs, keys: Iterable<string>): void {
+/** Delete records, and a press's settling of each, as every write of an override does. */
+function deletePieces(docs: RoomDocs, keys: readonly string[]): void {
   inMap(docs.structure, overrideMap("pieces"), (map) => {
     for (const key of keys) map.delete(key);
+  });
+  inMap(docs.structure, SETTLED_MAP, (map) => {
+    for (const key of keys)
+      if (map.get(settledKey("pieces", key)) !== undefined) map.delete(settledKey("pieces", key));
   });
 }
 
@@ -47,12 +52,16 @@ export function deletePieces(docs: RoomDocs, keys: Iterable<string>): void {
  * lists as changed (design §2). Run inside the write that may have settled them, so its Undo puts
  * them back with it: such a component recorded a move that is gone, and a later edit of its blocks
  * is its own change. `pending` names blocks the caller already knows are changed, so a component
- * holding one is kept without reading the structure.
+ * holding one is kept without reading the structure. The records the write itself made (`made`)
+ * stay: a press on another copy can make the move pending again before this write reaches it (a
+ * tab joins back a split the server is applying), and only the write's own record ties its halves
+ * then. The next write that finds the component settled retires it.
  */
 export function retirePieces(
   docs: RoomDocs,
   touched: Iterable<BlockId>,
   pending: (id: BlockId) => boolean = () => false,
+  made: ReadonlySet<string> = new Set(),
 ): void {
   const live = docs.live;
   const found = live ? piecesOf(docs, touched) : new Map<string, BlockId>();
@@ -72,7 +81,7 @@ export function retirePieces(
   if (settled.size > 0)
     deletePieces(
       docs,
-      [...found].filter(([, by]) => settled.has(by)).map(([key]) => key),
+      [...found].filter(([key, by]) => settled.has(by) && !made.has(key)).map(([key]) => key),
     );
 }
 

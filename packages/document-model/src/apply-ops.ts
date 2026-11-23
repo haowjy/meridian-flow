@@ -255,7 +255,8 @@ export function applyOps(
 
   for (const op of of("delete")) if (view.shown.has(op.block)) writer.remove(op.block);
   for (const op of of("pieces")) writer.pieces(...op.blocks);
-  if (docs.draft) retirePieces(docs, [...writer.touched, ...changes.keys()]);
+  if (docs.draft)
+    retirePieces(docs, [...writer.touched, ...changes.keys()], undefined, writer.recorded);
 
   const structure = commitStructure(docs, before, options);
   return {

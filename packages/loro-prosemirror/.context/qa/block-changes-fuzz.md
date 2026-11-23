@@ -2,7 +2,7 @@
 
 `block-changes-fuzz.probe.ts` runs seeded scripts against `@meridian/document-model`'s
 block-change model (`changedBlocks`, `applyBlocks`, `discardBlocks`, `undoPress`, `takeBack`,
-`restoreBefore`) and the Undo rule (`take-back.ts`) on the real schema, through the binding's codec, with no stack. Gate 5's fuzz
+`undoEdits` for `Restore before`) and the Undo rule (`take-back.ts`) on the real schema, through the binding's codec, with no stack. Gate 5's fuzz
 moved onto the product: removals are the product's records, restored by its own `importBatch`.
 Run it when any of those functions, `write.ts`'s override rules, `remove`/`restore`, `importBatch`
 `take-back.ts`, or the codec's block mapping change:
@@ -37,7 +37,7 @@ stored as JSON and read back.
 - Writer edits in Draft (text, marks, comments, inline nodes, block inserts, deletes, moves,
   splits, joins, type changes, table rows), Ctrl+Z of the edit just made through `editStays` and
   `takeBack`, AI turns on a copy of
-  the fork, and `Restore before` of a turn (`restoreBefore`).
+  the fork, and `Restore before` of a turn (`undoEdits` over the turn's edits, newest first).
 - A press of random changes (`applyBlocks`), carrying as the Live version the writer was shown the
   Live tab's (half the time) or the Changes list's (the server copy's, just read), with Live typing
   the tab never saw and Draft typing landing after it.
@@ -101,8 +101,7 @@ stored as JSON and read back.
   draft has only that paragraph pending, and no character of either draft's text is lost. When both
   drafts deleted one character, the second press's import deleted it again, and its Undo took that
   delete back, so the first press goes back too (part 4 of the rule).
-- After `Restore before`: the fork's text and overrides are what they were before the turn, with
-  Live's changes since kept.
+- After `Restore before`: each of the turn's edits went back whole or stayed whole.
 - At the end, after `Apply all`: Live, the fork and both tabs converge; nothing is pending; every
   comment mark has its body; no token is duplicated; block ids are unique; no block is pending that
   no write touched, except the accepted copies (below).
@@ -125,11 +124,16 @@ cursor on them) does not reach it: in the reordered runs the cursor resolves to 
 transform already uses. The two runs are concurrent inserts at one gap (Live never sees the draft's
 re-created words), and Loro orders those itself; an insert by index cannot choose a side.
 
-A word a split or a join moved is not counted as a duplicate at the end (`splitMoved`). That
-hides two things that are not grouping and fail with the exemption off (5 of seeds 0 to 399, the
-same on the content test this rule replaced): `Restore before` over a turn's text after the writer
-split the paragraph puts back the words the split moved (seeds 163, 372), and a press Undo in a
-chain after a join (seeds 249, 305, 325).
+Every word counts at the end: a word a split or a join moved is a duplicate like any other, and a
+Live token counts as lost only when the fork shows it nowhere whole, nor in pieces where Live typed
+it (a split, Live's or the draft's, carries it on). At 12,010 seeds (2026-11-23, #1858's fix round)
+11,999 pass. The rest are open classes, not grouping:
+- `duplicate-text`, Live and the draft or a chat each split or joined the same text (class C of
+  [gate/press-whole](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/gate/press-whole/README.md),
+  part 3's rules 1 and 3): 583, 1116, 1187, 1661, 3285, 3792, 10807, 11524, 11619, 11640.
+- `stale-discarded-back` 6611: a stale Draft tab's insert anchored inside text a Discard deleted
+  lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k f22k"); no
+  character comes back. Two inserts at one gap, open in the gate.
 
 Pins implementation decisions: design §2's grouping (ancestor, `pieces` records written and retired by the
 write, comment bodies), the apply record's `seen` from the Live version the writer was shown, the Undo rule per

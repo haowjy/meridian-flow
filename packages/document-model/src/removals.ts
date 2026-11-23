@@ -1,9 +1,10 @@
 import type { Frontiers } from "loro-crdt";
-import { inMap, scoped } from "./handles.js";
+import { inMap, inText, scoped } from "./handles.js";
 import { structureValues } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, overrideMap } from "./shape.js";
 import { isOrderKey, type Removal, removalOf, StructureView } from "./structure.js";
+import { copiesOf } from "./take-back.js";
 import { docCovers, docVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -18,17 +19,34 @@ export const UNTRACKED_ORIGIN = "untracked";
  * Bring removed blocks back (design §1, "Removed blocks"): `order[id]` set to the key its record
  * holds, last-writer-wins like any structure value, in a commit no Undo history records. A block
  * that is not removed, or was removed without a record (an older build's `null`), is left alone.
- * Returns the change to publish.
+ * A block comes back without the copies a split or a join made of its text, wherever later moves
+ * carried them (`copiesOf`): they are deleted, by id, so two copies that both restore it delete
+ * them once. Returns the changes to publish.
  */
-export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange | null {
+export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
-  for (const id of ids) {
+  const removed = [...ids].flatMap((id) => {
     const removal = view.removal(id);
-    if (removal) writer.set("order", id, removal.at);
+    return removal ? [[id, removal.at] as const] : [];
+  });
+  const changes: DocChange[] = [];
+  for (const [key, stretches] of copiesOf(
+    docs,
+    removed.map(([id]) => id),
+  )) {
+    const { doc, before } = docs.writableText(key);
+    inText(doc, (text) => {
+      for (const [from, to] of stretches.reverse()) text.delete(from, to - from);
+    });
+    doc.commit({ origin: UNTRACKED_ORIGIN });
+    changes.push({ key, doc, before, after: doc.frontiers() });
   }
-  return commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
+  for (const [id, at] of removed) writer.set("order", id, at);
+  const change = commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
+  if (change) changes.push(change);
+  return changes;
 }
 
 /**
@@ -36,11 +54,11 @@ export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange | nul
  * import's, `before` taken just ahead of it), restore each whose record did not count an op, by
  * any peer, that this copy holds in a text doc under the block. `RoomDocs.importBatch` and
  * `forward` run it on every import, before anything reads the copy. A draft's fork answers only
- * the removals in its own overrides. Returns the change to publish.
+ * the removals in its own overrides. Returns the changes to publish.
  */
-export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | null {
+export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange[] {
   const removed = removedSince(docs, before);
-  if (removed.length === 0) return null;
+  if (removed.length === 0) return [];
   const under = keysUnder(docs);
   const unread = removed.filter(([id, removal]) =>
     under(id).some((key) => {
@@ -53,47 +71,22 @@ export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | n
         docs,
         unread.map(([id]) => id),
       )
-    : null;
+    : [];
 }
 
 /**
- * Every block id under a block (itself included) by the parents as stored, shown or not: the text
- * docs a removal of it read. A textblock holds no blocks, so a removed paragraph costs no scan;
- * the parents are indexed once, for the first container asked about.
+ * Every block id under a block (itself included) by the parents as read, shown or not: the text
+ * docs a removal of it read. A textblock holds no blocks, so a removed paragraph costs no read of
+ * the structure; it is read once, for the first container asked about.
  */
 function keysUnder(docs: RoomDocs): (id: BlockId) => BlockId[] {
   const values = structureValues(docs);
-  let below: Map<BlockId, BlockId[]> | undefined;
-  const index = () => {
-    const parents: Record<BlockId, unknown> = inMap(docs.structure, "parent", (map) =>
-      map.toJSON(),
-    );
-    if (docs.draft)
-      Object.assign(
-        parents,
-        inMap(docs.structure, overrideMap("parent"), (map) => map.toJSON()),
-      );
-    const out = new Map<BlockId, BlockId[]>();
-    for (const [child, parent] of Object.entries(parents)) {
-      if (typeof parent !== "string") continue;
-      const list = out.get(parent);
-      if (list) list.push(child);
-      else out.set(parent, [child]);
-    }
-    return out;
-  };
+  let view: StructureView | undefined;
   return (id) => {
-    const out: BlockId[] = [];
-    const walk = (at: BlockId) => {
-      if (out.includes(at)) return;
-      out.push(at);
-      const node = values.value("node", at);
-      if (typeof node === "string" && docs.shape.node(node)?.textblock) return;
-      below ??= index();
-      for (const child of below.get(at) ?? []) walk(child);
-    };
-    walk(id);
-    return out;
+    const node = values.value("node", id);
+    if (typeof node === "string" && docs.shape.node(node)?.textblock) return [id];
+    view ??= new StructureView(docs);
+    return view.textKeysUnder(id);
   };
 }
 

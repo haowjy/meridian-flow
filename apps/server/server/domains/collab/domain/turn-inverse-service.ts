@@ -4,6 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import { editHandle } from "@meridian/agent-edit/integration";
 import type {
+  CommandId,
   DocumentId,
   DraftId,
   EditOrigin,
@@ -131,8 +132,13 @@ export interface TurnInverseStore {
    * many are already taken back (`taken`: by an earlier card Undo, or their opposite stands).
    */
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
-  /** The drafts the turn wrote in whose `Restore before` would restore: the card offers it there. */
-  restorableDrafts(query: TurnInverseQuery): Promise<DraftId[]>;
+  /**
+   * For the card's `Restore before`: the drafts where pressing it would change something, and the
+   * restore press in force for each draft the turn wrote in.
+   */
+  restoreStates(
+    query: TurnInverseQuery,
+  ): Promise<{ offered: DraftId[]; restored: { draft: DraftId; press: CommandId }[] }>;
   /** What became of each node's tree change the reply drafted, by node id. */
   treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnDraftState>>;
   /** A document's stored edit parts a chat's inverse reads, in order: its Undo stack is chosen from them. */
@@ -270,8 +276,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
         if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
         const drafts = Object.keys(treeStates).length ? treeStates : undefined;
-        const restorable = await store.restorableDrafts(query);
-        const restore = restorable.length ? { restore: restorable } : {};
+        const { offered, restored } = await store.restoreStates(query);
+        const restore = {
+          ...(offered.length ? { restore: offered } : {}),
+          ...(restored.length ? { restored } : {}),
+        };
         const { plans: undo, undoneByWriter } = await prepare(documents, query, randomUUID());
         if (hasSteps(undo) || tree.acting) return { control: "undo", drafts, ...restore };
         return {

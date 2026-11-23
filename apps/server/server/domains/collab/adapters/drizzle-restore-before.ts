@@ -1,37 +1,36 @@
 /**
  * What a Draft chat turn's `Restore before` takes back in one draft (design §2), read once for
- * the card's offer and the press: every room the turn wrote the draft's text in, back to the
- * turn's start (`turnSpan`), and the nodes the turn created there, which go to Trash. The draft's
- * text is its fork of each document, or the Live room of a document only the draft holds (a
- * part's `origin` names its draft either way, design §5). A document the turn wrote while only
- * the draft held it, and the writer has since applied, is the manuscript's now: it stays.
+ * the card's offer and the press: the turn's writes into the draft's text, newest first, each in
+ * the room it landed in, and the nodes the turn created there, which go to Trash. The draft's text
+ * is its fork of each document, or the Live room of a document only the draft holds (a part's
+ * `origin` names its draft either way, design §5). A document the turn wrote while only the draft
+ * held it, and the writer has since applied, is the manuscript's now: it stays.
  *
- * All or nothing: a draft whose rooms no longer hold the history some span needs (cut at design
- * §4's cutoff) is restored in none of them, so the card offers nothing and a press that comes
- * after the cut restores nothing.
+ * The writes go back by the one Undo rule (`undoInRooms`): each whole, or left whole when someone
+ * wrote over it since or the room cut its history (design §4's cutoff).
  */
-import type { DocumentId, DraftId, TurnId } from "@meridian/contracts";
+import type { RoomPart } from "@meridian/agent-edit/integration";
+import type { CommandId, DocumentId, DraftId, TurnId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
+import { loroRoomName } from "@meridian/contracts/protocol";
 import {
+  commands,
   documentEditParts,
   documentEdits,
   draftTreeNodes,
   treeEditReceipts,
 } from "@meridian/database/schema";
-import {
-  decodeRoomVersion,
-  holdsSpan,
-  type RoomDocs,
-  type TurnSpan,
-  turnSpan,
-} from "@meridian/document-model";
+import { type RoomDocs, type StoredEdit, whyEditStays } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 
+/** One write of the turn into the draft's text, as its Undo takes it back. */
+export type RestorePart = RoomPart & { documentId: DocumentId };
+
 export type RestorePlan = {
-  /** Each room the turn wrote the draft's text in, by document id order. */
-  rooms: { documentId: DocumentId; room: DocumentRoom; span: TurnSpan }[];
+  /** The turn's writes into the draft's text, newest first. */
+  parts: RestorePart[];
   /** The nodes the turn created in the draft that only the draft still holds. */
   created: DocumentId[];
 };
@@ -60,12 +59,11 @@ export async function restorePlan(
       )
   ).map((row) => row.node as DocumentId);
   const gone = new Set<string>(created);
-  const parts = await tx
+  const rows = await tx
     .select({
       documentId: documentEdits.documentId,
       kind: sql<"live" | "fork">`${documentEditParts.origin}->>'kind'`,
-      before: documentEditParts.before,
-      after: documentEditParts.after,
+      edit: documentEditParts.edit,
     })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
@@ -73,71 +71,55 @@ export async function restorePlan(
       and(
         eq(documentEdits.turnId, turn),
         sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
-        isNotNull(documentEditParts.before),
+        isNotNull(documentEditParts.edit),
         sql`(${documentEditParts.origin}->>'kind' = 'fork' OR ${onlyInDraft(draft, documentEdits.documentId)})`,
       ),
     )
-    .orderBy(asc(documentEditParts.id));
-  const writes = new Map<
-    string,
-    { room: DocumentRoom; writes: Parameters<typeof turnSpan>[0][number][] }
-  >();
-  for (const part of parts) {
-    const documentId = part.documentId as DocumentId;
-    if (gone.has(documentId)) continue;
+    .orderBy(desc(documentEditParts.id));
+  const parts = rows.flatMap((row): RestorePart[] => {
+    const documentId = row.documentId as DocumentId;
+    if (gone.has(documentId)) return [];
     const room: DocumentRoom =
-      part.kind === "fork"
+      row.kind === "fork"
         ? { kind: "fork", draftId: draft, documentId }
         : { kind: "live", documentId };
-    const key = `${documentId}:${room.kind}`;
-    const entry = writes.get(key) ?? { room, writes: [] };
-    entry.writes.push({
-      before: decodeRoomVersion(new Uint8Array(part.before as Buffer)),
-      after: decodeRoomVersion(new Uint8Array(part.after as Buffer)),
-    });
-    writes.set(key, entry);
-  }
-  return {
-    rooms: [...writes.values()]
-      .map(({ room, writes }) => ({
-        documentId: room.documentId as DocumentId,
-        room,
-        span: turnSpan(writes),
-      }))
-      .sort((a, b) => a.documentId.localeCompare(b.documentId)),
-    created,
-  };
+    return [{ documentId, room, edit: row.edit as StoredEdit }];
+  });
+  return { parts, created };
 }
 
 /**
- * Each of the plan's rooms read, and whether every one holds its span: the caller restores all
- * of them or none, and frees the copies.
+ * Each room of the plan read once, by room name, forwarded: the caller judges or takes the parts
+ * back on them, and frees them.
  */
-export async function readRestore(
+export async function readRooms(
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
   plan: RestorePlan,
-): Promise<{ copies: RoomDocs[]; held: boolean }> {
-  const copies: RoomDocs[] = [];
-  let held = true;
+): Promise<Map<string, RoomDocs>> {
+  const copies = new Map<string, RoomDocs>();
   try {
-    for (const { room, span } of plan.rooms) {
-      const copy = await rooms.read(room);
-      copies.push(copy);
-      held &&= holdsSpan(copy, span);
+    for (const { room } of plan.parts) {
+      const name = loroRoomName(room);
+      if (!copies.has(name)) copies.set(name, await rooms.read(room));
     }
   } catch (cause) {
-    for (const copy of copies) copy.free();
+    for (const copy of copies.values()) copy.free();
     throw cause;
   }
-  return { copies, held };
+  return copies;
 }
 
-/** The drafts the turn wrote in whose `Restore before` the card offers: each one's plan holds. */
-export async function restorableDrafts(
+/**
+ * What the turn card says of `Restore before` for each draft the turn wrote in: the drafts where
+ * pressing it would change something (a write of the turn there would go back, or a node it made
+ * would go to Trash), and the restore press in force for each draft, the latest that changed
+ * something and has not been undone, so every tab and a reload read the same state.
+ */
+export async function restoreStates(
   tx: DrizzleDb,
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
   turn: TurnId,
-): Promise<DraftId[]> {
+): Promise<{ offered: DraftId[]; restored: { draft: DraftId; press: CommandId }[] }> {
   const drafted = await tx.execute<{ draft: string }>(sql`
     SELECT DISTINCT p.origin->>'draftId' AS draft
       FROM ${documentEditParts} p JOIN ${documentEdits} e ON e.id = p.edit_id
@@ -148,13 +130,58 @@ export async function restorableDrafts(
       WHERE r.turn_id = ${turn} AND r.kind = 'write' AND r.op = 'create' AND r.draft_id IS NOT NULL
         AND EXISTS (SELECT 1 FROM drafts d WHERE d.id = r.draft_id)
     ORDER BY 1`);
-  const out: DraftId[] = [];
+  const offered: DraftId[] = [];
+  const restored: { draft: DraftId; press: CommandId }[] = [];
   for (const { draft } of drafted) {
     const plan = await restorePlan(tx, turn, draft as DraftId);
-    if (!plan.rooms.length && !plan.created.length) continue;
-    const { copies, held } = await readRestore(rooms, plan);
-    for (const copy of copies) copy.free();
-    if (held) out.push(draft as DraftId);
+    if (plan.created.length || (await someGoesBack(rooms, plan))) offered.push(draft as DraftId);
+    const press = await pressInForce(tx, turn, draft as DraftId);
+    if (press) restored.push({ draft: draft as DraftId, press });
   }
-  return out;
+  return { offered, restored };
+}
+
+/** Whether some write of `plan` would go back now (design §2's Undo rule). */
+async function someGoesBack(
+  rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
+  plan: RestorePlan,
+): Promise<boolean> {
+  if (!plan.parts.length) return false;
+  const copies = await readRooms(rooms, plan);
+  try {
+    for (const copy of copies.values()) copy.forward();
+    return plan.parts.some(
+      ({ room, edit }) => !whyEditStays(copies.get(loroRoomName(room)) as RoomDocs, edit),
+    );
+  } finally {
+    for (const copy of copies.values()) copy.free();
+  }
+}
+
+/** The latest Restore before of `turn` in `draft` that changed something and was not undone. */
+async function pressInForce(
+  tx: DrizzleDb,
+  turn: TurnId,
+  draft: DraftId,
+): Promise<CommandId | null> {
+  const [row] = await tx
+    .select({ id: commands.id })
+    .from(commands)
+    .where(
+      and(
+        eq(commands.kind, "press"),
+        sql`${commands.outcome}->>'status' = 'done'`,
+        sql`${commands.outcome}->'result'->>'verdict' = 'restore'`,
+        sql`${commands.outcome}->'result'->'scope'->>'turn' = ${turn}`,
+        sql`${commands.outcome}->'result'->'scope'->>'draft' = ${draft}`,
+        sql`(jsonb_array_length(${commands.outcome}->'result'->'documents') > 0
+          OR jsonb_array_length(${commands.outcome}->'result'->'items') > 0)`,
+        sql`NOT EXISTS (SELECT 1 FROM ${commands} u WHERE u.kind = 'unpress'
+          AND u.outcome->>'status' = 'done'
+          AND u.outcome->'result'->>'pressCommandId' = ${commands.id}::text)`,
+      ),
+    )
+    .orderBy(desc(commands.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }

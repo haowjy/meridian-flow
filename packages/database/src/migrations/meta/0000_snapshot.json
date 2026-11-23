@@ -5808,18 +5808,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "before": {
-          "name": "before",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "after": {
-          "name": "after",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
         "edit": {
           "name": "edit",
           "type": "jsonb",

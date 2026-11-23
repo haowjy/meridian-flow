@@ -10,10 +10,8 @@ must do that the types can't say.
 land or fail together. The record's `delta` is the write's before and after text by block, which
 the card and the edits list show; its `edit` is what turn Undo and the model's `undo` and `revert`
 take back, whole or not at all, by design §2's Undo rule (`undoInRooms`) in the record's `room`, so
-the writer's later edits stay. Its `before` and `after` are each written doc's version as the write
-began and once it landed: a Draft turn's `Restore before` goes back, per doc, to the first `before`
-that names it, and keeps a structure key written after the last `after` that names the structure
-(`turnSpan`). The record is self-describing; the batch is for storage, not to be decoded again.
+the writer's later edits stay; a Draft turn's `Restore before` takes the turn's edits back the same
+way, newest first. The record is self-describing; the batch is for storage, not to be decoded again.
 `readRoom` returns a copy the core frees; it holds none between calls.
 
 `roomFor` is the one place that picks a chat's room: a Draft chat's fork room from its first read,

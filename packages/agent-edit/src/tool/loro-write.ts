@@ -735,23 +735,14 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     // it, the writer's surviving words included. A removal of text the model never read comes
     // back in the room's copy (design §1, "Removed blocks", rule 1): the saved batch carries that
     // restore, and the receipt does not call the block deleted.
-    if (planDoc !== copy && copy.docs.importBatch(decodeEnvelope(batch)).restore)
+    if (planDoc !== copy && copy.docs.importBatch(decodeEnvelope(batch)).restore.length)
       batch = encodeEnvelope(copy.docs.exportSince(since));
     copy.forget();
     const textAfter = blocksOf(copy);
     const written = [...decodeEnvelope(batch).keys()];
-    const before = new Map(
-      written.flatMap((key) => {
-        const at = since.get(key);
-        return at ? [[key, at] as const] : [];
-      }),
-    );
-    const after = new Map([...copy.docs.shownVersion()].filter(([key]) => written.includes(key)));
     await rooms.save(read.room, batch, {
       documentId: docId,
       room: read.room,
-      before,
-      after,
       edit: editSince(copy.docs, since, planDoc.docs.peer, written),
       writeId: identity.durableId,
       wId: identity.ordinal,

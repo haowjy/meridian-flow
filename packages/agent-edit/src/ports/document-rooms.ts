@@ -1,5 +1,5 @@
 import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
-import type { RoomDocs, RoomVersion, StoredEdit } from "@meridian/document-model";
+import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/delta.js";
@@ -43,16 +43,6 @@ export interface AgentWriteRecord {
   documentId: string;
   /** Live, or the chat's draft fork: where the model's undo and revert of this write run. */
   room: DocumentRoom;
-  /**
-   * Each doc the batch writes, at the version the write started from (absent: a doc it created).
-   * A Draft-mode turn's `Restore before` returns the fork to its first write's (design §2).
-   */
-  before: RoomVersion;
-  /**
-   * Each doc the batch writes, at its version once the write landed in the call's copy.
-   * `Restore before` keeps a structure key anyone wrote after its turn's last write's `after`.
-   */
-  after: RoomVersion;
   /**
    * The write as one edit of design §2's Undo rule, noted as it landed in the call's copy: the
    * turn Undo and the model's undo and revert test it with `editStays` and take it back whole

@@ -21,10 +21,11 @@ import type { DocChange } from "./write.js";
 
 /** What an import did to a copy (`RoomDocs.importBatch`). */
 export interface Imported {
+  /** The docs the import changed, the restore's included. */
   changed: DocKey[];
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
-  restore: DocChange | null;
+  restore: DocChange[];
 }
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
@@ -273,6 +274,12 @@ export class RoomDocs {
     return this.texts.get(id) ?? this.live?.textOf(id);
   }
 
+  /** Every block whose text a reader reads (`textOf`): its own and, for a draft, Live's. */
+  textKeys(): Set<BlockId> {
+    this.alive();
+    return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
+  }
+
   /**
    * The doc a write into block `id` goes to: its own, else (in a draft) a fork of Live's taken now,
    * else a new doc. A draft never writes into Live's text docs. `before` is the frontier the write
@@ -418,7 +425,7 @@ export class RoomDocs {
    */
   forward(): Imported {
     const live = this.live;
-    if (!live) return { changed: [], pending: false, restore: null };
+    if (!live) return { changed: [], pending: false, restore: [] };
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
@@ -438,8 +445,11 @@ export class RoomDocs {
     return { changed, pending: false, restore: this.answer(before, changed) };
   }
 
-  private answer(before: Frontiers, changed: readonly DocKey[]): DocChange | null {
-    return changed.includes(STRUCTURE_KEY) ? answerRemovals(this, before) : null;
+  private answer(before: Frontiers, changed: DocKey[]): DocChange[] {
+    if (!changed.includes(STRUCTURE_KEY)) return [];
+    const restore = answerRemovals(this, before);
+    for (const { key } of restore) if (!changed.includes(key)) changed.push(key);
+    return restore;
   }
 
   free(): void {

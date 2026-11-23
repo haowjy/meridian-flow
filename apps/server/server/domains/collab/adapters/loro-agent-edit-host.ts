@@ -77,7 +77,7 @@ async function recordWrite(tx: DrizzleDb, record: AgentWriteRecord): Promise<voi
       {
         origin: originOf(record.room),
         delta: record.delta,
-        write: { before: record.before, after: record.after, edit: record.edit },
+        write: { edit: record.edit },
       },
     ],
   });

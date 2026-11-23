@@ -408,8 +408,8 @@ check(
   listed9,
 );
 
-// 10. `Restore before` the Draft turn returns the fork to the turn's start on today's Live: the
-// applied paragraph stays in Live and the draft reads as Live again.
+// 10. `Restore before` the Draft turn takes its writes in the draft back by the Undo rule: the
+// applied paragraph's write is Live's now and stays, so the draft reads as Live again.
 await host.restoreBefore("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
