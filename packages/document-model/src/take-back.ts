@@ -218,6 +218,10 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   for (const [key, { before, after, ops }] of edit.texts) {
     const doc = docs.textOf(key);
     if (!doc) continue;
+    // A press carried the draft's text into Live: the draft reads it as Live's now, as it does a
+    // value a press settled, so taking it back in the draft would undo the writer's Apply there.
+    const base = docs.draft ? docs.live?.textOf(key) : undefined;
+    if (base && base !== doc && standsIn(base, ops)) return `what it wrote in ${key} was pressed`;
     const then = plainVersion(doc.frontiersToVV(after));
     const deleted = deletedBy(doc, ops);
     if (deleted.size > 0) {
@@ -508,6 +512,28 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
     return true;
   }
   return false;
+}
+
+/** Whether every op of `ops` is in `doc` and stands there (`standingSince`). */
+function standsIn(doc: LoroDoc, ops: OpSpans): boolean {
+  const spans = Object.entries(ops).filter(([, [from, to]]) => to > from);
+  if (spans.length === 0) return false;
+  const version = docVersion(doc);
+  if (spans.some(([peer, [, to]]) => (version.get(peer as PeerID) ?? 0) < to)) return false;
+  const then = new Map(version);
+  for (const [peer, [from]] of spans) then.set(peer as PeerID, from);
+  const standing = standingSince(doc, then as DocVersion);
+  if (!standing) return false;
+  return spans.every(([peer, [from, to]]) => {
+    let at = from;
+    for (const ops of standing
+      .filter((ops) => ops.peer === peer && ops.to > from && ops.from < to)
+      .sort((a, b) => a.from - b.from)) {
+      if (ops.from > at) return false;
+      at = Math.max(at, ops.to);
+    }
+    return at >= to;
+  });
 }
 
 /** Ops `[from, to)` of one peer's change, and what the change's message says it takes back. */

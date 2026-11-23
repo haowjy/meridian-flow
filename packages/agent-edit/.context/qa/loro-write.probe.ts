@@ -408,17 +408,15 @@ check(
   listed9,
 );
 
-// 10. `Restore before` the Draft turn takes its writes in the draft back by the Undo rule, newest
-// first: the draft reads as before the turn. Live is untouched, so the applied paragraph stays
-// there, and the draft's taking back of it waits for review like any change.
-const restored10 = await host.restoreBefore("ch6", "d1", "t9");
+// 10. `Restore before` the Draft turn takes its writes in the draft back by the Undo rule: the
+// applied paragraph's write is Live's now and stays, so the draft reads as Live again.
+await host.restoreBefore("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
-  restored10 === 3 &&
-    (await draftText("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept." &&
+  (await draftText("ch6")).join("|") === texts(await host.live("ch6")).join("|") &&
     texts(await host.live("ch6"))[0] === "The iron gate was shut." &&
-    text(changes10).includes("The {--iron --}gate was shut."),
-  "Restore before takes the turn's writes back in the draft and leaves the applied paragraph in Live",
+    /No changes/.test(text(changes10)),
+  "Restore before reverts the fork and leaves the applied paragraph in Live",
   { draft: await draftText("ch6"), live: texts(await host.live("ch6")), changes: text(changes10) },
 );
 const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());

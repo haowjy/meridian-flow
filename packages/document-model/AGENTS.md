@@ -74,8 +74,9 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   Undo takes an edit back whole, or leaves it whole"): `editStays` tests an `Edit` (`valuesOf`,
   its text spans, `noteEdit` after each write or run and before the next import), and only then
   does the caller take its text back and `putBackValues` write its structure. Don't add a second
-  test beside it. "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's
-  peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
+  test beside it. In a draft, an edit a press took into Live stays (a value a press settled, text
+  whose ops stand in Live): the draft reads Live's, so taking it back there would undo the Apply.
+  "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
   its span's (`TextSpan.ops`): the author's in the editor, every peer's for a press, which imports
   its draft's ops. Every commit message is `commit-message.ts`'s, one JSON note: who wrote it
   (`by`: a turn or a press; none is the writer), and for a commit that puts text back the

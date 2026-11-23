@@ -1955,8 +1955,8 @@ function racedRemovals(): string[] {
   };
 
   // A Draft tab's Ctrl+Z of an edit the writer then applied: the press settled the draft's
-  // values (`d.settled`) and the draft reads Live's, which hold them now. The step stays, so Ctrl+Z
-  // goes on to the step before it, as it did when the press deleted the overrides.
+  // values (`d.settled`) and carried its text into Live, and the draft reads Live's, which hold
+  // them now. The step stays, so Ctrl+Z goes on to the step before it.
   const draftUndoAfterApply = (name: string, edit: (de: Editor) => void): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
@@ -2007,6 +2007,13 @@ function racedRemovals(): string[] {
     ["split", (de) => split(de, "x", 14, "x2")],
     ["move", (de) => move(de, "x", "a")],
     ["retype", (de) => retype(de, "x", "heading", { level: 2 })],
+    [
+      "typing",
+      (de) => {
+        caret(de, "x", 6);
+        type(de, " new");
+      },
+    ],
   ];
   for (const [name, edit] of edits) {
     const applied = draftUndoAfterApply(name, edit);
