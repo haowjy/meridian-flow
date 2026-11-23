@@ -86,7 +86,11 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    /** The Work's draft, minted with it; null only on No Work, which owns nothing. */
+    /**
+     * The Work's draft, minted with it; null only on No Work, which owns nothing. Phase 2b drops it for `drafts.work_id`
+     * and `drafts.is_default`; until then it and `drafts.work_id` reference each other, so it is deferrable
+     * (`sql/baseline.sql`) for the test reset's child-first order.
+     */
     draftId: text("draft_id")
       .$type<DraftId>()
       .unique("works_draft_id")

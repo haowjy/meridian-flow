@@ -1,6 +1,7 @@
 import {
   type DocChange,
   type DocKey,
+  deletedBetween,
   type Edit,
   editStays,
   noteEdit,
@@ -164,9 +165,11 @@ export class UndoHistory {
         continue;
       }
       const span = edit.texts.get(key);
-      if (span) span.after = after;
-      else {
-        edit.texts.set(key, { before, after });
+      if (span) {
+        span.after = after;
+        span.ops = opsBetween(doc, span.before, after, edit.peer);
+      } else {
+        edit.texts.set(key, { before, after, ops: opsBetween(doc, before, after, edit.peer) });
         // The doc's first commit in the step is an item already; the rest of the step merges into
         // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
         this.watched.get(key)?.manager.groupStart();
@@ -249,9 +252,9 @@ export class UndoHistory {
       for (const [key, span] of step.edit.texts) {
         const { manager, doc } = this.watched.get(key) as Watched;
         const before = doc.frontiers();
-        // Loro commits an Undo and a Redo alike under the origin `undo`: the message says which
-        // ops the commit takes back, so text it puts back can be told from typing.
-        const message = takeBackMessage(opsBetween(doc, span.before, span.after, step.edit.peer));
+        // Loro commits an Undo and a Redo alike under the origin `undo`: the message says what
+        // each character the commit puts back stands for, so it can be told from typing.
+        const message = takeBackMessage(deletedBetween(doc, span.before, span.after));
         // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
         const unstamp = doc.subscribePreCommit(({ modifier }) => {
           modifier.setMessage(message).free();
@@ -266,7 +269,11 @@ export class UndoHistory {
           unstamp();
         }
         const after = doc.frontiers();
-        step.edit.texts.set(key, { before, after });
+        step.edit.texts.set(key, {
+          before,
+          after,
+          ops: opsBetween(doc, before, after, step.edit.peer),
+        });
         if (doc.cmpFrontiers(before, after) !== 0) changes.push({ key, doc, before, after });
       }
       this.tag = null;

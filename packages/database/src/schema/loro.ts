@@ -2,9 +2,19 @@
  * Loro document storage (design §4, §2 of `loro-build`): a row per doc of a room, and a row per
  * draft fork of a document.
  */
-import type { DocumentId } from "@meridian/contracts";
-import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import type { CommandId, DocumentId } from "@meridian/contracts";
+import {
+  boolean,
+  index,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt } from "./_shared";
+import { commands } from "./collab";
 import { documents } from "./content";
 import { draftIdColumn } from "./drafts";
 
@@ -48,10 +58,37 @@ export const documentForks = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    /** Whether the fork differs from Live (`changedBlocks` is not empty), set on every save of its room. */
+    pending: boolean("pending").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.draftId, table.documentId] }),
     index("document_forks_document").on(table.documentId),
   ],
+);
+
+/**
+ * What a press of one draft on one document did, for its Undo: `changes` is the document model's
+ * `PressedChange[]` (JSON), each change's members and, per room, its edit with the note taken at
+ * press time, which can't be taken again later. A press of several drafts (a Work's `Apply all`)
+ * presses them one after another in draft id order, so a command can have a row per draft. Its
+ * Undo runs `undoPress` once per draft, in the reverse order; an Undo stores no rows (pressing
+ * again is the Redo).
+ */
+export const pressChanges = pgTable(
+  "press_changes",
+  {
+    commandId: uuid("command_id")
+      .$type<CommandId>()
+      .notNull()
+      .references(() => commands.id, { onDelete: "cascade" }),
+    draftId: draftIdColumn("draft_id").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    changes: jsonb("changes").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.draftId, table.documentId] })],
 );

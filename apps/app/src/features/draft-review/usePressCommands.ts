@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
-import type { DraftItem, DraftItemsResponse, PressResult } from "@meridian/contracts/drafts";
+import type { DraftItem, DraftItemsResponse, TreePressResult } from "@meridian/contracts/drafts";
 import type { TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
@@ -47,7 +47,7 @@ type Verdict = "apply" | "discard";
  * sources they showed in: the sidebar stacks its Undo step goes on.
  */
 type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
-type Pressed = { commandId: string; result: PressResult; placement: Placement };
+type Pressed = { commandId: string; result: TreePressResult; placement: Placement };
 /**
  * `failed`: the press reached the server, which didn't take it. `told`: it was never sent, and
  * `submitCommand` has told the writer already.
@@ -280,7 +280,7 @@ export function usePressCommands({
         if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
         return {
           commandId: record.sendId,
-          result: settled.outcome.result as PressResult,
+          result: settled.outcome.result as TreePressResult,
           placement,
         };
       } finally {

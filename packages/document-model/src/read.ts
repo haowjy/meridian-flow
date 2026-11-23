@@ -338,28 +338,59 @@ export function textUnits(
   rule: NodeRule,
   shape: ShapeSchema,
 ): TextUnit[] {
-  if (!doc) return [];
   const units: TextUnit[] = [];
   let pos = 0;
+  for (const run of storedRuns(doc, rule, shape))
+    for (let i = 0; i < run.insert.length; i++) {
+      const ch = run.insert[i];
+      const atom = ch === SENTINEL && run.style !== null;
+      units.push({
+        ch,
+        stored: run.stored,
+        pos: pos++,
+        hidden: atom && !run.shows,
+        ...(atom && run.shows ? { inline: run.style ?? undefined } : {}),
+      });
+    }
+  return units;
+}
+
+/**
+ * The style keys with a value on any unit of a text doc a reader shows (`textUnits`' rule), read
+ * run by run: what marks a block's text carries, without its units.
+ */
+export function shownStyleKeys(
+  doc: LoroDoc | undefined,
+  rule: NodeRule,
+  shape: ShapeSchema,
+): Set<string> {
+  const out = new Set<string>();
+  for (const run of storedRuns(doc, rule, shape)) {
+    if (run.style !== null && !run.shows && [...run.insert].every((ch) => ch === SENTINEL))
+      continue;
+    for (const [key, value] of Object.entries(run.stored)) if (value != null) out.add(key);
+  }
+  return out;
+}
+
+/** A text doc's runs as stored, each with its inline style and whether its block shows that node. */
+function storedRuns(doc: LoroDoc | undefined, rule: NodeRule, shape: ShapeSchema) {
+  if (!doc) return [];
+  const runs: {
+    insert: string;
+    stored: Readonly<Record<string, unknown>>;
+    style: { node: string; attrs: Attrs } | null;
+    shows: boolean;
+  }[] = [];
   for (const part of inText(doc, (text) => text.toDelta()) as Delta<string>[]) {
     if (part.insert === undefined) continue;
     const stored = part.attributes ?? {};
     const style = inlineStyle(stored[INLINE_STYLE]);
     const shows =
       style !== null && rule.allowsInline(style.node) && shape.node(style.node) !== undefined;
-    for (let i = 0; i < part.insert.length; i++) {
-      const ch = part.insert[i];
-      const atom = ch === SENTINEL && style !== null;
-      units.push({
-        ch,
-        stored,
-        pos: pos++,
-        hidden: atom && !shows,
-        ...(atom && shows ? { inline: style } : {}),
-      });
-    }
+    runs.push({ insert: part.insert, stored, style, shows });
   }
-  return units;
+  return runs;
 }
 
 /** The units a reader shows, in order: index `n` is the reader's offset `n`. */

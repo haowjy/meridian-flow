@@ -30,7 +30,9 @@ export type StoredDocumentCommandResult =
   | ReverseTurnCommandResult
   | CopyCommandResult
   | import("./press.js").PressResult
-  | import("./press.js").PressUndoResult;
+  | import("./press.js").PressUndoResult
+  | import("./press.js").TreePressResult
+  | import("./press.js").TreePressUndoResult;
 
 /** A chat card's Undo or Redo: always `done`; the outcome says what changed and what each target left. */
 export type ReverseTurnCommandResult = {
@@ -87,8 +89,14 @@ export interface DraftItem {
   /** `${draftId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
-  /** The draft's suggested changes in the document's text, counted by the server after each write; 0 when it has none. */
-  textChanges: number;
+  /** The draft's fork of the document's text differs from Live: it has a change to review. */
+  pending: boolean;
+  /**
+   * Live's version of the text docs under the draft's pending removals in the document, as this row was read: an encoded
+   * `RoomVersion`, which an Apply pressed from the row sends as its `PressRequest.liveVersions` entry. Null when the
+   * draft removes no block there.
+   */
+  liveVersion: string | null;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;

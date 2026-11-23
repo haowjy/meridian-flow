@@ -226,6 +226,9 @@ ALTER TABLE ONLY public.turns
 ALTER TABLE ONLY public.tree_nodes
     ALTER CONSTRAINT tree_nodes_parent_in_source DEFERRABLE INITIALLY DEFERRED;
 
+ALTER TABLE ONLY public.works
+    ALTER CONSTRAINT works_draft_id_drafts_id_fk DEFERRABLE;
+
 CREATE FUNCTION public.create_tree_list() RETURNS trigger
     LANGUAGE plpgsql
     AS $$

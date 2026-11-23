@@ -1,6 +1,22 @@
 export { type ApplyOpsOptions, type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
+export {
+  type ApplyOptions,
+  applyBlocks,
+  type BlockChange,
+  type ChangeSelection,
+  changedBlocks,
+  discardBlocks,
+  type PressChanges,
+  type PressedChange,
+  type PressOptions,
+  type PressUndo,
+  restoreBefore,
+  selectChanges,
+  undoPress,
+} from "./changes.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
+export { frontiersOf, type StoredEdit, takeBack, versionOf } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,
@@ -68,19 +84,19 @@ export {
   StructureView,
 } from "./structure.js";
 export {
+  deletedBetween,
   type Edit,
   type EditValues,
   editStays,
   leftOf,
   noteEdit,
+  type OpSpans,
   opsBetween,
   putBackValues,
   type SetValue,
-  type TakenBack,
   type TextOp,
   type TextSpan,
   takeBackMessage,
-  takenBack,
   textSince,
   valuesOf,
 } from "./take-back.js";
@@ -100,6 +116,7 @@ export {
   versionCovers,
   withVector,
 } from "./version.js";
+export { type WordPart, wordDiff } from "./word-diff.js";
 export {
   commitStructure,
   type DocChange,

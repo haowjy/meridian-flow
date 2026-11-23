@@ -1,6 +1,6 @@
 import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
 import type { Envelope } from "./envelope.js";
-import type { PeerId } from "./peer.js";
+import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
 import {
   type BlockId,
@@ -135,6 +135,9 @@ export class RoomDocs {
   private freed = false;
 
   private constructor(shape: ShapeSchema, peer: PeerId, structure: LoroDoc, live: RoomDocs | null) {
+    // A press writes both rooms from one draft copy: two docs of one history written under one
+    // peer would mint the same op ids.
+    if (live?.peer === peer) throw new Error(`a draft copy and its Live copy share peer ${peer}`);
     this.shape = shape;
     this.peer = peer;
     this.structureDoc = this.adopt(structure);
@@ -197,10 +200,11 @@ export class RoomDocs {
   /**
    * A private copy of these docs under `peer`, for a command or a read to change and drop. A
    * draft's copy comes with its own copy of `live` (so it can be forwarded and pressed without
-   * touching the room's); `free()` on the result frees that too.
+   * touching the room's); `free()` on the result frees that too. That Live copy takes its own
+   * fresh peer in `peer`'s range.
    */
   fork(peer: PeerId): RoomDocs {
-    const live = this.live?.fork(peer) ?? null;
+    const live = this.live?.fork(peerBeside(peer)) ?? null;
     const copy = new RoomDocs(this.shape, peer, this.structure.fork(), live);
     copy.ownedLive = live;
     for (const [id, doc] of this.texts) copy.texts.set(id, copy.adopt(doc.fork()));
@@ -245,7 +249,7 @@ export class RoomDocs {
       return copy;
     };
     const structure = view(this.structure, frontiers.get(STRUCTURE_KEY) ?? []);
-    const live = this.live ? new RoomDocs(this.shape, peer, new LoroDoc(), null) : null;
+    const live = this.live ? new RoomDocs(this.shape, peerBeside(peer), new LoroDoc(), null) : null;
     const copy = new RoomDocs(this.shape, peer, structure, live);
     copy.ownedLive = live;
     try {
@@ -458,6 +462,10 @@ export class RoomDocs {
     return configureDoc(doc, this.shape);
   }
 }
+
+/** A fresh peer in `peer`'s range (server or tab), for the Live copy a draft copy owns. */
+const peerBeside = (peer: PeerId): PeerId =>
+  isServerPeer(peer) ? freshServerPeerId() : freshPeerId();
 
 /** Oplog frontiers move exactly when the oplog gains ops; comparing them needs no version handle. */
 function sameFrontiers(a: Frontiers, b: Frontiers): boolean {

@@ -23,6 +23,7 @@ import {
   editStays,
   encodeRoomVersion,
   isOrderKey,
+  opsBetween,
   removalOf,
   RoomDocs,
   STRUCTURE_KEY,
@@ -1085,7 +1086,7 @@ function racedRemovals(): string[] {
         const edit: Edit = {
           peer: r.a.docs.peer,
           values: new Map(),
-          texts: new Map([["a", { before, after }]]),
+          texts: new Map([["a", { before, after, ops: opsBetween(doc(), before, after, r.a.docs.peer) }]]),
           leaving: new Map(),
           arriving: new Set(),
           shown: new Set(),

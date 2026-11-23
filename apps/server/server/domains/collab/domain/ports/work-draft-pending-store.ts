@@ -21,8 +21,6 @@ export type WorkDraftTextChanges = {
   documentId: DocumentId;
   draftId: DraftId;
   updatedAt: Date;
-  /** How many changes the Work's review shows in the document. */
-  textChanges: number;
   /** The chats that wrote them, and whether one is no chat's (the writer's typing). */
   writers: { threadIds: string[]; unattributed: boolean };
 };

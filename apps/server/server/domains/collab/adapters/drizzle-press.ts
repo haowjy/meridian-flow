@@ -9,7 +9,11 @@
  * the tree effect changes, the draft, the lists' keys, the documents' keys in id order, then writes.
  */
 import type { DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
-import type { PressRequest, PressResult, PressUndoResult } from "@meridian/contracts/drafts";
+import type {
+  TreePressRequest,
+  TreePressResult,
+  TreePressUndoResult,
+} from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees, commands } from "@meridian/database/schema";
 import {
@@ -37,14 +41,14 @@ import type { UsageEvents } from "./usage-events.js";
 
 export type PressCommand = {
   envelope: CommandEnvelope;
-  request: Omit<PressRequest, "saw"> & { saw?: TreeCut };
+  request: Omit<TreePressRequest, "saw"> & { saw?: TreeCut };
 };
 
 export type PressUndoCommand = { envelope: CommandEnvelope; pressCommandId: string };
 
 export type PressStore = {
-  press(command: PressCommand): Promise<PressResult>;
-  undo(command: PressUndoCommand): Promise<PressUndoResult>;
+  press(command: PressCommand): Promise<TreePressResult>;
+  undo(command: PressUndoCommand): Promise<TreePressUndoResult>;
 };
 
 export function createDrizzlePress(
@@ -113,28 +117,28 @@ export function createDrizzlePress(
   async function storedPress(
     envelope: CommandEnvelope,
     id: string,
-  ): Promise<{ result: PressResult; pressedAt: Date } | null> {
+  ): Promise<{ result: TreePressResult; pressedAt: Date } | null> {
     const [row] = await currentDrizzleDb(db)
       .select({ outcome: commands.outcome, pressedAt: commands.createdAt })
       .from(commands)
       .where(
         and(
-          eq(commands.id, id as PressResult["commandId"]),
+          eq(commands.id, id as TreePressResult["commandId"]),
           eq(commands.accountId, envelope.accountId),
           eq(commands.projectId, envelope.projectId as ProjectId),
           eq(commands.kind, "press"),
         ),
       );
     return row?.outcome.status === "done" && row.outcome.result
-      ? { result: row.outcome.result as PressResult, pressedAt: row.pressedAt }
+      ? { result: row.outcome.result as TreePressResult, pressedAt: row.pressedAt }
       : null;
   }
 
-  async function press(command: PressCommand): Promise<PressResult> {
+  async function press(command: PressCommand): Promise<TreePressResult> {
     const { envelope, request } = command;
     const { draft } = request;
     const lists = listsOf(envelope);
-    const answer = (items: PressResult["items"], trashed: string[] = []): PressResult => ({
+    const answer = (items: TreePressResult["items"], trashed: string[] = []): TreePressResult => ({
       status: "pressed" as const,
       commandId: envelope.commandId,
       draft,
@@ -147,7 +151,7 @@ export function createDrizzlePress(
       runDocumentCommand(db, envelope, () =>
         deps.workProjection.mutate(
           { drafts: [draft], works: owners.works, lineages: owners.lineages },
-          async (locked): Promise<PressResult> => {
+          async (locked): Promise<TreePressResult> => {
             // A purged draft has no records left.
             const draftId = (await deps.drafts.lock(draft))?.id ?? null;
             const judge = await owners.judge(locked);
@@ -221,13 +225,13 @@ export function createDrizzlePress(
     return withTreeOwners(db, sources, run);
   }
 
-  async function undo(command: PressUndoCommand): Promise<PressUndoResult> {
+  async function undo(command: PressUndoCommand): Promise<TreePressUndoResult> {
     const { envelope, pressCommandId } = command;
-    const pressId = pressCommandId as PressResult["commandId"];
+    const pressId = pressCommandId as TreePressResult["commandId"];
     const tx = () => currentDrizzleDb(db);
     const stored = await storedPress(envelope, pressId);
     const pressed = stored?.result;
-    const answer = (tree: string[]): PressUndoResult => ({
+    const answer = (tree: string[]): TreePressUndoResult => ({
       status: "unpressed",
       commandId: envelope.commandId,
       pressCommandId: pressId,
@@ -250,7 +254,7 @@ export function createDrizzlePress(
             works: owners.works,
             lineages: owners.lineages,
           },
-          async (locked): Promise<PressUndoResult> => {
+          async (locked): Promise<TreePressUndoResult> => {
             const judge = await owners.judge(locked);
             const by = `user:${envelope.accountId}`;
             const tree = new Set<string>();

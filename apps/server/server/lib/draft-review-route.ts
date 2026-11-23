@@ -13,8 +13,8 @@ import type {
   DocumentDraftHintsResponse,
   DraftItem,
   DraftItemsResponse,
-  PressResult,
-  PressUndoResult,
+  TreePressResult,
+  TreePressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { VersionVector } from "loro-crdt";
@@ -215,7 +215,8 @@ export function toWireItem(
     draftId: item.draftId,
     itemKey: item.itemKey,
     documentId: item.documentId,
-    textChanges: item.textChanges,
+    pending: item.pending,
+    liveVersion: null,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,
@@ -263,14 +264,14 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 export async function handlePressRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<PressResult> {
+): Promise<TreePressResult> {
   const { presses } = deps.documentSync;
   const request = parseBody(PressBody, input.request, "press");
   const { stored } = await draftOfProject(deps, { ...input, draft: request.draft });
   if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
   const envelope = pressEnvelope(input, "press", request.commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  const recorded = storedAnswer<PressResult>(first, request.commandId);
+  const recorded = storedAnswer<TreePressResult>(first, request.commandId);
   if (recorded) return recorded;
   return callDraftReview(presses.press({ envelope, request }));
 }
@@ -279,13 +280,13 @@ export async function handlePressRequest(
 export async function handlePressUndoRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<PressUndoResult> {
+): Promise<TreePressUndoResult> {
   const { presses } = deps.documentSync;
   await requireProjectOwned(deps, input);
   const request = parseBody(PressUndoBody, input.request, "Undo");
   const envelope = pressEnvelope(input, "unpress", request.commandId, request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  const recorded = storedAnswer<PressUndoResult>(first, request.commandId);
+  const recorded = storedAnswer<TreePressUndoResult>(first, request.commandId);
   if (recorded) return recorded;
   return callDraftReview(presses.undo({ envelope, pressCommandId: request.pressCommandId }));
 }

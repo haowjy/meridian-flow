@@ -66,7 +66,7 @@ export function useReviewHeader({
 
   // Only a file with suggestions has a review to move to: a move or delete alone has none.
   const next = nextReviewFile(
-    files.filter((file) => file.item.textChanges > 0 || file.documentId === documentId),
+    files.filter((file) => file.item.pending || file.documentId === documentId),
     documentId,
     null,
   );

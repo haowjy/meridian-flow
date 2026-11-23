@@ -41,9 +41,9 @@ export function hasTreeLine(
  * in place has no tree line).
  */
 export function hasApply(
-  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
-  return item.textChanges > 0 || item.isNew || hasTreeLine(item);
+  return item.pending || item.isNew || hasTreeLine(item);
 }
 
 /**
@@ -51,9 +51,9 @@ export function hasApply(
  * the live document with the draft's tree line.
  */
 export function isTreeOnly(
-  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
-  return item.tree?.deleted === true || (item.textChanges === 0 && hasTreeLine(item));
+  return item.tree?.deleted === true || (!item.pending && hasTreeLine(item));
 }
 
 /**
@@ -63,10 +63,10 @@ export function isTreeOnly(
 export function opensAsDocument(
   item: Pick<
     DraftItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges" | "binary"
+    "tree" | "contextLocation" | "documentName" | "isNew" | "pending" | "binary"
   >,
 ): boolean {
-  return item.textChanges > 0 || (item.isNew && !item.binary) || isTreeOnly(item);
+  return item.pending || (item.isNew && !item.binary) || isTreeOnly(item);
 }
 
 /** The tree line as a review row: one change with no text, keyed apart from text. */

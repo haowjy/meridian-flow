@@ -22,7 +22,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAt, idColumn } from "./_shared";
+import { byteaColumn, createdAt, idColumn } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
@@ -86,6 +86,13 @@ export const documentEditParts = pgTable(
      */
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
+    /**
+     * The room's version before the write (`encodeRoomVersion`), and its structure doc's after it
+     * (`encodeDocVersion`): a Draft-mode turn's `Restore before` reads its first part's `before` and
+     * its last part's `after`. Null for a part written before the columns.
+     */
+    before: byteaColumn("before"),
+    after: byteaColumn("after"),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),

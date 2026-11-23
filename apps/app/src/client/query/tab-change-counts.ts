@@ -1,9 +1,9 @@
 /**
  * Each open document's pending changes by Work, as this tab's editor holds them. The server counts
- * the same thing (`textChanges`, by `pendingChanges`) and lists a Work's suggestion row exactly
- * while that count is above 0, but only once it derives the document, a debounce after each
- * write. The tab's own Apply, Discard, Undo and typing are in its editor first, so while the
- * document is open the rows on screen follow the editor: their counts, and whether they are listed.
+ * whether a document has any (`pending`) and lists a Work's suggestion row exactly while it does,
+ * but only once it derives the document, a debounce after each write. The tab's own Apply,
+ * Discard, Undo and typing are in its editor first, so while the document is open whether its row
+ * is listed follows the editor.
  */
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { useSyncExternalStore } from "react";
@@ -58,7 +58,7 @@ export function useTabChangeCounts(): Counts {
 }
 
 /** A row the server lists for its suggestions alone: no tree change or whole item. */
-const suggestionsOnly = (row: DraftItem) => row.textChanges > 0 && !row.wholeItem && !row.tree;
+const suggestionsOnly = (row: DraftItem) => row.pending && !row.wholeItem && !row.tree;
 
 /** `owner`'s rows as this tab's open editors hold their documents. */
 export function withTabChangeCounts(items: DraftItem[], owner: string, tab: Counts): DraftItem[] {
@@ -72,19 +72,14 @@ export function withTabChangeCounts(items: DraftItem[], owner: string, tab: Coun
       return;
     }
     seen.set(seenKey(owner, row.documentId), { row, index });
-    const textChanges = held[owner] ?? 0;
-    if (textChanges === row.textChanges) next.push(row);
-    else {
-      changed = true;
-      if (textChanges > 0) next.push({ ...row, textChanges });
-    }
+    if ((held[owner] ?? 0) > 0) next.push(row);
+    else changed = true;
   });
   for (const [documentId, held] of tab) {
-    const textChanges = held[owner] ?? 0;
     const was = seen.get(seenKey(owner, documentId));
-    if (!was || textChanges === 0 || items.some((row) => row.documentId === documentId)) continue;
+    if (!was || !held[owner] || items.some((row) => row.documentId === documentId)) continue;
     changed = true;
-    next.splice(Math.min(was.index, next.length), 0, { ...was.row, textChanges });
+    next.splice(Math.min(was.index, next.length), 0, was.row);
   }
   return changed ? next : items;
 }
