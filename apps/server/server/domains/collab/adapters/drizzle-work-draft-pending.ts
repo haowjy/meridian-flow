@@ -127,9 +127,10 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         checked_at: Date | string;
         live_version: Uint8Array | null;
         writer_wrote: boolean;
+        changes: number;
         chats: string[] | null;
       }>(sql`
-        SELECT f.document_id::text AS document_id, f.checked_at, f.live_version, f.writer_wrote,
+        SELECT f.document_id::text AS document_id, f.checked_at, f.live_version, f.writer_wrote, f.changes,
           (SELECT array_agg(DISTINCT e.thread_id::text) FROM document_edits e
             JOIN document_edit_parts p ON p.edit_id = e.id
             WHERE e.document_id = f.document_id AND e.thread_id IS NOT NULL
@@ -143,6 +144,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         updatedAt: new Date(row.checked_at),
         liveVersion: row.live_version ? Buffer.from(row.live_version).toString("base64") : null,
         writers: { threadIds: row.chats ?? [], unattributed: row.writer_wrote },
+        changes: row.changes,
       }));
     },
   };

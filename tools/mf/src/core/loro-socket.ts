@@ -129,7 +129,9 @@ export class LoroSocket {
     return acked;
   }
 
+  /** Closes the socket. Its rooms are dropped first: a batch already queued reaches no callback. */
   close() {
+    this.rooms.clear();
     this.ws.close();
   }
 

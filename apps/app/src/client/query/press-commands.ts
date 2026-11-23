@@ -42,13 +42,9 @@ export type PressGate = (documents: readonly DocumentId[] | null) => Promise<voi
 /** One draft's presses and Undos go in the order the writer made them; a Work's press orders after its drafts'. */
 const pressLane = (key: string) => `press:${key}`;
 
-/**
- * The draft a scope presses on; a Work's press names its Work, and a turn's Restore before its turn
- * (the turn's draft is the server's to find).
- */
+/** The draft a scope presses on (a turn's Restore before names its draft); a Work's press names its Work. */
 export function pressLaneKey(scope: PressAction["scope"]): string {
-  if (scope.kind === "turn") return `turn:${scope.turn}`;
-  if (scope.kind === "draft") return scope.draft;
+  if (scope.kind === "turn" || scope.kind === "draft") return scope.draft;
   if (scope.kind === "work") return `work:${scope.work}`;
   return parseDraftItemKey(scope.item)?.draftId ?? scope.item;
 }

@@ -23,6 +23,8 @@ export type WorkDraftTextChanges = {
   liveVersion: string | null;
   /** The chats that wrote them, and whether one is no chat's (the writer's typing). */
   writers: { threadIds: string[]; unattributed: boolean };
+  /** How many changes the fork has, as Review changes groups them (`document_forks.changes`). */
+  changes: number;
 };
 
 export type WorkDraftPendingStore = {

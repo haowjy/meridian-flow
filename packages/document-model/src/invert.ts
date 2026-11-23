@@ -189,6 +189,20 @@ export function takeBack(
   return out;
 }
 
+/** Why an edit an Undo tested stays: someone wrote over it, or the room cut its history. */
+export type EditStayed = { kind: "written_over"; why: string } | { kind: "compacted" };
+
+/** Why `stored` would stay on `docs` now (design §2's Undo rule), or null when it goes back whole. */
+export function whyEditStays(
+  docs: RoomDocs,
+  stored: StoredEdit,
+  view?: StructureView,
+): EditStayed | null {
+  if (!holdsEdit(docs, stored)) return { kind: "compacted" };
+  const why = editStays(docs, loadEdit(docs, stored), view);
+  return why ? { kind: "written_over", why } : null;
+}
+
 /**
  * An Undo of stored edits on `docs`, in the order given (newest first), each judged on what the
  * ones before it left (design §2): an edit someone wrote over since, or whose history `docs` no
@@ -199,21 +213,17 @@ export function undoEdits(
   docs: RoomDocs,
   edits: readonly StoredEdit[],
   message?: string,
-): { changes: DocChange[]; stayed: Map<number, string> } {
+): { changes: DocChange[]; stayed: Map<number, EditStayed> } {
   const changes: DocChange[] = [];
-  const stayed = new Map<number, string>();
+  const stayed = new Map<number, EditStayed>();
   let view = new StructureView(docs);
   edits.forEach((stored, index) => {
-    if (!holdsEdit(docs, stored)) {
-      stayed.set(index, "its history was compacted");
-      return;
-    }
-    const edit = loadEdit(docs, stored);
-    const why = editStays(docs, edit, view);
+    const why = whyEditStays(docs, stored, view);
     if (why) {
       stayed.set(index, why);
       return;
     }
+    const edit = loadEdit(docs, stored);
     const wrote = takeBack(docs, [edit], view, message);
     changes.push(...wrote);
     if (wrote.some((change) => change.key === STRUCTURE_KEY)) view = new StructureView(docs);

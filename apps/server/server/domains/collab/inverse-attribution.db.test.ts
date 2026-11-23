@@ -4,7 +4,7 @@ import { decodeEnvelope, freshPeerId, readDocument } from "@meridian/document-mo
 import { nodeOf } from "@meridian/loro-prosemirror";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
-import { inverseSchema } from "./domain/inverse-text.js";
+import { inverseSchema } from "./domain/edit-excerpt.js";
 import {
   ALPHA_ID,
   closeDatabase,

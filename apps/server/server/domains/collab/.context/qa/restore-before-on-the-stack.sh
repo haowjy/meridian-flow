@@ -64,7 +64,7 @@ send "$chat" "$tmp/a.json"
 check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the turn wrote both paragraphs in the draft"
 check "$(live "$one")" "The bell rang at noon.||The square was empty.|" "A: Live is untouched"
 restore=$(uuid)
-answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH1")\"}")
+answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH1")\",\"draft\":\"$D\"}")
 check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: Restore before names the document"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the draft reads as before the turn"
 check "$(pending "$CH1")" false "A: nothing waits for review"
@@ -80,7 +80,7 @@ send "$chat" "$tmp/b.json"
 road=$(blockOf "$CH2" "The road climbed into the hills.")
 press "$(uuid)" apply "{\"kind\":\"change\",\"item\":\"$D:$CH2\",\"change\":\"$road\"}" >/dev/null
 check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Apply put one change in Live"
-press "$(uuid)" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH2")\"}" >/dev/null
+press "$(uuid)" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH2")\",\"draft\":\"$D\"}" >/dev/null
 check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Restore before leaves the applied text in Live"
 check "$(draft "$two")" "The road climbed into the hills.||The river ran south.|" "B: the draft reads as Live"
 check "$(pending "$CH2")" false "B: nothing waits for review"

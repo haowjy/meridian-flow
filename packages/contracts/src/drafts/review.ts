@@ -95,6 +95,11 @@ export interface DraftItem {
    * `PressRequest.liveVersions` entry. Null when the draft removes no block there.
    */
   liveVersion: string | null;
+  /**
+   * How many text changes Review changes shows for the document (`changedBlocks`' groups), as the fork's room last
+   * saved them: 0 when its text has none. A whole item's and a tree change's own change are not counted here.
+   */
+  changes: number;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;

@@ -7051,6 +7051,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "changes": {
+          "name": "changes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "writer_wrote": {
           "name": "writer_wrote",
           "type": "boolean",

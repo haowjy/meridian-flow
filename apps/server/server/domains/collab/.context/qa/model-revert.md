@@ -52,8 +52,9 @@ types into the block's text as a tab does.
 | One paragraph written twice | Two writes in one turn to one paragraph; `undo` count 2. | `undone: e2, e1`; the text is the seed; a further `undo` is `nothing_to_undo`. |
 | Revert of a revert | Revert Plain, then revert the handle it prints. | N's sentence returns. |
 
-In Draft mode, Apply N and run model Undo. It reports `reverted: e1`, restores
-the old text as a pending change, and leaves live unchanged. A model `redo` call is
+In Draft mode, Apply N and run model Undo. It reports `undone: e1` and that the
+manuscript still has the text, restores the old text in the draft as a pending change, and leaves
+live unchanged. A model `redo` call is
 answered `invalid_arguments`: to redo, the model writes the edit again. With one newer pending edit and one
 applied edit, `undo` with `count: 2` names the newer handle as undone and the
 older as reverted.
@@ -62,7 +63,8 @@ In direct mode, edit a live file and delete it in the same chat. `undo` with
 `count: 2` restores the file and reverses its earlier text edit atomically.
 
 To check routing, make an edit, switch the chat's write mode, and run Undo: the
-manuscript's change is taken back, with `version: live`. Move the chat to another Work; Undo still lands in the
+edit is taken back in the room it was written in (Live for a Direct-mode edit, the draft for a
+Draft-mode one), whichever mode the chat is in now. Move the chat to another Work; Undo still lands in the
 Work that owns the edit. Archive that Work; its rebound chat offers no command
 and Undo returns `nothing_to_undo`.
 

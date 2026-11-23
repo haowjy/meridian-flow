@@ -2,7 +2,7 @@ import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/pr
 import type { RoomDocs, RoomVersion, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
-import type { StoredDelta } from "../content-merge/stands.js";
+import type { StoredDelta } from "../content-merge/delta.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
 import type { DocumentEditRequest, ModelInverseCommand } from "./document-edits.js";
 

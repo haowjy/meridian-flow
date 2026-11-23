@@ -4,9 +4,9 @@ import { randomUUID } from "node:crypto";
 import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import { FileEditRefusedError } from "../../file-policy/index.js";
+import { deltaExcerpt } from "./edit-excerpt.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseStep } from "./inverse-stream.js";
-import { deltaExcerpt } from "./inverse-text.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
@@ -70,7 +70,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const apply = (entry: Entry, selection: StoredInversePart[], kind: "undo" | "revert") => {
       stepEntries.push({ kind, handle: entry.handle });
       steps.push({
-        destination: document.destination,
         actionId: stepAction(kind),
         actionKind: kind,
         at: Math.max(...entry.parts.map((part) => part.id)),
@@ -87,6 +86,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         omissions: planned.omissions.map((omission) =>
           textOmission(entry.handle, direction, omission),
         ),
+        compacted: planned.omissions.filter((omission) => omission.cause === "compacted").length,
       };
     };
     if (command.command === "revert") {
@@ -112,11 +112,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const textPlan = modelTextPlan(entry, "undo");
         if ("status" in textPlan) return textPlan;
         partial.push(...textPlan.omissions);
-        if (!textPlan.selection.length)
-          return {
-            status: "cant_undo_changed",
-            message: `Can't undo ${entry.handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
-          };
+        if (!textPlan.selection.length) return cantUndo(entry.handle, textPlan.compacted);
         apply(entry, textPlan.selection, textPlan.actionKind);
       }
     if (!steps.length)
@@ -144,10 +140,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "nothing_to_revert",
             message: `Nothing was reverted: none of ${first?.handle} remains to revert in ${document.uri}.${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`,
           }
-        : {
-            status: "cant_undo_changed",
-            message: `Can't undo ${first?.handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
-          };
+        : cantUndo(first?.handle ?? "", committed.compacted?.get(document.documentId) ?? 0);
     }
     const performed = (kind: "undo" | "revert") => [
       ...new Set(took.filter((entry) => entry.kind === kind).map((entry) => entry.handle)),
@@ -172,6 +165,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? ` (${parts} of ${planned + partial.length} parts)`
               : ""),
         ...partial.map((reason) => `not undone: ${reason}`),
+        ...(committed.inManuscript
+          ? [
+              "The manuscript still has the text: it was applied before this. The draft now differs from it there, and Review changes shows that as a change.",
+            ]
+          : []),
       ].join("\n"),
     };
   }
@@ -214,9 +212,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
             ? "undone by the user"
             : "undone"
-          : entry.parts.some((part) => policy.changed(part))
+          : entry.parts.some((part) => policy.whyStays(part)?.kind === "written_over")
             ? "changed"
-            : "live";
+            : entry.parts.some((part) => policy.whyStays(part))
+              ? "too old to undo"
+              : "live";
         let command = "none";
         const revertPlan = policy.textPlan(entry, "revert");
         const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
@@ -251,7 +251,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
      * receipt of the same document is ordered against.
      */
     async modelStack(documentId: DocumentId, threadId: string) {
-      const history = await store.readHistory(documentId);
+      const history = await store.readHistory(documentId, threadId);
       const inspection = inspectionActions(history, entries(history, threadId));
       const ordinal = (handle: string) => Number(handle.slice(1));
       return {
@@ -296,6 +296,21 @@ export function createModelInversePolicy(store: TurnInverseStore) {
   };
 }
 
-/** The version an inverse of this document runs in, as the model names it. */
+/**
+ * An undo that took nothing: why, from how many of the edit's parts the room cut the history of
+ * (the rest were written over).
+ */
+const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
+  compacted > 0
+    ? {
+        status: "expired",
+        message: `Can't undo ${handle}: the document no longer keeps history that old, so it stays as it is. Nothing was changed.`,
+      }
+    : {
+        status: "cant_undo_changed",
+        message: `Can't undo ${handle}: someone has written over it since, so it stays as they left it. Nothing was changed.`,
+      };
+
+/** The version the chat writes this document in, as the model names it. */
 const versionOf = (document: InverseDocument) =>
   document.room.kind === "fork" ? ("draft" as const) : ("live" as const);

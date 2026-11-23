@@ -151,6 +151,7 @@ export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs): P
     pending,
     liveVersion: removals.size > 0 ? Buffer.from(encodeRoomVersion(removals)) : null,
     writerWrote: pending && writerWrote(docs, changes),
+    changes: changes.length,
   };
   await tx
     .insert(documentForks)

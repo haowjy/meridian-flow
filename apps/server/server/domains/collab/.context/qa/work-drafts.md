@@ -63,7 +63,7 @@ bash apps/server/server/domains/collab/.context/qa/restore-before-on-the-stack.s
 
 | Check | What it shows |
 |---|---|
-| A: Restore before returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope, and its `unpress` |
+| A: Restore before returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
 | B: after one of the turn's changes was applied, Restore before leaves it in Live and the draft reads as Live | The restore carries the fork forward to today's Live first, and never writes Live |
 | C: the card's Undo of a Live turn whose first paragraph the writer retyped answers `partial`, keeps the writer's text and undoes the other paragraph | The turn Undo on design §2's rule: a write someone wrote over stays whole |
 | D: the model's `undo` of an edit the writer retyped says it was written over, and changes nothing | `cant_undo_changed` with the rule's words |

@@ -3,7 +3,15 @@ import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import { editHandle } from "@meridian/agent-edit/integration";
-import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  DraftId,
+  EditOrigin,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
@@ -16,7 +24,7 @@ import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
-import type { InverseDestination, InverseStep } from "./inverse-stream.js";
+import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -40,6 +48,8 @@ export type StoredInversePart = {
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
+  /** The room the part was written in (`origin`'s): Live, or a draft's fork. Its Undo runs there. */
+  room: DocumentRoom;
   /** The edit's recorded delta (an AI write only): the card's and the model's list's words. */
   delta: StoredDelta | null;
   /** An AI write as an edit of design §2's Undo rule: what an inverse tests and takes back. */
@@ -70,20 +80,26 @@ export type TurnInverseQuery = {
   /** What the caller's earlier attempts found they needed: sources whose owners to lock and judge. */
   learned?: Learned;
 };
+/** A room an inverse's parts were written in, as the capture read it. */
+export type CapturedRoom = {
+  room: DocumentRoom;
+  /** A private copy, freed when the attempt ends. */
+  docs: RoomDocs;
+  /** Why the room's owner (an archived or deleted Work, or its draft) takes no write, else null. */
+  closed: ClosedOwnerWhy | null;
+};
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
-  /** The room the inverse reads and commits into: Live, or the Draft chat's fork. */
+  /** The room the chat writes the document in now: Live, or a Draft chat's fork. */
   room: DocumentRoom;
-  /** The room as the capture read it: a private copy, freed when the attempt ends. */
-  docs: RoomDocs;
+  /** Each room the chat's parts were written in, and `room`, by room name: each part goes back in its own. */
+  rooms: ReadonlyMap<string, CapturedRoom>;
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   /** The card's Undo deletes this created document, leaving its text intact. */
   createdInTurn: boolean;
   history: StoredInversePart[];
-  /** Where every step of this document writes, as the capture found it. */
-  destination: InverseDestination;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
@@ -91,6 +107,8 @@ export type PreparedDocumentInverse = {
   steps: InverseStep[];
   /** The turn's parts someone wrote over since, which the steps leave whole (a card's plan). */
   stayed?: number;
+  /** The turn's parts whose history the room cut, which the steps leave as they are. */
+  compacted?: number;
 };
 export interface TurnInverseStore {
   /**
@@ -113,10 +131,12 @@ export interface TurnInverseStore {
    * many are already taken back (`taken`: by an earlier card Undo, or their opposite stands).
    */
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
+  /** The drafts the turn wrote in whose `Restore before` would restore: the card offers it there. */
+  restorableDrafts(query: TurnInverseQuery): Promise<DraftId[]>;
   /** What became of each node's tree change the reply drafted, by node id. */
   treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnDraftState>>;
-  /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
-  readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
+  /** A document's stored edit parts a chat's inverse reads, in order: its Undo stack is chosen from them. */
+  readHistory(documentId: DocumentId, threadId: string): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
   commit(input: {
     plans: PreparedDocumentInverse[];
@@ -136,6 +156,10 @@ export interface TurnInverseStore {
     reversed: ReadonlyMap<DocumentId, number>;
     /** Text parts a step planned that someone wrote over before the commit, by document. */
     stayed?: ReadonlyMap<DocumentId, number>;
+    /** Text parts a step planned whose history the room cut before the commit, by document. */
+    compacted?: ReadonlyMap<DocumentId, number>;
+    /** A step took text out of a draft that Live still holds (an Apply put it there). */
+    inManuscript?: boolean;
   }>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
@@ -186,6 +210,7 @@ async function prepare(
         .sort((a, b) => b.at - a.at);
       const steps: InverseStep[] = [];
       let stayed = 0;
+      let compacted = 0;
       // Each step is judged on what the steps before it leave, as its commit will find it.
       for (const { at, parts } of originals) {
         const entry = {
@@ -195,19 +220,15 @@ async function prepare(
         };
         const planned = entryPlanner.turnTextPlan(entry, query);
         if (!planned) continue;
-        const taken = entryPlanner.planTakeOut(planned.selection);
-        stayed += planned.selection.length - taken.length;
+        const { taken, stayed: why } = entryPlanner.planTakeOut(planned.selection);
+        for (const reason of why.values())
+          if (reason.kind === "compacted") compacted++;
+          else stayed++;
         if (taken.length)
-          steps.push({
-            parts: taken,
-            destination: planned.destination,
-            actionId,
-            actionKind: planned.actionKind,
-            at,
-          });
+          steps.push({ parts: taken, actionId, actionKind: planned.actionKind, at });
       }
       steps.sort((a, b) => b.at - a.at);
-      return { document, steps, stayed };
+      return { document, steps, stayed, compacted };
     } finally {
       entryPlanner.free();
     }
@@ -244,11 +265,14 @@ export function createTurnInverseService(store: TurnInverseStore) {
         if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
         const drafts = Object.keys(treeStates).length ? treeStates : undefined;
+        const restorable = await store.restorableDrafts(query);
+        const restore = restorable.length ? { restore: restorable } : {};
         const { plans: undo, undoneByWriter } = await prepare(documents, query, randomUUID());
-        if (hasSteps(undo) || tree.acting) return { control: "undo", drafts };
+        if (hasSteps(undo) || tree.acting) return { control: "undo", drafts, ...restore };
         return {
           control: "view_change",
           drafts,
+          ...restore,
           ...(tree.taken || undoneByWriter ? { undone: true as const } : {}),
         };
       });
@@ -280,18 +304,27 @@ export function createTurnInverseService(store: TurnInverseStore) {
                 query,
                 userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
               })
-            : { treeReversed: 0, reversed: new Map<DocumentId, number>(), stayed: undefined };
+            : {
+                treeReversed: 0,
+                reversed: new Map<DocumentId, number>(),
+                stayed: undefined,
+                compacted: undefined,
+              };
         const accepted =
           committed.treeReversed + [...committed.reversed.values()].reduce((n, m) => n + m, 0);
-        // An AI edit someone wrote over since stays whole (design §2), and the answer says so:
-        // planned with no step, or found written over under the locks.
+        // An AI edit someone wrote over since stays whole (design §2), and one whose history the
+        // room cut stays as it is; the answer says which: planned with no step, or found so under
+        // the locks.
         const stayedIn = (plan: PreparedDocumentInverse) =>
           (plan.stayed ?? 0) + (committed.stayed?.get(plan.document.documentId) ?? 0);
+        const compactedIn = (plan: PreparedDocumentInverse) =>
+          (plan.compacted ?? 0) + (committed.compacted?.get(plan.document.documentId) ?? 0);
         const stayed = plans.some((plan) => stayedIn(plan) > 0);
+        const compacted = plans.some((plan) => compactedIn(plan) > 0);
         return {
           // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
           status: accepted
-            ? stayed
+            ? stayed || compacted
               ? "partial"
               : "reversed"
             : undoneByWriter
@@ -303,19 +336,34 @@ export function createTurnInverseService(store: TurnInverseStore) {
           // to reverse (it left, or comes back, with its node) has none.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = committed.reversed.get(plan.document.documentId) ?? 0;
-            const left = stayedIn(plan);
-            if (!reversed && !left) return [];
+            const over = stayedIn(plan);
+            const old = compactedIn(plan);
+            if (!reversed && !over && !old) return [];
+            const text = [
+              ...(over
+                ? [
+                    `${over} of the reply's edits ${over === 1 ? "stays" : "stay"}: someone has written over ${over === 1 ? "it" : "them"} since.`,
+                  ]
+                : []),
+              ...(old
+                ? [
+                    `${old} of the reply's edits ${old === 1 ? "stays" : "stay"}: the document no longer keeps history that old.`,
+                  ]
+                : []),
+            ].join(" ");
             return [
               {
                 documentId: plan.document.documentId,
                 uri: plan.document.uri,
-                destination: { kind: "live" as const },
-                status: left ? (reversed ? "partial" : "cant_undo_changed") : "reversed",
-                ...(left
-                  ? {
-                      text: `${left} of the reply's edits ${left === 1 ? "stays" : "stay"}: someone has written over ${left === 1 ? "it" : "them"} since.`,
-                    }
-                  : {}),
+                status:
+                  over || old
+                    ? reversed
+                      ? "partial"
+                      : over
+                        ? "cant_undo_changed"
+                        : "expired"
+                    : "reversed",
+                ...(text ? { text } : {}),
               },
             ];
           }),

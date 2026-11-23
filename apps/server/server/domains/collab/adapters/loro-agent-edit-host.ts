@@ -8,12 +8,20 @@ import {
   type AgentWriteRecord,
   agentEditRooms,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  DraftId,
+  EditOrigin,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDestination } from "../domain/agent-destination.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
@@ -41,8 +49,17 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
   };
 }
 
-export const originOf = (room: DocumentRoom): EditOrigin =>
-  room.kind === "fork" ? { kind: "fork", draftId: room.draftId } : { kind: "live" };
+/**
+ * The origin of a write into `room` at the call's destination: a Draft chat's write into the Live
+ * room of a document only its draft holds names the draft.
+ */
+const originOf = (room: DocumentRoom): EditOrigin => {
+  if (room.kind === "fork") return { kind: "fork", draftId: room.draftId };
+  const destination = currentDestination();
+  return destination.kind === "draft"
+    ? { kind: "live", draftId: destination.draftId as DraftId }
+    : { kind: "live" };
+};
 
 /** One write's receipt: an edit of kind `write` and its one part, in the room it landed in. */
 async function recordWrite(tx: DrizzleDb, record: AgentWriteRecord): Promise<void> {

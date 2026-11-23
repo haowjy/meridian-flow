@@ -30,12 +30,13 @@ export function textOmission(
   direction: Direction,
   omission: {
     ordinal: number;
-    cause: "already_removed" | "edited_since" | "draft_archived";
+    cause: "already_removed" | "edited_since" | "compacted" | "draft_archived";
   },
 ) {
   const words = {
     already_removed: "already removed",
     edited_since: "written over since, so it stays",
+    compacted: "older than the history the document keeps, so it stays",
     draft_archived: "draft archived",
   } as const;
   const fact = `part ${omission.ordinal + 1}: ${words[omission.cause]}`;

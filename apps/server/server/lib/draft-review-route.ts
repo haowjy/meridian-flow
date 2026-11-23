@@ -13,8 +13,8 @@ import type {
   DocumentDraftHintsResponse,
   DraftItem,
   DraftItemsResponse,
+  PressAction,
   PressResult,
-  PressScope,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -138,7 +138,11 @@ const PressBody = z.union([
   z.strictObject({
     ...pressFields,
     verdict: z.literal("restore"),
-    scope: z.strictObject({ kind: z.literal("turn"), turn: z.string().uuid() }),
+    scope: z.strictObject({
+      kind: z.literal("turn"),
+      turn: z.string().uuid(),
+      draft: z.string().min(1).max(128),
+    }),
   }),
 ]);
 const PressUndoBody = z.strictObject({
@@ -246,6 +250,7 @@ export function toWireItem(
     documentId: item.documentId,
     pending: item.pending,
     liveVersion: item.liveVersion,
+    changes: item.changes,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,
@@ -280,7 +285,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 
 /**
  * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, or a
- * Draft chat turn's `Restore before`, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
+ * Draft chat turn's `Restore before` in one draft, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
  * the drafts, and the press writes only those drafts' changes.
  */
 export async function handlePressRequest(
@@ -289,15 +294,11 @@ export async function handlePressRequest(
 ): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const { commandId, liveVersions, ...request } = parseBody(PressBody, input.request, "press");
-  // A turn's drafts are read from its writes, in this project only (`drizzle-press.ts`).
-  if (request.verdict === "restore") await requireProjectOwned(deps, input);
-  else {
-    const { stored } = await draftOfProject(deps, {
-      ...input,
-      draft: await draftNamed(deps, request.scope as PressScope),
-    });
-    if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
-  }
+  const { stored } = await draftOfProject(deps, {
+    ...input,
+    draft: await draftNamed(deps, request.scope),
+  });
+  if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
   const envelope = pressEnvelope(input, "press", commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
   const recorded = storedAnswer<PressResult>(first, commandId);
@@ -320,7 +321,8 @@ export async function handlePressRequest(
 }
 
 /** A draft the scope names, which says whose project it is: a Work's is its default. */
-async function draftNamed(deps: DraftRouteServices, scope: PressScope): Promise<string> {
+async function draftNamed(deps: DraftRouteServices, scope: PressAction["scope"]): Promise<string> {
+  if (scope.kind === "turn") return scope.draft;
   if (scope.kind === "change" || scope.kind === "document") {
     const item = parseDraftItemKey(scope.item);
     if (!item) throw createError({ statusCode: 400, message: "Invalid item" });

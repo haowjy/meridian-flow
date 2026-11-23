@@ -32,6 +32,13 @@ shows the same card before and after Apply; only its words change.
 A document the reply created in a draft counts at once, and pending draft rows
 name the edited files.
 
+A row's `scope` is where the turn wrote it: `draft` (with the draft) for a Draft chat's write, in
+its fork or in a document only the draft holds, read from the write's own receipt. Its `block` is
+the first block the turn's first write there changed, where the row opens the document (Review
+changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Restore
+before` the card offers, one press each in that draft's lane; a draft whose history was cut below
+the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
+
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
 is not counted as an edit and offers no Undo. Undoing a text copy reverses it like any create (a tree entry

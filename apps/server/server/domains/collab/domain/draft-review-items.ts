@@ -23,6 +23,8 @@ export type DraftReviewItem = {
   pending: boolean;
   /** Live's version under the fork's removals, base64 (`DraftItem.liveVersion`); null when none. */
   liveVersion: string | null;
+  /** The text changes Review changes shows for the document (`DraftItem.changes`). */
+  changes: number;
   /** created: the draft has a `created` row; edited: text changes only. */
   origin: "created" | "edited";
   /** A creation only the Work shows: derived on read, nothing rewrites it. */
@@ -129,6 +131,7 @@ function toItem(
       : null,
     pending: text !== undefined,
     liveVersion: text?.liveVersion ?? null,
+    changes: text?.changes ?? 0,
     documentName: documentTitleFromUri(path),
     path,
     actorThreadIds: [...new Set([...(text?.writers.threadIds ?? []), ...treeActorThreadIds])],

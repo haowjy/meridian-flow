@@ -139,6 +139,7 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
       ? { scope: "draft" as const, draft: document.draft }
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
+    ...(document.block ? { block: document.block } : {}),
   };
 }
 

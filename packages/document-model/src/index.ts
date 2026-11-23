@@ -6,6 +6,7 @@ export {
   type ChangeSelection,
   changedBlocks,
   discardBlocks,
+  holdsSpan,
   type PressChanges,
   type PressedChange,
   type PressOptions,
@@ -13,19 +14,22 @@ export {
   pendingRemovalVersion,
   restoreBefore,
   selectChanges,
+  type TurnSpan,
+  type TurnWrite,
+  turnSpan,
   undoPress,
 } from "./changes.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export {
+  type EditStayed,
   editSince,
   frontiersOf,
-  holdsEdit,
-  loadEdit,
   type StoredEdit,
   takeBack,
   undoEdits,
   versionOf,
+  whyEditStays,
 } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {

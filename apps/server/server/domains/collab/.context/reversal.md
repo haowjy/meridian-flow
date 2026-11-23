@@ -13,16 +13,24 @@ Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `editStays` ju
 `@meridian/document-model` `invert.ts`). Each AI write into the manuscript records its Loro `edit`
 (`document_edit_parts.edit`: the text docs it wrote with the ops between `before` and `after`, and
 the structure values it set, by `editSince`) beside its `delta` (the blocks it changed, as
-markdown, which the card's rows and `read(format: "edits")` excerpts read) and the `room` it wrote
-in (`origin`). A part **stands** while `editStays` keeps nothing of it and the room still holds its
-history (`standsIn` in `domain/model-reversal-planner.ts`); the card's offer and every Undo use
-that one test, so an Undo never takes a part the offer would not.
+markdown, which the card's rows and `read(format: "edits")` excerpts read) and the room it wrote
+in (`origin`: Live, or a draft's fork; a Draft chat's write into a document only its draft holds
+is `live` with the draft's id). A part **stands** while `whyEditStays` finds nothing: no one wrote
+over it and the room still holds its history (`compacted` otherwise, a reason of its own); the
+card's offer and every Undo use that one test, so an Undo never takes a part the offer would not.
 
-A Draft chat's writes land in its draft's fork room (`roomFor` in
-`adapters/loro-agent-edit-host.ts`), and their receipts name it. The card's Undo takes a part out
-of the room its record names with one operation, `takeOut`. It plans (`prepare` in
-`domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps
-before it leave (the planner takes planned steps back on a private copy of the captured room).
+Every part goes back in the room it was written in, whatever room the chat writes in now: a chat
+switched between Draft and Live still undoes and reverts the edits it made before the switch. The
+capture (`capture` in `adapters/drizzle-turn-inverse.ts`) reads each room the chat's parts were
+written in, and the one it writes in now; the planner (`createCapturedReversalPlanner`) and the
+commit both take parts back through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
+them by room and runs `undoEdits` in each. The in-memory host's turn Undo and the model's undo run
+the same function. The card's Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step
+order, newest edit first, each judged on what the steps before it leave (the planner takes planned
+steps back on private copies of the captured rooms). A step's receipt has one part per room, with
+the targeted parts' own `origin`. Only the batches the chat's current room holds (its own, and
+Live's in a fork) join the reply's frontier. History is read in SQL to the chat's own parts and
+every Undo and revert, and a fork part whose draft is gone is left out.
 
 A step records one receipt of kind `undo` that names the parts it took, so the card says
 "Undone". The model's `undo` and `revert` of a part in Live are the same step the card's Undo of
@@ -110,7 +118,8 @@ edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port; its excerpt of each edit is
 read from the part's `delta` (`deltaExcerpt`), and its state from the text as for any write
 (`changed` or `live`), or `undone` when an undo receipt names the part. The listing
-shows only the parts written in the room the chat writes now: Live's, or its draft's fork. Model actions
+shows the chat's parts in every room, each judged in its own (`changed`, or `too old to undo` for a
+part whose room cut its history). Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
@@ -126,7 +135,11 @@ who typed or where:
   again what it deleted is writing over it: the part stays whole, skipped as `edited_since`
   (`cant_undo_changed` when nothing of the edit is left), and the answer says someone has
   written over it.
-- A part whose room was compacted below its write stays ("its history was compacted").
+- A part whose room was compacted below its write stays, and the answer says the document no
+  longer keeps history that old (`expired` when nothing of the edit is left), never that someone
+  wrote over it.
+- A model undo in a draft that takes out text an Apply already put in Live says so: the
+  manuscript still has the text, and the draft now differs from it there.
 - A part an Undo took reads `already_removed`; a card's reversal skips it and the chip reads
   from the actions that took it.
 
@@ -225,13 +238,13 @@ lock; those reads need not agree with each other. Its commit scope is one
 savepoint whose first locks are the Work rows (the bound grants' Works in id order, the grants
 confirmed: a seam boundary), then its documents' mutation locks in id order; the
 inverse takes no lock of its own, since those locks order two inverses
-of one edit. Under them each step plans again on the committed room: it reads the record's room (Live or the
-fork) and re-runs `takeOut`. A write that landed after the capture changes what a step takes, never whether the
+of one edit. Under them each step plans again on the committed room: it reads each captured room again and
+re-runs `undoInRooms`. A write that landed after the capture changes what a step takes, never whether the
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.
 
-The card's chip and its Undo use the `prepare` plan and its `standsIn` check: one load of each
-document's room docs, one document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
+The card's chip and its Undo use the `prepare` plan and its `whyEditStays` check: one load of each
+room the chat wrote the document in, one document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
 the same reads.
 
 A card outcome reports committed destination per document. The reverse endpoint may return

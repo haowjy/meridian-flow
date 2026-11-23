@@ -46,18 +46,14 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
     sql`${frontiers.sourceBlockId}::text = ANY(string_to_array(${blockIds.join(",")}, ','))`;
 
   /**
-   * The rows of one room, or of every room of a document: Live's and a fork of each draft of its
-   * project, named as the room keys are, so the `room_key` index serves the lookup.
+   * The rows of one room, or of every room of a document: Live's, and its fork in any draft,
+   * matched by the document id a room key ends with. The blocks' primary key serves the lookup.
    */
   const inRooms = (rooms: FrontierRooms) =>
     "room" in rooms
       ? eq(frontiers.roomKey, rooms.room)
-      : sql`${frontiers.roomKey} = ANY(ARRAY(
-          SELECT ${loroRoomName({ kind: "live", documentId: rooms.documentId })}
-          UNION ALL
-          SELECT 'fork:' || d.id || ':' || doc.id::text
-          FROM ${schema.drafts} d JOIN ${schema.documents} doc ON doc.project_id = d.project_id
-          WHERE doc.id = ${rooms.documentId}::uuid))`;
+      : sql`(${frontiers.roomKey} = ${loroRoomName({ kind: "live", documentId: rooms.documentId })}
+          OR (${frontiers.roomKey} LIKE 'fork:%' AND split_part(${frontiers.roomKey}, ':', 3) = ${rooms.documentId}))`;
 
   return {
     async resultStored(evidence) {

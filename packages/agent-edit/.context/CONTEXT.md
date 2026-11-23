@@ -96,10 +96,12 @@ this core for every chat: `recordWrite` gets the record and the batch and writes
 commit's transaction (`room`, `before`, `after` and `edit` on the part), and the model's `undo`
 and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
 frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
-document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) commits into the
-record's room by design §2's Undo rule (`undoEdits`): a write someone wrote over since stays whole
-and the answer says so, and a part already taken back is skipped. The in-memory host
-(`test-support`) does the same, and runs the writer's Apply, Discard and `Restore before` as the
+document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each
+part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
+over `undoEdits`): a write someone wrote over since stays whole and the answer says so, one whose
+room cut its history stays and the answer says that, and a part already taken back is skipped. The
+in-memory host (`test-support`) calls the same `undoInRooms`, and `turnSpan`, `holdsSpan` and
+`restoreBefore` for `Restore before`, and runs the writer's Apply, Discard and `Restore before` as the
 server's press does. Probe: [loro-write](qa/loro-write.md).
 
 ## What an Undo reads

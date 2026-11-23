@@ -712,6 +712,7 @@ CREATE TABLE "document_forks" (
 	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"empty_since" timestamp with time zone,
 	"live_version" "bytea",
+	"changes" integer DEFAULT 0 NOT NULL,
 	"writer_wrote" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")
