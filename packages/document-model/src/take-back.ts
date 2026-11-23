@@ -395,8 +395,12 @@ function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
   for (const [peer, counter] of docVersion(doc)) {
     const start = then.get(peer) ?? 0;
     if (peer === self || counter <= start) continue;
-    const [from, to] = own[peer] ?? [0, 0];
-    if (start < from || counter > Math.max(start, to)) return true;
+    const spans = own[peer] ?? [];
+    if (
+      spans.length === 0 ||
+      spans.some(([from, to]) => start < from || counter > Math.max(start, to))
+    )
+      return true;
   }
   return false;
 }
@@ -413,23 +417,26 @@ function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
   for (const ops of standing) {
     if (
       ops.undo &&
-      Object.entries(ops.undo.ops).every(([by, [from]]) => from >= (then.get(by as PeerID) ?? 0))
+      Object.entries(ops.undo.ops).every(([by, spans]) =>
+        spans.every(([from]) => from >= (then.get(by as PeerID) ?? 0)),
+      )
     )
       continue;
     if (ops.peer === self) continue;
-    const [from, to] = own[ops.peer] ?? [0, 0];
-    if (ops.from >= from && ops.to <= to) continue;
+    const spans = own[ops.peer] ?? [];
+    if (spans.some(([from, to]) => ops.from >= from && ops.to <= to)) continue;
     return true;
   }
   return false;
 }
 
 /** Ops `[from, to)` of one peer's change, and what the change's message says it takes back. */
-interface StandingOps {
+export interface StandingOps {
   peer: PeerID;
   from: number;
   to: number;
   undo?: TakeBackNote;
+  note: ReturnType<typeof readCommitMessage>;
 }
 
 /**
@@ -437,7 +444,7 @@ interface StandingOps {
  * says they were taken back). An op a take-back commit since names (`TakeBackNote.ops`) counts as
  * never made, unless a later take-back names that commit in turn (a Redo of the Undo) (design §2).
  */
-function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | null {
+export function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | null {
   const changes: (StandingOps & { lamport: number })[] = [];
   for (const [peer, counter] of docVersion(doc))
     for (let at = then.get(peer) ?? 0; at < counter; ) {
@@ -445,8 +452,15 @@ function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | null {
       if (!change) return null;
       const to = change.counter + change.length;
       const lamport = change.lamport + at - change.counter;
-      const { undo } = readCommitMessage(change.message);
-      changes.push({ peer, from: at, to, lamport, ...(undo ? { undo } : {}) });
+      const note = readCommitMessage(change.message);
+      changes.push({
+        peer,
+        from: at,
+        to,
+        lamport,
+        note,
+        ...(note.undo ? { undo: note.undo } : {}),
+      });
       at = to;
     }
   changes.sort((a, b) => b.lamport - a.lamport || (a.peer < b.peer ? 1 : -1));
@@ -456,7 +470,10 @@ function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | null {
     let stood = false;
     const piece = (start: number, end: number) => {
       if (start >= end) return;
-      out.push({ peer, from: start, to: end, ...(undo ? { undo } : {}) });
+      const note =
+        changes.find((change) => change.peer === peer && change.from <= start && change.to >= end)
+          ?.note ?? {};
+      out.push({ peer, from: start, to: end, note, ...(undo ? { undo } : {}) });
       stood = true;
     };
     let at = from;
@@ -467,10 +484,10 @@ function standingSince(doc: LoroDoc, then: DocVersion): StandingOps[] | null {
     }
     piece(at, to);
     if (!stood || !undo) continue;
-    for (const [by, span] of Object.entries(undo.ops)) {
+    for (const [by, spans] of Object.entries(undo.ops)) {
       const list = cancelled.get(by);
-      if (list) list.push(span);
-      else cancelled.set(by, [span]);
+      if (list) list.push(...spans);
+      else cancelled.set(by, [...spans]);
     }
   }
   return out;
@@ -755,17 +772,18 @@ function forEachDeleted(
   each: (id: { peer: PeerID; counter: number }) => void,
 ): void {
   const cutoff = doc.isShallow() ? plainVersion(doc.shallowSinceVV()) : null;
-  for (const [peer, [start, end]] of Object.entries(spans)) {
-    const from = Math.max(start, cutoff?.get(peer as PeerID) ?? 0);
-    if (end <= from) continue;
-    for (const change of doc.exportJsonInIdSpan({
-      peer: peer as PeerID,
-      counter: from,
-      length: end - from,
-    }))
-      for (const { content } of change.ops)
-        if (content.type === "delete") forDeleteOp(content as DeleteContent, each);
-  }
+  for (const [peer, ranges] of Object.entries(spans))
+    for (const [start, end] of ranges) {
+      const from = Math.max(start, cutoff?.get(peer as PeerID) ?? 0);
+      if (end <= from) continue;
+      for (const change of doc.exportJsonInIdSpan({
+        peer: peer as PeerID,
+        counter: from,
+        length: end - from,
+      }))
+        for (const { content } of change.ops)
+          if (content.type === "delete") forDeleteOp(content as DeleteContent, each);
+    }
 }
 
 type DeleteContent = { start_id: string; len: number };
@@ -776,7 +794,7 @@ function forDeleteOp(
   each: (id: { peer: PeerID; counter: number }) => void,
 ): void {
   const first = parseId(startId);
-  const step = len < 0 ? -1 : 1;
+  const step = 1;
   for (let k = 0; k < Math.abs(len); k++)
     each({ peer: first.peer, counter: first.counter + step * k });
 }
@@ -892,7 +910,11 @@ function readAny(
   ops: OpSpans,
 ): boolean {
   for (const seen of reads) {
-    if (Object.entries(ops).every(([peer, [, to]]) => (seen.get(peer as PeerID) ?? 0) >= to))
+    if (
+      Object.entries(ops).every(([peer, spans]) =>
+        spans.every(([, to]) => (seen.get(peer as PeerID) ?? 0) >= to),
+      )
+    )
       continue;
     for (const id of deleted) {
       const { counter, peer: by } = parseId(id);
@@ -978,7 +1000,7 @@ export function opsBetween(
   const out: OpSpans = {};
   for (const [by, to] of plainVersion(doc.frontiersToVV(after)))
     if ((peer === undefined || by === peer) && to > (from.get(by) ?? 0))
-      out[by] = [from.get(by) ?? 0, to];
+      out[by] = [[from.get(by) ?? 0, to]];
   return out;
 }
 

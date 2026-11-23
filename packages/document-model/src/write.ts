@@ -525,7 +525,7 @@ function ownOps(doc: LoroDoc, before: Frontiers, after: Frontiers): OpSpans {
   const from = plainVersion(doc.frontiersToVV(before));
   const out: OpSpans = {};
   for (const [peer, counter] of plainVersion(doc.frontiersToVV(after)))
-    if (counter > (from.get(peer) ?? 0)) out[peer] = [from.get(peer) ?? 0, counter];
+    if (counter > (from.get(peer) ?? 0)) out[peer] = [[from.get(peer) ?? 0, counter]];
   return out;
 }
 
