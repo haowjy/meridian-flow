@@ -1,7 +1,9 @@
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
-
+import { useMemo } from "react";
 import { listProjectThreads } from "@/client/api/projects-api";
+import { useCommands } from "@/client/commands/driver-context";
+import { projectChatDrafts } from "./draft-commands";
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
@@ -40,6 +42,8 @@ export function projectThreadsQueryOptions(client: QueryClient, projectId: strin
  *
  * Pass `enabled: false` to skip the fetch (e.g. when the caller already has
  * the thread from a local cache).
+ *
+ * A chat pointed at another draft names it at once (`projectChatDrafts`).
  */
 export function useProjectThreads(
   projectId: string,
@@ -58,5 +62,7 @@ export function useProjectThreads(
     }),
   );
 
-  return { threads: data, isError, isFetching, refetch };
+  const records = useCommands();
+  const threads = useMemo(() => (data ? projectChatDrafts(records, data) : data), [records, data]);
+  return { threads, isError, isFetching, refetch };
 }

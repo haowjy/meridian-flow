@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
-import { isWorkArchived } from "@meridian/contracts/works";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { JSONContent } from "@tiptap/core";
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import { chatUploadPort } from "@/client/api/context-upload-api";
@@ -22,6 +22,7 @@ import { useReferenceBrowserCatalog } from "@/features/editor/references/useRefe
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
@@ -112,12 +113,16 @@ export function CreationComposer({
   // The Work's default shows until the writer picks a mode or another Work here, and
   // only a picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
+  // A chat started while one of the Work's drafts is showing writes into that draft.
+  const shell = useShellTreeVersion();
+  const shownDraft = (work: Work) =>
+    shell?.work?.id === work.id && shell.showing === "draft" ? shell.draftId : work.draftId;
   const context =
     agent && work
       ? {
           workId: work.id,
           workAiWriteMode: work.defaultAiWriteMode,
-          workDraftId: work.isNoWork ? null : work.draftId,
+          workDraftId: work.isNoWork ? null : shownDraft(work),
           ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
           agent,
           overrides: choices?.overrides ?? NO_OVERRIDES,

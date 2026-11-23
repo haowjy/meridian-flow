@@ -1,8 +1,9 @@
 /**
- * A Work's drafts as the writer changes them: `+ New draft`, `Delete draft` and its Undo, each a
- * command the driver delivers. The list a surface shows is the server's read with every command
- * this tab has not seen a read include laid over it (`projectWorkDrafts`), so a new draft shows
- * and a deleted one leaves at once, offline too.
+ * A Work's drafts as the writer changes them: `+ New draft`, `Delete draft` and its Undo, and a
+ * chat pointed at another of them, each a command the driver delivers. The lists a surface shows
+ * are the server's reads with every command this tab has not seen a read include laid over them
+ * (`projectWorkDrafts`, `projectChatDrafts`), so a new draft shows, a deleted one leaves and a
+ * chat writes into its new draft at once, offline too.
  */
 import type {
   CommandDriver,
@@ -12,6 +13,7 @@ import type {
 } from "@meridian/command-driver";
 import { type DraftId, newDraftId, type WorkId } from "@meridian/contracts";
 import type { WorkDraft } from "@meridian/contracts/drafts";
+import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
@@ -37,6 +39,49 @@ type DraftCommandBody = {
 };
 
 const lane = (workId: string) => `work-drafts:${workId}`;
+
+const CHAT_DRAFT = "chat_draft";
+
+/** A chat's lineage writes into another draft of its Work (`PUT /api/threads/:id/draft`). */
+type ChatDraftBody = { projectId: string; threadId: string; rootThreadId: string; draftId: string };
+
+/** The project's chats with this tab's unseen chat-draft commands over them, oldest last. */
+export function projectChatDrafts(
+  records: readonly CommandRecord[],
+  threads: ThreadListItem[],
+): ThreadListItem[] {
+  let projected = threads;
+  for (const record of records) {
+    if (record.kind !== CHAT_DRAFT) continue;
+    if (record.state === "never" || (record.state === "done" && record.observed)) continue;
+    const { rootThreadId, draftId } = record.body as ChatDraftBody;
+    projected = projected.map((thread) =>
+      thread.rootThreadId === rootThreadId && thread.draftId !== draftId
+        ? { ...thread, draftId }
+        : thread,
+    );
+  }
+  return projected;
+}
+
+/** Points a chat's lineage at another draft of its Work. */
+export function useSetChatDraft(projectId: string) {
+  const driver = useCommandDriver();
+  return (thread: { id: string; rootThreadId: string }, draftId: string) => {
+    if (!driver) return;
+    const body: ChatDraftBody = {
+      projectId,
+      threadId: thread.id,
+      rootThreadId: thread.rootThreadId,
+      draftId,
+    };
+    void submitCommand(driver, {
+      kind: CHAT_DRAFT,
+      lanes: [`chat-draft:${thread.rootThreadId}`],
+      body,
+    });
+  };
+}
 
 export function workDraftsQueryOptions(projectId: string, workId: string) {
   return {
@@ -91,6 +136,30 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
     onSettled: settled,
   });
   const path = (body: DraftCommandBody, rest = "") => `/api/works/${body.workId}/drafts${rest}`;
+  const chatDraft: CommandKind = {
+    version: 1,
+    migrate: (body) => body as ChatDraftBody,
+    request: (record) => {
+      const body = record.body as ChatDraftBody;
+      return {
+        method: "PUT",
+        path: `/api/threads/${body.threadId}/draft`,
+        body: { draftId: body.draftId },
+      };
+    },
+    onSettled: (record) => {
+      const { projectId } = record.body as ChatDraftBody;
+      void client
+        .refetchQueries({ queryKey: projectQueryKeys.threads(projectId), exact: true })
+        .then(() => bound?.observe((each) => each.id === record.id));
+      void refreshDraftReads(
+        client,
+        projectId,
+        new Set([undefined]),
+        record.settledAt ?? Date.now(),
+      );
+    },
+  };
   const kinds: Record<string, CommandKind> = {
     [KINDS.create]: kind((body) => ({
       method: "POST",
@@ -107,6 +176,7 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
       path: path(body, `/${body.draft.id}/restore`),
       body: {},
     })),
+    [CHAT_DRAFT]: chatDraft,
   };
   return {
     kinds,
