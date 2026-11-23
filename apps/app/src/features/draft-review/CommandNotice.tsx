@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
@@ -191,9 +191,9 @@ export function DraftNoticeLine({
   const onUndo = () => void notice.undo();
   const sentence =
     subject.kind === "drafts"
-      ? t`${subject.count} discarded.`
+      ? plural(subject.count, { one: "# document discarded.", other: "# documents discarded." })
       : subject.kind === "deletes"
-        ? t`${subject.count} items deleted.`
+        ? plural(subject.count, { one: "# item deleted.", other: "# items deleted." })
         : subject.kind === "deleted"
           ? (name: string) => t`${name} deleted.`
           : (name: string) => t`${name} discarded.`;

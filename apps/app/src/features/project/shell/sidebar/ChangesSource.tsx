@@ -2,7 +2,6 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
-import type { LandingFault } from "@meridian/project-tree";
 import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
 import {
   type ReactNode,
@@ -31,9 +30,8 @@ import {
   useDraftNoticeWords,
   useSurfaceNotice,
 } from "@/features/draft-review/CommandNotice";
-import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
-import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
+import { changeSummary, DraftFileRow } from "@/features/draft-review/DraftFileRow";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
@@ -46,18 +44,15 @@ import {
   groupsOf,
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
-import { hasApply, opensAsDocument, treeLineOf } from "@/features/draft-review/tree-line";
+import { hasApply } from "@/features/draft-review/tree-line";
 import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../../context/context-file-icon";
-import { schemeLabel } from "../../context/context-schemes";
-import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
-import { useItemLauncher } from "../../review-launch";
 import {
   reviewCount,
   useDraftTreeChanges,
@@ -616,7 +611,7 @@ function DraftChangesSection({
             }
             const { file } = item;
             return (
-              <ChangeRow
+              <DraftFileRow
                 key={file.documentId}
                 projectId={projectId}
                 draftId={draftId}
@@ -650,150 +645,6 @@ const changeKey = (item: ChangeItem) => item.key;
 const taken = new Map<string, readonly GoneRow<ChangeItem>[]>();
 
 const NOTHING = () => {};
-
-/**
- * One drafted document: its name, and under it what the draft does to it (a move, rename or
- * delete, a new document, its text changes). Its × and ✓ show on hover or focus, always with a
- * finger. A refused or pending command shows in the status line under it.
- */
-function ChangeRow({
-  projectId,
-  draftId,
-  file,
-  depth,
-  fault,
-  active,
-  canApply,
-  controller,
-  touch,
-  notice,
-  onCommand,
-  onPicked,
-}: {
-  projectId: string;
-  draftId: string;
-  file: ReviewFileTarget;
-  /** Right before this row's Discard or Apply: the list holds what it shows. */
-  onCommand: () => void;
-  /** What the owner's notice says on this row (`useDraftNoticeWords`). */
-  notice: ReactNode;
-  /** Under its changed folder's row. */
-  depth: number;
-  /** Why its tree change cannot land, which stays after Apply as the change stays pending. */
-  fault: LandingFault | null;
-  active: boolean;
-  canApply: boolean;
-  controller: WorkDraftCommands;
-  touch: boolean;
-  onPicked?: () => void;
-}) {
-  const { openReviewFile } = useItemLauncher();
-  const [previewing, setPreviewing] = useState(false);
-  const discard = () => {
-    onCommand();
-    void controller.discard(file.documentId, file.item.itemKey);
-  };
-  const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
-  const copyView = draftCopyView(file, draftId);
-  const drag = useReferenceDrag(
-    copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
-  );
-  const reviewable = opensAsDocument(file.item);
-  const imageOpenable = file.item.binary;
-  const opens = Boolean(file.contextLocation) && (reviewable || imageOpenable);
-  const review = () => {
-    if (reviewable) {
-      openReviewFile(file, draftId);
-      onPicked?.();
-    } else if (imageOpenable) setPreviewing(true);
-  };
-  const line = treeLineOf(file.item);
-  const deleted = line?.kind === "delete";
-  const command = controller.owner.state(file.item.itemKey);
-
-  return (
-    <li data-change-row={file.documentId}>
-      <ListRow
-        onOpen={review}
-        depth={depth}
-        current={active}
-        disabled={!opens}
-        controlProps={drag}
-        icon={fileKindIcon(file.contextLocation?.path ?? name)}
-        title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
-        detail={changeSummary(file)}
-        notice={notice}
-        actions={
-          <ReviewActions
-            scope="document"
-            labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
-            density="icon"
-            touch={touch}
-            disabled={command.hidden || controller.dispositionLocked}
-            className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={discard}
-            onApply={
-              canApply
-                ? () => {
-                    onCommand();
-                    void controller.apply(file.documentId, file.item.itemKey);
-                  }
-                : undefined
-            }
-          />
-        }
-        below={
-          <div className="pl-1">
-            {fault ? (
-              <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
-            ) : null}
-            <DraftCommandStatus itemKey={file.item.itemKey} />
-          </div>
-        }
-      />
-      <DraftImagePreview
-        target={previewing ? { projectId, draftId, documentId: file.documentId, name } : null}
-        onClose={() => setPreviewing(false)}
-      />
-    </li>
-  );
-}
-
-/**
- * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
- * The row's name is already the draft's, so a rename says what it was.
- */
-function changeSummary(file: ReviewFileTarget) {
-  const line = treeLineOf(file.item);
-  const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
-  const tree = file.item.isNew
-    ? place
-      ? t`New in ${place}`
-      : t`New`
-    : line?.kind === "delete"
-      ? t`Deleted`
-      : line?.kind === "rename"
-        ? t`Was ${line.name}`
-        : line?.kind === "move"
-          ? t`Moving to ${line.place}`
-          : line?.kind === "reorder"
-            ? t`Changing position`
-            : null;
-  // A row with text changes says so by being listed: no screen counts them.
-  if (!tree) return null;
-  return (
-    <span className="flex min-w-0 flex-wrap gap-x-2">
-      <span className="min-w-0 truncate">{tree}</span>
-    </span>
-  );
-}
-
-/** "Manuscript/Arc 3": the source and folder a document lands in. */
-function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>): string {
-  const folders = location.path.split("/").filter(Boolean).slice(0, -1);
-  const source = location.scheme ? schemeLabel(location.scheme) : null;
-  return [source, ...folders].filter(Boolean).join("/");
-}
 
 /**
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it

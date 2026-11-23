@@ -11,7 +11,7 @@ heading reads what is true now of this reply's change, not what was true when th
 ended: the receipt's `drafts` map (one word per drafted document, text and tree halves
 folded into the less settled one; still a draft means a change waits in an open draft at
 this reply's own text, or the writer typed over it, and another reply's change in the same
-draft does not count) is re-read when this chat's waiting drafts change (`useDraftDock`)
+draft does not count) is re-read when the files this chat's draft changes do (`useDraftDock`)
 and when the writer edits an open document (`useRefreshTurnCardsOnEdit`, debounced; only the
 cards whose lineage names that document), so the Undo goes within a moment of the text it depends on changing. A turn that wrote the
 manuscript reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one

@@ -3,7 +3,7 @@
 import type { Work } from "@meridian/contracts/works";
 import { useMemo } from "react";
 import type { CommandOutcome } from "./draft-command-owner";
-import { type CommandStart, usePressCommands, type WorkDraftCommands } from "./usePressCommands";
+import { type CommandStart, usePressCommands } from "./usePressCommands";
 
 /** A document of a draft, as a press names it. */
 export type DraftItemRef = { documentId: string; itemKey: string };
@@ -13,7 +13,6 @@ export type DraftReviewController = {
   draftId: string;
   /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
-  commandChange: WorkDraftCommands["commandChange"];
   /**
    * Every Apply and Discard control disables on this: there is no owner to press on, or no
    * command driver yet. Clicks during another change's command are accepted and queued.
@@ -41,29 +40,18 @@ export function useDraftReviewController({
 }): DraftReviewController {
   const drafts = useMemo(() => (draftId ? [draftId] : []), [draftId]);
   const commands = usePressCommands({ projectId, work, drafts, threadId, surface: "band" });
-  const { commandChange, dispositionLocked, startItem, startChange, apply, discard } = commands;
+  const { dispositionLocked, startItem, startChange, apply, discard } = commands;
   return useMemo(
     () => ({
       projectId,
       draftId,
       threadId,
-      commandChange,
       dispositionLocked,
       startItem,
       startChange,
       apply,
       discard,
     }),
-    [
-      projectId,
-      draftId,
-      threadId,
-      commandChange,
-      dispositionLocked,
-      startItem,
-      startChange,
-      apply,
-      discard,
-    ],
+    [projectId, draftId, threadId, dispositionLocked, startItem, startChange, apply, discard],
   );
 }

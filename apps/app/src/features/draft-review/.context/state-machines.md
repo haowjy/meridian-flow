@@ -63,8 +63,3 @@ stateDiagram-v2
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
-
-## Loads, not machines
-
-`DraftChangesData` in `draft-changes.ts` (`idle`, `loading`, `ready`, `gone`) is
-[load status](../../../../../../.context/state-machines/load-status.md).

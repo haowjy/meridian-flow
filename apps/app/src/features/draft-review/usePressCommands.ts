@@ -584,7 +584,6 @@ export function usePressCommands({
       threadId,
       owner,
       dispositionLocked: locked,
-      commandChange: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item).outcome,
       startItem: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item),
       startChange,
       apply: (documentId: string, itemKey: string) =>
