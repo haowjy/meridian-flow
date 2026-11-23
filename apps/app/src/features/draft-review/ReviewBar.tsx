@@ -21,18 +21,17 @@ import { ReviewActions } from "./ReviewActions";
 import { ReviewStepper } from "./ReviewStepper";
 import { ReviewTargetPicker } from "./ReviewTargetPicker";
 import {
+  landOnLast,
   setReviewLayout,
   useChosenReviewLayout,
   useReviewFitsSide,
   useReviewMode,
   useReviewRows,
-  useReviewSurface,
 } from "./review-mode";
 
 export function ReviewBar() {
   const mode = useReviewMode();
   const review = useOptionalDraftReview();
-  const surface = useReviewSurface();
   const layout = useChosenReviewLayout();
   const wide = useReviewFitsSide();
   const rows = useReviewRows() ?? [];
@@ -47,18 +46,24 @@ export function ReviewBar() {
   const deleted = files.find((file) => file.documentId === mode.documentId)?.item.tree?.deleted;
   const live = mode.target === "live";
   const changed = live ? files.filter((file) => file.item.pending && file.contextLocation) : [];
+  // Against Live the stepper counts the whole draft: this chapter's rows as read here, every other
+  // chapter's from the list (`changeCount`).
+  const here = changed.findIndex((file) => file.documentId === mode.documentId);
+  const counted = (from: number, to: number) =>
+    changed.slice(from, to).reduce((sum, file) => sum + file.item.changeCount, 0);
+  const before = here < 0 ? 0 : counted(0, here);
+  const total = here < 0 ? rows.length : before + rows.length + counted(here + 1, changed.length);
 
   const step = (direction: 1 | -1) => {
     const next = focused + direction;
     if (next >= 0 && next < rows.length) return mode.focus(rows[next].id);
     // Past this chapter's last change: the draft's next changed chapter, wrapping.
-    const here = changed.findIndex((file) => file.documentId === mode.documentId);
     const file = changed.at((here + direction + changed.length) % changed.length);
     if (!file?.contextLocation || file.documentId === mode.documentId) {
       if (rows.length > 0) mode.focus(rows[direction === 1 ? 0 : rows.length - 1].id);
       return;
     }
-    if (direction === -1) surface?.landOnLast();
+    if (direction === -1) landOnLast(file.documentId);
     openReview({
       draftId: mode.draftId,
       documentId: file.documentId,
@@ -108,9 +113,9 @@ export function ReviewBar() {
       ) : null}
       <span data-review-secondary className="contents">
         <ReviewStepper
-          count={rows.length}
+          count={total}
           crosses={changed.length > 1}
-          focusedIndex={focused}
+          focusedIndex={focused < 0 ? -1 : before + focused}
           disabled={rows.length === 0}
           onStep={step}
           touch={touch}

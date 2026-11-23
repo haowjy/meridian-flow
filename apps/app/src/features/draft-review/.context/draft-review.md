@@ -25,7 +25,11 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
 - **The rows** are the editor's: `ReviewChangesExtension` (`core/editor/extensions/review-changes`)
   reads `changedBlocks` of the fork against Live 150 ms after typing pauses, or after Live's copy
   imports (a press, Live typed in elsewhere), and maps its decorations through the typing in
-  between. It publishes the rows to the host's `ReviewSurface` for the review line and "Review N changes". The layout
+  between. Every group `changedBlocks` lists is a row (`reviewRows`), so the steps agree with the
+  list's `changeCount`: a change that left the text alone says what changed in place of the old
+  text (`Moved`, `Formatting changed` for attributes or marks), and a comment body's change shows
+  the two bodies on the paragraph the comment is on, across both columns Side by side. A row is
+  named by one of its members, which a press takes; a link may name any member (`members`). It publishes the rows to the host's `ReviewSurface` for the review line and "Review N changes". The layout
   (Inline or Side by side) is a device preference, not in the address; Side by side gives every
   row both columns, an empty cell where one side has nothing.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
@@ -56,9 +60,10 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   it only once the draft's list agrees (`ReviewMode.listed`): a fork still syncing reads empty
   before the list does.
 - **The stepper crosses chapters** against Live: past either end it opens the next or previous
-  chapter with changes, ‹ at its last change. It counts this chapter's changes, not the draft's:
-  a total needs the draft's list to carry each document's change count, which the server would
-  count when the fork room saves (`changedBlocks` rows with a text paragraph).
+  chapter with changes, ‹ at its last change (`landOnLast`, held by document until the chapter's
+  address names a change: its review opens in a new host, and reads again before the focus lands).
+  It counts the whole draft: this chapter's rows as read here, every other chapter's
+  `DraftItem.changeCount`.
 - **A plain draft** shows "Review N changes" (`ReviewChangesButton`), counted by the same extension
   in count mode, which paints nothing.
 
@@ -99,8 +104,10 @@ rows (`DraftFileRow`), presses that draft, and counts what the Work's other draf
 
 A chat in Draft mode whose Work has several drafts has a `Writes into` control in its composer
 toolbar (`ChatDraftControl`), which points its lineage at another draft (`chat_draft`, laid over
-the thread list by `projectChatDrafts` until a read has it). A chat started while one of the Work's
-drafts is showing writes into that draft.
+the thread list by `projectChatDrafts` until a read has it). Its panel lists the drafts with the
+version chip's rows (`WorkDraftRows`, `workDraftVersions`), `+ New draft` included, which makes a
+draft and points the chat at it; `chat_draft` goes in the Work's draft lane too, so the server has
+the draft first. A chat started while one of the Work's drafts is showing writes into that draft.
 
 ## Account command lifetime
 
@@ -120,9 +127,11 @@ An Apply's Undo takes a created document out of Live too; if main shows it, main
 draft (`openDraftFile`). After a reload nothing offers a press's Undo.
 
 **A chat card's Undo** is the server's `reverse_turn` command: it takes back its own reply's
-changes.
+changes. A Draft chat's card also offers `Restore before` in each draft the turn wrote, a press
+with scope `turn` ([turn receipts](../../chat/.context/turn-edit-receipts.md)); its rows open
+Review changes at the turn's first changed block.
 
 ## Not covered yet
 
-- A Draft chat's turn cards (edited-chapter link, `Restore before`).
-- The stepper's total for the whole draft (above). Changes to comment bodies are not reviewed.
+- Nothing in the product writes a comment body yet, so a comment-only change reaches Review
+  changes only through another client.

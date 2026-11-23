@@ -1,9 +1,11 @@
 /**
  * Which of its Work's drafts a chat writes into, in the composer's toolbar: offered in Draft mode
  * while the Work has several. Picking one points the chat's lineage there
- * (`PUT /api/threads/:id/draft`); its next writes go into that draft, and its dock lists it.
+ * (`PUT /api/threads/:id/draft`); its next writes go into that draft, and its dock lists it. The
+ * panel lists the drafts as a version chip's menu does (`WorkDraftRows`), `+ New draft` included,
+ * which makes one and points the chat at it.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef } from "react";
@@ -13,11 +15,9 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
-import { Button } from "@/components/ui/button";
-import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
-import { handleListKeys } from "@/components/ui/list-keys";
-import { LabelNote } from "@/components/ui/marks";
-import { workDraftName } from "@/features/draft-review/draft-names";
+import { WorkDraftRows } from "@/features/draft-review/DraftSwitcher";
+import { nextDraftName, workDraftName } from "@/features/draft-review/draft-names";
+import { workDraftVersions } from "@/features/draft-review/work-draft-menu";
 
 export function useChatDraftToolbarControl({
   projectId,
@@ -31,8 +31,9 @@ export function useChatDraftToolbarControl({
   writeMode: AiWriteMode;
 }): ComposerToolbarControl | null {
   const thread = useDisplayedThread(projectId, threadId);
-  const drafts = useWorkDrafts(projectId, work.isNoWork ? null : work.id).drafts;
-  const setChatDraft = useSetChatDraft(projectId);
+  const workDrafts = useWorkDrafts(projectId, work.isNoWork ? null : work.id);
+  const drafts = workDrafts.drafts;
+  const setChatDraft = useSetChatDraft(projectId, work.id);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const current = drafts?.find((draft) => draft.id === thread?.draftId);
@@ -69,39 +70,26 @@ export function useChatDraftToolbarControl({
         fallback: "content",
       },
       render: ({ terminalClose }) => (
-        <div
-          role="radiogroup"
-          aria-label={t`Draft this chat writes into`}
-          className="space-y-[var(--chat-space-inline)]"
-          onKeyDown={handleListKeys}
-        >
-          {drafts.map((draft, index) => {
-            const files = draft.pendingDocumentCount + draft.pendingFolderCount;
-            const selected = draft.id === current.id;
-            return (
-              <Button
-                key={draft.id}
-                data-list-item
-                ref={selected ? selectedRef : index === 0 ? firstRef : undefined}
-                role="radio"
-                aria-checked={selected}
-                variant="ghost"
-                className={dropdownRowVariants({ selected })}
-                onClick={() => {
-                  if (!selected) setChatDraft(thread, draft.id);
-                  terminalClose();
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate text-left">{workDraftName(draft)}</span>
-                {files > 0 ? (
-                  <LabelNote className="shrink-0">
-                    {plural(files, { one: "# file", other: "# files" })}
-                  </LabelNote>
-                ) : null}
-              </Button>
-            );
-          })}
-        </div>
+        <WorkDraftRows
+          as="radio"
+          label={t`Draft this chat writes into`}
+          drafts={workDraftVersions(
+            drafts,
+            (draftId) => draftId === current.id,
+            (draftId) => {
+              if (draftId !== current.id) setChatDraft(thread, draftId);
+              terminalClose();
+            },
+          )}
+          rowRef={(draft, index) =>
+            draft.current ? selectedRef : index === 0 ? firstRef : undefined
+          }
+          onNewDraft={() => {
+            const id = workDrafts.create(nextDraftName(drafts));
+            if (id) setChatDraft(thread, id);
+            terminalClose();
+          }}
+        />
       ),
     },
   };

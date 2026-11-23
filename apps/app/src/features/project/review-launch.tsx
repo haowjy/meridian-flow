@@ -219,10 +219,11 @@ export function useItemLauncher() {
     },
     [openDraft],
   );
+  /** `change`: the change it opens at, named by any of its members (a turn's first changed block). */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, draftId: string) => {
+    (row: ReviewFileTarget, draftId: string, change?: string) => {
       const target = fileTarget(row, draftId);
-      if (target) openReview(target);
+      if (target) openReview(change ? { ...target, focus: { id: change } } : target);
     },
     [openReview],
   );

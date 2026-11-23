@@ -39,6 +39,15 @@ changes at the turn's edit, for a draft). The receipt's `restore` lists the draf
 before` the card offers, one press each in that draft's lane; a draft whose history was cut below
 the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
 
+`Restore before` (`RestoreBeforeSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
+each editor open on the turn's documents in that draft gets its Ctrl+Z step, the sidebar its step,
+and an Undo that someone wrote over keeps those changes marked `Kept`. The card is its notice: once
+it lands the slot offers `Undo restore`, and goes back to `Restore before` when any Undo takes it
+back. An answer that restored nothing says so in the slot (`Too old to restore` when the draft's
+history was cut since the card offered it). With one draft the slot sits in the header beside
+Undo; a turn that wrote in several drafts lists each draft's rows under its name, the slot beside
+it. A draft pressed from the card keeps its slot after a read stops offering it, so its Undo stays.
+
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
 is not counted as an edit and offers no Undo. Undoing a text copy reverses it like any create (a tree entry

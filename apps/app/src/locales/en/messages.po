@@ -402,7 +402,6 @@ msgstr "{files, plural, one {{prepared} of # file ready} other {{prepared} of # 
 msgid "{files, plural, one {{received} of # file} other {{received} of # files}}"
 msgstr "{files, plural, one {{received} of # file} other {{received} of # files}}"
 
-#: src/features/chat/ChatDraftControl.tsx
 #: src/features/draft-review/work-draft-menu.tsx
 #: src/features/import/import-presentation.ts
 msgid "{files, plural, one {# file} other {# files}}"
@@ -1394,6 +1393,10 @@ msgstr "Changes in this chapter"
 msgid "Changes in this chat"
 msgstr "Changes in this chat"
 
+#: src/features/draft-review/ReviewStepper.tsx
+msgid "Changes in this draft"
+msgstr "Changes in this draft"
+
 #: src/features/draft-review/DraftFileRow.tsx
 msgid "Changing position"
 msgstr "Changing position"
@@ -1646,6 +1649,10 @@ msgstr "Column options"
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
 msgstr "Commands"
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Comment:"
+msgstr "Comment:"
 
 #: src/features/chat/ChatView.tsx
 msgid "Compact conversation"
@@ -2116,6 +2123,7 @@ msgstr "Couldn't rename this chat"
 msgid "Couldn’t rename this Work"
 msgstr "Couldn’t rename this Work"
 
+#: src/features/draft-review/usePressCommands.ts
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't restore"
 msgstr "Couldn't restore"
@@ -2626,6 +2634,7 @@ msgid "Downloaded"
 msgstr "Downloaded"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
@@ -2966,6 +2975,10 @@ msgstr "For now the AI can use only tools that read."
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Fork from here"
 msgstr "Fork from here"
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Formatting changed"
+msgstr "Formatting changed"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
@@ -3701,6 +3714,7 @@ msgid "Move…"
 msgstr "Move…"
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Moved"
 msgstr "Moved"
 
@@ -4191,6 +4205,10 @@ msgstr "Nothing opened yet"
 msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Nothing to restore"
+msgstr "Nothing to restore"
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Nothing to review in {name}."
 msgstr "Nothing to review in {name}."
@@ -4537,6 +4555,10 @@ msgstr "Purchase not confirmed"
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Put the draft back as it read before this turn"
+msgstr "Put the draft back as it read before this turn"
+
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
 msgstr "Queued commands"
@@ -4831,6 +4853,10 @@ msgstr "Restore"
 msgid "Restore {0}"
 msgstr "Restore {0}"
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Restore {name} to before this turn"
+msgstr "Restore {name} to before this turn"
+
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "Restore {scopedName}"
 msgstr "Restore {scopedName}"
@@ -4839,9 +4865,17 @@ msgstr "Restore {scopedName}"
 msgid "Restore after {sibling}"
 msgstr "Restore after {sibling}"
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Restore before"
+msgstr "Restore before"
+
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore before {sibling}"
 msgstr "Restore before {sibling}"
+
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Restore the draft to before this turn"
+msgstr "Restore the draft to before this turn"
 
 #: src/features/draft-review/ReviewBar.tsx
 msgid "Restore this chapter"
@@ -4862,6 +4896,10 @@ msgstr "Restored from Trash just now"
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr "Restoring"
+
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Restoring…"
+msgstr "Restoring…"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/DocumentChoices.tsx
@@ -6009,6 +6047,10 @@ msgstr "Too many files"
 msgid "Too many imports"
 msgstr "Too many imports"
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Too old to restore"
+msgstr "Too old to restore"
+
 #: src/features/chat/script-copy.ts
 msgid "took longer than {seconds} seconds"
 msgstr "took longer than {seconds} seconds"
@@ -6149,6 +6191,10 @@ msgstr "Undo remove of {0}"
 msgid "Undo rename of {name}"
 msgstr "Undo rename of {name}"
 
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Undo restore"
+msgstr "Undo restore"
+
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo restore of {name}"
 msgstr "Undo restore of {name}"
@@ -6167,6 +6213,7 @@ msgstr "Undo switch to draft mode"
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/TurnRestoreBefore.tsx
 msgid "Undoing…"
 msgstr "Undoing…"
 

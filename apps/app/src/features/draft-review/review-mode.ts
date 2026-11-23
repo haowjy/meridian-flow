@@ -49,6 +49,27 @@ export function useReviewMode(): ReviewMode | null {
 }
 
 /**
+ * The chapter a step back is opening: its review opens at its last change, not its first. Keyed by
+ * the document, not held by a host's `ReviewSurface`: the chapter opens in a new one. It holds
+ * until the chapter's address names a change, since reads come again before the focus lands.
+ */
+let landingOnLast: string | null = null;
+
+export function landOnLast(documentId: string): void {
+  landingOnLast = documentId;
+}
+
+/** Where a chapter's review opens without a `change`: its first change or its last. */
+export function landingOf(documentId: string): "first" | "last" {
+  return landingOnLast === documentId ? "last" : "first";
+}
+
+/** The chapter's review is at a change: a step back has landed. */
+export function landed(documentId: string): void {
+  if (landingOnLast === documentId) landingOnLast = null;
+}
+
+/**
  * What the host's editor reads of Review changes, for the chrome above it: the rows (the stepper's
  * and "Review N changes"'s count) and whether the pane is wide enough for Side by side. One per
  * host (`useDocumentReview`), so two documents on screen keep their own.
@@ -56,8 +77,6 @@ export function useReviewMode(): ReviewMode | null {
 export class ReviewSurface {
   private rowsNow: readonly ReviewRow[] | null = null;
   private wideNow = false;
-  /** A step back into another chapter: its review opens at its last change, not its first. */
-  private landing: "last" | null = null;
   private readonly listeners = new Set<() => void>();
 
   get rows(): readonly ReviewRow[] | null {
@@ -78,17 +97,6 @@ export class ReviewSurface {
     if (wide === this.wideNow) return;
     this.wideNow = wide;
     this.notify();
-  }
-
-  landOnLast(): void {
-    this.landing = "last";
-  }
-
-  /** Where the next chapter's review opens without a `change`, once: its first change or its last. */
-  takeLanding(): "first" | "last" {
-    const landing = this.landing ?? "first";
-    this.landing = null;
-    return landing;
   }
 
   subscribe = (listener: () => void): (() => void) => {

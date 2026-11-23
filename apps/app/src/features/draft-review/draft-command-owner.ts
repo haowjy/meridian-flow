@@ -25,8 +25,11 @@ export type CommandOutcome =
       /** Takes the press back once, as its notice's Undo does. */
       undo?: () => Promise<unknown>;
     }
-  /** The server answered and the press changed none of these items. */
-  | { kind: "settled"; took?: DiscardTook };
+  /**
+   * The server answered and the press changed none of these items. `compacted`: a Restore
+   * before found the draft's history cut below the turn's start.
+   */
+  | { kind: "settled"; took?: DiscardTook; compacted?: true };
 
 export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();

@@ -47,7 +47,16 @@ export type ReviewChangesConfig = {
   focus: string | null;
   /** Changes pressed and not yet answered: the page shows them gone. */
   hidden: ReadonlySet<string>;
-  labels: { apply: string; discard: string; restore: string; take: string };
+  labels: {
+    apply: string;
+    discard: string;
+    restore: string;
+    take: string;
+    /** What a change that left the text alone did: its place, its attributes, a comment's body. */
+    moved: string;
+    restyled: string;
+    comment: string;
+  };
   press: (verdict: ReviewVerdict, row: ReviewRow) => void;
   take: (row: ReviewRow) => void;
   focusRow: (row: ReviewRow) => void;
@@ -127,10 +136,14 @@ function addedSpans(paragraph: ReviewParagraph): [number, number][] {
   return spans;
 }
 
+/** A heading is a paragraph with a `level`: the reference reads as the heading it is. */
+function blockElement(level: number): HTMLElement {
+  return document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
+}
+
 function referenceElement(paragraph: ReviewParagraph): HTMLElement {
   const live = paragraph.reference;
-  const level = live?.node === "heading" ? Number(live.attrs.level ?? 1) : 0;
-  const element = document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
+  const element = blockElement(Number(live?.attrs.level ?? 0));
   element.className = "meridian-review-ref";
   if (!live) return element;
   if (paragraph.kind === "removed") {
@@ -154,6 +167,37 @@ function referenceElement(paragraph: ReviewParagraph): HTMLElement {
   else element.textContent = blockText(live);
   return element;
 }
+
+/** What changed of a paragraph whose text did not, said in place of its text. */
+function noteElement(paragraph: ReviewParagraph, config: ReviewChangesConfig): HTMLElement {
+  const note = document.createElement("p");
+  note.className = "meridian-review-ref meridian-review-note";
+  const kind = paragraph.kind;
+  note.textContent =
+    kind === "moved"
+      ? config.labels.moved
+      : kind === "restyled"
+        ? config.labels.restyled
+        : config.labels.comment;
+  if (kind !== "comment") return note;
+  // A comment's body, its words marked as a paragraph's are: it is not in the text.
+  const body = document.createElement("span");
+  body.className = "meridian-review-comment";
+  for (const part of paragraph.words) {
+    if (part.kind === "same") body.append(part.text);
+    else {
+      const word = document.createElement("span");
+      word.className = part.kind === "added" ? "meridian-review-ins" : "meridian-review-del";
+      word.textContent = part.text;
+      body.append(word);
+    }
+  }
+  note.append(" ", body);
+  return note;
+}
+
+const textUnchanged = (paragraph: ReviewParagraph) =>
+  paragraph.kind === "moved" || paragraph.kind === "restyled" || paragraph.kind === "comment";
 
 /**
  * What a row's widget draws: its target, the reference's text, the words marked, the actions and
@@ -235,7 +279,8 @@ function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean
   return (view: EditorView) => {
     const wrap = cellOf(row, config, focused, view);
     for (const paragraph of row.paragraphs)
-      if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph));
+      if (textUnchanged(paragraph)) wrap.append(noteElement(paragraph, config));
+      else if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph));
     const pair = pairElement(row, config);
     if (pair) wrap.append(pair);
     return wrap;
@@ -255,7 +300,9 @@ function sideCell(
 ) {
   return (view: EditorView) => {
     const cell = cellOf(row, config, focused, view);
-    cell.append(paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph));
+    if (paragraph.kind === "comment") cell.classList.add("meridian-review-across");
+    else cell.append(paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph));
+    if (textUnchanged(paragraph)) cell.append(noteElement(paragraph, config));
     const pair = first ? pairElement(row, config) : null;
     if (pair) cell.append(pair);
     return cell;
@@ -278,8 +325,7 @@ function draftHole() {
 
 function sideReference(text: string, node: Node) {
   return () => {
-    const level = node.type.name === "heading" ? Number(node.attrs.level ?? 1) : 0;
-    const element = document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
+    const element = blockElement(Number(node.attrs.level ?? 0));
     element.className = "meridian-review-ref meridian-review-same";
     element.contentEditable = "false";
     element.textContent = text;
@@ -339,7 +385,8 @@ function buildDecorations(
             }),
           );
       }
-      if (paragraph.kind === "removed") return;
+      // A comment's row spans both columns, and its paragraph reads as itself.
+      if (paragraph.kind === "removed" || paragraph.kind === "comment") return;
       const pos = positions.get(paragraph.id);
       if (pos === undefined) return;
       const node = doc.nodeAt(pos);

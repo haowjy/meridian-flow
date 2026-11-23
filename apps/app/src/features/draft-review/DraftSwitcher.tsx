@@ -17,7 +17,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Plus, Trash2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, type Ref, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +27,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { DisclosureMark } from "@/components/ui/marks";
+import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
 /** One owner's draft of the document, as the menu lists it. */
@@ -107,15 +111,7 @@ export function DraftSwitcher({
           <Trans>Live</Trans>
         </VersionItem>
         {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
-        {scoped.map((draft) => (
-          <DraftVersionItem key={draft.key} draft={draft} />
-        ))}
-        {onNewDraft ? (
-          <DropdownMenuItem onSelect={onNewDraft}>
-            <Plus className="size-3.5 text-muted-foreground" aria-hidden />
-            <Trans>New draft</Trans>
-          </DropdownMenuItem>
-        ) : null}
+        <WorkDraftRows as="menu" drafts={scoped} onNewDraft={onNewDraft} />
         {others.length > 0 ? <DropdownMenuSeparator /> : null}
         {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}
         {onDeleteDraft && showing === "draft" ? (
@@ -156,21 +152,110 @@ function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; fold
   );
 }
 
+/**
+ * The picked Work's drafts and `+ New draft`: the same rows in a version chip's menu and in a
+ * chat's `Writes into` panel (`as: "radio"`, whose toolbar owns the popover), so picking a draft
+ * reads and behaves alike in both.
+ */
+export function WorkDraftRows({
+  as,
+  drafts,
+  onNewDraft,
+  rowRef,
+  label,
+}: {
+  as: "menu" | "radio";
+  drafts: readonly DraftVersion[];
+  onNewDraft?: () => void;
+  /** A panel's focus targets (`as: "radio"`). */
+  rowRef?: (draft: DraftVersion, index: number) => Ref<HTMLButtonElement> | undefined;
+  /** The radio group's accessible name. */
+  label?: string;
+}) {
+  if (as === "menu")
+    return (
+      <>
+        {drafts.map((draft) => (
+          <DraftVersionItem key={draft.key} draft={draft} />
+        ))}
+        {onNewDraft ? (
+          <DropdownMenuItem onSelect={onNewDraft}>
+            <NewDraftLabel />
+          </DropdownMenuItem>
+        ) : null}
+      </>
+    );
+  return (
+    <ul onKeyDown={handleListKeys}>
+      <li>
+        <div role="radiogroup" aria-label={label}>
+          {drafts.map((draft, index) => (
+            <Button
+              key={draft.key}
+              data-list-item
+              ref={rowRef?.(draft, index)}
+              role="radio"
+              aria-checked={draft.current}
+              variant="ghost"
+              className={cn(dropdownRowVariants({ selected: draft.current }), draftRowClass)}
+              onClick={draft.onSelect}
+            >
+              <DraftVersionLabel draft={draft} />
+            </Button>
+          ))}
+        </div>
+      </li>
+      {onNewDraft ? (
+        <li>
+          <Button
+            data-list-item
+            variant="ghost"
+            className={dropdownRowVariants()}
+            onClick={onNewDraft}
+          >
+            <NewDraftLabel />
+          </Button>
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+const draftRowClass =
+  "h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11";
+
+function NewDraftLabel() {
+  return (
+    <>
+      <Plus className="size-3.5 text-muted-foreground" aria-hidden />
+      <Trans>New draft</Trans>
+    </>
+  );
+}
+
 function DraftVersionItem({ draft }: { draft: DraftVersion }) {
   return (
     <DropdownMenuItem
       selected={draft.current}
       onSelect={draft.current ? undefined : draft.onSelect}
-      className="h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11"
+      className={draftRowClass}
     >
+      <DraftVersionLabel draft={draft} />
+    </DropdownMenuItem>
+  );
+}
+
+function DraftVersionLabel({ draft }: { draft: DraftVersion }) {
+  return (
+    <>
       <span className="flex w-full min-w-0 items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate">{draft.name}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{draft.name}</span>
         {draft.note ? (
           <span className="shrink-0 text-xs text-muted-foreground">{draft.note}</span>
         ) : null}
       </span>
       {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}
-    </DropdownMenuItem>
+    </>
   );
 }
 

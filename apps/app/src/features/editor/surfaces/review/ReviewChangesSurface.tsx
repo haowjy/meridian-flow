@@ -17,6 +17,8 @@ import {
 import type { ReviewRow } from "@/core/editor/extensions/review-changes/review-rows";
 import { useOptionalDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import {
+  landed,
+  landingOf,
   useDraftPage,
   useReviewLayout,
   useReviewMode,
@@ -101,7 +103,15 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       draftId,
       focus: changeId,
       hidden: pressed,
-      labels: { apply: t`Apply`, discard: t`Discard`, restore: t`Restore`, take: t`Take` },
+      labels: {
+        apply: t`Apply`,
+        discard: t`Discard`,
+        restore: t`Restore`,
+        take: t`Take`,
+        moved: t`Moved`,
+        restyled: t`Formatting changed`,
+        comment: t`Comment:`,
+      },
       press,
       take: (row) => {
         if (editor.isDestroyed) return;
@@ -124,16 +134,20 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
         settle();
       },
     };
-    // Review changes opens at its `change`; one that no longer exists, or none, is the first (the
-    // last after a step back from the next chapter).
+    // Review changes opens at its `change`, named by any of its members (a turn card names the
+    // first block the turn changed); one that no longer exists, or none, is the first (the last
+    // after a step back from the next chapter).
     const settle = () => {
       const { mode } = latest.current;
       const left = shown(rows.current ?? []);
       closeIfEmpty();
-      if (mode && left.length > 0 && !left.some((row) => row.id === mode.changeId)) {
-        const landing = surface?.takeLanding() === "last" ? left.at(-1) : left[0];
-        if (landing) mode.focus(landing.id);
-      }
+      if (!mode || left.length === 0) return;
+      if (left.some((row) => row.id === mode.changeId)) return landed(mode.documentId);
+      const named = mode.changeId
+        ? left.find((row) => row.members?.includes(mode.changeId ?? ""))
+        : undefined;
+      const landing = named ?? (landingOf(mode.documentId) === "last" ? left.at(-1) : left[0]);
+      if (landing) mode.focus(landing.id);
     };
     setReviewChanges(editor.view, config);
     if (rows.current) {

@@ -141,6 +141,16 @@
   color: var(--color-primary-foreground);
 }
 
+.meridian-editor .ProseMirror .meridian-review-note {
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+.meridian-editor .ProseMirror .meridian-review-comment {
+  font-style: normal;
+  color: var(--color-foreground);
+}
+
 .meridian-editor .ProseMirror .meridian-review-same {
   color: color-mix(in oklab, var(--color-muted-foreground) 70%, transparent);
   user-select: none;
@@ -172,8 +182,17 @@
   grid-column: 1;
 }
 
+/* A comment's change has no paragraph of its own to pair: it reads across both columns. */
+.meridian-editor .ProseMirror.meridian-review-side > .meridian-review-chg.meridian-review-across {
+  grid-column: 1 / -1;
+}
+
 .meridian-editor .ProseMirror.meridian-review-side .meridian-review-pair {
   left: calc(200% + 24px + 6px);
+}
+
+.meridian-editor .ProseMirror.meridian-review-side .meridian-review-across .meridian-review-pair {
+  left: calc(100% + 6px);
 }
 
 /* Text kept in place (KeptExtension): a paragraph deleted under the caret, kept while it stays
