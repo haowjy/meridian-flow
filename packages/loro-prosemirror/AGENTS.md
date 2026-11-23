@@ -60,9 +60,12 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   other write starts one, and a write that sets structure ends it. A step's note is taken late, just before the next import
   (`RoomDocs.beforeImport`), the next write that is not typing (sharing that write's read of the
   structure), or a run: an Enter pays one read of the structure, not two.
-- Every Undo and Redo commit in a text doc carries `takeBackMessage` (what each character it puts
-  back stands for, `deletedBetween` of the step's span), set in `subscribePreCommit`: `textSince`
-  reads text it put back as the text it deleted.
+- Every Undo and Redo commit in a text doc carries a take-back note and no author
+  (`commitMessage({ undo })`: what each character it puts back stands for, `deletedBetween` of the
+  step's span, and the step's ops), set in `subscribePreCommit`: `textSince` reads text it put
+  back as the text it deleted, and attribution reads the commit as the writer's. Loro's manager
+  deletes only this peer's own characters, so every step's `Edit` carries `ownTextOnly`:
+  `editStays` keeps a step whose text another peer's Undo put back (design §2, part 4).
 - The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the
   selection's head, or a block above it, the editor keeps every removed block on that path in its
   document. A local transaction with a step inside a kept block restores them (`restore`, which

@@ -1,6 +1,6 @@
 // agent-edit's document model over a Loro room copy (design §1, §5): blocks are the normalized read,
-// a block's identity is its `id`, and every write is `applyOps` on the copy, committed under the
-// write's message.
+// a block's identity is its `id`, and every write is `applyOps` on the copy, committed by the
+// write's author.
 import {
   applyOps as applyShapeOps,
   type BlockId,
@@ -31,7 +31,7 @@ export class LoroDocument {
   constructor(
     readonly docs: RoomDocs,
     readonly schema: Schema,
-    /** The commit message and origin of every write on this document (`turn:<id>`). */
+    /** The author and origin of every write on this document (a chat's turn). */
     public write: WriteOptions = {},
   ) {}
 

@@ -45,7 +45,7 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
 - **A write plans on what the model read**, so a word the writer deleted after that read stays
   deleted. The read's frontier is a per-doc map (`loro-frontier.ts`, `encodeFrontierMap`), the
   reply's own batches merged in by their end version; the write plans on `docs.at(frontiers)`,
-  exports one batch (`exportSince(shownVersion())`) with the commit message `turn:<turnId>` and
+  exports one batch (`exportSince(shownVersion())`) by its turn (`commitMessage`, `{by: {turn}}`) and
   saves it through `rooms.save` with an `AgentWriteRecord`: its `edit` (`editSince` in
   `@meridian/document-model`) is what Undo judges and takes back, and its `delta` (`captureDelta`)
   the blocks before and after, which the card's rows and the edit listing show.
@@ -67,7 +67,7 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   ops into Live, so the fork reads as it did; Discard takes the draft's change back by content, so
   a write planned on the read merges like an offline peer's and the Discard stands. Planning on the
   fork as it is instead would bring back what the writer discarded. The report names a press
-  (`press:<id>`) as `the user's Apply or Discard`.
+  (a commit by a press) as `the user's Apply or Discard`.
 - **A write the view already holds** answers `unchanged` and lands nothing: on the model's view it
   is a no-op, as an offline peer's would be. When the room no longer holds it (someone changed
   those blocks since the read, a turn Undo of the chat's own words included), the answer says the
@@ -83,9 +83,10 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   came after the read is what the fallback loses; a block deleted since answers `not_found` with
   the current text.
 - **Who changed what** (`tool/loro-observation.ts`) comes from the docs that changed since the
-  recorded frontier and their commit messages: `turn:<id>` is a chat (`authorOfTurn`), the
-  reader's own turn is skipped, `press:<id>` is the writer's Apply or Discard, and any other
-  message (none, a take-back) is the user. A structure change credits every
+  recorded frontier and who their commit messages say wrote them (`authorsSince`, by
+  `readCommitMessage`): a turn is a chat (`authorOfTurn`), the reader's own turn is skipped, a
+  press is the writer's Apply or Discard, and a commit by no one (typing, a tab's Undo) is the
+  user. A structure change credits every
   author of the structure doc since the read with every structural change: coarse, never wrong
   about who touched the document.
 - Write handles (`e<N>`) come from the host's `WriteOrdinals` (`ports/write-ordinals.ts`), one

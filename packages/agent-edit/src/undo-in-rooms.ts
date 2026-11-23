@@ -1,5 +1,6 @@
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
+  type CommitAuthor,
   type DocChange,
   type EditStayed,
   type RoomDocs,
@@ -22,7 +23,7 @@ export interface RoomPart {
 export function undoInRooms<P extends RoomPart>(
   parts: readonly P[],
   docsOf: (room: DocumentRoom) => RoomDocs,
-  message?: string,
+  by?: CommitAuthor,
 ): { rooms: { room: DocumentRoom; changes: DocChange[] }[]; stayed: Map<P, EditStayed> } {
   const byRoom = new Map<string, { room: DocumentRoom; here: P[] }>();
   for (const part of parts) {
@@ -37,7 +38,7 @@ export function undoInRooms<P extends RoomPart>(
     const { changes, stayed: why } = undoEdits(
       docsOf(room),
       here.map((part) => part.edit),
-      message,
+      by,
     );
     for (const [index, reason] of why) stayed.set(here[index], reason);
     if (changes.length) rooms.push({ room, changes });

@@ -506,8 +506,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       });
     }
     // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
-    const message = query.model && query.turnId ? `turn:${query.turnId}` : undefined;
-    const undone = undoInRooms(parts, docsOf, message);
+    const by = query.model && query.turnId ? { turn: query.turnId } : undefined;
+    const undone = undoInRooms(parts, docsOf, by);
     const taken = parts.filter((part) => !undone.stayed.has(part));
     for (const why of undone.stayed.values())
       if (why.kind === "compacted") entry.compacted++;

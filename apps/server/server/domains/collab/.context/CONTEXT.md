@@ -81,7 +81,7 @@ writer deleted lands where the anchor was: it is new words, and the anchor's tom
 places them.
 
 Concurrent chat edits and writer deletions are Loro peers: a write merges with them. Who changed
-what since a read comes from the changes' commit messages (`turn:<id>`), never text similarity.
+what since a read comes from the changes' commit messages (`readCommitMessage`'s `by`), never text similarity.
 
 ## Transaction and lock contracts
 
