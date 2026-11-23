@@ -45,7 +45,7 @@ import {
 import { Fragment, Slice } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import { blockOf } from "../../src/codec.js";
-import { movedPieces, readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
+import { movedPieces, movedText, readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
 import { Gen, randomEdit, schema, TOKEN } from "./block-changes.gen.ts";
 
 const shape = shapeSchemaOf(schema);
@@ -257,7 +257,12 @@ function edit(d, fn, { rng, by } = {}) {
     const under = parent === tr.doc ? null : parent.attrs.id;
     return parent.childCount === 1 && isDerivedEmpty(blockOf(node), under);
   });
-  return writeProseMirror(d, tr.doc, { by, random: rng, pieces: process.env.FUZZ_NO_PIECES ? [] : movedPieces(tr) });
+  return writeProseMirror(d, tr.doc, {
+    by,
+    random: rng,
+    pieces: process.env.FUZZ_NO_PIECES ? [] : movedPieces(tr),
+    moved: process.env.FUZZ_NO_PIECES ? [] : movedText(tr),
+  });
 }
 
 export function runScript(seed, { verbose = false } = {}) {
