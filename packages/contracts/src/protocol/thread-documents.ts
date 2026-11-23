@@ -26,6 +26,12 @@ export type TurnLiveLineageDocumentItem = {
   path: string;
   /** Present when the turn moved or deleted the document. */
   tree?: TurnTreeLine;
+  /**
+   * The id of the first block the turn's first write to the document changed, where the card opens
+   * it (Review changes at the turn's edit, for a draft). Absent for a document it only moved,
+   * created empty or deleted.
+   */
+  block?: string;
   /** A folder the turn changed: `documentId` is its node id, and it has no document to open. */
   folder?: true;
 } & (
@@ -49,6 +55,11 @@ export interface TurnReceiptChip {
   control: TurnReceiptControl;
   /** The card's Undo ran and nothing is left for it; the card says "Undone". */
   undone?: true;
+  /**
+   * The drafts the turn wrote in whose `Restore before` the card offers, one press each (`PressAction`'s `restore`):
+   * absent when none. A draft whose history was cut below the turn's start is left out, all or nothing (design §2).
+   */
+  restore?: DraftId[];
 }
 
 export interface ListTurnLiveLineageResponse {

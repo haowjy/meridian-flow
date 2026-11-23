@@ -1,13 +1,16 @@
 import type { Frontiers, LoroDoc, PeerID } from "loro-crdt";
 import { inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
-import type { BlockId, DocKey } from "./shape.js";
-import type { StructureView } from "./structure.js";
+import { type BlockId, type DocKey, STRUCTURE_KEY } from "./shape.js";
+import { StructureView } from "./structure.js";
 import {
   deletedBetween,
   type Edit,
   type EditValues,
+  editStays,
+  noteEdit,
   type OpSpans,
+  opsBetween,
   putBackOf,
   putBackValues,
   type SetValue,
@@ -15,8 +18,15 @@ import {
   takeBackMessage,
   textDiff,
   textSince,
+  valuesOf,
 } from "./take-back.js";
-import { type DocVersion, plainVersion, withVector } from "./version.js";
+import {
+  type DocVersion,
+  docCovers,
+  plainVersion,
+  type RoomVersion,
+  withVector,
+} from "./version.js";
 import type { DocChange } from "./write.js";
 
 /** The version `doc` holds at `frontiers`. */
@@ -93,6 +103,54 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
 }
 
 /**
+ * The edit `peer` made in `keys` since `since`, noted and stored as it left `docs` (an AI write,
+ * design §5): every op from `since` to now in those docs is the write's, so a caller passes a copy
+ * that has taken nothing else in since. A doc `since` lacks is one the write made.
+ */
+export function editSince(
+  docs: RoomDocs,
+  since: RoomVersion,
+  peer: PeerID,
+  keys: Iterable<DocKey>,
+): StoredEdit {
+  const edit: Edit = {
+    peer,
+    values: new Map(),
+    texts: new Map(),
+    leaving: new Map(),
+    arriving: new Set(),
+    shown: new Set(),
+    structureAt: [],
+  };
+  for (const key of keys) {
+    const doc = docs.doc(key);
+    if (!doc) continue;
+    const at = since.get(key);
+    const before = at ? frontiersOf(doc, at) : [];
+    const after = doc.frontiers();
+    if (key === STRUCTURE_KEY) valuesOf(doc, before, after, edit.values);
+    else edit.texts.set(key, { before, after, ops: opsBetween(doc, before, after) });
+  }
+  noteEdit(docs, edit);
+  return storeEdit(docs, edit);
+}
+
+/**
+ * Whether `docs` still hold every op `stored` names: a doc cut at its history cutoff since (design
+ * §4) can't check the edit out, and the edit stays as it is.
+ */
+export function holdsEdit(docs: RoomDocs, stored: StoredEdit): boolean {
+  const holds = (doc: LoroDoc | undefined, json: VersionJson) =>
+    !!doc &&
+    (!doc.isShallow() ||
+      docCovers(new Map(Object.entries(json)) as DocVersion, plainVersion(doc.shallowSinceVV())));
+  return (
+    holds(docs.structure, stored.structureAt) &&
+    stored.texts.every(([key, { before }]) => holds(docs.doc(key), before))
+  );
+}
+
+/**
  * Take back `edits` on `docs`, each of which passed `editStays` there (a press's Undo, design §2):
  * each text doc by its inverse moved through what happened since (`transformedInverse`), in a
  * commit that names what each character it puts back stands for (`takeBackMessage`); then every structure value in one
@@ -129,6 +187,48 @@ export function takeBack(
   const { change } = putBackValues(docs, values, view, message);
   if (change) out.push(change);
   return out;
+}
+
+/** Why an edit an Undo tested stays: someone wrote over it, or the room cut its history. */
+export type EditStayed = { kind: "written_over"; why: string } | { kind: "compacted" };
+
+/** Why `stored` would stay on `docs` now (design §2's Undo rule), or null when it goes back whole. */
+export function whyEditStays(
+  docs: RoomDocs,
+  stored: StoredEdit,
+  view?: StructureView,
+): EditStayed | null {
+  if (!holdsEdit(docs, stored)) return { kind: "compacted" };
+  const why = editStays(docs, loadEdit(docs, stored), view);
+  return why ? { kind: "written_over", why } : null;
+}
+
+/**
+ * An Undo of stored edits on `docs`, in the order given (newest first), each judged on what the
+ * ones before it left (design §2): an edit someone wrote over since, or whose history `docs` no
+ * longer hold, stays whole, and the rest are taken back whole (`takeBack`). Returns the changes,
+ * committed, and why each edit that stayed did, by its index.
+ */
+export function undoEdits(
+  docs: RoomDocs,
+  edits: readonly StoredEdit[],
+  message?: string,
+): { changes: DocChange[]; stayed: Map<number, EditStayed> } {
+  const changes: DocChange[] = [];
+  const stayed = new Map<number, EditStayed>();
+  let view = new StructureView(docs);
+  edits.forEach((stored, index) => {
+    const why = whyEditStays(docs, stored, view);
+    if (why) {
+      stayed.set(index, why);
+      return;
+    }
+    const edit = loadEdit(docs, stored);
+    const wrote = takeBack(docs, [edit], view, message);
+    changes.push(...wrote);
+    if (wrote.some((change) => change.key === STRUCTURE_KEY)) view = new StructureView(docs);
+  });
+  return { changes, stayed };
 }
 
 const length = (op: TextOp) => op.retain ?? op.delete ?? (op.insert as string).length;

@@ -13,8 +13,8 @@ import type {
   DocumentDraftHintsResponse,
   DraftItem,
   DraftItemsResponse,
+  PressAction,
   PressResult,
-  PressScope,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -111,25 +111,40 @@ const RoomVersionBody = z.base64().transform((value, context) => {
     return z.NEVER;
   }
 });
-const PressBody = z.strictObject({
+const pressFields = {
   commandId: CommandIdSchema,
-  verdict: z.enum(["apply", "discard"]),
-  scope: z.discriminatedUnion("kind", [
-    z.strictObject({
-      kind: z.literal("change"),
-      item: z.string().min(1).max(256),
-      change: z.string().min(1).max(128),
-    }),
-    z.strictObject({ kind: z.literal("document"), item: z.string().min(1).max(256) }),
-    z.strictObject({ kind: z.literal("draft"), draft: z.string().min(1).max(128) }),
-    z.strictObject({ kind: z.literal("work"), work: z.string().uuid() }),
-  ]),
   saw: SawBody.optional(),
   liveVersions: z
     .array(z.strictObject({ documentId: z.string().uuid(), version: RoomVersionBody }))
     .max(2000)
     .optional(),
-});
+};
+/** `PressRequest`: a verdict and the scopes it takes, so no other pair parses. */
+const PressBody = z.union([
+  z.strictObject({
+    ...pressFields,
+    verdict: z.enum(["apply", "discard"]),
+    scope: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("change"),
+        item: z.string().min(1).max(256),
+        change: z.string().min(1).max(128),
+      }),
+      z.strictObject({ kind: z.literal("document"), item: z.string().min(1).max(256) }),
+      z.strictObject({ kind: z.literal("draft"), draft: z.string().min(1).max(128) }),
+      z.strictObject({ kind: z.literal("work"), work: z.string().uuid() }),
+    ]),
+  }),
+  z.strictObject({
+    ...pressFields,
+    verdict: z.literal("restore"),
+    scope: z.strictObject({
+      kind: z.literal("turn"),
+      turn: z.string().uuid(),
+      draft: z.string().min(1).max(128),
+    }),
+  }),
+]);
 const PressUndoBody = z.strictObject({
   commandId: CommandIdSchema,
   pressCommandId: CommandIdSchema,
@@ -235,6 +250,7 @@ export function toWireItem(
     documentId: item.documentId,
     pending: item.pending,
     liveVersion: item.liveVersion,
+    changeCount: item.changeCount,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,
@@ -268,8 +284,8 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 }
 
 /**
- * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, one
- * command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
+ * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, or a
+ * Draft chat turn's `Restore before` in one draft, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
  * the drafts, and the press writes only those drafts' changes.
  */
 export async function handlePressRequest(
@@ -278,8 +294,10 @@ export async function handlePressRequest(
 ): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const { commandId, liveVersions, ...request } = parseBody(PressBody, input.request, "press");
-  const scope = request.scope as PressScope;
-  const { stored } = await draftOfProject(deps, { ...input, draft: await draftNamed(deps, scope) });
+  const { stored } = await draftOfProject(deps, {
+    ...input,
+    draft: await draftNamed(deps, request.scope),
+  });
   if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
   const envelope = pressEnvelope(input, "press", commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
@@ -290,7 +308,6 @@ export async function handlePressRequest(
       envelope,
       request: {
         ...request,
-        scope,
         ...(liveVersions
           ? {
               liveVersions: new Map(
@@ -304,7 +321,8 @@ export async function handlePressRequest(
 }
 
 /** A draft the scope names, which says whose project it is: a Work's is its default. */
-async function draftNamed(deps: DraftRouteServices, scope: PressScope): Promise<string> {
+async function draftNamed(deps: DraftRouteServices, scope: PressAction["scope"]): Promise<string> {
+  if (scope.kind === "turn") return scope.draft;
   if (scope.kind === "change" || scope.kind === "document") {
     const item = parseDraftItemKey(scope.item);
     if (!item) throw createError({ statusCode: 400, message: "Invalid item" });

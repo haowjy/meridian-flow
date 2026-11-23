@@ -3,12 +3,15 @@
 A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its pending tree
 records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
 a document, a draft or every draft of a Work, is one command, `press`
-(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). There is
-no folder scope.
+(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). So is a
+Draft chat turn card's Restore before. There is no folder scope.
 
 ## What a press does
 
-`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`. A
+`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`, where
+`PressAction` pairs the verdict with the scopes it takes: `apply` and `discard` take the review
+scopes below, and `restore` takes only `{ kind: "turn", turn, draft }`. The route's schema is the same
+union, so a mismatched pair does not parse. A
 `change` or `document` scope names its document by `DraftItemKey`; `draft` names one draft;
 `work` takes every living draft of the Work, one after another in draft id order, each on Live as
 the one before left it. Every Work and root chat has its draft from its creation, so a press
@@ -45,6 +48,40 @@ never makes one.
 - Lock order is the Apply click's: Works, drafts in id order, lists, documents in id order, then
   writes.
   Deliveries run after commit.
+
+## Restore before
+
+`restore` on a turn in one draft returns the draft to how it read before the turn, as one press.
+A turn that wrote in several drafts is one press per draft, each in that draft's lane on the tab
+(`press:<draft>`), so it is ordered after an Apply or Discard pressed on the same draft before it.
+The plan (`adapters/drizzle-restore-before.ts`, `restorePlan`) is read once and shared with the
+card's offer (`TurnReceiptChip.restore`, `restorableDrafts`):
+
+- **Rooms.** The turn's parts whose `origin` names the draft: its fork of a document, or the Live
+  room of a document only the draft still holds (a Draft chat writes such a document there). A
+  document the turn wrote while only the draft held it, and the writer has since applied, is the
+  manuscript's: it stays.
+- **Per room**, `turnSpan` takes each doc at its version as the turn's first write into it began,
+  and the structure at the turn's last write into it; a fork copy is carried forward to today's
+  Live first; `restoreBefore` (`@meridian/document-model`) puts each text doc back (merged with
+  Live's version in a fork) and each structure value the turn set back where it still holds what
+  the turn left. Live's manuscript is never written, so text an Apply already put there stays.
+- **The nodes the turn created** in the draft that only the draft still holds go to Trash, by the
+  Discard's tree half (`discardTreeRecords` with `trash`): the draft read without them before the
+  turn. Their text goes with them, so no room of theirs is restored. Other tree changes the turn
+  drafted (moves, renames, deletes) stay.
+- **All or nothing.** If any room no longer holds the history its span needs (`holdsSpan`, cut at
+  design §4's cutoff), nothing is restored, text or tree, and the result says `compacted: true`.
+  The card's offer reads the same plan, so it stops offering Restore before for that draft.
+
+Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
+for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is
+the press's `unpress` (`undoPress` in a fork, `undoEdits` in a Live room), and the created nodes
+come back by `restoreDiscard`; pressing again is the Redo.
+
+The press design lead's draft (`loro-build/gate/press-whole/`, part 3) replaces the per-doc
+frontier restore with `undoEdits` over the turn's stored edits in the draft. The rooms, the lane,
+the all-or-nothing decision and the Undo above carry over.
 
 ## Discard, and what goes to Trash
 
@@ -83,7 +120,7 @@ whole (`editStays`), each room its own, committed under `press:<undo id>`. A cha
 in the answer's `stayed`, with who wrote over it, read from the commit messages on its text since
 the press: a tab's commit (no message) is the writer, `turn:<id>` a chat (by its ref), `press:`
 another press; a server write with no message (a restore, a copy) names no one.
-Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard) on that draft's part, with
+Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Restore before) on that draft's part, with
 the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
 other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing
 to come back to.

@@ -13,9 +13,13 @@ export type TurnEditedDocumentScope = "live" | "draft";
  * draft-scoped edit is read and reversed at that draft destination, so it stays on the turn's
  * receipt after a live delete its draft outlived.
  */
-export type TurnEditedDocumentId =
+export type TurnEditedDocumentId = (
   | { documentId: DocumentId; scope: "live" }
-  | { documentId: DocumentId; scope: "draft"; draft: DraftId; ownerHandle: string | null };
+  | { documentId: DocumentId; scope: "draft"; draft: DraftId; ownerHandle: string | null }
+) & {
+  /** The first block the turn's first write there changed, where its card opens the document. */
+  block?: string;
+};
 
 export type TurnEditedDocument = TurnEditedDocumentId & {
   uri: string;

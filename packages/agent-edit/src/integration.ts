@@ -75,3 +75,4 @@ export {
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/types.js";
+export { type RoomPart, undoInRooms } from "./undo-in-rooms.js";

@@ -6,6 +6,7 @@ import { type CommandSpec, flag, requirePositional, stringOption } from "../../c
 import { truncate } from "../../core/output";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
+import { readMarkdown } from "./document-room";
 import { PROJECT_OPTION, resolveDocumentId, resolveUri } from "./uri";
 
 export const docReadCommand: CommandSpec = {
@@ -13,8 +14,20 @@ export const docReadCommand: CommandSpec = {
   summary: "Print a document's markdown projection",
   args: "<uri>",
   route: "GET /api/projects/:projectId/documents/:documentId/read",
-  options: { ...PROJECT_OPTION, full: { type: "boolean", description: "No truncation" } },
-  examples: ['./mf doc read "manuscript://Chapter 1"', "./mf doc read scratch://@w3/notes --json"],
+  options: {
+    ...PROJECT_OPTION,
+    full: { type: "boolean", description: "No truncation" },
+    draft: {
+      type: "string",
+      description:
+        "Read the draft's fork instead, through its room (WS /ws/loro fork:<draft>:<doc>)",
+    },
+  },
+  examples: [
+    './mf doc read "manuscript://Chapter 1"',
+    "./mf doc read scratch://@w3/notes --json",
+    './mf doc read "manuscript://Chapter 1" --draft k3x9a0b1c2d4',
+  ],
   async run(ctx) {
     const session = await ctx.session();
     const projectId = await resolveProjectId(session, stringOption(ctx, "project"));
@@ -26,6 +39,12 @@ export const docReadCommand: CommandSpec = {
       stringOption(ctx, "chat"),
     );
     const documentId = await resolveDocumentId(session, projectId, target);
+    const draft = stringOption(ctx, "draft");
+    if (draft) {
+      const content = await readMarkdown(session, documentId, draft);
+      ctx.out.result({ uri: target.uri, draft, content }, (value) => value.content);
+      return undefined;
+    }
     const response = await session.request(
       "GET",
       apiProjectDocumentReadPath(projectId, documentId),

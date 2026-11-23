@@ -17,15 +17,15 @@ import type {
   DocumentId,
   DraftId,
   ProjectId,
+  TurnId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
 import { parseDraftItemKey } from "@meridian/contracts";
 import type {
+  PressAction,
   PressOverwriter,
-  PressRequest,
   PressResult,
-  PressScope,
   PressUndoResult,
 } from "@meridian/contracts/drafts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
@@ -45,13 +45,18 @@ import {
   type DocChange,
   type DocVersion,
   discardBlocks,
+  editSince,
   encodeChanges,
   frontiersOf,
   isServerPeer,
+  memberOf,
   type PeerId,
   type PressedChange,
   type RoomDocs,
   type RoomVersion,
+  restoreBefore,
+  type StoredEdit,
+  undoEdits,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -79,13 +84,14 @@ import type { TreeCut } from "../domain/press.js";
 import { markFork } from "../rooms/postgres-document-rooms.js";
 import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
+import { type RestorePlan, readRestore, restorePlan } from "./drizzle-restore-before.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 import type { UsageEvents } from "./usage-events.js";
 
 export type PressCommand = {
   envelope: CommandEnvelope;
   /** `liveVersions` decoded: the Live version each document's tab showed. */
-  request: Omit<PressRequest, "commandId" | "saw" | "liveVersions"> & {
+  request: PressAction & {
     saw?: TreeCut;
     liveVersions?: ReadonlyMap<DocumentId, RoomVersion>;
   };
@@ -105,8 +111,10 @@ type DraftPart = {
   documents: DocumentId[] | "all";
   /** The change a `change` press names; null presses every change in those documents. */
   change: string | null;
-  /** The tree records it settles: one document's, every pending one, or none (a change). */
+  /** The tree records it settles: one document's, every pending one, or none (a change, a turn). */
   tree: DocumentId[] | "all";
+  /** A `Restore before`'s turn, whose writes into the draft's forks it takes back. */
+  turn?: TurnId;
 };
 
 const ORIGIN = "server:press";
@@ -144,7 +152,9 @@ export function createDrizzlePress(
   ];
 
   /** The drafts a scope presses, in draft id order, each with what it takes. */
-  async function partsOf(scope: PressScope): Promise<DraftPart[]> {
+  async function partsOf(scope: PressAction["scope"]): Promise<DraftPart[]> {
+    if (scope.kind === "turn")
+      return [{ draft: scope.draft, documents: [], change: null, tree: [], turn: scope.turn }];
     if (scope.kind === "change" || scope.kind === "document") {
       const item = parseDraftItemKey(scope.item);
       if (!item) return [];
@@ -262,6 +272,74 @@ export function createDrizzlePress(
     }
   }
 
+  /**
+   * A Draft chat turn's `Restore before` in one draft (design §2), from its plan
+   * (`drizzle-restore-before.ts`): each room the turn wrote the draft's text in goes back to the
+   * turn's start (`restoreBefore`), a fork carried forward to today's Live first; Live's
+   * manuscript is untouched. All or nothing: when a room no longer holds the history its span
+   * needs, nothing is restored and the answer says so. Each room's restore is one edit, stored in
+   * `press_changes` on the side of the room it was written in (`fork`, or `live` for a document
+   * only the draft holds), so the press's Undo takes it back by the one rule. Returns the
+   * documents it committed to, and whether the history held.
+   */
+  async function restoreDraft(
+    envelope: CommandEnvelope,
+    draft: DraftId,
+    plan: RestorePlan,
+  ): Promise<{ documents: DocumentId[]; held: boolean }> {
+    const { copies, held } = await readRestore(deps.rooms, plan);
+    try {
+      if (!held) return { documents: [], held };
+      const documents: DocumentId[] = [];
+      for (const [index, { documentId, room, span }] of plan.rooms.entries()) {
+        const copy = copies[index] as RoomDocs;
+        const forward = room.kind === "fork" ? copy.forward().restore : null;
+        const since = copy.shownVersion();
+        const changes = restoreBefore(copy, span, { message: `press:${envelope.commandId}` });
+        const written = [...(forward ? [forward] : []), ...changes];
+        if (room.kind === "fork") {
+          if (await commitCopy(room, { live: [], fork: written })) documents.push(documentId);
+          await markFork(tx(), room, copy);
+        } else if (written.length) {
+          await deps.rooms.commit(tx(), room, encodeChanges(written), ORIGIN);
+          documents.push(documentId);
+        }
+        if (!changes.length) continue;
+        const edit = editSince(
+          copy,
+          since,
+          copy.peer,
+          new Set(changes.map((change) => change.key)),
+        );
+        const members = [
+          ...new Set([
+            ...edit.texts.map(([key]) => key),
+            ...edit.values.flatMap(([name, keys]) => keys.map(([key]) => memberOf(name, key))),
+          ]),
+        ];
+        const [first, ...rest] = members;
+        if (first)
+          await tx()
+            .insert(pressChanges)
+            .values({
+              commandId: envelope.commandId as CommandId,
+              draftId: draft,
+              documentId,
+              changes: [
+                {
+                  members: [first, ...rest],
+                  live: room.kind === "live" ? edit : null,
+                  fork: room.kind === "fork" ? edit : null,
+                },
+              ] satisfies PressedChange[],
+            });
+      }
+      return { documents, held };
+    } finally {
+      for (const copy of copies) copy.free();
+    }
+  }
+
   /** A press this account made in this project, as it answered: null for an unknown or purged id. */
   async function storedPress(
     envelope: CommandEnvelope,
@@ -285,14 +363,14 @@ export function createDrizzlePress(
 
   async function press(command: PressCommand): Promise<PressResult> {
     const { envelope, request } = command;
+    const { saw: _saw, liveVersions: _shown, ...action } = request;
     const lists = listsOf(envelope);
     const parts = await partsOf(request.scope);
     const draftIds = parts.map((part) => part.draft);
     const answer = (documents: Set<string>, tree: Set<string>, trashed: string[]): PressResult => ({
       status: "pressed",
       commandId: envelope.commandId as CommandId,
-      verdict: request.verdict,
-      scope: request.scope,
+      ...action,
       documents: [...documents].sort() as DocumentId[],
       items: [...tree].sort().map((node) => ({ node, tree: true as const })),
       ...(trashed.length > 0 ? { trashed } : {}),
@@ -309,22 +387,38 @@ export function createDrizzlePress(
             const judge = await owners.judge(locked);
             await deps.treeLists.lock(lists);
             const plan = [];
-            for (const part of living)
+            for (const part of living) {
+              const restore = part.turn ? await restorePlan(tx(), part.turn, part.draft) : null;
               plan.push({
                 part,
-                nodes: await treeNodes(lists, part),
-                texts: await textDocuments(part),
+                restore,
+                nodes: restore ? restore.created : await treeNodes(lists, part),
+                texts: restore
+                  ? restore.rooms.map((room) => room.documentId)
+                  : await textDocuments(part),
               });
+            }
             await lockDocuments(plan.flatMap(({ nodes, texts }) => [...nodes, ...texts]));
             const documents = new Set<string>();
             const tree = new Set<string>();
             const trashed: string[] = [];
-            for (const { part, nodes, texts } of plan) {
+            let compacted = false;
+            for (const { part, restore, nodes, texts } of plan) {
+              if (restore) {
+                const restored = await restoreDraft(envelope, part.draft, restore);
+                // History cut since the card offered it: nothing is restored, text or tree.
+                if (!restored.held) {
+                  compacted = true;
+                  continue;
+                }
+                for (const documentId of restored.documents) documents.add(documentId);
+              }
               // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
-              for (const documentId of texts)
-                if (await pressText(envelope, request, part.draft, documentId, selection))
-                  documents.add(documentId);
+              if (!restore)
+                for (const documentId of texts)
+                  if (await pressText(envelope, request, part.draft, documentId, selection))
+                    documents.add(documentId);
               if (nodes.length === 0) continue;
               if (request.verdict === "apply") {
                 const listOf = await treeHalf.lockItems(nodes);
@@ -356,12 +450,16 @@ export function createDrizzlePress(
               }
             }
             judge.assertLocked();
-            return answer(documents, tree, trashed);
+            return {
+              ...answer(documents, tree, trashed),
+              ...(compacted ? { compacted: true } : {}),
+            };
           },
         ),
       );
 
-    if (request.verdict === "discard") return run(NO_OWNERS);
+    // A Discard and a Restore before change no Live tree record: no owner to judge.
+    if (request.verdict !== "apply") return run(NO_OWNERS);
     // The sources the drafts' pending records change, and where Live has the nodes they name:
     // their owners are locked with the drafts' and judged under the locks. A guess read before
     // the locks, so it can miss; a miss restarts.
@@ -410,13 +508,15 @@ export function createDrizzlePress(
     }
   }
 
-  /** Who wrote over a change that stayed, from the commits on its text since the press. */
-  async function overwriters(copy: RoomDocs, change: PressedChange): Promise<PressOverwriter[]> {
+  /**
+   * Who wrote over a change that stayed, from the commits on its text since the press: each side
+   * read in the room copy that holds it.
+   */
+  async function overwriters(
+    sides: readonly (readonly [RoomDocs | undefined, StoredEdit | null])[],
+  ): Promise<PressOverwriter[]> {
     const seen = { messages: new Set<string>(), tab: false };
-    for (const [side, stored] of [
-      [copy.live, change.live],
-      [copy, change.fork],
-    ] as const) {
+    for (const [side, stored] of sides) {
       if (!side || !stored) continue;
       for (const [key, span] of stored.texts) {
         const doc = side.doc(key);
@@ -519,10 +619,34 @@ export function createDrizzlePress(
               if (living.has(draft))
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
-                  const room = { kind: "fork" as const, draftId: draft, documentId };
+                  const changes = row.changes as PressedChange[];
+                  // A Restore before of a document only the draft holds wrote its Live room.
+                  const liveRoom = changes.every((change) => change.fork === null);
+                  const room: DocumentRoom = liveRoom
+                    ? { kind: "live", documentId }
+                    : { kind: "fork", draftId: draft, documentId };
                   const copy = await deps.rooms.read(room);
                   try {
-                    const changes = row.changes as PressedChange[];
+                    if (room.kind === "live") {
+                      const undone = undoEdits(
+                        copy,
+                        changes.map((change) => change.live as StoredEdit),
+                        message,
+                      );
+                      if (undone.changes.length) {
+                        await deps.rooms.commit(tx(), room, encodeChanges(undone.changes), ORIGIN);
+                        documents.add(documentId);
+                      }
+                      for (const index of undone.stayed.keys()) {
+                        const change = changes[index] as PressedChange;
+                        stayed.push({
+                          documentId,
+                          change: change.members[0],
+                          by: await overwriters([[copy, change.live]]),
+                        });
+                      }
+                      continue;
+                    }
                     const undone = undoPress(copy, changes, { message });
                     if (await commitCopy(room, undone)) documents.add(documentId);
                     await markFork(tx(), room, copy);
@@ -530,14 +654,17 @@ export function createDrizzlePress(
                       stayed.push({
                         documentId,
                         change: change.members[0],
-                        by: await overwriters(copy, change),
+                        by: await overwriters([
+                          [copy.live ?? undefined, change.live],
+                          [copy, change.fork],
+                        ]),
                       });
                   } finally {
                     copy.free();
                   }
                 }
               const treeTouched =
-                pressed.verdict === "discard"
+                pressed.verdict !== "apply"
                   ? pressed.items.some((item) => item.tree) && living.has(draft)
                   : trees.some((one) => one.draftId === draft);
               if (!treeTouched) continue;
@@ -547,7 +674,7 @@ export function createDrizzlePress(
                   const pressedHere = treeCommand(pressId, draft);
                   const undoHere = treeCommand(envelope.commandId, draft);
                   for (const [at, { writer }] of ends.entries()) {
-                    if (pressed.verdict === "discard") {
+                    if (pressed.verdict !== "apply") {
                       const restored = restoreDiscard(
                         writer,
                         pressedHere,
@@ -585,7 +712,7 @@ export function createDrizzlePress(
         ),
       );
 
-    if (pressed.verdict === "discard") return run(NO_OWNERS);
+    if (pressed.verdict !== "apply") return run(NO_OWNERS);
     // The sources the press's copies changed and where Live has their nodes and its documents.
     const sources = () =>
       deps.treeLists.read({

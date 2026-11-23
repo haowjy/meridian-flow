@@ -49,3 +49,22 @@ bash apps/server/server/domains/collab/.context/qa/press-on-the-stack.sh
 Not covered here: a tab's typing over a pressed change (`by: writer`) needs a socket client, and a
 server write with no commit message (a restore, a copy) names no one; both are read in
 `overwriters` in `drizzle-press.ts`.
+
+### Restore before and the turn Undo
+
+[`restore-before-on-the-stack.sh`](restore-before-on-the-stack.sh) runs on the same kind of stack,
+in a new Work each run. Writer typing is `./mf doc edit`, which types into one block's text as a tab
+does.
+
+```sh
+MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev
+bash apps/server/server/domains/collab/.context/qa/restore-before-on-the-stack.sh
+```
+
+| Check | What it shows |
+|---|---|
+| A: Restore before returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
+| B: after one of the turn's changes was applied, Restore before leaves it in Live and the draft reads as Live | The restore carries the fork forward to today's Live first, and never writes Live |
+| C: the card's Undo of a Live turn whose first paragraph the writer retyped answers `partial`, keeps the writer's text and undoes the other paragraph | The turn Undo on design §2's rule: a write someone wrote over stays whole |
+| D: the model's `undo` of an edit the writer retyped says it was written over, and changes nothing | `cant_undo_changed` with the rule's words |
+| E: a chat that read in Draft, switched to Live, writes over the writer's Live typing without losing it | The write plans on the chat's latest read in any of the document's rooms (`frontierLookup` per document) |
