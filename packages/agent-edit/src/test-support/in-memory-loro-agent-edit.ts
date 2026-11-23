@@ -159,11 +159,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     try {
       for (const { room } of parts)
         if (!held.has(loroRoomName(room))) held.set(loroRoomName(room), await rooms.read(room));
-      const undone = undoInRooms(
-        parts,
-        (room) => held.get(loroRoomName(room)) as RoomDocs,
-        by,
-      );
+      const undone = undoInRooms(parts, (room) => held.get(loroRoomName(room)) as RoomDocs, by);
       for (const { room, changes } of undone.rooms)
         await command(() => rooms.commit(inCommand(), room, encodeChanges(changes), "server:undo"));
       const taken = parts.filter((part) => !undone.stayed.has(part));

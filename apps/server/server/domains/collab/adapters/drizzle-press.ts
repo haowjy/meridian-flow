@@ -54,10 +54,10 @@ import {
   type PressedChange,
   type RoomDocs,
   type RoomVersion,
+  readCommitMessage,
   restoreBefore,
   type StoredEdit,
   undoEdits,
-  readCommitMessage,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -620,8 +620,11 @@ export function createDrizzlePress(
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
                   const changes = row.changes as PressedChange[];
-                  // A Restore before of a document only the draft holds wrote its Live room.
-                  const liveRoom = changes.every((change) => change.fork === null);
+                  // A Restore before of a document only the draft holds wrote its Live room. An
+                  // Apply's change has no fork side either when the fork kept nothing to delete.
+                  const liveRoom =
+                    pressed.verdict === "restore" &&
+                    changes.every((change) => change.fork === null);
                   const room: DocumentRoom = liveRoom
                     ? { kind: "live", documentId }
                     : { kind: "fork", draftId: draft, documentId };
