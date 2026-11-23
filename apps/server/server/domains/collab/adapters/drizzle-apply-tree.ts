@@ -11,7 +11,6 @@
 import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
-import { docVersion, encodeDocVersion } from "@meridian/document-model";
 import {
   applyDraft,
   covers,
@@ -78,6 +77,8 @@ export function createApplyTreeOperations(input: {
     draftId: DraftId;
     userId: UserId;
     commandId: CommandId;
+    /** The tree's name for this draft's part of the command (`assertNewCommand`: one per draft). */
+    treeCommand: string;
     saw: TreeCut | undefined;
     items: readonly TreeApplyItem[];
     /** Under the owners' locks: what each source takes. */
@@ -95,12 +96,7 @@ export function createApplyTreeOperations(input: {
     const { result: perList } = await input.treeLists.submit({
       lists,
       make: (writers) => {
-        const rows: {
-          scope: "project" | "account";
-          mark: Uint8Array;
-          created: string[];
-          nodes: string[];
-        }[] = [];
+        const rows: { scope: "project" | "account" }[] = [];
         for (const [at, end] of writers.entries()) {
           const { writer } = end;
           const list = lists[at] as TreeList;
@@ -128,7 +124,7 @@ export function createApplyTreeOperations(input: {
                 writer,
                 draftId,
                 actor,
-                click.commandId,
+                click.treeCommand,
                 [...new Set(chosen.map((record) => record.id))],
                 saw,
                 click.judge.closed,
@@ -142,14 +138,7 @@ export function createApplyTreeOperations(input: {
               )
             )
               landed.add(it.node);
-          if (!applied) continue;
-          const { copies } = applied;
-          rows.push({
-            scope: list.kind,
-            mark: encodeDocVersion(docVersion(writer.doc)),
-            created: copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
-            nodes: [...new Set(copies.map((copy) => copy.node))],
-          });
+          if (applied) rows.push({ scope: list.kind });
         }
         // Every judgement above was a guess for a source whose owner was not locked.
         click.judge.assertLocked();
@@ -164,8 +153,6 @@ export function createApplyTreeOperations(input: {
           commandId: click.commandId,
           draftId,
           scope: row.scope,
-          mark: Buffer.from(row.mark),
-          nodes: row.nodes,
         })),
       );
     if (perList.length > 0) {

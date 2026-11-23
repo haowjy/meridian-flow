@@ -114,7 +114,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    (`lockThreadAsRuntime`: the thread's asks, the inbox advisory lock, the row), since its Work
    step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
    the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
-   takes), then the draft row.
+   takes), then the draft rows, in ID order.
 3. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after
@@ -134,8 +134,8 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
 
-- **Press and unpress** take the order of [the press](press.md): Works, draft, lists, documents
-  in ID order, then writes.
+- **Press and unpress** take the order of [the press](press.md): Works, drafts in ID order, lists,
+  documents in ID order, then writes (each document's Live room, then its fork's).
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` takes none: it throws when the transaction does not hold the

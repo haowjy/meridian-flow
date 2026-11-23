@@ -1,31 +1,46 @@
 # The press
 
 A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its pending tree
-records. Phase 1 of the move to Loro has no text drafts, so a press has only its tree half; phase
-2 gives it a text half on the Work's fork rooms. Apply or Discard pressed on documents, folders or
-the whole draft is one command, `press` (`adapters/drizzle-press.ts`, routes
-`POST /api/projects/:id/press` and `/press/undo`).
+records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
+a document, a draft or every draft of a Work, is one command, `press`
+(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). There is
+no folder scope.
 
 ## What a press does
 
-`{ draft, verdict, items | "all", saw? }`, addressed by the draft id. Every Work and root chat has
-its draft from its creation, so a press never makes one.
+`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`. A
+`change` or `document` scope names its document by `DraftItemKey`; `draft` names one draft;
+`work` takes every living draft of the Work, one after another in draft id order, each on Live as
+the one before left it. Every Work and root chat has its draft from its creation, so a press
+never makes one.
 
-- **Selection.** `items` expands folders to what is under them in the Work's view; the press takes
-  the Work's pending records on those nodes. `"all"` takes every pending record. `saw` is the cut
-  of the lists the review was drawn from: records admitted after it stay pending.
+- **The text half** runs first, per document of the draft in scope that has a fork row (a
+  `draft` or `work` scope takes the forks flagged pending). It reads the fork room as a command
+  copy (its own peer, carrying its forwarded copy of Live), runs `applyBlocks` or
+  `discardBlocks` (a `change` scope selects the change by any member id), commits Live's room
+  then the fork's under the message `press:<id>`, and stores each change's `PressedChange` in
+  `press_changes` (command, draft, document) for its Undo. It then sets the fork's `pending`
+  flag from the copy: an Apply writes only Live, so no fork save would.
+- **`liveVersions`** stamps the record of a removal the press applies, nothing else: the server
+  never waits for or refuses a press over the tab's typing. A document it names no version for
+  counts as never shown, so a removal there does not land.
+- **The tree half.** A `document` scope takes that node's pending records; `draft` and `work`
+  take every pending record of each draft; a `change` takes none. `saw` is the cut of the lists
+  the review was drawn from: records admitted after it stay pending. Apply is the tree Apply
+  (`createApplyTreeOperations`, the same judge, locks and `apply_command_trees` rows); Discard is
+  `discardTreeRecords`. The tree lists take a command name once, so each draft's part is named
+  `<command>_<draft>` there.
 - **The draft's records are read under its owner's lock**, the lock an AI write takes
   (`lockForWrite`): a read before it could miss the first tree records an AI turn admitted in
   between.
-- **Apply** is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
-  `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`
   (`storedAnswer` in `lib/draft-review-route.ts`). The driver then resolves the id: a `never`
   settles as never-ran, but an id that holds another body's `done` resolves to that body's result,
   since resolve reads the id alone. Every command route shares this; only a client bug reaches it.
-- Lock order is the Apply click's: Works, draft, lists, documents in id order, then writes.
+- Lock order is the Apply click's: Works, drafts in id order, lists, documents in id order, then
+  writes.
   Deliveries run after commit.
 
 ## Discard, and what goes to Trash
@@ -59,8 +74,16 @@ closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree
 
 ## Undo and Redo
 
-`unpress` takes a press back once, in the press's own project: `undoApply` (Apply) or
-`restoreDiscard` (Discard). A document or folder a draft created is the draft's again after the
+`unpress` takes a press back once, in the press's own project, draft by draft, newest first. Per
+document, `undoPress` reads the press's `press_changes` rows: each change goes back whole or stays
+whole (`editStays`), each room its own, committed under `press:<undo id>`. A change that stays is
+in the answer's `stayed`, with who wrote over it, read from the commit messages on its text since
+the press: no message is the writer, `turn:<id>` a chat (by its ref), `press:` another press.
+Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard) on that draft's part, with
+the Trash deletes whose nodes its creates made. A deleted draft's text has nothing to come back
+to; a purged draft's rows went with it.
+
+A document or folder a draft created is the draft's again after the
 Undo of the press that put it in Live or in Trash: pending in the Work, in no Live row and no
 Trash entry. This rests on the tree's rule 15 (withdrawn nodes,
 `packages/project-tree/.context/CONTEXT.md`): the press's Undo takes back such a create with a
@@ -81,8 +104,8 @@ room gateway admits the room through `documentSync.draftsHolding`.
 ## Not covered yet
 
 - No per-document grant check: the press is the draft owner's, like Apply all.
-- `document_block_rooms.pending_changes` and its readers (the Work's text counts, retention holds,
-  `documentsHolding`, `listDraftTextChanges`) are left from suggestion drafts: nothing writes the
-  column in phase 1, so they read nothing. Phase 2 decides whether fork rooms fill it or it goes.
+- The review list's readers (the Work's text counts, retention holds, `documentsHolding`,
+  `listDraftTextChanges`) still read `document_block_rooms.pending_changes`, which nothing writes;
+  they move onto `document_forks` next (plan step 5).
 - Older builds read a withdrawn node as in Trash (the Undo's delete looks like any delete):
   nothing is lost, and the node is pending in the Work there too.

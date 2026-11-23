@@ -129,6 +129,26 @@ interface Loaded {
 type Row = { docKey: string; snapshot: Uint8Array; frontiers: StoredFrontiers };
 type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
 
+/** Writes a fork's row, or sets its pending flag from a read of it now. */
+export async function markFork(tx: DrizzleDb, room: ForkRoom, pending: boolean) {
+  await tx
+    .insert(documentForks)
+    .values({
+      draftId: room.draftId,
+      documentId: room.documentId,
+      pending,
+      emptySince: pending ? null : new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [documentForks.draftId, documentForks.documentId],
+      set: {
+        pending,
+        checkedAt: sql`now()`,
+        emptySince: pending ? null : sql`coalesce(${documentForks.emptySince}, now())`,
+      },
+    });
+}
+
 /**
  * `DocumentRooms` on Postgres (design §4): a room's docs live in this process, loaded together from
  * their `document_snapshots` rows, saved (the rows of the docs that changed) on the debounce or on
@@ -406,26 +426,6 @@ export function createPostgresDocumentRooms(input: {
     if (changed.length === 0) return null;
     // The delta holds the copy's own restore too, if the import wrote one.
     return { changed, delta: encodeEnvelope(docs.exportSince(before)) };
-  }
-
-  /** Writes the fork's row, or sets its pending flag from a read of it now. */
-  async function markFork(tx: DrizzleDb, room: ForkRoom, pending: boolean) {
-    await tx
-      .insert(documentForks)
-      .values({
-        draftId: room.draftId,
-        documentId: room.documentId,
-        pending,
-        emptySince: pending ? null : new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [documentForks.draftId, documentForks.documentId],
-        set: {
-          pending,
-          checkedAt: sql`now()`,
-          emptySince: pending ? null : sql`coalesce(${documentForks.emptySince}, now())`,
-        },
-      });
   }
 
   async function writeRows(

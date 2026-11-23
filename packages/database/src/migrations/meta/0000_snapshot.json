@@ -3798,18 +3798,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "mark": {
-          "name": "mark",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "nodes": {
-          "name": "nodes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {},
@@ -3842,10 +3830,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "apply_command_trees_command_id_scope_pk": {
-          "name": "apply_command_trees_command_id_scope_pk",
+        "apply_command_trees_command_id_draft_id_scope_pk": {
+          "name": "apply_command_trees_command_id_draft_id_scope_pk",
           "columns": [
             "command_id",
+            "draft_id",
             "scope"
           ]
         }

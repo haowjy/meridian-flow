@@ -3,8 +3,8 @@
 A writer asks the model for a chapter, watches it work, then reviews what it drafted and applies it
 or throws it away. In Draft mode the model's writes land in the chat's draft: its tree changes (new
 documents, renames, moves, deletes) and, per document, a fork room of the text. Phase 2 of the move to
-Loro is bringing the text half back: the server writes forks now, and the press's text half and the
-browser's review land with the rest of phase 2.
+Loro is bringing the text half back: the server writes forks and presses them now, and the
+browser's review lands with the rest of phase 2.
 
 ## Pick the Work
 
@@ -76,7 +76,7 @@ Sees: from phase 2, a Draft chip in the toolbar and a line of review controls ab
 
 Does: presses Apply (the filled green button) or Discard (quiet text).
 
-Sees: after Apply, the Work's tree changes (a move, a rename, a new document) are live; its text changes join them in phase 2. After Discard, they are gone and the project reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. Only a document or folder the Work created goes to Trash, where Restore brings it back into the project. The notice's Undo, the sidebar's Undo step or Ctrl+Z in the document takes an Apply or a Discard back while the tab is open, and puts the writer back where they were before it: a created document or folder is pending in the review again, out of Live and out of Trash. Trash's Restore brings a discarded created document into Live instead; after it, that Undo has nothing left to do.
+Sees: after Apply, the Work's tree changes (a move, a rename, a new document) and its text changes are live. Apply or Discard takes one change, a document, a draft, or every draft of the Work. After Discard, they are gone and the project reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. Only a document or folder the Work created goes to Trash, where Restore brings it back into the project. The notice's Undo, the sidebar's Undo step or Ctrl+Z in the document takes an Apply or a Discard back while the tab is open, and puts the writer back where they were before it: a created document or folder is pending in the review again, out of Live and out of Trash. Trash's Restore brings a discarded created document into Live instead; after it, that Undo has nothing left to do.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
 - Machines: [An Apply's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)

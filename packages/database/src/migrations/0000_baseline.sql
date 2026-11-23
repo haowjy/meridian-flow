@@ -398,9 +398,7 @@ CREATE TABLE "apply_command_trees" (
 	"command_id" uuid NOT NULL,
 	"draft_id" text NOT NULL,
 	"scope" text NOT NULL,
-	"mark" "bytea" NOT NULL,
-	"nodes" jsonb NOT NULL,
-	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
+	CONSTRAINT "apply_command_trees_command_id_draft_id_scope_pk" PRIMARY KEY("command_id","draft_id","scope")
 );
 --> statement-breakpoint
 CREATE TABLE "commands" (

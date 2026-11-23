@@ -440,6 +440,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       presses: createDrizzlePress(deps.db, {
         workProjection: deps.workProjectionMutation,
         drafts: workDrafts,
+        rooms,
         arrivals: deps.arrivals,
         treeLists: deps.treeLists,
         onCommitted: async (documentId) => {

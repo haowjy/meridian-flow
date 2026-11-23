@@ -28,7 +28,6 @@ import {
 } from "../adapters/drizzle-drafts.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
-import { createDrizzlePress } from "../adapters/drizzle-press.js";
 import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import { createDrizzleWriteOrdinals } from "../adapters/drizzle-write-ordinals.js";
@@ -371,12 +370,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
-  const presses = createDrizzlePress(db, {
-    workProjection: createTestWorkProjectionMutation(db),
-    drafts: workDrafts,
-    treeLists,
-    onCommitted: async () => {},
-  });
   // Tests mint a destination grant without a target; a write's grant names its document. A
   // write is the model's tool call as the chat loop sends it: one command, one transaction.
   const testAgentEdit = {
@@ -408,7 +401,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...drafts,
-    presses,
   };
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
