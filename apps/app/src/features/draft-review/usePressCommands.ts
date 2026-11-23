@@ -11,7 +11,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
-import type { DocumentId, DraftId } from "@meridian/contracts";
+import { type DocumentId, type DraftId, parseDraftItemKey, type WorkId } from "@meridian/contracts";
 import type {
   DraftItem,
   DraftItemsResponse,
@@ -80,19 +80,24 @@ export type WorkDraftCommands = ReturnType<typeof usePressCommands>;
 export function usePressCommands({
   projectId,
   work,
-  draftId,
+  drafts: draftList,
   threadId = null,
   surface,
 }: {
   projectId: string;
-  /** The Work the draft belongs to, if any: the chat strip counts what its Changes list holds. */
+  /** The Work the drafts belong to, if any: the chat strip counts what its Changes list holds. */
   work: Work | null;
-  /** The draft the commands act on; "" acts on none. */
-  draftId: string;
+  /**
+   * The drafts the commands act on: one (a chat's, a page's), or every draft of `work` (the
+   * Changes tab), whose "all" is the Work's press. Empty acts on none.
+   */
+  drafts: readonly string[];
   threadId?: string | null;
   /** Where this surface's notices show: the Changes list, a chat's strip, or a document's band. */
   surface: NoticeSurface["kind"];
 }) {
+  // A new array each render would remake every command: the list's ids are what matter.
+  const draftsKey = draftList.join(",");
   const owner = useDraftCommandOwner();
   const driver = useCommandDriver();
   const treeLists = useOptionalTreeLists();
@@ -101,10 +106,24 @@ export function usePressCommands({
   const registry = useOptionalLiveDocumentSessionRegistry();
   const { openDraftFile } = useItemLauncher();
   const queryClient = useQueryClient();
-  const locked = !draftId || !driver;
+  const locked = !draftsKey || !driver;
   return useMemo(() => {
     const { notices } = owner;
-    const rows = () => cachedOwnerDrafts(queryClient, projectId, draftId) ?? [];
+    const drafts = draftsKey ? draftsKey.split(",") : [];
+    const draftId = drafts[0] ?? "";
+    const workWide = drafts.length > 1 && work !== null;
+    const workKey = work ? `work:${work.id}` : "";
+    /** Whose notice a press shows: its draft's, or the Work's for a press of every draft. */
+    const noticeOf = (scope: PressScope) =>
+      scope.kind === "work"
+        ? workKey
+        : scope.kind === "draft"
+          ? scope.draft
+          : (parseDraftItemKey(scope.item)?.draftId ?? draftId);
+    const rows = () =>
+      drafts.flatMap((draft) => cachedOwnerDrafts(queryClient, projectId, draft) ?? []);
+    const draftOfNode = (node: string) =>
+      rows().find((item) => item.documentId === node)?.draftId ?? draftId;
     const nameOf = (node: string) => {
       const row = rows().find((item) => item.documentId === node);
       return row?.documentName ?? documentBasename(row?.contextLocation?.path) ?? "";
@@ -117,9 +136,13 @@ export function usePressCommands({
           : { kind: "changes" };
     /** Reads the list again; a row a press took or gave back shows once this lands. */
     const refresh = async () => {
-      await queryClient.refetchQueries(
-        { queryKey: projectQueryKeys.drafts(projectId, draftId) },
-        { cancelRefetch: false },
+      await Promise.all(
+        drafts.map((draft) =>
+          queryClient.refetchQueries(
+            { queryKey: projectQueryKeys.drafts(projectId, draft) },
+            { cancelRefetch: false },
+          ),
+        ),
       );
     };
     const blocked = (): CommandStart => ({
@@ -147,17 +170,20 @@ export function usePressCommands({
      */
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
-      const listed = queryClient.getQueryData<DraftItemsResponse>(
-        projectQueryKeys.drafts(projectId, draftId),
-      );
-      const view = listed ? { draft: draftId } : LIVE;
       const project: TreeListRef = { kind: "project", projectId };
       const placement = [project, treeLists.account].flatMap((list) => {
         const handle = treeLists.acquire(list);
-        const shown = handle.session.replay(view);
+        const sources = new Set<string>();
+        for (const draft of drafts) {
+          const listed = queryClient.getQueryData<DraftItemsResponse>(
+            projectQueryKeys.drafts(projectId, draft),
+          );
+          const shown = handle.session.replay(listed ? { draft } : LIVE);
+          for (const node of nodes)
+            for (const source of shownSourceOf(shown, node) ?? []) sources.add(source);
+        }
         handle.release();
-        const sources = [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))];
-        return sources.length ? [{ list, sources }] : [];
+        return sources.size ? [{ list, sources: [...sources] }] : [];
       });
       return placement.length ? placement : [{ list: project, sources: [] }];
     };
@@ -165,12 +191,13 @@ export function usePressCommands({
     /** A folder's name as the Work's tree shows it, in the project's list or the account's. */
     const folderName = (node: string): string => {
       if (!treeLists) return "";
-      for (const list of [{ kind: "project", projectId } as TreeListRef, treeLists.account]) {
-        const handle = treeLists.acquire(list);
-        const name = handle.session.replay({ draft: draftId }).nodes.get(node)?.name;
-        handle.release();
-        if (name) return name;
-      }
+      for (const list of [{ kind: "project", projectId } as TreeListRef, treeLists.account])
+        for (const draft of drafts) {
+          const handle = treeLists.acquire(list);
+          const name = handle.session.replay({ draft }).nodes.get(node)?.name;
+          handle.release();
+          if (name) return name;
+        }
       return "";
     };
 
@@ -227,7 +254,8 @@ export function usePressCommands({
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
           const created = rows().find((row) => row.documentId === main && row.isNew);
           if (verdict === "apply" && created && main && taken.includes(main))
-            for (const file of projectWorkDraftFiles([created], null)) openDraftFile(file, draftId);
+            for (const file of projectWorkDraftFiles([created], null))
+              openDraftFile(file, created.draftId);
           return { kind: "answered", unpressId: commandId, took: true };
         },
       };
@@ -259,19 +287,35 @@ export function usePressCommands({
       target: PressTarget,
       live: CommandDriver,
     ): Promise<Pressed | Unpressed> => {
-      const listed = queryClient.getQueryData<DraftItemsResponse>(
-        projectQueryKeys.drafts(projectId, draftId),
-      );
+      // The drafts the press acts on: a change's or a document's own, else all of the surface's.
+      const pressed =
+        target.scope.kind === "change" || target.scope.kind === "document"
+          ? [parseDraftItemKey(target.scope.item)?.draftId ?? draftId]
+          : drafts;
+      const lists = pressed.flatMap((draft) => {
+        const listed = queryClient.getQueryData<DraftItemsResponse>(
+          projectQueryKeys.drafts(projectId, draft),
+        );
+        return listed ? [{ draft, listed }] : [];
+      });
       const all = target.documents === null;
-      const nodes = target.documents ?? rows().map((item) => item.documentId);
-      const taken = rows().filter((item) => all || nodes.includes(item.documentId));
+      const inScope = lists.flatMap(({ listed }) => listed.items);
+      const nodes = target.documents ?? inScope.map((item) => item.documentId);
+      const taken = inScope.filter((item) => all || nodes.includes(item.documentId));
       const gone = (item: DraftItem) => target.whole && (all || nodes.includes(item.documentId));
-      const folders = listed && all ? listed.folders.map((folder) => folder.id) : [];
       // Discard all takes folders with only a tree change too: they have no row.
-      const placement = placementOf([...nodes, ...folders]);
+      const folders = all
+        ? lists.flatMap(({ draft, listed }) =>
+            listed.folders.map((folder) => ({ draft, id: folder.id })),
+          )
+        : [];
+      const placement = placementOf([...nodes, ...folders.map((folder) => folder.id)]);
       const release = target.whole
         ? owner.hold(
-            [...taken.map((item) => item.itemKey), ...folders.map((id) => folderKey(draftId, id))],
+            [
+              ...taken.map((item) => item.itemKey),
+              ...folders.map((folder) => folderKey(folder.draft, folder.id)),
+            ],
             verdict === "apply",
           )
         : () => {};
@@ -282,17 +326,21 @@ export function usePressCommands({
       );
       try {
         // A read already out answers from before the press: it must not bring the rows back.
-        await queryClient.cancelQueries({
-          queryKey: projectQueryKeys.drafts(projectId, draftId),
-        });
-        patchOwnerDrafts(queryClient, projectId, draftId, (rowsNow) =>
-          rowsNow.filter((item) => !gone(item)),
-        );
+        for (const draft of pressed) {
+          await queryClient.cancelQueries({
+            queryKey: projectQueryKeys.drafts(projectId, draft),
+          });
+          patchOwnerDrafts(queryClient, projectId, draft, (rowsNow) =>
+            rowsNow.filter((item) => !gone(item)),
+          );
+        }
+        // Each list's cut is the Work's tree as that list read it: the first is the press's.
+        const saw = lists[0]?.listed.saw;
         const record = await submitPress(live, {
           projectId,
           verdict,
           scope: target.scope,
-          ...(listed?.saw ? { saw: listed.saw } : {}),
+          ...(saw ? { saw } : {}),
           ...(verdict === "apply" && liveVersions.length ? { liveVersions } : {}),
         });
         if (!record) return "told";
@@ -325,7 +373,7 @@ export function usePressCommands({
       documents.flatMap((node) => {
         const documentId = node as DocumentId;
         const rooms = [
-          { kind: "fork", draftId: draftId as DraftId, documentId },
+          { kind: "fork", draftId: draftOfNode(node) as DraftId, documentId },
           { kind: "live", documentId },
         ] as const;
         return rooms.flatMap((room) => {
@@ -342,7 +390,9 @@ export function usePressCommands({
       again?: EditorPressStep,
     ): CommandStart => {
       if (locked || !driver) return blocked();
-      notices.end(draftId);
+      // The surface shows one notice: a new press ends the last, whichever draft it was on.
+      for (const key of [...drafts, ...(workWide ? [workKey] : [])]) notices.end(key);
+      const noticeKey = noticeOf(target.scope);
       const editor =
         again ??
         new EditorPressStep(
@@ -365,7 +415,7 @@ export function usePressCommands({
       const outcome = press(verdict, target, driver).then((pressed): CommandOutcome => {
         if (pressed === "failed")
           notifyFailure({
-            key: `press:${draftId}`,
+            key: `press:${noticeKey}`,
             title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
             brief: true,
           });
@@ -378,12 +428,12 @@ export function usePressCommands({
         let step: PressEntries;
         if (verdict === "apply") {
           step = remember("apply", pressed, editor, () => {
-            if (notices.appliedFacts(draftId)?.facts.some((fact) => fact.step === step))
-              notices.end(draftId);
+            if (notices.appliedFacts(noticeKey)?.facts.some((fact) => fact.step === step))
+              notices.end(noticeKey);
           });
           notices.showApplied({
             projectId,
-            draftId,
+            draftId: noticeKey,
             surface: where,
             facts: changed.map((documentId) => ({
               documentId,
@@ -396,7 +446,7 @@ export function usePressCommands({
           let shown: number | null = null;
           step = remember("discard", pressed, editor, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
-            const notice = notices.get(draftId);
+            const notice = notices.get(noticeKey);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
               notice.dismiss();
           });
@@ -414,7 +464,12 @@ export function usePressCommands({
               end: () => {},
             },
           };
-          shown = notices.showDiscard({ projectId, draftId, surface: where, parts: [part] });
+          shown = notices.showDiscard({
+            projectId,
+            draftId: noticeKey,
+            surface: where,
+            parts: [part],
+          });
         }
         entries = step;
         return { ...answer, undo: () => step.undo() };
@@ -429,7 +484,9 @@ export function usePressCommands({
       whole: true,
     });
     const draftTarget: PressTarget = {
-      scope: { kind: "draft", draft: draftId as DraftId },
+      scope: workWide
+        ? { kind: "work", work: work.id as WorkId }
+        : { kind: "draft", draft: draftId as DraftId },
       documents: null,
       whole: true,
     };
@@ -468,7 +525,11 @@ export function usePressCommands({
     return {
       projectId,
       work,
+      /** The surface's draft: its one, or with several the first. */
       draftId,
+      drafts,
+      /** Whose notices the surface shows (`useDraftNotice`): each draft's, and with several the Work's. */
+      noticeKeys: workWide ? [workKey, ...drafts] : drafts,
       threadId,
       owner,
       dispositionLocked: locked,
@@ -497,7 +558,7 @@ export function usePressCommands({
     locked,
     projectId,
     work,
-    draftId,
+    draftsKey,
     threadId,
     surface,
   ]);

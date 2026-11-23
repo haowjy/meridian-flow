@@ -1,8 +1,14 @@
-import { draftOf, type Work } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { enterScope } from "@/client/project-shell/document-views";
-import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
+import {
+  NO_SCOPE,
+  useProjectScope,
+  useShownWorkDraft,
+  writeProjectScope,
+} from "@/client/project-shell/store";
+import { useWorkDrafts } from "@/client/query/draft-commands";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useAccountId } from "./context/account-feature-context";
@@ -68,14 +74,17 @@ export function useWorkScope(projectId: string): {
 /**
  * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
  * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
- * and the Work chip all show these, so under No Work they follow the chat. `draftId` is "" when
- * there are none to show; `work` is the Work its commands act for. `known` is false until the
- * Works list has loaded: before that a picked Work's draft reads as "".
+ * and the Work chip all show these, so under No Work they follow the chat. `draftId` is the one
+ * the shell shows on Draft: of a picked Work, the draft its version chip picked
+ * (`useShownWorkDraft`) while the Work lists it, else its default; of a chat, the chat's own.
+ * `draftId` is "" when there are none to show; `work` is the Work its commands act for. `known`
+ * is false until the Works list has loaded: before that a picked Work's draft reads as "".
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
 ): { picked: Work | null; work: Work | null; draftId: string; known: boolean } {
+  const accountId = useAccountId();
   const { workId } = useWorkScope(projectId);
   const catalog = useWorks(projectId);
   const { works, deleted, noWork } = catalog;
@@ -86,19 +95,27 @@ export function useScopeDraftOwner(
     workId && workId !== noWork?.id
       ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
       : null;
+  const shown = useShownWorkDraft(accountId, projectId);
+  const { drafts } = useWorkDrafts(projectId, picked?.id ?? null);
+  const pickedDraft =
+    picked &&
+    shown?.workId === picked.id &&
+    (drafts === null || drafts.some((draft) => draft.id === shown.draftId))
+      ? shown.draftId
+      : (drafts?.find((draft) => draft.isDefault)?.id ?? picked?.draftId ?? "");
   // A Work still being created has its draft id from the browser that minted it.
   const creating = !picked && workId ? catalog.creations.get(workId)?.work.draftId : undefined;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  const chatKey = picked || creating || !chatWork || !thread ? "" : draftOf(thread, chatWork);
+  const chatKey = picked || creating || !chatWork || !thread ? "" : thread.draftId;
   const known = workId !== null;
   return useMemo(
     () =>
       picked
-        ? { picked, work: picked, draftId: picked.draftId ?? "", known }
+        ? { picked, work: picked, draftId: pickedDraft, known }
         : creating
           ? { picked: null, work: null, draftId: creating, known }
           : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey, known },
-    [picked, creating, chatWork, chatKey, known],
+    [picked, pickedDraft, creating, chatWork, chatKey, known],
   );
 }
 

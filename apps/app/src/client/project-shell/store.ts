@@ -89,6 +89,33 @@ export function writeTreeVersionChoice(
   notify(accountId, projectId);
 }
 
+/**
+ * Which of the picked Work's drafts the shell shows on Draft, as `<workId>:<draftId>`. A choice
+ * for another Work, or for a draft the Work no longer lists, is the Work's default.
+ */
+export type ShownWorkDraft = { workId: string; draftId: string };
+
+export function readShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
+  return decodeWorkDraft(readRememberedId("work-draft", accountId, projectId));
+}
+
+function decodeWorkDraft(stored: string | null): ShownWorkDraft | null {
+  const at = stored?.indexOf(":") ?? -1;
+  if (!stored || at < 1) return null;
+  return { workId: stored.slice(0, at), draftId: stored.slice(at + 1) };
+}
+
+export function writeShownWorkDraft(
+  accountId: string,
+  projectId: string,
+  shown: ShownWorkDraft | null,
+): void {
+  const next = shown ? `${shown.workId}:${shown.draftId}` : null;
+  if (readRememberedId("work-draft", accountId, projectId) === next) return;
+  writeRememberedId("work-draft", accountId, projectId, next);
+  notify(accountId, projectId);
+}
+
 export function readLastShownDocument(accountId: string, projectId: string): ShownDocument | null {
   return decodeDocument(readRememberedId("document", accountId, projectId));
 }
@@ -145,6 +172,16 @@ export function useTreeVersionChoice(accountId: string, projectId: string): Tree
     () => readTreeVersionChoice(accountId, projectId),
     () => "live",
   );
+}
+
+/** The picked Work's draft on Draft, re-read when it changes. */
+export function useShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
+  const stored = useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readRememberedId("work-draft", accountId, projectId),
+    () => null,
+  );
+  return useMemo(() => decodeWorkDraft(stored), [stored]);
 }
 
 /** The document slot, re-read when it changes. Decoded from one stored string, so stable. */

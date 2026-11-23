@@ -4,9 +4,17 @@ import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
 import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
-import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -20,13 +28,15 @@ import {
   CommandNotice,
   type CommandQuestion,
   noticeAction,
-  useDraftNotice,
   useDraftNoticeWords,
+  useSurfaceNotice,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
+import { workDraftName } from "@/features/draft-review/draft-names";
+import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -48,7 +58,12 @@ import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
 import { useItemLauncher } from "../../review-launch";
-import { reviewCount, useShellTreeVersion } from "../../tree-version";
+import {
+  reviewCount,
+  useDraftTreeChanges,
+  useDraftTreeVersion,
+  useShellTreeVersion,
+} from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
 
@@ -59,8 +74,13 @@ import { SourcePane } from "./SourcePane";
 export type ChangesScope = {
   /** The Work the commands act for: the picked Work, else the chat on screen's (No Work for a chat's own drafts). */
   work: Work | null;
-  /** "" when there is nothing to list (None with no chat of its own). */
+  /** The shown draft; "" when there is nothing to list (None with no chat of its own). */
   draftId: string;
+  /**
+   * The drafts the tab lists, each under its name when there are several (a picked Work's, which
+   * Apply all presses together); else the one draft, unnamed.
+   */
+  drafts: readonly { id: string; name: string | null }[];
   heading: string;
   empty: string;
   /** What waits on the writer: the documents and folders the Work or the chat changes. */
@@ -85,9 +105,16 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
   const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
+  const workDrafts = picked && shell?.work?.id === picked.id ? shell.workDrafts?.drafts : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
+    const drafts =
+      workDrafts && workDrafts.length > 1
+        ? workDrafts.map((draft) => ({ id: draft.id, name: workDraftName(draft) }))
+        : draftId
+          ? [{ id: draftId, name: null }]
+          : [];
     const others = (works ?? [])
       .filter((other) => other.id !== work?.id && !isWorkArchived(other))
       .filter((other) => reviewCount(shell, other) > 0)
@@ -101,6 +128,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       return {
         work,
         draftId,
+        drafts,
         heading: t`Changes in ${name}`,
         empty: t`Nothing to review in ${name}.`,
         count,
@@ -111,26 +139,38 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     return {
       work,
       draftId,
+      drafts,
       heading: t`Changes in this chat`,
       empty: t`Nothing to review in this chat.`,
       count,
       offered: Boolean(draftId) && count > 0,
       elsewhere,
     };
-  }, [picked, work, draftId, lineageCount, works, nameOf, chatWorkId, changed, shell]);
+  }, [picked, work, draftId, workDrafts, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
+
+/** What one draft's section tells the tab's bar: what Discard all and Apply all would take. */
+type SectionState = {
+  /** Its rows' files, in the list's order. */
+  files: readonly ReviewFileTarget[];
+  /** The folder changes Apply all takes along: every one that can land. */
+  folders: readonly { id: string; name: string }[];
+  /** A row a command took still shows. */
+  gone: boolean;
+  status: OwnerDraftListStatus["status"];
+  refetch: () => void;
+};
 
 /**
  * The scope's drafted documents, one row each in the one file order, under the folders the Work
- * changes. A row opens its draft; its × and ✓ discard or apply that document's draft, and a
- * folder's apply or discard everything under it, the folder's own change included. Discard all
- * and Apply all act on every change of the scope, new documents, folders, moves and deletes
- * included. Each Apply is one command, which sidebar Undo takes back whole, and each Discard's
- * notice has its Undo. An Apply of
- * several asks when it would delete documents or bring back documents deleted from the
- * manuscript, naming each, and again for any a newer delete held back. A question takes the
- * place of the buttons that asked it. A Discard made here shows its notice in the row's place
- * (Discard all: the bar's); an Apply's facts sit below the rows.
+ * changes, and in a Work with several drafts under a heading per draft. A row opens its draft;
+ * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
+ * change the tab lists (the draft, or every draft of the Work), new documents, folders, moves and
+ * deletes included. Each Apply is one command, which sidebar Undo takes back whole, and each
+ * Discard's notice has its Undo. An Apply of several asks when it would delete documents,
+ * naming each. A question takes the place of the buttons that asked it. A Discard made here shows
+ * its notice in the row's place (Discard all: on every row it took); an Apply's facts sit below
+ * the rows.
  *
  * An archived or deleted Work's commands go through as in any Work: Apply lands, and a Discard
  * the Work returns shows its chip on the control pressed. A frozen lineage (every chat in Trash)
@@ -151,19 +191,224 @@ export function ChangesSource({
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
-  const { draftId } = scope;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
   const touch = useCoarsePointer();
+  const several = scope.drafts.length > 1;
+  const [sections, setSections] = useState<ReadonlyMap<string, SectionState>>(() => new Map());
+  const report = useCallback((draftId: string, state: SectionState | null) => {
+    setSections((current) => {
+      const next = new Map(current);
+      if (state) next.set(draftId, state);
+      else next.delete(draftId);
+      return next;
+    });
+  }, []);
+  // Each section holds its rows as the writer saw them, right before a press of everything.
+  const holds = useRef(new Map<string, () => void>());
+  const listed = scope.drafts.flatMap((draft) => {
+    const state = sections.get(draft.id);
+    return state ? [state] : [];
+  });
+  const files = listed.flatMap((state) => state.files);
+  const changedFolders = listed.flatMap((state) => state.folders);
+  // A folder changed alone lists no document, and is still a change to review.
+  const hasFiles = files.length > 0 || changedFolders.length > 0;
+  const goneRows = listed.some((state) => state.gone);
+
+  /** What an Apply of several asks about first: the documents it deletes. */
+  const [asking, setAsking] = useState<{
+    targets: readonly ReviewFileTarget[];
+    deleting: readonly ReviewFileTarget[];
+  } | null>(null);
+  useEffect(() => {
+    if (hasFiles) return;
+    setAsking(null);
+  }, [hasFiles]);
+  const hold = () => {
+    for (const each of holds.current.values()) each();
+  };
+  const refsOf = (targets: readonly ReviewFileTarget[]) =>
+    targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
+  const everyItem = refsOf(files);
+  const applyAll = (targets: readonly ReviewFileTarget[]) => {
+    hold();
+    void controller.applyMany(refsOf(targets));
+  };
+  const startApply = (targets: readonly ReviewFileTarget[]) => {
+    const deleting = targets.filter((file) => file.item.tree?.deleted === true);
+    if (deleting.length > 0) setAsking({ targets, deleting });
+    else applyAll(targets);
+  };
+  const untitled = t`Untitled document`;
+  const names = (targets: readonly ReviewFileTarget[]) =>
+    targets.map((file) => reviewFileTargetName(file, untitled));
+  const question: CommandQuestion | null = asking
+    ? {
+        kind: "apply-all",
+        sentence: <ApplyAllQuestion deleting={names(asking.deleting)} />,
+        keep: <Trans>Cancel</Trans>,
+        confirm: <Trans>Apply all</Trans>,
+        onKeep: () => setAsking(null),
+        onConfirm: () => {
+          setAsking(null);
+          applyAll(asking.targets);
+        },
+        disabled: controller.dispositionLocked,
+      }
+    : null;
+  const notice = useSurfaceNotice(controller.noticeKeys);
+  // The pane's heading says what no section's row can: a node none of them draws.
+  const drawnNodes = new Set([
+    ...files.map((file) => file.documentId),
+    ...changedFolders.map((folder) => folder.id),
+  ]);
+  const treeWords = useTreeNoticeWords(projectId, {
+    holds: (node) => drawnNodes.has(node),
+    parent: () => null,
+    open: () => true,
+  });
+  // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
+  const undone = useRef<string | null>(null);
+  if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
+  const list = useRef<HTMLDivElement>(null);
+  useFocusSuccession(
+    list,
+    true,
+    (element) =>
+      noticeAction(element) ??
+      (undone.current
+        ? element.querySelector<HTMLElement>(
+            `[data-change-row="${escapeCssIdent(undone.current)}"] button`,
+          )
+        : null),
+  );
+  const status = listed.some((state) => state.status === "loading")
+    ? "loading"
+    : listed.find((state) => state.status === "error");
+  const [onlyFolder] = changedFolders;
+
+  return (
+    <div ref={list} className="contents">
+      <SourcePane
+        label={scope.heading}
+        notice={treeWords.header}
+        bar={
+          question ? (
+            <div className="min-w-0 flex-1">
+              <CommandNotice notice={null} question={question} />
+            </div>
+          ) : hasFiles ? (
+            <ReviewActions
+              scope="all"
+              density="full"
+              touch={touch}
+              onDiscard={() => {
+                hold();
+                void controller.discardAll(
+                  everyItem,
+                  // A lone folder change names itself in the notice.
+                  everyItem.length === 0 && changedFolders.length === 1 && onlyFolder
+                    ? onlyFolder.name
+                    : null,
+                );
+              }}
+              onApply={
+                files.every((file) => hasApply(file.item)) ? () => startApply(files) : undefined
+              }
+            />
+          ) : goneRows ? (
+            // The rows a command took still show: the bar stays, greyed, so they don't move.
+            <ReviewActions
+              scope="all"
+              density="full"
+              touch={touch}
+              disabled
+              onDiscard={NOTHING}
+              onApply={NOTHING}
+            />
+          ) : null
+        }
+      >
+        {scope.drafts.map((draft) => (
+          <DraftChangesSection
+            key={draft.id}
+            projectId={projectId}
+            draftId={draft.id}
+            heading={several ? draft.name : null}
+            controller={controller}
+            notice={notice}
+            touch={touch}
+            isOpen={isOpen}
+            onPicked={onPicked}
+            report={report}
+            holds={holds.current}
+          />
+        ))}
+        {hasFiles || goneRows ? null : status === "loading" ? (
+          <div className="px-2">
+            <ListLine iconSlot status>
+              <Trans>Loading changes…</Trans>
+            </ListLine>
+          </div>
+        ) : status ? (
+          <InlineErrorRow
+            message={t`Changes couldn’t load.`}
+            onRetry={status.refetch}
+            actionLabel={t`Retry changes`}
+          />
+        ) : listed.length < scope.drafts.length ? null : (
+          <div className="px-2">
+            <ListLine iconSlot>{scope.empty}</ListLine>
+            {scope.elsewhere ? <ElsewhereLink projectId={projectId} {...scope.elsewhere} /> : null}
+          </div>
+        )}
+      </SourcePane>
+    </div>
+  );
+}
+
+/**
+ * One draft's rows in the Changes tab, under its name when the tab lists several: its folders,
+ * then its documents. It tells the tab what Discard all and Apply all would take of it
+ * (`report`), and holds its rows as they were when one is pressed (`holds`).
+ */
+function DraftChangesSection({
+  projectId,
+  draftId,
+  heading,
+  controller,
+  notice,
+  touch,
+  isOpen,
+  onPicked,
+  report,
+  holds,
+}: {
+  projectId: string;
+  draftId: string;
+  heading: string | null;
+  controller: WorkDraftCommands;
+  /** The tab's notice, said on the rows it took. */
+  notice: DraftNotice | null;
+  touch: boolean;
+  isOpen: (file: ReviewFileTarget) => boolean;
+  onPicked?: () => void;
+  report: (draftId: string, state: SectionState | null) => void;
+  holds: Map<string, () => void>;
+}) {
   const drafts = useOwnerDrafts(projectId, draftId);
   // A command in flight hides its row.
   const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.item.itemKey));
   const shell = useShellTreeVersion();
-  const tree = shell?.draftId === draftId ? shell.tree : null;
+  // The shown draft's tree changes are the shell's; another draft's are replayed here.
+  const own = shell?.draftId === draftId;
+  const replayed = useDraftTreeChanges(projectId, useDraftTreeVersion(own ? null : drafts.draftId));
+  const tree = own ? (shell?.tree ?? null) : replayed;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (id: string) =>
     setFolded((current) => {
@@ -196,54 +441,9 @@ export function ChangesSource({
       ));
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
-
-  /** What an Apply of several asks about first: the documents it deletes. */
-  const [asking, setAsking] = useState<{
-    targets: readonly ReviewFileTarget[];
-    deleting: readonly ReviewFileTarget[];
-  } | null>(null);
-  // The folder changes Apply all takes along: every one that can land.
   const changedFolders = groupsOf(groups).flatMap((group) =>
-    group.folder && !group.folder.fault ? [group.folder.id] : [],
+    group.folder && !group.folder.fault ? [{ id: group.folder.id, name: group.folder.name }] : [],
   );
-  // A folder changed alone lists no document, and is still a change to review.
-  const hasFiles = files.length > 0 || groups.some((group) => group.folder);
-  useEffect(() => {
-    if (hasFiles) return;
-    setAsking(null);
-  }, [hasFiles]);
-
-  const refsOf = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
-  const everyItem = refsOf(files);
-  const applyAll = (targets: readonly ReviewFileTarget[]) => {
-    hold();
-    void controller.applyMany(refsOf(targets));
-  };
-  const startApply = (targets: readonly ReviewFileTarget[]) => {
-    const deleting = targets.filter((file) => file.item.tree?.deleted === true);
-    if (deleting.length > 0) setAsking({ targets, deleting });
-    else applyAll(targets);
-  };
-  const untitled = t`Untitled document`;
-  const names = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => reviewFileTargetName(file, untitled));
-  const question: CommandQuestion | null = asking
-    ? {
-        kind: "apply-all",
-        sentence: <ApplyAllQuestion deleting={names(asking.deleting)} />,
-        keep: <Trans>Cancel</Trans>,
-        confirm: <Trans>Apply all</Trans>,
-        onKeep: () => setAsking(null),
-        onConfirm: () => {
-          setAsking(null);
-          applyAll(asking.targets);
-        },
-        disabled: controller.dispositionLocked,
-      }
-    : null;
-  const owned = useDraftNotice(draftId);
-  const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
   const openDocument = useOpenProjectDocument(projectId);
   // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
@@ -305,191 +505,137 @@ export function ChangesSource({
       items.map((item, at) => ({ key: item.key, row: item, after: keys.slice(0, at).reverse() })),
     );
   };
+  const latestHold = useRef(hold);
+  latestHold.current = hold;
+  useEffect(() => {
+    holds.set(draftId, () => latestHold.current());
+    return () => {
+      holds.delete(draftId);
+    };
+  }, [holds, draftId]);
   const shown = withGone(
     items,
     changeKey,
     (taken.get(draftId) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
-  const goneRows = shown.some((item) => item.gone);
-  // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
-  const undone = useRef<string | null>(null);
-  if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
-  const list = useRef<HTMLDivElement>(null);
-  useFocusSuccession(
-    list,
-    true,
-    (element) =>
-      noticeAction(element) ??
-      (undone.current
-        ? element.querySelector<HTMLElement>(
-            `[data-change-row="${escapeCssIdent(undone.current)}"] button`,
-          )
-        : null),
-  );
+  const gone = shown.some((item) => item.gone);
+  const signature = [
+    files.map((file) => file.item.itemKey).join(),
+    changedFolders.map((folder) => folder.id).join(),
+    gone,
+    drafts.status,
+  ].join("|");
+  const latest = useRef({ files, changedFolders, gone, status: drafts.status, drafts });
+  latest.current = { files, changedFolders, gone, status: drafts.status, drafts };
+  useEffect(() => {
+    const now = latest.current;
+    report(draftId, {
+      files: now.files,
+      folders: now.changedFolders,
+      gone: now.gone,
+      status: now.status,
+      refetch: () => void now.drafts.refetch(),
+    });
+  }, [report, draftId, signature]);
+  useEffect(() => () => report(draftId, null), [report, draftId]);
+  if (!applying && shown.length === 0) return null;
 
   return (
-    <div ref={list} className="contents">
-      <SourcePane
-        label={scope.heading}
-        notice={treeWords.header}
-        bar={
-          question ? (
-            <div className="min-w-0 flex-1">
-              <CommandNotice notice={null} question={question} />
-            </div>
-          ) : hasFiles ? (
-            <ReviewActions
-              scope="all"
-              density="full"
-              touch={touch}
-              onDiscard={
-                everyItem.length > 0 || changedFolders.length > 0
-                  ? () => {
-                      hold();
-                      void controller.discardAll(
-                        everyItem,
-                        // A lone folder change names itself in the notice.
-                        everyItem.length === 0 && changedFolders.length === 1
-                          ? (groupsOf(groups).find(
-                              (group) => group.folder?.id === changedFolders[0],
-                            )?.folder?.name ?? null)
-                          : null,
-                      );
-                    }
-                  : undefined
-              }
-              onApply={
-                files.every((file) => hasApply(file.item)) &&
-                (files.length > 0 || changedFolders.length > 0)
-                  ? () => startApply(files)
-                  : undefined
-              }
-            />
-          ) : goneRows ? (
-            // The rows a command took still show: the bar stays, greyed, so they don't move.
-            <ReviewActions
-              scope="all"
-              density="full"
-              touch={touch}
-              disabled
-              onDiscard={NOTHING}
-              onApply={NOTHING}
-            />
-          ) : null
-        }
-      >
-        {applying ? (
-          <div className="px-2">
-            <ListLine iconSlot status>
-              <span className="inline-flex items-center gap-1.5">
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-                <Trans>Applying</Trans>
-              </span>
-            </ListLine>
-          </div>
-        ) : null}
-        {hasFiles || goneRows ? (
-          <ul className="flex flex-col px-2">
-            {shown.map(({ row: item, gone }) => {
-              // A row a Discard took is struck through with its Undo; one an Apply took has
-              // its Undo, and opens the document where it is now.
-              if (gone)
-                return (
-                  <li key={item.key} data-change-row={item.key} data-command-notice="row">
-                    <ListRow
-                      depth={item.depth}
-                      gone={notice?.kind === "discarded"}
-                      disabled={item.kind !== "file"}
-                      onOpen={() => void openDocument({ documentId: item.key })}
-                      icon={
-                        item.kind === "file"
-                          ? fileKindIcon(item.file.contextLocation?.path ?? item.name)
-                          : FolderIcon
-                      }
-                      title={item.name}
-                      detail={item.detail}
-                      notice={wordOf(item.key)}
-                      below={
-                        notice?.kind === "applied" &&
-                        item.kind === "file" &&
-                        item.file.contextLocation ? (
-                          <div
-                            className="flex pb-1 empty:hidden"
-                            style={{ paddingLeft: contentInset(item.depth) + ICON_SLOT_PX }}
-                          >
-                            <AgentFileSave
-                              projectId={projectId}
-                              scheme={item.file.contextLocation.scheme}
-                              path={item.file.contextLocation.path}
-                            />
-                          </div>
-                        ) : null
-                      }
-                    />
-                  </li>
-                );
-              if (item.kind === "folder") {
-                const { group } = item;
-                const folder = item.group.folder;
-                if (!folder) return null;
-                const own = groupFiles(group);
-                return (
-                  <FolderGroupRow
-                    key={`folder:${folder.id}`}
-                    draftId={drafts.draftId}
-                    folder={folder}
-                    depth={item.depth}
-                    open={!folded.has(folder.id)}
-                    onToggle={() => fold(folder.id)}
-                    files={own}
-                    notice={wordOf(folder.id)}
-                  />
-                );
-              }
-              const { file } = item;
+    <section aria-label={heading ?? undefined} data-draft-changes={draftId}>
+      {heading ? (
+        <h3 className="truncate px-4 pt-2 pb-0.5 text-xs font-medium text-muted-foreground">
+          {heading}
+        </h3>
+      ) : null}
+      {applying ? (
+        <div className="px-2">
+          <ListLine iconSlot status>
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+              <Trans>Applying</Trans>
+            </span>
+          </ListLine>
+        </div>
+      ) : null}
+      {shown.length > 0 ? (
+        <ul className="flex flex-col px-2">
+          {shown.map(({ row: item, gone }) => {
+            // A row a Discard took is struck through with its Undo; one an Apply took has
+            // its Undo, and opens the document where it is now.
+            if (gone)
               return (
-                <ChangeRow
-                  key={file.documentId}
-                  projectId={projectId}
-                  draftId={draftId}
-                  file={file}
+                <li key={item.key} data-change-row={item.key} data-command-notice="row">
+                  <ListRow
+                    depth={item.depth}
+                    gone={notice?.kind === "discarded"}
+                    disabled={item.kind !== "file"}
+                    onOpen={() => void openDocument({ documentId: item.key })}
+                    icon={
+                      item.kind === "file"
+                        ? fileKindIcon(item.file.contextLocation?.path ?? item.name)
+                        : FolderIcon
+                    }
+                    title={item.name}
+                    detail={item.detail}
+                    notice={wordOf(item.key)}
+                    below={
+                      notice?.kind === "applied" &&
+                      item.kind === "file" &&
+                      item.file.contextLocation ? (
+                        <div
+                          className="flex pb-1 empty:hidden"
+                          style={{ paddingLeft: contentInset(item.depth) + ICON_SLOT_PX }}
+                        >
+                          <AgentFileSave
+                            projectId={projectId}
+                            scheme={item.file.contextLocation.scheme}
+                            path={item.file.contextLocation.path}
+                          />
+                        </div>
+                      ) : null
+                    }
+                  />
+                </li>
+              );
+            if (item.kind === "folder") {
+              const { group } = item;
+              const folder = item.group.folder;
+              if (!folder) return null;
+              return (
+                <FolderGroupRow
+                  key={`folder:${folder.id}`}
+                  draftId={drafts.draftId}
+                  folder={folder}
                   depth={item.depth}
-                  fault={tree?.faults.get(file.documentId) ?? null}
-                  active={isOpen(file)}
-                  canApply={hasApply(file.item)}
-                  controller={controller}
-                  touch={touch}
-                  notice={wordOf(file.documentId)}
-                  onCommand={hold}
-                  onPicked={onPicked}
+                  open={!folded.has(folder.id)}
+                  onToggle={() => fold(folder.id)}
+                  files={groupFiles(group)}
+                  notice={wordOf(folder.id)}
                 />
               );
-            })}
-          </ul>
-        ) : drafts.status === "error" ? (
-          <InlineErrorRow
-            message={t`Changes couldn’t load.`}
-            onRetry={drafts.refetch}
-            actionLabel={t`Retry changes`}
-          />
-        ) : applying ? null : (
-          <div className="px-2">
-            {drafts.status === "loading" ? (
-              <ListLine iconSlot status>
-                <Trans>Loading changes…</Trans>
-              </ListLine>
-            ) : (
-              <>
-                <ListLine iconSlot>{scope.empty}</ListLine>
-                {scope.elsewhere ? (
-                  <ElsewhereLink projectId={projectId} {...scope.elsewhere} />
-                ) : null}
-              </>
-            )}
-          </div>
-        )}
-      </SourcePane>
-    </div>
+            }
+            const { file } = item;
+            return (
+              <ChangeRow
+                key={file.documentId}
+                projectId={projectId}
+                draftId={draftId}
+                file={file}
+                depth={item.depth}
+                fault={tree?.faults.get(file.documentId) ?? null}
+                active={isOpen(file)}
+                canApply={hasApply(file.item)}
+                controller={controller}
+                touch={touch}
+                notice={wordOf(file.documentId)}
+                onCommand={hold}
+                onPicked={onPicked}
+              />
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

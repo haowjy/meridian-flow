@@ -117,6 +117,7 @@ export function CreationComposer({
       ? {
           workId: work.id,
           workAiWriteMode: work.defaultAiWriteMode,
+          workDraftId: work.isNoWork ? null : work.draftId,
           ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
           agent,
           overrides: choices?.overrides ?? NO_OVERRIDES,

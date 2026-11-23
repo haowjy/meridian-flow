@@ -39,7 +39,8 @@ export function useDraftReviewController({
   draftId: string;
   threadId?: string | null;
 }): DraftReviewController {
-  const commands = usePressCommands({ projectId, work, draftId, threadId, surface: "band" });
+  const drafts = useMemo(() => (draftId ? [draftId] : []), [draftId]);
+  const commands = usePressCommands({ projectId, work, drafts, threadId, surface: "band" });
   const { commandChange, dispositionLocked, startItem, startChange, apply, discard } = commands;
   return useMemo(
     () => ({

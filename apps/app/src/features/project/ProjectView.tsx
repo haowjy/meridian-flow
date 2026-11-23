@@ -9,7 +9,6 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import { draftOf } from "@meridian/contracts/works";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
@@ -364,10 +363,12 @@ function HydratedReviewControllers({
   const chatWork = chatThread?.workId
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
+  const chatDraft = chatWork && chatThread ? chatThread.draftId : "";
+  const chatDrafts = useMemo(() => (chatDraft ? [chatDraft] : []), [chatDraft]);
   const chatCommands = usePressCommands({
     projectId: props.projectId,
     work: chatWork,
-    draftId: chatWork && chatThread ? draftOf(chatThread, chatWork) : "",
+    drafts: chatDrafts,
     threadId: chatThreadId,
     surface: "strip",
   });

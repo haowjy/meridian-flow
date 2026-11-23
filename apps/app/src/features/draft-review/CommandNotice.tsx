@@ -38,6 +38,25 @@ export function useDraftNotice(draftId: string): DraftNotice | null {
 }
 
 /**
+ * The notice a surface acting on several drafts shows (`WorkDraftCommands.noticeKeys`): a press
+ * ends the surface's last notice, so at most one of them holds one.
+ */
+export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => {
+      for (const key of keys) {
+        const notice = notices.get(key);
+        if (notice) return notice;
+      }
+      return null;
+    },
+    () => null,
+  );
+}
+
+/**
  * The Discard notice a document's identity row shows, or with `documentId` null the one the
  * Recently opened landing shows (`DraftNotices.forDocument`).
  */

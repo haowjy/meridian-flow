@@ -82,6 +82,8 @@ export function refreshDraftReads(
     reads.push(refreshWorksSnapshotSince(queryClient, projectId, since));
   reads.push(
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentDraftHintsOf(projectId) }),
+    // A Work's drafts carry their counts.
+    queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDraftsOf(projectId) }),
   );
   bumpLinkResolutionEpoch(projectId);
   return Promise.allSettled(reads);

@@ -27,6 +27,8 @@ export type SendProjectChatArgs = {
   workId: string;
   /** The selected Work's default: the new chat's mode unless the writer chose one. */
   workAiWriteMode: AiWriteMode;
+  /** The named Work's default draft, which the chat writes into; null under No Work, where it gets its own. */
+  workDraftId: string | null;
   /** The writer's explicit choice in this composer; it becomes the Work's default too. */
   aiWriteMode?: AiWriteMode;
   /** The thread id minted before the first attach, which owns any uploads already attached. */
@@ -55,6 +57,7 @@ export function sendProjectChat({
   overrides,
   workId,
   workAiWriteMode,
+  workDraftId,
   aiWriteMode,
   threadId: mintedThreadId,
   draftScope,
@@ -83,7 +86,7 @@ export function sendProjectChat({
       draft,
       creation: {
         title,
-        draftId: newDraftId(),
+        draftId: workDraftId ?? newDraftId(),
         workId,
         workAiWriteMode,
         ...(aiWriteMode ? { aiWriteMode } : {}),

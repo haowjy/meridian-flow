@@ -14,6 +14,7 @@ import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
+import { workDraftMenu } from "@/features/draft-review/work-draft-menu";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { useShellTreeVersion } from "@/features/project/tree-version";
@@ -57,34 +58,55 @@ export function DocumentVersionMenu({
     });
   const scopeDraft = paint?.scopeDraftId ?? null;
 
-  const drafts = listed.map((hint) => ({
-    key: hint.itemKey,
-    name: (
-      <WorkIdentity
-        work={draftWork(hint.draftId)}
-        unavailableLabel={hint.label || t`Unnamed draft`}
-      />
-    ),
-    detail: hint.tree ? (
+  // The picked Work's drafts are listed whether or not they change this document; picking one
+  // shows it on every page, as the sidebar's chip does.
+  const menu = workDraftMenu(projectId, shell, (draftId) => shown?.draftId === draftId);
+  const workDraftIds = new Set(menu?.drafts.map((draft) => draft.key));
+  const detailOf = (hint: DocumentDraftHint) =>
+    hint.tree ? (
       "deleted" in hint.tree ? (
         <Trans>Deletes this document</Trans>
       ) : (
         <Trans>Moves it to {hint.tree.movedTo.path}</Trans>
       )
-    ) : undefined,
-    current: shown?.draftId === hint.draftId,
-    scope: hint.draftId === scopeDraft,
-    onSelect: () => {
-      // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft,
-      // and another owner's pin, which outranks the toggle, goes.
-      const scoped = hint.draftId === shell?.draftId;
-      if (scoped) shell.show("draft");
-      setDocumentView(accountId, projectId, documentId, {
-        pin: scoped ? null : { draftId: hint.draftId, itemKey: hint.itemKey },
-      });
-      followToChip(documentId);
-    },
-  }));
+    ) : undefined;
+  const workEntries = (menu?.drafts ?? []).map((draft) => {
+    const hint = listed.find((each) => each.draftId === draft.key);
+    return {
+      ...draft,
+      detail: hint ? detailOf(hint) : undefined,
+      onSelect: () => {
+        draft.onSelect();
+        setDocumentView(accountId, projectId, documentId, { pin: null });
+        followToChip(documentId);
+      },
+    };
+  });
+  const hinted = listed
+    .filter((hint) => !workDraftIds.has(hint.draftId))
+    .map((hint) => ({
+      key: hint.itemKey,
+      name: (
+        <WorkIdentity
+          work={draftWork(hint.draftId)}
+          unavailableLabel={hint.label || t`Unnamed draft`}
+        />
+      ),
+      detail: detailOf(hint),
+      current: shown?.draftId === hint.draftId,
+      scope: hint.draftId === scopeDraft,
+      onSelect: () => {
+        // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft,
+        // and another owner's pin, which outranks the toggle, goes.
+        const scoped = hint.draftId === shell?.draftId;
+        if (scoped) shell.show("draft");
+        setDocumentView(accountId, projectId, documentId, {
+          pin: scoped ? null : { draftId: hint.draftId, itemKey: hint.itemKey },
+        });
+        followToChip(documentId);
+      },
+    }));
+  const drafts = [...workEntries, ...hinted];
   // As the sidebar's chip shows only while there is a draft to switch to, this one shows only
   // while the document has a version besides the one on screen.
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
@@ -92,17 +114,26 @@ export function DocumentVersionMenu({
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
   const outOfScope =
     shown && paint?.outOfScope ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`) : null;
+  // Among several of the Work's drafts the chip names the one on screen.
+  const named =
+    menu && menu.drafts.length > 1
+      ? menu.drafts.find((draft) => draft.key === shown?.draftId)?.name
+      : undefined;
 
   return (
     <DraftSwitcher
       showing={showing}
       drafts={drafts}
-      owner={outOfScope ?? undefined}
+      owner={outOfScope ?? named}
       onShowLive={() => {
         setDocumentView(accountId, projectId, documentId, { version: "live" });
         shell?.show("live");
         followToChip(documentId);
       }}
+      onNewDraft={menu?.onNewDraft}
+      onDeleteDraft={
+        menu?.onDeleteDraft && shown?.draftId === shell?.draftId ? menu.onDeleteDraft : undefined
+      }
       touch={touch}
     />
   );
