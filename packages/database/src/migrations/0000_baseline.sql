@@ -729,14 +729,12 @@ CREATE TABLE "document_snapshots" (
 	CONSTRAINT "document_snapshots_room_key_doc_key_pk" PRIMARY KEY("room_key","doc_key")
 );
 --> statement-breakpoint
-CREATE TABLE "press_commits" (
+CREATE TABLE "press_changes" (
 	"command_id" uuid NOT NULL,
 	"draft_id" text NOT NULL,
-	"room_key" text NOT NULL,
-	"doc_key" text NOT NULL,
-	"before" "bytea" NOT NULL,
-	"after" "bytea" NOT NULL,
-	CONSTRAINT "press_commits_command_id_draft_id_room_key_doc_key_pk" PRIMARY KEY("command_id","draft_id","room_key","doc_key")
+	"document_id" uuid NOT NULL,
+	"changes" jsonb NOT NULL,
+	CONSTRAINT "press_changes_command_id_draft_id_document_id_pk" PRIMARY KEY("command_id","draft_id","document_id")
 );
 --> statement-breakpoint
 CREATE TABLE "mcp_calls" (
@@ -1054,8 +1052,9 @@ ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "press_commits" ADD CONSTRAINT "press_commits_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "press_commits" ADD CONSTRAINT "press_commits_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_changes" ADD CONSTRAINT "press_changes_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_changes" ADD CONSTRAINT "press_changes_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_changes" ADD CONSTRAINT "press_changes_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_calls" ADD CONSTRAINT "mcp_calls_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

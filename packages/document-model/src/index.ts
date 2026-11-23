@@ -7,21 +7,16 @@ export {
   changedBlocks,
   discardBlocks,
   type PressChanges,
+  type PressedChange,
   type PressOptions,
+  type PressUndo,
   restoreBefore,
   selectChanges,
   undoPress,
 } from "./changes.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
-export {
-  frontiersOf,
-  invertCommit,
-  type PressCommit,
-  pressCommit,
-  transformedInverse,
-  versionOf,
-} from "./invert.js";
+export { frontiersOf, type StoredEdit, takeBack, versionOf } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,

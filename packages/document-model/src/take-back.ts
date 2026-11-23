@@ -9,9 +9,9 @@ import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 /**
  * The rule every Undo follows (design §2, "An Undo takes an edit back whole, or leaves it whole"):
  * an edit (a Ctrl+Z step, or one change of a press) goes back only while nobody else has written
- * over it, and then goes back whole. The editor's `UndoHistory` tests its steps with it; a press's
- * Undo will too. Nothing here knows how the edit's text is taken back (Loro's `UndoManager` in the
- * editor, an inverse on the server).
+ * over it, and then goes back whole. The editor's `UndoHistory` tests its steps with it, and a
+ * press's Undo each change (`undoPress`). Nothing here knows how the edit's text is taken back
+ * (Loro's `UndoManager` in the editor, an inverse on the server, `invert.ts`).
  */
 
 /**
@@ -27,10 +27,15 @@ export interface SetValue {
 /** An edit's structure values, by stored map name (`order`, a draft's `d.order`) then key. */
 export type EditValues = Map<string, Map<string, SetValue>>;
 
-/** The frontiers either side of what an edit, or its last run, wrote in one text doc. */
+/**
+ * What an edit, or its last run, wrote in one text doc: the frontiers either side, and its ops
+ * there (`opsBetween`). In the editor those are the author's between the frontiers, a peer's
+ * batch imported meanwhile left out; a press imports its draft's ops, every peer's between them.
+ */
 export interface TextSpan {
   before: Frontiers;
   after: Frontiers;
+  ops: TakenBack;
 }
 
 /**
@@ -158,14 +163,14 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   }
   const structural = edit.values.size > 0;
   let removals: Map<DocKey, DocVersion[]> | undefined;
-  for (const [key, { before, after }] of edit.texts) {
+  for (const [key, { before, after, ops }] of edit.texts) {
     const doc = docs.textOf(key);
     if (!doc) continue;
     const then = plainVersion(doc.frontiersToVV(after));
-    const deleted = deletedBy(doc, before, after, peer);
+    const deleted = deletedBy(doc, ops);
     if (deleted.size > 0) {
       removals ??= removalsSince(docs, edit.structureAt, peer);
-      if (readAny(removals.get(key) ?? [], deleted, peer, then.get(peer) ?? 0))
+      if (readAny(removals.get(key) ?? [], deleted, ops))
         return `text it deleted in ${key} left with a block another peer removed`;
     }
     if (!othersWrote(doc, then, peer)) continue;
@@ -184,7 +189,7 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   for (const id of after.hidden) {
     if (!edit.leaving.has(id)) return `it would take ${id} off the screen`;
     const doc = docs.textOf(id);
-    if (doc && othersWrote(doc, edit.leaving.get(id) ?? new Map(), peer))
+    if (doc && othersWrote(doc, edit.leaving.get(id) ?? new Map(), peer, edit.texts.get(id)?.ops))
       return `${id}, which it would take away, was written in`;
   }
   // A block comes back only from under removals the edit itself put back: one a peer removed
@@ -206,29 +211,40 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
  * edit made goes as a removal through `StructureWriter.remove`, with what this copy reads now, and
  * keeps its other keys to come back with; a removal record put back is written the same way, so a
  * peer's typing it did not read brings the block back (design §1, "Removed blocks"). Returns the
- * change and the values of the way back. `view`, if given, reads the structure as it is.
+ * change and the values of the way back. `view`, if given, reads the structure as it is; the
+ * commit carries `message`.
  */
 export function putBackValues(
   docs: RoomDocs,
   values: EditValues,
   view?: StructureView,
+  message?: string,
 ): { change: DocChange | null; values: EditValues } {
   const back: EditValues = new Map();
   if (values.size === 0) return { change: null, values: back };
   const { structure } = docs;
   const before = structure.frontiers();
   const read = view ?? new StructureView(docs);
-  const writer = new StructureWriter(docs, read);
-  for (const { name, key, value, at } of planOf(docs, read, values)) {
-    if (at !== undefined) writer.remove(key, at ?? undefined);
-    else
+  const puts = planOf(docs, read, values);
+  for (const { name, key, value, at } of puts) {
+    if (at === undefined)
       inMap(structure, name, (map) => {
         if (value === undefined) map.delete(key);
         else map.set(key, value as never);
       });
     keysOf(back, name).set(key, { before: values.get(name)?.get(key)?.left, left: undefined });
   }
-  const change = commitStructure(docs, before, {});
+  // A removal counts the text under it as the run leaves it, a block the run puts back under it
+  // included, or the next import answers it with a restore.
+  const removals = puts.filter(({ at }) => at !== undefined);
+  if (removals.length > 0) {
+    const writer = new StructureWriter(
+      docs,
+      removals.length < puts.length ? new StructureView(docs) : read,
+    );
+    for (const { key, at } of removals) writer.remove(key, at ?? undefined);
+  }
+  const change = commitStructure(docs, before, { message });
   for (const [name, keys] of back)
     inMap(structure, name, (map) => {
       for (const [key, value] of keys) {
@@ -267,7 +283,7 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
           puts.push({ name, key, value: undefined, at: null });
         continue;
       }
-      if (name !== order && !isComments(name) && made.has(blockOf(name, key))) continue;
+      if (name !== order && made.has(memberOf(name, key))) continue;
       const removal = name === order ? removalOf(before) : null;
       puts.push(
         removal ? { name, key, value: before, at: removal.at } : { name, key, value: before },
@@ -349,10 +365,17 @@ function screenAfter(
 const baseName = (name: string): StructureMap =>
   (name.startsWith("d.") ? name.slice(2) : name) as StructureMap;
 
-/** Whether a peer other than `self` has ops in `doc` that `then` lacks. */
-function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID): boolean {
-  for (const [peer, counter] of docVersion(doc))
-    if (peer !== self && counter > (then.get(peer) ?? 0)) return true;
+/**
+ * Whether `doc` has ops `then` lacks that are neither `self`'s nor the edit's own (`own`, its ops
+ * there: a press's are its draft's writers').
+ */
+function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: TakenBack = {}): boolean {
+  for (const [peer, counter] of docVersion(doc)) {
+    const start = then.get(peer) ?? 0;
+    if (peer === self || counter <= start) continue;
+    const [from, to] = own[peer] ?? [0, 0];
+    if (start < from || counter > Math.max(start, to)) return true;
+  }
   return false;
 }
 
@@ -581,12 +604,10 @@ function forEachDeleted(
   }
 }
 
-/** The characters `peer` deleted in `doc` from `before` to `after`, by id (`counter@peer`). */
-function deletedBy(doc: LoroDoc, before: Frontiers, after: Frontiers, peer: PeerID): Set<string> {
+/** The characters the ops in `spans` deleted in `doc`, by id (`counter@peer`). */
+function deletedBy(doc: LoroDoc, spans: TakenBack): Set<string> {
   const ids = new Set<string>();
-  forEachDeleted(doc, opsBetween(doc, before, after, peer), (id) =>
-    ids.add(`${id.counter}@${id.peer}`),
-  );
+  forEachDeleted(doc, spans, (id) => ids.add(`${id.counter}@${id.peer}`));
   return ids;
 }
 
@@ -637,17 +658,17 @@ function removalsSince(docs: RoomDocs, since: Frontiers, peer: PeerID): Map<DocK
 
 /**
  * Whether a removal that read `reads` took off the screen a character the edit deleted
- * (`deleted`): it read the character and not the deletion (the author's ops up to `deletedTo`),
+ * (`deleted`): it read the character and not the deletion (not every one of the edit's `ops`),
  * so an Undo would put back text that peer took away.
  */
 function readAny(
   reads: readonly DocVersion[],
   deleted: ReadonlySet<string>,
-  peer: PeerID,
-  deletedTo: number,
+  ops: TakenBack,
 ): boolean {
   for (const seen of reads) {
-    if ((seen.get(peer) ?? 0) >= deletedTo) continue;
+    if (Object.entries(ops).every(([peer, [, to]]) => (seen.get(peer as PeerID) ?? 0) >= to))
+      continue;
     for (const id of deleted) {
       const { counter, peer: by } = parseId(id);
       if (counter < (seen.get(by) ?? 0)) return true;
@@ -710,19 +731,26 @@ export function takenBack(message: string | undefined): TakenBack | null {
   return spans as TakenBack;
 }
 
-/** The ops `peer` made in `doc` from `before` to `after`, as a take-back message names them. */
+/**
+ * The ops `peer` made in `doc` from `before` to `after`, or with no `peer` every peer's, as a
+ * take-back message names them.
+ */
 export function opsBetween(
   doc: LoroDoc,
   before: Frontiers,
   after: Frontiers,
-  peer: PeerID,
+  peer?: PeerID,
 ): TakenBack {
-  const from = plainVersion(doc.frontiersToVV(before)).get(peer) ?? 0;
-  const to = plainVersion(doc.frontiersToVV(after)).get(peer) ?? 0;
-  return to > from ? { [peer]: [from, to] } : {};
+  const from = plainVersion(doc.frontiersToVV(before));
+  const out: TakenBack = {};
+  for (const [by, to] of plainVersion(doc.frontiersToVV(after)))
+    if ((peer === undefined || by === peer) && to > (from.get(by) ?? 0))
+      out[by] = [from.get(by) ?? 0, to];
+  return out;
 }
 
-function textDiff(doc: LoroDoc, from: Frontiers, to: Frontiers): TextOp[] {
+/** The delta of `doc`'s text from `from` to `to`. */
+export function textDiff(doc: LoroDoc, from: Frontiers, to: Frontiers): TextOp[] {
   const hit = doc.diff(from, to, false).find(([, diff]) => diff.type === "text");
   return hit ? ((hit[1] as { diff?: TextOp[] }).diff ?? []) : [];
 }
@@ -756,10 +784,11 @@ function keysOf(values: EditValues, name: string): Map<string, SetValue> {
   return keys;
 }
 
-const isComments = (name: string) => name === "comments" || name === overrideMap("comments");
-
-/** The block an `attrs` key (`id/name`) belongs to; every other block map is keyed by block id. */
-const blockOf = (name: string, key: string) =>
+/**
+ * What a structure key belongs to: for a comment body (`comments`, `d.comments`) the comment, for
+ * an `attrs` key (`id/name`) its block; every other map is keyed by block id.
+ */
+export const memberOf = (name: string, key: string): string =>
   name.endsWith("attrs") ? key.slice(0, key.lastIndexOf("/")) : key;
 
 /** The structure doc holds root maps only: `cid:root-<name>:Map`. */

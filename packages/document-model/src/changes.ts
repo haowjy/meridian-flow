@@ -1,7 +1,7 @@
-import type { Frontiers } from "loro-crdt";
+import type { Frontiers, LoroDoc } from "loro-crdt";
 import { commonEnds } from "./common-ends.js";
 import { inMap } from "./handles.js";
-import { frontiersOf, invertCommit, type PressCommit, pressCommit } from "./invert.js";
+import { frontiersOf, loadEdit, type StoredEdit, storeEdit, takeBack } from "./invert.js";
 import { commentVisibility, readInline, shownStyleKeys } from "./read.js";
 import type { Imported, RoomDocs } from "./room-docs.js";
 import {
@@ -13,10 +13,23 @@ import {
   overrideMap,
   SENTINEL,
   STRUCTURE_KEY,
+  STRUCTURE_MAPS,
   type StructureMap,
   sameValue,
 } from "./shape.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
+import {
+  type Edit,
+  editStays,
+  memberOf,
+  noteEdit,
+  opsBetween,
+  putBackValues,
+  type TakenBack,
+  type TextSpan,
+  takeBackMessage,
+  valuesOf,
+} from "./take-back.js";
 import {
   type DocVersion,
   docVersion,
@@ -197,8 +210,7 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
 function overriddenBlocks(view: StructureView): Set<BlockId> {
   const out = new Set<BlockId>();
   for (const name of BLOCK_MAPS)
-    for (const key of view.overrideKeys(name))
-      out.add(name === "attrs" ? key.slice(0, key.lastIndexOf("/")) : key);
+    for (const key of view.overrideKeys(name)) out.add(memberOf(name, key));
   return out;
 }
 
@@ -322,14 +334,26 @@ class Groups {
   }
 }
 
+/**
+ * One change a press acted on, as its Undo needs it (design §2, "For the press"): the change's
+ * members (block ids, and comment ids for a comment body) and, per room, the edit the press made
+ * there, noted as the press left it. A change's Live side and fork side are one edit: its Undo
+ * takes both back or neither. JSON, as `press_changes` stores it.
+ */
+export interface PressedChange {
+  members: string[];
+  live: StoredEdit | null;
+  fork: StoredEdit | null;
+}
+
 /** What a press changed: the changes it acted on, and each room's changed docs, committed. */
 export interface PressChanges {
   chosen: BlockChange[];
   /**
-   * The press's own commits, which its Undo takes back (`undoPress`) and `press_commits` stores:
-   * not the restores a forward or an import wrote on the way, which are no one's step.
+   * What its Undo takes back (`undoPress`), per change: the press's own writes, not the restores
+   * a forward or an import wrote on the way, which are no one's step.
    */
-  commits: PressCommit[];
+  pressed: PressedChange[];
   /** Live's docs: commit them to the Live room first. */
   live: DocChange[];
   /** The fork's docs, including the restore a forward wrote. */
@@ -356,19 +380,70 @@ function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][]
   const out: [StructureMap, string][] = [];
   for (const name of BLOCK_MAPS)
     for (const key of view.overrideKeys(name))
-      if (name === "attrs" ? key.startsWith(`${id}/`) : key === id) out.push([name, key]);
+      if (memberOf(name, key) === id) out.push([name, key]);
   return out;
-}
-
-/** Record one of the press's own commits: sent with its room's changes and stored for its Undo. */
-function own(result: PressChanges, side: PressCommit["side"], change: DocChange): void {
-  result[side].push(change);
-  result.commits.push(pressCommit(side, change));
 }
 
 function forwarded(draft: RoomDocs, into: DocChange[]): void {
   const imported: Imported = draft.forward();
   if (imported.restore) into.push(imported.restore);
+}
+
+/** What a press wrote in one room: each text doc's span, and its one structure commit. */
+interface Wrote {
+  docs: RoomDocs;
+  texts: Map<DocKey, TextSpan>;
+  structure: DocChange | null;
+}
+
+/** A text doc's change as an edit's span: every op between its frontiers is the press's. */
+function spanOf({ doc, before, after }: DocChange): TextSpan {
+  return { before, after, ops: opsBetween(doc, before, after) };
+}
+
+/**
+ * Each chosen change's edit in each room, from what the press wrote there, split by the member
+ * each key and text doc belongs to and noted now, as the press left the room. The author is the
+ * room copy's peer: a command's copy has a fresh one, so every later write is someone else's.
+ */
+function pressedOf(chosen: readonly BlockChange[], rooms: (Wrote | null)[]): PressedChange[] {
+  const index = new Map<string, number>();
+  chosen.forEach((change, i) => {
+    for (const id of [...change.blocks, ...change.comments]) index.set(id, i);
+  });
+  const sides = rooms.map((wrote) => {
+    if (!wrote) return null;
+    const edits: Edit[] = chosen.map(() => ({
+      peer: wrote.docs.peer,
+      values: new Map(),
+      texts: new Map(),
+      leaving: new Map(),
+      arriving: new Set(),
+      shown: new Set(),
+      structureAt: [],
+    }));
+    for (const [key, span] of wrote.texts) edits[index.get(key) as number].texts.set(key, span);
+    if (wrote.structure) {
+      const { doc, before, after } = wrote.structure;
+      for (const [name, keys] of valuesOf(doc, before, after))
+        for (const [key, value] of keys) {
+          const { values } = edits[index.get(memberOf(name, key)) as number];
+          const into = values.get(name) ?? new Map();
+          values.set(name, into.set(key, value));
+        }
+    }
+    const view = new StructureView(wrote.docs);
+    return edits.map((edit) => {
+      if (edit.texts.size === 0 && edit.values.size === 0) return null;
+      noteEdit(wrote.docs, edit, view);
+      return storeEdit(wrote.docs, edit);
+    });
+  });
+  return chosen.map((change, i) => ({
+    members: [...change.blocks, ...change.comments],
+    live: sides[0]?.[i] ?? null,
+    fork: sides[1]?.[i] ?? null,
+  }));
 }
 
 /**
@@ -378,7 +453,8 @@ function forwarded(draft: RoomDocs, into: DocChange[]): void {
  * Live's own doc), and copy the comment bodies the change carries. A block the draft removed is
  * removed in Live by a new record (`ApplyOptions.liveVersion`), never the fork's. A selection whose
  * changes are already empty changes nothing. Both copies are committed under `message`; the fork
- * is forwarded again, so it reads as before.
+ * is forwarded again, so it reads as before. Run it on a command's own copy, so the press's
+ * writes have a peer of their own (`PressedChange`).
  */
 export function applyBlocks(
   draft: RoomDocs,
@@ -387,7 +463,7 @@ export function applyBlocks(
 ): PressChanges {
   const live = draft.live;
   if (!live) throw new Error("applyBlocks needs a draft copy");
-  const result: PressChanges = { chosen: [], commits: [], live: [], fork: [] };
+  const result: PressChanges = { chosen: [], pressed: [], live: [], fork: [] };
   forwarded(draft, result.fork);
   result.chosen = selectChanges(changedBlocks(draft), selection);
   const blocks = result.chosen.flatMap((change) => change.blocks);
@@ -417,10 +493,13 @@ export function applyBlocks(
     const imported = live.importBatch(batch);
     if (imported.restore) result.live.push(imported.restore);
   }
+  const liveTexts = new Map<DocKey, TextSpan>();
   for (const [key, at] of liveBefore) {
     const doc = live.texts.get(key);
-    if (doc && !sameValue(at, doc.frontiers()))
-      own(result, "live", { key, doc, before: at, after: doc.frontiers() });
+    if (!doc || sameValue(at, doc.frontiers())) continue;
+    const change = { key, doc, before: at, after: doc.frontiers() };
+    result.live.push(change);
+    liveTexts.set(key, spanOf(change));
   }
 
   // What the removal read of one text doc: what the writer was shown of Live, capped at what Live held before
@@ -462,7 +541,7 @@ export function applyBlocks(
   for (const comment of comments)
     writer.set("comments", comment, forkView.override("comments", comment) ?? null);
   const liveCommit = commitStructure(live, liveStructure, { message: options.message });
-  if (liveCommit) own(result, "live", liveCommit);
+  if (liveCommit) result.live.push(liveCommit);
 
   const forkStructure = draft.structure.frontiers();
   for (const id of blocks)
@@ -471,8 +550,12 @@ export function applyBlocks(
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
   const forkCommit = commitStructure(draft, forkStructure, { message: options.message });
-  if (forkCommit) own(result, "fork", forkCommit);
+  if (forkCommit) result.fork.push(forkCommit);
   forwarded(draft, result.fork);
+  result.pressed = pressedOf(result.chosen, [
+    { docs: live, texts: liveTexts, structure: liveCommit },
+    { docs: draft, texts: new Map(), structure: forkCommit },
+  ]);
   return result;
 }
 
@@ -489,7 +572,7 @@ export function discardBlocks(
 ): PressChanges {
   const live = draft.live;
   if (!live) throw new Error("discardBlocks needs a draft copy");
-  const result: PressChanges = { chosen: [], commits: [], live: [], fork: [] };
+  const result: PressChanges = { chosen: [], pressed: [], live: [], fork: [] };
   forwarded(draft, result.fork);
   result.chosen = selectChanges(changedBlocks(draft), selection);
   const blocks = result.chosen.flatMap((change) => change.blocks);
@@ -497,6 +580,7 @@ export function discardBlocks(
   if (blocks.length + comments.length === 0) return result;
 
   const view = new StructureView(draft);
+  const texts = new Map<DocKey, TextSpan>();
   for (const id of blocks) {
     const text = draft.texts.get(id);
     const base = live.texts.get(id);
@@ -504,8 +588,10 @@ export function discardBlocks(
     const before = text.frontiers();
     text.applyDiff(text.diff(before, base.frontiers(), false));
     text.commit({ message: options.message });
-    if (!sameValue(before, text.frontiers()))
-      own(result, "fork", { key: id, doc: text, before, after: text.frontiers() });
+    if (sameValue(before, text.frontiers())) continue;
+    const change = { key: id, doc: text, before, after: text.frontiers() };
+    result.fork.push(change);
+    texts.set(id, spanOf(change));
   }
   const structure = draft.structure.frontiers();
   for (const id of blocks) {
@@ -517,55 +603,73 @@ export function discardBlocks(
   for (const comment of comments)
     inMap(draft.structure, overrideMap("comments"), (map) => map.delete(comment));
   const commit = commitStructure(draft, structure, { message: options.message });
-  if (commit) own(result, "fork", commit);
+  if (commit) result.fork.push(commit);
+  result.pressed = pressedOf(result.chosen, [null, { docs: draft, texts, structure: commit }]);
   return result;
 }
 
+/** What a press's Undo changed, and the changes it left as they are. */
+export interface PressUndo {
+  /** Live's docs: commit them to the Live room first. */
+  live: DocChange[];
+  fork: DocChange[];
+  /** The changes someone wrote over since the press (`editStays`): the Undo wrote nothing of them. */
+  stayed: PressedChange[];
+}
+
 /**
- * The Undo of a press (Apply or Discard) on a draft copy, from the commits it stored (design §2):
- * forward; Live takes back its own commits (`invertCommit`); the fork, forwarded again, takes the
- * text Live's Undo removed back as its own edit, between its own frontiers either side of that
- * forward, so what the draft typed since stays and the change is pending again; then the fork takes
- * back its own commits (the overrides a press deleted, a Discard's text). Commit Live's docs first.
+ * The Undo of a press (Apply or Discard) on a draft copy (design §2, "An Undo takes an edit back
+ * whole, or leaves it whole"): forward, then test each change, its Live and fork sides as one
+ * edit; a change someone wrote over stays, as a peer's edit would. Live takes back the rest
+ * (`takeBack`); the fork, forwarded again, takes the text Live's Undo removed back as its own
+ * edit, between its own frontiers either side of that forward, so what the draft typed since stays
+ * and the change is pending again; then the fork takes back its own side (the overrides a press
+ * deleted, a Discard's text). Commit Live's docs first. Run it on a command's own copy.
  */
 export function undoPress(
   draft: RoomDocs,
-  commits: readonly PressCommit[],
+  pressed: readonly PressedChange[],
   options: PressOptions = {},
-): Pick<PressChanges, "live" | "fork"> {
+): PressUndo {
   const live = draft.live;
   if (!live) throw new Error("undoPress needs a draft copy");
-  const result: Pick<PressChanges, "live" | "fork"> = { live: [], fork: [] };
+  const result: PressUndo = { live: [], fork: [], stayed: [] };
   forwarded(draft, result.fork);
-  // Text before structure, so a removal record an inverse puts back counts the text it wrote.
-  const ordered = [...commits].sort(
-    (a, b) => Number(a.key === STRUCTURE_KEY) - Number(b.key === STRUCTURE_KEY),
-  );
-  for (const commit of ordered)
-    if (commit.side === "live") {
-      const change = invertCommit(live, commit.key, commit.before, commit.after, options.message);
-      if (change) result.live.push(change);
+  const liveView = new StructureView(live);
+  const forkView = new StructureView(draft);
+  const liveEdits: Edit[] = [];
+  const forkEdits: Edit[] = [];
+  for (const change of pressed) {
+    const onLive = change.live && loadEdit(live, change.live);
+    const onFork = change.fork && loadEdit(draft, change.fork);
+    if (
+      (onLive && editStays(live, onLive, liveView)) ||
+      (onFork && editStays(draft, onFork, forkView))
+    ) {
+      result.stayed.push(change);
+      continue;
     }
-  const pending = new Map<DocKey, Frontiers>();
+    if (onLive) liveEdits.push(onLive);
+    if (onFork) forkEdits.push(onFork);
+  }
+  result.live = takeBack(live, liveEdits, liveView, options.message);
+  // The text Live's Undo took out comes back in the fork as the fork's own edit: put-back text
+  // that stands for what Live's Undo deleted.
+  const pending = new Map<DocKey, { at: Frontiers; ops: TakenBack }>();
   for (const change of result.live) {
     const own = change.key === STRUCTURE_KEY ? undefined : draft.texts.get(change.key);
-    if (own) pending.set(change.key, own.frontiers());
+    if (own) pending.set(change.key, { at: own.frontiers(), ops: spanOf(change).ops });
   }
   forwarded(draft, result.fork);
-  for (const [key, before] of pending) {
-    const doc = draft.texts.get(key);
-    if (!doc) continue;
+  for (const [key, { at, ops }] of pending) {
+    const doc = draft.texts.get(key) as LoroDoc;
     const after = doc.frontiers();
-    if (sameValue(before, after)) continue;
-    doc.applyDiff(doc.diff(after, before, false));
-    doc.commit({ message: options.message });
+    if (sameValue(at, after)) continue;
+    doc.applyDiff(doc.diff(after, at, false));
+    doc.commit({ message: takeBackMessage(ops) });
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
   }
-  for (const commit of ordered)
-    if (commit.side === "fork") {
-      const change = invertCommit(draft, commit.key, commit.before, commit.after, options.message);
-      if (change) result.fork.push(change);
-    }
+  result.fork.push(...takeBack(draft, forkEdits, new StructureView(draft), options.message));
   return result;
 }
 
@@ -574,9 +678,9 @@ export function undoPress(
  * stood before the turn's first write into it, on today's Live. `before` is each doc's version as
  * the turn's first write into it began (the write's `DocChange.before`), `after` the structure's
  * version at the turn's last write. A text doc goes to `before` merged with Live's version of it,
- * so Live's edits forwarded since stay; the structure's overrides go back key by key, keeping a key
- * anyone wrote after the turn. A text doc the turn created has no `before` and is hidden by the
- * structure's restore. Returns the fork's changes, committed.
+ * so Live's edits forwarded since stay; the structure's overrides go back key by key
+ * (`putBackValues`), keeping a key anyone wrote after the turn. A block the turn created goes as
+ * a removal. Returns the fork's changes, committed.
  */
 export function restoreBefore(
   draft: RoomDocs,
@@ -600,10 +704,26 @@ export function restoreBefore(
     if (!sameValue(head, doc.frontiers()))
       out.push({ key, doc, before: head, after: doc.frontiers() });
   }
-  const structure = turn.before.get(STRUCTURE_KEY);
-  if (structure && turn.after) {
-    const change = invertCommit(draft, STRUCTURE_KEY, structure, turn.after, options.message);
+  const start = turn.before.get(STRUCTURE_KEY);
+  if (start && turn.after) {
+    const { structure } = draft;
+    const values = valuesOf(
+      structure,
+      frontiersOf(structure, start),
+      frontiersOf(structure, turn.after),
+    );
+    // The turn wrote only overrides: Live's keys in the range came with a forward.
+    for (const [name, keys] of values) {
+      if (!OVERRIDE_MAPS.has(name)) values.delete(name);
+      else
+        inMap(structure, name, (map) => {
+          for (const [key, { left }] of keys) if (!sameValue(map.get(key), left)) keys.delete(key);
+        });
+    }
+    const { change } = putBackValues(draft, values, undefined, options.message);
     if (change) out.push(change);
   }
   return out;
 }
+
+const OVERRIDE_MAPS: ReadonlySet<string> = new Set(STRUCTURE_MAPS.map(overrideMap));

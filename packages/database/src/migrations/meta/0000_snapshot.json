@@ -7204,8 +7204,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.press_commits": {
-      "name": "press_commits",
+    "public.press_changes": {
+      "name": "press_changes",
       "schema": "",
       "columns": {
         "command_id": {
@@ -7220,36 +7220,24 @@
           "primaryKey": false,
           "notNull": true
         },
-        "room_key": {
-          "name": "room_key",
-          "type": "text",
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "doc_key": {
-          "name": "doc_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "before": {
-          "name": "before",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "after": {
-          "name": "after",
-          "type": "bytea",
+        "changes": {
+          "name": "changes",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "press_commits_command_id_commands_id_fk": {
-          "name": "press_commits_command_id_commands_id_fk",
-          "tableFrom": "press_commits",
+        "press_changes_command_id_commands_id_fk": {
+          "name": "press_changes_command_id_commands_id_fk",
+          "tableFrom": "press_changes",
           "tableTo": "commands",
           "columnsFrom": [
             "command_id"
@@ -7260,9 +7248,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "press_commits_draft_id_drafts_id_fk": {
-          "name": "press_commits_draft_id_drafts_id_fk",
-          "tableFrom": "press_commits",
+        "press_changes_draft_id_drafts_id_fk": {
+          "name": "press_changes_draft_id_drafts_id_fk",
+          "tableFrom": "press_changes",
           "tableTo": "drafts",
           "columnsFrom": [
             "draft_id"
@@ -7272,16 +7260,28 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "press_changes_document_id_documents_id_fk": {
+          "name": "press_changes_document_id_documents_id_fk",
+          "tableFrom": "press_changes",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "press_commits_command_id_draft_id_room_key_doc_key_pk": {
-          "name": "press_commits_command_id_draft_id_room_key_doc_key_pk",
+        "press_changes_command_id_draft_id_document_id_pk": {
+          "name": "press_changes_command_id_draft_id_document_id_pk",
           "columns": [
             "command_id",
             "draft_id",
-            "room_key",
-            "doc_key"
+            "document_id"
           ]
         }
       },

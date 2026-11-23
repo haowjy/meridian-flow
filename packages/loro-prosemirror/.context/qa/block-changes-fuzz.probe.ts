@@ -14,11 +14,13 @@ import {
   applyBlocks,
   changedBlocks,
   discardBlocks,
+  editStays,
   frontiersOf,
   inMap,
   inText,
-  invertCommit,
   isOrderKey,
+  noteEdit,
+  opsBetween,
   overrideMap,
   RoomDocs,
   restoreBefore,
@@ -27,8 +29,11 @@ import {
   StructureView,
   sameValue,
   setCommentBody,
+  takeBack,
+  takenBack,
   textUnits,
   undoPress,
+  valuesOf,
   versionOf,
 } from "@meridian/document-model";
 import { EditorState } from "prosemirror-state";
@@ -132,6 +137,38 @@ function charIds(doc) {
     return out;
   });
 }
+/**
+ * The characters a character stands for, by id: itself, or for one a take-back commit wrote (`undo {spans}`, design §2)
+ * every character the ops it names deleted, followed through earlier take-backs. Coarser than the model's alignment
+ * (a take-back that put back two runs reads each as both), which is enough to tell whether a press's text is there.
+ */
+function rootsOfChar(doc, id, memo = new Map()) {
+  const at = id.indexOf(":");
+  const change = doc.getChangeAt({ peer: id.slice(0, at), counter: Number(id.slice(at + 1)) });
+  const spans = takenBack(change?.message);
+  if (!spans) return new Set([id]);
+  const key = change.message;
+  if (memo.has(key)) return memo.get(key);
+  const out = new Set();
+  memo.set(key, out);
+  for (const [peer, [from, to]] of Object.entries(spans))
+    for (const json of doc.exportJsonInIdSpan({ peer, counter: from, length: to - from }))
+      for (const { content } of json.ops) {
+        if (content.type !== "delete") continue;
+        const [counter, by] = content.start_id.split("@");
+        const step = content.len < 0 ? -1 : 1;
+        for (let k = 0; k < Math.abs(content.len); k++) for (const root of rootsOfChar(doc, `${by}:${Number(counter) + step * k}`, memo)) out.add(root);
+      }
+  return out;
+}
+/** The positions in `doc` of a press's text (`place`, ids to characters): its own characters, or ones put back for them. */
+function placeAt(doc, place) {
+  const memo = new Map();
+  const text = textOfDoc(doc);
+  return charIds(doc).flatMap((id, i) =>
+    id && (place.ids.has(id) || [...rootsOfChar(doc, id, memo)].some((root) => place.ids.get(root) === text[i])) ? [i] : [],
+  );
+}
 const blockValues = (d) => {
   const view = new StructureView(d);
   const out = new Map();
@@ -214,7 +251,7 @@ export function runScript(seed, { verbose = false } = {}) {
     edits: 0, presses: 0, pressUndos: 0, discards: 0, discardUndos: 0, discardAlls: 0, discardAllUndos: 0,
     restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
     chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0,
-    tabVersionPresses: 0, twoDrafts: 0, twoDraftsCopies: 0, twoDraftsMoved: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
+    tabVersionPresses: 0, stayedChanges: 0, quietUndos: 0, twoDrafts: 0, twoDraftsMoved: 0, twoDraftsStayed: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
     resetCopyObserved: 0, kinds: {},
   };
   const outcomes = [];
@@ -229,7 +266,6 @@ export function runScript(seed, { verbose = false } = {}) {
   let tabLive;
   const deleted = new Set();
   const touched = new Set();
-  const openPresses = new Set();
   /** Blocks whose marks a Discard, Undo or restore wrote back as the fork's own: Live's later unmark leaves its copy. */
   const markCopied = new Set();
   const markCopies = (changes) => {
@@ -242,8 +278,13 @@ export function runScript(seed, { verbose = false } = {}) {
   const splitMoved = new Set();
   const resetRestored = new Map();
   const inverseCopies = new Map();
+  /** The token each character was first seen in, by block and character id: ids repeat across text docs. */
   const origins = new Map();
   let liveWrites = 0;
+  /** Press Undos that left a change: Live keeps that press's write, so an earlier press can't bring Live back. */
+  let kept = 0;
+  /** Every write to any copy: an Undo with none since its press must take every change back. */
+  let writes = 0;
 
   const row = (d, id) => {
     if (!d) return "(hidden)";
@@ -277,13 +318,35 @@ export function runScript(seed, { verbose = false } = {}) {
 
   /** `to` imports what `from` holds beyond it: one sync of two copies. */
   function send(from, to) {
+    const tabStructure = () => versionOf(live.structure, live.structure.frontiers()).get(liveTab?.peer) ?? 0;
+    const tabWrote = to === live && from === liveTab ? tabStructure() : null;
     const r = to.importBatch(from.exportSince(to.shownVersion()));
     check(!r.pending, "pending-import", "an import waited on ops the copy lacks");
+    // A restore Live writes, or one its tab wrote reaching it (Live typing answering a removal), is a Live write.
+    if ((to === live && r.restore) || (tabWrote !== null && tabStructure() > tabWrote)) liveWrites++;
   }
   function sync(a, b) {
     send(a, b);
     send(b, a);
   }
+  /**
+   * Run a press or its Undo on a command's own copy of draft room `d`, as the server does: each side gets a fresh
+   * peer, so every later write is someone else's. Then send what it wrote, Live's docs first.
+   */
+  function command(d, run) {
+    const cmd = d.fork(next());
+    try {
+      const r = run(cmd);
+      send(cmd.live, d.live);
+      send(cmd, d);
+      d.forward();
+      return r;
+    } finally {
+      cmd.free();
+    }
+  }
+  /** A press's changes as `press_changes` stores them: JSON. */
+  const stored = (pressed) => JSON.parse(JSON.stringify(pressed));
   const fwdLive = () => fork.forward();
   function syncLive() {
     sync(liveTab, live);
@@ -322,7 +385,7 @@ export function runScript(seed, { verbose = false } = {}) {
       const text = textOfDoc(td);
       const cs = charIds(td);
       for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
-        for (const c of cs.slice(m.index, m.index + m[0].length)) if (c && !origins.has(c)) origins.set(c, m[0]);
+        for (const c of cs.slice(m.index, m.index + m[0].length)) if (c && !origins.has(`${id}|${c}`)) origins.set(`${id}|${c}`, m[0]);
     }
   }
   const records = (changes) => changes.map((c) => ({ id: c.key === STRUCTURE_KEY ? null : c.key, doc: c.doc, before: c.before, after: c.after }));
@@ -385,6 +448,7 @@ export function runScript(seed, { verbose = false } = {}) {
       else changed.unshift({ id: null, doc: d.structure, before: b0, after: b1 });
     }
     recordOrigins(d);
+    writes++;
     const after = tokens(d);
     const now = new Set(after);
     const fresh = blockValues(d);
@@ -413,7 +477,12 @@ export function runScript(seed, { verbose = false } = {}) {
         for (const [id, set] of carriers(d)) if ([...set].some((c) => ids.has(c))) touched.add(id);
       }
     }
-    if (tb0) for (const [t, id] of tokenBlocks(d)) if (tb0.has(t) && tb0.get(t) !== id) splitMoved.add(t);
+    if (tb0) {
+      const tb1 = tokenBlocks(d);
+      for (const [t, id] of tb1) if (tb0.has(t) && tb0.get(t) !== id) splitMoved.add(t);
+      // A join that glues two tokens into one word ("l28kf32k") moves them out of the token regex's sight.
+      for (const t of tb0.keys()) if (!tb1.has(t)) splitMoved.add(t);
+    }
     stats.kinds[e.kind] = (stats.kinds[e.kind] ?? 0) + 1;
     note(`  ${origin} ${e.kind}`);
     return { e, changed };
@@ -426,7 +495,8 @@ export function runScript(seed, { verbose = false } = {}) {
     const text = textOfDoc(td);
     const ids = charIds(td);
     const lt = live.textOf(id);
-    if (lt && textOfDoc(lt) === text) {
+    // An Undo of a discard writes back a copy the discard had removed: the block stays a copy.
+    if ((lt && textOfDoc(lt) === text) || inverseCopies.has(id)) {
       const original = new Set(charIds(lt));
       for (const c of ids)
         if (c && !old.has(c) && !original.has(c)) {
@@ -515,7 +585,17 @@ export function runScript(seed, { verbose = false } = {}) {
     const r = userEdit(tab, "f", { prefer });
     stats.edits++;
     if (r?.changed.length && g.chance(0.18)) {
-      for (const rec of r.changed) invertCommit(tab, rec.id ?? STRUCTURE_KEY, versionOf(rec.doc, rec.before), versionOf(rec.doc, rec.after), "ctrlz");
+      // The writer's Ctrl+Z of the edit just made, as one edit through the shared rule and the server's text inverse.
+      const ctrlz = { peer: tab.peer, values: new Map(), texts: new Map(), leaving: new Map(), arriving: new Set(), shown: new Set(), structureAt: [] };
+      for (const rec of r.changed)
+        if (rec.id === null) valuesOf(rec.doc, rec.before, rec.after, ctrlz.values);
+        else ctrlz.texts.set(rec.id, { before: rec.before, after: rec.after, ops: opsBetween(rec.doc, rec.before, rec.after, tab.peer) });
+      noteEdit(tab, ctrlz);
+      const view = new StructureView(tab);
+      const why = editStays(tab, ctrlz, view);
+      check(why === null, "ctrlz", () => `the edit just made stays: ${why}`);
+      takeBack(tab, [ctrlz], view, "ctrlz");
+      recordOrigins(tab);
       stats.ctrlz++;
       note("  CTRLZ");
       check(render(tab) === before, "ctrlz", "tab not back to before edit");
@@ -575,7 +655,15 @@ export function runScript(seed, { verbose = false } = {}) {
     const now = textValues(fork);
     structureAfter([...now.keys()].filter((id) => now.get(id) !== prior.get(id)));
     if (!structureUnchanged) return;
-    check(same(overridesNow(), atStart), "restore", "overrides differ from the turn's start");
+    // A block the turn created goes as a removal, keeping its other keys to come back with (the shared put-back).
+    const restored = overridesNow();
+    const order = STRUCTURE_MAPS.indexOf("order");
+    const made = (key) => {
+      const id = key.split("/")[0];
+      return atStart[order][id] === undefined && typeof restored[order][id] === "string" && !isOrderKey(restored[order][id]);
+    };
+    const kept = restored.map((map, i) => Object.fromEntries(Object.entries(map).filter(([key]) => i === STRUCTURE_MAPS.indexOf("comments") || !made(key))));
+    check(same(kept, atStart), "restore", () => `overrides differ from the turn's start: ${JSON.stringify(restored)} vs ${JSON.stringify(atStart)}`);
     for (const [id, value] of now) {
       const wrote = turn.before.has(id) && turn.before.get(id).size > 0;
       const want = wrote ? expected.get(id) : prior.get(id);
@@ -602,6 +690,7 @@ export function runScript(seed, { verbose = false } = {}) {
     });
     if (position === null) return false;
     if (d === liveTab) liveWrites++;
+    writes++;
     edit(d, (tr) => tr.insertText(` ${token} `, position), { rng: g.rng });
     return true;
   }
@@ -609,7 +698,7 @@ export function runScript(seed, { verbose = false } = {}) {
   /**
    * A Work's `Apply all` over two drafts that both rewrite one paragraph (design §2): pressed one after the other on
    * a copy of the Live room, each on Live as the one before left it, then undone draft by draft in the reverse
-   * order, each from its own commits. Live typing may land between the presses. Leaves the script's copies alone.
+   * order, each from what it stored. Live typing may land between the presses. Leaves the script's copies alone.
    */
   function twoDrafts() {
     syncLive();
@@ -619,6 +708,8 @@ export function runScript(seed, { verbose = false } = {}) {
     if (!paragraphs.length) return;
     const id = g.pick(paragraphs);
     const drafts = [track(RoomDocs.draftOf(room, next())), track(RoomDocs.draftOf(room, next()))];
+    const original = charIds(room.textOf(id));
+    const deletedBy = [];
     for (const [i, d] of drafts.entries()) {
       let block = null;
       read(d).descendants((node, pos) => {
@@ -627,7 +718,12 @@ export function runScript(seed, { verbose = false } = {}) {
       const from = g.int(block.size + 1);
       const to = from + g.int(Math.min(6, block.size - from) + 1);
       edit(d, (tr) => tr.insertText(` d${i}${seed}k `, block.from + from, block.from + to), { rng: g.rng });
+      const kept = new Set(charIds(d.textOf(id)));
+      deletedBy.push(new Set(original.filter((c) => !kept.has(c))));
     }
+    // Both drafts deleted one character: the second press's import deleted it again, so by the Undo rule's part 4
+    // the first press's change stays (design §2), even with the second press undone.
+    const bothDeleted = [...deletedBy[0]].some((c) => deletedBy[1].has(c));
     const before = render(room);
     const draftsBefore = drafts.map((d) => {
       d.forward();
@@ -635,26 +731,46 @@ export function runScript(seed, { verbose = false } = {}) {
     });
     const liveToken = `y${seed}0wk`;
     const liveTyped = g.chance(0.4);
-    const commits = [];
+    const pressed = [];
     for (const [i, d] of drafts.entries()) {
       if (i === 1 && liveTyped) typeIn(room, id, liveToken);
-      commits.push(applyBlocks(d, "all", { message: `work press ${i}`, liveVersion: room.version() }).commits);
+      pressed.push(command(d, (cmd) => stored(applyBlocks(cmd, "all", { message: `work press ${i}`, liveVersion: room.version() }).pressed)));
     }
-    for (const d of drafts) {
+    const pressedTexts = drafts.map((d) => {
       d.forward();
+      return textOfDoc(d.textOf(id));
+    });
+    for (const d of drafts) {
       check(!changedBlocks(d).length, "two-drafts", () => `a draft still pending after Apply all: ${JSON.stringify(changedBlocks(d))}`);
     }
-    for (let i = drafts.length - 1; i >= 0; i--) undoPress(drafts[i], commits[i], { message: `undo work press ${i}` });
+    const stays = [];
+    for (let i = drafts.length - 1; i >= 0; i--) {
+      const { stayed } = command(drafts[i], (cmd) => undoPress(cmd, pressed[i], { message: `work press undo ${i}` }));
+      stays[i] = stayed.length > 0;
+      check(!stays[i] || (i === 0 && bothDeleted), "two-drafts", () => `draft ${i}'s press stayed: ${JSON.stringify(stayed.map((c) => c.members))}`);
+    }
+    if (stays[0]) stats.twoDraftsStayed++;
+    const liveIds = new Set(charIds(room.textOf(id)));
     for (const [i, d] of drafts.entries()) {
       d.forward();
       const changes = changedBlocks(d);
+      if (stays[i]) {
+        check(!changes.length, "two-drafts", () => `draft ${i}, whose press stayed, pending ${JSON.stringify(changes)}`);
+        continue;
+      }
       check(changes.length === 1 && same(changes[0].blocks, [id]), "two-drafts", () => `draft ${i} pending ${JSON.stringify(changes)} after the Undo, not ${id}`);
       // The draft's text is back (as new characters of its own: the return to pending). Beside it are only Live's
       // characters: its typing, and text both drafts deleted that the other press's Undo put back as new
       // characters, which this draft never deleted (the accepted copy of design §2: Loro has no undelete).
       const text = textOfDoc(d.textOf(id));
+      if (stays[0]) {
+        // The first press stayed in Live, so this draft reads its deletions too, and Live is as the presses left it
+        // but for this draft's own change: its text is unchanged by its press's Undo (design §2).
+        check(text === pressedTexts[i], "two-drafts", () => `draft ${i} changed by the Undo: ${JSON.stringify(pressedTexts[i])} -> ${JSON.stringify(text)}`);
+        continue;
+      }
       const ids = charIds(d.textOf(id));
-      const live = (at) => ids[at]?.startsWith(`${room.peer}:`);
+      const live = (at) => liveIds.has(ids[at]);
       if (!withExtras(draftsBefore[i], text, live)) {
         // Text the other draft deleted comes back as one run of new characters, placed by Loro beside this
         // draft's own re-created insertion at the same gap: on either side. Counted, not failed (reported to
@@ -667,11 +783,12 @@ export function runScript(seed, { verbose = false } = {}) {
         }
         stats.twoDraftsMoved++;
       }
-      const added = text.length - draftsBefore[i].length;
-      if (added && !liveTyped) stats.twoDraftsCopies++;
+      if (!liveTyped) check(text.length === draftsBefore[i].length, "two-drafts", () => `draft ${i} gained text from the Undo: ${draftsBefore[i]} -> ${text}`);
     }
-    if (liveTyped) check(textOfDoc(room.textOf(id)).includes(liveToken), "two-drafts", "Live typing between the presses lost by the Undo");
-    else check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
+    const liveText = textOfDoc(room.textOf(id));
+    if (liveTyped) check(liveText.includes(liveToken), "two-drafts", "Live typing between the presses lost by the Undo");
+    if (stays[0]) check(liveText.includes(`d0${seed}k`) && !liveText.includes(`d1${seed}k`), "two-drafts", () => `Live after the second press's Undo, the first staying: ${liveText}`);
+    else if (!liveTyped) check(render(room) === before, "two-drafts", () => `Live not back after the Undo: ${before} -> ${render(room)}`);
     stats.twoDrafts++;
     note("  TWO DRAFTS");
   }
@@ -680,14 +797,11 @@ export function runScript(seed, { verbose = false } = {}) {
    * The press's replacements in Live's text, for the rule "no Undo puts back text a later write removed"
    * (design §2, settled (a)): per text doc whose change is one replacement, the units it put in.
    */
-  function replacements(commits) {
+  function replacements(changes) {
     const out = [];
-    for (const c of commits) {
-      if (c.side !== "live" || c.key === STRUCTURE_KEY) continue;
-      const doc = live.texts.get(c.key);
-      if (!doc) continue;
-      const before = frontiersOf(doc, c.before);
-      const after = frontiersOf(doc, c.after);
+    for (const c of changes) {
+      if (c.key === STRUCTURE_KEY) continue;
+      const { doc, before, after } = c;
       const diff = doc.diff(before, after, false).find(([, d]) => d.type === "text")?.[1].diff ?? [];
       const places = [];
       let pos = 0;
@@ -716,8 +830,8 @@ export function runScript(seed, { verbose = false } = {}) {
         }
       };
       const { at: start, inserted } = places[0];
-      const ids = new Set(at(after, (v) => charIds(v).slice(start, start + inserted.length)));
-      out.push({ key: c.key, inserted, ids });
+      const ids = at(after, (v) => charIds(v).slice(start, start + inserted.length));
+      out.push({ key: c.key, inserted, ids: new Map(ids.map((id, i) => [id, inserted[i]])) });
     }
     return out;
   }
@@ -737,16 +851,19 @@ export function runScript(seed, { verbose = false } = {}) {
     const liveView = new StructureView(live);
     const forkView = new StructureView(fork);
     const leaf = chosen.find((id) => fork.texts.has(id) && live.texts.has(id) && liveView.shown.has(id) && forkView.shown.has(id));
-    const late = leaf ? track(fork.fork(next())) : null;
+    const late = leaf && g.chance(0.7) ? track(fork.fork(next())) : null;
     const draftToken = `x${seed}0${stats.presses}k`;
     const liveToken = `y${seed}0${stats.presses}k`;
     const lateTyped = late && typeIn(late, leaf, draftToken);
-    const liveTyped = leaf && typeIn(liveTab, leaf, liveToken);
+    const liveTyped = leaf && g.chance(0.7) && typeIn(liveTab, leaf, liveToken);
     // What the writer was shown: the Live tab's copy, or the Changes list's, read on the server just now.
     const fromTab = g.chance(0.5);
     if (fromTab) stats.tabVersionPresses++;
     const liveVersion = fromTab ? tabLive.version() : live.version();
-    const r = applyBlocks(fork, chosen, { message: `press:${stats.presses}`, liveVersion });
+    const { r, replaced, liveKeys } = command(fork, (cmd) => {
+      const r = applyBlocks(cmd, chosen, { message: `press:${stats.presses}`, liveVersion });
+      return { r, replaced: replacements(r.live), liveKeys: r.live.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key) };
+    });
     const ids = r.chosen.flatMap((c) => [...c.blocks, ...c.comments]);
     stats.presses++;
     note(`  PRESS ${chosen.map((x) => x.slice(0, 4))} -> ${ids.map((x) => x.slice(0, 4))}`);
@@ -756,7 +873,13 @@ export function runScript(seed, { verbose = false } = {}) {
     structureAfter(ids);
     const newBlocks = blockValues(live);
     for (const [id, b] of oldBlocks) if (!ids.includes(id) && newBlocks.has(id)) check(b === newBlocks.get(id), "apply", () => `unchosen block ${id} changed: ${b} -> ${newBlocks.get(id)}`);
-    check(applyBlocks(fork, chosen, { liveVersion: live.version() }).commits.length === 0, "apply", "applying again was not a no-op");
+    const again = fork.fork(next());
+    try {
+      const r2 = applyBlocks(again, chosen, { liveVersion: live.version() });
+      check(r2.pressed.every((c) => !c.live && !c.fork), "apply", "applying again was not a no-op");
+    } finally {
+      again.free();
+    }
     if (liveTyped) {
       syncLive();
       stats.unsyncedLive++;
@@ -775,8 +898,7 @@ export function runScript(seed, { verbose = false } = {}) {
       touched.add(leaf);
       toTab();
     }
-    const result = { r, commits: r.commits, before, fbefore, chosen, ids, liveTyped, liveAt: liveWrites, afterLive: blockValues(live), afterFork: blockValues(fork), replaced: replacements(r.commits) };
-    openPresses.add(result);
+    const result = { r, keptAt: kept, beforeBlocks: oldBlocks, pressed: stored(r.pressed), liveKeys, before, fbefore, chosen, ids, liveTyped, lateTyped, liveAt: liveWrites, writesAt: writes, afterLive: blockValues(live), afterFork: blockValues(fork), replaced };
     return result;
   }
 
@@ -790,15 +912,25 @@ export function runScript(seed, { verbose = false } = {}) {
     const beforeFork = blockValues(fork);
     const expectGone = [];
     for (const place of p.replaced) {
-      const doc = live.texts.get(place.key);
-      const text = textOfDoc(doc);
-      // Still there by identity, or put back as new characters by a later Undo (same text).
-      if (text.includes(place.inserted) || charIds(doc).some((c) => place.ids.has(c))) continue;
+      // Still there by identity, or put back for it by a later Undo: by character id, never by what it spells.
+      if (placeAt(live.texts.get(place.key), place).length) continue;
       expectGone.push(place.key);
     }
     const liveBefore = snapshotIds(live);
     const forkBefore = snapshotIds(fork);
-    markCopies(undoPress(fork, p.commits, { message: "undo press" }).fork);
+    const { stayed } = command(fork, (cmd) => {
+      const u = undoPress(cmd, p.pressed, { message: "press undo" });
+      markCopies(u.fork);
+      return u;
+    });
+    stats.stayedChanges += stayed.length;
+    if (stayed.length) kept++;
+    const stayedIds = new Set(stayed.flatMap((c) => c.members));
+    // Nothing wrote over the press since: every change goes back.
+    if (inTurn && writes === p.writesAt && !p.liveTyped && !p.lateTyped) {
+      stats.quietUndos++;
+      check(!stayed.length, "press-undo", () => `a change stayed with nothing written since the press: ${JSON.stringify(stayed.map((c) => c.members))}`);
+    }
     // The press was the doc's one replacement and a later write removed all it put in: the Undo has nothing
     // to take out and must not put the old text back, so it adds no character to the doc.
     for (const key of expectGone) {
@@ -811,27 +943,13 @@ export function runScript(seed, { verbose = false } = {}) {
     }
     recordOrigins(live);
     recordOrigins(fork);
-    openPresses.delete(p);
-    // An Undo that puts back an open press's text (a later press had moved or replaced it) puts it back
-    // as new characters: they are that press's text from here on.
-    for (const q of openPresses)
-      for (const place of q.replaced) {
-        const doc = live.texts.get(place.key);
-        if (!doc) continue;
-        const ids = charIds(doc);
-        if (ids.some((c) => place.ids.has(c))) continue;
-        const at = textOfDoc(doc).indexOf(place.inserted);
-        const old = new Set(liveBefore.get(place.key) ?? []);
-        if (at >= 0) for (const c of ids.slice(at, at + place.inserted.length)) if (c && !old.has(c)) place.ids.add(c);
-      }
-    for (const c of p.commits) {
-      if (c.side !== "live" || c.key === STRUCTURE_KEY) continue;
-      rememberInverse(live.texts.get(c.key), c.key, liveBefore.get(c.key) ?? []);
-      const td = fork.texts.get(c.key);
+    for (const key of p.liveKeys) {
+      rememberInverse(live.texts.get(key), key, liveBefore.get(key) ?? []);
+      const td = fork.texts.get(key);
       if (td) {
-        rememberInverse(td, c.key, forkBefore.get(c.key) ?? []);
+        rememberInverse(td, key, forkBefore.get(key) ?? []);
         const kept = new Set(charIds(td));
-        for (const ch of charIds(live.texts.get(c.key))) if (ch && !kept.has(ch)) draftDeletedChars.add(ch);
+        for (const ch of charIds(live.texts.get(key))) if (ch && !kept.has(ch)) draftDeletedChars.add(ch);
       }
     }
     fwdLive();
@@ -841,36 +959,30 @@ export function runScript(seed, { verbose = false } = {}) {
     note(`  UNDO PRESS${inTurn ? "" : " (out of order)"}`);
     const afterLive = p.afterLive;
     const afterFork = p.afterFork;
-    undoCheck(p.ids.filter((id) => afterLive.has(id) || afterFork.has(id)).filter((id) => afterLive.get(id) === beforeLive.get(id) && afterFork.get(id) === beforeFork.get(id)));
-    if (inTurn && render(fork) !== fb) {
-      // A removal the press applied that Live answered with a restore (Live typing the pressing tab had
-      // not seen) comes back as the draft's pending removal: the Undo puts back the override the press
-      // deleted, which is the key rule; the blocks under it, Live's and the draft's own, hide with it.
-      // Every other block reads as before.
+    // A change that stayed wrote nothing.
+    const liveNow = blockValues(live);
+    const forkNow = blockValues(fork);
+    for (const id of stayedIds) check(liveNow.get(id) === beforeLive.get(id) && forkNow.get(id) === beforeFork.get(id), "press-undo", () => `${id}, of a change that stayed, changed`);
+    undoCheck(p.ids.filter((id) => !stayedIds.has(id) && (afterLive.has(id) || afterFork.has(id))).filter((id) => afterLive.get(id) === beforeLive.get(id) && afterFork.get(id) === beforeFork.get(id)));
+    if (inTurn) {
       const now = blockValues(fork);
-      const fv = new StructureView(fork);
-      const changed = [...new Set([...beforeFork.keys(), ...now.keys()])].filter((id) => beforeFork.get(id) !== now.get(id));
-      const bounced = (id) => {
-        if (now.has(id)) return false;
-        for (let at = id, hops = 0; typeof at === "string" && hops < 50; at = fv.value("parent", at), hops++)
-          if (p.ids.includes(at) && fv.removal(at) !== null) return true;
-        return false;
-      };
-      const other = changed.filter((id) => !bounced(id));
-      check(!other.length, "press-undo", () => `fork changed by press Undo: ${other.map((id) => `${id}: ${beforeFork.get(id)} -> ${now.get(id)}`).join("; ")}`);
-      stats.bouncedRemovals = (stats.bouncedRemovals ?? 0) + changed.length;
+      check(render(fork) === fb, "press-undo", () => `fork changed by press Undo: ${[...new Set([...beforeFork.keys(), ...now.keys()])].filter((id) => beforeFork.get(id) !== now.get(id)).map((id) => `${id}: ${beforeFork.get(id)} -> ${now.get(id)}`).join("; ")}`);
     }
     else {
       const now = textValues(fork);
       for (const [id, text] of ft) if (now.has(id)) check(now.get(id) === text, "press-undo", () => `draft text of ${id} changed by an out-of-order press Undo: ${text} -> ${now.get(id)}`);
     }
-    if (exact) check(render(live) === p.before, "press-undo", "Live not back to before Apply");
+    if (exact && !stayed.length && kept === p.keptAt)
+      check(render(live) === p.before, "press-undo", () => {
+        const now = blockValues(live);
+        return `Live not back to before Apply: ${[...new Set([...p.beforeBlocks.keys(), ...now.keys()])].filter((id) => p.beforeBlocks.get(id) !== now.get(id)).map((id) => `${id} ${p.beforeBlocks.get(id)} -> ${now.get(id)}`).join("; ")}`;
+      });
   }
 
   /** Replace or delete, in Live or in the draft, text a press put in (design §2's "later write"). */
   function overwrite(p, side) {
     const place = g.pick(p.replaced.length ? p.replaced : [null]);
-    const key = place?.key ?? g.pick(p.commits.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key).concat([null]));
+    const key = place?.key ?? g.pick([...p.liveKeys, null]);
     if (!key) return;
     const d = side === "live" ? liveTab : tab;
     if (side === "live") syncLive();
@@ -881,8 +993,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const text = textOfDoc(doc);
     // The units the press put in, found by identity: all of them most of the time (the case design §2's
     // settled (a) decides), else a part.
-    const ids = charIds(doc);
-    const mine = place ? ids.flatMap((c, i) => (c && place.ids.has(c) ? [i] : [])) : [];
+    const mine = place ? placeAt(doc, place) : [];
     let from;
     let to;
     if (mine.length) {
@@ -907,9 +1018,19 @@ export function runScript(seed, { verbose = false } = {}) {
     const a = position + shownIndex(from);
     const b = position + shownIndex(to);
     const origin = side === "live" ? "l" : "f";
-    const replacement = g.chance(0.5) ? g.tok(origin) : null;
+    // Over the press's text, also a retype that holds it ("home" pressed to "house", then "household") or is held by
+    // it ("hous"), and typing right after it, which may be text an Undo put back: none of it is the press's.
+    const kind = mine.length ? g.pick(["overwrite", "overwrite", "overdelete", "overdelete", "holds", "held", "after"]) : g.pick(["overwrite", "overdelete"]);
+    const pressed = text.slice(from, to);
+    const replacement = {
+      overwrite: g.tok(origin),
+      holds: g.chance(0.5) ? `${pressed}ed` : `re${pressed}`,
+      held: pressed.slice(0, Math.max(1, pressed.length - 1 - g.int(Math.max(1, pressed.length - 1)))),
+      after: ` ${g.tok(origin)}`,
+    }[kind];
+    const at = kind === "after" ? b : a;
     userEdit(d, origin, {
-      edit: { kind: replacement ? "overwrite" : "overdelete", build: (tr) => (replacement ? tr.insertText(replacement, a, b) : tr.delete(a, b)) },
+      edit: { kind, build: (tr) => (replacement ? tr.insertText(replacement, at, b) : tr.delete(a, b)) },
     });
     stats.overwrites++;
     if (side === "live") syncLive();
@@ -993,8 +1114,11 @@ export function runScript(seed, { verbose = false } = {}) {
     const oldBlocks = blockValues(fork);
     const oldTextTokens = new Map([...fork.texts].map(([id, d]) => [id, new Set(tokensOf(textOfDoc(d)))]));
     const ids = snapshotIds(fork);
-    const r = discardBlocks(fork, chosen, { message: all ? "discard all" : "discard" });
-    markCopies(r.fork);
+    const r = command(fork, (cmd) => {
+      const r = discardBlocks(cmd, chosen, { message: all ? "discard all" : "discard" });
+      markCopies(r.fork);
+      return { chosen: r.chosen, pressed: stored(r.pressed), textKeys: r.fork.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key) };
+    });
     rememberAll(fork, ids);
     recordOrigins(fork);
     toTab();
@@ -1007,22 +1131,26 @@ export function runScript(seed, { verbose = false } = {}) {
       const now = pendingIds();
       for (const id of chosen) check(!now.includes(id), "discard", () => `block ${id} still pending: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
     }
-    for (const c of r.commits) {
-      if (c.key === STRUCTURE_KEY) continue;
-      const was = oldTextTokens.get(c.key) ?? new Set();
-      const onLive = new Set(tokensOf(textOfDoc(live.textOf(c.key))));
-      for (const token of tokensOf(textOfDoc(fork.texts.get(c.key)))) if (!was.has(token) && onLive.has(token)) resetRestored.set(token, c.key);
+    for (const key of r.textKeys) {
+      const was = oldTextTokens.get(key) ?? new Set();
+      const onLive = new Set(tokensOf(textOfDoc(live.textOf(key))));
+      for (const token of tokensOf(textOfDoc(fork.texts.get(key)))) if (!was.has(token) && onLive.has(token)) resetRestored.set(token, key);
     }
     structureAfter(done);
     const newBlocks = blockValues(fork);
     for (const [id, b] of oldBlocks) if (!done.includes(id) && newBlocks.has(id)) check(b === newBlocks.get(id), "discard", `unchosen block ${id} changed`);
     for (const id of done) touched.delete(id);
-    return { r, before, pendingBefore };
+    return { r, before, blocksBefore: oldBlocks, pendingBefore };
   }
   function undoDiscard(rec, kind, checkBefore = true) {
     syncTab();
     const ids = snapshotIds(fork);
-    markCopies(undoPress(fork, rec.r.commits, { message: `undo ${kind}` }).fork);
+    const { stayed } = command(fork, (cmd) => {
+      const u = undoPress(cmd, rec.r.pressed, { message: `${kind} undo` });
+      markCopies(u.fork);
+      return u;
+    });
+    stats.stayedChanges += stayed.length;
     rememberAll(fork, ids);
     recordOrigins(fork);
     toTab();
@@ -1030,7 +1158,11 @@ export function runScript(seed, { verbose = false } = {}) {
     for (const id of rec.pendingBefore) touched.add(id);
     if (kind === "discard") stats.discardUndos++;
     else stats.discardAllUndos++;
-    if (checkBefore) check(render(fork) === rec.before, `${kind}-undo`, "fork not back to before Discard");
+    if (checkBefore && !stayed.length)
+      check(render(fork) === rec.before, `${kind}-undo`, () => {
+        const now = blockValues(fork);
+        return `fork not back to before Discard: ${[...new Set([...rec.blocksBefore.keys(), ...now.keys()])].filter((id) => rec.blocksBefore.get(id) !== now.get(id)).map((id) => `${id} ${rec.blocksBefore.get(id)} -> ${now.get(id)}`).join("; ")}`;
+      });
   }
 
   try {
@@ -1165,7 +1297,7 @@ export function runScript(seed, { verbose = false } = {}) {
         else check(false, "live-typing-lost", () => `Live token ${tok} characters missing from fork; id ${id}; live ${blockValues(live).get(id)}; fork ${blockValues(fork).get(id)}`);
       }
     }
-    applyBlocks(fork, "all", { message: "apply all", liveVersion: live.version() });
+    command(fork, (cmd) => applyBlocks(cmd, "all", { message: "apply all", liveVersion: live.version() }));
     syncTab();
     syncLive();
     toTab();
@@ -1187,7 +1319,7 @@ export function runScript(seed, { verbose = false } = {}) {
       const text = textOfDoc(td);
       const cs = charIds(td);
       for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
-        if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(c) && origins.get(c) !== m[0])) collisions.add(m[0]);
+        if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(`${id}|${c}`) && origins.get(`${id}|${c}`) !== m[0])) collisions.add(m[0]);
     }
     const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t));
     check(!dup.length, "duplicate-text", () => `duplicate tokens ${dup.join(",")}; Live ${render(live)}`);

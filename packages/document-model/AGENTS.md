@@ -68,9 +68,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   its text spans, `noteEdit` after each write or run and before the next import), and only then
   does the caller take its text back and `putBackValues` write its structure. Don't add a second
   test beside it. "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's
-  peer: a press's Undo runs on a server copy with a peer of its own. Every
-  commit that takes ops back says which in its message (`takeBackMessage`), so `textSince` can
-  read text an Undo put back as the text it deleted, by character id.
+  peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
+  its span's (`TextSpan.ops`): the author's in the editor, every peer's for a press, which imports
+  its draft's ops. Every commit that takes ops back says which in its message (`takeBackMessage`),
+  so `textSince` can read text an Undo put back as the text it deleted, by character id.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`
   constructor enforces: a press writes both rooms from one copy, and one peer would mint the same
@@ -82,15 +83,17 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   imports the fork's text into Live and writes the chosen overrides there, a removal as a new
   record stamped with the Live version the writer was shown (`liveVersion`; a text doc it lacks
   counts as never shown);
-  `discardBlocks` makes the fork take Live's. Each returns the commits it made (`PressCommit`: side,
-  doc key, versions either side), which `undoPress` takes back: Live's first, then the fork is
-  returned to pending. A press over several drafts is undone one draft at a time, newest first.
-  `invertCommit` is the one Undo of a commit: the structure doc key by key
-  (only while a key holds what the commit left), a text doc by the inverse moved through what
-  happened since (`transformedInverse`, with rule (a): a replacement whose new text a later write
-  removed whole does not bring the old text back). Invert a room's text docs before its structure
-  doc, so a removal record put back counts the text. A forward's restore is not a commit of the
-  press. The hand-run fuzz is
+  `discardBlocks` makes the fork take Live's. Run each on a command's own copy, so the press's
+  writes have peers no later write shares. Each returns, per change, the edit it made in each room
+  (`PressedChange`, JSON for `press_changes`), noted as the press left the room: the note can't be
+  taken later. `undoPress` tests each change with `editStays`, its Live and fork sides as one edit,
+  and leaves one someone wrote over (`PressUndo.stayed`); `takeBack` writes the rest, Live's
+  first, each text doc by its inverse moved through `textSince` (`transformedInverse`, with rule
+  (a): a replacement whose new text a later write removed whole does not bring the old text back)
+  before `putBackValues`, so a removal record put back counts the text; then the fork is returned
+  to pending. A press over several drafts is undone one draft at a time, newest first.
+  `restoreBefore` puts a turn's overrides back key by key through `putBackValues`, keeping a key
+  written since. A forward's restore is not a write of the press. The hand-run fuzz is
   [block-changes-fuzz](../loro-prosemirror/.context/qa/block-changes-fuzz.md); run it at 10,000
   seeds after changing any of this.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s

@@ -69,26 +69,26 @@ export const documentForks = pgTable(
 );
 
 /**
- * One doc a press committed: the draft whose changes it pressed, its room (`live:<doc>` or
- * `fork:<draft>:<doc>`), its doc key, and its versions either side (`encodeDocVersion`). A press
- * of several drafts (a Work's `Apply all`) presses them one after another in draft id order, so
- * one Live doc can have a row per draft. The press's Undo runs `undoPress` once per draft, in the
- * reverse order, on that draft's rows; an Undo stores no rows (pressing again is the Redo).
+ * What a press of one draft on one document did, for its Undo: `changes` is the document model's
+ * `PressedChange[]` (JSON), each change's members and, per room, its edit with the note taken at
+ * press time, which can't be taken again later. A press of several drafts (a Work's `Apply all`)
+ * presses them one after another in draft id order, so a command can have a row per draft. Its
+ * Undo runs `undoPress` once per draft, in the reverse order; an Undo stores no rows (pressing
+ * again is the Redo).
  */
-export const pressCommits = pgTable(
-  "press_commits",
+export const pressChanges = pgTable(
+  "press_changes",
   {
     commandId: uuid("command_id")
       .$type<CommandId>()
       .notNull()
       .references(() => commands.id, { onDelete: "cascade" }),
     draftId: draftIdColumn("draft_id").notNull(),
-    roomKey: text("room_key").notNull(),
-    docKey: text("doc_key").notNull(),
-    before: byteaColumn("before").notNull(),
-    after: byteaColumn("after").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    changes: jsonb("changes").notNull(),
   },
-  (table) => [
-    primaryKey({ columns: [table.commandId, table.draftId, table.roomKey, table.docKey] }),
-  ],
+  (table) => [primaryKey({ columns: [table.commandId, table.draftId, table.documentId] })],
 );

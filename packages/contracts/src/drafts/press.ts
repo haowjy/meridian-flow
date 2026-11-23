@@ -62,6 +62,11 @@ export type PressUndoResult = {
   pressCommandId: CommandId;
   /** Every document whose rooms the Undo committed to. */
   documents: DocumentId[];
+  /**
+   * The changes someone wrote over since the press, which the Undo left whole, each named by the id of one of its members
+   * (as `PressScope`'s `change`). An Undo takes a change back whole or not at all (design §2).
+   */
+  stayed: { documentId: DocumentId; change: string }[];
   /** The nodes whose tree change came back. */
   tree: string[];
 };

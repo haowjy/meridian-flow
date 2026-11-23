@@ -164,9 +164,11 @@ export class UndoHistory {
         continue;
       }
       const span = edit.texts.get(key);
-      if (span) span.after = after;
-      else {
-        edit.texts.set(key, { before, after });
+      if (span) {
+        span.after = after;
+        span.ops = opsBetween(doc, span.before, after, edit.peer);
+      } else {
+        edit.texts.set(key, { before, after, ops: opsBetween(doc, before, after, edit.peer) });
         // The doc's first commit in the step is an item already; the rest of the step merges into
         // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
         this.watched.get(key)?.manager.groupStart();
@@ -251,7 +253,7 @@ export class UndoHistory {
         const before = doc.frontiers();
         // Loro commits an Undo and a Redo alike under the origin `undo`: the message says which
         // ops the commit takes back, so text it puts back can be told from typing.
-        const message = takeBackMessage(opsBetween(doc, span.before, span.after, step.edit.peer));
+        const message = takeBackMessage(span.ops);
         // The modifier, and the one `setMessage` returns for chaining, are handles of our own.
         const unstamp = doc.subscribePreCommit(({ modifier }) => {
           modifier.setMessage(message).free();
@@ -266,7 +268,11 @@ export class UndoHistory {
           unstamp();
         }
         const after = doc.frontiers();
-        step.edit.texts.set(key, { before, after });
+        step.edit.texts.set(key, {
+          before,
+          after,
+          ops: opsBetween(doc, before, after, step.edit.peer),
+        });
         if (doc.cmpFrontiers(before, after) !== 0) changes.push({ key, doc, before, after });
       }
       this.tag = null;
