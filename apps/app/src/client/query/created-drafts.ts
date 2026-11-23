@@ -50,7 +50,7 @@ export function useCreatedDrafts(
         draftId,
         itemKey: draftItemKey(draftId, documentId),
         documentId,
-        textChanges: 0,
+        pending: false,
         origin: "created",
         isNew: true,
         binary: false,

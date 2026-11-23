@@ -1,6 +1,6 @@
 import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
 import type { Envelope } from "./envelope.js";
-import type { PeerId } from "./peer.js";
+import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
 import {
   type BlockId,
@@ -197,10 +197,12 @@ export class RoomDocs {
   /**
    * A private copy of these docs under `peer`, for a command or a read to change and drop. A
    * draft's copy comes with its own copy of `live` (so it can be forwarded and pressed without
-   * touching the room's); `free()` on the result frees that too.
+   * touching the room's); `free()` on the result frees that too. That Live copy is another room's
+   * writer, so it takes its own fresh peer in `peer`'s range: a press writes both rooms from one
+   * copy, and two docs of one history written under one peer would mint the same op ids.
    */
   fork(peer: PeerId): RoomDocs {
-    const live = this.live?.fork(peer) ?? null;
+    const live = this.live?.fork(isServerPeer(peer) ? freshServerPeerId() : freshPeerId()) ?? null;
     const copy = new RoomDocs(this.shape, peer, this.structure.fork(), live);
     copy.ownedLive = live;
     for (const [id, doc] of this.texts) copy.texts.set(id, copy.adopt(doc.fork()));

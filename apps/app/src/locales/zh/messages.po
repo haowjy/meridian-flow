@@ -365,8 +365,8 @@ msgid "{count, plural, one {# question:} other {# questions:}}"
 msgstr "{count, plural, other {# 个问题：}}"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "{count, plural, one {# text change} other {# text changes}}"
-msgstr ""
+#~ msgid "{count, plural, one {# text change} other {# text changes}}"
+#~ msgstr ""
 
 #: src/features/connections/connection-status.ts
 msgid "{count, plural, one {# tool} other {# tools}}"

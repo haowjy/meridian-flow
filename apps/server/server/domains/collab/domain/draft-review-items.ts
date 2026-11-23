@@ -19,8 +19,8 @@ export type DraftReviewItem = {
   draftId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The text changes the document's derivation last counted; 0 without any. */
-  textChanges: number;
+  /** The draft's text of the document has a change to review. */
+  pending: boolean;
   /** created: the draft has a `created` row; edited: text changes only. */
   origin: "created" | "edited";
   /** A creation only the Work shows: derived on read, nothing rewrites it. */
@@ -125,7 +125,7 @@ function toItem(
           deleted: node.change === "deleting",
         }
       : null,
-    textChanges: text?.textChanges ?? 0,
+    pending: text !== undefined,
     documentName: documentTitleFromUri(path),
     path,
     actorThreadIds: [...new Set([...(text?.writers.threadIds ?? []), ...treeActorThreadIds])],

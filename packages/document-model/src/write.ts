@@ -24,7 +24,7 @@ import {
   sameValue,
   storedAttrs,
 } from "./shape.js";
-import { encodeRemoval, StructureView } from "./structure.js";
+import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 import { type DocVersion, plainVersion } from "./version.js";
 
@@ -154,15 +154,24 @@ export class StructureWriter {
    * In a draft, delete the `d.order` of a block whose override puts it in the same place among its
    * siblings as Live's key would (dragged away and back), and every `d.comments` equal to Live's.
    * Run before the write's removals, as the gate's model does: a sibling the write removes still
-   * counts, so Reset of that removal leaves the block where the draft moved it.
+   * counts, so a Discard of that removal leaves the block where the draft moved it. One drop can
+   * make a sibling's override match too (two blocks dragged back past each other), so each drop is
+   * judged against the order the drops before it left.
    */
   dropMatchingOverrides(ids: Iterable<BlockId>) {
     if (!this.docs.draft) return;
     const { structure } = this.docs;
-    const after = new StructureView(this.docs, this.view.kept);
+    const left = new Set(ids);
     inMap(structure, overrideMap("order"), (orders) => {
-      for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
+      for (;;) {
+        const now = new StructureView(this.docs, this.view.kept);
+        const id = [...left].find((candidate) => sameOrderAsBase(now, candidate));
+        if (id === undefined) break;
+        orders.delete(id);
+        left.delete(id);
+      }
     });
+    const after = new StructureView(this.docs, this.view.kept);
     inMap(structure, overrideMap("comments"), (comments) => {
       for (const key of after.overrideKeys("comments"))
         if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
@@ -185,7 +194,7 @@ function movedAmong(read: readonly BlockId[], written: readonly BlockId[], id: B
 function sameOrderAsBase(view: StructureView, id: BlockId): boolean {
   const override = view.override("order", id);
   const base = view.baseValue("order", id);
-  if (typeof override !== "string" || typeof base !== "string") return false;
+  if (!isOrderKey(override) || !isOrderKey(base)) return false;
   if (view.baseValue("parent", id) !== view.value("parent", id)) return false;
   const parent = view.parent(id) ?? null;
   for (const other of view.children(parent)) {

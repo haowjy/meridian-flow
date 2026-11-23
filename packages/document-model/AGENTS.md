@@ -72,7 +72,21 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   commit that takes ops back says which in its message (`takeBackMessage`), so `textSince` can
   read text an Undo put back as the text it deleted, by character id.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
-  peer across all its docs.
+  peer across all its docs. A draft copy's own Live copy (`RoomDocs.fork`) takes another: a press
+  writes both rooms from one copy, and one peer would mint the same op ids in both.
+- The block-change model (`changes.ts`, `invert.ts`; design §2) works on a draft copy and forwards
+  it first. `changedBlocks` groups what differs from Live into changes; `applyBlocks` imports the
+  fork's text into Live and writes the chosen overrides there, a removal as a new record;
+  `discardBlocks` makes the fork take Live's. Each returns the commits it made (`PressCommit`: side,
+  doc key, versions either side), which `undoPress` takes back: Live's first, then the fork is
+  returned to pending. `invertCommit` is the one Undo of a commit: the structure doc key by key
+  (only while a key holds what the commit left), a text doc by the inverse moved through what
+  happened since (`transformedInverse`, with rule (a): a replacement whose new text a later write
+  removed whole does not bring the old text back). Invert a room's text docs before its structure
+  doc, so a removal record put back counts the text. A forward's restore is not a commit of the
+  press. The hand-run fuzz is
+  [block-changes-fuzz](../loro-prosemirror/.context/qa/block-changes-fuzz.md); run it at 10,000
+  seeds after changing any of this.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s
   `shapeSchemaOf` builds from the schema.
 

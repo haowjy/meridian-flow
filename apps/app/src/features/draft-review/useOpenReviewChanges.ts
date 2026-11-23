@@ -45,7 +45,7 @@ export function useOpenReviewChanges(
   const command = useDraftCommandState(draft?.itemKey ?? "");
   const listed = useOwnerDraftList(controller.projectId, controller.draftId, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
-  const withoutText = item?.textChanges === 0 || item?.tree?.deleted === true;
+  const withoutText = item?.pending === false || item?.tree?.deleted === true;
   const read = useTextChanges(draft);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;

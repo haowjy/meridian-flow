@@ -2,9 +2,19 @@
  * Loro document storage (design §4, §2 of `loro-build`): a row per doc of a room, and a row per
  * draft fork of a document.
  */
-import type { DocumentId } from "@meridian/contracts";
-import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import type { CommandId, DocumentId } from "@meridian/contracts";
+import {
+  boolean,
+  index,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt } from "./_shared";
+import { commands } from "./collab";
 import { documents } from "./content";
 import { draftIdColumn } from "./drafts";
 
@@ -48,10 +58,32 @@ export const documentForks = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    /** Whether the fork differs from Live (`changedBlocks` is not empty), set on every save of its room. */
+    pending: boolean("pending").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.draftId, table.documentId] }),
     index("document_forks_document").on(table.documentId),
   ],
+);
+
+/**
+ * One doc a press, or its Undo, committed: its room (`live:<doc>` or `fork:<draft>:<doc>`), its doc
+ * key, and its versions either side (`encodeDocVersion`). The press's Undo inverts each row
+ * (`invertCommit`), each room its own.
+ */
+export const pressCommits = pgTable(
+  "press_commits",
+  {
+    commandId: uuid("command_id")
+      .$type<CommandId>()
+      .notNull()
+      .references(() => commands.id, { onDelete: "cascade" }),
+    roomKey: text("room_key").notNull(),
+    docKey: text("doc_key").notNull(),
+    before: byteaColumn("before").notNull(),
+    after: byteaColumn("after").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.roomKey, table.docKey] })],
 );

@@ -575,6 +575,7 @@ CREATE TABLE "works" (
 	"default_ai_write_mode" text DEFAULT 'direct' NOT NULL,
 	"entity_revision" bigint DEFAULT 1 NOT NULL,
 	"draft_id" text,
+	"default_draft_id" text,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -598,6 +599,8 @@ CREATE TABLE "document_edit_parts" (
 	"targets" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"delta" jsonb,
 	"origin" jsonb NOT NULL,
+	"before" "bytea",
+	"after" "bytea",
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
 	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' = 'live')
 );
@@ -655,6 +658,8 @@ CREATE TABLE "tree_edit_receipts" (
 CREATE TABLE "drafts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" uuid NOT NULL,
+	"work_id" uuid,
+	"name" text,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
 	"created_by" uuid NOT NULL,
@@ -708,6 +713,7 @@ CREATE TABLE "imports" (
 CREATE TABLE "document_forks" (
 	"draft_id" text NOT NULL,
 	"document_id" uuid NOT NULL,
+	"pending" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")
 );
@@ -721,6 +727,15 @@ CREATE TABLE "document_snapshots" (
 	"history_mark" jsonb NOT NULL,
 	"history_mark_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_snapshots_room_key_doc_key_pk" PRIMARY KEY("room_key","doc_key")
+);
+--> statement-breakpoint
+CREATE TABLE "press_commits" (
+	"command_id" uuid NOT NULL,
+	"room_key" text NOT NULL,
+	"doc_key" text NOT NULL,
+	"before" "bytea" NOT NULL,
+	"after" "bytea" NOT NULL,
+	CONSTRAINT "press_commits_command_id_room_key_doc_key_pk" PRIMARY KEY("command_id","room_key","doc_key")
 );
 --> statement-breakpoint
 CREATE TABLE "mcp_calls" (
@@ -1022,6 +1037,7 @@ ALTER TABLE "upload_intakes" ADD CONSTRAINT "upload_intakes_context_source_id_co
 ALTER TABLE "works" ADD CONSTRAINT "works_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "works" ADD CONSTRAINT "works_default_draft_id_drafts_id_fk" FOREIGN KEY ("default_draft_id") REFERENCES "public"."drafts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edit_parts" ADD CONSTRAINT "document_edit_parts_edit_id_document_edits_id_fk" FOREIGN KEY ("edit_id") REFERENCES "public"."document_edits"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1037,6 +1053,7 @@ ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_forks" ADD CONSTRAINT "document_forks_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_commits" ADD CONSTRAINT "press_commits_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_calls" ADD CONSTRAINT "mcp_calls_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1148,6 +1165,7 @@ CREATE INDEX "tree_edit_receipts_turn_idx" ON "tree_edit_receipts" USING btree (
 CREATE INDEX "tree_edit_receipts_command_idx" ON "tree_edit_receipts" USING btree ("command_id");--> statement-breakpoint
 CREATE INDEX "tree_edit_receipts_reverses_idx" ON "tree_edit_receipts" USING btree ("reverses");--> statement-breakpoint
 CREATE INDEX "drafts_project" ON "drafts" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "drafts_work" ON "drafts" USING btree ("work_id");--> statement-breakpoint
 CREATE INDEX "import_entries_import_order" ON "import_entries" USING btree ("import_id","ordinal");--> statement-breakpoint
 CREATE INDEX "import_entries_import_state" ON "import_entries" USING btree ("import_id","state");--> statement-breakpoint
 CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","created_at");--> statement-breakpoint

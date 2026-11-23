@@ -4,7 +4,7 @@
  * server runs both halves; an open document's text changes when its update arrives on the socket.
  */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
-import type { PressRequest } from "@meridian/contracts/drafts";
+import type { TreePressRequest } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -16,7 +16,7 @@ import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
 
-export type PressBody = { projectId: string } & Omit<PressRequest, "commandId">;
+export type PressBody = { projectId: string } & Omit<TreePressRequest, "commandId">;
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 /** One Work's presses and Undos go in the order the writer made them. */

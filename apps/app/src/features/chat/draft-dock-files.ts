@@ -44,7 +44,7 @@ export function dockFile(
 /** A document with text: the list says what changed; the press takes it whole. */
 export function wholeDockFile(row: ReviewFileTarget, name: string): DockFile {
   const changes = listedItemChanges(row.item, []);
-  const texts = row.item.wholeItem ? 0 : row.item.textChanges;
+  const texts = !row.item.wholeItem && row.item.pending ? 1 : 0;
   return {
     row,
     name,

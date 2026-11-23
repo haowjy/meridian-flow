@@ -4,7 +4,7 @@
  * (`works.draft_id`) and a root conversation names its lineage's (`threads.draft_id`), each minted
  * with the row that names it.
  */
-import type { DraftId, ProjectId, UserId } from "@meridian/contracts";
+import type { DraftId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import { check, index, integer, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt } from "./_shared";
@@ -20,6 +20,14 @@ export const drafts = pgTable(
       .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * The Work the draft belongs to (a Work holds several); null until phase 2b fills it. No foreign
+     * key: `works` already references `drafts`, and the database's reset needs foreign keys without a
+     * cycle, so a Work's delete removes its drafts itself.
+     */
+    workId: uuid("work_id").$type<WorkId>(),
+    /** The writer's name for the draft; null shows the default name. */
+    name: text("name"),
     /** The draft's pending documents; recounted at commit for every draft a write set locked. */
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     pendingFolderCount: integer("pending_folder_count").notNull().default(0),
@@ -31,6 +39,7 @@ export const drafts = pgTable(
   },
   (table) => [
     index("drafts_project").on(table.projectId),
+    index("drafts_work").on(table.workId),
     check("drafts_id_shape", sql`${table.id} ~ '^[0-9a-z]{12}$'`),
   ],
 );

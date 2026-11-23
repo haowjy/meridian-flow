@@ -61,7 +61,7 @@ export function useDraftDock({
   // A peer's Apply or Discard reaches this chat only as a change in which drafts wait here.
   const queryClient = useQueryClient();
   const waiting = candidates
-    .filter((row) => row.item.textChanges > 0)
+    .filter((row) => row.item.pending)
     .map((row) => row.item.itemKey)
     .join();
   const seenWaiting = useRef(waiting);
@@ -74,7 +74,7 @@ export function useDraftDock({
   const drafted = candidates.map((row) => {
     // A document with text is pressed whole; one another chat drafted too is reviewed in the
     // Changes list, not pressed from here as this chat's.
-    if (row.item.textChanges > 0 && row.item.tree?.deleted !== true) {
+    if (row.item.pending && row.item.tree?.deleted !== true) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
       return isSharedItem(row.item, threadId)
         ? { ...file, count: 0, actionable: [], alone: false }
@@ -162,9 +162,9 @@ export function useDraftDock({
     showCommands: actionableFiles.length > 0,
     canApply: applicable.some(
       (file) =>
-        (file.row.item.textChanges === 0 && file.row.item.isNew) ||
+        (!file.row.item.pending && file.row.item.isNew) ||
         hasTreeLine(file.row.item) ||
-        (file.whole && file.row.item.textChanges > 0),
+        (file.whole && file.row.item.pending),
     ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,

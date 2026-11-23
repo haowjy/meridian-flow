@@ -1,0 +1,1174 @@
+/**
+ * The block-change fuzz (`block-changes-fuzz.md`): seeded scripts of Live, Draft and AI writes, presses, their
+ * Undos, Discards and `Restore before` on `@meridian/document-model` itself, on the real schema through the
+ * binding's codec. Gate 5's fuzz (`gate/loro-fuzz` at 39f49e50ee) moved onto the product, with its `reset`
+ * step named discard, removals as records, and dependent presses undone in turn and out of order.
+ *
+ *   pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/block-changes-fuzz.probe.ts --n 1000
+ *   pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/block-changes-fuzz.probe.ts --seed 37   # one script, step by step
+ *
+ * FUZZ_TRACE=1 with --seed prints, after each step, every block where Live (L), the fork (F) and the Draft tab
+ * (T) differ, and the fork's overrides.
+ */
+import {
+  applyBlocks,
+  changedBlocks,
+  discardBlocks,
+  frontiersOf,
+  inMap,
+  inText,
+  invertCommit,
+  isOrderKey,
+  overrideMap,
+  RoomDocs,
+  restoreBefore,
+  STRUCTURE_KEY,
+  STRUCTURE_MAPS,
+  StructureView,
+  sameValue,
+  setCommentBody,
+  textUnits,
+  undoPress,
+  versionOf,
+} from "@meridian/document-model";
+import { EditorState } from "prosemirror-state";
+import { readProseMirror, shapeSchemaOf, writeProseMirror } from "../../src/index.js";
+import { Gen, randomEdit, schema, TOKEN } from "./block-changes.gen.ts";
+
+const shape = shapeSchemaOf(schema);
+
+class Fail extends Error {
+  constructor(cls, detail) {
+    super(`${cls}: ${detail}`);
+    this.cls = cls;
+  }
+}
+const check = (ok, cls, detail) => {
+  if (!ok) throw new Fail(cls, typeof detail === "function" ? detail() : detail);
+};
+const same = sameValue;
+const read = (d) => readProseMirror(d, schema);
+const render = (d) => JSON.stringify(read(d).toJSON());
+const textOfDoc = (doc) => (doc ? inText(doc, (t) => t.toString()) : "");
+const say = (...parts) => process.stdout.write(`${parts.join(" ")}\n`);
+/** A text doc's delta with each style set in key order: Loro's order follows the history, not the value. */
+const deltaOf = (doc) =>
+  doc
+    ? inText(doc, (t) => t.toDelta()).map((op) =>
+        op.attributes ? { ...op, attributes: Object.fromEntries(Object.entries(op.attributes).sort(([a], [b]) => (a < b ? -1 : 1))) } : op,
+      )
+    : [];
+const tokensOf = (text) => text.match(TOKEN) ?? [];
+const tokens = (d) => {
+  const pm = read(d);
+  return tokensOf(pm.textBetween(0, pm.content.size, " ", " "));
+};
+/** Every shown textblock's id and its normalized text, from the read. */
+function textblocks(d) {
+  const out = new Map();
+  read(d).descendants((node) => {
+    if (node.isTextblock) {
+      out.set(node.attrs.id, node);
+      return false;
+    }
+    return true;
+  });
+  return out;
+}
+/** Comments each shown block carries, as the normalized read shows them. */
+function carriers(d) {
+  const out = new Map();
+  for (const [id, node] of textblocks(d)) {
+    const set = new Set();
+    node.forEach((child) => {
+      for (const mark of child.marks) if (mark.type.name === "comment") set.add(mark.attrs.id);
+    });
+    out.set(id, set);
+  }
+  return out;
+}
+const comments = (d) => {
+  const out = new Set();
+  for (const set of carriers(d).values()) for (const c of set) out.add(c);
+  return out;
+};
+const tokenBlocks = (d) => {
+  const out = new Map();
+  for (const id of new StructureView(d).shown)
+    for (const tok of tokensOf(textOfDoc(d.textOf(id)))) out.set(tok, id);
+  return out;
+};
+/** Each unit's op id (`peer:counter`), from a cursor per unit. */
+function charIds(doc) {
+  if (!doc) return [];
+  return inText(doc, (t) => {
+    const out = [];
+    for (let i = 0; i < t.length; i++) {
+      const c = t.getCursor(i, 0);
+      if (!c) {
+        out.push(null);
+        continue;
+      }
+      const pos = c.pos();
+      out.push(pos ? `${pos.peer}:${pos.counter}` : null);
+      c.free();
+    }
+    return out;
+  });
+}
+const blockValues = (d) => {
+  const view = new StructureView(d);
+  const out = new Map();
+  for (const id of view.shown)
+    out.set(
+      id,
+      JSON.stringify([
+        ["parent", "order", "node"].map((k) => view.value(k, id)),
+        Object.entries(view.attrs(id)).sort(([a], [b]) => (a < b ? -1 : 1)),
+        deltaOf(d.textOf(id)),
+      ]),
+    );
+  return out;
+};
+/** Each shown textblock's stored text: what a restore or an Undo must keep, whatever its node shows. */
+const textValues = (d) => {
+  const out = new Map();
+  for (const id of textblocks(d).keys()) out.set(id, JSON.stringify(deltaOf(d.textOf(id))));
+  return out;
+};
+/**
+ * Whether the fork's `d.order` of `id` puts it where Live's key would among its siblings. `removed`: blocks the
+ * write removed, which still count at their record's key (the writer drops matching overrides before its
+ * removals, so a Discard of a removal leaves a moved block where the draft put it).
+ */
+function sameOrderAsBase(view, id, removed = new Set()) {
+  const override = view.override("order", id);
+  const base = view.baseValue("order", id);
+  if (!isOrderKey(override) || !isOrderKey(base)) return false;
+  if (view.baseValue("parent", id) !== view.value("parent", id)) return false;
+  const parent = view.parent(id) ?? null;
+  const siblings = [...view.children(parent), ...[...removed].filter((o) => view.parent(o) === parent && view.removal(o))];
+  for (const other of siblings) {
+    if (other === id) continue;
+    const key = view.order(other) ?? view.removal(other).at;
+    const side = (mine) => (mine < key ? -1 : mine > key ? 1 : id < other ? -1 : 1);
+    if (side(override) !== side(base)) return false;
+  }
+  return true;
+}
+
+let idCounter = 0;
+function fixBlockIds(tr, rng, skip = () => false) {
+  const seen = new Set();
+  const A = "0123456789abcdefghijklmnopqrstuvwxyz";
+  tr.doc.descendants((node, pos) => {
+    if (node.type.spec.attrs?.id === undefined || skip(node, pos)) return !node.isTextblock;
+    if (node.attrs.id == null || seen.has(node.attrs.id)) {
+      let id = "";
+      for (let i = 0; i < 10; i++) id += A[Math.floor(rng() * 36)];
+      tr.setNodeAttribute(pos, "id", id + (idCounter++).toString(36));
+    } else seen.add(node.attrs.id);
+    return !node.isTextblock;
+  });
+}
+function withIds(pm, rng) {
+  const tr = EditorState.create({ schema, doc: pm }).tr;
+  fixBlockIds(tr, rng);
+  return tr.doc;
+}
+/** One editor transaction on `d`, written as the editor writes it. */
+function edit(d, fn, { rng, message } = {}) {
+  const state = EditorState.create({ schema, doc: read(d) });
+  const tr = fn(state.tr, state.doc);
+  if (!tr || !tr.docChanged) return [];
+  const virtual = new Set();
+  state.doc.descendants((node, pos) => {
+    if (node.type.name === "paragraph" && (node.attrs.id == null || node.attrs.id.endsWith("/empty")) && !node.content.size)
+      virtual.add(tr.mapping.map(pos));
+  });
+  fixBlockIds(tr, rng, (node, pos) => virtual.has(pos) && node.type.name === "paragraph" && !node.content.size);
+  return writeProseMirror(d, tr.doc, { message, random: rng });
+}
+
+export function runScript(seed, { verbose = false } = {}) {
+  idCounter = 0;
+  const g = new Gen(seed);
+  const all = [];
+  const stats = {
+    edits: 0, presses: 0, pressUndos: 0, discards: 0, discardUndos: 0, discardAlls: 0, discardAllUndos: 0,
+    restores: 0, ctrlz: 0, liveEdits: 0, stale: 0, lateDraft: 0, unsyncedLive: 0, chains: 0, chainPresses: 0,
+    chainUndosInTurn: 0, chainUndosOutOfOrder: 0, overwrites: 0, replacedChecks: 0,
+    seenPresses: 0, structureAfter: 0, undoReapply: 0, matchingChecks: 0, tokenSplit: 0, liveTokenDeleted: 0,
+    resetCopyObserved: 0, kinds: {},
+  };
+  const outcomes = [];
+  const track = (d) => (all.push(d), d);
+  let peer = 100;
+  const next = () => String(++peer);
+
+  const live = track(RoomDocs.create(shape, "1"));
+  let liveTab;
+  let fork;
+  let tab;
+  let tabLive;
+  const deleted = new Set();
+  const touched = new Set();
+  const openPresses = new Set();
+  /** Blocks whose marks a Discard, Undo or restore wrote back as the fork's own: Live's later unmark leaves its copy. */
+  const markCopied = new Set();
+  const markCopies = (changes) => {
+    for (const c of changes)
+      if (c.key !== STRUCTURE_KEY && c.doc.diff(c.before, c.after, false).some(([, d]) => d.type === "text" && d.diff.some((op) => op.attributes))) markCopied.add(c.key);
+  };
+  const liveTokenBlock = new Map();
+  const liveTokenIds = new Map();
+  const draftDeletedChars = new Set();
+  const splitMoved = new Set();
+  const resetRestored = new Map();
+  const inverseCopies = new Map();
+  const origins = new Map();
+  let liveWrites = 0;
+
+  const row = (d, id) => {
+    if (!d) return "(hidden)";
+    const view = new StructureView(d);
+    if (!view.shown.has(id)) return "(hidden)";
+    const text = deltaOf(d.textOf(id)).map((r) => (r.attributes ? `{${r.insert}:${Object.keys(r.attributes)}}` : r.insert)).join("");
+    return `${view.value("node", id)}<${String(view.value("parent", id) ?? "-").slice(0, 4)}|${String(view.value("order", id)).slice(0, 3)}>${JSON.stringify(view.attrs(id))}[${text}]`;
+  };
+  const trace = () => {
+    const ids = new Set();
+    for (const d of [live, fork, tab]) if (d) for (const id of new StructureView(d).shown) ids.add(id);
+    for (const id of [...ids].sort()) {
+      const l = row(live, id);
+      const f = row(fork, id);
+      const t = row(tab, id);
+      if (l !== f || f !== t) say(`     ${id.slice(0, 4)} L ${l}\n          F ${f}${t !== f ? `\n          T ${t}` : ""}`);
+    }
+  };
+  const overrides = () =>
+    fork
+      ? STRUCTURE_MAPS.flatMap((n) => inMap(fork.structure, overrideMap(n), (m) => Object.entries(m.toJSON())).map(([k, v]) => `${n}:${k.slice(0, 4)}${k.includes("/") ? k.slice(k.indexOf("/")) : ""}=${JSON.stringify(v)?.slice(0, 12)}`)).join(" ")
+      : "";
+  const note = (s) => {
+    if (!verbose) return;
+    say(s);
+    if (process.env.FUZZ_TRACE) {
+      trace();
+      say("     overrides:", overrides());
+    }
+  };
+
+  /** `to` imports what `from` holds beyond it: one sync of two copies. */
+  function send(from, to) {
+    const r = to.importBatch(from.exportSince(to.shownVersion()));
+    check(!r.pending, "pending-import", "an import waited on ops the copy lacks");
+  }
+  function sync(a, b) {
+    send(a, b);
+    send(b, a);
+  }
+  const fwdLive = () => fork.forward();
+  function syncLive() {
+    sync(liveTab, live);
+    if (fork) fwdLive();
+  }
+  /** The Draft tab: its writes reach the fork room; its Live copy and its fork copy catch up. */
+  function syncTab() {
+    if (!fork) return;
+    send(tab, fork);
+    fwdLive();
+    toTab();
+  }
+  function toTab() {
+    send(live, tabLive);
+    tab.forward();
+    send(fork, tab);
+  }
+  const pending = () => {
+    fwdLive();
+    return changedBlocks(fork);
+  };
+  const pendingIds = () => pending().flatMap((c) => [...c.blocks, ...c.comments]);
+  function ensure() {
+    if (fork) return;
+    syncLive();
+    fork = track(RoomDocs.draftOf(live, "10"));
+    tabLive = track(live.fork(next()));
+    tab = track(RoomDocs.draftOf(tabLive, next()));
+    send(fork, tab);
+    note("fork created");
+  }
+  function recordOrigins(d) {
+    for (const id of new StructureView(d).shown) {
+      const td = d.textOf(id);
+      if (!td) continue;
+      const text = textOfDoc(td);
+      const cs = charIds(td);
+      for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
+        for (const c of cs.slice(m.index, m.index + m[0].length)) if (c && !origins.has(c)) origins.set(c, m[0]);
+    }
+  }
+  const records = (changes) => changes.map((c) => ({ id: c.key === STRUCTURE_KEY ? null : c.key, doc: c.doc, before: c.before, after: c.after }));
+
+  const overridesNow = (d) => {
+    const view = new StructureView(d);
+    return new Map(["parent", "order", "node", "attrs"].flatMap((name) => view.overrideKeys(name).map((key) => [`${name}\n${key}`, JSON.stringify(view.override(name, key))])));
+  };
+
+  /** No override this write set on `blocks` equals Live's (one Live later caught up with is the draft's own). */
+  function matching(d, blocks, editedComments, shownBefore, prior) {
+    if (!d.draft) return;
+    const view = new StructureView(d);
+    const written = (name, key) => prior.get(`${name}\n${key}`) !== JSON.stringify(view.override(name, key));
+    const removed = new Set([...shownBefore].filter((id) => !view.shown.has(id)));
+    const carried = carriers(d);
+    for (const name of ["parent", "node", "attrs", "comments"])
+      for (const key of view.overrideKeys(name)) {
+        const relevant =
+          name === "comments"
+            ? editedComments.has(key) || [...blocks].some((id) => carried.get(id)?.has(key))
+            : blocks.has(name === "attrs" ? key.split("/")[0] : key) && written(name, key);
+        if (!relevant) continue;
+        const base = view.baseValue(name, key);
+        check(!same(name === "attrs" ? (base ?? null) : base, view.override(name, key)), "matching-override", `${name}/${key} matches Live`);
+      }
+    for (const id of view.overrideKeys("order"))
+      if (blocks.has(id) && written("order", id))
+        check(!sameOrderAsBase(view, id, removed), "matching-override", () => `order/${id} matches Live relative position: override ${view.override("order", id)} base ${view.baseValue("order", id)} siblings ${view.children(view.parent(id) ?? null).map((o) => `${o.slice(0, 4)}=${view.order(o)}`)} all ${view.ids.filter((o) => view.value("parent", o) === view.value("parent", id)).map((o) => `${o.slice(0, 4)}=${String(view.value("order", o)).slice(0, 8)}${view.shown.has(o) ? "" : "(hidden)"}`)} parent ${JSON.stringify(view.baseValue("parent", id))}/${JSON.stringify(view.value("parent", id))}`);
+    stats.matchingChecks++;
+  }
+
+  /** One writer's edit: random, or `opts.edit` (a prepared `{ kind, build }`). */
+  function userEdit(d, origin, opts = {}) {
+    recordOrigins(d);
+    const pm = read(d);
+    const e = opts.edit ?? randomEdit(g, pm, origin, { commentsHere: [...comments(d)], ...opts });
+    if (!e) return null;
+    const old = blockValues(d);
+    const before = tokens(d);
+    const shown = new StructureView(d).shown;
+    const oldIds = new Map([...shown].map((id) => [id, charIds(d.textOf(id))]));
+    const tb0 = e.kind === "split" || e.kind === "join" ? tokenBlocks(d) : null;
+    const b0 = d.structure.frontiers();
+    const prior = d.draft ? overridesNow(d) : null;
+    for (const [id, body] of e.comments ?? []) setCommentBody(d, id, body);
+    let built = null;
+    const changed = e.build
+      ? records(edit(d, (tr, doc) => {
+          built = e.build(tr, doc);
+          return built;
+        }, { rng: g.rng, message: opts.message }))
+      : [];
+    if (built?.docChanged)
+      check(built.doc.eq(read(d)), "binding", () => `codec failed round trip for ${e.kind}: expected ${JSON.stringify(built.doc.toJSON())}; got ${render(d)}`);
+    const b1 = d.structure.frontiers();
+    if (!same(b0, b1)) {
+      const r = changed.find((x) => x.id === null);
+      if (r) r.before = b0;
+      else changed.unshift({ id: null, doc: d.structure, before: b0, after: b1 });
+    }
+    recordOrigins(d);
+    const after = tokens(d);
+    const now = new Set(after);
+    const fresh = blockValues(d);
+    const modified = new Set([...new Set([...old.keys(), ...fresh.keys()])].filter((id) => old.get(id) !== fresh.get(id)));
+    matching(d, modified, new Set((e.comments ?? []).map(([id]) => id)), shown, prior);
+    for (const t of before) if (!now.has(t)) deleted.add(t);
+    if (d === liveTab) {
+      liveWrites++;
+      const bs = tokenBlocks(d);
+      for (const token of after)
+        if (!before.includes(token) && token.startsWith("l")) {
+          const id = bs.get(token);
+          const td = d.textOf(id);
+          const pos = textOfDoc(td).indexOf(token);
+          liveTokenBlock.set(token, id);
+          if (pos >= 0) liveTokenIds.set(token, charIds(td).slice(pos, pos + token.length));
+        }
+    } else {
+      for (const [id, beforeIds] of oldIds) {
+        const afterIds = new Set(charIds(d.textOf(id)));
+        for (const charId of beforeIds) if (charId && !afterIds.has(charId)) draftDeletedChars.add(charId);
+      }
+      for (const id of modified) touched.add(id);
+      if (e.comments) {
+        const ids = new Set(e.comments.map(([id]) => id));
+        for (const [id, set] of carriers(d)) if ([...set].some((c) => ids.has(c))) touched.add(id);
+      }
+    }
+    if (tb0) for (const [t, id] of tokenBlocks(d)) if (tb0.has(t) && tb0.get(t) !== id) splitMoved.add(t);
+    stats.kinds[e.kind] = (stats.kinds[e.kind] ?? 0) + 1;
+    note(`  ${origin} ${e.kind}`);
+    return { e, changed };
+  }
+
+  /** Record characters an inverse created in a text doc (the N7 copy) and tokens it gave back. */
+  function rememberInverse(td, id, beforeIds) {
+    if (!td || !id) return;
+    const old = new Set(beforeIds);
+    const text = textOfDoc(td);
+    const ids = charIds(td);
+    const lt = live.textOf(id);
+    if (lt && textOfDoc(lt) === text) {
+      const original = new Set(charIds(lt));
+      for (const c of ids)
+        if (c && !old.has(c) && !original.has(c)) {
+          if (!inverseCopies.has(id)) inverseCopies.set(id, new Set());
+          inverseCopies.get(id).add(c);
+        }
+    }
+    for (const match of text.matchAll(new RegExp(TOKEN.source, "g"))) {
+      const at = match.index;
+      if (ids.slice(at, at + match[0].length).some((c) => c && !old.has(c)) && textOfDoc(live.textOf(id)).includes(match[0]))
+        resetRestored.set(match[0], id);
+    }
+  }
+  const snapshotIds = (d) => new Map([...d.texts].map(([id, td]) => [id, charIds(td)]));
+  function rememberAll(d, before) {
+    for (const [id, td] of d.texts) rememberInverse(td, id, before.get(id) ?? []);
+  }
+
+  /** A Live change made after the fork's last write of a block must reach the fork's read. */
+  function structureAfter(candidates) {
+    const pendingNow = new Set(pendingIds());
+    const liveView = new StructureView(live);
+    const id = candidates.find((x) => !pendingNow.has(x) && liveView.shown.has(x) && liveView.value("node", x) === "paragraph");
+    if (!id) return;
+    const b = fork.fork(next());
+    try {
+      const a = b.live;
+      const view = new StructureView(a);
+      const kinds = ["level", "align", "move"];
+      let kind = kinds[stats.structureAfter % 3];
+      const siblings = view.children(view.value("parent", id) ?? null);
+      if (kind === "move" && siblings.length < 2) kind = "align";
+      let key;
+      let want;
+      if (kind === "move") {
+        const rest = siblings.filter((x) => x !== id);
+        const first = siblings.at(-1) === id;
+        const lo = first ? null : view.value("order", rest.at(-1));
+        const hi = first ? view.value("order", rest[0]) : null;
+        key = id;
+        want = keyBetweenFixed(lo, hi);
+        inMap(a.structure, "order", (m) => m.set(key, want));
+      } else {
+        key = `${id}/${kind}`;
+        const old = view.value("attrs", key);
+        want = kind === "level" ? (old === 2 ? 3 : 2) : old === "center" ? "right" : "center";
+        inMap(a.structure, "attrs", (m) => m.set(key, want));
+      }
+      a.structure.commit();
+      b.forward();
+      const after = new StructureView(b);
+      check(after.value(kind === "move" ? "order" : "attrs", key) === want && !changedBlocks(b).some((c) => c.blocks.includes(id)), "stale-override", `Live ${kind} did not reach ${id}`);
+      stats.structureAfter++;
+    } finally {
+      b.free();
+    }
+  }
+
+  /** After an Undo, each block it returned to pending applies and discards cleanly. */
+  function undoCheck(ids) {
+    const now = pendingIds();
+    for (const id of ids) {
+      check(now.includes(id), "undo-pending", `block ${id} not pending after Undo`);
+      for (const mode of ["apply", "discard"]) {
+        const b = fork.fork(next());
+        try {
+          if (mode === "apply") applyBlocks(b, [id]);
+          else discardBlocks(b, [id]);
+          check(!changedBlocks(b).some((c) => c.blocks.includes(id) || c.comments.includes(id)), `undo-${mode}`, () => `${mode} after Undo left ${id} pending: live ${JSON.stringify(deltaOf(b.live.textOf(id)))} fork ${JSON.stringify(deltaOf(b.textOf(id)))} bodies live ${JSON.stringify(new StructureView(b.live).value("comments", "c0"))} fork ${JSON.stringify(new StructureView(b).value("comments", "c0"))}`);
+        } finally {
+          b.free();
+        }
+      }
+      stats.undoReapply++;
+    }
+  }
+
+  function liveEdit(structure = g.chance(0.3)) {
+    userEdit(liveTab, "l", { structure });
+    stats.liveEdits++;
+    if (g.chance(0.8)) syncLive();
+  }
+  function writerEdit(prefer = []) {
+    ensure();
+    const before = render(tab);
+    const r = userEdit(tab, "f", { prefer });
+    stats.edits++;
+    if (r?.changed.length && g.chance(0.18)) {
+      for (const rec of r.changed) invertCommit(tab, rec.id ?? STRUCTURE_KEY, versionOf(rec.doc, rec.before), versionOf(rec.doc, rec.after), "ctrlz");
+      stats.ctrlz++;
+      note("  CTRLZ");
+      check(render(tab) === before, "ctrlz", "tab not back to before edit");
+    }
+    if (g.chance(0.6)) syncTab();
+  }
+  function aiTurn(n) {
+    ensure();
+    syncTab();
+    const shadow = track(fork.fork(next()));
+    const work = fork.fork(next());
+    const before = new Map();
+    let after = null;
+    try {
+      for (let i = 0; i < n; i++) {
+        const r = userEdit(work, "a", { message: "turn" });
+        stats.edits++;
+        for (const rec of r?.changed ?? []) {
+          const key = rec.id ?? STRUCTURE_KEY;
+          if (!before.has(key)) before.set(key, versionOf(rec.doc, rec.before));
+          if (key === STRUCTURE_KEY) after = versionOf(rec.doc, rec.after);
+        }
+      }
+      send(work, fork);
+    } finally {
+      work.free();
+    }
+    toTab();
+    return { before, after, shadow };
+  }
+  function restore(turn) {
+    syncTab();
+    fwdLive();
+    send(live, turn.shadow.live);
+    turn.shadow.forward();
+    const expected = textValues(turn.shadow);
+    const prior = textValues(fork);
+    const overridesNow = () => STRUCTURE_MAPS.map((n) => inMap(fork.structure, overrideMap(n), (m) => m.toJSON()));
+    const atStart = STRUCTURE_MAPS.map((n) => inMap(turn.shadow.structure, overrideMap(n), (m) => m.toJSON()));
+    let structureUnchanged = same(atStart, overridesNow());
+    if (turn.after) {
+      const at = fork.structure.fork();
+      try {
+        at.checkout(frontiersOf(fork.structure, turn.after));
+        structureUnchanged = same(STRUCTURE_MAPS.map((n) => inMap(at, overrideMap(n), (m) => m.toJSON())), overridesNow());
+      } finally {
+        at.free();
+      }
+    }
+    const before = snapshotIds(fork);
+    markCopies(restoreBefore(fork, turn, { message: "restore" }));
+    recordOrigins(fork);
+    rememberAll(fork, before);
+    toTab();
+    stats.restores++;
+    note("  RESTORE");
+    const now = textValues(fork);
+    structureAfter([...now.keys()].filter((id) => now.get(id) !== prior.get(id)));
+    if (!structureUnchanged) return;
+    check(same(overridesNow(), atStart), "restore", "overrides differ from the turn's start");
+    for (const [id, value] of now) {
+      const wrote = turn.before.has(id) && turn.before.get(id).size > 0;
+      const want = wrote ? expected.get(id) : prior.get(id);
+      if (want !== undefined)
+        check(value === want, "restore", () => `block ${id}: expected ${want}, got ${value}; raw shadow ${JSON.stringify(deltaOf(turn.shadow.textOf(id)))} fork ${JSON.stringify(deltaOf(fork.textOf(id)))} node ${new StructureView(turn.shadow).node(id)}/${new StructureView(fork).node(id)} before ${JSON.stringify([...(turn.before.get(id) ?? [])])} owns ${turn.shadow.texts.has(id)}/${fork.texts.has(id)}`);
+    }
+  }
+  function markerAttrs(d, id, token) {
+    const delta = deltaOf(d.textOf(id));
+    const text = delta.map((p) => p.insert).join("");
+    const start = text.indexOf(token);
+    if (start < 0) return null;
+    let offset = 0;
+    const attrs = [];
+    for (const span of delta)
+      for (let i = 0; i < span.insert.length; i++, offset++)
+        if (offset >= start && offset < start + token.length) attrs.push(span.attributes ?? {});
+    return attrs;
+  }
+  function typeIn(d, id, token) {
+    let position = null;
+    read(d).descendants((node, pos) => {
+      if (node.isTextblock && node.attrs.id === id) position = pos + node.nodeSize - 1;
+    });
+    if (position === null) return false;
+    if (d === liveTab) liveWrites++;
+    edit(d, (tr) => tr.insertText(` ${token} `, position), { rng: g.rng });
+    return true;
+  }
+
+  /**
+   * The press's replacements in Live's text, for the rule "no Undo puts back text a later write removed"
+   * (design §2, settled (a)): per text doc whose change is one replacement, the units it put in.
+   */
+  function replacements(commits) {
+    const out = [];
+    for (const c of commits) {
+      if (c.side !== "live" || c.key === STRUCTURE_KEY) continue;
+      const doc = live.texts.get(c.key);
+      if (!doc) continue;
+      const before = frontiersOf(doc, c.before);
+      const after = frontiersOf(doc, c.after);
+      const diff = doc.diff(before, after, false).find(([, d]) => d.type === "text")?.[1].diff ?? [];
+      const places = [];
+      let pos = 0;
+      for (let i = 0; i < diff.length; ) {
+        if (diff[i].retain != null) {
+          pos += diff[i++].retain;
+          continue;
+        }
+        const place = { at: pos, deleted: 0, inserted: "" };
+        while (i < diff.length && diff[i].retain == null) {
+          if (diff[i].delete != null) place.deleted += diff[i].delete;
+          else place.inserted += diff[i].insert;
+          i++;
+        }
+        pos += place.deleted;
+        places.push(place);
+      }
+      if (places.length !== 1 || !places[0].deleted || !places[0].inserted) continue;
+      const at = (frontiers, use) => {
+        const view = doc.fork();
+        try {
+          view.checkout(frontiers);
+          return use(view);
+        } finally {
+          view.free();
+        }
+      };
+      const { at: start, inserted } = places[0];
+      const ids = new Set(at(after, (v) => charIds(v).slice(start, start + inserted.length)));
+      out.push({ key: c.key, inserted, ids });
+    }
+    return out;
+  }
+
+  function press(prefer = [], only = false) {
+    syncLive();
+    syncTab();
+    const groups = pending();
+    if (!groups.length) return null;
+    const wanted = prefer.length ? groups.filter((c) => c.blocks.some((id) => prefer.includes(id))) : [];
+    let selection = only ? wanted : (wanted.length && g.chance(0.7) ? wanted : groups).filter(() => g.chance(0.5));
+    if (!selection.length) selection = [g.pick(wanted.length ? wanted : groups)];
+    const chosen = selection.flatMap((c) => [...c.blocks, ...c.comments]);
+    const before = render(live);
+    const fbefore = render(fork);
+    const oldBlocks = blockValues(live);
+    const liveView = new StructureView(live);
+    const forkView = new StructureView(fork);
+    const leaf = chosen.find((id) => fork.texts.has(id) && live.texts.has(id) && liveView.shown.has(id) && forkView.shown.has(id));
+    const late = leaf ? track(fork.fork(next())) : null;
+    const draftToken = `x${seed}0${stats.presses}k`;
+    const liveToken = `y${seed}0${stats.presses}k`;
+    const lateTyped = late && typeIn(late, leaf, draftToken);
+    const liveTyped = leaf && typeIn(liveTab, leaf, liveToken);
+    const seen = g.chance(0.5) ? tabLive.version() : undefined;
+    if (seen) stats.seenPresses++;
+    const r = applyBlocks(fork, chosen, { message: `press:${stats.presses}`, seen });
+    const ids = r.chosen.flatMap((c) => [...c.blocks, ...c.comments]);
+    stats.presses++;
+    note(`  PRESS ${chosen.map((x) => x.slice(0, 4))} -> ${ids.map((x) => x.slice(0, 4))}`);
+    check(render(fork) === fbefore, "apply", "fork changed during Apply");
+    const after = pendingIds();
+    for (const id of chosen) check(!after.includes(id), "apply", () => `block ${id} still pending after Apply: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
+    structureAfter(ids);
+    const newBlocks = blockValues(live);
+    for (const [id, b] of oldBlocks) if (!ids.includes(id) && newBlocks.has(id)) check(b === newBlocks.get(id), "apply", () => `unchosen block ${id} changed: ${b} -> ${newBlocks.get(id)}`);
+    check(applyBlocks(fork, chosen).commits.length === 0, "apply", "applying again was not a no-op");
+    if (liveTyped) {
+      syncLive();
+      stats.unsyncedLive++;
+      const contains = (d) => {
+        const text = textOfDoc(d.textOf(leaf));
+        let i = 0;
+        for (const ch of text) if (ch === liveToken[i]) i++;
+        return i === liveToken.length;
+      };
+      check(contains(live) && contains(fork), "unsynced-live", () => `unsynced ${liveToken}: live ${blockValues(live).get(leaf)} fork ${blockValues(fork).get(leaf)}`);
+    }
+    if (lateTyped) {
+      send(late, fork);
+      stats.lateDraft++;
+      check(textOfDoc(fork.textOf(leaf)).includes(draftToken) && pendingIds().includes(leaf), "late-draft", "typing after Apply not pending");
+      touched.add(leaf);
+      toTab();
+    }
+    const result = { r, commits: r.commits, before, fbefore, chosen, ids, liveTyped, liveAt: liveWrites, afterLive: blockValues(live), afterFork: blockValues(fork), replaced: replacements(r.commits) };
+    openPresses.add(result);
+    return result;
+  }
+
+  /** Undo a press. `exact`: nothing but later presses (all undone since) touched Live after it. */
+  function undoPressStep(p, { exact, inTurn }) {
+    syncTab();
+    fwdLive();
+    const fb = render(fork);
+    const ft = textValues(fork);
+    const beforeLive = blockValues(live);
+    const beforeFork = blockValues(fork);
+    const expectGone = [];
+    for (const place of p.replaced) {
+      const doc = live.texts.get(place.key);
+      const text = textOfDoc(doc);
+      // Still there by identity, or put back as new characters by a later Undo (same text).
+      if (text.includes(place.inserted) || charIds(doc).some((c) => place.ids.has(c))) continue;
+      expectGone.push(place.key);
+    }
+    const liveBefore = snapshotIds(live);
+    const forkBefore = snapshotIds(fork);
+    markCopies(undoPress(fork, p.commits, { message: "undo press" }).fork);
+    // The press was the doc's one replacement and a later write removed all it put in: the Undo has nothing
+    // to take out and must not put the old text back, so it adds no character to the doc.
+    for (const key of expectGone) {
+      stats.replacedChecks++;
+      const old = new Set(liveBefore.get(key) ?? []);
+      const doc = live.texts.get(key);
+      const ids = charIds(doc);
+      const back = [...textOfDoc(doc)].filter((_, i) => ids[i] && !old.has(ids[i])).join("");
+      check(!back, "undo-replaced", () => `Undo put back "${back}", which a later write replaced: ${textOfDoc(doc)}`);
+    }
+    recordOrigins(live);
+    recordOrigins(fork);
+    openPresses.delete(p);
+    // An Undo that puts back an open press's text (a later press had moved or replaced it) puts it back
+    // as new characters: they are that press's text from here on.
+    for (const q of openPresses)
+      for (const place of q.replaced) {
+        const doc = live.texts.get(place.key);
+        if (!doc) continue;
+        const ids = charIds(doc);
+        if (ids.some((c) => place.ids.has(c))) continue;
+        const at = textOfDoc(doc).indexOf(place.inserted);
+        const old = new Set(liveBefore.get(place.key) ?? []);
+        if (at >= 0) for (const c of ids.slice(at, at + place.inserted.length)) if (c && !old.has(c)) place.ids.add(c);
+      }
+    for (const c of p.commits) {
+      if (c.side !== "live" || c.key === STRUCTURE_KEY) continue;
+      rememberInverse(live.texts.get(c.key), c.key, liveBefore.get(c.key) ?? []);
+      const td = fork.texts.get(c.key);
+      if (td) {
+        rememberInverse(td, c.key, forkBefore.get(c.key) ?? []);
+        const kept = new Set(charIds(td));
+        for (const ch of charIds(live.texts.get(c.key))) if (ch && !kept.has(ch)) draftDeletedChars.add(ch);
+      }
+    }
+    fwdLive();
+    send(live, liveTab);
+    toTab();
+    stats.pressUndos++;
+    note(`  UNDO PRESS${inTurn ? "" : " (out of order)"}`);
+    const afterLive = p.afterLive;
+    const afterFork = p.afterFork;
+    undoCheck(p.ids.filter((id) => afterLive.has(id) || afterFork.has(id)).filter((id) => afterLive.get(id) === beforeLive.get(id) && afterFork.get(id) === beforeFork.get(id)));
+    if (inTurn && render(fork) !== fb) {
+      // A removal the press applied that Live answered with a restore (Live typing the pressing tab had
+      // not seen) comes back as the draft's pending removal: the Undo puts back the override the press
+      // deleted, which is the key rule; the blocks under it, Live's and the draft's own, hide with it.
+      // Every other block reads as before.
+      const now = blockValues(fork);
+      const fv = new StructureView(fork);
+      const changed = [...new Set([...beforeFork.keys(), ...now.keys()])].filter((id) => beforeFork.get(id) !== now.get(id));
+      const bounced = (id) => {
+        if (now.has(id)) return false;
+        for (let at = id, hops = 0; typeof at === "string" && hops < 50; at = fv.value("parent", at), hops++)
+          if (p.ids.includes(at) && fv.removal(at) !== null) return true;
+        return false;
+      };
+      const other = changed.filter((id) => !bounced(id));
+      check(!other.length, "press-undo", () => `fork changed by press Undo: ${other.map((id) => `${id}: ${beforeFork.get(id)} -> ${now.get(id)}`).join("; ")}`);
+      stats.bouncedRemovals = (stats.bouncedRemovals ?? 0) + changed.length;
+    }
+    else {
+      const now = textValues(fork);
+      for (const [id, text] of ft) if (now.has(id)) check(now.get(id) === text, "press-undo", () => `draft text of ${id} changed by an out-of-order press Undo: ${text} -> ${now.get(id)}`);
+    }
+    if (exact) check(render(live) === p.before, "press-undo", "Live not back to before Apply");
+  }
+
+  /** Replace or delete, in Live or in the draft, text a press put in (design §2's "later write"). */
+  function overwrite(p, side) {
+    const place = g.pick(p.replaced.length ? p.replaced : [null]);
+    const key = place?.key ?? g.pick(p.commits.filter((c) => c.key !== STRUCTURE_KEY).map((c) => c.key).concat([null]));
+    if (!key) return;
+    const d = side === "live" ? liveTab : tab;
+    if (side === "live") syncLive();
+    else syncTab();
+    const doc = d.textOf(key);
+    const view = new StructureView(d);
+    if (!doc || !view.shown.has(key)) return;
+    const text = textOfDoc(doc);
+    // The units the press put in, found by identity: all of them most of the time (the case design §2's
+    // settled (a) decides), else a part.
+    const ids = charIds(doc);
+    const mine = place ? ids.flatMap((c, i) => (c && place.ids.has(c) ? [i] : [])) : [];
+    let from;
+    let to;
+    if (mine.length) {
+      from = mine[0];
+      to = mine.at(-1) + 1;
+      if (g.chance(0.3)) to = from + 1 + g.int(to - from);
+    } else {
+      const words = [...text.matchAll(/\S+/g)];
+      if (!words.length) return;
+      const w = g.pick(words);
+      from = w.index;
+      to = w.index + w[0].length;
+    }
+    const rule = shape.node(view.node(key));
+    const units = textUnits(doc, rule, shape);
+    const shownIndex = (raw) => units.slice(0, raw).filter((u) => !u.hidden).length;
+    let position = null;
+    read(d).descendants((node, pos) => {
+      if (node.isTextblock && node.attrs.id === key) position = pos + 1;
+    });
+    if (position === null) return;
+    const a = position + shownIndex(from);
+    const b = position + shownIndex(to);
+    const origin = side === "live" ? "l" : "f";
+    const replacement = g.chance(0.5) ? g.tok(origin) : null;
+    userEdit(d, origin, {
+      edit: { kind: replacement ? "overwrite" : "overdelete", build: (tr) => (replacement ? tr.insertText(replacement, a, b) : tr.delete(a, b)) },
+    });
+    stats.overwrites++;
+    if (side === "live") syncLive();
+    else syncTab();
+  }
+
+  /**
+   * The draft replaces a word, the press applies it alone, a later write in Live or the draft replaces or
+   * deletes what the press put in (wholly or in part), and the press is undone: design §2's settled (a).
+   */
+  function replaceThenOverwrite() {
+    ensure();
+    syncTab();
+    const blocks = [...textblocks(tab)].filter(([, node]) => node.type.name === "paragraph" && /\S/.test(node.textContent));
+    if (!blocks.length) return;
+    // A block with nothing pending, so the press replaces one word in one place (the case rule (a) decides).
+    const pendingNow = new Set(pendingIds());
+    const clean = blocks.filter(([id]) => !pendingNow.has(id));
+    const [id, node] = g.pick(clean.length ? clean : blocks);
+    let start = null;
+    read(tab).descendants((n, pos) => {
+      if (n.isTextblock && n.attrs.id === id) start = pos + 1;
+    });
+    const words = [...node.textContent.matchAll(/\S+/g)];
+    const w = g.pick(words);
+    if (start === null || node.content.childCount !== 1) return;
+    userEdit(tab, "f", { edit: { kind: "replace1", build: (tr) => tr.insertText(g.tok("f"), start + w.index, start + w.index + w[0].length) } });
+    const p = press([id], true);
+    if (!p) return;
+    overwrite(p, g.chance(0.75) ? "live" : "draft");
+    syncLive();
+    undoPressStep(p, { exact: false, inTurn: true });
+    stats.replaceThenOverwrite = (stats.replaceThenOverwrite ?? 0) + 1;
+  }
+
+  /** Two to five presses on the same blocks, undone newest first or in random order. */
+  function chain() {
+    ensure();
+    const presses = [];
+    let focus = [];
+    const count = 2 + g.int(4);
+    for (let i = 0; i < count; i++) {
+      for (let k = 0, n = 1 + g.int(2); k < n; k++) writerEdit(focus);
+      const p = press(focus);
+      if (!p) continue;
+      presses.push(p);
+      stats.chainPresses++;
+      focus = [...new Set([...focus, ...p.ids])];
+      if (g.chance(0.35)) liveEdit(false);
+    }
+    if (!presses.length) return;
+    stats.chains++;
+    const inTurn = g.chance(0.6);
+    const order = presses.map((_, i) => i);
+    if (inTurn) order.reverse();
+    else
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = g.int(i + 1);
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    for (const i of order) {
+      const p = presses[i];
+      if (g.chance(0.5)) overwrite(p, g.chance(0.7) ? "live" : "draft");
+      if (g.chance(0.3)) userEdit(tab, "f", { prefer: p.ids });
+      if (g.chance(0.25)) liveEdit(false);
+      syncLive();
+      undoPressStep(p, { exact: inTurn && liveWrites === p.liveAt && !p.liveTyped, inTurn });
+      if (inTurn) stats.chainUndosInTurn++;
+      else stats.chainUndosOutOfOrder++;
+    }
+  }
+
+  function discard(all = false) {
+    syncTab();
+    const groups = pending();
+    if (!groups.length) return null;
+    const selected = all ? null : g.pick(groups);
+    const chosen = all ? "all" : [...selected.blocks, ...selected.comments];
+    const before = render(fork);
+    const pendingBefore = new Set(touched);
+    const oldBlocks = blockValues(fork);
+    const oldTextTokens = new Map([...fork.texts].map(([id, d]) => [id, new Set(tokensOf(textOfDoc(d)))]));
+    const ids = snapshotIds(fork);
+    const r = discardBlocks(fork, chosen, { message: all ? "discard all" : "discard" });
+    markCopies(r.fork);
+    rememberAll(fork, ids);
+    recordOrigins(fork);
+    toTab();
+    const done = r.chosen.flatMap((c) => [...c.blocks, ...c.comments]);
+    note(`  ${all ? "DISCARD ALL" : `DISCARD ${chosen.map((x) => x.slice(0, 4))}`} -> ${done.map((x) => x.slice(0, 4))}`);
+    if (all) stats.discardAlls++;
+    else stats.discards++;
+    if (all) check(render(fork) === render(live), "discard-all", "fork differs from Live");
+    else {
+      const now = pendingIds();
+      for (const id of chosen) check(!now.includes(id), "discard", () => `block ${id} still pending: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
+    }
+    for (const c of r.commits) {
+      if (c.key === STRUCTURE_KEY) continue;
+      const was = oldTextTokens.get(c.key) ?? new Set();
+      const onLive = new Set(tokensOf(textOfDoc(live.textOf(c.key))));
+      for (const token of tokensOf(textOfDoc(fork.texts.get(c.key)))) if (!was.has(token) && onLive.has(token)) resetRestored.set(token, c.key);
+    }
+    structureAfter(done);
+    const newBlocks = blockValues(fork);
+    for (const [id, b] of oldBlocks) if (!done.includes(id) && newBlocks.has(id)) check(b === newBlocks.get(id), "discard", `unchosen block ${id} changed`);
+    for (const id of done) touched.delete(id);
+    return { r, before, pendingBefore };
+  }
+  function undoDiscard(rec, kind, checkBefore = true) {
+    syncTab();
+    const ids = snapshotIds(fork);
+    markCopies(undoPress(fork, rec.r.commits, { message: `undo ${kind}` }).fork);
+    rememberAll(fork, ids);
+    recordOrigins(fork);
+    toTab();
+    note(`  UNDO ${kind}`);
+    for (const id of rec.pendingBefore) touched.add(id);
+    if (kind === "discard") stats.discardUndos++;
+    else stats.discardAllUndos++;
+    if (checkBefore) check(render(fork) === rec.before, `${kind}-undo`, "fork not back to before Discard");
+  }
+
+  try {
+    writeProseMirror(live, withIds(g.initialDoc(), g.rng), { random: g.rng, message: "init" });
+    if (g.chance(0.6)) {
+      const e = randomEdit(g, read(live), "s", { structure: false });
+      if (e?.kind === "comment" || e?.kind === "comment2") {
+        for (const [id, b] of e.comments) setCommentBody(live, id, b);
+        edit(live, e.build, { rng: g.rng });
+      }
+    }
+    recordOrigins(live);
+    liveTab = track(live.fork("2"));
+    const count = 1 + g.int(8);
+    let made = 0;
+    let turn = null;
+    while (made < count) {
+      if (g.chance(0.25)) liveEdit();
+      if (g.chance(0.6)) {
+        writerEdit();
+        made++;
+      } else {
+        const n = Math.min(count - made, 1 + g.int(2));
+        const t = aiTurn(n);
+        made += n;
+        if (!turn && g.chance(0.35)) turn = t;
+      }
+    }
+    if (g.chance(0.4)) liveEdit();
+    if (turn && g.chance(0.6)) restore(turn);
+
+    for (let a = 0, n = 2 + g.int(3); a < n; a++) {
+      const k = g.r();
+      if (k < 0.3) {
+        const p = press();
+        if (p && g.chance(0.55)) {
+          for (let i = 0, m = g.int(3); i < m; i++) userEdit(tab, "f");
+          const since = g.chance(0.3);
+          if (since) liveEdit(false);
+          syncLive();
+          undoPressStep(p, { exact: liveWrites === p.liveAt && !p.liveTyped, inTurn: true });
+        }
+      } else if (k < 0.42) chain();
+      else if (k < 0.5) replaceThenOverwrite();
+      else if (k < 0.65) {
+        const r = discard();
+        if (r && g.chance(0.5)) undoDiscard(r, "discard");
+      } else if (k < 0.82) {
+        syncTab();
+        syncLive();
+        if (!pendingIds().length) continue;
+        const discarded = new Set(tokens(fork).filter((t) => (t[0] === "f" || t[0] === "a") && !tokens(live).includes(t)));
+        const stale = g.chance(0.5) ? track(tab.fork(next())) : null;
+        const r = discard(true);
+        const typed = [];
+        if (stale)
+          for (let i = 0, m = 1 + g.int(3); i < m; i++) {
+            const b = new Set(tokens(stale));
+            userEdit(stale, "f", { structure: false });
+            typed.push(...tokens(stale).filter((t) => !b.has(t)));
+          }
+        const order = g.int(3);
+        let undone = false;
+        if (order === 0) {
+          undoDiscard(r, "discard all");
+          undone = true;
+        } else if (order === 1) aiTurn(1);
+        if (stale) {
+          send(stale, fork);
+          fwdLive();
+          toTab();
+          const now = new Set(tokens(fork));
+          const back = [...discarded].filter((t) => now.has(t) && !undone);
+          outcomes.push({ route: "stale", back: back.length, typed: typed.length, kept: typed.filter((t) => now.has(t)).length });
+          stats.stale++;
+          check(!back.length, "stale-discarded-back", `discarded ${back.join(" ")}`);
+        }
+        if (order === 1 && g.chance(0.5)) undoDiscard(r, "discard all", false);
+      } else {
+        liveEdit();
+        if (g.chance(0.5)) writerEdit();
+      }
+    }
+    syncLive();
+    syncTab();
+
+    const fTokens = tokenBlocks(fork);
+    const lTokens = tokenBlocks(live);
+    const copied = new Set();
+    for (const [token, id] of resetRestored) {
+      const ft = fork.textOf(id);
+      const lt = live.textOf(id);
+      if (!tokensOf(textOfDoc(ft)).includes(token)) continue;
+      const fp = textOfDoc(ft).indexOf(token);
+      const lp = textOfDoc(lt).indexOf(token);
+      if (!tokensOf(textOfDoc(lt)).includes(token) || !same(charIds(ft).slice(fp, fp + token.length), charIds(lt).slice(lp, lp + token.length))) copied.add(id);
+    }
+    for (const id of markCopied) if (fork.textOf(id) && live.textOf(id) && textOfDoc(fork.textOf(id)) === textOfDoc(live.textOf(id))) copied.add(id);
+    for (const [id, chars] of inverseCopies) if (charIds(fork.textOf(id)).some((c) => chars.has(c))) copied.add(id);
+    const finalPending = pendingIds();
+    if ([...copied].some((id) => finalPending.includes(id))) stats.resetCopyObserved++;
+    const fv = new StructureView(fork);
+    const lv = new StructureView(live);
+    for (const id of finalPending)
+      for (const view of [lv, fv]) {
+        const seen = new Set();
+        for (let par = view.value("parent", id); typeof par === "string" && !seen.has(par); par = view.value("parent", par)) {
+          if (touched.has(par)) {
+            touched.add(id);
+            break;
+          }
+          seen.add(par);
+        }
+      }
+    for (const id of finalPending)
+      check(touched.has(id) || copied.has(id) || fv.override("comments", id) !== undefined, "spurious-pending", () => `untouched block ${id} pending: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
+    for (const [tok, id] of liveTokenBlock) {
+      if (deleted.has(tok) || !lTokens.has(tok) || !fv.shown.has(id)) continue;
+      const ids = liveTokenIds.get(tok) ?? [];
+      const present = new Set(charIds(fork.textOf(id)));
+      const missing = ids.filter((c) => c && !present.has(c));
+      if (missing.some((c) => draftDeletedChars.has(c))) {
+        stats.liveTokenDeleted++;
+        continue;
+      }
+      if (fTokens.get(tok) !== id && !splitMoved.has(tok)) {
+        const text = textOfDoc(fork.textOf(id));
+        let at = 0;
+        for (const c of text) if (c === tok[at]) at++;
+        if (at === tok.length) stats.tokenSplit++;
+        else check(false, "live-typing-lost", () => `Live token ${tok} characters missing from fork; id ${id}; live ${blockValues(live).get(id)}; fork ${blockValues(fork).get(id)}`);
+      }
+    }
+    applyBlocks(fork, "all", { message: "apply all" });
+    syncTab();
+    syncLive();
+    toTab();
+    check(render(live) === render(fork), "converge", "Live and fork differ after Apply all");
+    check(!pendingIds().length, "pending", "pending after Apply all");
+    check(render(tab) === render(fork), "tab", () => `Draft tab differs: tab ${[...blockValues(tab)].filter(([id, v]) => blockValues(fork).get(id) !== v).map(([id, v]) => `${id} ${v} / fork ${blockValues(fork).get(id)}`).join("; ")} | fork-only ${[...blockValues(fork).keys()].filter((id) => !blockValues(tab).has(id))}`);
+    check(render(liveTab) === render(live), "live-tab", "Live tab differs");
+    const bodies = new StructureView(live);
+    const forkBodies = new StructureView(fork);
+    for (const k of comments(live)) {
+      check(bodies.value("comments", k) != null, "bodies", `missing body ${k}`);
+      check(same(bodies.value("comments", k), forkBodies.value("comments", k)), "bodies", `body ${k} differs`);
+    }
+    const final = tokens(live);
+    const collisions = new Set();
+    for (const id of lv.shown) {
+      const td = live.textOf(id);
+      if (!td) continue;
+      const text = textOfDoc(td);
+      const cs = charIds(td);
+      for (const m of text.matchAll(new RegExp(TOKEN.source, "g")))
+        if (cs.slice(m.index, m.index + m[0].length).some((c) => origins.has(c) && origins.get(c) !== m[0])) collisions.add(m[0]);
+    }
+    const dup = final.filter((t, i) => final.indexOf(t) !== i && !splitMoved.has(t) && !collisions.has(t));
+    check(!dup.length, "duplicate-text", () => `duplicate tokens ${dup.join(",")}; Live ${render(live)}`);
+    const allIds = [];
+    read(live).descendants((n) => {
+      if (n.type.spec.attrs?.id !== undefined) allIds.push(n.attrs.id);
+    });
+    check(!allIds.includes(null) && new Set(allIds).size === allIds.length, "block-ids", "missing or duplicate block ids");
+    read(live).check();
+    return { ok: true, stats, outcomes };
+  } catch (e) {
+    return { ok: false, cls: e.cls ?? "throw", msg: e.stack ?? String(e), stats, outcomes };
+  } finally {
+    for (const d of all.reverse()) d.free();
+  }
+}
+
+/** A fixed key between two (structure-after's Live move): the middle, no randomness. */
+function keyBetweenFixed(lo, hi) {
+  const A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  let prefix = "";
+  let upper = hi;
+  for (let i = 0; ; i++) {
+    const a = lo && i < lo.length ? A.indexOf(lo[i]) : 0;
+    const b = upper && i < upper.length ? A.indexOf(upper[i]) : 61;
+    if (b - a > 1) return `${prefix}${A[Math.floor((a + b) / 2)]}PPV`;
+    prefix += A[a];
+    if (a < b) upper = null;
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const arg = (name, def) => {
+    const i = process.argv.indexOf(`--${name}`);
+    return i < 0 ? def : process.argv[i + 1];
+  };
+  const seed = arg("seed", null);
+  if (seed !== null) {
+    const r = runScript(Number(seed), { verbose: true });
+    say(r.ok ? "OK" : `FAIL ${r.cls}\n${r.msg}`);
+    process.exit(r.ok ? 0 : 1);
+  }
+  const start = Number(arg("start", 0));
+  const n = Number(arg("n", 100));
+  const fails = {};
+  const failureSeeds = {};
+  const totals = {};
+  const routes = {};
+  let ok = 0;
+  let peak = 0;
+  const begin = Date.now();
+  for (let s = start; s < start + n; s++) {
+    const r = runScript(s);
+    await new Promise((resolve) => setImmediate(resolve));
+    peak = Math.max(peak, process.memoryUsage().rss);
+    for (const [k, v] of Object.entries(r.stats)) if (typeof v === "number") totals[k] = (totals[k] ?? 0) + v;
+    for (const o of r.outcomes) {
+      const x = (routes[o.route] ??= { n: 0, back: 0, typed: 0, kept: 0 });
+      x.n++;
+      x.back += o.back;
+      x.typed += o.typed;
+      x.kept += o.kept;
+    }
+    if (r.ok) ok++;
+    else {
+      fails[r.cls] = (fails[r.cls] ?? 0) + 1;
+      (failureSeeds[r.cls] ??= []).push(s);
+      if (fails[r.cls] === 1) say(`seed ${s} FAIL ${r.msg.split("\n").slice(0, 3).join(" | ")}`);
+    }
+  }
+  say(`SUMMARY ${JSON.stringify({ start, n, ok, fails, failureSeeds, totals, routes, ms: Date.now() - begin, peakRssMB: Math.round(peak / 2 ** 20) })}`);
+  process.exit(ok === n ? 0 : 1);
+}

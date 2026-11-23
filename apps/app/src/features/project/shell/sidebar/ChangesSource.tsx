@@ -648,19 +648,11 @@ function changeSummary(file: ReviewFileTarget) {
           : line?.kind === "reorder"
             ? t`Changing position`
             : null;
-  // A new or deleted document is the whole change: its text needs no count.
-  const { textChanges } = file.item;
-  const count = !file.item.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
-  if (!tree && count === null) return null;
+  // A row with text changes says so by being listed: no screen counts them.
+  if (!tree) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">
-      {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
-      {count !== null ? (
-        // A row word and the ✕ ✓ can leave less than the count's width: it breaks between words.
-        <span className="whitespace-normal">
-          <Plural value={count} one="# text change" other="# text changes" />
-        </span>
-      ) : null}
+      <span className="min-w-0 truncate">{tree}</span>
     </span>
   );
 }

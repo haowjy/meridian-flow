@@ -132,7 +132,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         documentId: row.document_id as DocumentId,
         draftId,
         updatedAt: new Date(row.updated_at),
-        textChanges: row.pending.changes,
         writers: { threadIds: row.pending.chats, unattributed: row.pending.writer },
       }));
     },
