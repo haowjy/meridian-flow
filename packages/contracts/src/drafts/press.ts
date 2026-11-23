@@ -1,11 +1,12 @@
-import type { CommandId, DocumentId, DraftId, DraftItemKey, WorkId } from "../ids.js";
+import type { CommandId, DocumentId, DraftId, DraftItemKey, TurnId, WorkId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
 /**
- * Apply or Discard, pressed on one change, a document, a draft or every draft of a Work. One recorded command; one Undo
- * (`PressUndoRequest`) takes it back; pressing again is the Redo.
+ * Apply or Discard, pressed on one change, a document, a draft or every draft of a Work; or a Draft chat turn card's
+ * `Restore before` (`restore`, on a `turn`). One recorded command; one Undo (`PressUndoRequest`) takes it back; pressing
+ * again is the Redo.
  */
-export type PressVerdict = "apply" | "discard";
+export type PressVerdict = "apply" | "discard" | "restore";
 
 /**
  * What a press takes. A document of a draft is its `DraftItemKey`. A change is named by the id of any one of its members
@@ -20,7 +21,13 @@ export type PressScope =
    * The Changes tab's `Apply all`: every draft of the Work, pressed one after another in draft id order, each on Live as
    * the one before left it. Its Undo takes them back draft by draft in the reverse order.
    */
-  | { kind: "work"; work: WorkId };
+  | { kind: "work"; work: WorkId }
+  /**
+   * A Draft chat turn card's `Restore before` (verdict `restore`, and only it): every document the turn wrote in a
+   * draft's fork goes back to before the turn's first write into it, on today's Live (design §2). Live is untouched:
+   * text an Apply already put there stays.
+   */
+  | { kind: "turn"; turn: TurnId };
 
 export type PressRequest = {
   commandId: CommandId;

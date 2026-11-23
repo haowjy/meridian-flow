@@ -30,6 +30,19 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         message: "File not found. Read the project to find the right path.",
       };
     const policy = createCapturedReversalPlanner(document, query);
+    try {
+      return await planWith(document, policy, query, command, preview);
+    } finally {
+      policy.free();
+    }
+  }
+  async function planWith(
+    document: InverseDocument,
+    policy: ReturnType<typeof createCapturedReversalPlanner>,
+    query: ModelInverseQuery,
+    command: ModelInverseCommand,
+    preview: boolean,
+  ): Promise<DocumentEditResult | ModelPlanPreview> {
     const own = policy.own,
       actionId = randomUUID();
     const steps: InverseStep[] = [],
@@ -162,6 +175,76 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       ].join("\n"),
     };
   }
+  async function listEdits(
+    document: InverseDocument,
+    policy: ReturnType<typeof createCapturedReversalPlanner>,
+    query: ModelInverseQuery,
+    before: string | undefined,
+  ): Promise<DocumentEditResult> {
+    const own = policy.own,
+      topEntry = policy.actions.top;
+    if (before && !own.some((entry) => entry.handle === before))
+      return {
+        status: "invalid_write",
+        message: `Unknown edit ${before} in ${document.uri}. Read with format: "edits" without before for valid handles.`,
+      };
+    const older = own.filter(
+        (entry) => !before || Number(entry.handle.slice(1)) < Number(before.slice(1)),
+      ),
+      page = older.slice(0, 20);
+    const undo = topEntry
+      ? await plan(
+          document,
+          query,
+          { command: "undo", file: document.uri, documentId: document.documentId },
+          true,
+        )
+      : null;
+    const index = policy.actions.actions;
+    const lines = await Promise.all(
+      page.map(async (entry) => {
+        const undos = index.actions.filter((action) =>
+          entry.parts.some((part) => action.targets.has(key(part))),
+        );
+        const popped = index.byPart;
+        const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
+        const state = fullyUndone
+          ? undos.some((undo) =>
+              undo.parts.some((part) => part.actor !== "agent" || part.threadId !== query.threadId),
+            )
+            ? "undone by the user"
+            : "undone"
+          : entry.parts.some((part) => policy.changed(part))
+            ? "changed"
+            : "live";
+        let command = "none";
+        const revertPlan = policy.textPlan(entry, "revert");
+        const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
+        if (revert)
+          command =
+            revert === entry.parts.length ? "revert" : `revert ${revert} of ${entry.parts.length}`;
+        if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
+        const excerpt = deltaExcerpt(entry.parts[0].delta);
+        const summary =
+          excerpt.before && excerpt.after
+            ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
+            : excerpt.after
+              ? `+ ${JSON.stringify(excerpt.after)}`
+              : `− ${JSON.stringify(excerpt.before)}`;
+        return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
+      }),
+    );
+    return {
+      status: "success",
+      actionId: randomUUID(),
+      room: null,
+      message: [
+        `your edits to ${document.uri}, newest first (version: ${versionOf(document)})`,
+        ...lines,
+        ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
+      ].join("\n"),
+    };
+  }
   return {
     /**
      * The write ordinals of the model's text edits Undo would take, newest first: what a tree
@@ -202,74 +285,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "document_not_found",
             message: "File not found. Check the path with ls.",
           };
-        const policy = createCapturedReversalPlanner(document, query),
-          own = policy.own,
-          topEntry = policy.actions.top;
-        if (before && !own.some((entry) => entry.handle === before))
-          return {
-            status: "invalid_write",
-            message: `Unknown edit ${before} in ${document.uri}. Read with format: "edits" without before for valid handles.`,
-          };
-        const older = own.filter(
-            (entry) => !before || Number(entry.handle.slice(1)) < Number(before.slice(1)),
-          ),
-          page = older.slice(0, 20);
-        const undo = topEntry
-          ? await plan(
-              document,
-              query,
-              { command: "undo", file: document.uri, documentId: document.documentId },
-              true,
-            )
-          : null;
-        const index = policy.actions.actions;
-        const lines = await Promise.all(
-          page.map(async (entry) => {
-            const undos = index.actions.filter((action) =>
-              entry.parts.some((part) => action.targets.has(key(part))),
-            );
-            const popped = index.byPart;
-            const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
-            const state = fullyUndone
-              ? undos.some((undo) =>
-                  undo.parts.some(
-                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-                  ),
-                )
-                ? "undone by the user"
-                : "undone"
-              : entry.parts.some((part) => policy.changed(part))
-                ? "changed"
-                : "live";
-            let command = "none";
-            const revertPlan = policy.textPlan(entry, "revert");
-            const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
-            if (revert)
-              command =
-                revert === entry.parts.length
-                  ? "revert"
-                  : `revert ${revert} of ${entry.parts.length}`;
-            if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
-            const excerpt = deltaExcerpt(entry.parts[0].delta);
-            const summary =
-              excerpt.before && excerpt.after
-                ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
-                : excerpt.after
-                  ? `+ ${JSON.stringify(excerpt.after)}`
-                  : `− ${JSON.stringify(excerpt.before)}`;
-            return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
-          }),
-        );
-        return {
-          status: "success",
-          actionId: randomUUID(),
-          room: null,
-          message: [
-            `your edits to ${document.uri}, newest first (version: ${versionOf(document)})`,
-            ...lines,
-            ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
-          ].join("\n"),
-        };
+        const policy = createCapturedReversalPlanner(document, query);
+        try {
+          return await listEdits(document, policy, query, before);
+        } finally {
+          policy.free();
+        }
       });
     },
   };

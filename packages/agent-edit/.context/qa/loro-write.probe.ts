@@ -459,9 +459,9 @@ check(
   text(write11),
 );
 
-// 12. The model's own undo in a Draft chat runs on the fork, by content: an edit nobody wrote over
-// comes out of the draft (Live untouched); one the writer typed over in the draft stays, and the
-// result says so.
+// 12. The model's own undo in a Draft chat runs on the fork, on design §2's Undo rule: an edit nobody
+// wrote over comes out of the draft (Live untouched); one whose words the writer retyped in the
+// draft, so none of what it put in is left, stays whole, and the result says so.
 await host.seed("ch8", [paragraph("w1", "One."), paragraph("w2", "Two.")]);
 const d12 = chat("thread-12", "t12");
 d12.request();
@@ -473,14 +473,14 @@ d12.request();
 d12.record(await run(() => draftCore.write({ command: "replace", ...file("ch8"), in: w2, content: "Two, said Kade." } as never, d12.context())));
 await host.writerEdit(
   "ch8",
-  (blocks) => blocks.map((block) => (block.attrs.id === "w1" ? paragraph("w1", "One, Mara whispered.") : block)),
+  (blocks) => blocks.map((block) => (block.attrs.id === "w1" ? paragraph("w1", "Uno.") : block)),
   "d1",
 );
 d12.request();
 const undo12 = await run(() => draftCore.write({ command: "undo", ...file("ch8"), count: 2 } as never, d12.context()));
 check(
   !undo12.isError &&
-    (await draftText("ch8")).join("|") === "One, Mara whispered.|Two." &&
+    (await draftText("ch8")).join("|") === "Uno.|Two." &&
     texts(await host.live("ch8")).join("|") === "One.|Two." &&
     /e2/.test(text(undo12)) &&
     /e1 stays: someone has written over it/.test(text(undo12)),

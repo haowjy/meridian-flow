@@ -5819,6 +5819,12 @@
           "type": "bytea",
           "primaryKey": false,
           "notNull": false
+        },
+        "edit": {
+          "name": "edit",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

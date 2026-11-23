@@ -1,5 +1,5 @@
 // An in-memory host for the Loro core: the rooms adapter for a Live or a Draft chat, write records,
-// the model's edit list, undo and revert by content in the room each write landed in, and the
+// the model's edit list, undo and revert on the one Undo rule in the room each write landed in, and the
 // writer's turn Undo, Apply, Discard and `Restore before`, for hand-run probes. The server's host
 // does the same on Postgres.
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
@@ -17,6 +17,7 @@ import {
   readDocument,
   restoreBefore,
   STRUCTURE_KEY,
+  undoEdits,
   writeDocument,
 } from "@meridian/document-model";
 import {
@@ -26,7 +27,6 @@ import {
 } from "@meridian/document-model/rooms";
 import { blocksOf, nodeOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import { takeBack } from "../content-merge/stands.js";
 import type {
   AgentEditRooms,
   AgentWriteRecord,
@@ -133,50 +133,45 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     }
   };
 
-  /** Write `blocks` as the document on a fresh copy and commit the difference as one batch. */
-  const writeWhole = async (
-    room: DocumentRoom,
-    want: (current: PMNode[]) => PMNode[],
-    options: { message?: string; asClient?: boolean },
-  ) => {
-    const docs = await rooms.read(room, {
-      peer: options.asClient ? freshPeerId() : freshServerPeerId(),
-    });
+  /** The writer's typing: `want`'s document from a fresh client's copy, sent as one batch. */
+  const writerWrite = async (room: DocumentRoom, want: (current: PMNode[]) => PMNode[]) => {
+    const docs = await rooms.read(room, { peer: freshPeerId() });
     try {
       const since = docs.shownVersion();
-      const next = want(blocksIn(docs));
-      writeDocument(docs, blocksOf(schema.topNodeType.create(null, next)), {
-        ...(options.message ? { message: options.message } : {}),
-      });
+      writeDocument(docs, blocksOf(schema.topNodeType.create(null, want(blocksIn(docs)))));
       const update = docs.exportSince(since);
-      if (update.size === 0) return;
-      const batch = encodeEnvelope(update);
-      if (options.asClient) await rooms.write(room, batch, "socket:writer");
-      else await command(() => rooms.commit(inCommand(), room, batch, "server:undo"));
+      if (update.size > 0) await rooms.write(room, encodeEnvelope(update), "socket:writer");
     } finally {
       docs.free();
     }
   };
 
   /**
-   * `parts` taken back by content, each in the room it landed in, newest first as given. A change
-   * someone has written over since stays whole (design §2's Undo rule, by content): `takeBack`
-   * leaves a change that no longer stands.
+   * `parts` taken back, each in the room it landed in, newest first as given, on design §2's Undo
+   * rule: a write someone has written over since stays whole (`undoEdits`).
    */
   const takeBackIn = async (parts: readonly AgentWriteRecord[], message: string) => {
     const taken: AgentWriteRecord[] = [];
     const roomsOf = [...new Map(parts.map((r) => [loroRoomName(r.room), r.room])).values()];
     for (const room of roomsOf) {
       const here = parts.filter((r) => loroRoomName(r.room) === loroRoomName(room));
-      await writeWhole(
-        room,
-        (current) => {
-          const back = takeBack(schema, current, here);
-          taken.push(...back.taken);
-          return [...back.text];
-        },
-        { message },
-      );
+      const docs = await rooms.read(room);
+      try {
+        const { changes, stayed } = undoEdits(
+          docs,
+          here.map((r) => r.edit),
+          message,
+        );
+        here.forEach((record, i) => {
+          if (!stayed.has(i)) taken.push(record);
+        });
+        if (changes.length)
+          await command(() =>
+            rooms.commit(inCommand(), room, encodeChanges(changes), "server:undo"),
+          );
+      } finally {
+        docs.free();
+      }
     }
     for (const record of taken) takenBack.add(record);
     return taken;
@@ -272,7 +267,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     live: (documentId) => read(live(documentId)),
     draft: (documentId, draftId) => read(fork(documentId, draftId)),
     writerEdit: (documentId, edit, draftId) =>
-      writeWhole(draftId ? fork(documentId, draftId) : live(documentId), edit, { asClient: true }),
+      writerWrite(draftId ? fork(documentId, draftId) : live(documentId), edit),
     async press(kind, documentId, draftId, selection) {
       const room = fork(documentId, draftId);
       const docs = await rooms.read(room);

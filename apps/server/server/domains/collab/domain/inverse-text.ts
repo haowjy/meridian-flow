@@ -1,27 +1,11 @@
-/**
- * An Undo's text rule: each change of an edit's recorded delta (an AI write's, or a press's) that
- * still stands in Live is taken out of it, read by content against the delta.
- */
-import {
-  readDelta,
-  type StoredDelta,
-  takeBack as takeBackChanges,
-} from "@meridian/agent-edit/content-merge";
+/** An AI write's recorded delta in words, and the schema an inverse reads blocks with. */
+import { readDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
 import { DIFF_DELETE, DIFF_INSERT, wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 
 /** The one schema an inverse reads and writes blocks with: nodes of another instance don't compare. */
 export const inverseSchema = buildDocumentSchema();
-
-/** `live` with every change of `parts` that stands in it taken out, in order, and the parts that had one. */
-export function takeBack<P extends { delta: StoredDelta | null }>(
-  live: readonly PMNode[],
-  parts: readonly P[],
-): { live: readonly PMNode[]; taken: P[] } {
-  const { text, taken } = takeBackChanges(inverseSchema, live, parts);
-  return { live: text, taken };
-}
 
 /**
  * The words one edit part changed, for the model's list of its edits: what it took out and what it

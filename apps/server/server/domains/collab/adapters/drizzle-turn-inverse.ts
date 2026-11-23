@@ -11,15 +11,16 @@ import type { DocumentId, DraftId, EditOrigin, UserId } from "@meridian/contract
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
 import {
-  encodeEnvelope,
+  type DocVersion,
+  editSince,
+  encodeChanges,
   type RoomDocs,
   readDocument,
-  writeDocument,
+  type StoredEdit,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
-import { blocksOf, nodeOf } from "@meridian/loro-prosemirror";
+import { nodeOf } from "@meridian/loro-prosemirror";
 import { eq, inArray } from "drizzle-orm";
-import type { Node as PMNode } from "prosemirror-model";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { draftOwnerSql, mergeOwnerLocks, type OwnerLocks } from "../../../shared/draft-owner.js";
 import {
@@ -43,7 +44,8 @@ import {
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { currentDestination } from "../domain/agent-destination.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
-import { inverseSchema, takeBack } from "../domain/inverse-text.js";
+import { inverseSchema } from "../domain/inverse-text.js";
+import { takeOut } from "../domain/model-reversal-planner.js";
 import {
   createTurnInverseService,
   type InverseDocument,
@@ -127,6 +129,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ordinal: documentEditParts.ordinal,
           targets: documentEditParts.targets,
           delta: documentEditParts.delta,
+          edit: documentEditParts.edit,
           origin: documentEditParts.origin,
         },
         edit: documentEdits,
@@ -139,6 +142,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .filter(({ part, edit }) => sameOrigin(part.origin, originOf(room(edit.documentId))))
       .map(({ part, edit }) => ({
         ...part,
+        edit: part.edit as StoredEdit | null,
         kind: edit.kind,
         actionId: edit.actionId,
         documentId: edit.documentId,
@@ -150,19 +154,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         wId: edit.wId,
       }));
   }
-  async function readBlocks(room: DocumentRoom): Promise<readonly PMNode[]> {
-    const docs = await input.rooms.read(room);
-    try {
-      return blocksIn(docs);
-    } finally {
-      docs.free();
-    }
-  }
   /**
-   * Every affected document as the plan will see it: Live and the history. Taken with no lock, so
-   * it only chooses the steps; each step reads the committed text it writes.
+   * Every affected document as the plan will see it: its room and the history. Taken with no lock,
+   * so it only chooses the steps; each step reads the committed text it writes. The rooms' copies
+   * go into `held` as they are read, for the attempt to free.
    */
-  async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
+  async function capture(query: TurnInverseQuery, held: RoomDocs[]): Promise<InverseCapture> {
     const createdDocuments = await createdDocumentsOf(query);
     const ids = await selectedDocuments(query);
     const rooms = new Map<DocumentId, DocumentRoom>();
@@ -189,7 +186,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           : { kind: "live" },
       );
       // A delete keeps the document's rooms: its inverse plans over the retained text.
-      const live = await readBlocks(room);
+      const docs = await input.rooms.read(room);
+      held.push(docs);
       await testHook("inverse.afterCaptureRead");
       documents.push({
         documentId,
@@ -199,7 +197,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           query.path ??
           (await input.resolveLastDocumentUri(documentId)) ??
           documentId,
-        live,
+        docs,
         removal,
         room,
         createdInTurn: createdDocuments.has(documentId),
@@ -220,10 +218,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T> {
     const deliveries: (() => Promise<void>)[] = [];
-    const captured = await capture(query);
-    const result = await attemptStorage.run({ ...captured, deliveries }, () =>
-      run(captured.documents),
-    );
+    const held: RoomDocs[] = [];
+    let result: T;
+    try {
+      const captured = await capture(query, held);
+      result = await attemptStorage.run({ ...captured, deliveries }, () => run(captured.documents));
+    } finally {
+      for (const docs of held) docs.free();
+    }
     // Delivery reads the documents through their coordinators: only once the attempt completed.
     const deliver = async () => {
       for (const delivery of deliveries) await delivery();
@@ -286,6 +288,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             room: plan.document.room,
             updates: [],
             reversed: 0,
+            stayed: 0,
           },
         ]),
       );
@@ -372,6 +375,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         updates: documents.flatMap((entry) => entry.updates),
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
+        stayed: new Map(documents.map((entry) => [entry.documentId, entry.stayed])),
       };
     },
   };
@@ -443,10 +447,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * One step inside the commit scope: each of its changes that still stands in Live is taken out
-   * by content, committed into the room as one batch, and one receipt of kind `undo` or `revert`
-   * names the parts it took, with the model's chat and write ordinal or the writer. A change that
-   * stopped standing between the capture and the lock is left whole.
+   * One step inside the commit scope: its parts taken back on the committed room by design §2's
+   * Undo rule, newest first (a part someone wrote over between the capture and the lock stays
+   * whole), committed into the room as one batch, and one receipt of kind `undo` or `revert` that
+   * names the parts it took, with the model's chat and write ordinal or the writer.
    */
   async function commitStep(
     entry: PlannedInverse,
@@ -456,25 +460,24 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   ): Promise<{ handle: string; parts: number }> {
     const { documentId, docs, room } = entry;
     if (!docs) throw new Error("A step runs inside the commit scope");
-    const before = blocksIn(docs);
-    const back = takeBack(before, step.parts);
-    if (!back.taken.length) return { handle: "", parts: 0 };
+    const before = query.model ? blocksIn(docs) : null;
     const since = docs.shownVersion();
     // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
     const message = query.model && query.turnId ? `turn:${query.turnId}` : undefined;
-    writeDocument(docs, blocksOf(inverseSchema.topNodeType.create(null, [...back.live])), {
-      ...(message ? { message } : {}),
-    });
-    const update = docs.exportSince(since);
-    if (update.size === 0) return { handle: "", parts: 0 };
-    const batch = encodeEnvelope(update);
+    const { changes, taken } = takeOut(docs, step.parts, message);
+    entry.stayed += step.parts.length - taken.length;
+    if (!taken.length || !changes.length) return { handle: "", parts: 0 };
+    const batch = encodeChanges(changes);
     await input.rooms.commit(db(), room, batch, "server:inverse");
     entry.updates.push(batch);
     // The model's inverse is an edit on its stack: it takes the next write ordinal, as a write
-    // does, and records its delta, which a later Undo or revert reads back.
+    // does, and records its delta and its edit, which a later Undo or revert reads back.
     const wId = query.model
       ? await input.ordinals.reserveWriteOrdinal(documentId, query.threadId)
       : undefined;
+    const written = [...new Set(changes.map((change) => change.key))];
+    const versionOf = (version: ReadonlyMap<string, DocVersion>) =>
+      new Map([...version].filter(([key]) => written.includes(key)));
     await recordDocumentEdit(db(), {
       documentId,
       ...(query.model
@@ -493,15 +496,24 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       receipts: [
         {
           origin: originOf(room),
-          targets: back.taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
-          delta: query.model ? captureDelta(before, blocksIn(docs)) : null,
+          targets: taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
+          ...(before
+            ? {
+                delta: captureDelta(before, blocksIn(docs)),
+                write: {
+                  before: versionOf(since),
+                  after: versionOf(docs.shownVersion()),
+                  edit: editSince(docs, since, docs.peer, written),
+                },
+              }
+            : {}),
         },
       ],
     });
-    entry.reversed += back.taken.length;
+    entry.reversed += taken.length;
     return {
       handle: wId === undefined ? "" : editHandle(wId),
-      parts: back.taken.length,
+      parts: taken.length,
     };
   }
 
@@ -554,6 +566,8 @@ type PlannedInverse = {
   docs?: RoomDocs;
   /** Text parts the steps took. */
   reversed: number;
+  /** Text parts the steps found written over under the locks, and left whole. */
+  stayed: number;
 };
 
 type InverseCapture = {

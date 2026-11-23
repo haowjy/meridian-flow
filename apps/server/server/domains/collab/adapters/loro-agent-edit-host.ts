@@ -3,7 +3,11 @@
  * the call's destination), its writes committed in the model edit's command transaction with
  * their receipts, each naming the room it merged into, and the chat a turn's commit message names.
  */
-import type { AgentEditRooms, AgentWriteRecord } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditRooms,
+  type AgentWriteRecord,
+  agentEditRooms,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, threads, turns } from "@meridian/database";
@@ -20,17 +24,12 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
 } {
   const db = () => currentDrizzleDb(input.db);
   return {
-    rooms: {
-      async readRoom(documentId) {
-        const room = await agentRoomFor(db(), documentId);
-        return { room, docs: await input.rooms.read(room) };
-      },
-      async save(room, batch, record) {
-        const tx = db();
-        await input.rooms.commit(tx, room, batch, "server:agent");
-        if (record) await recordWrite(tx, record, originOf(room));
-      },
-    },
+    rooms: agentEditRooms(input.rooms, {
+      roomFor: (documentId) => agentRoomFor(db(), documentId),
+      transaction: db,
+      origin: "server:agent",
+      recordWrite,
+    }),
     async authorOfTurn(turnId) {
       const [row] = await db()
         .select({ ref: threads.ref })
@@ -45,10 +44,10 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
 export const originOf = (room: DocumentRoom): EditOrigin =>
   room.kind === "fork" ? { kind: "fork", draftId: room.draftId } : { kind: "live" };
 
-/** One write's receipt: an edit of kind `write` and its one part, its delta, in its room. */
-function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, origin: EditOrigin) {
+/** One write's receipt: an edit of kind `write` and its one part, in the room it landed in. */
+async function recordWrite(tx: DrizzleDb, record: AgentWriteRecord): Promise<void> {
   const { actor } = record;
-  return recordDocumentEdit(tx, {
+  await recordDocumentEdit(tx, {
     documentId: record.documentId as DocumentId,
     threadId: record.threadId as ThreadId,
     turnId: (record.turnId as TurnId | null) ?? null,
@@ -59,8 +58,9 @@ function recordWrite(tx: DrizzleDb, record: AgentWriteRecord, origin: EditOrigin
     actorUserId: actor.kind === "human" ? (actor.userId as UserId) : null,
     receipts: [
       {
-        origin,
+        origin: originOf(record.room),
         delta: record.delta,
+        write: { before: record.before, after: record.after, edit: record.edit },
       },
     ],
   });

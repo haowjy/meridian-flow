@@ -17,6 +17,7 @@ import type {
   DocumentId,
   DraftId,
   ProjectId,
+  TurnId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
@@ -33,7 +34,10 @@ import type { Database } from "@meridian/database";
 import {
   applyCommandTrees,
   commands,
+  documentEditParts,
+  documentEdits,
   documentForks,
+  documents,
   drafts,
   pressChanges,
   threads,
@@ -43,15 +47,23 @@ import {
   applyBlocks,
   type ChangeSelection,
   type DocChange,
+  type DocKey,
   type DocVersion,
+  decodeRoomVersion,
   discardBlocks,
+  docCovers,
+  editSince,
   encodeChanges,
   frontiersOf,
   isServerPeer,
+  memberOf,
   type PeerId,
   type PressedChange,
+  plainVersion,
   type RoomDocs,
   type RoomVersion,
+  restoreBefore,
+  STRUCTURE_KEY,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -64,7 +76,7 @@ import {
   restoreDiscard,
   undoApply,
 } from "@meridian/project-tree";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Frontiers, LoroDoc } from "loro-crdt";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -105,8 +117,10 @@ type DraftPart = {
   documents: DocumentId[] | "all";
   /** The change a `change` press names; null presses every change in those documents. */
   change: string | null;
-  /** The tree records it settles: one document's, every pending one, or none (a change). */
+  /** The tree records it settles: one document's, every pending one, or none (a change, a turn). */
   tree: DocumentId[] | "all";
+  /** A `Restore before`'s turn, whose writes into the draft's forks it takes back. */
+  turn?: TurnId;
 };
 
 const ORIGIN = "server:press";
@@ -144,7 +158,35 @@ export function createDrizzlePress(
   ];
 
   /** The drafts a scope presses, in draft id order, each with what it takes. */
-  async function partsOf(scope: PressScope): Promise<DraftPart[]> {
+  async function partsOf(scope: PressScope, projectId: ProjectId): Promise<DraftPart[]> {
+    if (scope.kind === "turn") {
+      const rows = await tx()
+        .selectDistinct({ origin: documentEditParts.origin, documentId: documentEdits.documentId })
+        .from(documentEditParts)
+        .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
+        .innerJoin(documents, eq(documents.id, documentEdits.documentId))
+        .where(
+          and(
+            eq(documentEdits.turnId, scope.turn as TurnId),
+            eq(documents.projectId, projectId),
+            isNotNull(documentEditParts.before),
+          ),
+        );
+      const byDraft = new Map<DraftId, DocumentId[]>();
+      for (const { origin, documentId } of rows)
+        if (origin.kind === "fork")
+          byDraft.set(origin.draftId as DraftId, [
+            ...(byDraft.get(origin.draftId as DraftId) ?? []),
+            documentId as DocumentId,
+          ]);
+      return [...byDraft.keys()].sort().map((draft) => ({
+        draft,
+        documents: byDraft.get(draft) ?? [],
+        change: null,
+        tree: [],
+        turn: scope.turn,
+      }));
+    }
     if (scope.kind === "change" || scope.kind === "document") {
       const item = parseDraftItemKey(scope.item);
       if (!item) return [];
@@ -262,6 +304,93 @@ export function createDrizzlePress(
     }
   }
 
+  /**
+   * A Draft chat turn's `Restore before` in one fork (design §2): each doc the turn wrote goes back
+   * to its first write's `before`, merged with Live's version, and the structure's overrides the
+   * turn set go back key by key, keeping a key written since (`restoreBefore`). Live is untouched.
+   * The restore is one edit, stored in `press_changes` as a fork-side change, so the press's Undo
+   * takes it back by the one rule. A doc the room cut below the turn's start is left as it is.
+   */
+  async function restoreText(
+    envelope: CommandEnvelope,
+    draft: DraftId,
+    documentId: DocumentId,
+    turn: TurnId,
+  ): Promise<boolean> {
+    const room = { kind: "fork" as const, draftId: draft, documentId };
+    const parts = await tx()
+      .select({ before: documentEditParts.before, after: documentEditParts.after })
+      .from(documentEditParts)
+      .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
+      .where(
+        and(
+          eq(documentEdits.turnId, turn),
+          eq(documentEdits.documentId, documentId),
+          sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
+          isNotNull(documentEditParts.before),
+        ),
+      )
+      .orderBy(asc(documentEditParts.id));
+    const before = new Map<DocKey, DocVersion>();
+    for (const part of parts)
+      for (const [key, at] of decodeRoomVersion(new Uint8Array(part.before as Buffer)))
+        if (!before.has(key)) before.set(key, at);
+    const last = parts.at(-1)?.after;
+    const after = last
+      ? (decodeRoomVersion(new Uint8Array(last)).get(STRUCTURE_KEY) ?? null)
+      : null;
+    const copy = await deps.rooms.read(room);
+    try {
+      const forward = copy.forward().restore;
+      // Cut since the turn: its start is gone, and so is the restore.
+      for (const [key, at] of before) {
+        const doc = copy.doc(key) ?? copy.live?.textOf(key);
+        if (doc?.isShallow() && !docCovers(at, plainVersion(doc.shallowSinceVV())))
+          before.delete(key);
+      }
+      const since = copy.shownVersion();
+      const changes = restoreBefore(
+        copy,
+        { before, after: before.has(STRUCTURE_KEY) ? after : null },
+        { message: `press:${envelope.commandId}` },
+      );
+      const committed = await commitCopy(room, {
+        live: [],
+        fork: [...(forward ? [forward] : []), ...changes],
+      });
+      await markFork(tx(), room, copy);
+      if (changes.length) {
+        const edit = editSince(
+          copy,
+          since,
+          copy.peer,
+          new Set(changes.map((change) => change.key)),
+        );
+        const members = [
+          ...new Set([
+            ...edit.texts.map(([key]) => key),
+            ...edit.values.flatMap(([name, keys]) => keys.map(([key]) => memberOf(name, key))),
+          ]),
+        ];
+        const [first, ...rest] = members;
+        if (first)
+          await tx()
+            .insert(pressChanges)
+            .values({
+              commandId: envelope.commandId as CommandId,
+              draftId: draft,
+              documentId,
+              changes: [
+                { members: [first, ...rest], live: null, fork: edit },
+              ] satisfies PressedChange[],
+            });
+      }
+      return committed;
+    } finally {
+      copy.free();
+    }
+  }
+
   /** A press this account made in this project, as it answered: null for an unknown or purged id. */
   async function storedPress(
     envelope: CommandEnvelope,
@@ -286,7 +415,7 @@ export function createDrizzlePress(
   async function press(command: PressCommand): Promise<PressResult> {
     const { envelope, request } = command;
     const lists = listsOf(envelope);
-    const parts = await partsOf(request.scope);
+    const parts = await partsOf(request.scope, envelope.projectId as ProjectId);
     const draftIds = parts.map((part) => part.draft);
     const answer = (documents: Set<string>, tree: Set<string>, trashed: string[]): PressResult => ({
       status: "pressed",
@@ -323,7 +452,11 @@ export function createDrizzlePress(
               // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
               for (const documentId of texts)
-                if (await pressText(envelope, request, part.draft, documentId, selection))
+                if (
+                  part.turn
+                    ? await restoreText(envelope, part.draft, documentId, part.turn)
+                    : await pressText(envelope, request, part.draft, documentId, selection)
+                )
                   documents.add(documentId);
               if (nodes.length === 0) continue;
               if (request.verdict === "apply") {
@@ -489,7 +622,9 @@ export function createDrizzlePress(
       ...new Set([
         ...trees.map((one) => one.draftId as DraftId),
         ...texts.map((one) => one.draftId as DraftId),
-        ...(await partsOf(pressed.scope)).map((part) => part.draft),
+        ...(await partsOf(pressed.scope, envelope.projectId as ProjectId)).map(
+          (part) => part.draft,
+        ),
       ]),
     ]
       .sort()

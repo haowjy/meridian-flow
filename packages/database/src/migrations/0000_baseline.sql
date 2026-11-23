@@ -593,6 +593,7 @@ CREATE TABLE "document_edit_parts" (
 	"origin" jsonb NOT NULL,
 	"before" "bytea",
 	"after" "bytea",
+	"edit" jsonb,
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
 	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' = 'live' OR ("document_edit_parts"."origin"->>'kind' = 'fork' AND "document_edit_parts"."origin"->>'draftId' IS NOT NULL))
 );

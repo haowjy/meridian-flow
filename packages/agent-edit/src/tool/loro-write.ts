@@ -3,6 +3,7 @@
 // record, and record what the result showed.
 import {
   decodeEnvelope,
+  editSince,
   encodeEnvelope,
   encodeRoomVersion,
   freshServerPeerId,
@@ -755,6 +756,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       room: read.room,
       before,
       after,
+      edit: editSince(copy.docs, since, planDoc.docs.peer, written),
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
