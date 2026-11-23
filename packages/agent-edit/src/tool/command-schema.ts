@@ -63,9 +63,9 @@ const READ_FIELDS = {
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
   format: z
-    .enum(["full", "outline", "edits"])
+    .enum(["full", "outline", "edits", "changes"])
     .describe(
-      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands. Not with `in`, `around` or `version`. Handles are for you; never show them to the user.",
+      "Read a long document's `outline` first. `edits` lists your edits newest first with available commands; handles are for you, never show them to the user. `changes` shows, in draft mode, each block where your draft differs from live, as CriticMarkup ({++added++}, {--removed--}, {~~old~>new~~}): what waits for the user to apply or discard in Review changes. `edits` and `changes` don't take `in`, `around` or `version`.",
     )
     .optional(),
 };
@@ -176,12 +176,11 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. An applied edit, text or tree, is reverted in live; discarded parts stay unchanged.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies; a part someone has written over since stays as they left it. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. In draft mode the undo is a draft change like your writes, waiting for the user's review: an edit the user already applied stays in live until they apply the undo too, and one they discarded has nothing left to undo.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
-    description:
-      'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
+    description: `Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it is a draft change like your writes, waiting for the user's review.`,
     fields: { edit: WRITE_HANDLE },
   },
 } as const;
@@ -291,15 +290,16 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
         version?: string;
         before?: string;
       };
-      if (fields.format === "edits") {
+      if (fields.format === "edits" || fields.format === "changes") {
         for (const field of ["in", "around", "version"] as const)
           if (fields[field] !== undefined)
             ctx.addIssue({
               code: "custom",
               path: [field],
-              message: "edits is not available with in, around or version",
+              message: `${fields.format} is not available with in, around or version`,
             });
-      } else if (fields.before !== undefined)
+      }
+      if (fields.format !== "edits" && fields.before !== undefined)
         ctx.addIssue({ code: "custom", path: ["before"], message: "before pages edits only" });
     });
 }

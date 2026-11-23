@@ -1,6 +1,8 @@
 // What a result showed on Loro, and who changed what since the model's last read (design §5,
 // "The concurrent-change report"): the frontiers say which docs changed, the docs' commit messages
 // say who (`turn:<id>` a chat, anything else the writer).
+
+import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
   type BlockId,
   type DocKey,
@@ -13,11 +15,11 @@ import type { Frontiers } from "loro-crdt";
 import type { FrontierLookup } from "../frontier.js";
 import {
   changedSince,
-  decodeFrontierMap,
   encodeFrontierMap,
   type FrontierMap,
   messagesSince,
   planningFrontiers,
+  recordedRead,
 } from "../loro-frontier.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "../model/block-hash.js";
 import type { LoroDocument, LoroDocumentModel } from "../model/loro-model.js";
@@ -29,7 +31,7 @@ export interface LoroListingSource {
   /** The room copy the result rendered from, the call's own write merged in. */
   copy: LoroDocument;
   model: LoroDocumentModel;
-  room: string;
+  room: DocumentRoom;
   recording?: FrontierLookup;
   /** The reader's own turn: its changes are not listed. */
   ownTurn: string | null;
@@ -41,8 +43,10 @@ export interface LoroListingSource {
 }
 
 /**
- * The result with the frontier it showed and, when the model read this room before, the blocks
- * others changed since that read, by author. Never fails the result: a failure goes out without it.
+ * The result with the frontier it showed and, when the model read this document before (in this
+ * room, or in Live for a fork room: `recordedRead`), the blocks others changed since that read, by
+ * author. In a fork, Live's forwarded changes carry their own commit messages: the writer's typing
+ * and presses read as `the user`, a Live chat's writes as that chat. Never fails the result: a failure goes out without it.
  */
 export async function recordLoroObservation(
   result: InternalWriteResult,
@@ -50,12 +54,11 @@ export async function recordLoroObservation(
 ): Promise<InternalWriteResult> {
   if (!source.recording) return result;
   try {
-    const prev = await source.recording(source.room);
+    const recorded = await recordedRead(source.recording, source.room, source.copy.docs);
     const frontier = {
-      room: source.room,
+      room: loroRoomName(source.room),
       snapshot: encodeFrontierMap(source.copy.docs.frontiers()),
     };
-    const recorded = prev?.room === source.room ? decodeFrontierMap(prev.snapshot) : null;
     const groups = recorded ? await listing(source, recorded, result.model) : [];
     return groups.length
       ? { ...result, frontier, model: { ...result.model, concurrent: { groups } } }

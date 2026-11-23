@@ -6,10 +6,18 @@ must do that the types can't say.
 ## `AgentEditRooms`
 
 `save(room, batch, record)` runs inside the host's command: `commit` the batch, then
-`recordWrite` the record in the same transaction, so a write and its Undo record land or fail
-together. The record's `delta` is the write's before and after text by block; turn Undo and
-`revert` take it back by content (`takeBack`), never by replaying ops, so the writer's later edits
-stay. `readRoom` returns a copy the core frees; it holds none between calls.
+`recordWrite` the record and the batch in the same transaction, so a write and its Undo record
+land or fail together. The record's `delta` is the write's before and after text by block; turn
+Undo and the model's `undo` and `revert` take it back by content (`takeBack`) in the record's
+`room`, never by replaying ops, so the writer's later edits stay. Its `before` is each written doc's
+version as the write began: a Draft turn's `Restore before` starts from its first write's.
+`readRoom` returns a copy the core frees; it holds none between calls.
+
+`roomFor` is the one place that picks a chat's room: a Draft chat's fork room from its first read,
+with no "does the fork exist" lookup (a fork with nothing stored reads as Live), and Live for a
+Live chat or a document only the draft holds. The host's `planning` and `recording` lookups answer
+per room name; the core asks under the fork's name and its Live room's, and takes the later read
+(`recordedRead`).
 
 ## `AgentEditCodec`
 

@@ -27,13 +27,14 @@ if (!model) throw new Error("Set LIVE_TEST_MODEL (deepseek-flash)");
 const { gateway, cleanup } = await createGatewayFromEnv(process.env);
 const schema = buildDocumentSchema();
 const host = createInMemoryLoroHost(schema);
+const liveChat = host.chat(null);
 const core = createLoroEditCore({
-  rooms: host.agentRooms,
-  journal: host.journal,
+  rooms: liveChat.rooms,
+  ordinals: host.ordinals,
   schema,
   codec: createAgentEditCodecFactory(mdxCodec({ schema })),
   links: createStaticDocumentLinks(undefined, { preloaded: true }),
-  documentEdits: host.documentEdits,
+  documentEdits: liveChat.documentEdits,
 });
 const paragraph = (id: string, text: string) =>
   schema.nodes.paragraph.create({ id }, schema.text(text));

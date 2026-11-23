@@ -1,5 +1,7 @@
 // Observation frontiers on Loro (design §5): what a result showed is the frontiers of every doc of
 // the room copy it rendered from, and a write plans on a view of the room at them.
+
+import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
   type DocKey,
   type DocVersion,
@@ -19,6 +21,7 @@ import {
   type LoroDoc,
   type PeerID,
 } from "loro-crdt";
+import type { FrontierLookup } from "./frontier.js";
 
 export type FrontierMap = ReadonlyMap<DocKey, Frontiers>;
 
@@ -102,6 +105,46 @@ export function planningFrontiers(
     );
   }
   return out;
+}
+
+/**
+ * The chat's latest recorded read of the document `docs` holds, as the room `room` reads it: the
+ * one recorded under the room's name or, for a fork room, under its Live room's name (design §5: a
+ * chat can switch to Draft between a read and a write, and every Live op is in the fork). The
+ * lookup answers per name, so of the two the fork's read is the later exactly when it covers
+ * Live's: a fork is forwarded before every read, so a later fork read holds all an earlier Live
+ * read did. A read `docs` can't check out (below the cutoff, or a fork's ops read in Live) loses
+ * to one it can. Null when the chat recorded neither.
+ */
+export async function recordedRead(
+  lookup: FrontierLookup,
+  room: DocumentRoom,
+  docs: RoomDocs,
+): Promise<FrontierMap | null> {
+  const read = async (name: string) => {
+    const frontier = await lookup(name);
+    return frontier?.room === name ? decodeFrontierMap(frontier.snapshot) : null;
+  };
+  const own = await read(loroRoomName(room));
+  const live = room.kind === "fork" ? await read(loroRoomName(liveRoomOf(room))) : null;
+  if (!own || !live) return own ?? live;
+  const usable = (map: FrontierMap) => planningFrontiers(docs, map, []) !== null;
+  if (!usable(live)) return own;
+  if (!usable(own)) return live;
+  return covers(docs, own, live) ? own : live;
+}
+
+/** Whether `a` holds every op `b` names, doc by doc; both usable in `docs`. */
+function covers(docs: RoomDocs, a: FrontierMap, b: FrontierMap): boolean {
+  for (const [key, at] of b) {
+    if (at.length === 0) continue;
+    const mine = a.get(key);
+    const doc = shownDoc(docs, key);
+    if (!mine || !doc) return false;
+    const have = vectorOf(doc, mine);
+    for (const [peer, end] of vectorOf(doc, at)) if ((have.get(peer) ?? 0) < end) return false;
+  }
+  return true;
 }
 
 /** The doc keys whose frontiers differ between a recorded read and `docs` now. */

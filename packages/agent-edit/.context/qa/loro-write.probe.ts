@@ -68,15 +68,20 @@ function chat(threadId: string, turnId: string) {
 }
 
 const host = createInMemoryLoroHost(schema);
-const core = createLoroEditCore({
-  rooms: host.agentRooms,
-  ordinals: host.ordinals,
-  schema,
-  codec,
-  links: createStaticDocumentLinks(undefined, { preloaded: true }),
-  documentEdits: host.documentEdits,
-  authorOfTurn: async (turn) => (turn === "t-other" ? "agent (c7)" : null),
-});
+/** A core for a Live chat (`null`) or a Draft chat on `draftId`, as the server's host builds one. */
+const coreFor = (draftId: string | null) => {
+  const chatRooms = host.chat(draftId);
+  return createLoroEditCore({
+    rooms: chatRooms.rooms,
+    ordinals: host.ordinals,
+    schema,
+    codec,
+    links: createStaticDocumentLinks(undefined, { preloaded: true }),
+    documentEdits: chatRooms.documentEdits,
+    authorOfTurn: async (turn) => (turn === "t-other" ? "agent (c7)" : null),
+  });
+};
+const core = coreFor(null);
 const file = (documentId: string) => ({ file: `${documentId}.md`, documentId });
 const text = (outcome: WriteOutcome) => renderAgentEditResult(outcome.result);
 const run = <T>(work: () => Promise<T>) => host.command(work);
@@ -323,6 +328,198 @@ check(
   !/removed:/.test(receipt),
   "the receipt does not list the paragraph as removed",
   receipt,
+);
+
+// 9. A Draft chat reads a chapter nobody has drafted: its fork room reads as Live. It rewrites two
+// paragraphs into the draft; Live is untouched. The writer applies one; the chat's next write to
+// that paragraph plans on its fork (no duplicate), and `format: "changes"` shows what still waits.
+const draftCore = coreFor("d1");
+const draftText = async (doc: string) => texts(await host.draft(doc, "d1"));
+await host.seed("ch6", [
+  paragraph("u1", "The gate was shut."),
+  paragraph("u2", "Rain all night."),
+  paragraph("u3", "The dog slept."),
+]);
+const d9 = chat("thread-9", "t9");
+d9.request();
+const read9 = d9.record(await draftCore.read({ ...file("ch6") } as never, d9.context()));
+check(!read9.isError && read9.frontier?.room === "fork:d1:ch6", "a Draft chat reads its fork room", read9.frontier);
+const [u1, u2] = read9.result.blocks?.[0]?.items.map((item) => item.hash) ?? [];
+d9.request();
+for (const [hash, content] of [
+  [u1, "The iron gate was shut."],
+  [u2, "Rain fell all night."],
+] as const) {
+  const written = d9.record(
+    await run(() => draftCore.write({ command: "replace", ...file("ch6"), in: hash, content } as never, d9.context())),
+  );
+  check(!written.isError, "a Draft chat's write lands", text(written));
+}
+check(
+  (await draftText("ch6")).join("|") === "The iron gate was shut.|Rain fell all night.|The dog slept." &&
+    texts(await host.live("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept.",
+  "the writes land in the draft and leave Live",
+  { draft: await draftText("ch6"), live: texts(await host.live("ch6")) },
+);
+check(host.records.at(-1)?.room.kind === "fork", "the write's record names the fork room", host.records.at(-1)?.room);
+check(
+  (await host.press("apply", "ch6", "d1", ["u1"])) === 1 &&
+    texts(await host.live("ch6"))[0] === "The iron gate was shut.",
+  "the writer applies one paragraph",
+  texts(await host.live("ch6")),
+);
+d9.request();
+const rewrite9 = d9.record(
+  await run(() =>
+    draftCore.write(
+      { command: "replace", ...file("ch6"), in: u1, content: "The iron gate was shut tight." } as never,
+      d9.context(),
+    ),
+  ),
+);
+check(
+  !rewrite9.isError && (await draftText("ch6"))[0] === "The iron gate was shut tight." &&
+    texts(await host.live("ch6"))[0] === "The iron gate was shut.",
+  "the next write after an Apply plans on the fork: no duplicate, Live keeps the applied text",
+  { draft: await draftText("ch6"), live: texts(await host.live("ch6")), text: text(rewrite9) },
+);
+d9.request();
+const changes9 = d9.record(await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context()));
+const listed9 = text(changes9);
+check(
+  !changes9.isError &&
+    listed9.includes("{~~shut.~>shut tight.~~}") &&
+    listed9.includes("Rain {++fell ++}all night.") &&
+    !listed9.includes("dog"),
+  'format "changes" shows each pending change as CriticMarkup, and nothing else',
+  listed9,
+);
+
+// 10. `Restore before` the Draft turn returns the fork to the turn's start on today's Live: the
+// applied paragraph stays in Live and the draft reads as Live again.
+await host.restoreBefore("ch6", "d1", "t9");
+const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
+check(
+  (await draftText("ch6")).join("|") === texts(await host.live("ch6")).join("|") &&
+    texts(await host.live("ch6"))[0] === "The iron gate was shut." &&
+    /No changes/.test(text(changes10)),
+  "Restore before reverts the fork and leaves the applied paragraph in Live",
+  { draft: await draftText("ch6"), live: texts(await host.live("ch6")), changes: text(changes10) },
+);
+const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());
+check(liveChanges.isError === true || /live, which has none/.test(text(liveChanges)), "a Live chat has no changes to read", text(liveChanges));
+
+// 11. A chat reads in Live, switches to Draft, and writes: the write plans on what it read (the Live
+// read, its ops in the fork), so the writer's sentence typed since stays, and the report names
+// the writer's Live change, forwarded into the fork, as the user's.
+await host.seed("ch7", [paragraph("v1", "Kade ran. The bell rang."), paragraph("v2", "Dusk.")]);
+const d11 = chat("thread-11", "t11");
+d11.request();
+const read11 = d11.record(await core.read({ ...file("ch7") } as never, d11.context()));
+const v1 = read11.result.blocks?.[0]?.items[0]?.hash;
+await host.writerEdit("ch7", (blocks) =>
+  blocks.map((block) => (block.attrs.id === "v1" ? paragraph("v1", "Kade sprinted. The bell rang.") : block)),
+);
+d11.request();
+const write11 = d11.record(
+  await run(() =>
+    draftCore.write(
+      { command: "replace", ...file("ch7"), in: v1, content: "Kade ran. The bell tolled twice." } as never,
+      d11.context(),
+    ),
+  ),
+);
+check(
+  !write11.isError &&
+    (await draftText("ch7"))[0] === "Kade sprinted. The bell tolled twice." &&
+    texts(await host.live("ch7"))[0] === "Kade sprinted. The bell rang.",
+  "a chat switched from Live to Draft plans on its Live read",
+  { draft: await draftText("ch7"), live: texts(await host.live("ch7")), text: text(write11) },
+);
+check(
+  (write11.result.concurrent?.groups ?? []).some((group) => group.author === "the user"),
+  "the report names the writer's forwarded Live change as the user's",
+  text(write11),
+);
+
+// 12. The model's own undo in a Draft chat runs on the fork, by content: an edit nobody wrote over
+// comes out of the draft (Live untouched); one the writer typed over in the draft stays, and the
+// result says so.
+await host.seed("ch8", [paragraph("w1", "One."), paragraph("w2", "Two.")]);
+const d12 = chat("thread-12", "t12");
+d12.request();
+const read12 = d12.record(await draftCore.read({ ...file("ch8") } as never, d12.context()));
+const [w1, w2] = read12.result.blocks?.[0]?.items.map((item) => item.hash) ?? [];
+d12.request();
+d12.record(await run(() => draftCore.write({ command: "replace", ...file("ch8"), in: w1, content: "One, said Mara." } as never, d12.context())));
+d12.request();
+d12.record(await run(() => draftCore.write({ command: "replace", ...file("ch8"), in: w2, content: "Two, said Kade." } as never, d12.context())));
+await host.writerEdit(
+  "ch8",
+  (blocks) => blocks.map((block) => (block.attrs.id === "w1" ? paragraph("w1", "One, Mara whispered.") : block)),
+  "d1",
+);
+d12.request();
+const undo12 = await run(() => draftCore.write({ command: "undo", ...file("ch8"), count: 2 } as never, d12.context()));
+check(
+  !undo12.isError &&
+    (await draftText("ch8")).join("|") === "One, Mara whispered.|Two." &&
+    texts(await host.live("ch8")).join("|") === "One.|Two." &&
+    /e2/.test(text(undo12)) &&
+    /e1 stays: someone has written over it/.test(text(undo12)),
+  "the model's undo in a draft takes back what stands and leaves the writer's text, saying so",
+  { draft: await draftText("ch8"), live: texts(await host.live("ch8")), text: text(undo12) },
+);
+
+// 13. After the writer's turn Undo, the same rewrite by hash asked again is not answered
+// "unchanged" in silence: the answer shows the text as it stands, and the next write lands.
+await host.seed("ch9", [paragraph("x1", "Plain line.")]);
+const c13 = chat("thread-13", "t13");
+c13.request();
+const read13 = c13.record(await core.read({ ...file("ch9") } as never, c13.context()));
+const x1 = read13.result.blocks?.[0]?.items[0]?.hash;
+const rewrite = () =>
+  run(() => core.write({ command: "replace", ...file("ch9"), in: x1, content: "Bright line." } as never, c13.context()));
+c13.request();
+c13.record(await rewrite());
+await host.undoTurn("ch9", "t13");
+c13.request();
+const again = c13.record(await rewrite());
+check(
+  /changed since you read it/.test(text(again)) && text(again).includes("Plain line."),
+  "a rewrite the view already holds but the room lost shows the text as it stands",
+  text(again),
+);
+c13.request();
+const landed13 = c13.record(await rewrite());
+check(
+  !landed13.isError && texts(await host.live("ch9"))[0] === "Bright line.",
+  "the rewrite asked again after seeing the text lands",
+  { live: texts(await host.live("ch9")), text: text(landed13) },
+);
+
+// 14. A draft the writer emptied: a Draft chat's write into the unstored `/empty` paragraph lands in
+// the fork under fresh ids, and the result lists every block it wrote (`renamed` on a fork room).
+await host.seed("ch10", [paragraph("y1", "Gone soon.")]);
+await host.writerEdit("ch10", () => [], "d1");
+const d14 = chat("thread-14", "t14");
+d14.request();
+const read14 = d14.record(await draftCore.read({ ...file("ch10") } as never, d14.context()));
+const empty14 = read14.result.blocks?.[0]?.items[0]?.hash;
+d14.request();
+const write14 = d14.record(
+  await run(() =>
+    draftCore.write({ command: "replace", ...file("ch10"), in: empty14, content: "One.\n\nTwo.\n\nThree." } as never, d14.context()),
+  ),
+);
+const listed14 = (write14.result.blocks ?? []).flatMap((group) => group.items.map((item) => item.body));
+check(
+  !write14.isError &&
+    (await draftText("ch10")).join("|") === "One.|Two.|Three." &&
+    texts(await host.live("ch10")).join("|") === "Gone soon." &&
+    ["One.", "Two.", "Three."].every((line) => listed14.some((body) => body.includes(line))),
+  "a Draft chat's write into an emptied draft lands in the fork and lists every block",
+  { draft: await draftText("ch10"), live: texts(await host.live("ch10")), text: text(write14) },
 );
 
 await host.close();

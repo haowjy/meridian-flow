@@ -48,6 +48,18 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   exports one batch (`exportSince(shownVersion())`) with the commit message `turn:<turnId>` and
   saves it through `rooms.save` with an `AgentWriteRecord` whose `delta` (`captureDelta`) is what
   Undo takes back by content (`takeBack`).
+- **A Draft chat reads and writes its draft's fork room** (`AgentEditRooms.readRoom`, the host's
+  `roomFor`) from its first read; nothing in the core branches on Live or fork beyond `format:
+  "changes"`. A write plans on the chat's latest read of the document under either of its room
+  names (`recordedRead`: a fork read is the later exactly when it covers the Live one, since a fork
+  is forwarded before every read), so a chat switched from Live to Draft plans on its Live read.
+- **`format: "changes"`** (`tool/draft-changes.ts`) shows each top-level block with a pending change
+  (`changedBlocks`, what Review changes lists) as CriticMarkup of Live's text to the draft's. It
+  records the read's frontier like any read.
+- **A write the view already holds** answers `unchanged`; when the room no longer holds it (someone
+  changed those blocks since the read, a turn Undo of the chat's own words included), the answer
+  also shows the text as it stands, and the next write plans on that. Planning such a write on the
+  room instead would undo writer edits the model never saw.
 - **A `find` names text, not blocks.** It matches the view first; when the view doesn't hold it
   (the writer typed or restored it since, a turn Undo included) or what it matched is gone from the
   room, it matches the room as it is now. Text the room plainly holds is never `not_found`.
@@ -66,10 +78,12 @@ write carries no ids (it writes text), so its pairing is by content only; `diffB
   counter per chat and document.
 
 The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
-this core for every chat, Live only while drafts are off: `recordWrite` gets the batch and writes
-the receipt in the commit's transaction, and the model's `undo` and `revert` go through
-`LoroDocumentEdits`, whose inverse returns the batches it committed so the reply's frontier covers
-them. Probe: [loro-write](qa/loro-write.md).
+this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
+commit's transaction, and the model's `undo` and `revert` go through `LoroDocumentEdits`, whose
+inverse runs in the room the write's record names, takes back by content (a change someone wrote
+over since stays whole, and the answer says so), and returns the batches it committed so the
+reply's frontier covers them. The in-memory host (`test-support`) does all of this for a Live or a
+Draft chat, with the writer's Apply, Discard and `Restore before`. Probe: [loro-write](qa/loro-write.md).
 
 ## What an Undo reads
 

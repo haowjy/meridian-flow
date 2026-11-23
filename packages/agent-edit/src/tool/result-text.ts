@@ -75,8 +75,9 @@ function statusLine(result: AgentEditResultV1): string {
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
-    // An edits read lists the chat's edits, not the document's blocks.
-    if (result.read.format === "edits") facts.push("format: edits");
+    // An edits or changes read lists the chat's edits or the draft's changes, not the blocks.
+    if (result.read.format === "edits" || result.read.format === "changes")
+      facts.push(`format: ${result.read.format}`);
     else
       facts.push(
         total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
@@ -97,7 +98,7 @@ function statusLine(result: AgentEditResultV1): string {
 function pendingLine(result: AgentEditResultV1): string[] {
   if (!result.tree?.firstDrafted || result.destination !== "draft") return [];
   return [
-    "not applied yet: tree changes in this chat's draft stay out of live until the user applies them. Tell the user they are waiting for review.",
+    "not applied yet: tree changes in this chat's draft stay out of live until the user applies them in Review changes. Tell the user they are waiting for review.",
   ];
 }
 
