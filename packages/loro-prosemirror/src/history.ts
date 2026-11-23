@@ -178,6 +178,22 @@ export class UndoHistory {
     this.clearRedo();
   }
 
+  /** An outside step leaves the history, from either stack: it has nothing left to take back. */
+  removeOutside(outside: OutsideStep): void {
+    for (const list of [this.undoSteps, this.redoSteps]) {
+      const at = list.findIndex((step) => step.outside === outside);
+      if (at >= 0) list.splice(at, 1);
+    }
+  }
+
+  /** An outside step whose Undo didn't happen goes back where Ctrl+Z reaches it again. */
+  restoreOutside(outside: OutsideStep): void {
+    const at = this.redoSteps.findIndex((step) => step.outside === outside);
+    if (at < 0) return;
+    const [step] = this.redoSteps.splice(at, 1);
+    if (step) this.undoSteps.push(step);
+  }
+
   /** The write `beforeWrite` announced is done; `changes` are what it changed (maybe nothing). */
   record(changes: readonly DocChange[]): void {
     const step = this.open;

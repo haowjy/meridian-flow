@@ -62,6 +62,30 @@ export class DocumentHistory {
     this.listeners.clear();
   }
 
+  /** Whether an editor shows the document now: a press made then goes on its Ctrl+Z. */
+  get open(): boolean {
+    return this.editors.size > 0;
+  }
+
+  /**
+   * A press goes on the Ctrl+Z (design §6, "Ctrl+Z is Loro's") as it is made: Undo sends the
+   * press's Undo, Redo presses again.
+   */
+  pushOutside(step: OutsideStep): void {
+    this.steps.pushOutside(step);
+    this.changed();
+  }
+
+  removeOutside(step: OutsideStep): void {
+    this.steps.removeOutside(step);
+    this.changed();
+  }
+
+  restoreOutside(step: OutsideStep): void {
+    this.steps.restoreOutside(step);
+    this.changed();
+  }
+
   hasEntries(): boolean {
     return this.steps.canUndo() || this.steps.canRedo();
   }
@@ -130,18 +154,6 @@ export class DocumentHistory {
       if (editor !== source && !editor.isDestroyed && !editor.view.composing)
         editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
-}
-
-/**
- * A press made from this editor's page goes on its Ctrl+Z (design §6, "Ctrl+Z is Loro's"): Undo
- * sends the press's Undo, Redo presses again. Nothing when the editor has no history.
- */
-export function pushOutsideStep(state: EditorState, step: OutsideStep): void {
-  const docs = loroSyncKey.getState(state)?.docs;
-  const history = docs && byDocs.get(docs);
-  if (!history) return;
-  history.steps.pushOutside(step);
-  history.changed();
 }
 
 /**

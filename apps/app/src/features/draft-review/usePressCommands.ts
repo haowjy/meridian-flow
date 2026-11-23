@@ -5,8 +5,9 @@
  *
  * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
  * pill. Its notice is the draft notice: a Discard's rows struck with Undo, an Apply's rows with
- * Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`), and every Undo of
- * it, there, on its notice or in an editor, is the press's one Undo.
+ * Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`) and, as it is made,
+ * on the Ctrl+Z of each editor open on its documents (`EditorPressStep`); every Undo of it, on
+ * its notice, the sidebar or an editor, is the press's one Undo and takes the others' steps away.
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
@@ -38,13 +39,20 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
+  useOptionalLiveDocumentSessionRegistry,
   useOptionalPresentedDocuments,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useItemLauncher } from "@/features/project/review-launch";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
-import { PressEntries, type PressPort, type Seat } from "./press-history";
+import {
+  type EditorHistory,
+  EditorPressStep,
+  PressEntries,
+  type PressPort,
+  type Seat,
+} from "./press-history";
 import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
@@ -89,6 +97,7 @@ export function usePressCommands({
   const treeLists = useOptionalTreeLists();
   const removal = useOptionalContextRemovalCoordinator();
   const presented = useOptionalPresentedDocuments();
+  const registry = useOptionalLiveDocumentSessionRegistry();
   const { openDraftFile } = useItemLauncher();
   const queryClient = useQueryClient();
   const locked = !draftId || !driver;
@@ -198,7 +207,12 @@ export function usePressCommands({
      * A press on the sidebar's stack (`PressEntries`): the sidebar's Ctrl+Z, or its notice's Undo,
      * takes back the press once. `dropped`: it was taken back, and its notice goes with it.
      */
-    const remember = (verdict: Verdict, pressed: Pressed, dropped: () => void): PressEntries => {
+    const remember = (
+      verdict: Verdict,
+      pressed: Pressed,
+      editor: EditorPressStep,
+      dropped: () => void,
+    ): PressEntries => {
       const taken = pressed.result.items.map((item) => item.node);
       const { seat, place } = seatOf(taken, async () => (await entries.undo()).kind !== "failed");
       place(pressed.placement);
@@ -223,6 +237,7 @@ export function usePressCommands({
           push: seat.push,
           drop: () => {
             seat.drop();
+            editor.drop();
             dropped();
           },
         },
@@ -304,13 +319,36 @@ export function usePressCommands({
         : { kind: "settled", took: { untaken } };
     };
 
+    /** The Ctrl+Z of each editor showing one of the documents now, in this draft or in Live. */
+    const editorsOf = (documents: readonly string[]): EditorHistory[] =>
+      documents.flatMap((node) => {
+        const documentId = node as DocumentId;
+        const rooms = [
+          { kind: "fork", draftId: draftId as DraftId, documentId },
+          { kind: "live", documentId },
+        ] as const;
+        return rooms.flatMap((room) => {
+          const history = registry?.openSession(room)?.history;
+          return history?.open ? [history] : [];
+        });
+      });
+
+    /** `again`: a Redo in an editor presses again, under the step it already has. */
     const run = (
       verdict: Verdict,
       target: PressTarget,
       input: { documentId: string | null; name?: string | null },
+      again?: EditorPressStep,
     ): CommandStart => {
       if (locked || !driver) return blocked();
       notices.end(draftId);
+      const editor =
+        again ??
+        new EditorPressStep(
+          editorsOf(target.documents ?? rows().map((row) => row.documentId)),
+          (step) => run(verdict, target, input, step),
+        );
+      let entries: PressEntries | null = null;
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       // A folder has no row: its name is the Work's tree's.
@@ -338,7 +376,7 @@ export function usePressCommands({
         const where = noticeSurface(input.documentId);
         let step: PressEntries;
         if (verdict === "apply") {
-          step = remember("apply", pressed, () => {
+          step = remember("apply", pressed, editor, () => {
             if (notices.appliedFacts(draftId)?.facts.some((fact) => fact.step === step))
               notices.end(draftId);
           });
@@ -355,7 +393,7 @@ export function usePressCommands({
           });
         } else {
           let shown: number | null = null;
-          step = remember("discard", pressed, () => {
+          step = remember("discard", pressed, editor, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
             const notice = notices.get(draftId);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
@@ -377,8 +415,10 @@ export function usePressCommands({
           };
           shown = notices.showDiscard({ projectId, draftId, surface: where, parts: [part] });
         }
+        entries = step;
         return { ...answer, undo: () => step.undo() };
       });
+      editor.pressing(outcome.then(() => entries));
       return { sent: true, outcome };
     };
 
@@ -447,6 +487,7 @@ export function usePressCommands({
   }, [
     owner,
     driver,
+    registry,
     treeLists,
     removal,
     presented,

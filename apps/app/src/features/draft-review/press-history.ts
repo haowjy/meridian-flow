@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import type { OutsideStep } from "@meridian/loro-prosemirror";
 import { notifyFailure } from "@/components/app/failure-toast";
 
 /**
@@ -67,5 +68,65 @@ export class PressEntries {
     this.ended = true;
     this.seat?.drop();
     this.over();
+  }
+}
+
+/** The Ctrl+Z of an editor open on a pressed document (`DocumentHistory`). */
+export type EditorHistory = {
+  pushOutside(step: OutsideStep): void;
+  removeOutside(step: OutsideStep): void;
+  restoreOutside(step: OutsideStep): void;
+};
+
+/**
+ * A press's step on the Ctrl+Z of the editors open on its documents, pushed as the press is made,
+ * so typing after it is undone first. Its Undo waits for the press's answer and is that press's
+ * one Undo; Redo presses again and the step stands for the new press. Taken back from anywhere
+ * else (the sidebar, a notice), the step leaves the editors with it.
+ */
+export class EditorPressStep implements OutsideStep {
+  /** The press in force, once answered: null when it took nothing. */
+  private press: Promise<PressEntries | null> = Promise.resolve(null);
+  /** Ctrl+Z took it back: its step is on the Redo stack. */
+  private undone = false;
+
+  constructor(
+    private readonly histories: readonly EditorHistory[],
+    private readonly again: (step: EditorPressStep) => void,
+  ) {
+    for (const history of histories) history.pushOutside(this);
+  }
+
+  /** The press this step stands for, from its sending to its answer. */
+  pressing(press: Promise<PressEntries | null>): void {
+    this.press = press;
+    void press.then((entries) => {
+      if (!entries) this.remove();
+    });
+  }
+
+  undo(): void {
+    this.undone = true;
+    void this.press.then(async (entries) => {
+      if (!entries) return;
+      const undone = await entries.undo();
+      if (undone.kind !== "failed") return;
+      this.undone = false;
+      for (const history of this.histories) history.restoreOutside(this);
+    });
+  }
+
+  redo(): void {
+    this.undone = false;
+    this.again(this);
+  }
+
+  /** Its press ended elsewhere: a step Ctrl+Z took back stays for Redo. */
+  drop(): void {
+    if (!this.undone) this.remove();
+  }
+
+  private remove(): void {
+    for (const history of this.histories) history.removeOutside(this);
   }
 }

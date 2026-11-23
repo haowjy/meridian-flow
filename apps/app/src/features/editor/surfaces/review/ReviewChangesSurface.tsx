@@ -1,13 +1,11 @@
 /**
  * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
  * presses a change from its margin pair, moves the focus to the next change after a press, and
- * closes Review changes when the chapter has none left (design §6, item 5). A press is a step of
- * the editor's Ctrl+Z: Undo sends the press's Undo, Redo presses again.
+ * closes Review changes when the chapter has none left (design §6, item 5).
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef, useState } from "react";
-import { pushOutsideStep } from "@/core/editor/editor-history";
 import {
   type ReviewChangesConfig,
   type ReviewVerdict,
@@ -63,24 +61,12 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       // The writer stays in this chapter's editor, so Ctrl+Z still reaches the press.
       if (next) mode.focus(next.id);
       else mode.close();
-      const send = () => review.controller.startChange(verdict, ref, row.id).outcome;
-      void send().then((outcome) => {
-        if (outcome.kind !== "done" || !outcome.undo) {
-          setPressed((prior) => {
-            const rest = new Set(prior);
-            rest.delete(row.id);
-            return rest;
-          });
-          return;
-        }
-        let undo = outcome.undo;
-        if (editor.isDestroyed) return;
-        pushOutsideStep(editor.state, {
-          undo: () => void undo(),
-          redo: () =>
-            void send().then((again) => {
-              if (again.kind === "done" && again.undo) undo = again.undo;
-            }),
+      void review.controller.startChange(verdict, ref, row.id).outcome.then((outcome) => {
+        if (outcome.kind === "done") return;
+        setPressed((prior) => {
+          const rest = new Set(prior);
+          rest.delete(row.id);
+          return rest;
         });
       });
     };

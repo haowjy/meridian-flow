@@ -20,8 +20,12 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   decorations through the typing in between. It publishes the rows (`publishReviewRows`) for the
   bar's stepper. The layout (Inline or Side by side) is a device preference, not in the address.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
-  focus moves to the next row, and the press is one step in the fork session's `UndoHistory`
-  (`pushOutsideStep`): Ctrl+Z sends the press's Undo, under the same rule as an edit.
+  focus moves to the next row.
+- **Every press is a Ctrl+Z step** in each editor open on its documents, pushed as it is made in
+  `usePressCommands.run`, the one path every press takes (margin, bar, tree row, Changes rows):
+  `EditorPressStep`. Its Undo waits for the press's answer, then sends the press's Undo; Redo
+  presses again. An Undo from the sidebar or a notice ends the press (`PressEntries`), which
+  takes the editor's step away too; one Ctrl+Z took back stays for Redo.
 - **An empty read closes the review** only once the draft's list agrees (`ReviewMode.listed`): a
   fork still syncing reads empty before the list does.
 - **A plain draft** shows "Review N changes" (`ReviewChangesButton`), counted by the same extension
