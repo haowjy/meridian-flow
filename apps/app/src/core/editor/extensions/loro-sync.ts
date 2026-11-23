@@ -1,4 +1,5 @@
 import { loroSyncPlugin } from "@meridian/loro-prosemirror";
+import { newBlockId } from "@meridian/prosemirror-schema";
 import { Extension } from "@tiptap/core";
 import type { EditorCopy } from "../config";
 import type { DocumentHistory } from "../editor-history";
@@ -20,6 +21,7 @@ export const LoroSyncExtension = Extension.create<LoroSyncOptions>({
       loroSyncPlugin({
         docs: copy.docs,
         history: history?.steps,
+        newBlockId,
         onLocalWrite: (changes) => {
           copy.publish(changes);
           history?.changed(editor);

@@ -13,7 +13,7 @@ import {
   type WriteOptions,
 } from "@meridian/document-model";
 import { blocksOf, inlineOf, nodeOf } from "@meridian/loro-prosemirror";
-import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
+import { newBlockId, withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, EditOp, ProjectedBlock } from "../ports/model.js";
@@ -69,7 +69,7 @@ export class LoroDocument {
 
   /** Apply ops and forget the read: the next reader reads what the write left. */
   apply(ops: readonly ShapeOp[]): ReturnType<typeof applyShapeOps> {
-    const result = applyShapeOps(this.docs, ops, this.write);
+    const result = applyShapeOps(this.docs, ops, { ...this.write, newBlockId });
     this.forget();
     return result;
   }

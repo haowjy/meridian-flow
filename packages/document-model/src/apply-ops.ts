@@ -1,11 +1,6 @@
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
-import {
-  checkEmptyParagraphId,
-  commentVisibility,
-  derivedEmptyParent,
-  shownUnits,
-} from "./read.js";
+import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
@@ -50,6 +45,11 @@ export type ShapeOp =
   /** Set (or with null clear) attributes of the block, or of its inline node at `unit`. */
   | { kind: "attrs"; block: BlockId; attrs: Attrs; unit?: number };
 
+export interface ApplyOpsOptions extends WriteOptions {
+  /** A fresh block id, for the empty paragraph a text or attribute op is the first write into. */
+  newBlockId: () => BlockId;
+}
+
 export type ApplyOpsResult =
   | { ok: true; changes: DocChange[] }
   | { ok: false; code: "invalid_write"; message: string };
@@ -61,13 +61,14 @@ export type ApplyOpsResult =
  * then deletes.
  *
  * The unstored empty paragraph a reader sees in an empty document or cell (`derivedEmptyParent`)
- * is addressable like any block: a text or attribute op stores it first, an insert after it goes
- * first, and deleting it writes nothing (the container shows it again).
+ * is addressable like any block: a text or attribute op stores a paragraph in its place under a
+ * fresh id (`options.newBlockId`), and every later op of the call addressing it writes that one;
+ * an insert after it goes first, or after the stored paragraph; deleting it writes nothing.
  */
 export function applyOps(
   docs: RoomDocs,
   ops: readonly ShapeOp[],
-  options: WriteOptions = {},
+  options: ApplyOpsOptions,
 ): ApplyOpsResult {
   const { shape } = docs;
   const view = new StructureView(docs);
@@ -138,24 +139,28 @@ export function applyOps(
   const random = options.random ?? Math.random;
   /** Order keys this call gave, so a later op places after a block an earlier one stored. */
   const placed = new Map<BlockId, string>();
-  const stored = new Set<BlockId>();
-  const store = (id: BlockId) => {
+  /** The fresh id each empty paragraph this call wrote into is stored under. */
+  const stored = new Map<BlockId, BlockId>();
+  /** The block an op on `id` writes: `id`, or the paragraph stored in place of its empty one. */
+  const store = (id: BlockId): BlockId => {
     const parent = derived(id);
-    if (parent === undefined || stored.has(id)) return;
-    stored.add(id);
-    const key = keyBetween(null, null, random);
-    placed.set(id, key);
-    writer.set("order", id, key);
-    writer.block(id, parent, "paragraph", {});
-    // A text doc left from when this paragraph was last stored would show again: empty it.
-    const rule = shape.node("paragraph") as NodeRule;
-    record(writeText(docs, id, [], { rule, shape, visibleComment }, options));
+    if (parent === undefined) return id;
+    let fresh = stored.get(id);
+    if (fresh === undefined) {
+      fresh = options.newBlockId();
+      stored.set(id, fresh);
+      const key = keyBetween(null, null, random);
+      placed.set(fresh, key);
+      writer.set("order", fresh, key);
+      writer.block(fresh, parent, "paragraph", {});
+    }
+    return fresh;
   };
 
   for (const op of of("text")) {
-    store(op.block);
-    const { doc, before: start } = docs.writableText(op.block);
     const rules = { rule: ruleOf(op.block) as NodeRule, shape, visibleComment };
+    const block = store(op.block);
+    const { doc, before: start } = docs.writableText(block);
     for (const { from, to, mark, value } of op.formats) {
       const units = shownUnits(doc, rules.rule, shape);
       const range = { start: units[from].pos, end: units[to - 1].pos + 1 };
@@ -168,15 +173,15 @@ export function applyOps(
     for (const { from, to, content } of [...op.splices].reverse())
       replaceText(doc, rules, from, to, content);
     doc.commit({ message: options.message, origin: options.origin });
-    record({ key: op.block, doc, before: start, after: doc.frontiers() });
+    record({ key: block, doc, before: start, after: doc.frontiers() });
   }
 
   for (const op of of("attrs")) {
     if (op.unit === undefined) {
-      store(op.block);
+      const block = store(op.block);
       const merged = { ...view.attrs(op.block), ...op.attrs };
       const parent = view.shown.has(op.block) ? (view.parent(op.block) ?? null) : derived(op.block);
-      writer.block(op.block, parent ?? null, view.node(op.block) ?? "paragraph", merged);
+      writer.block(block, parent ?? null, view.node(op.block) ?? "paragraph", merged);
       continue;
     }
     const { doc, before: start } = docs.writableText(op.block);
@@ -197,8 +202,8 @@ export function applyOps(
   const chained = new Map<string, BlockId>();
   for (const op of of("insert")) {
     const anchor =
-      op.after !== null && derived(op.after) === op.parent && !stored.has(op.after)
-        ? null
+      op.after !== null && derived(op.after) === op.parent
+        ? (stored.get(op.after) ?? null)
         : op.after;
     const siblings = view.children(op.parent);
     const nextId = anchor === null ? siblings[0] : siblings[siblings.indexOf(anchor) + 1];
@@ -215,7 +220,6 @@ export function applyOps(
     if (end) chained.set(chain, end.id);
   }
   function insertBlock(block: ShapeBlock, parent: BlockId | null, key: string) {
-    checkEmptyParagraphId(block.id, parent);
     writer.set("order", block.id, key);
     writer.block(block.id, parent, block.node, block.attrs, true);
     if (block.kind === "container") {

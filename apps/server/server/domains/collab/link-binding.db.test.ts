@@ -29,7 +29,7 @@ import {
   TEXT_KEY,
 } from "@meridian/document-model";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, newBlockId } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { Cursor, type VersionVector } from "loro-crdt";
 import { afterAll, describe, expect, it } from "vitest";
@@ -153,7 +153,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         let batch: Uint8Array;
         try {
           const before = tab.version();
-          const applied = applyOps(tab, edit(readDocument(tab)));
+          const applied = applyOps(tab, edit(readDocument(tab)), { newBlockId });
           if (!applied.ok) throw new Error(applied.message);
           batch = encodeEnvelope(tab.exportSince(before));
         } finally {

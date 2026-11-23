@@ -21,6 +21,7 @@ import { blocksOf, nodeOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
+  newBlockId,
   packCollabSchemaVersion,
   withBlockIds,
 } from "@meridian/prosemirror-schema";
@@ -205,7 +206,7 @@ try {
         formats: [],
       },
     ],
-    { message: "turn:probe" },
+    { message: "turn:probe", newBlockId },
   );
   await rooms.commit(db, live, encodeEnvelope(agent.exportSince(agentBase)), "turn:probe");
   agent.free();

@@ -23,11 +23,12 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `textUnits`), and every writer compares against it, so a merged state the schema forbids reads
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
   delta raw to decide what a document shows. Every text write goes through `replaceText`, which
-  addresses shown units; the unstored empty paragraph is `derivedEmptyParent` / `isDerivedEmpty`
-  for every writer, and only when it is its container's one block (`storedOf`). Its id
-  `<parent>/empty` is stored only under that parent: where ids are given (the app's block-id fixer,
-  the probe's), a block moved out takes a fresh one, and `writeDocument` and `applyOps` throw on
-  one elsewhere (`checkEmptyParagraphId`), or the parent shown empty again reads the id twice.
+  addresses shown units. The unstored empty paragraph an empty container or document shows has
+  the placeholder id `<parent>/empty` (`emptyParagraphId`), which no block is ever stored under:
+  the first write into it stores a paragraph under a fresh id (the binding renames the editor's
+  node in the same transaction; `applyOps` takes `newBlockId`), so the id never leaves its parent
+  and never names a removed block. `writeDocument` skips it only as its container's one empty
+  block (`storedOf`, `isDerivedEmpty`); `applyOps` addresses it through `derivedEmptyParent`.
   Which blocks show is one function, `showRule`: `StructureView` runs it over every block and an
   Undo's test over the blocks its run changes. Don't write a second copy of it. A local write
   into a text doc takes the doc from `writableText`, which tells `beforeTextWrite` listeners

@@ -139,7 +139,7 @@ export function blocksOf(doc: Node): ShapeBlock[] {
   return blocks;
 }
 
-function blockOf(node: Node): ShapeBlock {
+export function blockOf(node: Node): ShapeBlock {
   const known = blockOfNode.get(node);
   if (known) return known;
   const id = node.attrs.id;

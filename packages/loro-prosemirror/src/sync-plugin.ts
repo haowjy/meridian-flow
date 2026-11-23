@@ -2,7 +2,8 @@ import {
   type BlockId,
   commentVisibility,
   type DocChange,
-  emptyParagraphId,
+  emptyParagraphOf,
+  isDerivedEmpty,
   type NodeRule,
   type RoomDocs,
   removedOnPath,
@@ -23,7 +24,13 @@ import {
   TextSelection,
   type Transaction,
 } from "prosemirror-state";
-import { inlineOf, type ProseMirrorSince, readProseMirror, writeProseMirror } from "./codec.js";
+import {
+  blockOf,
+  inlineOf,
+  type ProseMirrorSince,
+  readProseMirror,
+  writeProseMirror,
+} from "./codec.js";
 import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
@@ -37,6 +44,8 @@ export interface LoroSyncOptions {
   origin?: string;
   /** A transaction's commit message; none is the writer's own typing (design §5's attribution). */
   messageOf?: (tr: Transaction) => string | undefined;
+  /** A fresh block id, for the empty paragraph a local transaction is the first write into. */
+  newBlockId: () => BlockId;
   /** Every local write's doc changes with their frontiers: what the copy publishes. */
   onLocalWrite?: (changes: DocChange[]) => void;
   /**
@@ -83,12 +92,23 @@ const NONE: ReadonlySet<BlockId> = new Set();
  * or a block above it, the editor keeps every removed block on that path. A local transaction
  * with a step in a kept block restores them all before it writes; any other write leaves them
  * removed. The head leaving a kept block ends it, and the block goes from the screen.
+ *
+ * The empty paragraph an empty container shows (`<container>/empty`) is a placeholder no block is
+ * stored under (design §1). A local transaction that leaves a node with such an id anywhere but as
+ * its parent's one empty paragraph (typing into it, Enter, a retype, an unwrap moving it out)
+ * gives that node a fresh id in the same transaction, before the write. The plugin filters after
+ * the editor's block-id fixer, so it reads the ids the fixer gave.
  */
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs, history } = options;
   const tracked = options.origin ?? "editor";
   return new Plugin<LoroSyncState>({
     key: loroSyncKey,
+    filterTransaction(tr) {
+      if (tr.docChanged && tr.getMeta(loroSyncKey) !== REMOTE_META)
+        storePlaceholders(tr, options.newBlockId);
+      return true;
+    },
     state: {
       init: () => ({ docs, kept: NONE }),
       apply(tr, value, oldState, newState) {
@@ -228,6 +248,32 @@ function rangeOf(step: Transaction["steps"][number]): { from: number; to: number
   return pos === undefined ? null : { from: pos, to: pos + 1 };
 }
 
+/**
+ * Give a fresh id to every node near what `tr` changed that holds a placeholder id but is not
+ * that placeholder: its parent's one child, an empty paragraph with no attributes. Only the
+ * changed ranges and one position either side are read, so the neighbour of an inserted sibling
+ * is too, and typing elsewhere costs the depth of the block it types in.
+ */
+function storePlaceholders(tr: Transaction, newBlockId: () => BlockId): void {
+  const stale = new Set<number>();
+  tr.steps.forEach((step, i) => {
+    const range = rangeOf(step);
+    if (!range) return;
+    const after = tr.mapping.slice(i);
+    const from = Math.max(0, after.map(range.from, -1) - 1);
+    const to = Math.min(tr.doc.content.size, after.map(range.to, 1) + 1);
+    tr.doc.nodesBetween(from, to, (node, pos, parent) => {
+      const id = node.attrs.id;
+      if (typeof id === "string" && emptyParagraphOf(id) !== undefined && parent) {
+        const under = parent === tr.doc ? null : (parent.attrs.id as BlockId);
+        if (parent.childCount !== 1 || !isDerivedEmpty(blockOf(node), under)) stale.add(pos);
+      }
+      return !node.isTextblock;
+    });
+  });
+  for (const pos of stale) tr.setNodeAttribute(pos, "id", newBlockId());
+}
+
 /** Typing: one replace step of inline content inside one textblock. */
 type Typing = { id: string; rule: NodeRule; from: number; to: number; content: Fragment };
 
@@ -256,7 +302,6 @@ function typingOf(
     !block.isTextblock ||
     !rule ||
     typeof id !== "string" ||
-    id.endsWith(emptyParagraphId("")) ||
     step.to > $from.end() ||
     $after.parent.attrs.id !== id ||
     $after.parent.type !== block.type ||

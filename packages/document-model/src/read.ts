@@ -23,26 +23,17 @@ import { StructureView } from "./structure.js";
 
 /**
  * The id every peer gives the unstored empty paragraph of a cell, container or document with no
- * shown block, so two peers typing into it first make one block (`/empty` for the document).
+ * shown block (`/empty` for the document). It is a placeholder no block is stored under: the first
+ * write into the paragraph stores it under a fresh id (design §1), so the id never leaves its
+ * parent and never names a removed block.
  */
 export const emptyParagraphId = (parent: BlockId | null) => `${parent ?? ""}/empty`;
 
-/**
- * The parent whose empty paragraph `id` names (null: the document), or undefined for any other id.
- * Such an id is stored only under that parent (design §1): elsewhere it would read twice once the
- * parent shows empty again. Where ids are given, a block moved out takes a fresh one.
- */
+/** The parent whose placeholder id `id` is (null: the document), or undefined for any other id. */
 export function emptyParagraphOf(id: BlockId): BlockId | null | undefined {
   const suffix = emptyParagraphId(null);
   if (!id.endsWith(suffix)) return undefined;
   return id.length === suffix.length ? null : id.slice(0, -suffix.length);
-}
-
-/** Throws when `id` names another parent's empty paragraph: no writer stores one under `parent`. */
-export function checkEmptyParagraphId(id: BlockId, parent: BlockId | null): void {
-  const owner = emptyParagraphOf(id);
-  if (owner !== undefined && owner !== parent)
-    throw new Error(`block id ${id} names the empty paragraph of ${owner ?? "the document"}`);
 }
 
 const derivedEmpty = (parent: BlockId | null): ShapeBlock => ({
@@ -56,8 +47,8 @@ const derivedEmpty = (parent: BlockId | null): ShapeBlock => ({
 /**
  * The unstored empty paragraph rule, for writers: if `id` is the empty paragraph this read shows
  * in an empty fillable container (or document), the parent it shows in (null: the document);
- * otherwise undefined. A writer that puts anything into it (text, attributes) stores it first,
- * under this parent, with this id; a block placed after it is placed first.
+ * otherwise undefined. A writer that puts anything into it (text, attributes) stores a new
+ * paragraph under this parent with a fresh id; a block placed after it is placed first.
  */
 export function derivedEmptyParent(
   view: StructureView,
@@ -85,9 +76,8 @@ export function isDerivedEmpty(block: ShapeBlock, parent: BlockId | null): boole
 
 /**
  * The blocks of a child list that are stored: all of them, unless the list is only the unstored
- * empty paragraph a reader shows in an empty container. An empty paragraph with that id beside
- * others (Enter in an empty cell) is stored like any block, or the editor would show a paragraph
- * the docs do not hold.
+ * empty paragraph a reader shows in an empty container. Anything else under a placeholder id (the
+ * paragraph typed in, or beside a sibling after Enter) the writer gave a fresh id first.
  */
 export function storedOf(
   list: readonly ShapeBlock[],
@@ -134,8 +124,7 @@ export function readDocument(
   kept?: ReadonlySet<BlockId>,
 ): ShapeBlock[] {
   if (since && !since.changed.has(STRUCTURE_KEY)) {
-    const texts = readTexts(docs, since);
-    if (texts) return texts;
+    return readTexts(docs, since);
   }
   return readBlocks(docs, new StructureView(docs, kept), since);
 }
@@ -177,11 +166,9 @@ function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): Sha
 
 /**
  * The read after a batch that changed text docs only: the blocks named in `changed` read again,
- * the rest as they were. Null when a changed key is an empty paragraph's id, whose read depends
- * on whether the structure stores it.
+ * the rest as they were.
  */
-function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] | null {
-  for (const key of since.changed) if (key.endsWith(emptyParagraphId(null))) return null;
+function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] {
   const visibleComment = commentVisibility(structureValues(docs));
   const again = (block: ShapeBlock): ShapeBlock => {
     if (block.kind === "text") {
