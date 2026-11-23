@@ -1651,8 +1651,12 @@ msgid "Commands"
 msgstr "Commands"
 
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-msgid "Comment:"
-msgstr "Comment:"
+msgid "Comment"
+msgstr "Comment"
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+#~ msgid "Comment:"
+#~ msgstr "Comment:"
 
 #: src/features/chat/ChatView.tsx
 msgid "Compact conversation"
@@ -2634,7 +2638,7 @@ msgid "Downloaded"
 msgstr "Downloaded"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/turn-card-drafts.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
@@ -2977,8 +2981,8 @@ msgid "Fork from here"
 msgstr "Fork from here"
 
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-msgid "Formatting changed"
-msgstr "Formatting changed"
+#~ msgid "Formatting changed"
+#~ msgstr "Formatting changed"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
@@ -3095,6 +3099,7 @@ msgstr "Id"
 
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Image"
 msgstr "Image"
@@ -4206,8 +4211,8 @@ msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
 
 #: src/features/chat/TurnRestoreBefore.tsx
-msgid "Nothing to restore"
-msgstr "Nothing to restore"
+#~ msgid "Nothing to restore"
+#~ msgstr "Nothing to restore"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Nothing to review in {name}."
@@ -5521,6 +5526,10 @@ msgstr "Storage full"
 msgid "Strikethrough"
 msgstr "Strikethrough"
 
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Style"
+msgstr "Style"
+
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "Subagent chat path"
@@ -6048,8 +6057,8 @@ msgid "Too many imports"
 msgstr "Too many imports"
 
 #: src/features/chat/TurnRestoreBefore.tsx
-msgid "Too old to restore"
-msgstr "Too old to restore"
+#~ msgid "Too old to restore"
+#~ msgstr "Too old to restore"
 
 #: src/features/chat/script-copy.ts
 msgid "took longer than {seconds} seconds"
@@ -6198,6 +6207,10 @@ msgstr "Undo restore"
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo restore of {name}"
 msgstr "Undo restore of {name}"
+
+#: src/features/chat/TurnRestoreBefore.tsx
+msgid "Undo restoring {name}"
+msgstr "Undo restoring {name}"
 
 #: src/features/agents/UndoSave.tsx
 msgid "Undo save of {label}"

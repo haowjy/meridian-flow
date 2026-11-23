@@ -153,9 +153,10 @@ function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; fold
 }
 
 /**
- * The picked Work's drafts and `+ New draft`: the same rows in a version chip's menu and in a
- * chat's `Writes into` panel (`as: "radio"`, whose toolbar owns the popover), so picking a draft
- * reads and behaves alike in both.
+ * The picked Work's drafts and `+ New draft`: one list, the same rows in a version chip's menu and
+ * in a chat's `Writes into` panel, so picking a draft reads and behaves alike in both. Only the
+ * presentation differs: menu items in the chip (`as: "menu"`), and in the panel, whose toolbar
+ * owns the popover, the drafts as a radio group with `New draft` after it.
  */
 export function WorkDraftRows({
   as,
@@ -172,52 +173,75 @@ export function WorkDraftRows({
   /** The radio group's accessible name. */
   label?: string;
 }) {
+  const Row = as === "menu" ? MenuRow : PanelRow;
+  const rows = drafts.map((draft, index) => (
+    <Row
+      key={draft.key}
+      checked={draft.current}
+      onSelect={draft.onSelect}
+      rowRef={rowRef?.(draft, index)}
+      className={draftRowClass}
+    >
+      <DraftVersionLabel draft={draft} />
+    </Row>
+  ));
+  const create = onNewDraft ? (
+    <Row onSelect={onNewDraft}>
+      <NewDraftLabel />
+    </Row>
+  ) : null;
   if (as === "menu")
     return (
       <>
-        {drafts.map((draft) => (
-          <DraftVersionItem key={draft.key} draft={draft} />
-        ))}
-        {onNewDraft ? (
-          <DropdownMenuItem onSelect={onNewDraft}>
-            <NewDraftLabel />
-          </DropdownMenuItem>
-        ) : null}
+        {rows}
+        {create}
       </>
     );
   return (
-    <ul onKeyDown={handleListKeys}>
-      <li>
-        <div role="radiogroup" aria-label={label}>
-          {drafts.map((draft, index) => (
-            <Button
-              key={draft.key}
-              data-list-item
-              ref={rowRef?.(draft, index)}
-              role="radio"
-              aria-checked={draft.current}
-              variant="ghost"
-              className={cn(dropdownRowVariants({ selected: draft.current }), draftRowClass)}
-              onClick={draft.onSelect}
-            >
-              <DraftVersionLabel draft={draft} />
-            </Button>
-          ))}
-        </div>
-      </li>
-      {onNewDraft ? (
-        <li>
-          <Button
-            data-list-item
-            variant="ghost"
-            className={dropdownRowVariants()}
-            onClick={onNewDraft}
-          >
-            <NewDraftLabel />
-          </Button>
-        </li>
-      ) : null}
-    </ul>
+    <fieldset className="m-0 min-w-0 border-0 p-0" onKeyDown={handleListKeys}>
+      <div role="radiogroup" aria-label={label}>
+        {rows}
+      </div>
+      {create}
+    </fieldset>
+  );
+}
+
+/** One row of a draft list: a draft (`checked` on the one in use) or `New draft`. */
+type RowProps = {
+  checked?: boolean;
+  onSelect: () => void;
+  rowRef?: Ref<HTMLButtonElement>;
+  className?: string;
+  children: ReactNode;
+};
+
+function MenuRow({ checked, onSelect, className, children }: RowProps) {
+  return (
+    <DropdownMenuItem
+      selected={checked}
+      onSelect={checked ? undefined : onSelect}
+      className={className}
+    >
+      {children}
+    </DropdownMenuItem>
+  );
+}
+
+/** A panel's row: a draft is a radio of the group, `New draft` a button after it. */
+function PanelRow({ checked, onSelect, rowRef, className, children }: RowProps) {
+  return (
+    <Button
+      data-list-item
+      ref={rowRef}
+      role={checked === undefined ? undefined : "radio"}
+      aria-checked={checked}
+      variant="ghost"
+      className={cn(dropdownRowVariants({ selected: checked ?? false }), className)}
+      onClick={onSelect}
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -235,13 +259,9 @@ function NewDraftLabel() {
 
 function DraftVersionItem({ draft }: { draft: DraftVersion }) {
   return (
-    <DropdownMenuItem
-      selected={draft.current}
-      onSelect={draft.current ? undefined : draft.onSelect}
-      className={draftRowClass}
-    >
+    <MenuRow checked={draft.current} onSelect={draft.onSelect} className={draftRowClass}>
       <DraftVersionLabel draft={draft} />
-    </DropdownMenuItem>
+    </MenuRow>
   );
 }
 

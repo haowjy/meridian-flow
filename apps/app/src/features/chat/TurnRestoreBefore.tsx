@@ -1,23 +1,14 @@
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { DraftId, TurnId } from "@meridian/contracts";
-import { type MouseEvent, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
-import type { Undone } from "@/features/draft-review/press-history";
 import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 
 /**
- * Where a draft's Restore before stands: offered, sent, done (its Undo offered), being undone, or
- * answered with nothing restored (`compacted`: the draft no longer keeps history from before the
- * turn).
- */
-type RestoreState = "offered" | "restoring" | "restored" | "undoing" | "unchanged" | "compacted";
-
-/**
- * A Draft chat turn card's `Restore before` in one draft the turn wrote: one press (`restoreTurn`),
- * with its Ctrl+Z step in each editor on its documents and its step on the sidebar's stack. Once
- * it lands the slot offers its Undo, and goes back to offering the press when any of those takes
- * it back. Its width holds still through every state, as the card's Undo does.
+ * A Draft chat turn card's `Restore before` in one draft the turn wrote: one press, whose state
+ * is the owner's (`DraftCommandOwner.restore`), so the card, every editor's Ctrl+Z and the
+ * sidebar show one press with one Undo, and a reload or another tab shows the same once the
+ * card's read names it (`named`). Its width holds still through every state.
  */
 export function RestoreBeforeSlot({
   commands,
@@ -25,7 +16,9 @@ export function RestoreBeforeSlot({
   draft,
   documents,
   name,
-  onPressed,
+  offered,
+  named,
+  readAt,
 }: {
   commands: WorkDraftCommands;
   turn: TurnId;
@@ -34,72 +27,51 @@ export function RestoreBeforeSlot({
   documents: readonly string[];
   /** The draft's name, when the card names several. */
   name: string | null;
-  onPressed: () => void;
+  /** The card's read says pressing it would change something. */
+  offered: boolean;
+  /** The press in force the card's read names: an id, none, or undefined where it doesn't say. */
+  named: string | null | undefined;
+  readAt: number;
 }) {
-  const [state, setState] = useState<RestoreState>("offered");
-  const undo = useRef<(() => Promise<unknown>) | null>(null);
-  const restore = () => {
-    setState("restoring");
-    onPressed();
-    const start = commands.restoreTurn(turn, draft, documents, () => {
-      undo.current = null;
-      setState("offered");
-    });
-    void start.outcome.then((outcome) => {
-      if (outcome.kind === "done") {
-        undo.current = outcome.undo ?? null;
-        setState("restored");
-      } else if (outcome.kind === "settled")
-        setState(outcome.compacted ? "compacted" : "unchanged");
-      else setState("offered");
-    });
-  };
-  const takeBack = async () => {
-    const pending = undo.current;
-    if (!pending) return;
-    setState("undoing");
-    const undone = (await pending()) as Undone;
-    // A landed Undo ends the press, which puts the offer back; a failed one leaves it restored.
-    if (undone.kind === "failed") setState("restored");
-  };
+  const { owner } = commands;
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  useEffect(
+    () => commands.syncRestore(turn, draft, named, readAt),
+    [commands, turn, draft, named, readAt],
+  );
+  const entry = owner.restore(turn, draft);
+  if (!entry && !offered) return null;
   const fenced = (act: () => void) => (event: MouseEvent) => {
     event.stopPropagation();
     act();
   };
   return (
     <span className="flex min-w-[6.5rem] shrink-0 items-center justify-end" data-restore-before>
-      {state === "offered" || state === "restoring" ? (
+      {entry?.kind === "in-force" ? (
         <Button
           type="button"
           variant="quiet"
           size="meta"
-          disabled={state === "restoring"}
+          disabled={entry.press.undoing}
+          aria-label={name ? t`Undo restoring ${name}` : undefined}
+          onClick={fenced(() => commands.undoRestore(turn, draft))}
+        >
+          {entry.press.undoing ? t`Undoing…` : t`Undo restore`}
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="quiet"
+          size="meta"
+          disabled={entry?.kind === "sending"}
           aria-label={
             name ? t`Restore ${name} to before this turn` : t`Restore the draft to before this turn`
           }
           title={t`Put the draft back as it read before this turn`}
-          onClick={fenced(restore)}
+          onClick={fenced(() => commands.restoreTurn(turn, draft, documents))}
         >
-          {state === "restoring" ? t`Restoring…` : t`Restore before`}
+          {entry?.kind === "sending" ? t`Restoring…` : t`Restore before`}
         </Button>
-      ) : state === "restored" || state === "undoing" ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          disabled={state === "undoing"}
-          onClick={fenced(() => void takeBack())}
-        >
-          {state === "undoing" ? t`Undoing…` : t`Undo restore`}
-        </Button>
-      ) : (
-        <span className="text-muted-foreground" role="status">
-          {state === "compacted" ? (
-            <Trans>Too old to restore</Trans>
-          ) : (
-            <Trans>Nothing to restore</Trans>
-          )}
-        </span>
       )}
     </span>
   );

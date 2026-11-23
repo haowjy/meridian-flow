@@ -26,9 +26,13 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   reads `changedBlocks` of the fork against Live 150 ms after typing pauses, or after Live's copy
   imports (a press, Live typed in elsewhere), and maps its decorations through the typing in
   between. Every group `changedBlocks` lists is a row (`reviewRows`), so the steps agree with the
-  list's `changeCount`: a change that left the text alone says what changed in place of the old
-  text (`Moved`, `Formatting changed` for attributes or marks), and a comment body's change shows
-  the two bodies on the paragraph the comment is on, across both columns Side by side. A row is
+  list's `changeCount`. Each changed block shows on itself, whatever it holds: a rule or an image
+  added is ringed in the added tint, one removed shows Live's (a rule as a rule, an image by its
+  caption); a container whose own blocks show the change (a list added with its items) adds
+  nothing. A change that left the text alone says what changed in place of the old text, in one
+  word at every size (`Moved`, `Style` for attributes or marks), and a comment body's change shows
+  `Comment` and the two bodies on the paragraph the comment is on, across both columns Side by
+  side. A row is
   named by one of its members, which a press takes; a link may name any member (`members`). It publishes the rows to the host's `ReviewSurface` for the review line and "Review N changes". The layout
   (Inline or Side by side) is a device preference, not in the address; Side by side gives every
   row both columns, an empty cell where one side has nothing.
@@ -60,10 +64,10 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   it only once the draft's list agrees (`ReviewMode.listed`): a fork still syncing reads empty
   before the list does.
 - **The stepper crosses chapters** against Live: past either end it opens the next or previous
-  chapter with changes, ‹ at its last change (`landOnLast`, held by document until the chapter's
-  address names a change: its review opens in a new host, and reads again before the focus lands).
-  It counts the whole draft: this chapter's rows as read here, every other chapter's
-  `DraftItem.changeCount`.
+  chapter with changes, ‹ at its last change (`landOnLast`, held per pane by document until the
+  chapter's address names a change: its review opens in a new host, and reads again before the
+  focus lands). It counts the whole draft: this chapter's rows as read here, every other chapter's
+  `DraftItem.changeCount`, and stays usable while this chapter has none left and others do.
 - **A plain draft** shows "Review N changes" (`ReviewChangesButton`), counted by the same extension
   in count mode, which paints nothing.
 

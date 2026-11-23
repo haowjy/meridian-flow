@@ -60,6 +60,11 @@ export interface TurnReceiptChip {
    * absent when none. A draft whose history was cut below the turn's start is left out, all or nothing (design §2).
    */
   restore?: DraftId[];
+  /**
+   * The Restore before in force in each draft where one is (`press`: its command id, which an Undo names), so every
+   * tab and a reload offer the same Undo. Absent where the server doesn't say.
+   */
+  restored?: { draft: DraftId; press: string }[];
 }
 
 export interface ListTurnLiveLineageResponse {

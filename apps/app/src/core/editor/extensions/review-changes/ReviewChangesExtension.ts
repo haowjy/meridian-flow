@@ -52,10 +52,12 @@ export type ReviewChangesConfig = {
     discard: string;
     restore: string;
     take: string;
-    /** What a change that left the text alone did: its place, its attributes, a comment's body. */
+    /** One-word tags for what a change that left the text alone did: its place, its style, a comment's body. */
     moved: string;
     restyled: string;
     comment: string;
+    /** An image with no caption, where Live's version of it is shown. */
+    image: string;
   };
   press: (verdict: ReviewVerdict, row: ReviewRow) => void;
   take: (row: ReviewRow) => void;
@@ -89,15 +91,12 @@ export function reviewRowsOf(state: EditorState): readonly ReviewRow[] {
   return reviewChangesKey.getState(state)?.rows ?? [];
 }
 
-/** Where each text block starts, by block id. */
+/** Where each block starts, containers and blocks with no text included, by block id. */
 function blockPositions(doc: Node): Map<string, number> {
   const positions = new Map<string, number>();
   doc.descendants((node, pos) => {
-    if (node.isTextblock) {
-      if (typeof node.attrs.id === "string") positions.set(node.attrs.id, pos);
-      return false;
-    }
-    return true;
+    if (typeof node.attrs.id === "string") positions.set(node.attrs.id, pos);
+    return !node.isTextblock;
   });
   return positions;
 }
@@ -141,8 +140,43 @@ function blockElement(level: number): HTMLElement {
   return document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
 }
 
-function referenceElement(paragraph: ReviewParagraph): HTMLElement {
+/**
+ * The reference's version of a block with no text of its own: a rule as a rule, an image by its
+ * caption, any other by the text inside it.
+ */
+function blockReference(
+  block: ShapeBlock,
+  removed: boolean,
+  labels: ReviewChangesConfig["labels"],
+) {
+  if (block.node === "horizontal_rule") {
+    const rule = document.createElement("hr");
+    rule.className = `meridian-review-ref${removed ? " meridian-review-del" : ""}`;
+    return rule;
+  }
+  const element = document.createElement("p");
+  element.className = "meridian-review-ref";
+  const text =
+    block.node === "figure"
+      ? String(block.attrs.caption || block.attrs.alt || "") || labels.image
+      : [...textOf([block]).values()].join(" ");
+  if (!removed) element.textContent = text;
+  else {
+    const span = document.createElement("span");
+    span.className = "meridian-review-del";
+    span.textContent = text;
+    element.append(span);
+  }
+  return element;
+}
+
+function referenceElement(
+  paragraph: ReviewParagraph,
+  labels: ReviewChangesConfig["labels"],
+): HTMLElement {
   const live = paragraph.reference;
+  if (live && live.kind !== "text")
+    return blockReference(live, paragraph.kind === "removed", labels);
   const element = blockElement(Number(live?.attrs.level ?? 0));
   element.className = "meridian-review-ref";
   if (!live) return element;
@@ -168,17 +202,20 @@ function referenceElement(paragraph: ReviewParagraph): HTMLElement {
   return element;
 }
 
-/** What changed of a paragraph whose text did not, said in place of its text. */
+/** What changed of a block whose text did not, as a one-word tag, with a comment's body. */
 function noteElement(paragraph: ReviewParagraph, config: ReviewChangesConfig): HTMLElement {
   const note = document.createElement("p");
   note.className = "meridian-review-ref meridian-review-note";
   const kind = paragraph.kind;
-  note.textContent =
+  const tag = document.createElement("span");
+  tag.className = "meridian-review-tag";
+  tag.textContent =
     kind === "moved"
       ? config.labels.moved
       : kind === "restyled"
         ? config.labels.restyled
         : config.labels.comment;
+  note.append(tag);
   if (kind !== "comment") return note;
   // A comment's body, its words marked as a paragraph's are: it is not in the text.
   const body = document.createElement("span");
@@ -192,7 +229,7 @@ function noteElement(paragraph: ReviewParagraph, config: ReviewChangesConfig): H
       body.append(word);
     }
   }
-  note.append(" ", body);
+  note.append(body);
   return note;
 }
 
@@ -215,7 +252,11 @@ function drawnKey(row: ReviewRow, config: ReviewChangesConfig, focused: boolean)
     const reference = paragraph.reference;
     parts.push(paragraph.id, paragraph.kind, paragraph.before ?? "");
     if (reference)
-      parts.push(reference.node, String(reference.attrs.level ?? ""), blockText(reference));
+      parts.push(
+        reference.node,
+        JSON.stringify(reference.attrs),
+        reference.kind === "text" ? blockText(reference) : [...textOf([reference]).values()].join(),
+      );
     for (const word of paragraph.words) parts.push(word.kind, word.text);
   }
   return `${row.id}:${textHash(parts.join("\u0000")).toString(36)}`;
@@ -280,7 +321,7 @@ function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean
     const wrap = cellOf(row, config, focused, view);
     for (const paragraph of row.paragraphs)
       if (textUnchanged(paragraph)) wrap.append(noteElement(paragraph, config));
-      else if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph));
+      else if (paragraph.kind !== "added") wrap.append(referenceElement(paragraph, config.labels));
     const pair = pairElement(row, config);
     if (pair) wrap.append(pair);
     return wrap;
@@ -301,7 +342,10 @@ function sideCell(
   return (view: EditorView) => {
     const cell = cellOf(row, config, focused, view);
     if (paragraph.kind === "comment") cell.classList.add("meridian-review-across");
-    else cell.append(paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph));
+    else
+      cell.append(
+        paragraph.kind === "added" ? emptyCell() : referenceElement(paragraph, config.labels),
+      );
     if (textUnchanged(paragraph)) cell.append(noteElement(paragraph, config));
     const pair = first ? pairElement(row, config) : null;
     if (pair) cell.append(pair);
@@ -392,12 +436,15 @@ function buildDecorations(
       const node = doc.nodeAt(pos);
       if (!node) return;
       rowed.add(paragraph.id);
+      // A block with no text to tint reads as added whole.
+      const whole = paragraph.kind === "added" && !node.isTextblock ? " meridian-review-added" : "";
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
-          class: `meridian-review-draft${tone}`,
+          class: `meridian-review-draft${whole}${tone}`,
           "data-review-row": row.id,
         }),
       );
+      if (!node.isTextblock) return;
       const spans =
         paragraph.kind === "added"
           ? [[0, node.textContent.length] as [number, number]]
@@ -457,7 +504,7 @@ function readRows(state: EditorState, config: ReviewChangesConfig): ReviewRow[] 
   return reviewRows(docs, readDocument(reference), fork);
 }
 
-/** Where the textblock of `id` starts, or null. */
+/** Where the block of `id` starts, or null. */
 function positionOf(doc: Node, id: string): number | null {
   return blockPositions(doc).get(id) ?? null;
 }
@@ -488,7 +535,7 @@ export function takeRow(view: EditorView, row: ReviewRow, draftId: string): void
       continue;
     }
     const reference = paragraph.reference;
-    if (!reference) continue;
+    if (reference?.kind !== "text") continue;
     if (nodeOf(schema, { ...reference, id: node.attrs.id }).eq(node)) continue;
     tr.replaceWith(pos + 1, pos + node.nodeSize - 1, inlineNodes(schema, reference.inline));
     tr.setNodeMarkup(pos, schema.nodes[reference.node], { ...reference.attrs, id: node.attrs.id });

@@ -8,6 +8,7 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { browserStorage } from "@/client/storage/browser-record";
 import type { ReviewRow } from "@/core/editor/extensions/review-changes/review-rows";
+import type { PanePlace } from "@/features/project/pane-place";
 import { createPreferenceSubscribers } from "@/lib/preference-subscribers";
 
 /** What Review changes compares the draft against: Live, another draft by id, or another file. */
@@ -49,24 +50,24 @@ export function useReviewMode(): ReviewMode | null {
 }
 
 /**
- * The chapter a step back is opening: its review opens at its last change, not its first. Keyed by
- * the document, not held by a host's `ReviewSurface`: the chapter opens in a new one. It holds
+ * The chapter each pane's step back is opening: its review opens at its last change, not its
+ * first. Kept per pane, not by a host's `ReviewSurface`: the chapter opens in a new one. It holds
  * until the chapter's address names a change, since reads come again before the focus lands.
  */
-let landingOnLast: string | null = null;
+const landingOnLast = new Map<PanePlace, string>();
 
-export function landOnLast(documentId: string): void {
-  landingOnLast = documentId;
+export function landOnLast(pane: PanePlace, documentId: string): void {
+  landingOnLast.set(pane, documentId);
 }
 
-/** Where a chapter's review opens without a `change`: its first change or its last. */
-export function landingOf(documentId: string): "first" | "last" {
-  return landingOnLast === documentId ? "last" : "first";
+/** Where a chapter's review opens in `pane` without a `change`: its first change or its last. */
+export function landingOf(pane: PanePlace, documentId: string): "first" | "last" {
+  return landingOnLast.get(pane) === documentId ? "last" : "first";
 }
 
-/** The chapter's review is at a change: a step back has landed. */
-export function landed(documentId: string): void {
-  if (landingOnLast === documentId) landingOnLast = null;
+/** The chapter's review in `pane` is at a change: a step back has landed. */
+export function landed(pane: PanePlace, documentId: string): void {
+  if (landingOnLast.get(pane) === documentId) landingOnLast.delete(pane);
 }
 
 /**

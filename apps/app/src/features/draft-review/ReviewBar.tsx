@@ -14,6 +14,7 @@ import { Columns2, X } from "lucide-react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { usePanePlace } from "@/features/project/pane-place";
 import { useItemLauncher } from "@/features/project/review-launch";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { useOptionalDraftReview } from "./DraftReviewProvider";
@@ -38,6 +39,7 @@ export function ReviewBar() {
   const files = useOwnerDrafts(mode?.projectId ?? null, mode?.draftId ?? null).files ?? [];
   const { openReview } = useItemLauncher();
   const touch = useCoarsePointer();
+  const pane = usePanePlace();
   if (!mode || !review) return null;
   const focused = rows.findIndex((row) => row.id === mode.changeId);
   const locked = review.controller.dispositionLocked;
@@ -49,21 +51,27 @@ export function ReviewBar() {
   // Against Live the stepper counts the whole draft: this chapter's rows as read here, every other
   // chapter's from the list (`changeCount`).
   const here = changed.findIndex((file) => file.documentId === mode.documentId);
-  const counted = (from: number, to: number) =>
-    changed.slice(from, to).reduce((sum, file) => sum + file.item.changeCount, 0);
-  const before = here < 0 ? 0 : counted(0, here);
-  const total = here < 0 ? rows.length : before + rows.length + counted(here + 1, changed.length);
+  const counted = (files: typeof changed) =>
+    files.reduce(
+      (sum, file) => (file.documentId === mode.documentId ? sum : sum + file.item.changeCount),
+      0,
+    );
+  const before = here < 0 ? 0 : counted(changed.slice(0, here));
+  const total = rows.length + counted(changed);
+  const elsewhere = changed.some((file) => file.documentId !== mode.documentId);
 
   const step = (direction: 1 | -1) => {
     const next = focused + direction;
     if (next >= 0 && next < rows.length) return mode.focus(rows[next].id);
-    // Past this chapter's last change: the draft's next changed chapter, wrapping.
-    const file = changed.at((here + direction + changed.length) % changed.length);
+    // Past this chapter's last change: the draft's next changed chapter, wrapping. A chapter not
+    // in the list (its last change just pressed) steps from either end of it.
+    const from = here >= 0 ? here : direction === 1 ? -1 : changed.length;
+    const file = changed.at((from + direction + changed.length) % changed.length);
     if (!file?.contextLocation || file.documentId === mode.documentId) {
       if (rows.length > 0) mode.focus(rows[direction === 1 ? 0 : rows.length - 1].id);
       return;
     }
-    if (direction === -1) landOnLast(file.documentId);
+    if (direction === -1) landOnLast(pane, file.documentId);
     openReview({
       draftId: mode.draftId,
       documentId: file.documentId,
@@ -114,9 +122,9 @@ export function ReviewBar() {
       <span data-review-secondary className="contents">
         <ReviewStepper
           count={total}
-          crosses={changed.length > 1}
+          crosses={elsewhere}
           focusedIndex={focused < 0 ? -1 : before + focused}
-          disabled={rows.length === 0}
+          disabled={total === 0}
           onStep={step}
           touch={touch}
         />

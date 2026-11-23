@@ -38,15 +38,28 @@ the first block the turn's first write there changed, where the row opens the do
 changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Restore
 before` the card offers, one press each in that draft's lane; a draft whose history was cut below
 the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
+Its `restored` names the Restore before in force in each draft (its press id), so every tab and a
+reload offer the same Undo.
+
+**A draft's writes have one action, `Restore before`.** The card's Undo takes back only what it
+doesn't cover: the turn's Live writes and its tree changes (the server's card plan skips every part
+written in a draft). So a Draft chat's card that wrote only text in its draft shows `Restore before`
+and no Undo slot.
 
 `Restore before` (`RestoreBeforeSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
 each editor open on the turn's documents in that draft gets its Ctrl+Z step, the sidebar its step,
-and an Undo that someone wrote over keeps those changes marked `Kept`. The card is its notice: once
-it lands the slot offers `Undo restore`, and goes back to `Restore before` when any Undo takes it
-back. An answer that restored nothing says so in the slot (`Too old to restore` when the draft's
-history was cut since the card offered it). With one draft the slot sits in the header beside
-Undo; a turn that wrote in several drafts lists each draft's rows under its name, the slot beside
-it. A draft pressed from the card keeps its slot after a read stops offering it, so its Undo stays.
+and an Undo that someone wrote over keeps those changes marked `Kept`. The card is its notice. Its
+state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in
+force with its one `PressEntries`, so collapsing the card or switching chats loses nothing, and a
+second press of the same turn and draft is not sent while one is out or in force. The card's read
+reconciles it (`syncRestore`): a press the read names that this tab doesn't hold (another tab's, or
+one from before a reload) is taken on with the card's Undo alone, since its Ctrl+Z and sidebar steps
+belonged to that tab; one the read says ended elsewhere ends here with its steps. A read from before
+the entry last changed in this tab is out of date and ignored; a press or its Undo reads the card
+again, dropping a read already out, so the next one is current. With one draft the slot sits in the
+header; a turn that wrote in several drafts lists each draft's rows under its name, the slot beside
+it. The chat's cards share one set of press commands and one read of the Work's drafts
+(`TurnCardDraftsProvider`, in `TurnList`).
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it

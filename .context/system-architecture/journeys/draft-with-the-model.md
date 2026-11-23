@@ -67,7 +67,7 @@ Sees: every sidebar source turns to the Work's tree on a grey review ground, at 
 
 Does: opens a drafted document, then presses "Review N changes" beside the Draft chip, or clicks its row in Changes.
 
-Sees: the plain draft first, typing as on Live. Review changes puts Live's text of each changed paragraph above the draft's, in muted ink, with × and ✓ in the margin beside it (Side by side puts Live in a column of its own). A line above the toolbar says what the draft is compared against and holds the stepper ("3 of 12", counted over the whole draft, chapter to chapter), the chapter's × and ✓, and Close. A change that left the text alone is a stop too, saying "Moved" or "Formatting changed" in place of the old text. A change's × or ✓ takes it at once and the next change takes the focus; Ctrl+Z takes it back. Back, Close or Esc leave Review changes; the address keeps it, so a reload or a shared link opens the same change.
+Sees: the plain draft first, typing as on Live. Review changes puts Live's text of each changed paragraph above the draft's, in muted ink, with × and ✓ in the margin beside it (Side by side puts Live in a column of its own). A line above the toolbar says what the draft is compared against and holds the stepper ("3 of 12", counted over the whole draft, chapter to chapter), the chapter's × and ✓, and Close. Every changed block is a stop, a rule or an image too; a change that left the text alone says "Moved" or "Style" in place of the old text. A change's × or ✓ takes it at once and the next change takes the focus; Ctrl+Z takes it back. Back, Close or Esc leave Review changes; the address keeps it, so a reload or a shared link opens the same change.
 
 - Map: [editor](../app-documents.md#editor), [draft-review](../app-documents.md#draft-review), [file-policy](../server-documents.md#file-policy)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)
@@ -89,9 +89,9 @@ Sees: what the reply wrote is reversed, wherever it now is. The receipt stays.
 
 ## Restore before
 
-Does: on a Draft chat's reply, presses "Restore before" on its receipt (one per draft the reply wrote in), or opens one of its chapters there.
+Does: on a Draft chat's reply, presses "Restore before" on its receipt (one per draft the reply wrote in, in place of the receipt's Undo, which keeps only the reply's Live writes and tree changes), or opens one of its chapters there.
 
-Sees: a chapter opens in Review changes at the reply's edit. Restore before puts the draft back as it read before the reply, on today's Live: text already applied stays in the manuscript, and a document the reply made in the draft goes to Trash. The receipt then offers "Undo restore"; Ctrl+Z in the chapter or in the sidebar takes it back too, as for any press.
+Sees: a chapter opens in Review changes at the reply's edit. Restore before puts the draft back as it read before the reply, on today's Live: text already applied stays in the manuscript, and a document the reply made in the draft goes to Trash. The receipt then offers "Undo restore", in every tab and after a reload; Ctrl+Z in the chapter or in the sidebar takes it back too, as for any press.
 
 - Map: [chat](../app-conversation.md#chat), [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
 - Machines: [A press's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)

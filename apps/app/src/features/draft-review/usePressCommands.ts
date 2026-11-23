@@ -34,6 +34,7 @@ import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
 import { pressLaneKey, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -66,6 +67,7 @@ import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
 type Scope = PressAction["scope"];
+type TurnScope = Extract<Scope, { kind: "turn" }>;
 /**
  * Each tree list whose rows showed the press's nodes in the Work's tree as it was sent, with the
  * sources they showed in: the sidebar stacks its Undo step goes on.
@@ -73,14 +75,14 @@ type Scope = PressAction["scope"];
 type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
 /**
  * `took`: the documents and folders the press changed, in their text or their place in the tree.
- * `compacted`: a Restore before that found the draft's history cut, and restored nothing.
+ * `landed`: when its answer came, before the lists were read again.
  */
 type Pressed = {
   commandId: string;
   lane: string;
   took: readonly string[];
   placement: Placement;
-  compacted?: true;
+  landed: number;
 };
 /**
  * `failed`: the press reached the server, which didn't take it. `told`: it was never sent, and
@@ -161,8 +163,17 @@ export function usePressCommands({
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
-    /** Reads the lists again; a row a press took or gave back shows once this lands. */
+    /**
+     * Reads the lists again; a row a press took or gave back shows once this lands. A Restore
+     * before reads its turn's card again too, dropping a read already out, so any card read that
+     * lands after this says whether the press is in force (`RestoreEntry.since`).
+     */
     const refresh = async (scope: Scope) => {
+      if (scope.kind === "turn" && threadId)
+        void queryClient.refetchQueries(
+          { queryKey: threadQueryKeys.liveLineage(threadId, scope.turn), exact: true },
+          { cancelRefetch: true },
+        );
       await Promise.all(
         [...new Set([...drafts, ...scopeDrafts(scope)])].map((draft) =>
           queryClient.refetchQueries(
@@ -350,9 +361,30 @@ export function usePressCommands({
           },
         },
         () => owner.presses.delete(entries),
+        owner.changed,
       );
       owner.presses.add(entries);
       return entries;
+    };
+
+    /**
+     * A Restore before in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
+     * and in the owner under its turn and draft, where the turn's card reads it and offers its
+     * Undo. Taken back anywhere, it leaves the owner.
+     */
+    const restoreInForce = (
+      scope: TurnScope,
+      pressed: Pressed,
+      editor: EditorPressStep,
+      shown: { noticeKey: string; where: NoticeSurface; names: ReadonlyMap<string, string> },
+    ): PressEntries => {
+      const { turn, draft } = scope;
+      const step: PressEntries = remember(scope, "restore", pressed, editor, shown, () => {
+        const entry = owner.restore(turn, draft);
+        if (entry?.kind === "in-force" && entry.press === step) owner.setRestore(turn, draft, null);
+      });
+      owner.setRestore(turn, draft, { kind: "in-force", press: step }, pressed.landed);
+      return step;
     };
 
     /**
@@ -419,6 +451,7 @@ export function usePressCommands({
         });
         if (!record) return "told";
         const settled = await live.whenSettled(record.id);
+        const landed = Date.now();
         await refresh(scope);
         if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
         const result = settled.outcome.result as PressResult;
@@ -427,7 +460,7 @@ export function usePressCommands({
           lane: pressLaneKey(scope),
           took: [...new Set([...result.documents, ...result.items.map((item) => item.node)])],
           placement,
-          ...(result.compacted ? { compacted: true } : {}),
+          landed,
         };
       } finally {
         release();
@@ -440,7 +473,7 @@ export function usePressCommands({
       const untaken = nodes.filter((node) => !took.has(node));
       return took.size > 0
         ? { kind: "done", commandId: pressed.commandId, took: { untaken } }
-        : { kind: "settled", took: { untaken }, ...(pressed.compacted ? { compacted: true } : {}) };
+        : { kind: "settled", took: { untaken } };
     };
 
     /**
@@ -470,17 +503,15 @@ export function usePressCommands({
     };
 
     /** `again`: a Redo in an editor presses again, under the step it already has. */
-    /**
-     * `again`: a Redo in an editor presses again, under the step it already has. `ended`: the
-     * press was taken back, wherever (a Restore before's card offers it again).
-     */
     const run = (
       target: PressTarget,
-      input: { documentId: string | null; name?: string | null; ended?: () => void },
+      input: { documentId: string | null; name?: string | null },
       again?: EditorPressStep,
     ): CommandStart => {
-      if (locked || !driver) return blocked();
       const { verdict, scope } = target.action;
+      // A turn's press names its draft; any other presses the surface's.
+      const acting = scopeDrafts(scope);
+      if (!driver || acting.length === 0 || !acting.every(Boolean)) return blocked();
       // The surface shows one notice: a new press ends the last, whichever draft it was on.
       for (const key of [...drafts, ...(workWide ? [workKey] : [])]) notices.end(key);
       const noticeKey = noticeOf(scope);
@@ -523,9 +554,9 @@ export function usePressCommands({
         const where = noticeSurface(input.documentId);
         let step: PressEntries;
         const said = { noticeKey, where, names };
-        if (verdict === "restore") {
-          // The turn's card is its notice: it offers the Undo and says when it ended.
-          step = remember(scope, verdict, pressed, editor, said, () => input.ended?.());
+        if (scope.kind === "turn") {
+          // The turn's card is its notice: it reads the press in force from the owner.
+          step = restoreInForce(scope, pressed, editor, said);
         } else if (verdict === "apply") {
           step = remember(scope, verdict, pressed, editor, said, () => {
             if (notices.appliedFacts(noticeKey)?.facts.some((fact) => fact.step === step))
@@ -605,22 +636,56 @@ export function usePressCommands({
       );
     /**
      * A Draft chat turn card's `Restore before` in one draft it wrote: `documents` are the ones
-     * the turn wrote there, whose editors get the press's Ctrl+Z step.
+     * the turn wrote there, whose editors get the press's Ctrl+Z step. One at a time per turn and
+     * draft: while one is out or in force, the card offers its Undo instead.
      */
-    const restoreTurn = (
-      turn: TurnId,
-      draft: DraftId,
-      documents: readonly string[],
-      ended: () => void,
-    ) =>
-      run(
+    const restoreTurn = (turn: TurnId, draft: DraftId, documents: readonly string[]) => {
+      if (owner.restore(turn, draft)) return;
+      owner.setRestore(turn, draft, { kind: "sending" });
+      const start = run(
         {
           action: { verdict: "restore", scope: { kind: "turn", turn, draft } },
           documents,
           whole: false,
         },
-        { documentId: null, ended },
+        { documentId: null },
       );
+      // A press that changed nothing, or never landed, leaves nothing in force.
+      void start.outcome.then(() => {
+        if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
+      });
+    };
+    /** The Undo of the turn's Restore before in force in `draft`, the same as its Ctrl+Z. */
+    const undoRestore = (turn: TurnId, draft: DraftId) => {
+      const entry = owner.restore(turn, draft);
+      if (entry?.kind === "in-force") void entry.press.undo();
+    };
+    /**
+     * What a read of the turn's card (`TurnReceiptChip.restored`, read at `readAt`) says is in
+     * force in `draft`: `named`, a press id, or null for none; undefined where the server doesn't
+     * say. A press this tab doesn't hold (another tab's, or one from before a reload) is taken on
+     * with the card's Undo alone; one the read says ended elsewhere ends here, its Ctrl+Z and
+     * sidebar steps with it. A read from before the entry last changed here is out of date.
+     */
+    const syncRestore = (
+      turn: TurnId,
+      draft: DraftId,
+      named: string | null | undefined,
+      readAt: number,
+    ) => {
+      if (named === undefined || readAt < owner.restoreChangedAt(turn, draft)) return;
+      const entry = owner.restore(turn, draft);
+      if (entry?.kind === "sending" || (entry?.press.id ?? null) === named) return;
+      entry?.press.end();
+      if (named === null) return;
+      const scope = { kind: "turn", turn, draft } as const;
+      restoreInForce(
+        scope,
+        { commandId: named, lane: pressLaneKey(scope), took: [], placement: [], landed: readAt },
+        new EditorPressStep([], () => {}),
+        { noticeKey: draft, where: noticeSurface(null), names: new Map() },
+      );
+    };
     /** The draft's files: one press on the whole draft; a single file presses that document. */
     const many = (verdict: Verdict, items: readonly DraftItemRef[]) => {
       const [only] = items;
@@ -656,6 +721,8 @@ export function usePressCommands({
       startItem: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item),
       startChange,
       restoreTurn,
+      undoRestore,
+      syncRestore,
       apply: (documentId: string, itemKey: string) =>
         startItem("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>

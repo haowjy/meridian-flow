@@ -25,6 +25,7 @@ import {
   useReviewSurface,
 } from "@/features/draft-review/review-mode";
 import { referenceOf, useReviewReference } from "@/features/draft-review/use-review-reference";
+import { usePanePlace } from "@/features/project/pane-place";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 
 /** The editor's width at which Review changes offers two columns. */
@@ -35,6 +36,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const review = useOptionalDraftReview();
   const layout = useReviewLayout();
   const surface = useReviewSurface();
+  const pane = usePanePlace();
   // Pressed changes leave the page at once; the server's answer then takes them out of the copy.
   const [pressed, setPressed] = useState<ReadonlySet<string>>(new Set());
   const rows = useRef<readonly ReviewRow[] | null>(null);
@@ -109,8 +111,9 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
         restore: t`Restore`,
         take: t`Take`,
         moved: t`Moved`,
-        restyled: t`Formatting changed`,
-        comment: t`Comment:`,
+        restyled: t`Style`,
+        comment: t`Comment`,
+        image: t`Image`,
       },
       press,
       take: (row) => {
@@ -142,11 +145,12 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       const left = shown(rows.current ?? []);
       closeIfEmpty();
       if (!mode || left.length === 0) return;
-      if (left.some((row) => row.id === mode.changeId)) return landed(mode.documentId);
+      if (left.some((row) => row.id === mode.changeId)) return landed(pane, mode.documentId);
       const named = mode.changeId
         ? left.find((row) => row.members?.includes(mode.changeId ?? ""))
         : undefined;
-      const landing = named ?? (landingOf(mode.documentId) === "last" ? left.at(-1) : left[0]);
+      const landing =
+        named ?? (landingOf(pane, mode.documentId) === "last" ? left.at(-1) : left[0]);
       if (landing) mode.focus(landing.id);
     };
     setReviewChanges(editor.view, config);
@@ -167,6 +171,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     changeId,
     pressed,
     surface,
+    pane,
   ]);
 
   useEffect(() => {

@@ -11,18 +11,21 @@ import {
 } from "@meridian/document-model";
 
 /**
- * One paragraph of a change as Review changes paints it: the reference's text (Live's, another
- * draft's or another file's) above or beside the draft's, the words each side alone has marked.
- * `kind` says which sides hold it, or what changed when its text did not: its place (`moved`), its
- * attributes or marks (`restyled`: a heading's level, a bold word), or a comment's body on it
- * (`comment`).
+ * One block of a change as Review changes paints it: the reference's (Live's, another draft's or
+ * another file's) above or beside the draft's, the words each side alone has marked. Any block is
+ * one, a paragraph or one with no text of its own (a rule, an image, a list). `kind` says which
+ * sides hold it, or what changed when its text did not: its place (`moved`), its attributes or
+ * marks (`restyled`: a heading's level, a bold word), or a comment's body on it (`comment`).
  */
 export type ReviewParagraph = {
-  /** The draft's paragraph; for a `removed` one, the reference's; for a `comment`, the one it is on. */
+  /**
+   * The draft's block; for a `removed` one, the reference's; for a `comment`, the paragraph it is
+   * on, or with none the comment's own id.
+   */
   id: BlockId;
   kind: "edited" | "added" | "removed" | "moved" | "restyled" | "comment";
-  /** The reference's paragraph; null when the draft added it. */
-  reference: TextBlock | null;
+  /** The reference's block; null when the draft added it. */
+  reference: ShapeBlock | null;
   /**
    * The words of the reference's text and the draft's, aligned (a `comment`'s: of its two
    * bodies); empty for an added or removed paragraph.
@@ -67,7 +70,10 @@ export function blockText(block: TextBlock): string {
  * Reading order over both sides by block id: a block only the reference holds sorts after the
  * draft block before it. `anchorFrom` is the first draft block at or after a place in that order.
  */
-function readingOrder(reference: Map<BlockId, TextBlock>, fork: Map<BlockId, TextBlock>) {
+function readingOrder(
+  reference: ReadonlyMap<BlockId, unknown>,
+  fork: ReadonlyMap<BlockId, unknown>,
+) {
   const merged: BlockId[] = [];
   const referenceIds = [...reference.keys()];
   const referenceIndex = new Map(referenceIds.map((id, index) => [id, index]));
@@ -103,22 +109,13 @@ function single(paragraph: ReviewParagraph, anchor: BlockId | null): ReviewRow {
   };
 }
 
-/** Every block by id, containers included. */
+/** Every block by id, containers included, in reading order. */
 function allBlocks(blocks: readonly ShapeBlock[], into = new Map<BlockId, ShapeBlock>()) {
   for (const block of blocks) {
     into.set(block.id, block);
     if (block.kind === "container") allBlocks(block.children, into);
   }
   return into;
-}
-
-function firstText(block: ShapeBlock): TextBlock | null {
-  if (block.kind === "text") return block;
-  for (const child of block.children) {
-    const text = firstText(child);
-    if (text) return text;
-  }
-  return null;
 }
 
 /** Same type, attributes and, for a paragraph, marks: what is left to differ is its place. */
@@ -128,23 +125,43 @@ const sameStyle = (a: ShapeBlock, b: ShapeBlock) =>
   (a.kind !== "text" || b.kind !== "text" || JSON.stringify(a.inline) === JSON.stringify(b.inline));
 
 /**
- * A changed block both sides hold with the same text: its attributes or marks changed, or else its
- * place. A container's change shows on its first paragraph.
+ * A changed block as it is painted, on the block itself: added or removed whole, a paragraph's
+ * words edited, else what changed of it when its text did not: its style, a comment's body on it
+ * (`body`: the words of the change's comment it carries, if any), or its place. Null where neither
+ * side shows it: a block inside one the draft removed, which that removal paints.
  */
-function structureParagraph(
-  reference: ShapeBlock,
-  draft: ShapeBlock,
-  referenceText: ReadonlyMap<BlockId, TextBlock>,
+function changedBlock(
+  id: BlockId,
+  reference: ShapeBlock | undefined,
+  draft: ShapeBlock | undefined,
+  before: BlockId | null,
+  body: (block: TextBlock) => readonly WordPart[] | null,
 ): ReviewParagraph | null {
-  const shown = firstText(draft);
-  if (!shown) return null;
-  return {
-    id: shown.id,
-    kind: sameStyle(reference, draft) ? "moved" : "restyled",
-    reference: referenceText.get(shown.id) ?? shown,
-    words: wordDiff(blockText(shown), blockText(shown)),
-    before: shown.id,
-  };
+  if (reference && draft) {
+    if (reference.kind === "text" && draft.kind === "text") {
+      const words = wordDiff(blockText(reference), blockText(draft));
+      if (words.some((part) => part.kind !== "same"))
+        return { id, kind: "edited", reference, words, before: id };
+    }
+    if (!sameStyle(reference, draft))
+      return { id, kind: "restyled", reference, words: [], before: id };
+    const words = draft.kind === "text" ? body(draft) : null;
+    if (words) return { id, kind: "comment", reference, words, before: id };
+    return { id, kind: "moved", reference, words: [], before: id };
+  }
+  if (draft) return { id, kind: "added", reference: null, words: [], before: id };
+  if (reference) return { id, kind: "removed", reference, words: [], before };
+  return null;
+}
+
+/** Every block under `block`, at any depth. */
+function descendants(block: ShapeBlock, into: BlockId[] = []): BlockId[] {
+  if (block.kind === "container")
+    for (const child of block.children) {
+      into.push(child.id);
+      descendants(child, into);
+    }
+  return into;
 }
 
 function paragraphOf(
@@ -284,10 +301,10 @@ const bodyOf = (docs: RoomDocs, comment: string) =>
 
 /**
  * The draft's changes against Live, as rows in reading order: a row sits where its first draft
- * paragraph is, and a row Live alone holds sits where Live has it, before the next paragraph both
- * show. `live` and `fork` are the two sides' blocks as read now (`readDocument`). Every change
- * `changedBlocks` lists is a row, so the steps agree with the list's `changeCount`: a change of
- * place or attributes shows on its paragraph, and a comment body's alone on the paragraph it is on.
+ * block is, and a row Live alone holds sits where Live has it, before the next block both show.
+ * `live` and `fork` are the two sides' blocks as read now (`readDocument`). Every change
+ * `changedBlocks` lists is a row, so the steps agree with the list's `changeCount`: each changed
+ * block shows on itself, whatever it holds, and a comment body's change on the paragraph it is on.
  */
 export function reviewRows(
   draft: RoomDocs,
@@ -298,57 +315,66 @@ export function reviewRows(
   const forkText = textBlocks(fork);
   const liveBlocks = allBlocks(live);
   const forkBlocks = allBlocks(fork);
-  const { order, anchorFrom } = readingOrder(liveText, forkText);
+  const { order, anchorFrom } = readingOrder(liveBlocks, forkBlocks);
 
   const rows: (ReviewRow & { at: number })[] = [];
+  const bodyWords = (comment: string) =>
+    wordDiff(bodyOf(draft.live ?? draft, comment), bodyOf(draft, comment));
   for (const change of changedBlocks(draft)) {
-    const paragraphs = new Map<BlockId, ReviewParagraph>();
-    const unchanged: BlockId[] = [];
-    for (const id of change.blocks) {
-      const paragraph = paragraphOf(
-        id,
-        liveText.get(id) ?? null,
-        forkText.get(id) ?? null,
-        anchorFrom(order.get(id) ?? 0),
+    const body = (block: TextBlock) => {
+      const comment = change.comments.find((each) =>
+        block.inline.some((item) => `${COMMENT_STYLE_PREFIX}${each}` in item.marks),
       );
-      if (paragraph) paragraphs.set(paragraph.id, paragraph);
-      else unchanged.push(id);
+      return comment === undefined ? null : bodyWords(comment);
+    };
+    const shown = new Map<BlockId, ReviewParagraph>();
+    for (const id of change.blocks) {
+      const block = changedBlock(
+        id,
+        liveBlocks.get(id),
+        forkBlocks.get(id),
+        anchorFrom(order.get(id) ?? 0),
+        body,
+      );
+      if (block) shown.set(id, block);
     }
-    // What changed of a block whose text did not, unless its paragraph shows a change already.
-    for (const id of unchanged) {
-      const reference = liveBlocks.get(id);
-      const shown = forkBlocks.get(id);
-      const paragraph = reference && shown ? structureParagraph(reference, shown, liveText) : null;
-      if (paragraph && !paragraphs.has(paragraph.id)) paragraphs.set(paragraph.id, paragraph);
+    // A container whose own blocks show the change (a list added with its items) shows nothing more.
+    for (const [id, block] of shown) {
+      const own = forkBlocks.get(id) ?? liveBlocks.get(id);
+      if (block.kind !== "edited" && own && descendants(own).some((inner) => shown.has(inner)))
+        shown.delete(id);
     }
-    if (paragraphs.size === 0) {
-      const [comment] = change.comments;
-      const carrier = comment
-        ? (carrierOf(forkText, comment) ?? carrierOf(liveText, comment))
-        : null;
-      if (!comment || !carrier) continue;
-      paragraphs.set(carrier.id, {
-        id: carrier.id,
+    if (shown.size === 0) {
+      // A comment body alone: on the paragraph it is on, or at the end where none holds it. Every
+      // change of blocks shows one on a side (`changedBlocks`), so this one names a comment.
+      const comment = change.comments[0] as string;
+      const carrier = carrierOf(forkText, comment) ?? carrierOf(liveText, comment);
+      const id = carrier?.id ?? comment;
+      shown.set(id, {
+        id,
         kind: "comment",
-        reference: liveText.get(carrier.id) ?? null,
-        words: wordDiff(bodyOf(draft.live ?? draft, comment), bodyOf(draft, comment)),
-        before: forkText.has(carrier.id) ? carrier.id : anchorFrom(order.get(carrier.id) ?? 0),
+        reference: carrier ? (liveText.get(carrier.id) ?? null) : null,
+        words: bodyWords(comment),
+        before: !carrier
+          ? null
+          : forkText.has(carrier.id)
+            ? carrier.id
+            : anchorFrom(order.get(carrier.id) ?? 0),
       });
     }
-    const sorted = [...paragraphs.values()].sort(
-      (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+    const sorted = [...shown.values()].sort(
+      (a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity),
     );
     const first = sorted[0];
-    const at = order.get(first.id) ?? 0;
+    const at = order.get(first.id) ?? Infinity;
     const members = [...change.blocks, ...change.comments];
     rows.push({
-      // A member's id, which the press names it by: a container's change shows on a paragraph
-      // that is not one.
-      id: members.includes(first.id) ? first.id : (members[0] ?? first.id),
+      // A member's id, which the press names it by: a comment's paragraph may not be one.
+      id: members.includes(first.id) ? first.id : members[0],
       members,
       paragraphs: sorted,
       anchor: first.kind === "comment" ? first.before : anchorFrom(at),
-      removed: sorted.every((paragraph) => paragraph.kind === "removed"),
+      removed: sorted.every((block) => block.kind === "removed"),
       at,
     });
   }

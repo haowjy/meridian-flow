@@ -30,7 +30,7 @@ stateDiagram-v2
   dialog or field already handled, and acts for its own host, or for main when the focus is in
   no host.
 - **The stepper crosses chapters**: past the last change it opens the next chapter with changes;
-  ‹ before the first opens the previous one at its last change (`ReviewSurface.landOnLast`).
+  ‹ before the first opens the previous one at its last change (`landOnLast`, per pane).
 
 ## A press's Undo
 
@@ -38,8 +38,9 @@ The browser keeps no state machine for a press, Apply, Discard or Restore before
 `PressEntries` (`press-history.ts`) holds the press's command id and one step on the sidebar's Undo
 stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`). Every Undo of it is
 `undo()`: its notice's or row's Undo, a turn card's `Undo restore`, the sidebar's Ctrl+Z, or the
-editor's. A press while one is out hears the same answer. A chat card's Undo is not one of them:
-it is the server's `reverse_turn`.
+editor's. A press while one is out hears the same answer, and `undoing` says one is out. A chat
+card's Undo is not one of them: it is the server's `reverse_turn`, for the turn's Live writes and
+tree changes only.
 
 The editor's Ctrl+Z gets its step (`EditorPressStep`) when the press is made, on every editor open
 on a pressed document, so typing after the press is undone first. Its Undo waits for the press's
@@ -61,6 +62,28 @@ stateDiagram-v2
 - **Ended anywhere, the steps go together**: taken back from the sidebar or a notice, the editor's
   step leaves too; one Ctrl+Z took back stays for Redo.
 - `owner.presses` holds every entry; the owner ends them when the account closes.
+
+### Restore before on a turn card
+
+A turn's Restore before in one draft is this press, keyed in the owner by turn and draft
+(`DraftCommandOwner.restore`), which the card reads: the slot keeps no state of its own. The
+card's read of the turn (`TurnReceiptChip.restored`) says which press is in force, so a reload or
+another tab converges on it.
+
+```mermaid
+stateDiagram-v2
+  [*] --> offered: the card's read offers it
+  offered --> sending: Restore before
+  sending --> offered: it changed nothing, or never landed
+  sending --> in_force: it restored something (its Ctrl+Z and sidebar steps)
+  offered --> in_force: a newer read names a press (another tab's, or before a reload: the card's Undo only)
+  in_force --> offered: an Undo landed (card, Ctrl+Z, sidebar), or a newer read names none
+```
+
+- **One per turn and draft in a tab**: while one is sent or in force, the card offers its Undo,
+  never a second press.
+- **A read older than the entry's last change here is ignored** (`restoreChangedAt`); a press and
+  its Undo read the card again, dropping a read already out.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
