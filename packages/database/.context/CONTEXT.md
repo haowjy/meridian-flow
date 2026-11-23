@@ -48,7 +48,9 @@ its project and chat, so a resend of a create cannot create twice.
 `doc_key`), so a save writes only the docs that changed. Rows have no foreign key, so a document's
 text can exist before its `documents` row (an import); the `*_delete_room_snapshots` triggers
 delete a room's rows with its document, fork, project or account. `document_forks` names a
-draft's fork of a document (unused in phase 1).
+draft's fork of a document: whether it differs from Live (`pending`), Live's version under its
+removals (`live_version`) and whether the writer typed in it (`writer_wrote`), all set by each
+save of the fork's room, so the Changes list and the counts read rows and load no room.
 
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather

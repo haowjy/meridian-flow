@@ -88,15 +88,6 @@ export const documentBlockRooms = pgTable(
     /** The top-level blocks' ids in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
-    /**
-     * By draft id, what it has pending in the cut: its review's change count, the chats that
-     * wrote them, and whether one is no chat's. The blocks hold Live's text, so a reader in one
-     * of these drafts' views reads the document itself.
-     */
-    pendingChanges: jsonb("pending_changes")
-      .$type<Record<string, { changes: number; chats: string[]; writer: boolean }>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     /** The document's `content_seq` the derivation read. */
@@ -104,11 +95,7 @@ export const documentBlockRooms = pgTable(
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
   },
-  (table) => [
-    uniqueIndex("document_block_rooms_document").on(table.documentId),
-    // A draft's documents with suggestions: `pending_changes ? <draft id>`.
-    index("document_block_rooms_pending_changes").using("gin", table.pendingChanges),
-  ],
+  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
 );
 
 /** One row per top-level block of a room, keyed by its block id. */

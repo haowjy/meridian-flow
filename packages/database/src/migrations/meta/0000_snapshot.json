@@ -3980,13 +3980,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pending_changes": {
-          "name": "pending_changes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
         "document_hash": {
           "name": "document_hash",
           "type": "bytea",
@@ -4026,21 +4019,6 @@
           "isUnique": true,
           "concurrently": false,
           "method": "btree",
-          "with": {}
-        },
-        "document_block_rooms_pending_changes": {
-          "name": "document_block_rooms_pending_changes",
-          "columns": [
-            {
-              "expression": "pending_changes",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
           "with": {}
         }
       },
@@ -7060,6 +7038,19 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "live_version": {
+          "name": "live_version",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "writer_wrote": {
+          "name": "writer_wrote",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

@@ -42,7 +42,6 @@ import {
 import {
   applyBlocks,
   type ChangeSelection,
-  changedBlocks,
   type DocChange,
   type DocVersion,
   discardBlocks,
@@ -245,7 +244,7 @@ export function createDrizzlePress(
           : discardBlocks(copy, selection, { message });
       const committed = await commitCopy(room, pressed);
       // An Apply writes Live and may leave the fork no write: its pending flag is read here.
-      await markFork(tx(), room, changedBlocks(copy).length > 0);
+      await markFork(tx(), room, copy);
       if (pressed.pressed.length)
         await tx()
           .insert(pressChanges)
@@ -516,7 +515,7 @@ export function createDrizzlePress(
                     const changes = row.changes as PressedChange[];
                     const undone = undoPress(copy, changes, { message });
                     if (await commitCopy(room, undone)) documents.add(documentId);
-                    await markFork(tx(), room, changedBlocks(copy).length > 0);
+                    await markFork(tx(), room, copy);
                     for (const change of undone.stayed)
                       stayed.push({
                         documentId,

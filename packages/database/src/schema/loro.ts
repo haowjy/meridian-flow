@@ -68,6 +68,14 @@ export const documentForks = pgTable(
     checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
     /** Since when the fork has had no change; null while it is pending. Retention deletes it 30 days on. */
     emptySince: timestamp("empty_since", { withTimezone: true }),
+    /**
+     * Live's version (an encoded `RoomVersion`) of the text docs under the blocks the fork removes,
+     * set with `pending`; null when it removes none. The Changes list hands it out as
+     * `DraftItem.liveVersion`, so a press from the list reads no room.
+     */
+    liveVersion: byteaColumn("live_version"),
+    /** Whether the writer typed a pending change into the fork (a non-server peer's op), set with `pending`. */
+    writerWrote: boolean("writer_wrote").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [

@@ -104,8 +104,5 @@ room gateway admits the room through `documentSync.draftsHolding`.
 ## Not covered yet
 
 - No per-document grant check: the press is the draft owner's, like Apply all.
-- The review list's readers (the Work's text counts, retention holds, `documentsHolding`,
-  `listDraftTextChanges`) still read `document_block_rooms.pending_changes`, which nothing writes;
-  they move onto `document_forks` next (plan step 5).
 - Older builds read a withdrawn node as in Trash (the Undo's delete looks like any delete):
   nothing is lost, and the node is pending in the Work there too.

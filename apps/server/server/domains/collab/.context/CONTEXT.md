@@ -184,7 +184,7 @@ sent but the room has not saved yet can be in a cut, and that save makes the cut
 sweeps stale rooms and retries failures without advancing certification.
 
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
-`pending_changes`, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its block id: `text`,
 `content_hash`). A block row never holds its position, so inserting a
 paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
@@ -203,9 +203,8 @@ reader trusts a room only when its `cut_content_seq` and `cut_location_version` 
 document's and its
 `extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
 reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
-blocks hold Live's text. A Loro room holds no suggestions, so a derivation writes
-`pending_changes` empty, and `grepTexts` still leaves a document out for a reader in a Work that
-column names. Phase 2's forks replace it. The
+blocks hold Live's text, so `grepTexts` leaves a document out for a reader whose draft has a fork
+of it (`document_forks`): that reader reads the fork. The
 sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
 newer extractor certified, because builds overlap in a deploy, the older build's certify
 refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
@@ -226,8 +225,8 @@ fence (`grepBlockText` in agent-edit). Sizes are therefore destination-free byte
 Stored text is never substituted for the Live room when serving document content, with one
 exception: `grep` matches a document's stored text (the blocks' `text` joined with `\n`
 in `block_order`, in one statement with the freshness check, and equal byte for byte to
-the room-copy path's text) when the room is current and the reader's own Work has no
-suggestions in the document. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
+the room-copy path's text) when the room is current and the reader's own draft has no fork of
+the document. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
 Nothing else reads stored markdown: `ls -v` word counts come from `BlockText.wordCounts`
 (current rooms only); everything else reads the room through the engine
 (`domain/markdown-document.ts`), where a document with no stored rows reads as empty.

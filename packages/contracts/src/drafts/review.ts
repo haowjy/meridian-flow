@@ -92,9 +92,9 @@ export interface DraftItem {
   /** The draft's fork of the document's text differs from Live: it has a change to review. */
   pending: boolean;
   /**
-   * Live's version of the text docs under the draft's pending removals in the document, as this row was read: an encoded
-   * `RoomVersion`, which an Apply pressed from the row sends as its `PressRequest.liveVersions` entry. Null when the
-   * draft removes no block there.
+   * Live's version of the text docs under the draft's pending removals in the document, as the fork's room last saved
+   * (`document_forks.live_version`): an encoded `RoomVersion`, which an Apply pressed from the row sends as its
+   * `PressRequest.liveVersions` entry. Null when the draft removes no block there.
    */
   liveVersion: string | null;
   origin: "created" | "edited";
@@ -114,11 +114,11 @@ export interface DraftItem {
     movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
     deleted?: true;
   } | null;
-  /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
+  /** Chats whose writes landed in the draft's fork of this item. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
-  /** The Work holds a suggestion no chat wrote: the writer's own. Like another chat in `actorThreads`, it makes the draft shared. */
+  /** The writer typed a change into the draft's fork. Like another chat in `actorThreads`, it makes the draft shared. */
   unattributed: boolean;
-  /** When the Work's suggestions in the document last changed. */
+  /** When the draft's fork of the document last saved. */
   updatedAt: string;
 }
 

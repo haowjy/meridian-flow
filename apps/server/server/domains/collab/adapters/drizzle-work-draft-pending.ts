@@ -113,29 +113,36 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
     },
     async listDraftTextChanges(draftId, documentIds) {
       const only = documentIds?.length
-        ? sql`AND r.document_id IN (${sql.join(
+        ? sql`AND f.document_id IN (${sql.join(
             documentIds.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})`
         : documentIds
           ? sql`AND false`
           : sql``;
+      // The chats are those whose writes landed in this fork (their receipts name it), read from
+      // rows: the list loads no room.
       const rows = await currentDrizzleDb(db).execute<{
         document_id: string;
-        updated_at: Date | string;
-        pending: { changes: number; chats: string[]; writer: boolean };
+        checked_at: Date | string;
+        live_version: Uint8Array | null;
+        writer_wrote: boolean;
+        chats: string[] | null;
       }>(sql`
-        SELECT r.document_id::text AS document_id, d.updated_at, r.pending_changes -> ${draftId}::text AS pending
-        FROM document_block_rooms r
-        JOIN documents d ON d.id = r.document_id
-        WHERE r.pending_changes ? ${draftId}::text ${only}
-          AND (r.pending_changes -> ${draftId}::text ->> 'changes')::int > 0
-        ORDER BY r.document_id`);
+        SELECT f.document_id::text AS document_id, f.checked_at, f.live_version, f.writer_wrote,
+          (SELECT array_agg(DISTINCT e.thread_id::text) FROM document_edits e
+            JOIN document_edit_parts p ON p.edit_id = e.id
+            WHERE e.document_id = f.document_id AND e.thread_id IS NOT NULL
+              AND p.origin->>'kind' = 'fork' AND p.origin->>'draftId' = f.draft_id) AS chats
+        FROM document_forks f
+        WHERE f.draft_id = ${draftId} AND f.pending ${only}
+        ORDER BY f.document_id`);
       return rows.map((row) => ({
         documentId: row.document_id as DocumentId,
         draftId,
-        updatedAt: new Date(row.updated_at),
-        writers: { threadIds: row.pending.chats, unattributed: row.pending.writer },
+        updatedAt: new Date(row.checked_at),
+        liveVersion: row.live_version ? Buffer.from(row.live_version).toString("base64") : null,
+        writers: { threadIds: row.chats ?? [], unattributed: row.writer_wrote },
       }));
     },
   };

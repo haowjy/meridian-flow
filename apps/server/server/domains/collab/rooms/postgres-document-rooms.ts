@@ -21,6 +21,9 @@ import {
   encodeRoomVersion,
   freshServerPeerId,
   type Imported,
+  isServerPeer,
+  type PeerId,
+  pendingRemovalVersion,
   RoomDocs,
   type ShapeSchema,
 } from "@meridian/document-model";
@@ -129,24 +132,54 @@ interface Loaded {
 type Row = { docKey: string; snapshot: Uint8Array; frontiers: StoredFrontiers };
 type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
 
-/** Writes a fork's row, or sets its pending flag from a read of it now. */
-export async function markFork(tx: DrizzleDb, room: ForkRoom, pending: boolean) {
+/**
+ * Writes a fork's row, or sets what it says from a read of the fork now (`docs`, a draft copy):
+ * whether it is pending, Live's version under its removals, and whether the writer typed in it.
+ */
+export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs) {
+  const changes = changedBlocks(docs);
+  const pending = changes.length > 0;
+  const removals = pending ? pendingRemovalVersion(docs, changes) : new Map();
+  const state = {
+    pending,
+    liveVersion: removals.size > 0 ? Buffer.from(encodeRoomVersion(removals)) : null,
+    writerWrote: pending && writerWrote(docs, changes),
+  };
   await tx
     .insert(documentForks)
     .values({
       draftId: room.draftId,
       documentId: room.documentId,
-      pending,
+      ...state,
       emptySince: pending ? null : new Date(),
     })
     .onConflictDoUpdate({
       target: [documentForks.draftId, documentForks.documentId],
       set: {
-        pending,
+        ...state,
         checkedAt: sql`now()`,
         emptySince: pending ? null : sql`coalesce(${documentForks.emptySince}, now())`,
       },
     });
+}
+
+/**
+ * Whether a non-server peer (a tab) holds ops in the fork's structure or its changed blocks' text
+ * that Live lacks: the writer typed there. A fork forwards Live, so only ops beyond Live's count.
+ */
+function writerWrote(docs: RoomDocs, changes: readonly { blocks: readonly string[] }[]): boolean {
+  const live = docs.live;
+  const ahead = (doc: LoroDoc | undefined, base: LoroDoc | undefined) => {
+    if (!doc) return false;
+    const held = base ? docVersion(base) : new Map<string, number>();
+    for (const [peer, counter] of docVersion(doc))
+      if (!isServerPeer(peer as PeerId) && counter > (held.get(peer) ?? 0)) return true;
+    return false;
+  };
+  if (ahead(docs.structure, live?.structure)) return true;
+  return changes.some((change) =>
+    change.blocks.some((id) => ahead(docs.textOf(id), live?.textOf(id))),
+  );
 }
 
 /**
@@ -458,7 +491,7 @@ export function createPostgresDocumentRooms(input: {
     const bytes = await writeSnapshots(tx, rows);
     // The fork's row comes with its first rows, whichever door wrote them (design §2), and every
     // save sets whether it is pending from the docs in hand, forwarded.
-    if (room.kind === "fork") await markFork(tx, room, changedBlocks(docs).length > 0);
+    if (room.kind === "fork") await markFork(tx, room, docs);
     await tx
       .update(documents)
       .set({
@@ -907,13 +940,11 @@ export function createPostgresDocumentRooms(input: {
             const tx = currentDrizzleDb(db);
             await lockRoom(tx, room);
             const docs = await copyInTransaction(tx, room, freshServerPeerId());
-            let pending: boolean;
             try {
-              pending = changedBlocks(docs).length > 0;
+              await markFork(tx, room, docs);
             } finally {
               docs.free();
             }
-            await markFork(tx, room, pending);
             const deleted = await tx
               .delete(documentForks)
               .where(

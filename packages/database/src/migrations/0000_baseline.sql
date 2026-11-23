@@ -418,7 +418,6 @@ CREATE TABLE "document_block_rooms" (
 	"document_id" uuid NOT NULL,
 	"block_order" text[] NOT NULL,
 	"word_count" integer NOT NULL,
-	"pending_changes" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"document_hash" "bytea" NOT NULL,
 	"cut_content_seq" bigint NOT NULL,
 	"cut_location_version" bigint NOT NULL,
@@ -711,6 +710,8 @@ CREATE TABLE "document_forks" (
 	"pending" boolean DEFAULT false NOT NULL,
 	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"empty_since" timestamp with time zone,
+	"live_version" "bytea",
+	"writer_wrote" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_forks_draft_id_document_id_pk" PRIMARY KEY("draft_id","document_id")
 );
@@ -1126,7 +1127,6 @@ CREATE INDEX "credit_transactions_user_created" ON "credit_transactions" USING b
 CREATE INDEX "credit_transactions_consumption_group" ON "credit_transactions" USING btree ("consumption_group_id") WHERE "credit_transactions"."consumption_group_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX "document_block_rooms_pending_changes" ON "document_block_rooms" USING gin ("pending_changes");--> statement-breakpoint
 CREATE INDEX "pending_notices_thread" ON "pending_notices" USING btree ("thread_id","created_at","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_project_scope_slug" ON "context_sources" USING btree ("project_id","slug") WHERE "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_work_slug" ON "context_sources" USING btree ("work_id","slug") WHERE "context_sources"."work_id" IS NOT NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
