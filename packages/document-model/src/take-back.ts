@@ -770,15 +770,16 @@ function forEachDeleted(
 
 type DeleteContent = { start_id: string; len: number };
 
-/** Each character one delete op deleted, by id. */
+/**
+ * Each character one delete op deleted, by id. A negative `len` is a Backspace run, and its
+ * `start_id` is still the lowest id: the op covers `start_id` up, either way.
+ */
 function forDeleteOp(
   { start_id: startId, len }: DeleteContent,
   each: (id: { peer: PeerID; counter: number }) => void,
 ): void {
   const first = parseId(startId);
-  const step = len < 0 ? -1 : 1;
-  for (let k = 0; k < Math.abs(len); k++)
-    each({ peer: first.peer, counter: first.counter + step * k });
+  for (let k = 0; k < Math.abs(len); k++) each({ peer: first.peer, counter: first.counter + k });
 }
 
 /** The characters the ops in `spans` deleted in `doc`, by id (`counter@peer`). */

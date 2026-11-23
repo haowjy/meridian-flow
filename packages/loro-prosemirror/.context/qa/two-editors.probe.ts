@@ -988,6 +988,23 @@ function racedRemovals(): string[] {
         return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "First.|Last." ? null : `shows "${t}"`));
       },
     },
+    // B Backspaces "f", "e", "d" before it sees A's delete of "f": Loro stores the run as one delete
+    // op with a negative length whose `start_id` is "d", the lowest id. B deleted A's "f" again,
+    // so A's Ctrl+Z stays; read from "d" downwards, the op missed "f" and the Undo put it back.
+    "a peer's Backspace run deleted text A deleted": {
+      room: () => room([p("a", "abcdefgh."), p("z", "Last.")]),
+      run: (r) => {
+        r.a.view.dispatch(r.a.view.state.tr.delete(posOf(r.a, "a") + 6, posOf(r.a, "a") + 7));
+        r.a.history.endStep();
+        for (const at of [6, 5, 4]) {
+          r.b.view.dispatch(r.b.view.state.tr.delete(posOf(r.b, "a") + at, posOf(r.b, "a") + at + 1));
+          r.b.history.endStep();
+        }
+        syncAll(r);
+        if (runHistory(r.a, "undo")) return "Backspace run: A's Ctrl+Z ran";
+        return settle(r, "a peer's Backspace run deleted text A deleted", (t) => (t === "abcgh.|Last." ? null : `shows "${t}"`));
+      },
+    },
     // Seed 477: A and B remove x from one state, so their removal records are equal,
     // and A's wins (the higher peer). B's Ctrl+Z finds a value A wrote: x stays removed.
     "a peer's equal removal keeps the block removed": {
