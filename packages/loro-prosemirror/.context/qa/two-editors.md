@@ -48,14 +48,16 @@ the key back) makes A's Ctrl+Z skip its move for the typing before it, which Red
 it does for typing either side of a move a peer wrote over. After A's Enter, a peer that moves,
 deletes, retypes, wraps, types in or bolds the new half, joins the halves back or deletes the
 first half keeps the Enter (the reviews' torn blocks, text twice and words off the screen); a peer
-typing in the first half does not, and a peer typing in the new half while A undoes gets the half
-back with its words. A join whose target a peer retyped goes back; a wrap a peer moved a block out
+typing in the first half does not, nor does typing in the new half that the peer has undone since,
+and a peer typing in the new half while A undoes gets the half back with its words. A join whose target a peer retyped goes back; a wrap a peer moved a block out
 of stays; a move whose Undo would put a block under a container a peer removed stays. From review
 p18993: a peer's deletion still in flight when A's Enter stays lands everywhere (C2); a step that
 stays takes only the steps of its own paragraphs out of the history, so Redo still gives back the
 steps either side of it in other blocks (C3); with nobody else writing, Ctrl+Z takes back a
 picture whose upload landed as an untracked write (C4). A split a peer wrote over takes the typing
-under it out of the history; a peer's deletion of part of A's typing stays through A's Ctrl+Z.
+under it out of the history; a peer's rewrite of a word A typed that keeps one of its letters keeps
+A's typing, as a chat's rewrite keeps the letters it shares (#1854: the Undo took those letters out
+of the chat's words).
 From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
 deleted across two blocks unseen, and A's Ctrl+Z stays rather than show it twice (seed 414); a
 draft that also deleted A's "F" is pressed into Live and the press undone, and A's Ctrl+Z goes

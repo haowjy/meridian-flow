@@ -1503,6 +1503,32 @@ function racedRemovals(): string[] {
       return settled ?? null;
     },
     // --- The step rule: a step that set structure goes back whole or stays whole.
+    // B's typing in the new half, undone since, is no one's write: A's Ctrl+Z of the Enter goes
+    // back (design §2, part 2).
+    "a peer's typing undone since does not keep A's split": (r) => {
+      split(r.a, "x", 14, "x2");
+      syncAll(r);
+      caret(r.b, "x2", 0);
+      type(r.b, "Zq");
+      if (!runHistory(r.b, "undo")) return "typing undone: B's Ctrl+Z stayed";
+      away(r.b);
+      syncAll(r);
+      if (!runHistory(r.a, "undo")) return "typing undone: A's Ctrl+Z stayed";
+      return settle(r, "typing undone, then A's Ctrl+Z", showsAll("Delete-target before after."));
+    },
+    // B rewrites a word A typed keeping one of its letters, as a chat's rewrite keeps the letters
+    // it shares: A's Ctrl+Z would take that letter out of B's word and scramble it, so it stays.
+    "a peer's rewrite keeps A's typing": (r) => {
+      caret(r.a, "z", 4);
+      type(r.a, " Owl");
+      syncAll(r);
+      const at = posOf(r.b, "z") + 1 + 5;
+      r.b.view.dispatch(r.b.view.state.tr.insertText("D", at + 2, at + 3).insertText("B", at, at + 1));
+      r.b.history.endStep();
+      syncAll(r);
+      if (runHistory(r.a, "undo")) return "rewrite: A's Ctrl+Z ran over B's rewrite";
+      return settle(r, "rewrite, then A's Ctrl+Z", showsAll("|Last BwD.|"));
+    },
     "A's own split goes back exactly, and Redo gives it back": (r) => {
       const before = shown(r.a);
       split(r.a, "x", 14, "x2");
@@ -1724,18 +1750,6 @@ function racedRemovals(): string[] {
       return bold?.text === "before" && schema.marks.strong.isInSet(bold.marks)
         ? null
         : `split/mark: x2 starts ${JSON.stringify(bold?.toJSON())}`;
-    },
-    // A peer deleted part of what A typed: A's Ctrl+Z takes the rest, and the deletion stays.
-    "a peer's deletion of A's typing stays through A's Ctrl+Z": (r) => {
-      caret(r.a, "z", 0);
-      type(r.a, "hello world ");
-      syncAll(r);
-      const at = posOf(r.b, "z") + 1 + 6;
-      r.b.view.dispatch(r.b.view.state.tr.delete(at, at + 6));
-      r.b.history.endStep();
-      syncAll(r);
-      if (!runHistory(r.a, "undo")) return "typing/delete: Ctrl+Z did nothing";
-      return settle(r, "typing/delete then A Undo", showsAll("|Last.|"), showsNone("hello", "world"));
     },
     // A moves i1 out of the container, B removes the container, A's Ctrl+Z: i1 would go under a
     // removed block, off the screen with words its removal never read. The move stays.

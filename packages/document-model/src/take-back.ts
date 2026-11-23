@@ -135,10 +135,9 @@ export function noteEdit(docs: RoomDocs, edit: Edit, view?: StructureView): void
  * its run would take off the screen is one it would have taken when noted, with no one else's
  * write in its text since, and the blocks it would bring onto the screen the ones it would have
  * brought (2: a block a peer removed since, with what is under it, stays removed); every text doc
- * it wrote that showed still shows or leaves with it (3); of the text it put in, some is left, or
- * for an edit that set structure all of it, untouched; no style it set was set again over the same
- * text, and no text it deleted was taken away again, by a delete or by a removal of its block that
- * read it (4). "Written over" is by a peer other than the author: the author's own untracked
+ * it wrote that showed still shows or leaves with it (3); all the text it put in is left, and for
+ * an edit that set structure unrestyled; no style it set was set again over the same text, and no
+ * text it deleted was taken away again, by a delete or by a removal of its block that read it (4). "Written over" is by a peer other than the author: the author's own untracked
  * writes (an upload landing, a restore) never keep an edit. `view`, if given, reads the docs as
  * they are.
  */
@@ -176,12 +175,15 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
     if (!othersWrote(doc, then, peer)) continue;
     const again = deletedAgain(doc, before, after, deleted, peer);
     if (again) return `text it deleted in ${key} was ${again}`;
-    const { left, touched, restyled } = leftOf(doc, before, after);
+    const { whole, touched, restyled } = leftOf(doc, before, after);
     if (restyled) return `a style it set in ${key} was set again`;
+    // A write that kept some of the edit's characters reads them as its own: a chat's rewrite
+    // keeps the letters it shares, and taking those out scrambles its words.
+    if (!whole) return `some of what it put into ${key} was deleted`;
     // An edit that set structure moved text between blocks by copy, and its Undo brings the
-    // original back beside what is left of the copy: the copy must be whole.
-    if (left === "none" || (structural && (left === "some" || touched)))
-      return `of what it put into ${key}, ${touched && left === "all" ? "some was restyled" : `${left} is left`}`;
+    // original back beside the copy: a restyle of the copy keeps it, or the original comes back
+    // without the style.
+    if (structural && touched) return `some of what it put into ${key} was restyled`;
   }
   if (!structural) return null;
   const read = view ?? new StructureView(docs);
@@ -189,7 +191,7 @@ export function editStays(docs: RoomDocs, edit: Edit, view?: StructureView): str
   for (const id of after.hidden) {
     if (!edit.leaving.has(id)) return `it would take ${id} off the screen`;
     const doc = docs.textOf(id);
-    if (doc && othersWrote(doc, edit.leaving.get(id) ?? new Map(), peer, edit.texts.get(id)?.ops))
+    if (doc && othersStand(doc, edit.leaving.get(id) ?? new Map(), peer, edit.texts.get(id)?.ops))
       return `${id}, which it would take away, was written in`;
   }
   // A block comes back only from under removals the edit itself put back: one a peer removed
@@ -379,19 +381,69 @@ function othersWrote(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans 
   return false;
 }
 
+/**
+ * Whether ops in `doc` since `then` by a peer other than `self` (and outside `own`) still stand: an
+ * op a take-back commit since names (`takeBackMessage`'s `ops`) counts as never made, unless a
+ * later take-back names that commit in turn (a Redo of the Undo); and a take-back that stands and
+ * names only ops made since is no write of its own. So a peer's typing it has undone since is no
+ * one's write.
+ */
+function othersStand(doc: LoroDoc, then: DocVersion, self: PeerID, own: OpSpans = {}): boolean {
+  if (!othersWrote(doc, then, self, own)) return false;
+  const changes: { peer: PeerID; from: number; to: number; lamport: number; names?: OpSpans }[] =
+    [];
+  for (const [peer, counter] of docVersion(doc))
+    for (let at = then.get(peer) ?? 0; at < counter; ) {
+      const change = changeAt(doc, { peer, counter: at });
+      // Cut by a shallow snapshot: nothing says it was taken back.
+      if (!change) return true;
+      const to = change.counter + change.length;
+      const lamport = change.lamport + at - change.counter;
+      changes.push({ peer, from: at, to, lamport, names: takenBack(change.message)?.ops });
+      at = to;
+    }
+  changes.sort((a, b) => b.lamport - a.lamport || (a.peer < b.peer ? 1 : -1));
+  const cancelled: [string, number, number][] = [];
+  const isCancelled = (peer: PeerID, from: number, to: number) => {
+    let at = from;
+    for (let moved = true; moved && at < to; ) {
+      moved = false;
+      for (const [by, start, end] of cancelled)
+        if (by === peer && start <= at && at < end) {
+          at = end;
+          moved = true;
+        }
+    }
+    return at >= to;
+  };
+  for (const change of changes) {
+    if (isCancelled(change.peer, change.from, change.to)) continue;
+    if (change.names) {
+      const spans = Object.entries(change.names);
+      for (const [by, [from, to]] of spans) cancelled.push([by, from, to]);
+      if (spans.every(([by, [from]]) => from >= (then.get(by as PeerID) ?? 0))) continue;
+    }
+    if (change.peer === self) continue;
+    const [from, to] = own[change.peer] ?? [0, 0];
+    if (change.from >= from && change.to <= to) continue;
+    return true;
+  }
+  return false;
+}
+
 export type TextOp = Delta<string>;
 
 /**
- * What became of a write (`before` → `after`) to `doc`'s text: how much of the text it put in is
- * there now (all, some or none; text an Undo deleted and an Undo put back counts as there, by
- * `textSince`), whether any of that text was restyled since (`touched`), and whether a style it
- * set was set again since over the same text (`restyled`).
+ * What became of a write (`before` → `after`) to `doc`'s text: whether all the text it put in is
+ * there now (`whole`; text an Undo deleted and an Undo put back counts as there, by `textSince`),
+ * whether any of that text was restyled since (`touched`), and whether a style it set was set
+ * again since over the same text (`restyled`).
  */
-export function leftOf(
+function leftOf(
   doc: LoroDoc,
   before: Frontiers,
   after: Frontiers,
-): { left: "all" | "some" | "none"; touched: boolean; restyled: boolean } {
+): { whole: boolean; touched: boolean; restyled: boolean } {
   const inserted: Range[] = [];
   const styles: Range[] = [];
   let at = 0;
@@ -405,7 +457,7 @@ export function leftOf(
       at += op.insert.length;
     }
   if (inserted.length === 0 && styles.length === 0)
-    return { left: "all", touched: false, restyled: false };
+    return { whole: true, touched: false, restyled: false };
   const gone: Range[] = [];
   const styled: Range[] = [];
   at = 0;
@@ -426,16 +478,10 @@ export function leftOf(
           : n + Math.max(0, Math.min(range.to, other.to) - Math.max(range.from, other.from)),
       0,
     );
-  let total = 0;
-  let lost = 0;
-  let touched = false;
-  for (const range of inserted) {
-    total += range.to - range.from;
-    lost += overlap(range, gone);
-    touched ||= overlap(range, styled) > 0;
-  }
+  const whole = inserted.every((range) => overlap(range, gone) === 0);
+  const touched = inserted.some((range) => overlap(range, styled) > 0);
   const restyled = styles.some((range) => overlap(range, styled, true) > 0);
-  return { left: lost === 0 ? "all" : lost === total ? "none" : "some", touched, restyled };
+  return { whole, touched, restyled };
 }
 
 /** A stretch of text at an edit's `after`, with the styles an op there set. */

@@ -102,7 +102,6 @@ export {
   type Edit,
   type EditValues,
   editStays,
-  leftOf,
   memberOf,
   noteEdit,
   type OpSpans,

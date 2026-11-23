@@ -44,7 +44,7 @@ bash apps/server/server/domains/collab/.context/qa/press-on-the-stack.sh
 | Apply all lands both drafts, leaves no fork pending, the Work's count is 0 | The `work` scope presses each draft in id order |
 | Its Undo leaves nothing and gives Live its text back; both forks are pending again | The Undo, draft by draft, newest first |
 | The Undo names the chat that wrote over; each change it left is named by an id; the chat's text stays | `stayed[].by` from the commit messages on the change's text |
-| A change a chat replaced stays, and Live keeps the chat's text | **Fails today.** When the chat's rewrite shares letters with the pressed text ("Chapter four closes at dusk…" to "Night falls on chapter four."), `editStays` in `document-model`'s `take-back.ts` judges the change undoable and the Undo interleaves the two: `NightThefalls onchpersecondparagraphofchapterfourfour.` Open, with the two-drafts Undo, in `take-back.ts` |
+| A change whose letters a chat's rewrite kept stays, and Live keeps the chat's text | `editStays` part 4: a later write that deleted any of what the change put in keeps it ("Chapter four closes at dusk…" to "Night falls on chapter four." once came back as `NightThefalls onchpersecondparagraphofchapterfourfour.`) |
 
 Not covered here: a tab's typing over a pressed change (`by: writer`) needs a socket client, and a
 server write with no commit message (a restore, a copy) names no one; both are read in

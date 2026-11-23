@@ -73,7 +73,8 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   its draft's ops. Every commit that puts text back says, in its message, the character each one it
   inserts stands for, and the ops it takes back (`takeBackMessage(deletedBetween(doc, before, after),
   span.ops)`), so `textSince` reads put-back text as the text it deleted, by character id, and
-  `editStays` counts a delete an Undo took back as never made. Read the message before the write: a fork
+  `editStays` counts ops an Undo took back as never made: a delete, and typing in a block the run
+  would take away. Read the message before the write: a fork
   of the doc commits its pending ops, without the message.
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`

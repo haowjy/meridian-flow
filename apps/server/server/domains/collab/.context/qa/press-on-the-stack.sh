@@ -93,7 +93,7 @@ check "$(echo "$answer" | field "[s['by'] for s in d['stayed']]")" "[[{'kind': '
 check "$(echo "$answer" | field "all(s['change'] for s in d['stayed'])")" True "each change it left is named by an id"
 check "$(last "$three")" "Night falls on chapter three." "the chat's text stays"
 
-# Open (document-model's take-back rule): the same with a text whose rewrite shares letters with it.
+# The same with a rewrite that keeps letters of the change: its Undo would scramble the chat's words.
 four="Probe $run four"
 put "$four" $'# Four\n\nThe second paragraph of chapter four.' >/dev/null
 write "$tmp/d4.json" "manuscript://$four" "The second paragraph of chapter four." "Chapter four closes at dusk, rewritten by the draft."
@@ -102,8 +102,8 @@ pressed=$(uuid)
 press "$pressed" "{\"kind\":\"draft\",\"draft\":\"$D1\"}" >/dev/null
 write "$tmp/l4.json" "manuscript://$four" "Chapter four closes at dusk, rewritten by the draft." "Night falls on chapter four."
 send "$live" "$tmp/l4.json"
-check "$(undo "$pressed" | field "len(d['stayed'])")" 1 "a change a chat replaced stays (open: take-back.ts)"
-check "$(last "$four")" "Night falls on chapter four." "and Live keeps the chat's text (open: take-back.ts)"
+check "$(undo "$pressed" | field "len(d['stayed'])")" 1 "a change whose letters a chat's rewrite kept stays"
+check "$(last "$four")" "Night falls on chapter four." "and Live keeps the chat's text"
 
 echo "$fails failed"
 exit $((fails > 0))
