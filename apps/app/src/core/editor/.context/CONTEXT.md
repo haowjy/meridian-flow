@@ -69,6 +69,13 @@ synchronously, then drains transports and leases.
   transaction marked `setMeta(loroSyncKey, REMOTE_META)` and `addToHistory: false`. Code that
   must tell a writer's move from a remote write reads that meta; `notifyChanged` (a write made
   outside the editor, an Undo, a `writeDocument`) dispatches the same way.
+- Review changes (`extensions/review-changes`) is decorations only: Live's text of a changed
+  paragraph is a widget, never document text, so typing, Undo and the binding see the draft alone.
+  Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
+  decorations map through the typing in between: reading on every key costs more than a key may.
+  The host turns it on and off with `setReviewChanges`; a plugin's config change needs a reload in
+  dev, since HMR keeps the plugin instance. `KeptRemovedExtension` marks a block another device
+  deleted that the binding keeps while the caret is in it (`loroSyncKey` state `kept`).
 - Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other

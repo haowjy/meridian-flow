@@ -66,9 +66,9 @@ Sees: every sidebar source turns to the Work's tree on a grey review ground, at 
 
 ## Review a draft in the document
 
-Does: opens a drafted document.
+Does: opens a drafted document, then presses "Review N changes" beside the Draft chip, or clicks its row in Changes.
 
-Sees: from phase 2, a Draft chip in the toolbar and a line of review controls above the page, with the Work's changes to the text painted in it. The Live menu lists every Work with changes to the page.
+Sees: the plain draft first, typing as on Live. Review changes puts Live's text of each changed paragraph above the draft's, in muted ink, with × and ✓ in the margin beside it (Side by side puts Live in a column of its own). A line above the toolbar says what the draft is compared against and holds the stepper ("3 of 12"), the chapter's × and ✓, and Close. A change's × or ✓ takes it at once and the next change takes the focus; Ctrl+Z takes it back. Back, Close or Esc leave Review changes; the address keeps it, so a reload or a shared link opens the same change.
 
 - Map: [editor](../app-documents.md#editor), [draft-review](../app-documents.md#draft-review), [file-policy](../server-documents.md#file-policy)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)

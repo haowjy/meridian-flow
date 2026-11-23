@@ -11,6 +11,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { useItemLauncher } from "@/features/project/review-launch";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { useOptionalDraftReview } from "./DraftReviewProvider";
 import { ReviewActions } from "./ReviewActions";
 import { ReviewStepper } from "./ReviewStepper";
@@ -23,6 +24,7 @@ export function ReviewBar() {
   const rows = useReviewRows(mode?.documentId ?? "") ?? [];
   const files = useOwnerDrafts(mode?.projectId ?? null, mode?.draftId ?? null).files ?? [];
   const { openReview } = useItemLauncher();
+  const touch = useCoarsePointer();
   if (!mode || !review) return null;
   const focused = rows.findIndex((row) => row.id === mode.changeId);
   const locked = review.controller.dispositionLocked;
@@ -77,10 +79,12 @@ export function ReviewBar() {
         disabled={rows.length === 0}
         onStep={step}
         compact
+        touch={touch}
       />
       <ReviewActions
         scope="document"
         density="icon"
+        touch={touch}
         disabled={locked}
         onDiscard={() => pressChapter("discard")}
         onApply={() => pressChapter("apply")}

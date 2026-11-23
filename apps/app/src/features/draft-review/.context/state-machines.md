@@ -1,10 +1,24 @@
 # Draft review state machines
 
-A Work's draft is its tree records (phase 1 has no text drafts). An Apply or Discard of a
-document, a folder or the Work is a press (`usePressCommands`, `client/query/press-commands.ts`):
-one command the server runs over the items' tree changes, sent through the command driver, which
-keeps resending it under the same id until the server answers. How the press fits review is in
-[draft-review.md](draft-review.md).
+An Apply or Discard of a change, a document, the draft or the Work is a press
+(`usePressCommands`, `client/query/press-commands.ts`): one command sent through the command
+driver, which waits until the rooms have this tab's edits and then resends it under the same id
+until the server answers. How it fits review is in [draft-review.md](draft-review.md).
+
+## Review changes
+
+Not a store: the host's address (main) or stored slot (the side) holds it, and
+`useHostReviewMode` reads it.
+
+```mermaid
+stateDiagram-v2
+  [*] --> plain: a draft page
+  plain --> reviewing: Review N changes (push)
+  reviewing --> reviewing: the stepper, a press, Retarget (replace)
+  reviewing --> plain: Close or Esc (Back, or replace)
+  reviewing --> plain: the last change pressed, the list agrees
+  plain --> [*]: Live
+```
 
 ## A press's Undo
 

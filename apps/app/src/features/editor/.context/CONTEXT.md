@@ -70,17 +70,13 @@ in phase 2. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 Each document host (main, the side, the phone) has its own review
-(`features/project/DocumentReview.tsx`); its chrome and change bars read that
-review's projection, and `EditorView` does not own a second review controller.
-The version chip (`DocumentVersionMenu`, Live with every draft one pick away) sits at the
-toolbar row's end on desktop and phone alike, and gives way to the review's own chip once a
-review of the document is entered. The chip names what the host paints: once a Discard or
-Apply ends the draft, the review stays open ("No changes left", its Undo) but the chip reads
-Live, as the text does. On desktop the review's controls live in the identity
-bar (`DraftReviewBand`), with no separate header above it. The focused
-change's bar (`surfaces/review`) never covers manuscript text: it sits in the
-right margin beside the change when there is room, else in a block slot after
-the change's last paragraph. Commands and Discard history belong to
+(`features/project/DocumentReview.tsx`), and `EditorView` owns none. The version chip
+(`DocumentVersionMenu`, Live with every draft one pick away) sits at the toolbar row's end on
+desktop and phone alike, beside "Review N changes" on a plain draft. Review changes paints in the
+editor (`core/editor/extensions/review-changes`, mounted by `surfaces/review`): Live's text of each
+changed paragraph above the draft's (Inline) or beside every paragraph (Side by side), with the
+change's pair in the right margin. Its controls take the review line above the toolbar
+(`ReviewBar`). Commands and their Undo belong to
 [`draft-review`](../../draft-review/.context/draft-review.md).
 
 `PaintHold` retains finished paint across lifecycle handoffs. Same-entry URL replacements

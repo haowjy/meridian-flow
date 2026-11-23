@@ -64,6 +64,7 @@ have it:
 | Queued control | One compaction or write-mode switch waiting behind a running reply | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
+| Review changes | Whether a draft page reviews its changes, against what, and the change in focus | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | An Apply's Undo | One press Apply: in force, Undo or Redo in flight, taken back, or ended; every surface that undoes it reads it | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Package Save word | What the last Save or Undo of one Agent package says where its state shows | [features/agents](../../apps/app/src/features/agents/.context/state-machines.md) |
 | Held paint | A document still painting a draft that left its list | [features/project](../../apps/app/src/features/project/.context/document-paint-state-machine.md) |

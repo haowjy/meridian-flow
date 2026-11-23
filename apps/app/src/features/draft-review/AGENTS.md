@@ -1,9 +1,10 @@
 # features/draft-review — review of a Work's draft
 
-Phase 1 of the move to Loro has no text drafts: a Work's draft is its tree records (creates,
-renames, moves, deletes), and every text write lands Live. Text drafts come back in phase 2 as fork
-rooms. Review lists the owner's draft items (`useOwnerDrafts`) and acts on them with a press
-(`usePressCommands`): one server command over the items' tree changes, with one Undo (`unpress`).
+A Work's draft is a fork room per changed document plus its tree records (creates, renames, moves,
+deletes). Review changes is the page's address, not a store (`review-mode.ts`); the editor paints
+it. Review lists the owner's draft items (`useOwnerDrafts`) and acts on them with a press
+(`usePressCommands`): one server command over a change, a document, the draft or the Work, with
+one Undo (`unpress`).
 
 - A press's items are in flight (`DraftCommandOwner.hold`) until the list is read again: a pressed
   row leaves the list and comes back if the press fails. Items never end on their own.
