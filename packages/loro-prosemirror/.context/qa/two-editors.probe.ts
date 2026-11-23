@@ -1015,6 +1015,7 @@ function racedRemovals(): string[] {
         type(r.a, "WORD");
         syncAll(r);
         const typed = firstIn(r.b, "c");
+        caret(r.b, typed, 4);
         const at = posOf(r.b, typed);
         r.b.view.dispatch(r.b.view.state.tr.delete(at + 1, at + 5));
         r.b.history.endStep();
