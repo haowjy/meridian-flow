@@ -61,7 +61,8 @@ type Verdict = "apply" | "discard";
  * sources they showed in: the sidebar stacks its Undo step goes on.
  */
 type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
-type Pressed = { commandId: string; lane: string; result: PressResult; placement: Placement };
+/** `took`: the documents and folders the press changed, in their text or their place in the tree. */
+type Pressed = { commandId: string; lane: string; took: readonly string[]; placement: Placement };
 /**
  * `failed`: the press reached the server, which didn't take it. `told`: it was never sent, and
  * `submitCommand` has told the writer already.
@@ -213,7 +214,7 @@ export function usePressCommands({
       editor: EditorPressStep,
       dropped: () => void,
     ): PressEntries => {
-      const taken = pressed.result.items.map((item) => item.node);
+      const taken = pressed.took;
       const { seat, place } = seatOf(taken, async () => (await entries.undo()).kind !== "failed");
       place(pressed.placement);
       const port: PressPort = {
@@ -298,10 +299,11 @@ export function usePressCommands({
         const settled = await live.whenSettled(record.id);
         await refresh();
         if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
+        const result = settled.outcome.result as PressResult;
         return {
           commandId: record.sendId,
           lane: pressLaneKey(target.scope),
-          result: settled.outcome.result as PressResult,
+          took: [...new Set([...result.documents, ...result.items.map((item) => item.node)])],
           placement,
         };
       } finally {
@@ -311,8 +313,7 @@ export function usePressCommands({
 
     /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
     const outcomeOf = (pressed: Pressed, nodes: readonly string[]): CommandOutcome => {
-      const { result } = pressed;
-      const took = new Set(result.items.map((item) => item.node));
+      const took = new Set(pressed.took);
       const untaken = nodes.filter((node) => !took.has(node));
       return took.size > 0
         ? { kind: "done", commandId: pressed.commandId, took: { untaken } }
@@ -369,10 +370,10 @@ export function usePressCommands({
             brief: true,
           });
         if (typeof pressed === "string") return { kind: "blocked" };
-        const sent = target.documents ?? pressed.result.items.map((item) => item.node);
+        const sent = target.documents ?? pressed.took;
         const answer = outcomeOf(pressed, sent);
         if (answer.kind !== "done") return answer;
-        const changed = pressed.result.items.map((item) => item.node);
+        const changed = pressed.took;
         const where = noticeSurface(input.documentId);
         let step: PressEntries;
         if (verdict === "apply") {

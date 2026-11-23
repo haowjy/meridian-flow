@@ -9,7 +9,7 @@
  * settles, never inside a keystroke: decorations map through typing and are rebuilt once the
  * writer pauses, so a 10,000-word chapter types as fast with Review changes on as off.
  */
-import { readDocument, type ShapeBlock } from "@meridian/document-model";
+import { type RoomDocs, readDocument, type ShapeBlock } from "@meridian/document-model";
 import { blocksOf, loroSyncKey } from "@meridian/loro-prosemirror";
 import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
@@ -388,6 +388,9 @@ export const ReviewChangesExtension = Extension.create({
         view: () => {
           let timer: ReturnType<typeof setTimeout> | undefined;
           let shownConfig: ReviewChangesConfig | null = null;
+          // A press, or Live typed in elsewhere, changes Live and not the draft this editor shows.
+          let watched: RoomDocs | null = null;
+          let unwatch = () => {};
           const read = (view: EditorView) => {
             timer = undefined;
             if (view.isDestroyed) return;
@@ -401,11 +404,22 @@ export const ReviewChangesExtension = Extension.create({
                 .setMeta("addToHistory", false),
             );
           };
+          const readSoon = (view: EditorView) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => read(view), SETTLE_MS);
+          };
+          const watch = (view: EditorView, live: RoomDocs | null) => {
+            if (live === watched) return;
+            unwatch();
+            watched = live;
+            unwatch = live?.beforeImport(() => readSoon(view)) ?? (() => {});
+          };
           return {
             update(view, previous) {
               const config = reviewChangesKey.getState(view.state)?.config ?? null;
               const turnedOn = config !== null && shownConfig === null;
               shownConfig = config;
+              watch(view, config ? (loroSyncKey.getState(view.state)?.docs?.live ?? null) : null);
               if (!config) {
                 clearTimeout(timer);
                 timer = undefined;
@@ -416,12 +430,11 @@ export const ReviewChangesExtension = Extension.create({
                 queueMicrotask(() => read(view));
                 return;
               }
-              if (view.state.doc === previous.doc) return;
-              clearTimeout(timer);
-              timer = setTimeout(() => read(view), SETTLE_MS);
+              if (view.state.doc !== previous.doc) readSoon(view);
             },
             destroy() {
               clearTimeout(timer);
+              unwatch();
             },
           };
         },
