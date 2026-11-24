@@ -290,9 +290,9 @@ one source's tree contributes.
   run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
   so it lands only in an empty document) and encoded to its first state
-  (`encodeSeed`) outside the lock. A copy into a Work's draft view creates an empty live
-  authority and draft through admission, then appends the bound blocks to that draft through
-  the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
+  (`encodeSeed`) outside the lock. A copy into a Work's draft view is the draft's pending create:
+  its text is written straight into the document's Live room (`writeWorkCreatedContent`), and the
+  pending create is its whole pending state; it is not a live arrival. The live insert is one `submit` of `create` records
   (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
   (`createDocumentsAtomically`) persists the identities, `installSeeds` writes the seeds' Live rows (`encodeSeed`'s states), and every arrival settles once, so ahead refs pointing at a copy's new address
   settle. Projections and link rows are derived after the transaction commits, four documents at a

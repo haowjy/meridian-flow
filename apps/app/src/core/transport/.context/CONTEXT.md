@@ -78,10 +78,6 @@ Works catalog, which can predate the room's first connect. The host's
 `RoomScopeCatalogCheck` (`features/project/context/ContextDocumentHost.tsx`) refreshes
 that catalog when a named scope disagrees with `readOnly`.
 
-## Stateless document messages
-
-Every `DocumentSession` subscribes to `change_event`.
-
 ## Dev-only wire observation
 
 Both sockets are tapped in dev: the thread socket (`ThreadWireTap`) and the Loro room socket

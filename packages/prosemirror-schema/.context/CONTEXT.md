@@ -33,17 +33,16 @@ the editor's structural surface.
   block across edits. It is set once where a block is made and copied with its other
   attributes on a move; a copied block gets a new ID. Markdown never carries IDs, so content
   parsed from the model's Markdown has the schema's default, null. Stored blocks must have
-  non-null IDs: `insertBlocks` assigns them when codec blocks enter storage, and `writeBlocks`
-  rejects a block without one. `block-id.ts` holds the generator and walkers.
+  non-null IDs: `insertBlocks` assigns them when codec blocks enter storage, and
+  `writeDocument` (`@meridian/document-model`) keys each block's text doc by its id. `block-id.ts` holds the generator and walkers.
   Rows and content blocks gained IDs in collab schema 3.0.0; cells gained them in 3.1.0.
   Before using 3.1.0 with older tables, run `pnpm db:reset` from the checkout that owns the
   dev database. This deletes that database's data. There is no backfill, and the minor version
   does not stop the server from reading older stored documents.
 
-- Schema 4.0.0 removed suggestion mode (the `suggest_ins` and `suggest_del` marks and the `sug`
-  and `sugAttrs` block attributes) with the move to Loro: drafts come back in phase 2 as fork
-  rooms, outside the schema. `comment` stays; its marks may overlap (`excludes: ""`), so the Loro
-  model stores each under its own key (`comment_<id>`).
+- A draft is a fork room of the document, outside the schema: no mark or attribute says who
+  changed what. `comment` marks may overlap (`excludes: ""`), so the Loro model stores each under
+  its own key (`comment_<id>`).
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it
