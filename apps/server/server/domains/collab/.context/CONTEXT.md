@@ -97,8 +97,8 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work and lineage of the set is active: new AI writes use it (`lockForWrite`), while a press on a closed owner's suggestions locks without it. A draft is minted with its Work or root chat, so no lock creates one. No other collab code locks a Work for a write; a Live write's
-seam (`enterLiveSeam`) locks only the bound grants' Works. No keystroke enters the boundary:
+Work and lineage of the set is active: new AI writes use it (`lockForWrite`), while a press on a closed owner's draft locks without it. A draft is minted with its Work or root chat, so no lock creates one. No other collab code locks a Work for a write; a model write's
+seam (`enterSeam` in `composition.ts`) locks only the bound grants' Works. No keystroke enters the boundary:
 no keystroke locks a Work or counts. Tests use the same boundary
 (`apps/server/server/test-support/work-projection.ts`), with no catalog or
 availability notice.
@@ -154,7 +154,7 @@ documents', then write. A tree list's write
 (`withLists`) takes the seam's Work locks first, so the append under the key takes no lock it
 lacks; a Work's close, archive, restore and delete takes both lists' keys after its Work row and
 before its document keys (`lockProjectTreeList`), so the open Works an admission reads under that
-key are current. No path takes a list's key a list's key while holding a document key. No writer-ingress epoch barrier remains.
+key are current. No path takes a list's key while holding a document key.
 
 A document command (a model edit, a tree tool call, `reverse_turn`, a press or unpress, Copy, the server's move between a project's list and the account's) runs in
 `runCommand` (`shared/commands/drizzle-commands.ts`, through `adapters/drizzle-document-commands.ts`): one transaction, `runInCommandTransaction`,
@@ -164,8 +164,8 @@ read a command plans on is taken, or taken again, under the locks of what it rea
 captures off-lock to choose its steps, then reads the text each step writes under its Works,
 document keys. A miss the server retries (a deadlock, a serialization failure,
 a moved owner) rolls back past the claim and is never stored
-as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
-transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
+as an outcome. In dev and test, a second connection taken while a command
+transaction is open throws (`assertOutsideCommandTransaction`): a wait on it is invisible to
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction
 reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's
@@ -249,8 +249,8 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view reads the Work's
-view of Live (`draftView`), with links spelled in the Draft tree. The cut holds
+A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view reads the draft's
+fork room (Live where the draft wrote nothing), with links spelled in the Draft tree. The cut holds
 its projected blocks, the
 revision that version reports, the holder its links spell from, its room version, and
 where each `ahead:` ref in the cut settles now. `bindCopiedBlocks` turns those blocks into a
@@ -267,10 +267,8 @@ settlements from the same cut.
 A result's concurrent attribution reads only the changes after its stored observation frontier
 through the rendered cut. There is no preflight or second recheck.
 
-`document_links` is a hint from a certified cut, never link authority. Unlike the blocks it
-is read from the stored document, every Work's pending links included: its only reader is
-ahead-ref registration, and a link a Work suggested needs its ahead ref registered to settle.
-A reader that shows these rows to a person (backlinks) must filter them to a view first. Changing
+`document_links` is a hint from a certified cut of Live, never link authority. Its only reader
+is ahead-ref registration; a link a draft wrote has no row until a press applies it. A reader that shows these rows to a person (backlinks) must filter them to a view first. Changing
 the extractor bumps its version, and no second post-write writer exists.
 
 ## Inverses
@@ -288,7 +286,7 @@ recorded frontier, while rendering uses the fresh room copy.
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
 - [Model edits as commands](model-edits.md)
-- [The press: Apply and Discard of a Work's tree changes](press.md)
+- [The press: Apply and Discard](press.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 

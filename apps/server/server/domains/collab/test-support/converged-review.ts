@@ -1,6 +1,5 @@
 /**
- * Review reads that first run the document derivations, which count each Work's suggestions. In
- * production they follow a write within seconds; a test that asserts membership right after a
+ * Review reads that first run the document derivations. In production they follow a write within seconds; a test that asserts membership right after a
  * write reads through this instead of sleeping.
  */
 import type { CollabDomain } from "../contracts.js";

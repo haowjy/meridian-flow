@@ -1,4 +1,4 @@
-// Host-owned immutable edit history and forward inverses; no reconstruction journal.
+// Host-owned immutable edit history and forward inverses.
 
 import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../tool/types.js";
 

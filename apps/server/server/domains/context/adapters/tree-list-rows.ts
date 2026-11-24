@@ -168,7 +168,6 @@ async function loadDrafts(
   return out;
 }
 
-/** Documents a Work has suggestions in, which the list cannot see (rule 7). */
 /** An admitted `create`'s node id is refused: another node, a document or a list has it. */
 export class NodeIdRefusedError extends Error {
   /** The node id at fault, when the claim could tell which. */
@@ -182,9 +181,9 @@ export class NodeIdRefusedError extends Error {
 
 /**
  * Claims the node ids the records create, in the admitting transaction: the claim table's key is
- * the claim, so two lists that admit one id at once cannot both hold it. An id a document or a
- * list's journal already has is taken too. A document's own journal does not count: an import
- * writes each text under the id its create will have, before the create.
+ * the claim, so two lists that admit one id at once cannot both hold it. An id a document row or a
+ * list already has is taken too. A document's Live room does not count: an import seeds each
+ * text under the id its create will have, before the create.
  */
 export async function claimNodeIds(
   tx: DrizzleDb,
@@ -535,7 +534,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
 /**
  * Brings the rows to the list's replay: `added` are the records this transaction admitted, whose
  * documents get their `documents` rows. Call under the list's lock, after the update is
- * journaled, so the rows are never behind the list. The views replayed are live and every open
+ * in the list, so the rows are never behind the list. The views replayed are live and every open
  * Work with pending tree records or pending text. Returns the creates that made a document row,
  * and the Works' drafts whose rows changed (their review count may have moved).
  */
@@ -618,7 +617,7 @@ export async function syncRows(
         ),
     ),
   );
-  // A live change to a document a Work has suggestions in changes the Work's list (a move's place),
+  // A live change to a document a draft has pending text in changes the Work's list (a move's place),
   // and a trash or restore its count, though the Work has no row there.
   const holding = await draftsWithText(tx, kept, [...liveIds].filter(isUuid));
   const changedDrafts: string[] = [...holding];
@@ -638,7 +637,7 @@ export async function syncRows(
   return { created, changedDrafts: [...new Set(changedDrafts)], liveChangedUnder, reassigned };
 }
 
-/** The list's drafts (`kept`) whose Work has suggestions in one of `documentIds`. */
+/** The list's drafts (`kept`) with pending text in one of `documentIds`. */
 async function draftsWithText(
   tx: DrizzleDb,
   kept: readonly string[],

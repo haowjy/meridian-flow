@@ -134,8 +134,8 @@ resumes on `pageshow` only if it holds that suspension.
 ## Anchors and holds
 
 A remote write can move or replace any block. Long-lived UI uses `EditorAnchor` backed by Loro
-cursors (`loro-points.ts`: `pointAt`, `resolvePoint`, `EncodedPoint` for storage), resolves it
-at use time, and validates the object found there. `NodeHold` adds the node's block id and
+cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `anchors.ts`:
+`resolveAnchor`), resolves it at use time, and validates the object found there. `NodeHold` adds the node's block id and
 type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
 replacement; an inline atom with no id resolves by the seams around it. `carryAnchor` is used
 where plugin `apply` runs before the binding settles; read resolution happens later. Every
@@ -301,7 +301,7 @@ keyboard, pointer, drop, or recovery answer.
   what the selection holds cancels (checked again at release). Left native: presses with a modifier (so
   Ctrl/Option-drag still carries text out of the window; Mac Option is
   unrun), read-only views, editors with no kernel (code documents, the
-  composer as a source), cell selections, and objects (`ObjectPhysics`).
+  composer as a source), cell selections, and objects (`ObjectPhysicsExtension`).
 - **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
   `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
   types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
@@ -464,7 +464,7 @@ keyboard, pointer, drop, or recovery answer.
   asks it and keeps no list of its own.
 - A held session ends when the server acknowledges its edits, when the predicate turns
   false, when the document is removed or access revoked
-  (`drainDocument`, `drainAccess`), when the account closes
+  (the room closes, `settleDrainedRoom`), when the account closes
   (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time

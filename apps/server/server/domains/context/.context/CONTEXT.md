@@ -422,7 +422,7 @@ A link resolver is not a capability. A reader who cannot reach a ref receives
 path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
-The address endpoint resolves a path in the live tree only; `./mf doc uri` reads it. The browser
+The address endpoint resolves a path in the live tree only; `./mf doc` commands resolve their URI through it (`tools/mf/src/commands/doc/uri.ts`). The browser
 resolves every address from the replay of the project's tree list, a review address in its Work's
 tree included, and never asks this endpoint. The resolver returns the canonical current locator;
 it never makes a path-only URL a capability.
@@ -462,5 +462,5 @@ it is `domains/recent-documents`.
 
 ## Import reveal
 
-An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
+An import stages nothing in tables of its own: each planned text seeds the document's Live room under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
 

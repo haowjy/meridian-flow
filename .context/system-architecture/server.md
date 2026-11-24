@@ -3,7 +3,7 @@
 One Nitro process. Its 17 domains are grouped by the writer work they serve, and a group opens a
 page of its domains. Follow the numbers for one chat turn: the message arrives (1), a route admits
 it (2), conversation asks the model for a reply (3), the model's tool calls read and edit documents
-(4), the edit is journaled in Postgres (5), and the reply (6) and the edit (7) stream back to the
+(4), the edit is saved in Postgres (5), and the reply (6) and the edit (7) stream back to the
 browser. Step by step: [a message becomes an edit](flows/message-becomes-edit.md). Imports that
 break the written rules, among them a cycle of six domains, are on [dependencies](dependencies.md).
 
@@ -24,7 +24,7 @@ flowchart LR
   routes -->|"2. admits it and wakes the run"| conversation
   conversation -->|"3. asks for a reply"| models
   conversation -->|"4. reads and edits documents for the model"| documents
-  documents -->|"5. journals the edit"| postgres
+  documents -->|"5. saves the edit"| postgres
   conversation -->|"6. streams the reply"| browser
   documents -->|"7. pushes the edit to open documents"| browser
   lib -->|"builds the domains for"| routes

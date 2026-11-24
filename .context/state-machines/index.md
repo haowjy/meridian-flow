@@ -53,6 +53,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Room connection | One room's socket to `/ws/loro` (a document's Live or fork, or a tree list): connecting, connected, disconnected, or ended | [core/transport](../../apps/app/src/core/transport/.context/state-machines.md) |
 | Release | Whether this tab's code is current, deployed under, or must reload | [client/release](../../apps/app/src/client/release/.context/state-machines.md) |
 | Account session runtime | Whether the account's document sessions take new work: open, closing, closed | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
@@ -82,6 +83,6 @@ have it:
 
 Named states that no code steps: they are computed from other state on each read. Examples
 are the handoff brief card and compaction divider (from a turn's status), the import word the
-writer sees, undo part state in agent-edit, the state of a change of an AI edit in a draft (drawn in
+writer sees, undo part state in agent-edit, the state of an AI edit (drawn in
 [collab reversal](../../apps/server/server/domains/collab/.context/reversal.md)) and the Stop button's status. Two-way toggles and
 one-shot results are left out too.

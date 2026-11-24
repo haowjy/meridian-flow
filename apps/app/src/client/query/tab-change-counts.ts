@@ -1,6 +1,6 @@
 /**
  * Each open document's pending changes by Work, as this tab's editor holds them. The server counts
- * whether a document has any (`pending`) and lists a Work's suggestion row exactly while it does,
+ * whether a document has any (`pending`) and lists the document's row for its text alone exactly while it does,
  * but only once it derives the document, a debounce after each write. The tab's own Apply,
  * Discard, Undo and typing are in its editor first, so while the document is open whether its row
  * is listed follows the editor.
@@ -57,8 +57,8 @@ export function useTabChangeCounts(): Counts {
   return useSyncExternalStore(subscribe, tabChangeCounts, tabChangeCounts);
 }
 
-/** A row the server lists for its suggestions alone: no tree change or whole item. */
-const suggestionsOnly = (row: DraftItem) => row.pending && !row.wholeItem && !row.tree;
+/** A row the server lists for its text changes alone: no tree change or whole item. */
+const textOnly = (row: DraftItem) => row.pending && !row.wholeItem && !row.tree;
 
 /** `owner`'s rows as this tab's open editors hold their documents. */
 export function withTabChangeCounts(items: DraftItem[], owner: string, tab: Counts): DraftItem[] {
@@ -67,7 +67,7 @@ export function withTabChangeCounts(items: DraftItem[], owner: string, tab: Coun
   const next: DraftItem[] = [];
   items.forEach((row, index) => {
     const held = tab.get(row.documentId);
-    if (!held || !suggestionsOnly(row)) {
+    if (!held || !textOnly(row)) {
       next.push(row);
       return;
     }

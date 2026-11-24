@@ -30,10 +30,9 @@ sequenceDiagram
   threads-->>client: 10. events over the thread socket
   runtime->>context: 11. write tool: resolve the path
   runtime->>file-policy: 12. may this chat edit it?
-  runtime->>collab: 13. stage the edit under the grant
-  runtime->>collab: 14. the response ends: commit
-  collab->>postgres: 15. journal the rows
-  collab-->>core-transport: 16. push to open rooms
+  runtime->>collab: 13. write the edit under the grant
+  collab->>postgres: 14. save the room's rows, the receipt and the result
+  collab-->>core-transport: 15. push to open rooms
 ```
 
 1. **Send.** [chat](../app-conversation.md#chat) calls the optimistic send helper `lib/send-project-chat.ts`, which shows the message at once and keeps it in the send journal in `localStorage` until the server confirms.

@@ -1,14 +1,14 @@
 # Collab — reversal contracts
 
 Reversal reads what an edit recorded and writes a merge, for card actions and the model's
-Undo/Revert alike. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
-model writes the edit again (the writer asks it to). An inverse is an ordinary
+Undo/Revert alike. There is no Redo: to redo, the model writes the edit again (the writer asks it
+to). An inverse is an ordinary
 recorded edit; it never rewrites a target row or marks it reversed.
 
 ## An AI edit is a Loro edit
 
 Every Undo of an AI write, the card's and the model's `undo` and `revert`, goes by design §2's one
-Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `takeBack` takes the write
+Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `takeBack` (`take-back.ts`) takes the write
 back whatever was written since (`undoEdits` in `@meridian/document-model` `invert.ts`). Each AI write into the manuscript records its Loro `edit`
 (`document_edit_parts.edit`: the text docs it wrote with the ops between `before` and `after`, and
 the structure values it set, by `editSince`) beside its `delta` (the blocks it changed, as
@@ -65,7 +65,7 @@ in Trash) is planned per target, not refused: the reversal lands Live and open t
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
 closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a draft that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
 whole reversal (`permission_denied`), which the card shows as a failed press.
-A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
+A tab of an older build may send `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
@@ -104,7 +104,7 @@ model's `undo` and `revert` list a taken part as `already removed`, and `read(fo
 offers neither for it, because the listing asks the same planner. A model's forward revert is its
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
 (`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
-the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
+the turn's text out, or the card's Undo took any of its tree changes (`byCard` in `adapters/drizzle-tree-history.ts`, the
 card's undo receipts, whatever has happened to the nodes since): the chip's `undone` flag. Otherwise
 it carries no word (the same rule as for tree receipts below). Effective action state is indexed per
 immutable part (`effectiveActionIndex`). A model count consumes original
@@ -198,7 +198,7 @@ keeps a receipt (`tree_edit_receipts`: the record ids, the Work's draft) and one
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
 `e<N>` the model is given is the ordinal on the receipt's subject.
 
-A node has one history per chat: this agent's own tree receipts and text edits (each agent is its own peer for the text, as above, so the writer's typing never drops an edit from it; only an edit with no item left to remove or restore does), ordered by that ordinal,
+A node has one history per chat: this agent's own tree receipts and text edits (the writer's typing never drops an edit from it: an Undo always runs), ordered by that ordinal,
 with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
 not reversed, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,

@@ -28,5 +28,6 @@ stateDiagram-v2
   (offline then, or online with it in flight) reconnects read-only; the pill goes quiet instead of saying "offline", the
   archived notice says why. The session finds the unsent edits at the read admission, drops them with one
   "Couldn't save" pill, and the editor shows the server's text (the room is replaced).
-- A room whose updates the server kept refusing (`updatesRefused`) is replaced the same way: its
-  typing is dropped with one "Couldn't save" pill, and the editor shows the server's text.
+- A room the server ended because its typing depends on history below the room's cutoff
+  (`historyCutOff`) is replaced the same way: its typing is dropped with one "Couldn't save" pill,
+  and the editor shows the server's text.
