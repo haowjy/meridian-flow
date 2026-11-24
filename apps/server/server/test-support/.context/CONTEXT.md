@@ -10,8 +10,8 @@ the backstop before the next file uses that worker. A file `afterAll` that start
 detached DB work must use `closeTestDatabase`.
 
 The reset helper cannot drain an isolated tracker, so harnesses share
-`processDetachedWork`. Room unload schedules checkpoint stores without awaiting
-them, so checkpoints join the same tracker. Collab producers stop and join their
+`processDetachedWork`. A document room's debounced save runs without being awaited,
+so it joins the same tracker. Collab producers stop and join their
 own work through `collab.lifecycle.dispose`, which a harness awaits before
 resetting rows, so running work cannot deadlock against the reset's locks. See
 [collab's CONTEXT.md](../../domains/collab/.context/CONTEXT.md).

@@ -1,4 +1,4 @@
-// Staged model writes and response setup shared by the Postgres suites.
+// Model writes and response setup shared by the Postgres suites.
 
 import { randomUUID } from "node:crypto";
 import { editHandle } from "@meridian/agent-edit/integration";

@@ -16,7 +16,7 @@ Forced colours (Windows high contrast) drop every fill and shadow, so a state sh
 only by a fill vanishes. `globals.css` paints `SelectedItem` on whatever carries the
 state in ARIA (`aria-selected` tab, `aria-current`, `aria-pressed`, a checked radio,
 `ListRow`'s `data-selected` frame): a new selected or current state sets one of those,
-not only a class. Draft marks have their own forced-colours treatment in
+not only a class. Review changes' word highlights have their own forced-colours treatment in
 `inline-review.css`. Hide a resting outline with `outline-none`, never Tailwind's
 `outline-hidden`, which forced colours draw as a solid box on every row.
 

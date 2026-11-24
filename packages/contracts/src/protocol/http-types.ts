@@ -155,7 +155,7 @@ export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
   /**
-   * The document in a draft's view: Live with that draft's suggestions applied. A draft that
+   * The document in a draft's view: the draft's fork of it. A draft that
    * never changed it reads the live document, which is what the draft would have held.
    */
   | { kind: "draft"; draft: DraftId };

@@ -835,7 +835,7 @@ async function runDrainTurn(
 }
 
 /**
- * The shared run-start prelude: reconcile interrupted staged writes, load the
+ * The shared run-start prelude: load the
  * thread's prior turns and inherited (fork) conversation, and resolve the turn
  * to chain from. Both writer and drain starts run this inside their run-start
  * transition; they differ only in the user-turn source they mint afterward.

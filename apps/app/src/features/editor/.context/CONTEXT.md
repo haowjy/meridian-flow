@@ -64,9 +64,8 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Drafts are off while the editor moves to Loro: the editor paints Live only, and a review shows
-its changes in the review lists, not as paint in the manuscript. Drafts come back as Loro forks
-in phase 2. Projection, commands and history belong to the
+A Draft view edits the draft's fork room of the document (`registry.admit` with the draft's id),
+as Live's view edits the Live room. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 Each document host (main, the side, the phone) has its own review

@@ -21,9 +21,9 @@ composeAppServices(ports)
 - **Concrete adapters**: Drizzle repositories, context/collab stores, package
   store, project repositories, credit ledger, package seeder, and
   provider gateway.
-- **Pure service wiring**: event hub, checkpoint registry, tool
-  registry/executor, late-bound turn runner, child-run coordination,
-  orchestrator, and returned `AppServices` aggregate.
+- **Pure service wiring**: event hub, tool registry/executor, late-bound turn
+  runner, child-run coordination, orchestrator, and returned `AppServices`
+  aggregate.
 
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.

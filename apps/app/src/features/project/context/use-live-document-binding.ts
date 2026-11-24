@@ -34,7 +34,7 @@ export function useLiveDocumentBinding({
   owner: "desktop-document-host" | "mobile-project-document-host" | "trash-view";
   /** The document is in Trash and is shown read-only. */
   trashed?: true;
-  /** Suggestion mode: the document exists only in the Work under review (`ProjectDocumentLiveOpener`). */
+  /** The document exists only in the Work under review (`ProjectDocumentLiveOpener`). */
   workOnly?: true;
   /** The draft whose fork room the host shows; absent for Live. */
   draftId?: string;

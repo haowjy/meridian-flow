@@ -413,12 +413,12 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   aheadSettlements: ReadonlyMap<string, string>;
 };
 
-/** Reads a document as one reader sees it: Live, or a draft's view with its suggestions applied. */
+/** Reads a document as one reader sees it: Live, or its draft's fork of it. */
 export type EffectiveDocumentReader = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread: its draft and its reply's staged writes count. */
+      /** The reading thread, whose draft the read sees. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
@@ -436,8 +436,7 @@ export type EffectiveDocumentReader = {
   /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
   /**
-   * A document's markdown in a draft's view: Live with that draft's suggestions applied. Needs no
-   * reading chat.
+   * A document's markdown in a draft's view: the draft's fork of it. Needs no reading chat.
    */
   readDraftMarkdown(input: {
     documentId: DocumentId;
@@ -453,8 +452,8 @@ export type EffectiveDocumentReader = {
    * One document's frozen cut for a copy: the blocks a whole-document write would see,
    * the revision a `read` of that version reports, the holder those links spell from, and
    * the room version of the cut (what a client's own version is compared against). A draft
-   * view reads Live content (phase 1 has no text drafts). Links still spell
-   * in the named Work's tree view.
+   * view reads the draft's fork room (Live where the draft wrote nothing), and its links spell
+   * in the draft's tree view.
    */
   readEffectiveBlocks(
     input: { documentId: DocumentId } & EffectiveReadVersion,

@@ -46,14 +46,32 @@ import {
   type ProtocolMessage,
   RoomErrorCode,
 } from "loro-protocol";
-import type {
-  DocumentSessionAccess,
-  DocumentSessionConnectionState,
-  DocumentSessionResetReason,
-} from "@/core/editor/document-session";
+import type { DocumentSessionAccess } from "@/core/editor/document-session";
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import { notifyLoroMessage, notifyLoroSocketClose, notifyLoroSocketOpen } from "./wire-tap";
+
+export type RoomResetReason =
+  | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
+  | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
+  /** The document was deleted or discarded; its rooms never reopen. */
+  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
+
+/**
+ * How a terminal room reset treats its unacknowledged edits. `removed`: the document was purged,
+ * so nothing reconnects on its own; the session stays read-only until its owner closes it, or an
+ * exact open proves the document present and restarts it.
+ */
+export type ResetDisposition = "schema" | "removed";
+
+/** The room's connection, drawn in `.context/state-machines.md`. */
+export type RoomConnectionState =
+  | { kind: "connecting"; attempt: number }
+  | { kind: "connected" }
+  | { kind: "disconnected" }
+  | { kind: "reset"; reason: RoomResetReason; disposition: ResetDisposition }
+  | { kind: "unauthorized"; reason: string; code?: number }
+  | { kind: "terminal"; reason: string };
 
 /** What the transport needs from the copy it carries. */
 export type TransportedCopy = {
@@ -98,7 +116,7 @@ export type LoroRoomTransport = {
   serverVersion(): RoomVersion;
   readonly synced: boolean;
   readonly whenSynced: Promise<void>;
-  subscribeStatus(listener: (state: DocumentSessionConnectionState) => void): () => void;
+  subscribeStatus(listener: (state: RoomConnectionState) => void): () => void;
   subscribeAccess(
     listener: (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void,
   ): () => void;
@@ -107,7 +125,7 @@ export type LoroRoomTransport = {
   destroy(): void;
 };
 
-const RESET_REASONS: Readonly<Record<string, DocumentSessionResetReason>> = {
+const RESET_REASONS: Readonly<Record<string, RoomResetReason>> = {
   [LORO_JOIN_ERROR.DOCUMENT_DELETED.appCode]: WS_CLOSE.DOCUMENT_DELETED.reason,
   [LORO_JOIN_ERROR.CLIENT_SCHEMA_SUPERSEDED.appCode]: WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
   [LORO_JOIN_ERROR.DOCUMENT_SCHEMA_STALE.appCode]: WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
@@ -117,7 +135,7 @@ const RETRY_MS = [250, 1_000, 2_500, 5_000, 10_000];
 /** Room payload per fragment, under the protocol's 256 KiB message limit with header room. */
 const FRAGMENT_BYTES = MAX_MESSAGE_SIZE - 4 * 1024;
 
-function resetState(reason: DocumentSessionResetReason): DocumentSessionConnectionState {
+function resetState(reason: RoomResetReason): RoomConnectionState {
   return {
     kind: "reset",
     reason,
@@ -148,7 +166,7 @@ export function createLoroRoomTransport({
   connectivityHints,
 }: LoroRoomTransportOptions): LoroRoomTransport {
   const roomId = loroRoomName(room);
-  const statusListeners = new Set<(state: DocumentSessionConnectionState) => void>();
+  const statusListeners = new Set<(state: RoomConnectionState) => void>();
   const accessListeners = new Set<
     (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void
   >();
@@ -158,7 +176,7 @@ export function createLoroRoomTransport({
     resolve: () => void;
     reject: (error: Error) => void;
   }>();
-  let state: DocumentSessionConnectionState = { kind: "connecting", attempt: 1 };
+  let state: RoomConnectionState = { kind: "connecting", attempt: 1 };
   let access: { access: DocumentSessionAccess; why: ClosedOwnerWhy | null } | null = null;
   let socket: WebSocket | null = null;
   let joined = false;
@@ -196,7 +214,7 @@ export function createLoroRoomTransport({
   });
   let synced = false;
 
-  const emitStatus = (next: DocumentSessionConnectionState) => {
+  const emitStatus = (next: RoomConnectionState) => {
     state = next;
     for (const listener of statusListeners) listener(state);
     emitAck();
@@ -436,7 +454,7 @@ export function createLoroRoomTransport({
     };
   };
 
-  const end = (next: DocumentSessionConnectionState) => {
+  const end = (next: RoomConnectionState) => {
     emitStatus(next);
     failBarriers();
     const ws = socket;

@@ -4,7 +4,7 @@
 
 Upload and organization are separate durable phases. Upload completion sets
 `organizing` and wakes one server-owned organizer lane. The organizer prepares
-receipts, plans the tree once, writes bounded batches of first texts into the journal, then
+receipts, plans the tree once, seeds bounded batches of first texts into their documents' Live rooms, then
 makes every planned node a `create` record in one submission to the project's tree list, in the
 transaction that marks the import finished. Do not reintroduce placeholders,
 landing receipts, awaited document ids, or browser plan/resume loops to bridge

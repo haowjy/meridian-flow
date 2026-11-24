@@ -435,7 +435,7 @@ export interface ContextPort {
    */
   treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
 
-  /** The tree of `area` as this port's reader sees it, at the journal's head. */
+  /** The tree of `area` as this port's reader sees it, as the list stands. */
   readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;

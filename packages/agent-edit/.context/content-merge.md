@@ -35,7 +35,7 @@ Undo rule (`takeBack` in `@meridian/document-model`).
 `overrode` is the count of live's words the draft replaced in contested text, and it overstates
 that when the draft deleted words live never touched. `conflicts` holds the clashes with their
 tokens for the tests' oracle; `mergeCodeText` reports their count as the file's clashes. Every
-block it returns has an id (a paragraph it makes from nothing gets a fresh one, so `writeBlocks`
+block it returns has an id (a paragraph it makes from nothing gets a fresh one, so `writeDocument`
 never throws on its output).
 
 Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both sides added

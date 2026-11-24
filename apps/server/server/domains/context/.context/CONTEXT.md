@@ -62,7 +62,7 @@ literal name: a folder clashes with a document when the folder's name equals the
 document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
-while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
+while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it.
 No writer picks a free name: a name may repeat in a folder, and replay gives every later twin a
 `~` suffix from its id (rule 14 in `@meridian/project-tree`). A node's `name` in `tree_nodes` is its filename as
 shown, extension included; readers never render a filename from a name and an extension.
@@ -235,8 +235,8 @@ one source's tree contributes.
 
 - Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, by node id, in the source view) and each
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
-  document, or the Work's draft where it has one). A Draft view reads live content for
-  documents without a Work draft, while spelling links in the Draft tree. The listing is a
+  document, or the Work's draft fork where it has one). A Draft view reads live content for
+  documents the draft has no fork of, while spelling links in the Draft tree. The listing is a
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
@@ -290,9 +290,9 @@ one source's tree contributes.
   run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
   so it lands only in an empty document) and encoded to its first state
-  (`encodeSeed`) outside the lock. A copy into a Work's draft view creates an empty live
-  authority and draft through admission, then appends the bound blocks to that draft through
-  the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
+  (`encodeSeed`) outside the lock. A copy into a Work's draft view is the draft's pending create:
+  its text is written straight into the document's Live room (`writeWorkCreatedContent`), and the
+  pending create is its whole pending state; it is not a live arrival. The live insert is one `submit` of `create` records
   (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
   (`createDocumentsAtomically`) persists the identities, `installSeeds` writes the seeds' Live rows (`encodeSeed`'s states), and every arrival settles once, so ahead refs pointing at a copy's new address
   settle. Projections and link rows are derived after the transaction commits, four documents at a
@@ -314,8 +314,8 @@ one source's tree contributes.
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
   path or room version, and a version sent for a folder, which the route refuses before the domain
-  runs. A draft view names its Work and no chat: the server reads the document through that Work's
-  view of Live; a Work outside the project is refused
+  runs. A draft view names its Work and no chat: the server reads the document in that Work's draft
+  (its fork, or Live where the draft has none); a Work outside the project is refused
   as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
   documents the Work places in it, a document only the Work has included, and a node the Work
   does not place is left out as purged. The one name outcome left to the address-model
@@ -422,7 +422,7 @@ A link resolver is not a capability. A reader who cannot reach a ref receives
 path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
-The address endpoint resolves a path in the live tree only; `./mf doc uri` reads it. The browser
+The address endpoint resolves a path in the live tree only; `./mf doc` commands resolve their URI through it (`tools/mf/src/commands/doc/uri.ts`). The browser
 resolves every address from the replay of the project's tree list, a review address in its Work's
 tree included, and never asks this endpoint. The resolver returns the canonical current locator;
 it never makes a path-only URL a capability.
@@ -462,5 +462,5 @@ it is `domains/recent-documents`.
 
 ## Import reveal
 
-An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
+An import stages nothing in tables of its own: each planned text seeds the document's Live room under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
 

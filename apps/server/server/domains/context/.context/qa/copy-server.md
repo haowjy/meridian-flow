@@ -43,9 +43,9 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    vetoes a visible one), and the hidden rows stay hidden; in the draft both keep their
    names as twins (`Sheet~…`, `Vault~…`), still holding the draft's text. The same copy where
    the name is held by a live document lands as its twin, `Sheet~…`, and the entry says so.
-3. **Draft source.** A Work's text drafts are phase 2: until then a chat's writes land in the
-   Live document, and a copy with `--draft-work w1` reads the Live text (`metadata.copiedFrom.version`
-   `draft`, the revision ending in `:work:<key>`). A folder with a draft view copies each document
+3. **Draft source.** A Draft-mode chat of w1 writes into w1's fork of the document, and a copy
+   with `--draft-work w1` reads that fork's text (`metadata.copiedFrom.version` `draft`, the
+   revision ending in `:work:<key>`). A folder with a draft view copies each document
    as the Work shows it; a document only w1 created copies too, from its plain text.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any

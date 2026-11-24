@@ -8,8 +8,8 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 /**
- * A `drafts` row: one draft, everything pending in it (its suggestion marks in Live documents and
- * its tree records). A Work and a root conversation each name theirs; the draft names no owner.
+ * A `drafts` row: one draft, everything pending in it (its fork rooms of documents and its tree
+ * records). A Work and a root conversation each name theirs; the draft names no owner.
  */
 export type DraftId = string;
 

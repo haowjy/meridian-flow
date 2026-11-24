@@ -53,7 +53,7 @@ export async function captureDocumentDerivation(
     .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(eq(documents.id, documentId))
     .limit(1);
-  // An already-staged push must still settle after a soft deletion.
+  // A derive scheduled before the document was purged settles with nothing to do.
   if (!row) return null;
   const address = await lastAddress(documentId);
   if (row.inLive && !address)

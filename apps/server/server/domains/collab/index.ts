@@ -27,7 +27,6 @@ export {
 } from "./domain/link-binding.js";
 export { ModelEditRefusal } from "./domain/model-edit.js";
 export type { ModelEvidence } from "./domain/model-evidence.js";
-export { liveRoom } from "./domain/observation-rooms.js";
 export {
   type DocumentLinkScopes,
   type HolderLinkScope,

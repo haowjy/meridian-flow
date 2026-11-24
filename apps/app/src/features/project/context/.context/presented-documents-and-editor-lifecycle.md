@@ -173,4 +173,4 @@ A presented document carries no review state. Which Work's view a document shows
 pin. Whether it exists only in that Work comes from the pin's row in the owner's draft list
 (`useDocumentLiveness`: a drafted create, or a delete Live made): such a page offers Close where
 others offer Back to live. A live delete of a document closes its view like any removal; a
-Work's suggestions in it stay in the document and come back with a Restore.
+draft's fork of it stays and comes back with a Restore.

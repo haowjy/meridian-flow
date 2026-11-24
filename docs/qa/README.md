@@ -68,7 +68,7 @@ stack.
 - [Saved file display](../../apps/app/src/features/project/.context/qa/file-display.md): a TIFF, HEIC or BMP draws from a server-made preview in the viewer, a DOCX's inline image and chat; any file the browser can't draw is a card with Download, never Retry.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as `@` references that land where the caret showed (word, gap, margin, past the end, bullets, inline code, diagram, empty document), with refusals and drop-regression checks.
 - [Presses](../../apps/app/src/core/editor/.context/qa/presses.md): clicks with no text under them (margin, gap, wrapped line, cell padding, below each kind of ending) put the caret where pointed and never make a paragraph.
-- [Model `grep`](../../apps/server/server/domains/context/.context/qa/grep.md): regex search over a 450-document project, each output mode, scoping, refusals, staged and draft text, each case with its predicted and measured time.
+- [Model `grep`](../../apps/server/server/domains/context/.context/qa/grep.md): regex search over a 450-document project, each output mode, scoping, refusals, just-written and draft text, each case with its predicted and measured time.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 - [Staged typechecking](../../tools/ci/README.md#staged-hook-probe-recipe): index selection, dependent projects, shared configuration, cache invalidation and hook failures.
@@ -185,7 +185,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    the spinner when you return. Stop in Reading,
    Uploading, Organizing, and Adding uses one confirmation and discards everything before
    reveal. Cancelling that confirmation resumes the same activity.
-8. Let the real organizer finish. The whole staged tree and catalog appear together
+8. Let the real organizer finish. The whole planned tree and catalog appear together
    with Done; no imported child is visible beforehand. A lost Stop race says it
    finished before it could stop. A clean result acknowledges at once, or when
    an open popup that shows it closes; a needs-a-look result stays until its popup is opened

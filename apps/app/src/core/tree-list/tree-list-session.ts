@@ -17,9 +17,12 @@ import {
 } from "@meridian/document-model";
 import { LIVE, replayView, type TreeProjection, type View } from "@meridian/project-tree";
 import { LoroDoc } from "loro-crdt";
-import type { DocumentSessionConnectionState } from "../editor/document-session";
 import { LocalCopyStore } from "../editor/local-copy-store";
-import { createLoroRoomTransport, type LoroRoomTransport } from "../transport/loro-room-transport";
+import {
+  createLoroRoomTransport,
+  type LoroRoomTransport,
+  type RoomConnectionState,
+} from "../transport/loro-room-transport";
 import { treeListCopyPrefix } from "./copy-names";
 
 /**
@@ -63,7 +66,7 @@ function freshDoc(): LoroDoc {
   return doc;
 }
 
-function statusOf(state: DocumentSessionConnectionState, synced: boolean): TreeListStatus {
+function statusOf(state: RoomConnectionState, synced: boolean): TreeListStatus {
   switch (state.kind) {
     case "connected":
       return "synced";

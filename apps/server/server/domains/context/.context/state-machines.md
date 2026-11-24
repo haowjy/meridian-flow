@@ -26,8 +26,8 @@ stateDiagram-v2
   kept view shows it (a `draft_tree_nodes` row), an unsettled record for a kept Work names it
   in the list, or a draft not yet purged has a pending fork of it
   (`tree/retention-holds.ts`, `document_forks.pending`). A kept Work is one that can still come back: open, archived, or
-  deleted and restorable; only a draft that ended (a whole Discard, a Work purged for good)
-  stops being kept. Ask before the purge: a purge removes the rows the question reads.
+  deleted and restorable; only a purged draft (Delete draft past its window, or a Work purged
+  for good) stops being kept. Ask before the purge: a purge removes the rows the question reads.
 - **`in_no_view_since`** is written by the rows' sync (`adapters/tree-list-rows.ts`): null while
   any view has a row for the document, the time it left the last view otherwise.
 - **Rows follow inputs outside the list.** A draft ending and a Work's text draft closing change

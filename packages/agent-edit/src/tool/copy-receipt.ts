@@ -4,7 +4,7 @@ import type { BlockSnapshot } from "../apply/echo.js";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
 
-/** What a copy wrote, kept with the staged write so its settled receipt says the same. */
+/** What a copy wrote, kept with the write so its receipt says the same. */
 export interface CopySummary {
   /** The source path as the model named it. */
   from: string;

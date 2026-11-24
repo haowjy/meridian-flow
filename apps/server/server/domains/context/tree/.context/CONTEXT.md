@@ -26,8 +26,8 @@ list in the admitting transaction and written by nothing else:
 A document is in no view when it has no `tree_nodes` row (it was purged or never reached live)
 and no `draft_tree_nodes` row. Two kinds:
 
-- **In Trash**: a `tree_nodes` row with `trash_record`. Restorable; its text is still in the
-  journal. Not in any view, so nothing but the server reads it.
+- **In Trash**: a `tree_nodes` row with `trash_record`. Restorable; its text is still in its
+  room. Not in any view, so nothing but the server reads it.
 - **A drafted create that was discarded** (or refused and not kept): a `documents` row with no
   node row anywhere. `documents.in_no_view_since` is the time the replay's last row for it
   went; the store sets it and clears it when a row returns (an Undo of the Discard).
@@ -49,7 +49,7 @@ One window (`deletionPurgeCutoff`) for both kinds.
 - **A Work's purge** ends the nodes of the Work's sources the same way, in one submission with the
   Work's transaction: it deletes what stands, then appends a `purge` record per Trash entry the
   sources hold (`projects/adapters/drizzle-work-purge.ts`), then releases the documents.
-- **Release** (`release-document-content.ts`, the one way a document ends): the journal, derived rows and drafts go; the
+- **Release** (`release-document-content.ts`, the one way a document ends): the room snapshots, forks, derived rows and edit receipts go; the
   `documents` row stays, marked `content_purged_at`, so a bound link resolves to "gone". The
   documents' loaded rooms end and storage objects are deleted after the commit. A purged document
   holds no content: every snapshot write (`writeRows` in the collab rooms) runs under the
