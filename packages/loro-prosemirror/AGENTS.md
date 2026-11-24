@@ -59,7 +59,10 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   `putBackValues` writes its values back, a block it made going as a removal, and runs rule 1 over
   what it wrote. That rule is `document-model`'s (`take-back.ts`), shared with the press's Undo:
   change it there, not here. A step whose run changes nothing (a peer already took out all it
-  did) leaves the history. The history keeps steps (500), not manager items: a manager has no
+  did) leaves the history. A step's `Edit.read` is taken once, at its write, and no run retakes it:
+  every Undo and Redo counts what the step read. A join's Redo copies only the text the join read,
+  so a peer's typing in the joined block must bring that block back (two-editors seed 35), and a
+  Ctrl+Z after a Redo of a table must keep a peer's paragraph in it (seed 247). The history keeps steps (500), not manager items: a manager has no
   item limit, since one typing step split by a peer's batches is an item per key, and a limit
   would drop part of it. Typing joins the open step; any other write starts one, and a write that
   sets structure ends it. Undo and Redo commits carry no message: attribution reads them as the
