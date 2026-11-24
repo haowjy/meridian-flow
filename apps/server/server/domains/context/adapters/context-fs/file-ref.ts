@@ -12,7 +12,7 @@ import type { VisibleDocument } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { mapDocument } from "./drizzle-store.js";
 
-export function trackedSchemaForPersistedFiletype(
+function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
 ): Result<TrackedSchemaType, AdapterFault> {
   const classification = classifyFiletype(filetype);

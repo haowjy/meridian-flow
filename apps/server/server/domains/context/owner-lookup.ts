@@ -105,7 +105,7 @@ export interface OwnerLookupDeps {
 }
 
 /** Two spellings of one name compare equal: `Tea Notes` and `tea-notes`. */
-export function workNameKey(name: string): string {
+function workNameKey(name: string): string {
   return name
     .normalize("NFKD")
     .replace(/\p{Mark}/gu, "")

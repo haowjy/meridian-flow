@@ -91,7 +91,7 @@ export function createDocumentDerivationService(input: {
   };
 }
 
-export async function deriveDocument(
+async function deriveDocument(
   input: { store: DocumentDerivationStore; readCut: ReadCut },
   documentId: DocumentId,
   at = new Date(),
@@ -117,7 +117,7 @@ export async function deriveDocument(
 }
 
 /** The blocks and link rows of the cut's document. */
-export async function deriveDocumentOutputs(
+async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
   readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {

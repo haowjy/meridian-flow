@@ -7,7 +7,7 @@ import {
   sectionNotFoundMessage,
 } from "./heading-sections.js";
 
-export const AROUND_BLOCK_RADIUS = 3;
+const AROUND_BLOCK_RADIUS = 3;
 
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
@@ -75,7 +75,7 @@ export function resolveScope(
   return resolveSingleHash(ctx, input);
 }
 
-export function resolveFragment(
+function resolveFragment(
   ctx: ScopeContext,
   fragment: string,
   options: ScopeResolveOptions = {},

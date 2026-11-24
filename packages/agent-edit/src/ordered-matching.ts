@@ -51,7 +51,7 @@ export function weightedOrderedMatches(
 }
 
 /** Most table cells an equality match may allocate (one cell is four bytes, twice over). */
-export const MAX_EQUAL_MATCH_CELLS = 250_000;
+const MAX_EQUAL_MATCH_CELLS = 250_000;
 
 /**
  * The in-order pairs of equal keys, `[indexInA, indexInB]`, ascending in both. Ties follow

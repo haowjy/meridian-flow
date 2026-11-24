@@ -19,7 +19,7 @@ export type ContextNamespace = {
   workId: string | null;
 };
 
-export function contextNamespaceKey(input: ContextNamespace): string {
+function contextNamespaceKey(input: ContextNamespace): string {
   return input.owner.kind === "account"
     ? `context-user:${input.owner.userId}`
     : `context-project:${input.owner.projectId}:${input.workId ?? "none"}:${input.scheme}`;

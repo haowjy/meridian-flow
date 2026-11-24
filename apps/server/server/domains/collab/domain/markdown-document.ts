@@ -519,7 +519,7 @@ function assertHolder(documentId: DocumentId, content: BoundWrite, use: HolderUs
   }
 }
 
-export function syncErrorMessage(error: SyncError): string {
+function syncErrorMessage(error: SyncError): string {
   switch (error.code) {
     case "not_found":
       return `Document not found: ${error.documentId}`;

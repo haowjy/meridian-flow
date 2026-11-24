@@ -68,7 +68,7 @@ export interface RoomBounds {
   historyMs: number;
 }
 
-export const DEFAULT_ROOM_BOUNDS: RoomBounds = {
+const DEFAULT_ROOM_BOUNDS: RoomBounds = {
   debounceMs: 2_000,
   maxDebounceMs: 10_000,
   idleMs: 5 * 60_000,

@@ -1,4 +1,4 @@
-export const DEFAULT_HASH_LENGTH = 4;
+const DEFAULT_HASH_LENGTH = 4;
 const FNV_64_OFFSET = 0xcbf29ce484222325n;
 const FNV_64_PRIME = 0x100000001b3n;
 const HEX_FIELD_WIDTH = 16;

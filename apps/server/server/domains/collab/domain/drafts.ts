@@ -39,7 +39,7 @@ export interface Drafts {
 }
 
 /** An owner the write boundary locked names no draft: its row went between the read and the lock. */
-export class OwnerWithoutDraftError extends Error {
+class OwnerWithoutDraftError extends Error {
   constructor(readonly owner: DraftOwner) {
     super(`No draft is named by ${JSON.stringify(owner)}`);
     this.name = "OwnerWithoutDraftError";
