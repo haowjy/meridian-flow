@@ -1,6 +1,6 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`), the presses this tab can still take back (`presses`), each turn's Restore before in a
+ * (`hold`), the presses this tab can still take back (`presses`), each turn's Undo turn in a
  * draft (`restore`) and one notice per draft owner. The press itself is `usePressCommands`.
  */
 import { type DraftId, draftItemKey, type TurnId } from "@meridian/contracts";
@@ -29,7 +29,7 @@ export type CommandOutcome =
   | { kind: "settled"; took?: DiscardTook };
 
 /**
- * A turn's Restore before in one draft, as this tab knows it: sent and not yet answered, or in
+ * A turn's Undo turn in one draft, as this tab knows it: sent and not yet answered, or in
  * force with its one Undo (`press`).
  */
 export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntries };
@@ -66,17 +66,17 @@ export class DraftCommandOwner {
     };
   }
 
-  /** The turn's Restore before in `draft` this tab has sent or holds in force. */
+  /** The turn's Undo turn in `draft` this tab has sent or holds in force. */
   restore(turn: TurnId, draft: DraftId): RestoreEntry | null {
     return this.restores.get(restoreKey(turn, draft))?.entry ?? null;
   }
 
-  /** When the turn's Restore before in `draft` last changed here; 0 if it never did. */
+  /** When the turn's Undo turn in `draft` last changed here; 0 if it never did. */
   restoreChangedAt(turn: TurnId, draft: DraftId): number {
     return this.restores.get(restoreKey(turn, draft))?.at ?? 0;
   }
 
-  /** The drafts where this tab has sent or holds the turn's Restore before. */
+  /** The drafts where this tab has sent or holds the turn's Undo turn. */
   restoredDrafts(turn: TurnId): DraftId[] {
     const prefix = `${turn}:`;
     return [...this.restores].flatMap(([key, { entry }]) =>

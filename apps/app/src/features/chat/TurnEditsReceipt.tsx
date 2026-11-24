@@ -33,7 +33,7 @@ import {
 import { DocumentName } from "./DocumentName";
 import { describeModelMove, documentDisplayName, folderDisplayName } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
-import { RestoreBeforeSlot } from "./TurnRestoreBefore";
+import { UndoTurnSlot } from "./TurnUndoTurn";
 import { useTurnCardDrafts } from "./turn-card-drafts";
 import { workReceiptLine } from "./work-receipt-copy";
 
@@ -83,7 +83,7 @@ export function TurnEditsReceipt({
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
-  const restore = useRestoreBefore(turn, documents, receipt, receiptReadAt);
+  const undoTurn = useUndoTurn(turn, documents, receipt, receiptReadAt);
   const hasEditedDocuments = documents.length > 0;
   const names = useOwnerNames();
   // Reversible Work mutation receipts are content in their own right: their
@@ -138,9 +138,9 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        {restore.drafts.length === 1 ? restore.slot(restore.drafts[0] as DraftId, false) : null}
-        {/* A draft's writes are Restore before's: the card's Undo is for the rest, when there is any. */}
-        {reversible || receipt?.undone || restore.drafts.length === 0 ? (
+        {undoTurn.drafts.length === 1 ? undoTurn.slot(undoTurn.drafts[0] as DraftId, false) : null}
+        {/* A draft's writes are Undo turn's: the card's Undo is for the rest, when there is any. */}
+        {reversible || receipt?.undone || undoTurn.drafts.length === 0 ? (
           <UndoSlot
             reversible={reversible}
             pending={pending}
@@ -154,12 +154,12 @@ export function TurnEditsReceipt({
       ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {restore.groups.map((group) => (
+          {undoTurn.groups.map((group) => (
             <div key={group.draft ?? "live"}>
               {group.draft ? (
                 <div className="flex min-h-6 items-center px-[var(--chat-card-pad-x)] text-foreground">
                   <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
-                  {restore.slot(group.draft, true)}
+                  {undoTurn.slot(group.draft, true)}
                 </div>
               ) : null}
               <ul className="flex flex-col">
@@ -194,12 +194,12 @@ export function TurnEditsReceipt({
 }
 
 /**
- * The card's `Restore before`, one per draft the card's read offers it in or names a press in
+ * The card's `Undo turn`, one per draft the card's read offers it in or names a press in
  * force for, or this tab pressed it in: with one, in the header; with several, each heads its
  * draft's rows, named. `groups` are the rows to list: the turn's Live rows, then each such draft's
  * under its name (one group, unnamed, with fewer than two).
  */
-function useRestoreBefore(
+function useUndoTurn(
   turn: Turn,
   documents: readonly TurnEditDocument[],
   receipt: TurnReceiptChip | null,
@@ -245,7 +245,7 @@ function useRestoreBefore(
     groups: groups.filter((group) => group.draft || group.documents.length > 0),
     slot: (draft: DraftId, named: boolean) =>
       cards ? (
-        <RestoreBeforeSlot
+        <UndoTurnSlot
           key={draft}
           commands={cards.commands}
           turn={turnId}

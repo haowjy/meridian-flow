@@ -87,11 +87,11 @@ Does: presses Undo on the reply's receipt, the card that lists every document th
 
 Sees: what the reply wrote is reversed, wherever it now is. The receipt stays.
 
-## Restore before
+## Undo turn
 
-Does: on a Draft chat's reply, presses "Restore before" on its receipt (one per draft the reply wrote in, in place of the receipt's Undo, which keeps only the reply's Live writes and tree changes), or opens one of its chapters there.
+Does: on a Draft chat's reply, presses "Undo turn" on its receipt (one per draft the reply wrote in, in place of the receipt's Undo, which keeps only the reply's Live writes and tree changes), or opens one of its chapters there.
 
-Sees: a chapter opens in Review changes at the reply's edit. Restore before puts the draft back as it read before the reply, on today's Live: text already applied stays in the manuscript, and a document the reply made in the draft goes to Trash. The receipt then offers "Undo restore", in every tab and after a reload; Ctrl+Z in the chapter or in the sidebar takes it back too, as for any press.
+Sees: a chapter opens in Review changes at the reply's edit. Undo turn takes back what the reply wrote in the draft, by the one Undo rule: text already applied stays in the manuscript, and a document the reply made in the draft goes to Trash. The button shows while the reply has writes there to take back. The receipt then reads "Undone" with an Undo, in every tab and after a reload, and says nothing about what stayed; Ctrl+Z in the chapter or in the sidebar takes it back too, as for any press.
 
 - Map: [chat](../app-conversation.md#chat), [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
 - Machines: [A press's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)

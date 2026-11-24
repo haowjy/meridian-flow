@@ -131,7 +131,7 @@ export interface TurnInverseStore {
    */
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
   /**
-   * For the card's `Restore before`: the drafts where pressing it would change something, and the
+   * For the card's `Undo turn`: the drafts where pressing it would change something, and the
    * restore press in force for each draft the turn wrote in.
    */
   restoreStates(
@@ -166,8 +166,8 @@ export interface TurnInverseStore {
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId" | "origin">;
 /**
- * The card's Undo takes back the turn's Live writes; a write made in a draft is `Restore
- * before`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
+ * The card's Undo takes back the turn's Live writes; a write made in a draft is `Undo
+ * turn`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
  */
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (part.kind === "write" || part.kind === "revert") &&

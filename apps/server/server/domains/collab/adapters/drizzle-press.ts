@@ -102,7 +102,7 @@ type DraftPart = {
   change: string | null;
   /** The tree records it settles: one document's, every pending one, or none (a change, a turn). */
   tree: DocumentId[] | "all";
-  /** A `Restore before`'s turn, whose writes into the draft's forks it takes back. */
+  /** An `Undo turn`'s turn, whose writes into the draft's forks it takes back. */
   turn?: TurnId;
 };
 
@@ -262,7 +262,7 @@ export function createDrizzlePress(
   }
 
   /**
-   * A Draft chat turn's `Restore before` in one draft (design §2), from its plan
+   * A Draft chat turn's `Undo turn` in one draft (design §2), from its plan
    * (`drizzle-restore-before.ts`): the turn's writes into the draft's text go back by the one Undo
    * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
    * first (`undoInRooms`); Live's manuscript is untouched. A write whose history the room cut
@@ -444,7 +444,7 @@ export function createDrizzlePress(
         ),
       );
 
-    // A Discard and a Restore before change no Live tree record: no owner to judge.
+    // A Discard and an Undo turn change no Live tree record: no owner to judge.
     if (request.verdict !== "apply") return run(NO_OWNERS);
     // The sources the drafts' pending records change, and where Live has the nodes they name:
     // their owners are locked with the drafts' and judged under the locks. A guess read before
@@ -541,7 +541,7 @@ export function createDrizzlePress(
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
                   const changes = row.changes as PressedChange[];
-                  // A Restore before of a document only the draft holds wrote its Live room. An
+                  // An Undo turn of a document only the draft holds wrote its Live room. An
                   // Apply's change has no fork side either when the fork kept nothing to delete.
                   const liveRoom =
                     pressed.verdict === "restore" &&

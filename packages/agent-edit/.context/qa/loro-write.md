@@ -38,7 +38,7 @@ What it covers:
 - A Draft chat (`host.chat("d1")`) reads its fork room before the draft has written there, writes
   two paragraphs into the draft only, the writer applies one, and the chat's next write to it plans
   on the fork (no duplicate, Live keeps the applied text); `format: "changes"` shows the pending
-  changes as CriticMarkup; `Restore before` the turn returns the draft to Live with the applied
+  changes as CriticMarkup; `Undo turn` the turn returns the draft to Live with the applied
   paragraph left in Live; a Live chat's `changes` read succeeds and says nothing waits.
 - A chat reads in Live and writes in Draft: the write plans on the Live read (the writer's sentence
   typed since stays) and the report names the writer's forwarded Live change as `the user`.

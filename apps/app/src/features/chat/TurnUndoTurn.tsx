@@ -1,16 +1,17 @@
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { DraftId, TurnId } from "@meridian/contracts";
 import { type MouseEvent, useEffect, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 
 /**
- * A Draft chat turn card's `Restore before` in one draft the turn wrote: one press, whose state
- * is the owner's (`DraftCommandOwner.restore`), so the card, every editor's Ctrl+Z and the
+ * A Draft chat turn card's `Undo turn` in one draft the turn wrote, then `Undone` with its Undo:
+ * one press, whose state is the owner's (`DraftCommandOwner.restore`), so the card, every editor's Ctrl+Z and the
  * sidebar show one press with one Undo, and a reload or another tab shows the same once the
  * card's read names it (`named`). Its width holds still through every state.
  */
-export function RestoreBeforeSlot({
+export function UndoTurnSlot({
   commands,
   turn,
   draft,
@@ -46,31 +47,40 @@ export function RestoreBeforeSlot({
     act();
   };
   return (
-    <span className="flex min-w-[6.5rem] shrink-0 items-center justify-end" data-restore-before>
+    <span className="flex min-w-[7.5rem] shrink-0 items-center justify-end" data-undo-turn>
       {entry?.kind === "in-force" ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          disabled={entry.press.undoing}
-          aria-label={name ? t`Undo restoring ${name}` : undefined}
-          onClick={fenced(() => commands.undoRestore(turn, draft))}
-        >
-          {entry.press.undoing ? t`Undoing…` : t`Undo restore`}
-        </Button>
+        <>
+          <span className="text-muted-foreground" role="status">
+            <Trans>Undone</Trans>
+          </span>
+          <Button
+            type="button"
+            variant="quiet"
+            size="meta"
+            disabled={entry.press.undoing}
+            aria-label={name ? t`Undo in ${name}` : undefined}
+            onClick={fenced(() => commands.undoRestore(turn, draft))}
+            className="text-jade-text"
+          >
+            {t`Undo`}
+          </Button>
+        </>
       ) : (
         <Button
           type="button"
           variant="quiet"
           size="meta"
           disabled={entry?.kind === "sending"}
-          aria-label={
-            name ? t`Restore ${name} to before this turn` : t`Restore the draft to before this turn`
+          aria-label={name ? t`Undo turn in ${name}` : undefined}
+          title={
+            name
+              ? t`Take back what this turn wrote in ${name}`
+              : t`Take back what this turn wrote in the draft`
           }
-          title={t`Put the draft back as it read before this turn`}
           onClick={fenced(() => commands.restoreTurn(turn, draft, documents))}
+          className="text-jade-text"
         >
-          {entry?.kind === "sending" ? t`Restoring…` : t`Restore before`}
+          {entry?.kind === "sending" ? t`Undoing…` : t`Undo turn`}
         </Button>
       )}
     </span>

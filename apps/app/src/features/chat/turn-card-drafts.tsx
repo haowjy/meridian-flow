@@ -46,7 +46,7 @@ export function TurnCardDraftsProvider({
   );
 }
 
-/** Null outside a chat in a project: its cards offer no Restore before. */
+/** Null outside a chat in a project: its cards offer no Undo turn. */
 export function useTurnCardDrafts(): TurnCardDrafts | null {
   return useContext(TurnCardDraftsContext);
 }

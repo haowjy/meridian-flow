@@ -56,14 +56,14 @@ export interface TurnReceiptChip {
   /** The card's Undo ran and nothing is left for it; the card says "Undone". */
   undone?: true;
   /**
-   * The drafts the turn wrote in whose `Restore before` the card offers, one press each (`PressAction`'s `restore`):
+   * The drafts the turn wrote in whose `Undo turn` the card offers, one press each (`PressAction`'s `restore`):
    * those where pressing it would change something now (a write of the turn there would go back by design §2's Undo
    * rule, or a document it created would go to Trash). Absent when none: a turn already restored or undone there is
    * left out.
    */
   restore?: DraftId[];
   /**
-   * The `Restore before` press in force for each draft the turn wrote in: the latest that changed something and has not
+   * The `Undo turn` press in force for each draft the turn wrote in: the latest that changed something and has not
    * been undone (its Undo is `PressUndoRequest` with this `press`). Absent when none, so every tab and a reload read
    * the same state.
    */

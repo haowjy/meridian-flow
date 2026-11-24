@@ -4,7 +4,7 @@ A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its 
 records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
 a document, a draft or every draft of a Work, is one command, `press`
 (`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). So is a
-Draft chat turn card's Restore before. There is no folder scope.
+Draft chat turn card's Undo turn. There is no folder scope.
 
 ## What a press does
 
@@ -49,7 +49,7 @@ never makes one.
   writes.
   Deliveries run after commit.
 
-## Restore before
+## Undo turn
 
 `restore` on a turn in one draft returns the draft to how it read before the turn, as one press.
 A turn that wrote in several drafts is one press per draft, each in that draft's lane on the tab
@@ -123,7 +123,7 @@ document, `undoPress` reads the press's `press_changes` rows: every change goes 
 was written since (design §2, "An Undo always runs"), each room its own, committed by the Undo's
 press (`commit-message.ts`). A change older than the room's history cutoff can't go back and is
 left as it is, silently.
-Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Restore before) on that draft's part, with
+Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Undo turn) on that draft's part, with
 the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
 other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing
 to come back to.

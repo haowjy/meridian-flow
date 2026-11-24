@@ -69,7 +69,7 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.
 - Every Undo follows one rule (`take-back.ts`, design §2 "An Undo always runs"): the editor's
-  Ctrl+Z and Redo, a press's Undo, `Restore before` and agent-edit's undo. It runs whatever was
+  Ctrl+Z and Redo, a press's Undo, `Undo turn` and agent-edit's undo. It runs whatever was
   written since. Text goes back by its inverse, which deletes the edit's characters that still
   stand and puts back the ones it deleted (Loro's `UndoManager` in the editor, `textInverse`
   here). Structure goes back key by key to the value before the edit, last writer wins. Every
@@ -111,7 +111,7 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   change, the edit it made in each room (`PressedChange`, JSON for `press_changes`). `undoPress`
   takes both sides of every change back (`takeBack`), Live's first; then the fork is returned to
   pending. A press over several drafts is undone one draft at a time, newest first.
-  `Restore before` is the same rule: `undoEdits` over the turn's stored edits, newest first (the
+  `Undo turn` is the same rule: `undoEdits` over the turn's stored edits, newest first (the
   server's `drizzle-restore-before.ts`); there is no frontier restore. The hand-run fuzz is
   [block-changes-fuzz](../loro-prosemirror/.context/qa/block-changes-fuzz.md); run it at 10,000
   seeds after changing any of this.

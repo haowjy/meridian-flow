@@ -35,18 +35,18 @@ name the edited files.
 A row's `scope` is where the turn wrote it: `draft` (with the draft) for a Draft chat's write, in
 its fork or in a document only the draft holds, read from the write's own receipt. Its `block` is
 the first block the turn's first write there changed, where the row opens the document (Review
-changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Restore
-before` the card offers, one press each in that draft's lane; a draft whose history was cut below
+changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Undo turn`
+the card offers, one press each in that draft's lane; a draft whose history was cut below
 the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
-Its `restored` names the Restore before in force in each draft (its press id), so every tab and a
-reload offer the same Undo.
+Its `restored` names the Undo turn in force in each draft (its press id), so every tab and a
+reload show the same `Undone` and its Undo.
 
-**A draft's writes have one action, `Restore before`.** The card's Undo takes back only what it
+**A draft's writes have one action, `Undo turn`.** The card's Undo takes back only what it
 doesn't cover: the turn's Live writes and its tree changes (the server's card plan skips every part
-written in a draft). So a Draft chat's card that wrote only text in its draft shows `Restore before`
+written in a draft). So a Draft chat's card that wrote only text in its draft shows `Undo turn`
 and no Undo slot.
 
-`Restore before` (`RestoreBeforeSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
+`Undo turn` (`UndoTurnSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
 each editor open on the turn's documents in that draft gets its Ctrl+Z step and the sidebar its
 step. The card is its notice. Its
 state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in

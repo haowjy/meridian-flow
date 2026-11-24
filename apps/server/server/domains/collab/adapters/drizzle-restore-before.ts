@@ -1,5 +1,5 @@
 /**
- * What a Draft chat turn's `Restore before` takes back in one draft (design §2), read once for
+ * What a Draft chat turn's `Undo turn` takes back in one draft (design §2), read once for
  * the card's offer and the press: the turn's writes into the draft's text, newest first, each in
  * the room it landed in, and the nodes the turn created there, which go to Trash. The draft's text
  * is its fork of each document, or the Live room of a document only the draft holds (a part's
@@ -119,7 +119,7 @@ export async function readRooms(
 }
 
 /**
- * What the turn card says of `Restore before` for each draft the turn wrote in: the drafts where
+ * What the turn card says of `Undo turn` for each draft the turn wrote in: the drafts where
  * pressing it would change something (a write of the turn there would go back, or a node it made
  * would go to Trash), and the restore press in force for each draft, the latest that changed
  * something and has not been undone, so every tab and a reload read the same state.
@@ -166,7 +166,7 @@ async function someStands(
   }
 }
 
-/** The latest Restore before of `turn` in `draft` that changed something and was not undone. */
+/** The latest Undo turn of `turn` in `draft` that changed something and was not undone. */
 async function pressInForce(
   tx: DrizzleDb,
   turn: TurnId,

@@ -101,8 +101,8 @@ document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`
 part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
 over `undoEdits`): every write goes back whatever was written since, but one whose room cut its
 history, which stays and the answer says so; a part already taken back is skipped. The
-in-memory host (`test-support`) calls the same `undoInRooms`, also for `Restore before` (the
-turn's parts in the draft, newest first), and runs the writer's Apply, Discard and `Restore before` as the
+in-memory host (`test-support`) calls the same `undoInRooms`, also for `Undo turn` (the
+turn's parts in the draft, newest first), and runs the writer's Apply, Discard and `Undo turn` as the
 server's press does. Probe: [loro-write](qa/loro-write.md).
 
 ## What an Undo reads

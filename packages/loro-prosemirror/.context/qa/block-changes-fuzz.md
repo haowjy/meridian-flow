@@ -1,8 +1,8 @@
-# Block changes: the press, its Undo, Discard and Restore before
+# Block changes: the press, its Undo, Discard and Undo turn
 
 `block-changes-fuzz.probe.ts` runs seeded scripts against `@meridian/document-model`'s
 block-change model (`changedBlocks`, `applyBlocks`, `discardBlocks`, `undoPress`, `takeBack`,
-`undoEdits` for `Restore before`) and the Undo rule (`take-back.ts`) on the real schema, through the binding's codec, with no stack. Gate 5's fuzz
+`undoEdits` for `Undo turn`) and the Undo rule (`take-back.ts`) on the real schema, through the binding's codec, with no stack. Gate 5's fuzz
 moved onto the product: removals are the product's records, restored by its own `importBatch`.
 Run it when any of those functions, `write.ts`'s override rules, `remove`/`restore`, `importBatch`
 `take-back.ts`, or the codec's block mapping change:
@@ -37,7 +37,7 @@ stored as JSON and read back.
 - Writer edits in Draft (text, marks, comments, inline nodes, block inserts, deletes, moves,
   splits, joins, type changes, table rows), Ctrl+Z of the edit just made through `takeBack`, AI
   turns on a copy of
-  the fork (sometimes adding a container), and `Restore before` of a turn (`undoEdits` over the
+  the fork (sometimes adding a container), and `Undo turn` of a turn (`undoEdits` over the
   turn's edits, newest first), half the time after the writer adds a paragraph of their own words
   inside a container the turn made (`nestIn`).
 - A press of random changes (`applyBlocks`), carrying as the Live version the writer was shown the
@@ -95,7 +95,7 @@ stored as JSON and read back.
   puts the block where Live's key would).
 - After the two drafts' Undo: Live's text is back (or holds the typing between), each draft has
   only that paragraph pending, and no character of either draft's text is lost.
-- After `Restore before`: each of the turn's edits went back, and a paragraph the writer added
+- After `Undo turn`: each of the turn's edits went back, and a paragraph the writer added
   inside a container the turn made still shows its words (`lost-word`): the Undo's removal counts
   only what the turn's copy showed as read (`Edit.read`). A block the restore wrote counts as
   touched: rule 1 can bring back a container Live removed since, when the restore puts text back
@@ -144,5 +144,5 @@ are open, lose no word, and fail the same on the PR's head before this round (th
 
 Pins implementation decisions: design §2's grouping (ancestor, `pieces` records per pair, deleted
 by the press that presses them, comment bodies), the apply record's `seen` from the Live version
-the writer was shown, a press's Undo of both sides of every change, a block `Restore before` takes
+the writer was shown, a press's Undo of both sides of every change, a block `Undo turn` takes
 away going as a removal, and a Work press undone draft by draft, newest first.

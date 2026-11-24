@@ -80,7 +80,7 @@ Drafts: a draft's Undo deletes its override, Live then moves the block, and the 
 writes its override over that move. A Draft tab's Ctrl+Z of an edit the writer then applied: the
 press deleted the overrides it read, so Ctrl+Z of a split, a move or a retype finds nothing to put
 back and the draft shows the applied edit, while Ctrl+Z of typing takes the text back as a pending
-change against Live. With the Apply undone first, Ctrl+Z and `Restore before` of the move and the
+change against Live. With the Apply undone first, Ctrl+Z and `Undo turn` of the move and the
 retype take them back; the press's Undo returned the split's and the typing's text to the draft as
 new characters, which neither deletes (they take back the edit's own characters), so that text
 stays and no word is lost (review p19057).

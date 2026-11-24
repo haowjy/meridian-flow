@@ -32,5 +32,5 @@ What it covers:
   transaction, a fork room forwarded on load, and a reload from the stored rows.
 
 Not covered: a real browser and IME (phase 1c reruns gate 1's matrix on this binding), the
-Postgres adapter, and the block-change model (the press, its Undo, Discard and `Restore before`:
+Postgres adapter, and the block-change model (the press, its Undo, Discard and `Undo turn`:
 [block-changes-fuzz.md](block-changes-fuzz.md)).

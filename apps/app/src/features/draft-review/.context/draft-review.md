@@ -133,7 +133,7 @@ An Apply's Undo takes a created document out of Live too; if main shows it, main
 draft (`openDraftFile`). After a reload nothing offers a press's Undo.
 
 **A chat card's Undo** is the server's `reverse_turn` command: it takes back its own reply's
-changes. A Draft chat's card also offers `Restore before` in each draft the turn wrote, a press
+changes. A Draft chat's card also offers `Undo turn` in each draft the turn wrote, a press
 with scope `turn` ([turn receipts](../../chat/.context/turn-edit-receipts.md)); its rows open
 Review changes at the turn's first changed block.
 

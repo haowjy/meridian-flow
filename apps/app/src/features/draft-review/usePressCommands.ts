@@ -90,7 +90,7 @@ type Pressed = {
 type Unpressed = "failed" | "told";
 /**
  * What a press does, and the documents it expects to take whole (`null`: every row listed). A
- * change press or a Restore before takes part of a document: its row stays listed.
+ * change press or an Undo turn takes part of a document: its row stays listed.
  */
 type PressTarget = { action: PressAction; documents: readonly string[] | null; whole: boolean };
 
@@ -163,8 +163,8 @@ export function usePressCommands({
           ? { kind: "strip", threadId }
           : { kind: "changes" };
     /**
-     * Reads the lists again; a row a press took or gave back shows once this lands. A Restore
-     * before reads its turn's card again too, dropping a read already out, so any card read that
+     * Reads the lists again; a row a press took or gave back shows once this lands. An Undo
+     * turn reads its turn's card again too, dropping a read already out, so any card read that
      * lands after this says whether the press is in force (`RestoreEntry.since`).
      */
     const refresh = async (scope: Scope) => {
@@ -322,7 +322,7 @@ export function usePressCommands({
     };
 
     /**
-     * A Restore before in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
+     * An Undo turn in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
      * and in the owner under its turn and draft, where the turn's card reads it and offers its
      * Undo. Taken back anywhere, it leaves the owner.
      */
@@ -495,7 +495,7 @@ export function usePressCommands({
               verdict === "apply"
                 ? t`Couldn't apply`
                 : verdict === "restore"
-                  ? t`Couldn't restore`
+                  ? t`Couldn't undo`
                   : t`Couldn't discard`,
             brief: true,
           });
@@ -587,7 +587,7 @@ export function usePressCommands({
         { documentId: item.documentId },
       );
     /**
-     * A Draft chat turn card's `Restore before` in one draft it wrote: `documents` are the ones
+     * A Draft chat turn card's `Undo turn` in one draft it wrote: `documents` are the ones
      * the turn wrote there, whose editors get the press's Ctrl+Z step. One at a time per turn and
      * draft: while one is out or in force, the card offers its Undo instead.
      */
@@ -607,7 +607,7 @@ export function usePressCommands({
         if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
       });
     };
-    /** The Undo of the turn's Restore before in force in `draft`, the same as its Ctrl+Z. */
+    /** The Undo of the turn's Undo turn in force in `draft`, the same as its Ctrl+Z. */
     const undoRestore = (turn: TurnId, draft: DraftId) => {
       const entry = owner.restore(turn, draft);
       if (entry?.kind === "in-force") void entry.press.undo();

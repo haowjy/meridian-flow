@@ -25,7 +25,7 @@ written in, and the one it writes in now; the planner (`createCapturedReversalPl
 commit both take parts back through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
 them by room and runs `undoEdits` in each. The in-memory host's turn Undo and the model's undo run
 the same function. The card's Undo takes only the turn's parts written outside a draft (`origin`
-with no `draftId`): a draft's writes are its card's `Restore before`, a press with its own Undo
+with no `draftId`): a draft's writes are its card's `Undo turn`, a press with its own Undo
 (design §5), so one action takes them back and the card offers Undo only when the turn wrote in
 Live or changed the tree. The model's `undo` and `revert` still take a draft's parts. The card's
 Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps before it leave (the planner takes planned
