@@ -46,6 +46,7 @@ export {
   structureValues,
   type TextUnit,
   textUnits,
+  unitEditors,
   visibleComments,
 } from "./read.js";
 export {

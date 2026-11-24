@@ -29,7 +29,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   the containers they shared in their source and take those of the block they land beside
   (`landCopies`). A new quote written next to an existing quote joins it: only the editor
   writes `|`.
-- A write is planned on the model's view and never reads the room. `lowerBlock`
+- A write is planned on the model's view and never reads the room; the one thing it reads beyond
+  the view's text is who typed each character of the view (below). `lowerBlock`
   (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
   per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
   table cell; a list item or a quoted paragraph is a paragraph with nesting attributes), text splices with format ranges; per node at any depth,
@@ -41,7 +42,28 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   the review tokenizer (`segmentText`), so each character of a script written without spaces (Chinese, Japanese, Thai) is a word, and the word the model
   changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
   formatting is not part of a token). A changed run that only gained characters (the old run is a subsequence of the new)
-  writes just the insertions (`retainShared`), so the old characters keep their ops; any other change writes the run whole. Every operation is made and Loro merges it,
+  writes just the insertions (`retainShared`), so the old characters keep their ops; any other change writes the run whole.
+  This runs on each word change first. Then changes that delete text and that only whitespace
+  separates become one change; an insertion never joins them, so `the cat dog` → `the cats hound`
+  still writes just the `s`, and a writer's `r` typed into `cat` meanwhile gives `carts`. A change
+  that deletes words takes one bordering space with them and keeps the other: the one whose
+  editor also typed the kept word beyond it, read with `LoroText.getEditorOf` on the view
+  (`AgentEditModel.unitEditors`; an editor is a Loro peer, one per editing session), else the
+  one after. The take stops short of a neighbouring insertion's point. The word diff alone keeps
+  either of two equal spaces, and when it keeps the one the writer typed beside words the model
+  deleted, the writer's Ctrl+Z takes that space out and glues the model's words (`before we of
+  course are able` rewritten as `before we can go` gave `before wecan go`). Editors come from
+  the view, never the room: they are part of what the model read, so the plan still depends only
+  on the read. A space typed during the write is not in the view, and the default side decides it.
+  A comment (any mark with `markdown: false`, which the model cannot see or write) follows the
+  word diff, not the written changes (`carriedMarks`): a unit the model kept keeps its comments,
+  and a changed run's new words take those of the old words they stand for, paired in order
+  (`one, two` → `three—four` puts `one`'s comment on `three` and `two`'s on `four`), as bold the
+  model could see would. A space between new words keeps a comment only where the words on both
+  sides have it and the old space it stands for had it. Words the model only deletes take their
+  comments with them. Nothing new is stored and nothing is reported. The marks ride in the
+  splice's content, so the one text write sets them.
+  Every operation is made and Loro merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it. The owner chose that the writer's edit to a word the model kept wins, even where that
   leaves a fragment, and to trust the model to notice an odd merge in the write's echo and its

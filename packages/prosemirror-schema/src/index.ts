@@ -228,7 +228,8 @@ const customMarks = {
   strike: {},
 
   // A comment's anchor; its body lives outside the document.
-  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it alone.
+  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it
+  // alone, except that on words the model replaces it moves onto the replacement (`lowerBlock`).
   comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "", markdown: false },
 } satisfies Record<string, MarkSpec>;
 

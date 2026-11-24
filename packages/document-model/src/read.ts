@@ -401,3 +401,27 @@ export function shownUnits(
 ): TextUnit[] {
   return textUnits(doc, rule, shape).filter((unit) => !unit.hidden);
 }
+
+/**
+ * The peer that wrote each unit a reader shows (`shownUnits`' order), as Loro records it: who typed
+ * a character, not who last styled it.
+ */
+export function unitEditors(
+  doc: LoroDoc | undefined,
+  rule: NodeRule,
+  shape: ShapeSchema,
+): Array<string | undefined> {
+  if (!doc) return [];
+  const units = shownUnits(doc, rule, shape);
+  return inText(doc, (text) => {
+    let last: string | undefined;
+    // Loro has no editor for the second half of a surrogate pair: it is its first half's.
+    return units.map((unit) => {
+      last = text.getEditorOf(unit.pos) ?? (isLowSurrogate(unit.ch) ? last : undefined);
+      return last;
+    });
+  });
+}
+
+const isLowSurrogate = (unit: string) =>
+  unit.charCodeAt(0) >= 0xdc00 && unit.charCodeAt(0) <= 0xdfff;
