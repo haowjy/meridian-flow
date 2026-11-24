@@ -618,8 +618,8 @@ export class DocumentSession {
   }
 
   /**
-   * Settles once the server acknowledged every batch this session sent so far, and at once while
-   * it is not connected. A fork's copy holds the Live ops it forwards, which its room never
+   * Settles once the server acknowledged every batch this session sent so far; a room that is
+   * reconnecting is waited for until its Join's batch is acknowledged. A fork's copy holds the Live ops it forwards, which its room never
    * acknowledges, so a press waits on this (design §4).
    */
   whenSentAcknowledged(): Promise<void> {

@@ -36,6 +36,13 @@ copy's version at the call and resolves once the server version covers it, wheth
 acks or through batches the server sent. Terminal ends reject current and future barriers;
 ordinary disconnects leave them pending.
 
+`whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
+every batch sent so far is acknowledged. A room that is not joined (offline, reconnecting) is
+waited for until it joins and the Join's own batch, which carries everything typed while away,
+is acknowledged; a socket that drops mid-wait moves the wait to the next Join. It resolves when
+the room ends or is destroyed. Resolving at once on a room that was not joined let a press made
+offline reach the server before the offline typing did, so it pressed an older fork.
+
 ## Errors
 
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
