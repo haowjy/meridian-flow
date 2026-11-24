@@ -4,11 +4,8 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { LineageRange } from "../lineage/range-set.js";
-import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   cutTextWindows,
@@ -38,7 +35,7 @@ export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
-  /** Already-parsed content, with the original source retained in `content` for semantic IR. */
+  /** Already-parsed content, with the original source retained in `content`. */
   parsedContent?: ParsedContent;
   /**
    * Blocks copied from another document. They take the place of
@@ -67,8 +64,6 @@ export interface ResolveWriteContext {
    * already assigned refs (a host's lowered overwrite), so nodes stay as given.
    */
   links: WriteLinks;
-  /** Exact revision whose live block handles and source ranges the resolver inspects. */
-  inputRevision?: string;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -78,7 +73,6 @@ export type ResolveWriteResult =
   | {
       ok: true;
       edits: ResolvedEdit[];
-      ir: SemanticEditIRV1;
     }
   | {
       ok: false;
@@ -141,13 +135,7 @@ export function planWrite(
           : step.blocks,
     ),
     assign(links) {
-      const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
-      if (!resolved.ok) return resolved;
-      return {
-        ok: true,
-        edits: resolved.edits,
-        ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
-      };
+      return assignPlannedWrite(concreteCtx, normalized, steps, links);
     },
   };
 }
@@ -184,9 +172,8 @@ function assignPlannedWrite(
   params: NormalizedParams,
   steps: readonly PlannedStep[],
   links: WriteLinks,
-): ResolveWriteResultWithoutIr {
+): ResolveWriteResult {
   const edits: ResolvedEdit[] = [];
-  let keptBlocks = false;
   for (const step of steps) {
     switch (step.kind) {
       case "edits":
@@ -199,26 +186,20 @@ function assignPlannedWrite(
       }
       case "replace":
       case "spliced": {
-        const lowered = replaceScope(
-          ctx,
-          params,
-          step.scope,
-          assignScope(ctx, step, links),
-          step.kind === "spliced" ? step.windows : null,
+        edits.push(
+          ...replaceScope(
+            ctx,
+            params,
+            step.scope,
+            assignScope(ctx, step, links),
+            step.kind === "spliced" ? step.windows : null,
+          ),
         );
-        edits.push(...lowered.edits);
-        keptBlocks ||= lowered.keptBlocks === true;
         break;
       }
     }
   }
-  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
-}
-
-interface LoweredScope {
-  edits: ResolvedEdit[];
-  /** Some of the scope's blocks were already equal to their replacement and kept. */
-  keptBlocks?: true;
+  return { ok: true, edits };
 }
 
 /** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
@@ -245,8 +226,6 @@ function scopeNodes(ctx: ConcreteResolveContext, scope: BlockScope): Block[] {
     .slice(scope.startIndex, scope.startIndex + scope.blocks.length)
     .map((block) => block.node);
 }
-
-type ResolveWriteResultWithoutIr = ({ ok: true } & LoweredScope) | ResolveWriteFailure;
 
 function planInsert(
   ctx: ConcreteResolveContext,
@@ -388,7 +367,7 @@ function normalizeParams(
   ctx: ConcreteResolveContext,
   params: ResolveWriteParams,
 ): NormalizedParams {
-  // Copied blocks are described by their markup only for the semantic IR.
+  // Copied blocks stand in `content` as their markup.
   const content = params.blocks
     ? serializeReplacementBlocks(ctx, [...params.blocks])
     : (params.content ?? "");
@@ -612,6 +591,31 @@ function planSplicedGroup(
   }
 }
 
+/** `text` without its closing punctuation: a word carried off a sentence's end leaves its stop. */
+const unclosed = (text: string) => text.replace(/\p{P}+$/u, "");
+
+/** Whether `text` ends with `run`, its closing punctuation set aside or not. */
+const endsWithRun = (text: string, run: string) =>
+  text.endsWith(run) || unclosed(text).endsWith(run);
+
+/**
+ * The longest run of whole words that starts `second` and ends `first` (its closing punctuation
+ * set aside or not): the same words at the facing edges of two neighbouring paragraphs. Any length:
+ * a short run taken for a carry only makes a change larger, never wrong.
+ */
+function edgeRun(first: string, second: string): string {
+  for (let size = second.length; size > 0; size--) {
+    const run = second.slice(0, size);
+    if (/\s/.test(run[size - 1]) || (size < second.length && !/\s/.test(second[size]))) continue;
+    if (!/[\p{L}\p{N}]/u.test(run)) continue;
+    for (const end of [first, unclosed(first)]) {
+      const at = end.length - size;
+      if (at >= 0 && end.endsWith(run) && (at === 0 || /\s/.test(end[at - 1]))) return run;
+    }
+  }
+  return "";
+}
+
 /**
  * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
  * left alone, a changed block keeps its identity and is changed in place, and
@@ -626,7 +630,7 @@ function replaceScope(
   scope: BlockScope,
   newBlocks: readonly Block[],
   windows: CutWindows | null = null,
-): LoweredScope {
+): ResolvedEdit[] {
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
@@ -634,8 +638,8 @@ function replaceScope(
     scope.startIndex > 0 ? ctx.projected[scope.startIndex - 1]?.ref : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
-  let keptBlocks = false;
   let structuralBoundary: object | undefined;
+  let pieceOf: number | undefined;
   let insertionRun = {};
 
   const flushStructural = () => {
@@ -649,6 +653,7 @@ function replaceScope(
         ),
         structuralBoundary,
         insertionRun,
+        ...(pieceOf === undefined ? {} : { pieceOf: oldBlocks[pieceOf] }),
       });
     }
     for (const block of pendingDelete) {
@@ -658,23 +663,35 @@ function replaceScope(
         kind: "delete",
         block,
         structuralBoundary,
+        ...(pieceOf === undefined ? {} : { pieceOf: oldBlocks[pieceOf] }),
       });
     }
     pendingInsert = [];
     pendingDelete = [];
     structuralBoundary = undefined;
+    pieceOf = undefined;
   };
 
-  for (const step of alignBlocks(oldNodes, newBlocks)) {
+  const steps = alignBlocks(oldNodes, newBlocks);
+  // The new text of each old block that stays, to tell a neighbour that lost what this one gained.
+  const stays = new Map<number, string>();
+  for (const step of steps)
+    if (step.kind === "keep" || step.kind === "change")
+      stays.set(step.old, newBlocks[step.next].textContent);
+  for (const step of steps) {
     switch (step.kind) {
       case "remove":
-        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        if (structuralBoundary !== step.structuralBoundary || pieceOf !== step.pieceOf)
+          flushStructural();
         structuralBoundary = step.structuralBoundary;
+        pieceOf = step.pieceOf;
         pendingDelete.push(oldBlocks[step.old]);
         break;
       case "add":
-        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        if (structuralBoundary !== step.structuralBoundary || pieceOf !== step.pieceOf)
+          flushStructural();
         structuralBoundary = step.structuralBoundary;
+        pieceOf = step.pieceOf;
         pendingInsert.push(newBlocks[step.next]);
         break;
       case "change": {
@@ -683,6 +700,7 @@ function replaceScope(
         const after = newBlocks[step.next];
         const lowered = lowerBlock(before, after, {
           placed: windows && [windows.old[step.old], windows.new[step.next]],
+          editors: (path) => ctx.model.unitEditors(oldBlocks[step.old], path),
           shownBy: {
             codec: ctx.codec,
             place: () => {
@@ -693,8 +711,21 @@ function replaceScope(
         });
         anchor = oldBlocks[step.old];
         insertionRun = {};
-        if (lowered.length === 0) keptBlocks = true;
-        else
+        const tookFrom = after.isTextblock
+          ? [step.old - 1, step.old + 1].filter((at) => {
+              const other = oldNodes[at];
+              if (!other?.isTextblock) return false;
+              const [was, now] = [before.textContent, after.textContent];
+              const left = stays.get(at);
+              if (at < step.old) {
+                const run = edgeRun(other.textContent, now);
+                return run !== "" && !was.startsWith(run) && !(left && endsWithRun(left, run));
+              }
+              const run = edgeRun(now, other.textContent);
+              return run !== "" && !endsWithRun(was, run) && !left?.startsWith(run);
+            })
+          : [];
+        if (lowered.length > 0)
           edits.push({
             documentId: params.documentAddress.documentId,
             file: params.documentAddress.filePath,
@@ -702,6 +733,7 @@ function replaceScope(
             structuralBoundary: step.structuralBoundary,
             kind: "ops",
             ops: lowered,
+            ...(tookFrom.length > 0 ? { tookFrom: tookFrom.map((at) => oldBlocks[at]) } : {}),
           });
         break;
       }
@@ -709,13 +741,12 @@ function replaceScope(
         flushStructural();
         anchor = oldBlocks[step.old];
         insertionRun = {};
-        keptBlocks = true;
         break;
     }
   }
   flushStructural();
 
-  return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return edits;
 }
 
 function serializeReplacementBlocks(
@@ -731,99 +762,6 @@ function fragmentScope(params: NormalizedParams): string | undefined {
 
 function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
-}
-
-function semanticIrForResolvedEdits(
-  ctx: ConcreteResolveContext,
-  params: NormalizedParams,
-  resolved: Extract<ResolveWriteResultWithoutIr, { ok: true }>,
-): SemanticEditIRV1 {
-  const { edits } = resolved;
-  const scope: LineageRange[] = [];
-  const deleted: LineageRange[] = [];
-  const mappedEdits = edits.map((edit) => {
-    let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "ops") {
-      const lineage = ctx.model.nodeLineage(edit.block, []);
-      scope.push(...lineage);
-      let output = 0;
-      const fresh = (text: string) => {
-        if (text.length > 0)
-          outputRuns.push({
-            kind: "fresh",
-            payload: text,
-            output: { from: output, to: output + text.length },
-          });
-        output += text.length;
-      };
-      for (const op of edit.ops) {
-        if (op.kind === "delete") deleted.push(...ctx.model.nodeLineage(edit.block, op.path));
-        else if (op.kind === "insert") for (const node of op.nodes) fresh(node.textContent);
-        else if (op.kind === "text")
-          for (const splice of op.splices) {
-            deleted.push(
-              ...ctx.model.textblockLineage(edit.block, op.path, splice.from, splice.to),
-            );
-            fresh(splice.content.textBetween(0, splice.content.size, ""));
-          }
-      }
-    } else if (edit.kind === "insert") {
-      if (edit.newText.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.newText,
-            output: { from: 0, to: edit.newText.length },
-          },
-        ];
-      }
-    } else {
-      const lineage = ctx.model.nodeLineage(edit.block, []);
-      scope.push(...lineage);
-      deleted.push(...lineage);
-    }
-    return { edit, outputRuns };
-  });
-  const normalizedScope = normalizeLineageRanges(scope);
-  const normalizedDeleted = normalizeLineageRanges(deleted);
-  // Its payload is the whole requested content, so it only describes a scope
-  // whose every block was rewritten.
-  const isTotalFreshReplacement =
-    params.command === "replace" &&
-    params.find === undefined &&
-    resolved.keptBlocks === undefined &&
-    normalizedScope.length > 0 &&
-    sameLineageRanges(normalizedScope, normalizedDeleted);
-  return {
-    version: 1,
-    documentId: params.documentAddress.documentId,
-    inputRevision: (ctx.inputRevision ??
-      documentRevision(ctx)) as SemanticEditIRV1["inputRevision"],
-    scope: normalizedScope,
-    intent: isTotalFreshReplacement
-      ? { kind: "fullScopeFreshReplacement", payload: params.content }
-      : { kind: "mappedEdits", edits: mappedEdits },
-    deleted: normalizedDeleted,
-  };
-}
-
-function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every(
-      (range, index) =>
-        range.clientID === right[index]?.clientID &&
-        range.clock === right[index]?.clock &&
-        range.length === right[index]?.length,
-    )
-  );
-}
-
-/** The revision a semantic IR names: the document's state vector, in hex. */
-export function documentRevision(ctx: { model: AgentEditModel; doc: DocHandle }): string {
-  return [...ctx.model.encodeStateVector(ctx.doc)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 function scopeError(result: ScopeFailure): ResolveWriteFailure {

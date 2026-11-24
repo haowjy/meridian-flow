@@ -14,10 +14,8 @@ import {
   readPath,
   sharedSteps,
 } from "@meridian/prosemirror-schema";
-import type { View } from "@meridian/suggestions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, type Transaction } from "@tiptap/pm/state";
-import { shownBlock, transactionView } from "../suggestion-mode/SuggestionModeExtension";
 
 export type ListKindName = "bullet" | "ordered";
 
@@ -39,10 +37,10 @@ type Sequence = {
 };
 
 /**
- * The blocks the selection touches, as siblings under their nearest shared container, as `view`
- * shows them (`shownBlock`): what every list and quote command and key reads and writes.
+ * The blocks the selection touches, as siblings under their nearest shared container: what every
+ * list and quote command and key reads and writes.
  */
-export function selectedSequence(selection: Transaction["selection"], view: View): Sequence {
+export function selectedSequence(selection: Transaction["selection"]): Sequence {
   const { $from, $to } = selection;
   const textDepth =
     selection instanceof NodeSelection || !$from.parent.isTextblock ? $from.depth + 1 : $from.depth;
@@ -52,7 +50,7 @@ export function selectedSequence(selection: Transaction["selection"], view: View
   const positions: number[] = [];
   let at = $from.start(depth);
   container.forEach((child) => {
-    blocks.push(shownBlock(view, child));
+    blocks.push(child);
     positions.push(at);
     at += child.nodeSize;
   });
@@ -105,7 +103,7 @@ export function setList(
   kind: ListKindName,
   { keepKind = false }: { keepKind?: boolean } = {},
 ): boolean {
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  const sequence = selectedSequence(tr.selection);
   let changed = false;
   for (let i = sequence.from; i < sequence.to; i++) {
     const facts = sequence.facts[i];
@@ -138,14 +136,10 @@ export function selectionIsTaskList(sequence: Sequence): boolean {
 
 /** Makes every selected block a task item, keeping the kind of the items it already is; a checked task stays checked. */
 export function setTaskList(tr: Transaction): boolean {
-  let changed = setList(
-    tr,
-    selectionListKind(selectedSequence(tr.selection, transactionView(tr))) ?? "bullet",
-    {
-      keepKind: true,
-    },
-  );
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  let changed = setList(tr, selectionListKind(selectedSequence(tr.selection)) ?? "bullet", {
+    keepKind: true,
+  });
+  const sequence = selectedSequence(tr.selection);
   for (const start of selectedItems(sequence)) {
     const marker = sequence.blocks[start].attrs.marker;
     if (marker === "todo" || marker === "done") continue;
@@ -165,7 +159,7 @@ export function unsetList(tr: Transaction): boolean {
 
 /** One more list level for each selected item and what is under it. */
 export function indent(tr: Transaction): boolean {
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  const sequence = selectedSequence(tr.selection);
   let changed = false;
   for (const start of selectedItems(sequence)) {
     const level = innermostListStep(sequence.facts[start].steps);
@@ -187,7 +181,7 @@ export function indent(tr: Transaction): boolean {
 
 /** One list level fewer for each selected item and what is under it; the last level returns the blocks to body text. */
 export function outdent(tr: Transaction): boolean {
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  const sequence = selectedSequence(tr.selection);
   let changed = false;
   for (const start of selectedItems(sequence)) {
     const level = innermostListStep(sequence.facts[start].steps);
@@ -218,7 +212,7 @@ export function selectionIsQuoted(sequence: Sequence): boolean {
  * just above or below stays separate (`|`).
  */
 export function quote(tr: Transaction): boolean {
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  const sequence = selectedSequence(tr.selection);
   const { from, to } = sequence;
   const at = sharedSteps(sequence.facts, from, to);
   const paths = sequence.blocks.map((block) => readPath(block.attrs.path));
@@ -245,7 +239,7 @@ export function quote(tr: Transaction): boolean {
  * unquoting it gives the list back. Blocks that share no quote each leave their innermost one.
  */
 export function unquote(tr: Transaction): boolean {
-  const sequence = selectedSequence(tr.selection, transactionView(tr));
+  const sequence = selectedSequence(tr.selection);
   const shared = sequence.facts[sequence.from].steps
     .slice(0, sharedSteps(sequence.facts, sequence.from, sequence.to))
     .map((step) => step.type)

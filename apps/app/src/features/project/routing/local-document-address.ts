@@ -198,12 +198,32 @@ export function resolveReplayAddress(input: {
  */
 export function draftOnlyTarget(
   result: DocumentAddressResult | undefined,
-  view: "live" | "review",
   draftList: { files: ReviewFileTarget[] | null },
 ): ReviewFileTarget | undefined {
-  if (view !== "review" || !result || result.kind === "unavailable") return undefined;
+  if (!result || result.kind === "unavailable") return undefined;
   const file = draftList.files?.find(
     (candidate) => candidate.documentId === result.document.documentId,
   );
   return file?.draftOnly ? file : undefined;
+}
+
+/**
+ * The draft-only file a plain address names when live has nothing there: the document its entry
+ * is bound to, else the file at its path. Read from the draft list the route already holds, so a
+ * bare Live address to a page only a draft holds can offer that draft (design §6).
+ */
+export function draftOnlyAt(
+  destination: { scheme: string; path: string },
+  boundDocumentId: string | null,
+  draftList: { files: ReviewFileTarget[] | null },
+): ReviewFileTarget | undefined {
+  const path = canonicalDocumentPath(destination.path);
+  return draftList.files?.find(
+    (file) =>
+      file.draftOnly &&
+      (boundDocumentId
+        ? file.documentId === boundDocumentId
+        : file.contextLocation?.scheme === destination.scheme &&
+          canonicalDocumentPath(file.contextLocation.path) === path),
+  );
 }

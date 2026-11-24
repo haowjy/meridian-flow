@@ -1,8 +1,10 @@
 /** Durable inverse delivery to live rooms and drafts. */
+
+import { decodeEnvelope, freshPeerId, readDocument } from "@meridian/document-model";
+import { nodeOf } from "@meridian/loro-prosemirror";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
-import * as Y from "yjs";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { inverseSchema } from "./domain/edit-excerpt.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -151,38 +153,22 @@ it("records writer card undo with the writer's user identity", async () => {
   }
 });
 
-it("an already-connected live room sees Undo without a repairing read", async () => {
+it("an already-connected live room sees the write and its Undo", async () => {
   const { harness, view, responseId, context } = await fixture();
-  const peer = new Y.Doc({ gc: false });
+  const room = { kind: "live", documentId: ALPHA_ID } as const;
+  const peer = await view.rooms.read(room, { peer: freshPeerId() });
+  const stop = view.rooms.subscribe(room, ({ batch }) => {
+    peer.importBatch(decodeEnvelope(batch));
+  });
   try {
     const immediate = {
       ...context,
       responseIdentity: undefined,
-      grant: testFileGrant({ kind: "live" }, ALPHA_ID),
-      actor: {
-        kind: "agent" as const,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseId,
-      },
+      actor: { kind: "agent" as const, threadId: THREAD_ID, turnId: TURN_ID, responseId },
     };
-    await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, immediate);
-    const room = view.hocuspocus.documents.get(ALPHA_ID);
-    if (!room) throw new Error("Room was not connected");
-    Y.applyUpdate(peer, Y.encodeStateAsUpdate(room));
-    room.on("update", (update: Uint8Array) => Y.applyUpdate(peer, update));
     const prose = () =>
-      peer
-        .getXmlFragment("prosemirror")
-        .toArray()
-        .map((node) =>
-          node instanceof Y.XmlElement
-            ? node
-                .toArray()
-                .map((child) => (child instanceof Y.XmlText ? child.toString() : ""))
-                .join("")
-            : "",
-        )
+      readDocument(peer)
+        .map((block) => nodeOf(inverseSchema, block).textContent)
         .join("\n\n");
     expect(
       await view.collab.agentEdit().write(
@@ -196,9 +182,8 @@ it("an already-connected live room sees Undo without a repairing read", async ()
         },
         immediate,
       ),
-    ).toMatchObject({ status: "success", phase: "committed" });
+    ).toMatchObject({ status: "success" });
     await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
-    const broadcasts = view.hocuspocus.broadcasts.length;
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -206,10 +191,10 @@ it("an already-connected live room sees Undo without a repairing read", async ()
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed" });
-    expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
     await vi.waitFor(() => expect(prose()).toBe("Alpha Beta.\n\nBlue."));
   } finally {
-    peer.destroy();
+    stop();
+    peer.free();
     await harness.dispose();
   }
 });

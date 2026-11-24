@@ -46,7 +46,7 @@ Lists what the writer opened lately, from the catalog. It imports two Context ad
 
 The writer's browser tab.
 
-Holds the HTTP client, the thread socket and the Yjs socket.
+Holds the HTTP client, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [browser](system.md#browser)

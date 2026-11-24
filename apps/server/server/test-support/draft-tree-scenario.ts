@@ -21,7 +21,7 @@ export type {
   ScenarioView,
   ScenarioWriter,
 } from "./draft-tree-commands.js";
-export { itemFor, typeLink } from "./draft-tree-commands.js";
+export { itemFor } from "./draft-tree-commands.js";
 export type { ScenarioSource, ScenarioWork } from "./draft-tree-seeds.js";
 
 /** Seed verbs always; command verbs need `options.runtime` and `options.runtimes`. */

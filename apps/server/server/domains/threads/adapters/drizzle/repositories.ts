@@ -37,7 +37,7 @@ export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTra
 
 function composeDrizzleRepositories(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit"> | null,
   lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
@@ -46,7 +46,7 @@ function composeDrizzleRepositories(
     threads: createDrizzleThreadRepository(db, { statusReader, lineageScratch }),
     chatFeed: createDrizzleProjectChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
-    threadWorks: createDrizzleThreadWorksRepository(db),
+    threadWorks: createDrizzleThreadWorksRepository(db, workActivity),
     turns: createDrizzleTurnRepository(db, workActivity),
     promptBakes: createDrizzlePromptBakeRepository(db),
     blocks: createDrizzleBlockRepository(db),
@@ -74,7 +74,7 @@ function composeDrizzleRepositories(
 
 export function createDrizzleRepositories(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks">,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit">,
   lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {

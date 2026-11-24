@@ -9,16 +9,17 @@
  *
  * Most of that is one writer alone, so `mount` is one editor. `mountPair`
  * brings a real collaborator, and a case reaches for it only when its own claim
- * names one: y-prosemirror rebuilds the whole document and reports every
+ * names one: the binding rebuilds the whole document and reports every
  * position deleted, which is the hazard the anchored hold exists for, and undo
- * on a shared document is the Yjs UndoManager rather than ProseMirror's own
- * history.
+ * on a shared document is the editor's own collaborative history
+ * (`editor-history.ts`) rather than ProseMirror's.
  */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { history, undo } from "@tiptap/pm/history";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { undoEditorHistory } from "@/core/editor/editor-history";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
 import { createStandaloneEditor, requireNode } from "@/test-support/standalone-editor";
 
@@ -332,7 +333,7 @@ describe("a pending picture can be moved while its bytes travel", () => {
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
 
-    // One transaction, delete plus insert: the move y-prosemirror reconciles as
+    // One transaction, delete plus insert: the move the binding reconciles as
     // a new identity, and the shape a drag inside the manuscript produces.
     const transaction = editor.state.tr;
     const picture = editor.state.doc.nodeAt(5);
@@ -474,10 +475,13 @@ describe("a new picture lands where the writer asked for it", () => {
 
     const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
 
-    // The collaborator takes the whole table away. There is no cell to land in,
-    // and landing anywhere else would be a picture the writer never asked for.
+    // The collaborator takes the whole table away, and the writer's caret leaves
+    // it, so it goes from this screen too (while the caret rests in it, the
+    // editor keeps it). There is no cell to land in, and landing anywhere else
+    // would be a picture the writer never asked for.
     peer.view.dispatch(peer.state.tr.delete(table.pos, table.pos + table.node.nodeSize));
     sync();
+    editor.commands.setTextSelection(2);
     await settle();
 
     chooseFile(imageFile("portrait.png"));
@@ -559,7 +563,7 @@ describe("an image file pasted over a sweep replaces the sweep", () => {
 
 describe("Replace aims at the picture the writer pointed at", () => {
   it("takes the whole replacement back in one undo", async () => {
-    // Undo on a shared document is the Yjs UndoManager, so the shared document
+    // Undo on a shared document is the editor's collaborative history, so the shared document
     // is what these two cases are for — not a peer.
     const { editor, held } = mountPair();
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
@@ -579,7 +583,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     await settle();
     expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:new"]);
 
-    expect(editor.commands.undo()).toBe(true);
+    expect(undoEditorHistory(editor)).toBe(true);
     await settle();
 
     expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:old"]);
@@ -593,7 +597,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     held[0].settle(asset("only"));
     await settle();
 
-    expect(editor.commands.undo()).toBe(true);
+    expect(undoEditorHistory(editor)).toBe(true);
     await settle();
 
     expect(imageNodes(editor)).toEqual([]);

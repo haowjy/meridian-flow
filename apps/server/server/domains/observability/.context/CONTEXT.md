@@ -8,8 +8,8 @@ consumption][consumption] pages.
 Domain services receive an explicit `EventSink`; there is no ambient fallback.
 
 The process sink carries active HTTP/WebSocket trace scope. Request and domain
-joins are explicit at emit sites; detached work retains its scope, while shared
-Yjs persistence creates a new trace and emits its document/draft joins.
+joins are explicit at emit sites; detached work retains its scope, while a room's
+save creates a new trace and emits its document joins.
 
 [records]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/diagnostics.md
 [consumption]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/diagnostics.md#bounded-and-loss-aware

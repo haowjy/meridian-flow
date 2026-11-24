@@ -102,7 +102,7 @@ structured authoring snapshot before navigation; acceptance retires it,
 rejection stays on its row, and ambiguity retains it for replay. See the
 [submission guide](../src/client/chat-submissions/AGENTS.md).
 
-Peer marks are read-only; receipt Undo is the AI reversal
+Receipt Undo is the AI reversal
 authority. `DocumentSession` owns collaboration state only, with no parallel
 safety-notice presentation model. Collaboration self-suppression uses internal Meridian `UserId`, not
 the WorkOS external identity.
@@ -256,8 +256,8 @@ the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it so
 focus following a pointer command stays quiet.
 
 E2E fixtures may seed relational project/Work/thread/context shells through the
-authenticated API or SQL, but never write Yjs content or the `document_blocks`
-rows; Yjs is authoritative and those rows are derived from it. Teardown removes context sources and relies on cascades.
+authenticated API or SQL, but never write document content or the `document_blocks`
+rows; the CRDT is authoritative and those rows are derived from it. Teardown removes context sources and relies on cascades.
 
 Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).
 

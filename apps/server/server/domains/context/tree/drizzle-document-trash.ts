@@ -21,14 +21,18 @@ import {
 } from "@meridian/project-tree";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type * as Y from "yjs";
+import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import { trashActorsOf } from "../adapters/trash-removals.js";
 import type { DocumentPurgeDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
-import { type Released, releaseDocumentContent } from "./release-document-content.js";
+import {
+  type DocumentContentEnd,
+  type Released,
+  releaseDocumentContent,
+} from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
 import {
   ownedByRequestSql,
@@ -53,7 +57,7 @@ function projectTrashMember() {
 }
 
 /** An unsettled drafted record on one of the nodes, or one that creates or moves under them. */
-function unsettledOn(doc: Y.Doc, nodes: ReadonlySet<string>): boolean {
+function unsettledOn(doc: LoroDoc, nodes: ReadonlySet<string>): boolean {
   const settled = settlementsOf(doc);
   return listRecords(doc).some(
     (record) =>
@@ -69,6 +73,8 @@ export function createDrizzleDocumentTrash(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   purges: DocumentPurgeDisposal;
+  /** What collab ends with a purged document's content. */
+  collab: DocumentContentEnd;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
   const objects = createObjectRelease({
@@ -154,8 +160,9 @@ export function createDrizzleDocumentTrash(deps: {
       SELECT DISTINCT p.document_id::text,
              coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
       FROM (${retentionHolds(ids)}) p
-      LEFT JOIN ${works} w ON w.draft_id = p.draft_id
-      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id
+      JOIN drafts d ON d.id = p.draft_id
+      LEFT JOIN ${works} w ON w.id = d.work_id
+      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id AND d.work_id IS NULL
       WHERE (w.id IS NOT NULL OR t.id IS NOT NULL)
       ORDER BY p.document_id::text, 3, 2
     `);
@@ -296,7 +303,7 @@ export function createDrizzleDocumentTrash(deps: {
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
-        return releaseDocumentContent(deps.db, taken.documentIds);
+        return releaseDocumentContent(deps.db, deps.collab, taken.documentIds);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;
@@ -386,7 +393,7 @@ export function createDrizzleDocumentTrash(deps: {
             }
           },
         });
-        return releaseDocumentContent(deps.db, [documentId]);
+        return releaseDocumentContent(deps.db, deps.collab, [documentId]);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;

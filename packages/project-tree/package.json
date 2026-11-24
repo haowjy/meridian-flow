@@ -14,7 +14,7 @@
   "dependencies": {
     "@meridian/contracts": "workspace:*",
     "fractional-indexing": "^4.0.0",
-    "yjs": "13.6.33"
+    "loro-crdt": "catalog:"
   },
   "devDependencies": {
     "typescript": "catalog:",

@@ -6,7 +6,6 @@
  */
 import { writeFileSync } from "node:fs";
 import { createDb } from "@meridian/database";
-import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { setTestHook, type TestHookPoint } from "../shared/test-hooks.js";
 
@@ -23,7 +22,7 @@ setTestHook(env("STEP") as TestHookPoint, async () => {
     /* hang until SIGKILL */
   });
 });
-const store = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+const store = createDrizzleTreeListStore({ db });
 await store.admit({
   list: { kind: "project", projectId: env("PROJECT_ID") },
   accountId: env("ACCOUNT_ID"),

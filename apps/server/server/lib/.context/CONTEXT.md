@@ -31,7 +31,7 @@ bindable proxy exists. Detached work uses the shared tracker.
 
 `auth-gate.ts` composes WorkOS session validation, user provisioning, and app
 services. Route code authenticates first, then uses domain-owned
-`requireProjectOwner`/`requireThreadOwner`; document routes and Yjs rooms ask
+`requireProjectOwner`/`requireThreadOwner`; document routes and Loro rooms ask
 file-policy for the per-resource grant. `lib` adapts these contracts but does
 not own authorization.
 
@@ -51,7 +51,7 @@ model takes (`placeMedia`, with the model on `ToolHandlerContext.model`), as a m
 (`renderReadResult` in `core-tools.ts` adds it after the text); a PDF the model can't take, or an
 EPUB, as its extracted Markdown (`given: "text"`); any other file as a description. Extracted text
 is read through agent-edit's `readStaticMarkdown`: the same renderer as a document, in a throwaway
-in-memory document with fixed Yjs ids so block hashes stay the same between reads. So outline,
+in-memory document with block ids by position so block hashes stay the same between reads. So outline,
 `#heading` sections, `in` ranges and `around` searches all work on it; nothing is recorded as seen
 and nothing can be written. A whole read of more than `OUTLINE_FIRST_CHARS` (30,000) characters
 returns the outline first; naming a section, `in`, `around` or `format` reads what was asked. A
@@ -90,19 +90,12 @@ Close, unsubscribe and a newer request invalidate pending acquisition; only the
 current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
 
-The Yjs handler asks file-policy for `edit`, then `read` for room admission.
-A Live edit frame is judged in the room and stored with one insert, and takes no grant of its own;
-a draft's edit frames run under the admitted grant. A refusal, or an access change that reaches
-a key the socket is registered under, closes with the typed transport code. Schema admission closes the physical transport
-through `closeTransport` after emitting its correlated diagnostic; the hook
-throw only aborts processing and is not close delivery. Schema comparison and
-head semantics belong to [collab](../../domains/collab/.context/document-authority-and-schema.md).
-
-The client schema comes from `Sec-WebSocket-Protocol`: exactly one grammar
-match supplies the triple; absent, zero, or multiple matches use the `0.0.0`
-sentinel. The route echoes the sole matching token, otherwise the first offered
-token, so the 101 completes and typed refusal can reach malformed clients. No
-offered token means no echo, and query parameters do not participate.
+The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
+room's Join. A batch takes no grant of its own: it is imported as sent and acked. A refusal is a
+`JoinError` with the contract's app code, and an access change that reaches a key the room is
+registered under ends the room (`RoomError` `access-changed`), so the client joins again. The
+client's schema version rides in the Join's `auth` (`encodeLoroJoinAuth`); schema comparison
+belongs to [collab](../../domains/collab/.context/document-authority-and-schema.md#schema-admission).
 
 ## Route-specific contracts
 
@@ -127,7 +120,7 @@ join's forward. It answers from that row (`fileRefOfVisible`, the mapping `Conte
 shares), so it never resolves a path and never sees a draft.
 
 A move inside one list, and every rename, delete and create in it, is a record the browser
-writes in the tree's room (`yjs-tree-room.ts`); no route takes those, and nothing moves between
+writes in the tree's room (`loro-tree-rooms.ts`, on `/ws/loro`); no route takes those, and nothing moves between
 a project's files and the account's: between the two the action is Copy. Owner resolution and the edit recheck are
 `context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy, and the
 destination parsers are in `context-destination.ts`.

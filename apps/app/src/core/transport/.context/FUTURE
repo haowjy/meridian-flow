@@ -2,7 +2,7 @@
 
 - Recovery after a server restart with the browser online waits on backoff: no browser
   signal says the server is back, so the first connection through depends on the
-  randomized delay (Hocuspocus `maxDelay` 30 s, thread `persistentDelayMs` 30 s;
-  observed 0.8–22 s). Peer success then pulls the other connections within ~0.5 s.
-  Lowering those caps trades reconnect load for latency; revisit with production
-  deploy-restart data.
+  retry delay (a Loro room's fixed `RETRY_MS`, at most 10 s and without jitter; the thread
+  socket's randomized `persistentDelayMs`, up to 30 s). Peer success then pulls the other
+  connections within ~0.5 s. Every room retries on the same schedule, so a restart brings
+  them back together; add jitter or lower the caps with production deploy-restart data.

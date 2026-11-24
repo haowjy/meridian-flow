@@ -297,7 +297,7 @@ function answerOf(
   delta: ShownDelta | undefined,
 ) {
   return {
-    output: modelResult({ command, status: "success", phase: "committed", payload }),
+    output: modelResult({ command, status: "success", payload }),
     metadata: { treeWrite: true },
     evidence: { shown: [], ...namesEvidence(delta) },
   };

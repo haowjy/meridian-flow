@@ -53,9 +53,8 @@ direct child of a flex column, with `PHONE_DOCUMENT_PRESENTATION`
 (`context/document-presentation.ts`). The phone resolves its document with the same
 `resolveMainDocument` as the desktop's main (`../views.ts`) and mounts one host.
 
-The presentation value is the whole phone difference: it shows no remote carets,
-keeps a review body read-only, suspends presence from the click that requests a review, and sets the binding
-owner id `mobile-project-document-host`.
+The presentation value is the whole phone difference: it shows no remote carets and sets the
+binding owner id `mobile-project-document-host`.
 Everything else is the shared host.
 
 The phone must stay on the shared session boundary. Only
@@ -63,24 +62,10 @@ The phone must stay on the shared session boundary. Only
 lease that completes a stranded adoption; a phone that binds the live room itself
 is refused with `adoption-pending` while the local copy is reserved.
 
-The same document identity feeds `useActiveReviewBinding`, which leases live
-presence. Phone hosts pass requested draft identity; the adapter resolves the
-canonical room and Work. A review body is read-only and has no editing toolbar.
-
-`MobileDocumentReview` keeps one wrapper in the tree for live/review
-presentation. `MobileReviewHeader` owns the draft switcher, stepper, and list
-button; `MobileChangeBar` sits in page flow at the bottom of the manuscript;
-`MobileChangeSheet` lists this document's changes and links to Work changes.
-All controls use 44px targets. Apply/Discard, refusal holds, and next
-change behavior come from shared draft-review state; phone owns only sheet and
-phone-layout state. No Apply-all/Discard-all lives in the sheet.
-
-The live view's one version chip sits at the toolbar row's end, as on desktop, with every
-draft one pick away; the review's header carries its own once a review is entered. An empty review stays on
-the same document and reads "No changes left"; closing a draft-only document
-is navigation, not Discard or a terminal review card. The read-only body
-selects changes instead of opening the
-keyboard; mobile review never becomes an editable Editor.
+`MobileDocumentReview` keeps one wrapper in the tree for Live, a plain draft and Review changes.
+In Review changes it shows the same `ReviewBar` as the desktop, with 44px targets, and the body
+takes typing as the desktop's does. The live view's one version chip sits at the toolbar row's end,
+as on desktop, with every draft one pick away.
 
 ## Drawer and phone chrome
 

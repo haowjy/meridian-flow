@@ -1,29 +1,39 @@
 # Collab — reversal contracts
 
 Reversal reads what an edit recorded and writes a merge, for card actions and the model's
-Undo/Revert alike. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
-model writes the edit again (the writer asks it to). An inverse is an ordinary
-immutable journal edit; it never rewrites a target row or marks it reversed.
+Undo/Revert alike. There is no Redo: to redo, the model writes the edit again (the writer asks it
+to). An inverse is an ordinary
+recorded edit; it never rewrites a target row or marks it reversed.
 
-## An AI edit is text
+## An AI edit is a Loro edit
 
-The card's state and Undo read what an edit recorded, never Yjs item ids. Each AI write into the
-manuscript records its `delta` (the blocks it changed, before and after:
-`document_edit_parts.delta`). A change of the edit is one of the differences its delta cuts
-(`content-merge/stands.ts`). It **stands** in a text when the text holds it and merges it out
-cleanly (`changeStateIn`). The Live inverse and a press's Undo write only a change that stands;
-the card's offer uses that same test for Live text.
+Every Undo of an AI write, the card's and the model's `undo` and `revert`, goes by design §2's one
+Undo rule ([undo-and-attribution]), the rule a press's Undo uses: `takeBack` (`take-back.ts`) takes the write
+back whatever was written since (`undoEdits` in `@meridian/document-model` `invert.ts`). Each AI write into the manuscript records its Loro `edit`
+(`document_edit_parts.edit`: the text docs it wrote with the ops between `before` and `after`, and
+the structure values it set, by `editSince`) beside its `delta` (the blocks it changed, as
+markdown, which the card's rows and `read(format: "edits")` excerpts read) and the room it wrote
+in (`origin`: Live, or a draft's fork; a Draft chat's write into a document only its draft holds
+is `live` with the draft's id). A part **stands** while it is not taken back and the room still
+holds its history (`holdsEdit`; `compacted` otherwise): the card's offer and every Undo use that
+one test (`unavailable` in the planner), so an Undo never takes a part the offer would not.
 
-A drafted write (Draft mode, or a named Work) leaves the Work's suggestions in Live, not text the
-manuscript holds. The card's Undo handles a document that still holds the turn's suggestions in a
-separate path: `suggestion-turn-undo.ts` finds them with `storedPendingTurns` and rejects them with
-`resolveStored(..., "reject", { turn })`, without a `stands` check; text the writer typed beside
-them stays. Documents where the turn left no pending suggestion (it wrote Live there, or its
-suggestions were applied or discarded) go to the Live inverse: one operation takes a change out of
-Live, `takeOut`, the merge of its inverse. The card's Undo plans (`prepare` in
-`domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps
-before it leave. An applied suggestion is Live text no `delta` of the turn describes, so the Live
-inverse finds nothing of it standing and leaves it.
+Every part goes back in the room it was written in, whatever room the chat writes in now: a chat
+switched between Draft and Live still undoes and reverts the edits it made before the switch. The
+capture (`capture` in `adapters/drizzle-turn-inverse.ts`) reads each room the chat's parts were
+written in, and the one it writes in now; the planner (`createCapturedReversalPlanner`) and the
+commit both take parts back through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
+them by room and runs `undoEdits` in each. The in-memory host's turn Undo and the model's undo run
+the same function. The card's Undo takes only what the turn did outside a draft: its parts whose `origin` has no
+`draftId`, and its live tree receipts. What it did in a draft, text and tree, is the turn's
+restore (the card's `Undo turn`, [press](press.md)), a press with its own Undo (design §5), so one
+action takes a reply back and the card offers Undo only when the turn wrote in Live or changed
+the Live tree. The model's `undo` and `revert` still take a draft's parts. The card's
+Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps before it leave (the planner takes planned
+steps back on private copies of the captured rooms). A step's receipt has one part per room, with
+the targeted parts' own `origin`. Only the batches the chat's current room holds (its own, and
+Live's in a fork) join the reply's frontier. History is read in SQL to the chat's own parts and
+every Undo and revert, and a fork part whose draft is gone is left out.
 
 A step records one receipt of kind `undo` that names the parts it took, so the card says
 "Undone". The model's `undo` and `revert` of a part in Live are the same step the card's Undo of
@@ -33,16 +43,12 @@ revert reads back like any other edit.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> suggested: the AI's drafted write lands as the Work's suggestions
   [*] --> live: the AI's write lands in the manuscript
-  suggested --> applied: Apply (accept)
-  suggested --> out: the card's Undo (reject), or Discard
-  out --> suggested: Undo of that Discard
   live --> out: the card's Undo, the model's undo or revert
 ```
 
 No code steps this machine: each change's state is read from the document on every read, so it
-cannot go stale. An applied change is plain Live text; the card's Undo leaves it.
+cannot go stale.
 
 ## Commands and policy
 
@@ -54,14 +60,12 @@ its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every st
 `done`. The turn's Work receipts (`reverseTurnCard`'s `alongside`,
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
-is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's draft no longer places the node (a Discard took it out) is
-dropped from the grants and never run: it is left alone, and the rest of the reply still
-reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A target in a closed owner's draft (an archived or deleted Work, a chat
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
 closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a draft that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
 whole reversal (`permission_denied`), which the card shows as a failed press.
-A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
+A tab of an older build may send `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
@@ -91,8 +95,9 @@ card uses the same admission boundary.
 An invertible active part offers Undo. One eligibility rule, in the captured planner
 (`model-reversal-planner.ts`, `taken`/`takenBy`), decides what every reversal may still take: a
 part an Undo took (the card's, a writer's revert, or the model's own undo in the same chat) is not
-available, whatever the text says. Nothing reverses an Undo, so its action is the
-permanent record of what it took. Without the rule, an older edit's Undo that removed the text a
+available, whatever the text says. Nothing erases an Undo's receipt, so its action is the
+permanent record of what it took. The turn's restore records in this same ledger, and its press
+Undo is a new receipt taking the restore's own parts ([press](press.md)). Without the rule, an older edit's Undo that removed the text a
 newer edit's Undo restored leaves that newer edit "restorable" again: a card would take it out on
 every press, and a model `revert` of it would bring back an intermediate word. The card's Undo and
 its chip choose from one selection (`prepare`): a taken part is neither a step nor a skip. The
@@ -100,7 +105,7 @@ model's `undo` and `revert` list a taken part as `already removed`, and `read(fo
 offers neither for it, because the listing asks the same planner. A model's forward revert is its
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
 (`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
-the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
+the turn's text out, or the card's Undo took any of its tree changes (`byCard` in `adapters/drizzle-tree-history.ts`, the
 card's undo receipts, whatever has happened to the nodes since): the chip's `undone` flag. Otherwise
 it carries no word (the same rule as for tree receipts below). Effective action state is indexed per
 immutable part (`effectiveActionIndex`). A model count consumes original
@@ -108,51 +113,45 @@ actions: once a partial model Undo reverses any surviving part of an edit, the n
 continues to the preceding edit.
 
 The model owns one strict stack per thread/document. `write undo` accepts a count; `write revert`
-creates a new edit at the current (destination) view. Both read the part's `delta`: a part whose change no longer stands is skipped
+creates a new edit at the current (destination) view. Both read the part's `delta`: a part that no longer stands is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
-or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
-edit remains to reverse. The model uses ordinary `read` for the passage;
-`read(format: "edits")` reads immutable parts through the host port, and says what became of a
-drafted write's suggestions from the changes the part's stored update bytes carry and the
-verdicts their resolves recorded (`writeVerdict`, `suggestion_verdicts`); its excerpt of each
-edit is read from the part's `delta` (`deltaExcerpt`). Neither reads Live's deleted items, whose
-content a checkpoint drops: `applied` (or `partly applied`, by
-parts) when the writer accepted them, `discarded` when rejected. A change nobody resolved (an edit
-removed it) or one two resolves decided opposite ways has no verdict, and the line reads from the
-text as for any write (`changed`, `pending` or `live`). Model actions
+or current text. The model uses ordinary `read` for the passage;
+`read(format: "edits")` reads immutable parts through the host port; its excerpt of each edit is
+read from the part's `delta` (`deltaExcerpt`), and its state from the text as for any write
+(`live`), or `undone` when an undo receipt names the part. The listing
+shows the chat's parts in every room, each judged in its own (`too old to undo` for a part whose
+room cut its history). Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
 other text parts, including applied parts.
-A change **stands** where it landed when its inverse merges into the text without a conflict
-and putting it back gives the text again (`content-merge/stands.ts`); an Undo or revert writes
-only a change that stands, and leaves the others whole. The text decides, not who typed it:
+A part goes back whatever was written over it since (design §2, "An Undo always runs"):
 
-- Typing beside the AI's words, or in another sentence, stays; the AI's change comes out.
-- Typing inside the AI's words, or over them, is an edit the change cannot be merged out around:
-  the change stands no longer, and the part is skipped as `edited_since` (`cant_undo_changed`
-  when nothing of the edit is left). The AI's words are never half taken out with the writer's
-  letters joined to what is left.
+- The write's characters that still stand come out, and what it deleted comes back; typing
+  beside or inside the AI's words stays, around them.
+- A part the writer deleted or retyped whole still goes back: its words are gone already, so the
+  text it deleted comes back beside the writer's.
+- A part whose room was compacted below its write can't go back, and the answer says the
+  document no longer keeps history that old (`expired` when nothing of the edit is left).
+- A model undo in a draft that takes out text an Apply already put in Live says so: the
+  manuscript still has the text, and the draft now differs from it there.
 - A part an Undo took reads `already_removed`; a card's reversal skips it and the chip reads
   from the actions that took it.
 
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
-stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's draft
-places the node. A step that can't act is a skip and never runs, so one purged document never
+stand (the fates are below, under tree receipts). A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
 card never targets the text of a document created by the turn, even after the create was undone;
 the tree Undo takes the document back whole (`createdDocuments`).
 A reversal's result names a document in Trash by where it last stood.
 A turn's edit targets include its create transition even when the document is empty. A create
-that Undo removed stays addressable through that immutable target. Every part is Live's
-(`document_edit_parts.origin` is `live`): a drafted write's suggestions are Live text with marks,
-and their Undo is the rejection above. Text targets authorize live.
+that Undo removed stays addressable through that immutable target. A part's `origin` names the
+room it was written in, Live or its draft's fork, and its Undo commits there.
 
 Card authorization and change-viewer discovery share immutable edit and
-origin targets with inverse admission; mutation and draft transport
-journals are never authorization lineage. Card inverse rows are writer rows
+origin targets with inverse admission; room batches are never authorization lineage. Card inverse rows are writer rows
 with no turn. A model write carries a
 `ResponseAuthorship`: `response_id` keeps provider authorship. The command's id
 (`document_edits.command_id`) joins the text and tree receipts of one call.
@@ -166,7 +165,7 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 A tree change (create, move, rename, delete, restore, folders included) is its own command
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
-A chat card's Undo of a turn takes the reply's tree receipts back too, in the same
+A chat card's Undo of a turn takes the reply's live tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
 steps, newest receipt first; a receipt the model's own `undo` reversed in the reply is part of
 what the reply did, and the card leaves it). The receipts one list holds go back in one update of that list, so a browser showing
@@ -190,10 +189,8 @@ words after the card's Undo (a change leaves the card only when the newest rever
 is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
 parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
 records (it follows a restored Discard's copies, and a record a later change landed over reads
-`replaced`); per node, pending, else applied, else replaced, else discarded. A restored Discard may
-put its copies in a new draft of the Work, so the card's tree plan judges and takes back each
-drafted receipt in the draft of its newest copy (`newestDrafted`), not the draft it was written in. The card's label and
-row word read both. Its lists' keys are taken before the documents' (in
+`replaced`); per node, pending, else applied, else undone (the turn's restore in force took it),
+else discarded. The card's label and row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a live restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call
@@ -202,7 +199,7 @@ keeps a receipt (`tree_edit_receipts`: the record ids, the Work's draft) and one
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
 `e<N>` the model is given is the ordinal on the receipt's subject.
 
-A node has one history per chat: this agent's own tree receipts and text edits (each agent is its own peer for the text, as above, so the writer's typing never drops an edit from it; only an edit with no item left to remove or restore does), ordered by that ordinal,
+A node has one history per chat: this agent's own tree receipts and text edits (the writer's typing never drops an edit from it: an Undo always runs), ordered by that ordinal,
 with what was undone left out (`TreeHistory.historyOf`: the receipts that took a step and were
 not reversed, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
@@ -234,20 +231,19 @@ lock; those reads need not agree with each other. Its commit scope is one
 savepoint whose first locks are the Work rows (the bound grants' Works in id order, the grants
 confirmed: a seam boundary), then its documents' mutation locks in id order; the
 inverse takes no lock of its own, since those locks order two inverses
-of one edit. Under them each step plans again on the committed text: the step re-reads Live and re-runs
-`takeBack`. A write that landed after the capture changes what a step takes, never whether the
+of one edit. Under them each step plans again on the committed room: it reads each captured room again and
+re-runs `undoInRooms`. A write that landed after the capture changes what a step takes, never whether the
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.
 
-The card's chip exposes and the press handles the two cases in `suggestion-turn-undo.ts`: pending
-suggestions use the `storedPendingTurns` scan, while Live text uses the `prepare` plan and its
-`stands` check. The cost is one read of each document's blocks and about 2.5 ms per change, one
-document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
+The card's chip and its Undo use the `prepare` plan and its `unavailable` check: one load of each
+room the chat wrote the document in, one document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
 the same reads.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
-`expired`, or `partial` with HTTP 200; callers retain
+`expired` (every part is past the history cutoff) or `partial` (some are) with HTTP
+200; callers retain
 those outcomes and refresh the turn query. The outcome carries no per-part explanation: the
 card reads again and shows what is true.
 
@@ -286,3 +282,4 @@ chip is composed once (`getTurnReceiptChip` there; the collab port's `getDocumen
 knows nothing of Works, so nothing else answers the card with it):
 Undo while any part acts, `undone` once a part was taken and none acts now.
 
+[undo-and-attribution]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/design.md#2-drafts

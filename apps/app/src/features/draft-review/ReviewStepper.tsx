@@ -1,9 +1,8 @@
 /**
- * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order,
- * bringing each into view. Before any change is focused it reads the count, and
- * the first step lands on the first (or, going back, the last) change.
- * `touch` makes both arrows 44px targets for a phone. `compact` is the identity
- * row's form: quiet arrows, and `4/4` once the row's container gets narrow.
+ * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order, bringing each into
+ * view; when it crosses chapters, through the whole draft's, counted across them. Before any change is focused it reads the count. The review line's ladder
+ * (`fitReviewLine`) swaps `2 of 6` for `2/6`, then hides the count; `touch` makes both arrows 44px
+ * targets. The group takes the focus when Review changes opens.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -18,7 +17,7 @@ export function ReviewStepper({
   disabled,
   onStep,
   touch = false,
-  compact = false,
+  crosses = false,
 }: {
   count: number;
   /** The focused change's place, or -1 when none is focused. */
@@ -26,15 +25,21 @@ export function ReviewStepper({
   disabled: boolean;
   onStep: (direction: 1 | -1) => void;
   touch?: boolean;
-  compact?: boolean;
+  /** A step past either end goes on to another chapter: the stepper shows even for one change. */
+  crosses?: boolean;
 }) {
-  if (count <= 1) return null;
+  if (count <= 1 && !crosses) return null;
   const position = focusedIndex + 1;
   return (
-    <div className="flex items-center gap-0.5">
+    <fieldset
+      data-review-stepper
+      aria-label={crosses ? t`Changes in this draft` : t`Changes in this chapter`}
+      tabIndex={-1}
+      className="focus-ring m-0 flex min-w-0 items-center gap-0.5 rounded-sm border-0 p-0"
+    >
       <IconButton
         size="xs"
-        variant={touch || compact ? "quiet" : "outline"}
+        variant="quiet"
         label={t`Previous change`}
         disabled={disabled}
         onClick={() => onStep(-1)}
@@ -43,53 +48,35 @@ export function ReviewStepper({
       </IconButton>
       <span
         className={cn(
-          "px-1 text-center text-xs text-muted-foreground tabular-nums",
-          compact ? "identity-step-count whitespace-nowrap" : "min-w-14",
+          "identity-step-count whitespace-nowrap px-1 text-center text-xs text-muted-foreground tabular-nums",
           touch && "text-sm",
         )}
         aria-live="polite"
       >
-        {focusedIndex >= 0 ? (
-          compact ? (
-            <>
-              <span className="identity-count-long">
-                <Trans>
-                  {position} of {count}
-                </Trans>
-              </span>
-              <span aria-hidden className="identity-count-short hidden">
-                {position}/{count}
-              </span>
-            </>
-          ) : (
+        <span className="identity-count-long">
+          {focusedIndex >= 0 ? (
             <Trans>
               {position} of {count}
             </Trans>
-          )
-        ) : compact ? (
-          <>
-            <span className="identity-count-long">
-              {count === 1 ? <Trans>1 change</Trans> : <Trans>{count} changes</Trans>}
-            </span>
-            <span aria-hidden className="identity-count-short hidden">
-              {count}
-            </span>
-          </>
-        ) : count === 1 ? (
-          <Trans>1 change</Trans>
-        ) : (
-          <Trans>{count} changes</Trans>
-        )}
+          ) : count === 1 ? (
+            <Trans>1 change</Trans>
+          ) : (
+            <Trans>{count} changes</Trans>
+          )}
+        </span>
+        <span aria-hidden className="identity-count-short hidden">
+          {focusedIndex >= 0 ? `${position}/${count}` : count}
+        </span>
       </span>
       <IconButton
         size="xs"
-        variant={touch || compact ? "quiet" : "outline"}
+        variant="quiet"
         label={t`Next change`}
         disabled={disabled}
         onClick={() => onStep(1)}
       >
         <ChevronRight aria-hidden />
       </IconButton>
-    </div>
+    </fieldset>
   );
 }

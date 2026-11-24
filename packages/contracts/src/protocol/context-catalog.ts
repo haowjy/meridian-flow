@@ -10,7 +10,7 @@ import type {
   WorkId,
 } from "../ids.js";
 import type { ContextSourcesHint } from "./context-sources.js";
-import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
+import type { Filetype, TrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
 
 export type CatalogScope =
@@ -74,7 +74,7 @@ export type CatalogFileClassification = { extension: string } & (
   | {
       editable: true;
       filetype: Filetype;
-      schemaType: YjsTrackedSchemaType;
+      schemaType: TrackedSchemaType;
       fileType?: never;
       mimeType?: never;
     }

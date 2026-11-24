@@ -2,7 +2,7 @@
 
 A project's documents are a list of records the browser writes and replays (see
 [context CONTEXT.md](../context/.context/CONTEXT.md), Tree ownership), and each document's text is
-a Yjs session persisted into this browser. This page says what makes a document leave the screen
+a Loro session persisted into this browser. This page says what makes a document leave the screen
 and what makes its local copy go. The two are different: closing a view is reversible, deleting
 a copy is not.
 
@@ -16,7 +16,7 @@ id). It runs when one of them changes; nothing polls.
 |---|---|---|
 | The node is in Trash | close (main shows its Trash view with the session's text, read-only) | kept |
 | The node's source ended and can be restored (a deleted chat, a lineage whose chats are all in Trash) | close | kept |
-| The list closed with 4401 (sign-in expired) | stay | kept; the writer is asked to sign in again |
+| The list closed with 4401 (sign-in expired) | stay | kept; the writer is asked to sign in again, and the prompt goes once the list rejoins |
 | The connection dropped, or the list is read-only | stay | kept |
 | A Discard of the document's draft | the review closes | kept |
 | The node's `purge` in the list (a discarded create's purge is a `purge` record too) | close | **deleted** |

@@ -9,7 +9,6 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import { draftOf } from "@meridian/contracts/works";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
@@ -37,13 +36,14 @@ import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import { DesktopProject } from "./DesktopProject";
-import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentReview";
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
 import type { ChatDisplay } from "./routing/chat-navigation";
+import type { MainReviewControls } from "./routing/main-review";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
+import type { ReviewTarget } from "./routing/project-address";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
@@ -55,9 +55,13 @@ import {
 } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
+import { useDraftAddressSync } from "./use-draft-address-sync";
 import { useMainArrival } from "./use-main-arrival";
-import { useReviewAddressSync } from "./use-review-address-sync";
-import type { ReviewAddressAdmission } from "./use-review-admission";
+import {
+  type DraftAddressAdmission,
+  type MainReviewAddress,
+  MainReviewAddressContext,
+} from "./use-review-mode";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
 import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from "./views";
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
@@ -72,8 +76,8 @@ export type ProjectViewProps = {
   routeIssues?: {
     main?: ProjectRouteIssue;
     editor?: ProjectRouteIssue;
-    /** Why an unavailable Editor destination is gone, when its document was removed. */
-    removed?: ProjectRouteMask["removed"];
+    /** Why an unavailable Editor destination is unavailable, when the route knows. */
+    unavailable?: ProjectRouteMask["unavailable"];
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
@@ -92,24 +96,28 @@ export type ProjectViewProps = {
   /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
-  reviewItemKey?: string;
-  /** The draft the address's item reviews (`addressReviewDraft`). */
-  reviewOwner?: string | null;
+  draftItemKey?: string;
+  /** The draft the address's item reviews (`addressDraftOwner`). */
+  draftOwner?: string | null;
+  /** Review changes is on, against this (`?review=`); undefined is the plain draft. */
+  reviewTarget?: ReviewTarget;
+  /** The change in focus in Review changes (`?change=`). */
   reviewChangeId?: string;
+  reviewControls?: MainReviewControls;
   /** Document the Editor address resolved to; a review follows it through a rename. */
-  reviewAddressDocumentId?: string;
+  mainAddressDocumentId?: string;
   /**
    * The document the answered address names: from its draft row when live lacks it (a page a
    * draft created), else the server's answer.
    */
   addressedDocument?: AddressedDocument;
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
-  reviewAddressAdmission?: ReviewAddressAdmission;
+  draftAddressAdmission?: DraftAddressAdmission;
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewItemKey: (review: DraftPin | null) => void;
+  onSetEditorDraftItemKey: (review: DraftPin | null) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -355,37 +363,48 @@ function HydratedReviewControllers({
   const chatWork = chatThread?.workId
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
+  const chatDraft = chatWork && chatThread ? chatThread.draftId : "";
+  const chatDrafts = useMemo(() => (chatDraft ? [chatDraft] : []), [chatDraft]);
   const chatCommands = usePressCommands({
     projectId: props.projectId,
     work: chatWork,
-    draftId: chatWork && chatThread ? draftOf(chatThread, chatWork) : "",
+    drafts: chatDrafts,
     threadId: chatThreadId,
     surface: "strip",
   });
   // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
   const { notices } = useDraftCommandOwner();
   useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
-  const main = props.chatDisplay === null ? props.reviewAddressDocumentId : undefined;
-  useReviewAddressSync({
+  const main = props.chatDisplay === null ? props.mainAddressDocumentId : undefined;
+  useDraftAddressSync({
     projectId: props.projectId,
     chatThreadId,
     locationKey: props.routeLocationKey,
-    reviewOwner: props.reviewOwner ?? null,
+    draftOwner: props.draftOwner ?? null,
     address: {
-      itemKey: props.reviewItemKey,
-      changeId: props.reviewChangeId,
+      itemKey: props.draftItemKey,
       documentId: main,
-      admission: props.reviewAddressAdmission,
+      admission: props.draftAddressAdmission,
     },
-    writeItemKey: props.onSetEditorReviewItemKey,
+    writeItemKey: props.onSetEditorDraftItemKey,
   });
   const mainAddress = useMemo<MainReviewAddress>(
     () => ({
       documentId: main,
-      itemKey: props.reviewItemKey,
-      admission: props.reviewAddressAdmission,
+      itemKey: props.draftItemKey,
+      admission: props.draftAddressAdmission,
+      review: props.reviewTarget,
+      changeId: props.reviewChangeId,
+      controls: props.reviewControls,
     }),
-    [main, props.reviewItemKey, props.reviewAddressAdmission],
+    [
+      main,
+      props.draftItemKey,
+      props.draftAddressAdmission,
+      props.reviewTarget,
+      props.reviewChangeId,
+      props.reviewControls,
+    ],
   );
   const scopedProps = { ...props, chatWork, chatCommands };
   return (

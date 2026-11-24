@@ -36,7 +36,7 @@ import {
 import type { RemovalIdentity } from "../tree-change.js";
 import type { AiWriteMode, Work, WorksSnapshot } from "../works/index.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
-import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
+import { type Filetype, filetypeSchema, type TrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
 
@@ -155,7 +155,7 @@ export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
   /**
-   * The document in a draft's view: Live with that draft's suggestions applied. A draft that
+   * The document in a draft's view: the draft's fork of it. A draft that
    * never changed it reads the live document, which is what the draft would have held.
    */
   | { kind: "draft"; draft: DraftId };
@@ -182,13 +182,14 @@ export type CopyContextEntrySource = {
    */
   copyId?: string;
   /**
-   * A document the writer holds open sends its Live room's Yjs state vector (base64), whichever
-   * view it copies: a Work's view is Live with its suggestions. A folder has no room of its own, and a vector on one is a 400, as is one that does not decode. The server
+   * A document the writer holds open sends its Live room's version (base64), whichever view it
+   * copies. A folder has no room of its own, and a version on one is a 400, as is one that does
+   * not decode. The server
    * waits about two seconds for the room to hold those updates; if it still does not, the
    * answer is a 503 `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
    * and the client sends the same operation ID again until the room has them.
    */
-  stateVector?: string;
+  roomVersion?: string;
 };
 
 /**
@@ -269,11 +270,11 @@ export type AuthMeResponse = { user: AuthenticatedUser };
 
 export type ContextReadTrackedResponse = {
   kind: "tracked";
-  /** Yjs schema family used to render/edit this projection. */
-  schemaType: YjsTrackedSchemaType;
+  /** Schema family used to render/edit this projection. */
+  schemaType: TrackedSchemaType;
   /** Filetype determining the viewer/editor surface. */
   filetype: Filetype;
-  /** Markdown/fenced projection of the canonical Yjs document. */
+  /** Markdown/fenced projection of the document's Live room. */
   content: string;
 };
 
@@ -579,7 +580,7 @@ export type GetFigureSignedUrlResponse = {
   /** The file name, for the file card shown when the image can't be drawn. */
   name: string;
   sizeBytes: number;
-  /** Short-lived URL of the original: what Download serves. Do not persist in Yjs. */
+  /** Short-lived URL of the original: what Download serves. Do not persist it in a document. */
   signedUrl: string;
   /**
    * Short-lived URL of what to draw: the server's preview of an image browsers can't draw

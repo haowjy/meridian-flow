@@ -307,9 +307,9 @@ read, and from a second chat editing another block:
 ./mf thread context "$T" --all --view raw --json
 ```
 
-Writes land on the current Yjs room and show the resulting block plus
-`the user changed <hash> after you last read it.` Draft writes stay in the Work draft and leave
-live text unchanged. Missing targets return `not_found` and change no text.
+Writes land on the current Loro room and show the resulting block plus
+`the user changed <hash> after you last read it.` A Draft-mode write
+lands in the chat's draft's fork room, not Live. Missing targets return `not_found` and change no text.
 
 ## RP-21: Listed reads after compaction fit the budget, in listed order
 

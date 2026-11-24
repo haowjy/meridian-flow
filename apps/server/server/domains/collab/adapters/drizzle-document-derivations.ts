@@ -1,5 +1,5 @@
-/** Journal-locked cuts and compare-and-set writes of document derived outputs. */
-import type { DraftId } from "@meridian/contracts";
+/** Lock-scoped cuts of the Live room and compare-and-set writes of document derived outputs. */
+import type { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -7,10 +7,8 @@ import {
   documentBlocks,
   documentLinks,
   documents,
-  documentYjsHeads,
   treeNodes,
 } from "@meridian/database";
-import { sameValue } from "@meridian/suggestions";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -22,7 +20,6 @@ import {
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkProjectionMutation } from "../../projects/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,
@@ -30,32 +27,34 @@ import {
   type DocumentDerivationOutputs,
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
-import { loadDocumentState } from "./document-loader.js";
 import { liveLocationVersion, staleForSweep } from "./drizzle-block-text.js";
-import { createDrizzleJournal } from "./drizzle-journal.js";
 
-/** Caller owns the document mutation lock for this transaction. */
+/** Reads a copy of the document's Live room inside the caller's transaction. */
+export type ReadLiveCopy = (documentId: DocumentId) => Promise<LoroDocument>;
+
+/**
+ * Caller owns the document mutation lock for this transaction. The cut reads the Live room as
+ * this process holds it, with the rows the transaction sees merged in, so it may run ahead of
+ * `content_seq` by typing not yet saved; the save that stores that typing makes the cut stale.
+ */
 export async function captureDocumentDerivation(
   tx: DrizzleDb,
   documentId: DocumentId,
   lastAddress: DocumentLastAddress,
+  readLive: ReadLiveCopy,
 ): Promise<DocumentDerivationCut | null> {
   const [row] = await tx
     .select({
-      admissionSequence: documentYjsHeads.nextAdmissionSequence,
+      contentSeq: documents.contentSeq,
       locationVersion: liveLocationVersion,
       inLive: sql<boolean>`${treeNodes.trashRecord} IS NULL AND ${treeNodes.id} IS NOT NULL`,
     })
     .from(documents)
-    .innerJoin(documentYjsHeads, eq(documents.id, documentYjsHeads.documentId))
     .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(eq(documents.id, documentId))
     .limit(1);
-  // An already-staged push must still settle after a soft deletion.
+  // A derive scheduled before the document was purged settles with nothing to do.
   if (!row) return null;
-  // Never certify a warm room: writer admission precedes its in-memory apply.
-  const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
-  if (!state) return null;
   const address = await lastAddress(documentId);
   if (row.inLive && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
@@ -64,9 +63,9 @@ export async function captureDocumentDerivation(
   return {
     documentId,
     holderUri,
-    state,
+    doc: await readLive(documentId),
     watermark: {
-      admissionSequence: row.admissionSequence,
+      contentSeq: row.contentSeq,
       locationVersion: row.locationVersion,
       extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
     },
@@ -94,16 +93,14 @@ export async function certifyDocumentDerivation(
   cut: DocumentDerivationCut,
   outputs: DocumentDerivationOutputs,
   at: Date,
-  /** The drafts whose pending suggestions in the document moved. */
-  pendingMoved?: (drafts: readonly DraftId[]) => Promise<void>,
 ): Promise<boolean> {
   const w = cut.watermark;
-  const [head] = await tx
-    .select()
-    .from(documentYjsHeads)
-    .where(eq(documentYjsHeads.documentId, cut.documentId))
+  const [content] = await tx
+    .select({ seq: documents.contentSeq })
+    .from(documents)
+    .where(eq(documents.id, cut.documentId))
     .limit(1);
-  if (head?.nextAdmissionSequence !== w.admissionSequence) return false;
+  if (content?.seq !== w.contentSeq) return false;
   // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
     .select({ version: treeNodes.locationVersion })
@@ -119,7 +116,7 @@ export async function certifyDocumentDerivation(
   if (room && room.extractorVersion > w.extractorVersion) return false;
   if (
     room &&
-    room.cutAdmissionSeq === w.admissionSequence &&
+    room.cutContentSeq === w.contentSeq &&
     room.cutLocationVersion === w.locationVersion &&
     room.extractorVersion === w.extractorVersion
   )
@@ -137,18 +134,11 @@ export async function certifyDocumentDerivation(
     .returning({ id: documents.id });
   if (!updated) return false;
 
-  const before = room?.pendingChanges ?? {};
-  const moved = [
-    ...new Set([...Object.keys(before), ...Object.keys(outputs.pendingChanges)]),
-  ].filter((draft) => !sameValue(before[draft], outputs.pendingChanges[draft]));
-  if (moved.length > 0) await pendingMoved?.(moved);
-
   const blockOrder = outputs.blocks.map((block) => block.id);
   const roomValues = {
     wordCount: outputs.wordCount,
-    pendingChanges: outputs.pendingChanges,
     documentHash: outputs.documentHash,
-    cutAdmissionSeq: w.admissionSequence,
+    cutContentSeq: w.contentSeq,
     cutLocationVersion: w.locationVersion,
     extractorVersion: w.extractorVersion,
   };
@@ -232,19 +222,9 @@ const AHEAD_RECOVERY_PAGE = 100;
 export function createDrizzleDocumentDerivationStore(
   db: Database,
   lastAddress: DocumentLastAddress,
+  readLive: ReadLiveCopy,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
-  /** Wakes a Work's review list and recounts it when its suggestions in a document moved. */
-  workProjection?: Pick<
-    WorkProjectionMutation,
-    "liveChangedUnder" | "ownersOf" | "recountAfterCommit"
-  >,
 ): DocumentDerivationStore {
-  const pendingMoved = workProjection
-    ? async (drafts: readonly DraftId[]) => {
-        workProjection.liveChangedUnder(drafts);
-        workProjection.recountAfterCommit(await workProjection.ownersOf({ drafts: drafts }));
-      }
-    : undefined;
   const page = async (
     scope: Parameters<AheadRegistrationRecovery["registerUnregistered"]>[0],
     after: string | undefined,
@@ -291,14 +271,14 @@ export function createDrizzleDocumentDerivationStore(
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         await lockDocumentMutation(tx, documentId);
-        return captureDocumentDerivation(tx, documentId, lastAddress);
+        return captureDocumentDerivation(tx, documentId, lastAddress, readLive);
       });
     },
     certify(cut, outputs, at) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         await lockDocumentMutation(tx, cut.documentId);
-        return certifyDocumentDerivation(tx, cut, outputs, at, pendingMoved);
+        return certifyDocumentDerivation(tx, cut, outputs, at);
       });
     },
     async stale(page) {
@@ -306,7 +286,6 @@ export function createDrizzleDocumentDerivationStore(
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
         .from(documents)
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(

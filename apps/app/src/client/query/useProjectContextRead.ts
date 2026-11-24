@@ -4,7 +4,7 @@
  * Backed by `GET /api/projects/:projectId/documents/:documentId/read`, which
  * returns either:
  *   - `{ kind: "tracked", ... }` — markdown projection (not used by the
- *     collaborative editor surface; that still binds the Yjs WS), or
+ *     collaborative editor surface; that binds the Loro room), or
  *   - `{ kind: "binary", url, mimeType }` — a short-lived signed URL the
  *     viewer renders directly.
  *

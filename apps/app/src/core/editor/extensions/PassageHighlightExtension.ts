@@ -10,16 +10,12 @@
  * from then on the document is their business again. A peer's edit is not the
  * writer moving: those arrive constantly and would otherwise wipe the mark
  * before it was read.
- *
- * Telling the two apart needs care. Collaborative undo is the writer's own
- * keystroke, but it reaches ProseMirror through the same ySync channel a peer's
- * edit does, so the metadata has to be read rather than merely noticed.
  */
 
+import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type { TextRange } from "../passage-resolution";
 import { markEditorTarget } from "../reading-position-navigation";
 
@@ -98,17 +94,12 @@ export const PassageHighlightExtension = Extension.create({
 });
 
 /**
- * Whether this transaction is the writer taking the document back.
- *
- * `@tiptap/y-tiptap` signs every change it applies with the same plugin key and
- * distinguishes them in the payload: an undo carries `isUndoRedoOperation`
- * because its Yjs origin is the local `UndoManager`, which only the writer's
- * own Ctrl+Z reaches. A peer's edit carries the key without it.
+ * Whether this transaction is the writer's own: a peer's edit arrives as a remote transaction. An
+ * Undo lands as one too, then puts the writer's caret back in a transaction of its own.
  */
 function writerMoved(tr: Transaction): boolean {
   if (!tr.docChanged && !tr.selectionSet) return false;
-  const ySync = tr.getMeta(ySyncPluginKey) as { isUndoRedoOperation?: boolean } | undefined;
-  return ySync === undefined || ySync.isUndoRedoOperation === true;
+  return tr.getMeta(loroSyncKey) !== REMOTE_META;
 }
 
 /**

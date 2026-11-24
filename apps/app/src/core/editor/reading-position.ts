@@ -1,25 +1,36 @@
-/** Document-relative viewport and selection capture/restore over the live Yjs binding. */
+/**
+ * Document-relative viewport and selection capture and restore: the block the reading line is in by
+ * its id, and the text there and the selection as Loro points, so the place survives edits above
+ * it, anyone's.
+ */
+import type { RoomDocs } from "@meridian/document-model";
+import { resolveCursor } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
+import type { Node } from "@tiptap/pm/model";
 import { NodeSelection, Selection, TextSelection } from "@tiptap/pm/state";
-import * as Y from "yjs";
+import { decodePoint, docsOf, encodePoint, findBlock, pointAt } from "./loro-points";
 import type { ReadingAnchor, ReadingPosition } from "./reading-position-store";
-import {
-  type RelativePositionRuntime,
-  relativePositionForIndex,
-  relativePositionRuntimeFromState,
-  resolveRelativePosition,
-} from "./relative-position-runtime";
 
-function anchor(runtime: RelativePositionRuntime, pos: number): ReadingAnchor | null {
-  const relative = relativePositionForIndex(runtime, pos);
-  return relative ? Array.from(Y.encodeRelativePosition(relative)) : null;
+function anchor(docs: RoomDocs, doc: Node, pos: number): ReadingAnchor | null {
+  const point = pointAt(docs, doc, pos);
+  return point ? encodePoint(point) : null;
 }
-function resolve(runtime: RelativePositionRuntime, value: ReadingAnchor): number | null {
-  try {
-    return resolveRelativePosition(runtime, Y.decodeRelativePosition(Uint8Array.from(value)));
-  } catch {
-    return null;
-  }
+
+function resolve(docs: RoomDocs, doc: Node, value: ReadingAnchor): number | null {
+  const point = decodePoint(value);
+  return point && resolveCursor(docs, doc, point);
+}
+
+/** The first block with an id at or inside `node`: a table or a quote is found by its first. */
+function blockIdIn(node: Node): string | null {
+  if (typeof node.attrs.id === "string") return node.attrs.id;
+  let id: string | null = null;
+  node.descendants((child) => {
+    if (id) return false;
+    if (typeof child.attrs.id === "string") id = child.attrs.id;
+    return id === null;
+  });
+  return id;
 }
 
 /**
@@ -37,8 +48,9 @@ function readingLine(editor: Editor, pane: HTMLElement): number {
 export function captureReadingPosition(editor: Editor, pane: HTMLElement): ReadingPosition | null {
   if (editor.isDestroyed) return null;
   try {
-    const runtime = relativePositionRuntimeFromState(editor.state);
-    if (!runtime) return null;
+    const docs = docsOf(editor.state);
+    if (!docs) return null;
+    const { doc } = editor.state;
     const top = readingLine(editor, pane);
     let viewport: ReadingPosition["viewport"] | null = null;
     editor.state.doc.forEach((node, pos) => {
@@ -47,8 +59,7 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
       if (!(dom instanceof HTMLElement)) return;
       const rect = dom.getBoundingClientRect();
       if (!rect.height || rect.bottom <= top) return;
-      // Inside the block rather than before it: edits inserted above stay above.
-      const block = anchor(runtime, Math.min(pos + 1, pos + node.nodeSize - 1));
+      const block = blockIdIn(node);
       if (!block) return;
       const hit = editor.view.posAtCoords({
         left: rect.left + 1,
@@ -61,7 +72,7 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
         editor.state.doc.resolve(hit.pos).parent.isTextblock
           ? hit.pos
           : null;
-      const text = textPos === null ? null : anchor(runtime, textPos);
+      const text = textPos === null ? null : anchor(docs, doc, textPos);
       const line = textPos === null ? null : editor.view.coordsAtPos(textPos);
       // Dimensionless line offset (or block fraction for opaque content), never pixels.
       const offset = line
@@ -70,8 +81,8 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
       viewport = { block, text, offset };
     });
     const selection = editor.state.selection;
-    const start = anchor(runtime, selection.anchor);
-    const head = anchor(runtime, selection.head);
+    const start = anchor(docs, doc, selection.anchor);
+    const head = anchor(docs, doc, selection.head);
     if (!viewport || !start || !head) return null;
     return {
       viewport,
@@ -95,13 +106,14 @@ export function restoreReadingPosition(
   place: ReadingPosition,
 ): boolean {
   if (editor.isDestroyed) return false;
-  const runtime = relativePositionRuntimeFromState(editor.state);
-  if (!runtime) return false;
+  const docs = docsOf(editor.state);
+  if (!docs) return false;
   let scrolled = false;
   try {
     const doc = editor.state.doc;
-    const block = resolve(runtime, place.viewport.block);
-    const text = place.viewport.text ? resolve(runtime, place.viewport.text) : null;
+    const found = findBlock(doc, place.viewport.block);
+    const block = found && found.pos + 1;
+    const text = place.viewport.text ? resolve(docs, doc, place.viewport.text) : null;
     const top = readingLine(editor, pane);
     if (text !== null && doc.resolve(text).parent.isTextblock) {
       const line = editor.view.coordsAtPos(text);
@@ -117,8 +129,8 @@ export function restoreReadingPosition(
     scrolled = true;
 
     const reading = text ?? block;
-    const from = resolve(runtime, place.selection.anchor);
-    const to = resolve(runtime, place.selection.head) ?? from;
+    const from = resolve(docs, doc, place.selection.anchor);
+    const to = resolve(docs, doc, place.selection.head) ?? from;
     // Text deleted since leaves no caret to restore: the reading line takes it, never the top.
     let selection = reading === null ? null : Selection.near(doc.resolve(reading));
     if (from !== null && to !== null) {

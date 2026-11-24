@@ -4,7 +4,6 @@ import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
-import type { BlockItemId } from "../model/block-hash.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { removalPhrase } from "./removal-copy.js";
@@ -15,8 +14,9 @@ interface AcceptedEdit {
   commandName: DocumentCommandName;
   writeId: string;
   durableWriteId: string;
-  touchedBlocks: readonly BlockItemId[];
-  deletedBlocks: readonly BlockItemId[];
+  /** Keys (`BlockSnapshot.key`) of the blocks the edit changed and removed. */
+  touchedBlocks: readonly string[];
+  deletedBlocks: readonly string[];
   copied?: CopySummary;
 }
 /** Pure rendering over the owner's accepted cuts; no documents or admission operations. */
@@ -26,7 +26,7 @@ export function renderReceipt(
   after: readonly BlockSnapshot[],
   outcome: Omit<ApplySuccessResponseInput, "echo" | "deletedBlocks" | "copied">,
 ): InternalWriteResult {
-  const deletedIds = new Set(edit.deletedBlocks.map((id) => `${id.clientID}:${id.clock}`));
+  const deletedIds = new Set(edit.deletedBlocks);
   const echo = computeEcho({
     before,
     after,
@@ -44,9 +44,7 @@ export function renderReceipt(
               blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
             },
           ],
-    deletedBlocks: before
-      .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
-      .map((block) => block.hash),
+    deletedBlocks: before.filter((block) => deletedIds.has(block.key)).map((block) => block.hash),
     ...(isEmptyDocument(after.map((block) => block.node)) ? { documentEmpty: true } : {}),
     ...(edit.copied
       ? { copied: { summary: edit.copied, edges: copyEdgeLines(edit.copied, after) } }

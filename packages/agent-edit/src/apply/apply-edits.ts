@@ -18,7 +18,6 @@ type PlannedEdit =
   | {
       kind: "ops";
       edit: Extract<ResolvedEdit, { kind: "ops" }>;
-      blockId: string;
     }
   | {
       kind: "insert";
@@ -138,7 +137,7 @@ function preflightOps(
   if (edit.ops.length === 0) {
     return { ok: false, code: "invalid_write", message: "Edits require at least one operation" };
   }
-  return { ok: true, plan: { kind: "ops", edit, blockId: model.getBlockId(edit.block) } };
+  return { ok: true, plan: { kind: "ops", edit } };
 }
 
 function preflightInsert(
@@ -193,7 +192,9 @@ function executePlan(
     case "ops": {
       const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
-      accumulator.touchedHashes.add(plan.blockId);
+      for (const other of plan.edit.tookFrom ?? []) model.recordPieces(doc, plan.edit.block, other);
+      // After the write: writing into an empty document's paragraph gives it a new id.
+      accumulator.touchedHashes.add(model.getBlockId(plan.edit.block));
       break;
     }
     case "insert": {
@@ -201,6 +202,8 @@ function executePlan(
       const anchor =
         (run ? accumulator.insertionTails.get(run) : undefined) ?? plan.edit.after ?? null;
       const inserted = model.insertBlocks(doc, anchor, plan.parsed);
+      if (plan.edit.pieceOf)
+        for (const block of inserted) model.recordPieces(doc, plan.edit.pieceOf, block);
       if (run && inserted.length)
         accumulator.insertionTails.set(run, inserted[inserted.length - 1]);
       const blockIds = inserted.map((block) => model.getBlockId(block));
@@ -210,6 +213,8 @@ function executePlan(
     }
     case "delete":
       model.deleteBlock(doc, plan.edit.block);
+      // After the delete: a record whose blocks show no change yet is retired as it is written.
+      if (plan.edit.pieceOf) model.recordPieces(doc, plan.edit.pieceOf, plan.edit.block);
       if (plan.removesBlock) {
         accumulator.deletedHashes.add(plan.blockId);
       } else {

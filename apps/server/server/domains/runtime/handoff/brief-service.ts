@@ -14,7 +14,7 @@ import {
   handoffSeedMetadata,
   type ThreadRepositories,
 } from "../../threads/index.js";
-import type { EventJournalWriter, LiveEventWriter } from "../../threads/ports/event-journal.js";
+import type { LiveEventWriter } from "../../threads/ports/event-journal.js";
 import type {
   HandoffBriefHold,
   HandoffBriefLauncher,

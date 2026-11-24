@@ -5,11 +5,12 @@
  * block maps to. A split's first half is that block, except when Enter was pressed at the start and
  * left it empty, where the half that holds the text is.
  */
+
+import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import { hasBlockId, newBlockId } from "@meridian/prosemirror-schema";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { AddMarkStep, RemoveMarkStep, ReplaceStep } from "@tiptap/pm/transform";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 function blocksOf(doc: ProseMirrorNode): Array<{ node: ProseMirrorNode; pos: number }> {
   const out: Array<{ node: ProseMirrorNode; pos: number }> = [];
@@ -43,9 +44,9 @@ function keepsBlocks(transaction: Transaction): boolean {
   });
 }
 
-/** A change the Yjs binding applied: a peer's, an undo or the first load. Its blocks already have their ids. */
+/** A change the Loro binding applied: a peer's, an undo or the first load. Its blocks already have their ids. */
 function fromBinding(transaction: Transaction): boolean {
-  return transaction.getMeta(ySyncPluginKey) !== undefined;
+  return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }
 
 /**

@@ -6,6 +6,7 @@
  *
  * Nothing here inserts a `documents` or `tree_nodes` row: the rows are the store's replay.
  */
+
 import type { Filetype } from "@meridian/contracts/protocol";
 import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -17,7 +18,6 @@ import {
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
-import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { treeListOfSource } from "../domains/context/adapters/tree-list-facts.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
@@ -80,7 +80,7 @@ function ensureDir(
 }
 
 export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } = {}) {
-  const defaultStore = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
+  const defaultStore = createDrizzleTreeListStore({ db });
 
   async function submitIn<T>(
     sourceId: string,

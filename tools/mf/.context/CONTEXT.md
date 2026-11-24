@@ -32,7 +32,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   ([why](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#few-tests-against-a-scripted-wire)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client`, plus the tree and document-room clients `doc` needs
-  (`@meridian/project-tree`, `@meridian/tree-list-sync`, `@meridian/agent-edit`,
+  (`@meridian/project-tree`, `@meridian/agent-edit`,
   `@meridian/markup`, `@meridian/prosemirror-schema`). Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
   `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
@@ -135,7 +135,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   reports `previousDocumentId`, and says the old document was already deleted if the create
   then fails. `doc rm` deletes documents, not folders. Seed scenario names use writer spelling.
   `doc copy` stays the server's Copy route: one Copy command per run under a fresh operation
-  ID, each source's identity (`expected`) read from the list, no state vector (it holds nothing
+  ID, each source's identity (`expected`) read from the list, no room version (it holds nothing
   open); `--draft-work` reads every source through that Work's draft.
 - **Usage refusals** are current pending state, not terminal run events. Send
   exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's
@@ -223,8 +223,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   turn the stream never carried, the sync holds the divider out and asks for a read; it never
   inserts the divider at the tail. `./mf` has no recovery code of its own.
 - `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask. Its answers are one `--answer option:<label>|text:<words>|skip` per question, in order, or `--answers` JSON. `thread presence` sends the takeover's `ask.presence`: clock-only by default, or with `--answer`/`--answers` as the held answers (`none` for unanswered) over the same socket and waits 300 ms for it to flush, since the server sends no reply.
-  `events` on a replay gap is 6 `replay_truncated` after printing. Tool results distinguish staged
-  `tool.completed` from committed `tool.settled`.
+  `events` on a replay gap is 6 `replay_truncated` after printing. A call's first result is
+  `tool.completed`, any later one for the same call `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and
   `serializeMessageDoc` (reference labels and image capability from the address
   route's catalog entry). Reference lookups run sequentially: a failed lookup leaves no

@@ -16,11 +16,9 @@ last drafted delete or restore before the record, so the folder lands as it stoo
 was drafted (a card Undo of its restore then finds it in live). A folder's delete drafted after
 the document left it, or after the record, stays pending. Earlier records on the same facts come
 too. The press carries `saw`: the cut the draft list read its rows at (each list's id and
-state vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
+version vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
 (`after_press`); a cut naming another list (one rebuilt under a new id) is no cut, and a scope left
-out is the server's own cut. A cut ahead of the server is a 503 that stores nothing. A text-only
-item (`half` absent and no tree record named) leaves a pending move or delete pending, except a creation only the Work shows: the tree half
-runs for any item with a pending create, which lands whole.
+out is the server's own cut. A cut ahead of the server is a 503 that stores nothing.
 
 ## Owners
 
@@ -34,7 +32,7 @@ stayed and why (the answer).
 *Estimate, before the locks* (`withTreeOwners`, `shared/tree-owners.ts`). Apply: the `sources` of
 each pending record of the draft in the Work's view, and where live has each node those records and
 the items name. Undo of an Apply: the `sources` of each copy the Apply made (`madeBy`), where live has each
-of those nodes, and where each document with an applied text effect stands. It is a guess and can
+of those nodes, and where each document the press named stands. It is a guess and can
 miss without any race: an Apply that moved six notes out of six folders, whose folders live then
 moved into six other sources, returns each note to a source the estimate never saw. Its owners are
 locked with the draft's in the same `mutate` call (Works sorted by id, then lineages, before lists
@@ -74,7 +72,7 @@ bring back the miss of move destinations and folders.
 
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) deletes each press and unpress command row past 30
-days, which cascades its text effects; an Undo after that finds no press and takes nothing
+days, which cascades its `press_changes` rows; an Undo after that finds no press and takes nothing
 back. A created document a Discard put in Trash is Trash's to purge, on Trash's clock; a drafted
 create no view shows (a purged Work's) the tree purges on its own (`purgeUnviewed`). The tree's
 `discarded` settlements stay.

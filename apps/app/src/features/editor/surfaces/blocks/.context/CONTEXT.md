@@ -11,7 +11,7 @@ last. Move, duplicate and delete act on the held block's run (`blockRun`: a
 list item and what is under it), and `moveBlockToSeamTransaction` refuses the
 seams around and inside it. The seam is measured before lifting; only a seam
 below the run is shifted by the removed size. A moved run is delete plus
-insert, so its blocks get new Yjs elements. Moving the final block leaves an empty
+insert, so a moved block keeps its id and text doc. Moving the final block leaves an empty
 paragraph because the schema requires a block.
 
 The gesture holds a `NodeHold` from `holdBlock`. A mapped position or child

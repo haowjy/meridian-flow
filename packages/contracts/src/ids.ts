@@ -7,10 +7,9 @@ export const asContextSourceId = (s: string) => s as ContextSourceId;
 export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
-export const asDocumentId = (s: string) => s as DocumentId;
 /**
- * A `drafts` row: one draft, everything pending in it (its suggestion marks in Live documents and
- * its tree records). A Work and a root conversation each name theirs; the draft names no owner.
+ * A `drafts` row: one draft, everything pending in it (its fork rooms of documents and its tree
+ * records). A Work and a root conversation each name theirs; the draft names no owner.
  */
 export type DraftId = string;
 
@@ -56,15 +55,12 @@ export function parseDraftItemKey(
 /** A client-generated UUID naming one document command; resends reuse it. */
 export type CommandId = string;
 export type ThreadId = string;
-export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;
-export const asTurnId = (s: string) => s as TurnId;
 export type PromptBakeId = string;
 export const asPromptBakeId = (s: string) => s as PromptBakeId;
 export type TurnBlockId = string;
 export const asTurnBlockId = (s: string) => s as TurnBlockId;
 export type ModelResponseId = string;
-export const asModelResponseId = (s: string) => s as ModelResponseId;
 export type UserSubscriptionId = string;
 export const asUserSubscriptionId = (s: string) => s as UserSubscriptionId;
 export type CreditLotId = string;
@@ -72,13 +68,7 @@ export const asCreditLotId = (s: string) => s as CreditLotId;
 export type CreditTransactionId = string;
 export const asCreditTransactionId = (s: string) => s as CreditTransactionId;
 export type UserId = string;
-export const asUserId = (s: string) => s as UserId;
 export type DocumentRestorePointId = string;
 export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePointId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
-/** Identity of one durable document authority head; a handle bound to another id is retired. */
-export type DocumentAuthorityId = string;
-export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
-export type DocumentRevision = string;
-export const asDocumentRevision = (s: string) => s as DocumentRevision;

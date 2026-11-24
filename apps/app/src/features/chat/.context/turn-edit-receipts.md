@@ -11,7 +11,7 @@ heading reads what is true now of this reply's change, not what was true when th
 ended: the receipt's `drafts` map (one word per drafted document, text and tree halves
 folded into the less settled one; still a draft means a change waits in an open draft at
 this reply's own text, or the writer typed over it, and another reply's change in the same
-draft does not count) is re-read when this chat's waiting drafts change (`useDraftDock`)
+draft does not count) is re-read when the files this chat's draft changes do (`useDraftDock`)
 and when the writer edits an open document (`useRefreshTurnCardsOnEdit`, debounced; only the
 cards whose lineage names that document), so the Undo goes within a moment of the text it depends on changing. A turn that wrote the
 manuscript reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one
@@ -31,6 +31,42 @@ shows the same card before and after Apply; only its words change.
 
 A document the reply created in a draft counts at once, and pending draft rows
 name the edited files.
+
+A row's `scope` is where the turn wrote it: `draft` (with the draft) for a Draft chat's write, in
+its fork or in a document only the draft holds, read from the write's own receipt. Its `block` is
+the first block the turn's first write there changed, where the row opens the document (Review
+changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Undo turn`
+the card offers, one press each in that draft's lane; a draft whose history was cut below
+the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
+Its `restored` names the restore in force in each draft (its press id), so every tab and a
+reload show the same `Undone` and its Undo.
+
+**One reply, one action.** What the turn did in a draft, its text and its tree changes (renames,
+moves, deletes, creates), is the turn's restore, labelled `Undo turn`. The card's Undo
+(`reverse_turn`) takes back only the rest: the turn's Live writes and Live tree changes, and its
+Work receipts. So a Draft chat's card shows `Undo turn` alone and a Live chat's card its Undo; a
+reply that wrote in both shows both. While a restore is in force, each tree row it took
+reads `Undone` (`TurnDraftState`). "restore" is the name in the code and on the wire
+(`verdict: "restore"`); `Undo turn` is only the label.
+
+Every Undo on the card is one cell (`UndoCell`): its action, `Undoing…` while the command is out,
+then `Undone`, with its own Undo where one brings it back (a restore's). Its width holds through
+every state.
+
+The restore (`TurnRestoreSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
+each editor open on the turn's documents in that draft gets its Ctrl+Z step and the sidebar its
+step. The card is its notice. Its
+state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in
+force with its one `PressEntries`, so collapsing the card or switching chats loses nothing, and a
+second press of the same turn and draft is not sent while one is out or in force. The card's read
+reconciles it (`syncRestore`): a press the read names that this tab doesn't hold (another tab's, or
+one from before a reload) is taken on with the card's Undo alone, since its Ctrl+Z and sidebar steps
+belonged to that tab; one the read says ended elsewhere ends here with its steps. A read from before
+the entry last changed in this tab is out of date and ignored; a press or its Undo reads the card
+again, dropping a read already out, so the next one is current. With one draft the slot sits in the
+header; a turn that wrote in several drafts lists each draft's rows under its name, the slot beside
+it. The chat's cards share one set of press commands and one read of the Work's drafts
+(`TurnCardDraftsProvider`, in `TurnList`).
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
@@ -52,30 +88,30 @@ undone reply back, the writer asks the model to write it again. The card has one
 header with a fixed width: Undo (`control: "undo"`) while a press would take something back,
 "Undoing…" while it runs, "Undone" once the card's Undo ran and nothing is left for it
 (`undone`), else empty, so a change of state moves nothing under the pointer. A press sends one
-command, takes what it can and says nothing: no sentence about what stayed or why, and none for
+command and says nothing: no sentence for
 a held owner (a closed, archived or Trashed Work or chat): the Undo is simply absent until the
 owner reopens. Only a press that failed, or never got an answer, shows a message: the floating
 pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo gets 200 `expired`.
 
  where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
-only this reply's own changes, applied ones included, and sends nothing else: the server reads each
-change of an edit from the text (a drafted change that stands, or an applied change the Apply's
-`carried` names and that still stands in the manuscript) and takes out what stands, leaving a
-word the writer typed over it. The card never takes back a whole Apply; a Changes row's Undo and
-Ctrl+Z do. Undo is offered only while a press would take something back. A change the writer typed
-inside is not taken, and the card has no Undo for it. The receipt immediately shows Undoing while the command runs;
-Yjs publishes the edit after durable commit and failures stay on the card.
-Eligibility is the text's: a change stands when taking it out merges cleanly
-(`content-merge/stands.ts`). The word "Undone" counts only the writer's own Undo, text and
+only this reply's own changes, applied ones included, and sends nothing else: the server takes back each of the
+reply's writes in the room it was written in (Live or the draft's fork), whatever was written
+since (design §2, "An Undo always runs"): it deletes what still stands of the write's characters
+and puts back what it deleted, so the writer's words stay. The card never takes back a whole
+Apply; a Changes row's Undo and Ctrl+Z do. Undo is offered while the turn's writes stand: not
+taken back, and still in the history (a write older than the history cutoff can't go back, and
+the answer is `partial` or `expired`). The receipt immediately shows Undoing while the command runs;
+the Live room publishes the edit after durable commit and failures stay on the card.
+The rule is design §2's one Undo rule (`takeBack`), the one a press's Undo uses
+(server [reversal](../../../../../server/server/domains/collab/.context/reversal.md)). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. A Discard takes the draft's pending changes out as one
 appended update in the same room; it is not receipt Undo, and the draft stays open. Only a purge
 of its Work retires a draft's identity. Dependency and archived-Work guards still apply.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
-remain in the composer-attached `DraftDock`, the sidebar's Changes and the document's suggestion
-review.
+remain in the composer-attached `DraftDock`, the sidebar's Changes and the document's Review changes.
 
 Work mutation rows consume the shared structured receipt contract. The server
 supplies operation, identity, before/after facts, and a typed inverse; this

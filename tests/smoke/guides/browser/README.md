@@ -41,4 +41,3 @@ verify real browser behavior, console output, WebSocket state, and database rows
 |---|---|
 | [`quick-chat-create.md`](quick-chat-create.md) | Bootstrap/default project route materializes a project, work, thread, and document |
 | [`thread-streaming.md`](thread-streaming.md) | Project agent composer streams a message through the active runtime |
-| [`editor-collab.md`](editor-collab.md) | Agent output reaches the live TipTap/Yjs editor and persists attribution |

@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { Hocuspocus } from "@hocuspocus/server";
+import { LoroDocument, loroModel, toLoroHandle } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -17,19 +17,28 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  applyOps,
+  type BlockId,
+  encodeEnvelope,
+  freshPeerId,
+  type RoomDocs,
+  readDocument,
+  type ShapeBlock,
+  type ShapeOp,
+  TEXT_KEY,
+} from "@meridian/document-model";
+import { walkLinkOccurrences } from "@meridian/markup/links";
+import { buildDocumentSchema, newBlockId } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
+import { Cursor, type VersionVector } from "loro-crdt";
 import { afterAll, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { uploadBytes } from "../context/uploads/upload-test-support.js";
 import { createNoopEventSink } from "../observability/index.js";
-import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -43,23 +52,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await db.close();
     });
 
-    /** The document as its journal holds it (what every reader spells from). */
-    async function journalDoc(documentId: string): Promise<Y.Doc> {
-      const snapshot = await createDrizzleJournal(db).read(documentId);
-      const doc = new Y.Doc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-      for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-      return doc;
-    }
-    /** Stored refs in document order. */
-    async function storedRefs(documentId: string): Promise<(string | null)[]> {
-      const doc = await journalDoc(documentId);
-      const refs = extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
-        (occurrence) => occurrence.ref,
+    const schema = buildDocumentSchema();
+    const model = loroModel(schema);
+    /** Stored refs in document order, as the Live room holds them. */
+    const storedRefs = (rooms: Rooms, documentId: string) =>
+      withLive(rooms, documentId, (docs) =>
+        walkLinkOccurrences(
+          model
+            .projectBlocks(toLoroHandle(new LoroDocument(docs, schema)))
+            .map((block) => block.node),
+        ).map(({ attrs }) => attrs.ref),
       );
-      doc.destroy();
-      return refs;
-    }
     async function registeredAddress(ref: string | null) {
       const aheadId = ref?.startsWith("ahead:") ? ref.slice("ahead:".length) : null;
       if (!aheadId) return null;
@@ -99,12 +102,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         environment: { FLOW_OPENAI_API_KEY: "sk-test-link-binding" },
       });
       const app = composeAppServices(ports);
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        onStoreDocument: ({ documentName, document }) =>
-          ports.documentSync.storeHocuspocusDocument(documentName, document),
-      });
-      ports.documentSync.bindHocuspocus(hocuspocus);
+      const { rooms } = ports.documentSync;
       // Runs once, after the next whole-document write is bound and before it applies.
       let afterNextBind: (() => Promise<void>) | null = null;
       const bindMarkdown = ports.documentSync.bindMarkdown;
@@ -129,40 +127,40 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         return settled.value;
       };
       const read = async (uri: string) => (await ok(port.read(uri))).content;
-      /** The text of the document's `index`th block. */
-      const blockText = (fragment: Y.XmlFragment, index: number) =>
-        (fragment.get(index) as Y.XmlElement).get(0) as Y.XmlText;
       /**
        * An independent writer's edit, made from the document as it is now
        * (by default: new prose, link removed); admitting it is returned.
        */
       const writerEdit = async (
         documentId: string,
-        edit = (fragment: Y.XmlFragment) => {
-          const prose = blockText(fragment, 0);
-          prose.delete(0, prose.length);
-          prose.insert(0, "Concurrent.");
-          const linked = blockText(fragment, 1);
-          linked.format(0, linked.length, { link: null });
-        },
+        edit = (top: readonly ShapeBlock[]): ShapeOp[] => [
+          {
+            kind: "text",
+            block: idAt(top, 0),
+            splices: [whole(top, 0, "Concurrent.")],
+            formats: [],
+          },
+          {
+            kind: "text",
+            block: idAt(top, 1),
+            splices: [],
+            formats: [{ from: 0, to: lengthAt(top, 1), mark: "link", value: null }],
+          },
+        ],
       ) => {
-        const client = new Y.Doc({ gc: false });
-        const state = await ports.documentSync.loadHocuspocusDocument?.(documentId);
-        if (state) Y.applyUpdate(client, state);
-        const vector = Y.encodeStateVector(client);
-        client.transact(() => edit(client.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)));
-        const update = Y.encodeStateAsUpdate(client, vector);
-        client.destroy();
+        const room = { kind: "live", documentId } as const;
+        const tab = await rooms.read(room, { peer: freshPeerId() });
+        let batch: Uint8Array;
+        try {
+          const before = tab.version();
+          const applied = applyOps(tab, edit(readDocument(tab)), { newBlockId });
+          if (!applied.ok) throw new Error(applied.message);
+          batch = encodeEnvelope(tab.exportSince(before));
+        } finally {
+          tab.free();
+        }
         return async () => {
-          const journal = createDrizzleJournal(db);
-          const snapshot = await journal.read(documentId);
-          if (!snapshot.authority) throw new Error("No writer path");
-          await journal.appendWriterUpdate(
-            documentId,
-            update,
-            { origin: `human:${userId}`, seq: 0 },
-            snapshot.authority,
-          );
+          await rooms.write(room, batch, "test:tab");
           await ports.documentSync.readAsMarkdown(documentId);
         };
       };
@@ -284,9 +282,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   port.createTrackedDocument(uri, "First para.\n\nSecond para here.\n\nThird."),
                 )
               ).documentId;
-              const base = await journalDoc(id);
-              const baseVector = Y.decodeStateVector(Y.encodeStateVector(base));
-              base.destroy();
+              const base = await withLive(rooms, id, textVersions);
               await ok(
                 port.write(
                   uri,
@@ -296,11 +292,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               );
               // Only the new paragraph and word are the saver's; every paragraph the save kept
               // keeps its items, and so the authorship it had.
-              const saved = await journalDoc(id);
-              const freshUnits = visibleTextUnits(saved).filter(
-                ({ client, clock }) => clock >= (baseVector.get(client) ?? 0),
-              ).length;
-              saved.destroy();
+              const saved = await withLive(rooms, id, textVersions);
+              const freshUnits = [...saved].reduce(
+                (sum, [key, version]) => sum + opsBeyond(version, base.get(key)),
+                0,
+              );
               expect(freshUnits).toBe("Inserted.".length + " changed".length);
               return id;
             },
@@ -317,31 +313,40 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 const id = (
                   await ok(port.createTrackedDocument(uri, "Alpha.\n\nBravo.\n\nCharlie."))
                 ).documentId;
-                const base = await journalDoc(id);
-                const kept = base.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
-                const keptText = kept.get(0) as Y.XmlText;
-                const keptIds = [kept._item?.id, keptText._item?.id];
-                const anchor = Y.createRelativePositionFromTypeIndex(keptText, 3);
-                base.destroy();
-                const edit = await writerEdit(id, (fragment) => {
-                  const text = blockText(fragment, 1);
-                  text.insert(text.length, " Concurrent.");
+                const { kept, anchor } = await withLive(rooms, id, (docs) => {
+                  const block = idAt(readDocument(docs), 1);
+                  const cursor = docs.textOf(block)?.getText(TEXT_KEY).getCursor(3);
+                  if (!cursor) throw new Error("no cursor in the kept paragraph");
+                  return { kept: block, anchor: cursor.encode() };
                 });
+                const edit = await writerEdit(id, (top) => [
+                  {
+                    kind: "text",
+                    block: idAt(top, 1),
+                    splices: [
+                      {
+                        from: lengthAt(top, 1),
+                        to: lengthAt(top, 1),
+                        content: [{ kind: "text", text: " Concurrent.", marks: {} }],
+                      },
+                    ],
+                    formats: [],
+                  },
+                ]);
                 if (when === "before") afterNextBind = edit;
                 await ok(
                   port.write(uri, "Alpha.\n\nInserted.\n\nBravo.\n\nChanged Charlie.", actor),
                 );
                 if (when === "after") await edit();
-                const saved = await journalDoc(id);
-                const block = saved
-                  .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
-                  .get(2) as Y.XmlElement;
-                const text = block.get(0) as Y.XmlText;
-                expect([block._item?.id, text._item?.id]).toEqual(keptIds);
-                const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, saved);
-                expect(resolved?.type).toBe(text);
-                expect(resolved?.index).toBe(3);
-                saved.destroy();
+                await withLive(rooms, id, (docs) => {
+                  expect(idAt(readDocument(docs), 2)).toBe(kept);
+                  const cursor = Cursor.decode(anchor);
+                  try {
+                    expect(docs.textOf(kept)?.getCursorPos(cursor)?.offset).toBe(3);
+                  } finally {
+                    cursor.free();
+                  }
+                });
                 return id;
               },
               refs: () => [],
@@ -389,7 +394,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         for (const { door, act, refs: expectedRefs, markdown } of doors) {
           try {
             const documentId = await act();
-            const refs = await storedRefs(documentId);
+            const refs = await storedRefs(rooms, documentId);
             if (expectedRefs) expect(refs, door).toEqual(expectedRefs(refs));
             if (markdown !== undefined) {
               const content = await ports.documentSync.readAsMarkdown(documentId);
@@ -415,27 +420,50 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           ),
         ).rejects.toBeInstanceOf(LinkBindingInsideTransactionError);
       } finally {
-        await unloadHocuspocus(hocuspocus);
         await app.shutdown();
       }
     });
   },
 );
 
-/** Each character the document shows, as the Yjs id of its item and its offset. */
-function visibleTextUnits(doc: Y.Doc): { client: number; clock: number }[] {
-  const units: { client: number; clock: number }[] = [];
-  const visit = (node: Y.XmlFragment | Y.XmlElement | Y.XmlText) => {
-    if (node instanceof Y.XmlText) {
-      for (let item = node._start; item; item = item.right)
-        if (!item.deleted && item.content instanceof Y.ContentString)
-          for (let i = 0; i < item.length; i++)
-            units.push({ client: item.id.client, clock: item.id.clock + i });
-      return;
-    }
-    for (const child of node.toArray())
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-  };
-  visit(doc.getXmlFragment("prosemirror"));
-  return units;
+type Rooms = import("./contracts.js").CollabTransport["rooms"];
+
+/** Runs `read` on a copy of the document's Live room, and frees the copy. */
+async function withLive<T>(rooms: Rooms, documentId: string, read: (docs: RoomDocs) => T) {
+  const docs = await rooms.read({ kind: "live", documentId });
+  try {
+    return read(docs);
+  } finally {
+    docs.free();
+  }
+}
+
+const idAt = (top: readonly ShapeBlock[], index: number): BlockId => {
+  const block = top[index];
+  if (!block) throw new Error(`no block ${index}`);
+  return block.id;
+};
+
+/** The units of a top-level textblock: its characters and inline nodes. */
+const lengthAt = (top: readonly ShapeBlock[], index: number) => {
+  const block = top[index];
+  if (block?.kind !== "text") throw new Error(`block ${index} is not a textblock`);
+  return block.inline.reduce((sum, item) => sum + (item.kind === "text" ? item.text.length : 1), 0);
+};
+
+const whole = (top: readonly ShapeBlock[], index: number, text: string) => ({
+  from: 0,
+  to: lengthAt(top, index),
+  content: [{ kind: "text" as const, text, marks: {} }],
+});
+
+/** Each text doc's version, by block id. */
+const textVersions = (docs: RoomDocs) =>
+  new Map([...docs.texts].map(([key, doc]) => [key, doc.oplogVersion()]));
+
+/** How many ops `version` holds that `base` does not. */
+function opsBeyond(version: VersionVector, base: VersionVector | undefined): number {
+  let count = 0;
+  for (const [peer, counter] of version.toJSON()) count += counter - (base?.get(peer) ?? 0);
+  return count;
 }

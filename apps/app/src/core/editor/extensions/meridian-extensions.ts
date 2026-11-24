@@ -7,7 +7,15 @@
  * surface; consumed by the editor `config`.
  */
 import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
-import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
+import {
+  getAttributesFromExtensions,
+  getRenderedAttributes,
+  isiOS,
+  isMacOS,
+  type KeyboardShortcutCommand,
+  mergeAttributes,
+  Node,
+} from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -57,7 +65,6 @@ import { exitFence, objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
 import { blockTypeInputRule, setBlockType } from "./block-type";
 import { landSlice } from "./nesting";
-import { shownAttrs, transactionView } from "./suggestion-mode/SuggestionModeExtension";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -120,7 +127,7 @@ function textLayoutAttributes() {
 
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
-// These renames are required for Yjs CRDT compatibility — node type names
+// These renames are required for the shared schema — node type names
 // must match exactly between the server schema and TipTap's schema.
 
 export const MeridianStrong = Bold.extend({
@@ -147,8 +154,8 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     headingLevel: {
       /**
-       * Gives every paragraph under the selection this level, keeping each block and its Yjs
-       * element; a level they all already have, or null, returns them to body text.
+       * Gives every paragraph under the selection this level, keeping each block and its
+       * text; a level they all already have, or null, returns them to body text.
        */
       toggleHeadingLevel: (attributes: { level: HeadingLevel | null }) => ReturnType;
     };
@@ -191,9 +198,13 @@ export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
+/** A level the binding read from the room may be anything; only a real one makes a heading. */
+const paragraphTag = (node: ProseMirrorNode) =>
+  HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
+
 /**
  * A heading is a paragraph with a `level` (null is body text). One node name
- * means retyping a block edits its Yjs element in place instead of rebuilding
+ * means retyping a block edits its block in place instead of rebuilding
  * it, so a peer's concurrent typing, authorship and anchors in it survive.
  */
 export const MeridianParagraph = Paragraph.extend({
@@ -216,9 +227,40 @@ export const MeridianParagraph = Paragraph.extend({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    // A level the binding read from the room may be anything; only a real one makes a heading.
-    const tag = HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
-    return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+    return [paragraphTag(node), mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+  },
+
+  // ProseMirror rebuilds a node whose attributes change. A new id (the binding storing an empty
+  // paragraph on its first keystroke, the block-id fixer) would replace the element holding an
+  // open IME composition, and the browser commits its raw keys as a stray letter. This view keeps
+  // the element and sets the attributes in place; only a change of tag (a level) rebuilds it.
+  addNodeView() {
+    let attributes: ReturnType<typeof getAttributesFromExtensions> | undefined;
+    const rendered = (node: ProseMirrorNode) => {
+      attributes ??= getAttributesFromExtensions(this.editor.extensionManager.extensions);
+      return mergeAttributes(this.options.HTMLAttributes, getRenderedAttributes(node, attributes));
+    };
+    return ({ node }) => {
+      const tag = paragraphTag(node);
+      const dom = document.createElement(tag);
+      let shown: Record<string, unknown> = {};
+      const show = (next: Record<string, unknown>) => {
+        for (const name of Object.keys(shown)) if (!(name in next)) dom.removeAttribute(name);
+        for (const [name, value] of Object.entries(next))
+          if (value != null && value !== shown[name]) dom.setAttribute(name, String(value));
+        shown = next;
+      };
+      show(rendered(node));
+      return {
+        dom,
+        contentDOM: dom,
+        update: (next) => {
+          if (next.type !== node.type || paragraphTag(next) !== tag) return false;
+          show(rendered(next));
+          return true;
+        },
+      };
+    };
   },
 
   addCommands() {
@@ -243,7 +285,7 @@ export const MeridianParagraph = Paragraph.extend({
             level === null ||
             blocks.every((pos) => {
               const node = tr.doc.nodeAt(pos);
-              return !!node && shownAttrs(transactionView(tr), node).level === level;
+              return !!node && node.attrs.level === level;
             });
           const start = tr.steps.length;
           let changed = false;
@@ -268,12 +310,7 @@ export const MeridianParagraph = Paragraph.extend({
         if (editor.can().undoInputRule()) return false;
         const { empty, $anchor } = tr.selection;
         const { parent: block, pos } = $anchor;
-        if (
-          !empty ||
-          block.type !== this.type ||
-          shownAttrs(transactionView(tr), block).level === null ||
-          block.textContent
-        ) {
+        if (!empty || block.type !== this.type || block.attrs.level === null || block.textContent) {
           return false;
         }
         const $parentPos = pos > 0 ? tr.doc.resolve(pos - 1) : $anchor;
@@ -830,7 +867,7 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
   atom: true,
   defining: true,
   // Not draggable: PM default DnD reorders in place, which re-binds block hashes
-  // (y-prosemirror reconciles by slot). Figure drag-to-place must be reimplemented
+  // (the binding replaces the whole document). Figure drag-to-place must be reimplemented
   // as delete+insert — see .context/TODO.md.
 
   addOptions() {

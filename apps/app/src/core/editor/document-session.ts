@@ -1,87 +1,83 @@
 /**
- * document-session — owns the lifecycle of one collaborative document's CRDT.
+ * document-session — owns the lifecycle of one document room's copy in this tab: the document's
+ * Live room, or a draft's fork room of it (design §6, "The session lifecycle").
  *
- * Wraps a Yjs `Y.Doc`, IndexedDB local persistence, awareness, and a pluggable
- * transport provider into a subscribable session with a status snapshot
- * (detached / syncing / synced / offline / access-lost / destroyed). The single place document
- * collaboration state is created and torn down; `EditorView` binds to it.
+ * A fork session is built over the Live session of its document, which its holder keeps alive
+ * longer: its docs are a draft copy of the Live copy (`RoomDocs.draftOf`), and it registers them
+ * with the binding so every batch the Live session imports or writes forwards them, editor or
+ * not. It has its own socket, store, presence and Undo.
  *
- * Status semantics — derived from BOTH local persistence and the live
- * transport connection state, so the indicator stays honest after the initial
- * load:
- *   - `detached`  — local persistence is available, but no server transport
- *                   has been attached yet.
- *   - `syncing`   — initial local load and/or first server sync hasn't
- *                   completed yet, or the transport is actively reconnecting
- *                   after a drop.
- *   - `synced`    — local persistence is loaded AND the server transport is
- *                   currently connected and has completed its handshake. This
- *                   does NOT say the server has the writer's latest edits:
- *                   Hocuspocus sets `synced` on the server's SyncStep2 and its
- *                   own docs say it "does not mean all updates from the client
- *                   have been persisted". Use `serverHasLocalChanges` for that.
- *   - `offline`   — local persistence is loaded but the socket is
- *                   disconnected (edits are buffered in IndexedDB and may
- *                   upload after reconnect).
- *   - `access-lost` — the server permanently denied this document/session;
- *                   further local edits are NOT expected to upload.
- *   - `destroyed` — the session has been torn down.
+ * A copy is a `RoomDocs` (the structure doc and a text doc per block, design §1), its IndexedDB
+ * store (`local-copy-store.ts`), the room transport (`loro-room-transport.ts`), presence on
+ * the room's ephemeral store, and the writer's Undo. Every local write reaches the copy through
+ * one path, `publish`: stored, sent to the other tabs of this browser, then to the server.
+ * Every peer's batch reaches it through `importRemote`, which goes through the binding's
+ * composition guard.
  *
- * `access` is separate from status: the server's scope for this room. A `read`
- * room stays live (peers' changes still arrive) but takes no local edits.
+ * Status, derived from local persistence and the transport together:
+ *   - `detached`  — no server transport attached yet.
+ *   - `syncing`   — the local load or the first Join is not done, or the socket is reconnecting.
+ *   - `synced`    — loaded, connected and joined. Not that the server holds the latest edits:
+ *                   `serverHasLocalChanges` says that.
+ *   - `offline`   — loaded, socket down; edits wait in IndexedDB and go with the next Join.
+ *   - `access-lost` — the server ended this room for good; local edits will not upload.
+ *   - `destroyed` — torn down.
  *
- * `serverHasLocalChanges` is separate from `status`: true only while `synced`
- * AND the server has acknowledged every local change on the current
- * connection (for a live room it journaled each update and applied it to its
- * in-memory document before replying; only the debounced full-document store
- * is asynchronous, and the next handshake re-sends anything lost). It
- * turns false on the next local edit and on any disconnect, then true again
- * after the acknowledgements arrive, so subscribers can show "back online and
- * saved" after an outage.
+ * `access` is the server's scope for the room. A `read` room still receives peers' changes and
+ * sends nothing.
  */
-
-import { dropResolvedMarks } from "@meridian/agent-edit";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
+import type { DocumentRoom } from "@meridian/contracts/protocol";
+import { loroRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import {
-  type ChangeEventWsMessage,
-  parseYjsRoomName,
-  WS_CLOSE,
-  type YjsRoomName,
-} from "@meridian/contracts/protocol";
-import type { ConnectionState } from "@meridian/thread-client";
+  type DocChange,
+  type DocKey,
+  type DocVersion,
+  decodeRoomVersion,
+  encodeChanges,
+  encodeEnvelope,
+  encodeRoomVersion,
+  freshPeerId,
+  mergeVersion,
+  RoomDocs,
+  type RoomVersion,
+  versionCovers,
+} from "@meridian/document-model";
+import {
+  forwardLocalWrite,
+  importRemoteUpdate,
+  notifyChanged,
+  registerDraft,
+  UNTRACKED_ORIGIN,
+  writeProseMirror,
+} from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
-import { IndexeddbPersistence } from "y-indexeddb";
-import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
-import * as Y from "yjs";
+import type { Node } from "@tiptap/pm/model";
 import { requireReload } from "@/client/release/release";
+import type {
+  LoroRoomTransport,
+  ResetDisposition,
+  RoomConnectionState,
+} from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
-import type { Ranges } from "./item-ranges";
-import {
-  commitContentInitialization,
-  readContentInitialization,
-} from "./local-content-initialization";
-import { LocalDocumentPeers } from "./local-document-peers";
+import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
 import {
   createLocalPresence,
   type LocalPresence,
   type LocalPresenceFields,
 } from "./local-presence";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import { documentShape } from "./room-content";
 import type { SchemaFence } from "./schema-fence";
-import {
-  createSchemaRepairWitness,
-  type SchemaRepairEvent,
-  type SchemaRepairWitness,
-} from "./schema-repair-witness";
+import { wordsBeyond } from "./unsent-words";
 
 export type { SchemaFence } from "./schema-fence";
 
-import { createServerMark, type ServerMark } from "./server-mark";
-import { SessionMarkerStore } from "./session-marker-store";
-import { UnsentEdits } from "./unsent-edits";
-
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
+/** How long the server's mark waits for typing to pause before it is stored. */
+const NOTE_SERVER_MS = 1_000;
+/** The log is folded into snapshots after this many appended batches. */
+const COMPACT_EVERY = 200;
 
 export type DocumentSessionStatus =
   | "detached"
@@ -91,165 +87,71 @@ export type DocumentSessionStatus =
   | "access-lost"
   | "destroyed";
 
+/**
+ * The key a room's session goes by in this tab (registry, replacement, reading position, fence
+ * quarantine): the bare document id for Live, which keeps what earlier builds stored under it,
+ * and the room's name for a fork.
+ */
+export function sessionRoomKey(room: DocumentRoom): string {
+  return room.kind === "live" ? room.documentId : loroRoomName(room);
+}
+
 export type DocumentSessionSnapshot = {
   documentId: string;
-  /** Hocuspocus room key: the bare document id. */
+  /** `sessionRoomKey` of the room. */
   roomKey: string;
-  room: YjsRoomName;
+  room: DocumentRoom;
   status: DocumentSessionStatus;
   /** Server acknowledged every local change on this connection (see file header). */
   serverHasLocalChanges: boolean;
-  connectionState: DocumentSessionConnectionState | null;
+  connectionState: RoomConnectionState | null;
   /**
-   * The scope the server last named for this room, kept across reconnects and
-   * transport restarts; `null` until it names one. An unnamed room is writable
-   * (local-first).
+   * The scope the server last named for this room, kept across reconnects and transport
+   * restarts; `null` until it names one. An unnamed room is writable (local-first).
    */
   access: DocumentSessionAccess | null;
-  /** Why a read-only room is read-only, when its owner is closed (a Work archived or deleted, a chat in Trash). */
+  /** Why a read-only room is read-only, when its owner is closed. */
   closedWhy: ClosedOwnerWhy | null;
-  /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
-  reasonPending: boolean;
   localPersistenceSynced: boolean;
-  /**
-   * The document has reached this session from the server once. It stays true offline and through
-   * reconnects, which leave the text in place.
-   */
+  /** The document has reached this session from the server once; stays true offline. */
   contentHeld: boolean;
   schemaFence: SchemaFence | null;
-  schemaRepairs: SchemaRepairEvent[];
   /**
-   * The room holds the writer's edits that the server lacks and can never deliver them: it was
-   * admitted read-only and its last handshake found them, or the server kept refusing its updates
-   * (`updatesRefused`).
+   * The room holds edits the server lacks and can never take: it was admitted read-only with
+   * them, or the server ended it for history below its cutoff.
    */
   holdsUndeliverableEdits: boolean;
 };
 
-/** What one read-admitted handshake found: the update the server lacks, and its snapshot (state vector and delete set), encoded. */
-export type HandshakeDifference = { lacking: Uint8Array; server: Uint8Array };
-
 export type DocumentSessionAccess = "edit" | "read";
 
-export type DocumentSessionResetReason =
-  | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
-  | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  /** The document was deleted or discarded; its rooms never reopen. */
-  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
-
-/**
- * How a terminal room reset treats its unacknowledged writer updates.
- * `removed`: the server closed the room because the document was purged, so nothing reconnects,
- * rebuilds or replays on its own; the session stays read-only until its owner
- * closes it, or an exact open proves the document present and restarts it.
- */
-export type ResetDisposition = "schema" | "removed";
-
-/**
- * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
- * edits like an offline one, and the account's list shows the "sign in again" prompt.
- */
-export function isSignInLapse(state: DocumentSessionConnectionState | null | undefined): boolean {
-  return state?.kind === "unauthorized" && state.code === WS_CLOSE.AUTH_FAILED.code;
+/** The server ended the room: its update depends on history below the room's cutoff. */
+export function historyCutOff(state: RoomConnectionState | null | undefined): boolean {
+  return state?.kind === "terminal" && state.reason === "history-cutoff";
 }
 
-export type DocumentSessionConnectionState =
-  | Exclude<ConnectionState, { kind: "reset" }>
-  | {
-      kind: "reset";
-      reason: DocumentSessionResetReason;
-      disposition: ResetDisposition;
-      code?: number;
-    };
-
-/**
- * Client-side terminal reason: the server could not store this room's updates on several
- * reconnects in a row. Its edits are undeliverable, and its owner replaces the room.
- */
-export const UPDATES_REFUSED = "updates-refused";
-
-export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
-  return state?.kind === "terminal" && state.reason === UPDATES_REFUSED;
-}
-
-/**
- * Surface `DocumentSession` consumes from its transport.
- *
- * `synced` / `whenSynced` describe the FIRST server reconciliation. Live
- * connection-state changes after that (drop / reconnect / terminal close) flow
- * through `subscribeStatus` so the session can re-derive `status` whenever
- * the transport changes — without that, the pill would freeze on its startup
- * value and `offline` could never fire.
- */
-export type DocumentSessionTransportProvider = {
-  /** Local updates not acknowledged on this connection, merged; null when none. */
-  unacknowledgedUpdates(): Uint8Array | null;
-  whenCurrentChangesAcknowledged?: () => Promise<void>;
-  synced?: boolean;
-  whenSynced?: Promise<void>;
-  /**
-   * Re-armable signal: the server has acknowledged the handshake and every
-   * document update sent on the current connection. False on any local change,
-   * on disconnect, and in terminal states; never inferred from the provider's
-   * `unsyncedChanges` counter, which a reconnect resets mid-flight. Emits the
-   * current value synchronously on subscribe, then on every change and when
-   * the local outbox becomes non-empty (with those bytes already visible).
-   */
-  subscribeServerAcknowledgement?: (listener: (acknowledged: boolean) => void) => () => void;
-  /**
-   * Subscribe to live connection-state updates from the underlying socket.
-   * Implementations MUST emit the current state synchronously on subscribe
-   * and on every subsequent change. Returns an unsubscribe function.
-   */
-  subscribeStatus?: (listener: (state: DocumentSessionConnectionState) => void) => () => void;
-  /**
-   * Each handshake of a read-admitted connection says what the document holds that the server
-   * lacks (null when nothing). Never called on an edit admission.
-   */
-  subscribeDifference?: (listener: (difference: HandshakeDifference | null) => void) => () => void;
-  /**
-   * What the server is known to hold, as a state vector: its SyncStep1 at each handshake
-   * (`handshake`), and the whole document once it acknowledged everything. Written into the copy's
-   * mark (`server-mark.ts`).
-   */
-  subscribeServerHas?: (listener: (vector: Uint8Array, handshake: boolean) => void) => () => void;
-  /** The origin of the updates the server's answers apply; every other origin is a local change. */
-  readonly serverOrigin?: unknown;
-  /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
-  requestHandshake?: () => void;
-  /**
-   * Every scope the server names for this room, and on subscribe the one it
-   * last named. Nothing until it names one: a transport never invents a scope.
-   */
-  subscribeAccess?: (
-    listener: (
-      access: DocumentSessionAccess,
-      closedWhy: ClosedOwnerWhy | null,
-      reasonPending: boolean,
-    ) => void,
-  ) => () => void;
-  subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
-  destroy: () => void | Promise<void>;
-};
+export type DocumentSessionTransportProvider = LoroRoomTransport;
 
 export type DocumentSessionTransportFactory = (opts: {
-  roomKey: string;
-  room: YjsRoomName;
-  document: Y.Doc;
-  awareness: Awareness;
-  fragmentName: typeof PROSEMIRROR_FRAGMENT_NAME;
+  room: DocumentRoom;
+  peer: string;
+  copy: {
+    version(): RoomVersion;
+    exportSince(since: RoomVersion): Uint8Array | null;
+    importRemote(batch: Uint8Array): void;
+  };
+  presence: LocalPresence["store"];
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id. */
-  roomKey: string;
-  /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
+  room: DocumentRoom;
+  /** A fork room's Live session, which outlives this one. */
+  live?: DocumentSession;
+  /** The copy's IndexedDB database, by its exact name. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
-  /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
   /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
-  ownUserId?: string | null;
   /** The scope of a room this session replaces: the editor is read-only from its first frame. */
   access?: DocumentSessionAccess | null;
 };
@@ -257,86 +159,62 @@ export type DocumentSessionOptions = {
 const noop = () => {};
 
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
-type DestroyStage = { settled: boolean; run: () => void | Promise<void> };
+
+/** A batch between this browser's tabs: the copy's name and the envelope. */
+type TabMessage = { batch: Uint8Array };
 
 export class DocumentSession {
-  roomKey: string;
-  room: YjsRoomName;
-  documentId: string;
-  readonly document: Y.Doc;
-  readonly awareness: Awareness;
-  readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
-  readonly markerStore: SessionMarkerStore;
-  /** The writer's undo, kept with the document: editors attach to it while mounted. */
+  readonly roomKey: string;
+  readonly room: DocumentRoom;
+  readonly documentId: string;
+  /** This copy's peer id, across all its docs. */
+  readonly peer = freshPeerId();
+  readonly docs: RoomDocs;
+  /** The writer's undo, kept with the copy: editors attach to it while mounted. */
   readonly history: DocumentHistory;
-  /** What the document holds that a read-admitting server lacks, and which of it is the writer's. */
-  private readonly unsent: UnsentEdits;
-  /** What the server is known to hold, written into the copy. */
-  private readonly serverMark: ServerMark;
 
-  private persistence: IndexeddbPersistence | null;
-  private localPeers: LocalDocumentPeers | null = null;
-  private initialization: Promise<void> | null = null;
+  private store: LocalCopyStore | null = null;
+  private readonly storeName: string | null;
+  private appended = 0;
+  private tabs: BroadcastChannel | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
-  /** The closing of a transport `detachTransport` released; the next one opens after it. */
   private detaching: Promise<void> | null = null;
-  /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
   private readonly listeners = new Set<Listener>();
-  private unsubscribeTransportStatus: (() => void) | null = null;
-  private unsubscribeTransportAccess: (() => void) | null = null;
-  private unsubscribeChangeEvents: (() => void) | null = null;
-  private unsubscribeAcknowledgement: (() => void) | null = null;
-  private unsubscribeDifference: (() => void) | null = null;
-  private unsubscribeServerHas: (() => void) | null = null;
+  private readonly contentListeners = new Set<() => void>();
+  private readonly unsubscribers: (() => void)[] = [];
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
-  private destroyStages: DestroyStage[] | null = null;
   private localPersistenceSynced = false;
-  /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
-  /** True after any transport's first `whenSynced`; a detach doesn't reset it. */
   private contentHeld = false;
-  /** Raw transport signal; the snapshot exposes it only while `status` is `synced`. */
   private transportAcknowledged = false;
+  /**
+   * Whether the copy holds ops the server lacks; null until read. Kept as an edge, not recomputed
+   * per keystroke: comparing the room's versions costs a pass over every block's doc.
+   */
+  private unsent: boolean | null = null;
+  private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
-  private observedOutboxPresence = false;
-  private observedHolds = false;
-  // Distinct connection states can share a status (`disconnected` and
-  // `terminal` are both `offline`); subscribers still need the new one.
-  private emittedTransportState: DocumentSessionConnectionState | null = null;
-  /**
-   * Latest live connection-state from the transport. When the transport is
-   * pre-`whenSynced` we treat the session as syncing; this field lets us
-   * distinguish "connected & synced" from "disconnected" after that.
-   */
-  private transportState: DocumentSessionConnectionState | null = null;
+  private emittedKey = "";
+  private transportState: RoomConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
-  private reasonPending = false;
-  /**
-   * Read admission only: whether this connection's last handshake found the writer's edits the
-   * server lacks. `differenceAnswered` is false from a connection's start, and from any change
-   * that is not a display write, until the next handshake answers.
-   */
+  /** What the server is known to hold, across connections: the copy's `server` meta. */
+  private readonly server = new Map<DocKey, DocVersion>();
   private holdsUndeliverable = false;
-  private differenceAnswered = false;
-  private lastDifference: HandshakeDifference | null = null;
-  /** Called when a handshake answers, or the verdict is forgotten. */
-  private readonly verdictWaiters = new Set<() => void>();
   /** Replaced by another session: nothing more goes to the server or to other tabs. */
   private inert = false;
+  /** Inside a peer's batch: its writes are the import's, which forwards drafts itself. */
+  private importing = false;
+  private readonly unregisterDraft: () => void;
   private boundEditors = 0;
   private readonly unbound = new Set<() => void>();
   private schemaFence: SchemaFence | null = null;
-  private schemaRepairs: SchemaRepairEvent[] = [];
-  private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
-  /** `detachTransport` holds one presence suspension until the next transport attaches. */
   private presenceHeldForTransport = false;
-  /** Page hide is a presence suspension; `pageshow` releases it only if this listener took it. */
   private presenceHeldForPageHide = false;
   private readonly onPageHide = () => {
     if (this.presenceHeldForPageHide) return;
@@ -355,179 +233,337 @@ export class DocumentSession {
   private resolveLifecycleCompleted!: () => void;
 
   constructor({
-    roomKey,
+    room,
+    live,
     persistence,
     transportFactory,
     persistSchemaFence,
-    ownUserId = null,
     access = null,
   }: DocumentSessionOptions) {
-    const room = parseYjsRoomName(roomKey);
-    if (room?.kind !== "live") throw new Error(`Invalid Yjs room key: ${roomKey}`);
-    this.roomKey = roomKey;
+    if ((room.kind === "fork") !== (live !== undefined))
+      throw new Error("a fork session takes its Live session, and only a fork session does");
+    this.roomKey = sessionRoomKey(room);
     this.access = access;
     this.room = room;
     this.documentId = room.documentId;
-    this.document = new Y.Doc();
-    this.history = DocumentHistory.forDocument(this.document);
-    this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
-    this.serverMark = createServerMark(() =>
-      this.destroyed ? null : (this.persistence?.db ?? null),
-    );
-    this.document.on("update", this.onDocumentUpdate);
-    this.document.on("afterTransaction", this.onAfterTransaction);
+    this.docs = live
+      ? RoomDocs.draftOf(live.docs, this.peer)
+      : RoomDocs.create(documentShape(), this.peer);
+    this.unregisterDraft = live
+      ? registerDraft(this.docs, (changes) => this.publish(changes))
+      : noop;
+    this.history = new DocumentHistory(this.docs, (changes) => this.publish(changes));
     this.persistSchemaFence = persistSchemaFence;
-    this.markerStore = new SessionMarkerStore(ownUserId);
-    this.awareness = new Awareness(this.document);
-    this.localPresence = createLocalPresence(this.awareness);
+    this.localPresence = createLocalPresence(this.peer);
     if (typeof window !== "undefined") {
       window.addEventListener("pagehide", this.onPageHide);
       window.addEventListener("pageshow", this.onPageShow);
     }
-    if (persistence.kind === "indexeddb") {
-      this.persistence = new IndexeddbPersistence(persistence.key, this.document);
-    } else {
-      this.persistence = null;
-    }
+    this.storeName = persistence.kind === "indexeddb" ? persistence.key : null;
     this.transportAttachedPromise = new Promise((resolve) => {
       this.resolveTransportAttached = resolve;
     });
     this.lifecycleCompletedPromise = new Promise((resolve) => {
       this.resolveLifecycleCompleted = resolve;
     });
-    this.localPersistenceSyncedPromise = this.watchLocalPersistence();
-    if (persistence.kind === "indexeddb" && persistence.fresh)
-      this.establishContentInitialization();
+    this.localPersistenceSyncedPromise = this.loadLocalCopy();
     if (transportFactory) this.attachTransport(transportFactory);
     this.emit();
   }
 
-  /** Attach the session's only server transport after local replay, without replacing its Y.Doc. */
+  // --- the copy -------------------------------------------------------------------------------
+
+  /**
+   * Every local write, from any writer in this tab (the editor, Undo, a command run here): store
+   * it, tell the other tabs, send it. A read room sends nothing; its writes stay in the copy and
+   * count as undeliverable.
+   */
+  publish(changes: readonly DocChange[]): void {
+    if (this.destroyed || changes.length === 0) return;
+    this.publishBatch(encodeChanges(changes));
+    if (!this.importing && !this.docs.live)
+      forwardLocalWrite(
+        this.docs,
+        changes.map((change) => change.key),
+      );
+  }
+
+  /**
+   * Write a whole document into the copy as a writer outside any editor would (a just-made file's
+   * first text): only what differs is written, published like typing, and shown in every editor
+   * of the copy. No Ctrl+Z takes it back.
+   */
+  writeDocument(doc: Node): void {
+    if (this.destroyed || this.docs.isFreed) return;
+    const changes = writeProseMirror(this.docs, doc, { origin: UNTRACKED_ORIGIN });
+    this.publish(changes);
+    notifyChanged(
+      this.docs,
+      changes.map((change) => change.key),
+    );
+  }
+
+  private publishBatch(batch: Uint8Array): void {
+    this.unsent = true;
+    this.append(batch);
+    this.contentChanged();
+    if (this.inert) return;
+    this.tabs?.postMessage({ batch } satisfies TabMessage);
+    if (this.access === "read") {
+      this.holdsUndeliverable = this.computeUndeliverable();
+      this.recomputeStatus();
+      return;
+    }
+    this.transportProvider?.send(batch);
+    this.recomputeStatus();
+  }
+
+  /** A peer's batch: imported through the composition guard, then stored. */
+  private importRemote(batch: Uint8Array, store = true): void {
+    if (this.destroyed || this.docs.isFreed) return;
+    this.importing = true;
+    try {
+      importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes));
+    } catch (error) {
+      reportError(error);
+      return;
+    } finally {
+      this.importing = false;
+    }
+    if (store) this.append(batch);
+    this.contentChanged();
+  }
+
+  /**
+   * Called after the copy's content changes, by anyone: for a reader of the text that is not an
+   * editor (a trashed document's preview, a name suggested from its first line).
+   */
+  subscribeContent(listener: () => void): () => void {
+    this.contentListeners.add(listener);
+    return () => this.contentListeners.delete(listener);
+  }
+
+  private contentChanged(): void {
+    for (const listener of [...this.contentListeners]) listener();
+  }
+
+  private append(batch: Uint8Array): void {
+    const store = this.store;
+    if (!store) return;
+    void store.append(batch).catch(noop);
+    if (++this.appended >= COMPACT_EVERY) this.compact();
+  }
+
+  private compact(): void {
+    const store = this.store;
+    if (!store || this.docs.isFreed) return;
+    this.appended = 0;
+    void store.compact(this.docs.snapshots()).catch(noop);
+  }
+
+  private async loadLocalCopy(): Promise<void> {
+    if (!this.storeName || typeof indexedDB === "undefined") {
+      this.localPersistenceSynced = true;
+      this.recomputeStatus();
+      return;
+    }
+    try {
+      const store = await LocalCopyStore.open(indexedDB, this.storeName);
+      if (this.destroyed) {
+        void store.close();
+        return;
+      }
+      const loaded = await store.read();
+      if (this.destroyed) {
+        void store.close();
+        return;
+      }
+      // Through the binding like a peer's batch: past the bind horizon an editor may show the
+      // copy already.
+      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
+      for (const batch of loaded.updates) this.importRemote(batch, false);
+      this.forwardFromLive();
+      const server = loaded.meta.get(SERVER_META);
+      if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
+      this.store = store;
+      store.db.onversionchange = () => {
+        // Another tab is deleting this copy (a purge): stop writing to it.
+        this.store = null;
+        void store.close();
+      };
+      if (loaded.updates.length > 0) this.compact();
+      this.localPersistenceSynced = true;
+      this.startTabs();
+      this.recomputeStatus();
+    } catch (error) {
+      reportError(error);
+      this.localPersistenceSynced = true;
+      this.recomputeStatus();
+    }
+  }
+
+  /**
+   * A fork's copy is brought up to the Live copy it reads through: after its own load, whose
+   * stored copy can trail the Live copy this tab holds. Every later Live batch forwards it.
+   */
+  private forwardFromLive(): void {
+    if (!this.docs.live || this.docs.isFreed) return;
+    const forwarded = this.docs.forward();
+    if (forwarded.restore.length) this.publish(forwarded.restore);
+    if (forwarded.changed.length > 0) notifyChanged(this.docs, forwarded.changed);
+  }
+
+  private startTabs(): void {
+    if (
+      this.tabs ||
+      this.inert ||
+      this.destroyed ||
+      !this.storeName ||
+      typeof BroadcastChannel !== "function"
+    )
+      return;
+    const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
+    tabs.onmessage = (event: MessageEvent<TabMessage>) => {
+      if (!(event.data?.batch instanceof Uint8Array)) return;
+      // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
+      this.unsent = null;
+      this.importRemote(event.data.batch, false);
+    };
+    this.tabs = tabs;
+  }
+
+  private stopTabs(): void {
+    this.tabs?.close();
+    this.tabs = null;
+  }
+
+  /** The room version of this copy, for a command that waits on the server holding it. */
+  roomVersion(): Uint8Array {
+    return encodeRoomVersion(this.docs.version());
+  }
+
+  // --- the transport --------------------------------------------------------------------------
+
+  /** Attach the session's only server transport after the local load. */
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
-    // A replaced session never reaches the server again: the words it handed back stay out of it.
     if (this.inert) return;
-    if (this.transportProvider || this.transportAttachmentPending) {
+    if (this.transportProvider || this.transportAttachmentPending)
       throw new Error(`Transport already attached to room: ${this.roomKey}`);
-    }
-
     this.transportAttachmentPending = true;
     this.recomputeStatus();
-    if ((this.persistence && !this.localPersistenceSynced) || this.detaching) {
-      void Promise.all([
-        this.detaching,
-        this.persistence && !this.localPersistenceSynced
-          ? this.waitForLocalPersistenceTransportGate()
-          : null,
-      ]).then(() => {
-        if (!this.destroyed && !this.inert && this.resetDisposition === null)
-          this.connectTransport(transportFactory);
-      });
-      return;
-    }
-    this.connectTransport(transportFactory);
+    void Promise.all([this.detaching, this.waitForLocalPersistenceTransportGate()]).then(() => {
+      if (
+        !this.destroyed &&
+        !this.inert &&
+        this.resetDisposition === null &&
+        this.transportAttachmentPending
+      )
+        this.connectTransport(transportFactory);
+    });
   }
 
   private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
-    // Before the factory, so the new provider's first handshake carries this client's presence.
     this.resumePresenceForTransport();
-    try {
-      this.transportProvider = transportFactory({
-        roomKey: this.roomKey,
-        room: this.room,
-        document: this.document,
-        awareness: this.awareness,
-        fragmentName: this.fragmentName,
-      });
-    } catch (error) {
-      this.transportAttachmentPending = false;
-      this.recomputeStatus();
-      this.emit();
-      throw error;
-    }
+    const provider = transportFactory({
+      room: this.room,
+      peer: this.peer,
+      copy: {
+        version: () => this.docs.version(),
+        exportSince: (since) => {
+          const entries = this.docs.exportSince(since);
+          return entries.size > 0 ? encodeEnvelope(entries) : null;
+        },
+        importRemote: (batch) => this.importRemote(batch),
+      },
+      presence: this.localPresence.store,
+    });
     this.transportAttachmentPending = false;
+    this.transportProvider = provider;
     this.resolveTransportAttached();
-    this.status = "syncing";
-    this.unsubscribeTransportStatus =
-      this.transportProvider.subscribeStatus?.((state) => {
+    this.unsubscribers.push(
+      provider.subscribeStatus((state) => {
         this.transportState = state;
-        if (state.kind !== "connected") this.forgetDifference();
-        if (updatesRefused(state)) this.holdsUndeliverable = true;
-        if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
-          this.localPeers?.stop();
+        if (state.kind === "unauthorized" || state.kind === "reset") this.stopTabs();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
-          // Editing stops here; the app-wide reload (one per release) is what lifts it.
           requireReload();
           this.raiseSchemaFence({ reason: "client-superseded" });
         }
+        if (historyCutOff(state)) this.holdsUndeliverable = this.computeUndeliverable();
         this.recomputeStatus();
-      }) ?? null;
-    this.unsubscribeTransportAccess =
-      this.transportProvider.subscribeAccess?.((access, closedWhy, reasonPending) => {
-        if (
-          access === this.access &&
-          closedWhy === this.closedWhy &&
-          reasonPending === this.reasonPending
-        )
-          return;
+      }),
+      provider.subscribeAccess((access, closedWhy) => {
         this.access = access;
         this.closedWhy = closedWhy;
-        this.reasonPending = reasonPending;
-        this.forgetDifference();
+        this.holdsUndeliverable = access === "read" && this.computeUndeliverable();
+        this.recomputeStatus();
         this.emit();
-      }) ?? null;
-    this.unsubscribeDifference =
-      this.transportProvider.subscribeDifference?.((difference) => {
-        this.differenceAnswered = true;
-        this.lastDifference = difference;
-        this.holdsUndeliverable = difference !== null && this.unsent.holdsUndeliverable(difference);
-        this.recomputeStatus();
-        for (const waiter of [...this.verdictWaiters]) waiter();
-      }) ?? null;
-    this.unsubscribeServerHas =
-      this.transportProvider.subscribeServerHas?.((vector, handshake) =>
-        this.serverMark.note(vector, handshake),
-      ) ?? null;
-    this.unsubscribeChangeEvents =
-      this.room.kind === "live"
-        ? (this.transportProvider.subscribeChangeEvents?.((message) => {
-            if (message.documentId === this.documentId) this.markerStore.replaceGroup(message);
-          }) ?? null)
-        : null;
-    this.unsubscribeAcknowledgement =
-      this.transportProvider.subscribeServerAcknowledgement?.((acknowledged) => {
+      }),
+      provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
+        // Joined, with everything this connection sent acknowledged: the Join sent all the copy held.
+        if (acknowledged) {
+          this.unsent = false;
+          this.noteServerSoon();
+        }
         this.recomputeStatus();
-      }) ?? null;
-    void this.watchTransportSync(this.transportProvider);
+      }),
+    );
+    void this.watchTransportSync(provider);
     this.recomputeStatus();
     this.emit();
   }
 
   /**
-   * Close the server transport and keep the Y.Doc, its local persistence and its history. Edits
-   * made after this wait in the document until `attachTransport` syncs the difference. A
-   * following `attachTransport` waits for this to finish.
+   * Record what the server holds in the copy, for a later tab or reload, once typing pauses: a
+   * mark that trails the server only offers words it has, never loses one.
+   */
+  private noteServerSoon(): void {
+    if (this.noteServerTimer !== undefined) return;
+    this.noteServerTimer = setTimeout(() => this.noteServer(), NOTE_SERVER_MS);
+  }
+
+  private noteServer(): void {
+    clearTimeout(this.noteServerTimer);
+    this.noteServerTimer = undefined;
+    const provider = this.transportProvider;
+    if (!provider || this.docs.isFreed) return;
+    const known = provider.serverVersion();
+    if (versionCovers(this.server, known)) return;
+    mergeVersion(this.server, known);
+    void this.store?.putMeta(SERVER_META, encodeRoomVersion(this.server)).catch(noop);
+  }
+
+  /** Whether the copy holds words the server lacks (see `unsent-words.ts`). */
+  private computeUndeliverable(): boolean {
+    const server = this.transportProvider?.serverVersion() ?? this.server;
+    return wordsBeyond(this.docs, server);
+  }
+
+  private async watchTransportSync(provider: DocumentSessionTransportProvider): Promise<void> {
+    await provider.whenSynced;
+    if (this.destroyed || provider !== this.transportProvider) return;
+    this.transportInitialSyncComplete = true;
+    const first = !this.contentHeld;
+    this.contentHeld = true;
+    this.recomputeStatus();
+    if (first) this.emit();
+  }
+
+  /**
+   * Close the server transport and keep the copy, its store and its history. Edits made after
+   * this wait in the copy until `attachTransport`'s Join sends them.
    */
   detachTransport(): Promise<void> {
+    this.transportAttachmentPending = false;
     const previous = this.transportProvider;
-    if (this.destroyed || !previous) return this.detaching ?? Promise.resolve();
-    this.unsubscribeTransportStatus?.();
-    this.unsubscribeTransportAccess?.();
-    this.unsubscribeChangeEvents?.();
-    this.unsubscribeAcknowledgement?.();
-    this.unsubscribeDifference?.();
-    this.unsubscribeServerHas?.();
-    this.unsubscribeTransportStatus = null;
-    this.unsubscribeTransportAccess = null;
-    this.unsubscribeChangeEvents = null;
-    this.unsubscribeAcknowledgement = null;
-    this.unsubscribeDifference = null;
-    this.unsubscribeServerHas = null;
-    this.forgetDifference();
-    // The provider never destroys this session's Awareness, so presence is held here and put
-    // back on attach.
+    if (this.destroyed || !previous) {
+      this.recomputeStatus();
+      return this.detaching ?? Promise.resolve();
+    }
+    this.noteServer();
+    for (const stop of this.unsubscribers.splice(0)) stop();
     if (!this.presenceHeldForTransport) {
       this.presenceHeldForTransport = true;
       this.localPresence.suspend();
@@ -538,147 +574,80 @@ export class DocumentSession {
     this.transportAcknowledged = false;
     this.status = "detached";
     this.serverHasLocalChanges = false;
-    const closing = Promise.resolve(previous.destroy());
-    const settled = closing.then(noop, noop).then(() => {
-      if (this.detaching === settled) this.detaching = null;
-    });
-    this.detaching = settled;
+    previous.destroy();
     this.emit();
-    return closing;
+    return Promise.resolve();
   }
 
-  /** Replace a terminal transport while preserving local persistence and the live Y.Doc. */
+  /** Replace a terminal transport while keeping the copy. */
   async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
-    if (this.destroyed) {
+    if (this.destroyed)
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
-    }
     await this.detachTransport();
-    await this.localPeers?.drain();
-    this.localPeers = null;
     this.attachTransport(transportFactory);
-    this.startLocalPeers();
+    this.startTabs();
   }
 
   get resetDisposition(): ResetDisposition | null {
     return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
   }
 
-  unacknowledgedUpdates(): Uint8Array | null {
-    return this.transportProvider?.unacknowledgedUpdates() ?? null;
+  /**
+   * Settles once the server acknowledged every batch this session sent so far. A session still
+   * loading its copy is waited for until its transport attaches, and a room that is reconnecting
+   * until its Join's batch is acknowledged. A fork's copy holds the Live ops it forwards, which
+   * its room never acknowledges, so a press waits on this (design §4).
+   */
+  async whenSentAcknowledged(): Promise<void> {
+    if (this.transportAttachmentPending)
+      await new Promise<void>((resolve) => {
+        const stop = this.subscribe(() => {
+          if (this.transportAttachmentPending && !this.destroyed) return;
+          resolve();
+          queueMicrotask(() => stop());
+        });
+      });
+    await this.transportProvider?.whenSentAcknowledged();
   }
 
-  /** Captured synchronously with an Apply snapshot; later typing does not move this barrier. */
+  /** Captured now; later typing does not move this barrier. */
   whenCurrentChangesAcknowledged(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      let stop = () => {};
-      let settled = false;
-      const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        stop();
-        if (error) reject(error);
-        else resolve();
-      };
-      const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
-      stop = this.subscribe((snapshot) => {
-        if (this.isRoomEnded())
-          finish(new Error("Document session can no longer acknowledge this cut"));
-        // A read-admitted connection acknowledges nothing: its verdict is the handshake's.
-        else if ((!prefix || snapshot.access === "read") && snapshot.serverHasLocalChanges)
-          finish();
-      });
-      if (settled) stop();
-      void prefix?.then(
-        () => finish(),
-        (error: Error) => finish(error),
-      );
-    });
-  }
-
-  /**
-   * Settles once the server holds what this room holds now, or at once while the room is not
-   * synced or is read-admitted, and when it stops being synced or becomes read: the server will
-   * never take a read room's typing, and a caller deciding from the server's state never waits on
-   * a reconnect.
-   */
-  whenServerHoldsLocalChanges(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      let stop = () => {};
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        stop();
-        resolve();
-      };
-      stop = this.subscribe((snapshot) => {
-        if (snapshot.status !== "synced" || snapshot.access === "read") done();
-      });
-      if (settled) stop();
-      else this.whenCurrentChangesAcknowledged().then(done, done);
-    });
-  }
-
-  /**
-   * Reads the local copy (words another tab stored that this tab never received) and takes one
-   * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
-   * edits the server will not take; false when the connection ended or turned editable meanwhile.
-   */
-  async decideAgain(): Promise<boolean> {
-    await this.localPeers?.catchUp().catch((error) => reportError(error));
     const provider = this.transportProvider;
-    if (!provider || this.access !== "read") return false;
-    const answered = new Promise<boolean>((resolve) => {
-      const waiter = () => {
-        this.verdictWaiters.delete(waiter);
-        resolve(this.holdsUndeliverable);
-      };
-      this.verdictWaiters.add(waiter);
-    });
-    this.differenceAnswered = false;
-    provider.requestHandshake?.();
-    return answered;
+    if (!provider) return Promise.reject(new Error("Document session has no transport"));
+    if (this.access === "read") return Promise.resolve();
+    return provider.whenCurrentChangesAcknowledged();
   }
 
-  /**
-   * The typing the last read-admitted handshake found the server lacks (`UnsentEdits.undeliverable`),
-   * as the items (`lacking`) and the document they live in, encoded so it can be read after the
-   * session is made inert. Null when the room holds none.
-   */
-  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges } | null {
-    const difference = this.lastDifference;
-    if (!difference || !this.holdsUndeliverable) return null;
-    return {
-      copy: Y.encodeStateAsUpdate(this.document),
-      lacking: this.unsent.undeliverable(difference),
-    };
+  /** Whether this copy holds words a read-admitting server will never take. */
+  undeliverableWords(): boolean {
+    return this.holdsUndeliverable && this.computeUndeliverable();
   }
 
-  /**
-   * Another session replaces this room: stop offering anything to the server and other tabs. The
-   * document stays readable until its editors have gone and it is destroyed.
-   */
   get replaced(): boolean {
     return this.inert;
   }
 
+  /** Another session replaces this room: nothing more goes to the server or to other tabs. */
   makeInert(): Promise<void> {
     this.inert = true;
     this.transportAttachmentPending = false;
-    this.localPeers?.stop();
+    this.stopTabs();
     this.recomputeStatus();
     return this.detachTransport();
   }
 
+  /** Whether the copy holds ops the server is not known to have. */
   hasUnacknowledgedEdits(): boolean {
-    return this.unacknowledgedUpdates() !== null;
+    if (this.unsent === null) {
+      const server = this.transportProvider?.serverVersion() ?? this.server;
+      this.unsent = !versionCovers(server, this.docs.version());
+    }
+    return this.unsent;
   }
 
   /**
    * Whether this room can still take the unsent edits: false once it is reset, unauthorized,
-   * terminal, destroyed or admitted read-only (the server drops writes without closing).
-   * Owners that keep a released session until its edits are acknowledged ask this to know the
-   * wait can end.
+   * terminal, destroyed or admitted read-only.
    */
   canDeliverUnsentEdits(): boolean {
     return !this.isRoomEnded() && this.access !== "read";
@@ -686,66 +655,18 @@ export class DocumentSession {
 
   /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
   isRoomEnded(): boolean {
-    const { status, connectionState } = this.getSnapshot();
     return (
-      this.resetDisposition !== null ||
-      status === "destroyed" ||
-      status === "access-lost" ||
-      connectionState?.kind === "reset" ||
-      (connectionState?.kind === "unauthorized" && !isSignInLapse(connectionState)) ||
-      connectionState?.kind === "terminal"
+      this.destroyed || this.status === "access-lost" || this.transportState?.kind === "terminal"
     );
   }
 
-  /**
-   * A new connection, or a new scope, starts with no verdict. Called before each recompute that
-   * follows one, so a stale verdict never reads as the new connection's.
-   */
-  private forgetDifference(): void {
-    this.differenceAnswered = false;
-    this.holdsUndeliverable = false;
-    this.lastDifference = null;
-    for (const waiter of [...this.verdictWaiters]) waiter();
-  }
-
-  /**
-   * On a read-admitted connection a local change that is not a display write makes the verdict
-   * unknown, and one handshake decides again. Changes the server's answers apply carry the
-   * transport's origin and never get here.
-   */
-  private readonly onDocumentUpdate = (
-    _update: Uint8Array,
-    origin: unknown,
-    _document: Y.Doc,
-    transaction: Y.Transaction,
-  ): void => {
-    const provider = this.transportProvider;
-    if (this.access !== "read" || !provider || origin === provider.serverOrigin) return;
-    if (this.unsent.isDisplayWrite(transaction)) return;
-    this.differenceAnswered = false;
-    provider.requestHandshake?.();
-    this.recomputeStatus();
-  };
-
-  /**
-   * What the server, the copy or a peer tab brings in may end a mark another client re-opened
-   * inside a change resolved since: that mark goes, or it runs on over the words after it.
-   */
-  private readonly onAfterTransaction = (transaction: Y.Transaction): void => {
-    if (!transaction.local && this.access === "edit") dropResolvedMarks(this.document, transaction);
-  };
-
   private waitForLocalPersistenceTransportGate(): Promise<void> {
     return new Promise((resolve) => {
-      let complete = false;
-      const finish = () => {
-        if (complete) return;
-        complete = true;
+      const timeout = setTimeout(resolve, LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS);
+      void this.localPersistenceSyncedPromise.finally(() => {
         clearTimeout(timeout);
         resolve();
-      };
-      const timeout = setTimeout(finish, LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS);
-      void this.localPersistenceSyncedPromise.then(finish, finish);
+      });
     });
   }
 
@@ -759,60 +680,31 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       closedWhy: this.closedWhy,
-      reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
       contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,
-      schemaRepairs: this.schemaRepairs,
       holdsUndeliverableEdits: this.holdsUndeliverable,
     };
   }
 
-  /**
-   * Snapshot and arm once, immediately before the first binding is constructed.
-   * Every later view contributes PM attribution to the same document witness.
-   * Releasing a view removes only its attribution, never document observation.
-   */
-  bindEditor(
-    construct: () => Editor,
-    evidenceDegraded = false,
-  ): {
-    editor: Editor;
-    release: () => void;
-  } {
+  // --- editors --------------------------------------------------------------------------------
+
+  bindEditor(construct: () => Editor): { editor: Editor; release: () => void } {
     if (this.destroyed) throw new Error("Cannot bind an editor to a destroyed session");
-    const firstBinding = this.schemaRepairWitness === null;
-    this.schemaRepairWitness ??= createSchemaRepairWitness({
-      document: this.document,
-      evidenceDegraded,
-      onRepair: (event) => this.reportSchemaRepair(event),
-    });
-    const witness = this.schemaRepairWitness;
-    try {
-      const editor = construct();
-      const leave = witness.enterLive(editor);
-      this.boundEditors += 1;
-      let released = false;
-      return {
-        editor,
-        release: () => {
-          leave();
-          if (released) return;
-          released = true;
-          this.boundEditors -= 1;
-          if (this.boundEditors === 0) for (const done of [...this.unbound]) done();
-        },
-      };
-    } catch (error) {
-      if (firstBinding) {
-        witness.destroy();
-        this.schemaRepairWitness = null;
-      }
-      throw error;
-    }
+    const editor = construct();
+    this.boundEditors += 1;
+    let released = false;
+    return {
+      editor,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.boundEditors -= 1;
+        if (this.boundEditors === 0) for (const done of [...this.unbound]) done();
+      },
+    };
   }
 
-  /** Resolves once no editor is bound to this session: the moment it can be destroyed. */
   whenUnbound(): Promise<void> {
     if (this.boundEditors === 0) return Promise.resolve();
     return new Promise((resolve) => {
@@ -824,18 +716,10 @@ export class DocumentSession {
     });
   }
 
-  /** Append one session-scoped repair verdict and notify every report surface. */
-  reportSchemaRepair(event: SchemaRepairEvent): void {
-    if (this.destroyed) return;
-    this.schemaRepairs = [...this.schemaRepairs, event];
-    this.emit();
-  }
-
-  /** Permanently stop editing for this session while preserving its connection status. */
   raiseSchemaFence(fence: SchemaFence): void {
     if (this.destroyed || this.schemaFence) return;
     this.schemaFence = fence;
-    this.localPeers?.stop();
+    this.stopTabs();
     this.persistSchemaFence?.(fence);
     this.suspendPresence();
     this.emit();
@@ -849,7 +733,6 @@ export class DocumentSession {
     };
   }
 
-  /** Resolve after first local + server sync, or when destruction ends that lifecycle. */
   whenSynced(): Promise<void> {
     const syncSequence = async () => {
       await this.localPersistenceSyncedPromise;
@@ -859,22 +742,20 @@ export class DocumentSession {
     return Promise.race([syncSequence(), this.lifecycleCompletedPromise]);
   }
 
-  /** Resolve once IndexedDB has replayed this room into the session-owned Y.Doc. */
   whenLocalPersistenceSynced(): Promise<void> {
     return Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
   }
 
   waitForCurrentSync(timeoutMs: number): Promise<void> {
-    if (this.status === "synced" || this.status === "access-lost" || this.status === "destroyed") {
+    if (this.status === "synced" || this.status === "access-lost" || this.status === "destroyed")
       return Promise.resolve();
-    }
     return new Promise((resolve) => {
       let done = false;
       let unsubscribe: (() => void) | null = null;
       const finish = () => {
         if (done) return;
         done = true;
-        if (unsubscribe) unsubscribe();
+        unsubscribe?.();
         clearTimeout(timer);
         resolve();
       };
@@ -884,52 +765,29 @@ export class DocumentSession {
           snapshot.status === "synced" ||
           snapshot.status === "access-lost" ||
           snapshot.status === "destroyed"
-        ) {
+        )
           finish();
-        }
       });
     });
   }
 
   get persistenceName(): string | null {
-    return this.persistence?.name ?? null;
+    return this.storeName;
   }
 
-  /** Separate from replay readiness; absent evidence never authorizes empty initialization. */
+  /** Whether this copy's first content was written here (a new document's template). */
   async hasInitializedLocalContent(): Promise<boolean> {
-    await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
-    await this.initialization?.catch(() => undefined);
-    if (this.destroyed || !this.persistence?.db) return false;
-    return readContentInitialization(this.persistence.db);
+    await this.whenLocalPersistenceSynced();
+    const store = this.store;
+    if (this.destroyed || !store) return false;
+    return (await store.read()).meta.get(INITIALIZED_META) === true;
   }
 
-  private establishContentInitialization(): void {
-    if (!this.persistence || this.initialization) return;
-    const attempt = (async () => {
-      await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
-      if (this.destroyed || this.schemaFence || !this.persistence?.db) return;
-      const database = this.persistence.db;
-      if (await readContentInitialization(database)) return;
-      if (this.destroyed || this.schemaFence) return;
-      await commitContentInitialization(database, this.document);
-    })().finally(() => {
-      if (this.initialization === attempt) this.initialization = null;
-    });
-    this.initialization = attempt;
-    void attempt.catch((error) => reportError(error));
+  /** Record that this copy's first content is written; `hasInitializedLocalContent` reads it. */
+  markContentInitialized(): void {
+    void this.store?.putMeta(INITIALIZED_META, true).catch(noop);
   }
 
-  /**
-   * Where every local awareness field is written, by every publisher in the
-   * editor — including TipTap's caret and y-prosemirror's cursor plugin, which
-   * reach it through `caretProvider` (`local-presence.ts`).
-   *
-   * The session owns whether this client is on the wire, so it has to own the
-   * fields too: a publisher writing to `Awareness` directly loses its write
-   * whenever presence is suspended, and suspension would then restore a value
-   * the publisher had already corrected. This is the editor's whole reach into
-   * awareness; `this.awareness` is the transport's.
-   */
   get presence(): LocalPresenceFields {
     return this.localPresence;
   }
@@ -940,215 +798,83 @@ export class DocumentSession {
     this.localPresence.resume();
   }
 
-  /** Take this client off the wire. Field writes made meanwhile still count. */
   suspendPresence(): void {
     if (this.destroyed) return;
     this.localPresence.suspend();
   }
 
-  /** Put this client back, with the fields as they now stand. */
   resumePresence(): void {
     if (this.destroyed) return;
     this.localPresence.resume();
   }
 
   /**
-   * Cleanup ordering is intentionally caller-friendly: React unmounts the
-   * TipTap editor first, then calls this method so providers can detach before
-   * the Y.Doc is destroyed.
+   * Tear down: the transport, the other tabs' channel, the store (after its writes land and a
+   * last compaction), presence, history, and last the docs, which are WASM memory only `free()`
+   * releases. Editors must be destroyed first (the registry waits for `whenUnbound`).
    */
   destroy(): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
-    if (!this.destroyStages) {
-      this.destroyed = true;
-      this.localPeers?.stop();
-      this.resolveTransportAttached();
-      this.resolveLifecycleCompleted();
-      this.status = "destroyed";
-      this.serverHasLocalChanges = false;
-      this.destroyStages = [
-        { settled: false, run: () => this.emit() },
-        { settled: false, run: () => this.markerStore.clear() },
-        {
-          settled: false,
-          run: () => {
-            if (typeof window === "undefined") return;
-            window.removeEventListener("pagehide", this.onPageHide);
-            window.removeEventListener("pageshow", this.onPageShow);
-          },
-        },
-        { settled: false, run: () => this.localPresence.release() },
-        {
-          settled: false,
-          run: () =>
-            removeAwarenessStates(
-              this.awareness,
-              [this.awareness.clientID],
-              "document-session-destroy",
-            ),
-        },
-        { settled: false, run: () => this.unsubscribeTransportStatus?.() },
-        { settled: false, run: () => this.unsubscribeTransportAccess?.() },
-        { settled: false, run: () => this.unsubscribeChangeEvents?.() },
-        { settled: false, run: () => this.unsubscribeAcknowledgement?.() },
-        { settled: false, run: () => this.unsubscribeDifference?.() },
-        { settled: false, run: () => this.unsubscribeServerHas?.() },
-        { settled: false, run: () => this.transportProvider?.destroy() },
-        { settled: false, run: () => this.localPeers?.drain() },
-        {
-          settled: false,
-          run: async () => {
-            await this.initialization?.catch(() => undefined);
-          },
-        },
-        {
-          settled: false,
-          run: () => this.persistence?.destroy(),
-        },
-        { settled: false, run: () => this.schemaRepairWitness?.destroy() },
-        { settled: false, run: () => this.awareness.destroy() },
-        { settled: false, run: () => this.unsent.destroy() },
-        { settled: false, run: () => this.history.destroy() },
-        { settled: false, run: () => this.document.destroy() },
-        { settled: false, run: () => this.listeners.clear() },
-      ];
+    this.destroyed = true;
+    this.stopTabs();
+    this.resolveTransportAttached();
+    this.resolveLifecycleCompleted();
+    this.status = "destroyed";
+    this.serverHasLocalChanges = false;
+    this.emit();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pagehide", this.onPageHide);
+      window.removeEventListener("pageshow", this.onPageShow);
     }
-
-    const attempt = (async () => {
-      const errors: unknown[] = [];
-      for (const stage of this.destroyStages ?? []) {
-        if (stage.settled) continue;
-        try {
-          await stage.run();
-          stage.settled = true;
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-
-      if (errors.length === 1) throw errors[0];
-      if (errors.length > 1) throw new AggregateError(errors, "Document session teardown failed");
-    })().finally(() => {
-      if (this.destroyPromise === attempt) this.destroyPromise = null;
-    });
-    this.destroyPromise = attempt;
-    return attempt;
+    this.noteServer();
+    for (const stop of this.unsubscribers.splice(0)) stop();
+    this.transportProvider?.destroy();
+    this.transportProvider = null;
+    this.localPresence.release();
+    this.unregisterDraft();
+    this.history.destroy();
+    const store = this.store;
+    this.store = null;
+    this.destroyPromise = (async () => {
+      if (store && !this.docs.isFreed && this.appended > 0)
+        await store.compact(this.docs.snapshots()).catch(noop);
+      await store?.close();
+      await this.localPersistenceSyncedPromise.catch(noop);
+      this.docs.free();
+      this.listeners.clear();
+    })();
+    return this.destroyPromise;
   }
 
-  private async watchLocalPersistence(): Promise<void> {
-    await this.persistence?.whenSynced;
-    // The copy's updates are in the document; its display records are read after them.
-    await this.unsent.readRecords().catch((error) => reportError(error));
-    if (this.destroyed) return;
-    this.localPersistenceSynced = true;
-    this.startLocalPeers();
-    this.recomputeStatus();
-  }
-
-  private startLocalPeers(): void {
-    if (
-      this.localPersistenceSynced &&
-      !this.destroyed &&
-      !this.inert &&
-      !this.localPeers &&
-      this.persistence &&
-      !this.schemaFence &&
-      (this.transportState?.kind !== "unauthorized" || isSignInLapse(this.transportState)) &&
-      this.transportState?.kind !== "reset" &&
-      typeof window !== "undefined" &&
-      typeof BroadcastChannel === "function"
-    )
-      try {
-        this.localPeers = new LocalDocumentPeers(
-          this.document,
-          this.persistence,
-          this.awareness,
-          this.unsent,
-        );
-      } catch (error) {
-        // A denied peer channel must not make successfully loaded writing unavailable.
-        reportError(error);
-      }
-  }
-
-  private async watchTransportSync(provider: DocumentSessionTransportProvider): Promise<void> {
-    await provider.whenSynced;
-    if (this.destroyed || provider !== this.transportProvider) return;
-    this.transportInitialSyncComplete = true;
-    const first = !this.contentHeld;
-    this.contentHeld = true;
-    if (provider.whenSynced) this.establishContentInitialization();
-    this.recomputeStatus();
-    if (first) this.emit();
-  }
-
-  /**
-   * Single derivation site for `status`. Called on every input change —
-   * local persistence load, transport connection-state transition, transport
-   * first-sync resolution — so the indicator never freezes on a startup value.
-   *
-   * Honesty matters here: `synced` means the transport is connected and its
-   * first handshake is complete, not that the server holds the latest edits;
-   * `serverHasLocalChanges` carries that and is derived here too so both
-   * change together. When the transport has no server channel, it remains
-   * explicitly detached rather than presenting local persistence as a
-   * successful server sync.
-   */
   private recomputeStatus(): void {
     if (this.destroyed) return;
     const next = this.deriveStatus();
     const acknowledged =
       next === "synced" &&
-      (this.access === "read"
-        ? this.differenceAnswered && !this.holdsUndeliverable
-        : this.transportAcknowledged);
-    const outboxPresent = this.hasUnacknowledgedEdits();
-    if (
-      next === this.status &&
-      acknowledged === this.serverHasLocalChanges &&
-      this.holdsUndeliverable === this.observedHolds &&
-      outboxPresent === this.observedOutboxPresence &&
-      this.transportState === this.emittedTransportState
-    )
-      return;
-    this.observedOutboxPresence = outboxPresent;
-    this.observedHolds = this.holdsUndeliverable;
-    this.emittedTransportState = this.transportState;
+      (this.access === "read" ? !this.holdsUndeliverable : this.transportAcknowledged);
+    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}`;
+    if (key === this.emittedKey && this.transportState === this.lastEmittedState) return;
+    this.emittedKey = key;
+    this.lastEmittedState = this.transportState;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();
   }
 
+  private lastEmittedState: RoomConnectionState | null = null;
+
   private deriveStatus(): DocumentSessionStatus {
     if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";
-    if (!this.localPersistenceSynced) return "syncing";
-
     const state = this.transportState;
-
-    // Terminal transport states pre-empt the initial-sync gate: first sync will
-    // never complete after permanent denial or a session-level terminal close.
-    if (isSignInLapse(state)) return "offline";
-    if (state?.kind === "unauthorized") return "access-lost";
-    if (state?.kind === "reset") return "access-lost";
-    if (state?.kind === "terminal") return "offline";
-
-    // Empty local cache after a schema bump must resync from the server first.
+    if (state?.kind === "unauthorized" || state?.kind === "reset") return "access-lost";
+    if (!this.localPersistenceSynced) return "syncing";
+    // A lapsed sign-in keeps the text and takes edits like offline; the account's list asks the
+    // writer to sign in again.
+    if (state?.kind === "terminal" || state?.kind === "signed-out") return "offline";
     if (!this.transportInitialSyncComplete) return "syncing";
-
-    const serverSynced = this.transportProvider.synced !== false;
-
-    // Live disconnect: edits buffer locally until reconnect.
     if (state?.kind === "disconnected") return "offline";
-
-    // Actively reconnecting/degraded after a drop — still syncing.
-    if (state?.kind === "reconnecting" || state?.kind === "degraded") return "syncing";
-
-    // Connecting or connected-but-not-yet-server-synced → syncing.
-    if (state?.kind === "connecting") return "syncing";
-    if (!serverSynced) return "syncing";
-
-    // state?.kind === "connected" || (no state yet but provider reports synced)
-    return "synced";
+    if (state?.kind === "connected") return "synced";
+    return "syncing";
   }
 
   private emit(): void {

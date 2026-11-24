@@ -1,19 +1,43 @@
 # App editor runtime contracts
 
-This page covers contracts that cross the TipTap, Yjs, session, and feature
+This page covers contracts that cross the TipTap, Loro, session, and feature
 boundaries. The app schema must remain structurally aligned with
 `@meridian/prosemirror-schema`; schema drift can corrupt shared documents.
 
 ## Sessions and local copies
 
-`DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's live
-sessions: one per document id, held by retain/release, closed after a grace once no host wants
-it and its unsent edits are acknowledged. A lease is only the account's right to hold one
-document's session (`{accountId, projectId, documentId}`): nothing orders or fences it, because
-the project's list says whether a document is there.
+`DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's
+document sessions: one per room, keyed by `sessionRoomKey` (the bare document id for a Live room,
+`fork:<draft>:<document>` for a draft's fork room), held by retain/release, closed after a grace
+once no host wants it and its unsent edits are acknowledged. A lease is only the account's right
+to hold one room's session (`{accountId, projectId, documentId, room}`): nothing orders or fences
+it, because the project's list says whether a document is there.
 
-The browser's local copy of a live document is the IndexedDB database
-`documentSessionPersistenceKey(accountId, documentId)` (`local-document-copies.ts`). It is
+A fork session (design §6, "The session lifecycle") is the same `DocumentSession` class on the
+fork room, built over its document's Live session: its docs are `RoomDocs.draftOf` the Live
+copy, it has its own socket, store, presence and `UndoHistory`, and it registers its docs with
+the binding (`registerDraft`) so every batch the Live session imports, and every local write it
+publishes (`forwardLocalWrite`), forwards the fork, whether or not an editor shows it. Admitting a
+fork admits its Live room; the Live room counts as retained while any fork session of it lives,
+and is torn down after them (`clearLocalCopy` and account close retire forks first). A draft
+page opens its fork room whether or not the draft has changed the document: there is no path that
+binds Live and swaps at the first keystroke. A document the draft created has no fork: its page
+binds its own Live room.
+
+A session owns one `RoomDocs` (the structure doc and one `LoroDoc` per textblock, local-first
+design §1) and frees it at teardown; nothing else frees it. Every local write leaves by one path,
+`publish`: appended to the IndexedDB copy, posted to this browser's other tabs
+(`BroadcastChannel` named after the copy), then sent to the server. Every peer's batch, from the
+server or another tab, arrives by `importRemote`, which calls the binding's `importRemoteUpdate`
+and so goes through its composition guard: a batch is held, as bytes, while any editor on the
+room is composing.
+
+The browser's local copy of a room is the IndexedDB database
+`documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
+`local-copy-store.ts`): a snapshot per doc key, a log of envelope batches folded into snapshots
+every `COMPACT_EVERY` batches and at open, and a `meta` store holding the room version the server
+is known to hold (`SERVER_META`). A fork room's copy is named under its document's, so a document's
+copies (Live and every fork) are found and deleted together. It is
 deleted only when it cannot come back to this account: the node's `purge`, the project, Work
 or chat deleted for good, the account removed from the project, or sign-out. A `delete` (a
 document in Trash) touches nothing: the server's text room admits a document in Trash until its
@@ -25,166 +49,71 @@ crashed half way leaves one).
 
 One Web Lock per copy keeps a tab from deleting a database another has open: a session holds it
 shared from creation to teardown, a deletion takes it exclusive and gives up when it is held.
-The tab that holds it clears the copy itself when it reads the same `purge`.
-
-Local document peers are scoped to the exact persistence incarnation and schema,
-not a path or unqualified document ID. They exchange Yjs updates and ephemeral
-presence; replay is a remote transaction and local convergence is not server
-acknowledgement. Teardown removes local awareness and drains reads before
-destroying persistence. A cross-tab cache deletion also fences peers on IndexedDB
-`versionchange`, before a lifecycle wake can replay from the closing connection.
-The replay adapter uses y-indexeddb's public stores and
-does not create a second content journal.
+The tab that holds it clears the copy itself when it reads the same `purge`; a tab whose copy
+another tab deletes stops writing to it on IndexedDB `versionchange`.
 
 A document made in this browser has its session in the registry from the start, under its final
-id; there is no handover. Its room connects once the server has the `create` (the server closes
-a room for a document it does not know yet non-terminally, and the provider retries).
+id; there is no handover. Its room connects once the server has the `create` (a Join for a
+document the server does not know yet errors non-terminally, and the transport rejoins).
 
 The production registry has one immutable account epoch. Account close refuses new work
-synchronously, then drains providers and leases. Removed sessions transfer to the teardown owner
-and remain quarantined until their retryable destroy ledger succeeds.
+synchronously, then drains transports and leases.
 
 ## Mount and collaboration
 
 - `createEditorExtensions()` is the sole collaborative assembly point. TipTap
   and `buildDocumentSchema()` are built separately, so adding a node or
-  attribute requires parity in both. Collaboration uses one
-  `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
+  attribute requires parity in both. The binding is `loroSyncPlugin`
+  (`extensions/loro-sync.ts`), over the session's `RoomDocs`.
+- The binding rebuilds only the blocks a remote batch touched and dispatches them as one
+  transaction marked `setMeta(loroSyncKey, REMOTE_META)` and `addToHistory: false`. Code that
+  must tell a writer's move from a remote write reads that meta; `notifyChanged` (a write made
+  outside the editor, an Undo, a `writeDocument`) dispatches the same way.
+- Review changes (`extensions/review-changes`) is decorations only: Live's text of a changed
+  paragraph is a widget, never document text, so typing, Undo and the binding see the draft alone.
+  Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
+  decorations map through the typing in between: reading on every key costs more than a key may.
+  The host turns it on and off with `setReviewChanges`; a plugin's config change needs a reload in
+  dev, since HMR keeps the plugin instance. `KeptExtension` shows a block someone
+  deleted that the binding keeps while the caret is in it (`loroSyncKey` state `kept`) in muted
+  ink, with no words; typing brings it back in full ink, and once the caret leaves it goes with no
+  mark after. It reads `kept` in `props.decorations`, not in a plugin state's
+  `apply`, where the binding's state for the same transaction isn't built yet.
 - Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other
   half, a pasted copy and any block with none get a fresh one; a cut block's id is free, so a
-  paste or drop keeps it. The id rides the clipboard as `data-block-id`. Transactions from the
-  Yjs binding (a peer's change, undo, redo, the first load) are left alone: their blocks
-  already have ids. Undo never takes an id away: the document's `UndoManager`
-  (`editor-history.ts`) refuses to delete an `id` attribute, because a paragraph survives its
-  creator's undo and would keep a peer's text with no id. A pure keystroke is repaired only in
-  the block typed in; a stored block with no id (written before ids were assigned on every path)
-  gets its id when someone types in it or edits its structure, and an edit addressed by block
-  cannot reach it until then. There is no migration; nothing deployed holds one.
-- A block's adjacent `Y.XmlText` children are one run of text: peers typing into
-  an empty block at once create several. One rule reads and writes them
-  everywhere: diff the run as one string, send each change to the `XmlText`
-  that owns the offset (a boundary insert goes left), and empty a text, never
-  delete it, so a peer's concurrent insert and its byline survive. A run of
-  texts that are all empty (a writer emptied a run beside an image or a break)
-  is not a child the editor compares: without that, the next local edit in the
-  block rewrites everything after the empty text and duplicates words. The browser
-  editor, the server and `packages/agent-edit` all bind through the one patched
-  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.3.0.patch`; `y-prosemirror`
-  is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
-  rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
-  its first text, delete the rest, and fold again on read (a read that writes).
-  To drop the patch when upstream stops doing either, remove the grouping
-  changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
-  `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
-  read) and keep `refreshProseMirrorDoc`, `sameBlock` and the forced-render selection
-  resolver (until upstream resolves valid selections there too).
-- `updateYText` places a typed or deleted run where the transaction put it (`placeByStep`). `simpleDiff`
-  puts an edit at the far end of any run of equal characters, so a space typed before a space, or
-  a letter beside the same letter, became the item at the other end of the run: the word's
-  characters then sat in the wrong item order, and the text of the unsent typing read them
-  split and out of order (`Second\nunsent `). The sync plugin's `apply` records the range of a
-  local transaction with one changed step inside a text-only block (`binding.edit`, with the block
-  node); `updateYText` uses it only for that node and only when it reproduces the new text, after trimming the
-  characters the replacement shares at both ends so only the changed ones get new or deleted items. A split,
-  a join or a multi-step transaction records nothing and the plain diff stands. To drop it,
-  upstream's diff must take the steps' range.
-- The binding’s forced render replaces the editor’s document before restoring its selection.
-  It resolves offsets from the previous document to a valid selection in the rendered one,
-  a text selection when text is available. A clamped offset alone can land at a table
-  boundary, where a text selection is invalid.
-- Cell selections cross peer updates as cell-boundary positions, cell IDs and
-  whole-row/whole-column coverage, not the ending cell's text range. The binding's
-  `resolveRelativeCellSelection` first uses live Yjs references, then a unique cell
-  ID if a move or Undo recreated the element. It shares that resolution with local
-  history. A deleted endpoint never becomes a selected neighboring cell: peer
-  updates collapse to a legal caret in the surviving endpoint, or near the mapped
-  head if neither survives. This deliberately differs from stock column-delete
-  mapping, which can select neighboring cells. Undo's explicit range restore leaves
-  the binding's mapped result alone if its cell endpoints cannot be recovered.
-  As in stock `CellSelection.map`, a full-row selection expands across added
-  columns; otherwise a full-column selection expands across added rows. When both
-  apply (all cells selected), the row rule wins, not both rules. The
-  corners define the rectangle: inserted interior rows join it; a moved corner can
-  reshape it. A whole table can lose whole-table status on an exterior row addition,
-  as stock does; this is not a new whole-table selection model. Cells without IDs
-  can follow live references but not recreated elements. Duplicate-ID fallback is
-  unresolved rather than choosing a copy. Keep both runtime bundles and selection
-  declarations aligned when updating the y-tiptap patch.
-- A block keeps its Yjs element: `updateYFragment` pairs the children it can't
-  match from either end by block `id` (`pairByBlockId`), deletes an old element
-  with no partner, inserts a node with none, and never writes a node into an
-  element with a different `id` (`sameBlock`). When the pairing must choose
-  (blocks swapped), a block this editor's own transaction moved
-  (`binding.movedIds`, recorded in the sync plugin's `apply`: its original
-  occurrence was deleted and did not come back in place) always loses to one left
-  in place, however many moved, so a dragged run is what is re-created and the
-  blocks it passed keep their elements and a peer's concurrent typing. A block
-  only retyped, or replaced in place by a copy with its id, stays in place, and
-  nothing inside a block replaced in place counts as moved. So a command that
-  moves blocks writes the move as a delete and an insert of the moved nodes
-  (`moveTableRow` and `moveTableColumn` in `table-operations.ts`), never as a rebuilt parent: a
-  rebuilt table tells the binding nothing about which row or cell moved, and a tie can
-  re-create one a collaborator is typing in. The rule holds only under a
-  parent that stays the same block (its id before the write is the node's id) or
-  the document. Cells and headers carry ids too, so their paragraphs and nested containers
-  pair by id. Children inside a container rewritten in place as another block still pair
-  by position. Stock y-tiptap pairs by position and
-  child equality (3.3.0 adds a first pass that pairs by the node a Yjs type was last mapped to,
-  `reconcileMappedChildren`; the patch bypasses it and keeps the id pairing): Enter at the end of a paragraph followed by an empty one moved
-  the empty one's element to the new paragraph. Yjs has no move, so typing a
-  peer puts into a block while it is dragged is lost, and two peers dragging one
-  block at once leave two copies with one `id`. The fold fuzz
-  (`qa/fold-fuzz.md`) checks this rule and the text rule above; run it by hand
-  when the patch changes.
-- Redoing the y-tiptap patch on a new version: `pnpm patch @tiptap/y-tiptap@<version>`, edit
-  `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
-  the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
-  `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), formatting only the runs whose marks differ (`updateYText`; re-formatting every run moved format items a peer needed, `qa/offline-press.md`), the empty-fragment guard, the attribute layers (a block's
-  `sugAttrs` record folded from and expanded to one `sugAttrs--<layer id>` element attribute per
-  layer, compared by content, in `createNodeFromYElement`, `createTypeFromElementNode`,
-  `updateYFragment` and `equalYTypePNode`; the rule is `@meridian/prosemirror-schema`
-  `layer-key.ts`), the forced-render
-  selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
-  capture and restore (`resolveRelativeCellSelection`), the gap-cursor restore (a remote edit
-  used to turn the gap below a final table into a caret in its last cell), and `recoverSelectionEndpoint` trusting a
-  position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
-  [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594), open: drop this change once a release fixes it).
-- Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
-  transaction with `addToHistory: false`; a meta-only one does not. A site that needs its edit to
-  be a separate step calls `endUndoStep(state)` (`editor-history.ts`) before the edit: image
-  upload, link actions, `@` references, reference drops, a Discard, a block drop. Meta-only
-  messages (block hold and lift, review projection, upload progress, reading position) are not
-  boundaries.
-- Debugging the patched y-tiptap: the `.map` files and `src/` in the package are pristine 3.3.0, so
-  devtools shows code that does not run. Set breakpoints in `dist/index.js` itself (delete its
-  `//# sourceMappingURL` line locally to stop devtools following the map) and read the patched
-  logic from `patches/@tiptap__y-tiptap@3.3.0.patch`. `refreshProseMirrorDoc` there is the headless
-  copy of the mapping refresh in `ProsemirrorBinding._typeChanged`; change both together.
-- Known limits, left as they are until writers hit them: deleting a run beside
-  an inline atom deletes a peer's concurrent typing into it (a text is emptied
-  only when the whole block empties), and a concurrent split moves the bylines
-  of the text after the split to the splitting client.
-- `EditorMountIdentity` holds every construction fact. `editorMountKey()` becomes the React
-  key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts TipTap. A
-  Work's view of the document is not a construction fact: it reaches the running editor as an
-  option (`suggestion`).
+  paste or drop keeps it. The fixer leaves a container's empty paragraph `<container>/empty` to
+  the binding (either filter may run first): that id is a placeholder no block is stored under,
+  and the binding gives the paragraph a fresh id in the same transaction once it is typed in,
+  split, or moved out. The first character typed there is usually inside an IME composition, so
+  the paragraph's node view (`MeridianParagraph.addNodeView`) sets a changed id or attribute on
+  the element it has instead of ProseMirror replacing the element, which would commit the
+  composition's raw keys as a stray letter (`k` before `かな`); only a level that changes the tag
+  rebuilds it. The id rides the clipboard as `data-block-id`. Remote transactions
+  are left alone: their blocks already have ids. A block's id is its text doc's key, so a block
+  is found by id (`findBlock` in `loro-points.ts`), never by a stored position.
+- Caret across a remote write: the binding carries the selection as Loro cursors. A
+  `NodeSelection` that still selects a node after mapping stays one. When the block a cursor was
+  in is gone (a peer deleted it while the writer composed in it), the caret goes to the nearest
+  position before where the block was; typing composed into it stays in its text doc, hidden
+  with the block.
+- `EditorMountIdentity` holds every construction fact. `editorMountKey()` becomes the React key,
+  with the session's peer id appended, so a replaced room remounts TipTap.
 - `useMountedEditor()` freezes construction options, binds through the session,
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions use the IndexedDB key of the account and the document id; the copy goes with
-  its document at the list's purge (`local-document-copies.ts`).
+- The editor binds one session's docs: a Live room's, or a draft's fork room's, which reads Live's
+  text for every block the draft has not written.
+- Builds on Yjs kept document copies in IndexedDB; `core/stale-yjs-copies.ts` deletes them once
+  per signed-in load (`routes/_authenticated.tsx`).
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
-orthogonal. `synced` means the transport handshake completed, not that all
-local edits are saved. `serverHasLocalChanges` is true only after that
-handshake and every update on the current connection is acknowledged. Outbox
-and acknowledgement are edge observations, not per-keystroke snapshots; the
-transport stores bytes before sending them (see
+orthogonal. `synced` means the transport's Join completed, not that all
+local edits are saved. `serverHasLocalChanges` is true only after that Join and every batch
+sent on the current connection is acknowledged (see
 [`../../transport/.context/CONTEXT.md`](../../transport/.context/CONTEXT.md)).
 
 Before binding, `EditorView` waits for local persistence. Verified detached
@@ -192,56 +121,25 @@ content may bind without first server sync; other sessions use the existing
 overall timeout, whose expiry permits degraded evidence but not upload
 authorization.
 
-## Schema repair and presence
+## Presence
 
-`DocumentSession.bindEditor()` owns one schema-repair witness per Y.Doc and one
-update listener across open and live phases. It captures the pre-bind snapshot
-immediately before construction, receives attribution from each bound view,
-and removes only that view's callbacks on release. Later views consume the
-session verdicts. Delete-only candidates are correlated independently within a
-Yjs transaction batch by item identity; ordinary writer transactions produce no
-verdict. Mixed delete-and-insert normalization is intentionally not classified.
-Repairs are reported in the snapshot; they do not fence, quarantine, pause, or
-change connection status. The witness counts each report with `countSchemaRepair("editor")`
-(`@meridian/agent-edit`); the removed-text extraction it reports lives in
-`rescued-text.ts`. The binding's delete reaches the server as an ordinary Yjs update,
-and the server journals it under no name (`isSchemaRepairUpdate`); Undo still reaches it, which
-re-inserts the element and has the binding delete it again.
-
-Local presence is owned by `local-presence.ts`. Extensions receive `setField`,
-read-only peer state, and an Awareness-shaped caret facade; they never receive
-the mutable Awareness instance. Suspension publishes null while retaining the
-desired map, nested suspension republished only at the outer boundary. A second
-presence write path or cached client ID creates ghost carets.
-
-The session is the only writer of local presence. A transport's provider is
-patched never to write local state on an Awareness it did not create: no clear
-on destroy, none on `pagehide`. `detachTransport` holds one suspension
-and the next attach releases it. The session also suspends on `pagehide` and resumes on `pageshow`
-only if it holds that suspension, so a page restored from the back/forward cache
-republishes its caret. Peers drop a closed tab when the server sees its socket
-close: Hocuspocus 4.3.0 relays no explicit null awareness update.
-
-Peer marks, session markers, and review decorations are projections, never
-manuscript content. The session marker store is ephemeral and group revisions
-fence delayed replays. Undo/Redo of an AI change remains the producing-turn
-receipt's authority.
-
-The peer-marks lane (`PeerMarkerExtension`, the marker store, the agent-name
-store) is dormant: no server code has sent `change_event` since `92967a8b80`, so
-the store stays empty and no mark renders. It is kept for the history feature,
-which will decide what marks show. Don't extend it and don't delete it
-([peer-marks](../../../features/editor/surfaces/peer-marks/AGENTS.md)).
+Local presence is owned by `local-presence.ts`, on a Loro `EphemeralStore` keyed by the
+session's peer id; the transport relays it on the room's ephemeral channel. Extensions receive
+`setField`, read-only peer state, and a caret facade; they never receive the mutable store.
+Suspension publishes null while retaining the desired map, nested suspension republished only at
+the outer boundary. A second presence write path creates ghost carets. `detachTransport` holds
+one suspension and the next attach releases it; the session also suspends on `pagehide` and
+resumes on `pageshow` only if it holds that suspension.
 
 ## Anchors and holds
 
-Remote Yjs sync rebuilds the whole ProseMirror document. Numeric positions map to
-seams and can report deleted even when the target still exists. Long-lived UI
-uses `EditorAnchor` backed by Y.RelativePositions, resolves it at use time, and
-validates the object found there. `NodeHold` adds the Yjs element identity and
-node type, so a deleted node releases rather than retargeting a replacement.
-`carryAnchor` is used where plugin `apply` runs before the binding settles; read
-resolution happens later. Every resolution is bounds-checked.
+A remote write can move or replace any block. Long-lived UI uses `EditorAnchor` backed by Loro
+cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `anchors.ts`:
+`resolveAnchor`), resolves it at use time, and validates the object found there. `NodeHold` adds the node's block id and
+type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
+replacement; an inline atom with no id resolves by the seams around it. `carryAnchor` is used
+where plugin `apply` runs before the binding settles; read resolution happens later. Every
+resolution is bounds-checked.
 
 DOM elements are geometry only. Node views and decoration spans can be rebuilt
 without content moving, so a surface drops elements after measuring and holds
@@ -250,40 +148,28 @@ identity in anchors or holds.
 ## Editor policy seams
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
-  behavior supplies the contract. `editor-history.ts` is the document's history:
-  its `DocumentHistory` is owned by the `DocumentSession`, with the `Y.UndoManager`
-  the editor's collaboration plugin uses (`yUndoOptions`), and each collaborative
-  editor attaches to it while mounted (range capture, the restore dispatch). It
-  orders Yjs stack items with editor-originated text Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
-  capture at each Apply boundary, so nearby typing stays in separate native
-  segments. History traversal is synchronous: Apply entries enqueue owner-held
-  commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. An Apply's undo resolves whether it
-  happened; when it didn't (a refused or failed Un-Apply), the entry goes back to
-  the undo side at its place, unless it was redone or cleared since. An owner can
-  also hide an Apply entry (out of both sides) and show it again, back on the undo
-  side at its place with the redo side left alone. A guarded step (`DocumentHistory.guard`, a Discard's)
-  runs alone: no-op skipping stops before it, and when it is next it runs only if no edit since
-  touched its text (`touchedSince`, against the state vector `markStepDone` stored on the step
-  when it was done; the notice's Undo reads the same one);
-  otherwise it is dropped unrun, which spends the press. The guard follows the step through Undo
-  and Redo: a redone step is marked and guarded again from the state the Redo left, so every Ctrl+Z of it
-  is checked. Undo gives back the text or cell range a change
-  started from (a drag, a cut, typing over a selection), captured by
-  `editor-history.ts` on `beforeTransaction` and carried through the stack items
-  that UndoManager generates. It is never read from y-tiptap's copy, which a
-  plugin's appended transaction makes wrong; Yjs alone would map the current
-  selection, and a moved range has just been removed. Redo and a caret keep
-  y-tiptap's mapped selection. After typing over cells, Redo can keep the restored
-  cell rectangle when its saved caret no longer resolves; a subsequent Backspace
-  therefore clears those visibly selected cells. This is accepted, not a promise
-  that Redo always restores a typing caret. Destroying an editor only detaches it: the
-  history lasts as long as the session, so a tab's undo survives its editor (the patched
-  y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
-  listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
-  the writer's own and leaves peer and model edits alone. Reload resets it. A press Apply enters it as one entry, from any surface, while the
-  session lives (`features/draft-review/.context/draft-review.md`); a press Discard, a tree-only
-  Apply and title changes never enter it.
+  behavior supplies the contract. `editor-history.ts` is the document's history: its
+  `DocumentHistory` is owned by the `DocumentSession`, and each editor attaches to it while
+  mounted. It wraps the binding's `UndoHistory`, which the sync plugin records every write into:
+  one Loro `UndoManager` per text doc the tab changes (made at its first write, through
+  `RoomDocs.beforeTextWrite`), each Undo item tagged with the editor step
+  it belongs to. Ctrl+Z runs exactly the managers the newest step touched until their top item
+  is another step's, and publishes what they wrote as one local batch. Loro keeps each inverse
+  as positions moved through every edit since and records only this peer's commits, so a chain
+  of dependent steps (Enter, Backspace, paste; bold, unbold) undoes and redoes exactly, and
+  Ctrl+Z takes back the writer's change and leaves a peer's or the model's alone. Writes closer
+  than `GROUP_MS` join one step. A step closes on `endUndoStep(state)` (image upload, link
+  actions, `@` references, reference drops, a block drop call it before their edit) and on any
+  document-changing transaction marked `addToHistory: false`, which commits under
+  `UNTRACKED_ORIGIN`, as `session.writeDocument` does; meta-only transactions are not
+  boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
+  carries through its inverse (a deleted selection comes back over the restored text); Redo puts
+  back the one Undo was pressed from. Structure values (order, parent, node type, attributes,
+  comment bodies) are not Loro's: each step keeps the values it set and puts them back, last
+  writer wins, whatever another peer wrote since (design §2, "An Undo always runs"). Typing joins the open step; any other write starts one, and a write that sets
+  structure ends it, so an Enter is a step of its own. Destroying an editor only detaches it: the history lasts
+  as long as the session, so a tab's undo survives its editor; the session frees its managers
+  before its docs. Reload resets it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -296,13 +182,14 @@ identity in anchors or holds.
   refuses ambiguous fallback. It acquires one exact container registration; hiding, holding, replacing, or
   destroying that editor revokes the target and ends the jump without
   reacquiring another editor.
-- Search-passage navigation lands by block hash (from the block's immutable Yjs
-  item id) plus the matched term, in three outcomes: the live block still holds
+- Search-passage navigation lands by block hash (a prefix of
+  `fullHashForBlockId(id)` from `@meridian/agent-edit`, which must match exactly one block) plus
+  the matched term, in three outcomes: the live block still holds
   the term (mark it there), the term occurs exactly once in the document (mark
   that), or `stale`, which shows a notice. Never land on a choice among
   duplicates: a nearby-but-wrong paragraph is worse than saying nothing was
   found. The highlight is never a selection, clears on the writer's next edit or
-  caret move (not on remote Yjs transactions), and its notice expires by
+  caret move (not on remote transactions), and its notice expires by
   navigation token, not by the rendering component.
 - Autoformat supports headings through
   `######`, fences accept `~~~`, bullets accept `+`, and the fence takes the whole
@@ -317,12 +204,6 @@ identity in anchors or holds.
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
   healthy sessions show nothing.
-- A Work's view paints its suggestions (`SuggestionModeExtension`): deletions red and
-  insertions green. Attribution is a byline/membership overlay; it never chooses a third paint
-  colour or splits boxes.
-  After an edit it repaints only the blocks the edit reached (`suggestion-paint.ts`); the repaint
-  fuzz (`qa/repaint-fuzz.md`) checks that against a full paint. Run it by hand when the paint
-  changes.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 
@@ -420,7 +301,7 @@ keyboard, pointer, drop, or recovery answer.
   what the selection holds cancels (checked again at release). Left native: presses with a modifier (so
   Ctrl/Option-drag still carries text out of the window; Mac Option is
   unrun), read-only views, editors with no kernel (code documents, the
-  composer as a source), cell selections, and objects (`ObjectPhysics`).
+  composer as a source), cell selections, and objects (`ObjectPhysicsExtension`).
 - **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
   `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
   types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
@@ -563,9 +444,7 @@ keyboard, pointer, drop, or recovery answer.
   a live session whose room still takes writes (`canDeliverUnsentEdits()`) and its history has
   entries, the registry keeps it, off its socket, wherever it was shown: a side document whose
   review just ended, a closed tab, a phone sheet. An ended or read-only room's session retires,
-  so the writer comes back to a fresh one. A band or card Apply puts an entry in that history, so
-  this is what keeps an Apply's Ctrl+Z. An Apply hidden while an Un-Apply sent from elsewhere is
-  out counts as an entry: the Un-Apply can fail and bring it back, however long it takes. At most
+  so the writer comes back to a fresh one. At most
   `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently changed retired first; a history that
   empties ends its session, and a host that takes the session back reattaches it.
 - A retained session's socket is open when some owner wants it (a host is on screen, reported
@@ -585,7 +464,7 @@ keyboard, pointer, drop, or recovery answer.
   asks it and keeps no list of its own.
 - A held session ends when the server acknowledges its edits, when the predicate turns
   false, when the document is removed or access revoked
-  (`drainDocument`, `drainAccess`), when the account closes
+  (the room closes, `settleDrainedRoom`), when the account closes
   (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time
@@ -604,88 +483,45 @@ Copy and no words, and nothing stored. `DocumentSessionRegistry.observeDroppedTy
 observers each time words are dropped (the account lifetime shows the pill under one key, so
 a repeat replaces it). A change with no words (a deletion, a format change) is dropped silently.
 
-- **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
-  state vector of what the server is known to hold. The transport reads one off each socket's
-  frames (`transport/server-has.ts`): the server's SyncStep1, every update the server sends and
-  every one written to the socket. It reports the SyncStep1 at each handshake and that vector each
-  time the server has acknowledged everything (`subscribeServerHas`); the session merges each into
-  the mark by per-client maximum in one transaction, skipping a vector it already wrote. Per client
-  the server holds every item below the mark, so the items the copy holds beyond it are all the
-  server can lack. A mark too low offers words the server has; one too high would lose words, so
-  nothing writes a vector no frame showed: never the document's own, which can hold a local
-  peer's pending items that a server update released in the provider's transaction, which
-  Hocuspocus never uploads. After each server frame, once the provider and every transaction it
-  opened (a schema repair included) are done, an editable room sends what the document holds
-  beyond the vector, so those items reach the server too, once that socket's SyncStep1 has
-  arrived (before it the vector is partial). A payload grows the vector only by runs that continue
-  from it, so structs past a gap are never counted. The check covers inserts: a vector carries
-  no deletions, so a peer's deletions released by a server frame go with the next handshake.
-- **A replaced room.** The server can replace a room's document with one that lacks items a mark
-  counts: a document with no authority head is reseeded empty. A handshake whose vector does not
-  cover the mark replaces it instead of merging. Items the replaced room lost and a copy still holds
-  stay within the mark until then: the server had them, and the replacement dropped them. A
-  version restore replaces nothing: it is an edit every copy merges, so a copy's typing from before
-  it lands.
-- **Who drops from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
-  `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`); the
-  copy has every write of the session's by then. Not at the reset: a session kept on screen still
-  shows that text, and a restore that restarts it delivers it. A session retires once. A 4409 access
-  change is no reset: the room reconnects and keeps its typing. `LocalDocumentCopies.clear`, the
-  only deletion on a final fact, reads each copy beyond its mark before deleting it. So typing
-  from before an offline reload, in a document purged before its room reconnects, is dropped with
-  the pill, and a room with no session in this tab is measured too. A copy with no mark (written
-  before marks, or whose first mark write was lost) counts as marking nothing: all of it counts.
-- What it cannot reach: a read admission or a refused room has no such loss (see the next section). A document no
-  tab has open keeps its typing in its copy until its next open or its purge.
+- **What the server has.** Each copy keeps the room version the server is known to hold
+  (`SERVER_META` in the copy's `meta` store). The transport knows it per connection: the
+  server's Join version, merged with each batch the server acked or sent
+  (`serverVersion()`); the session writes it to the copy each time the server has acknowledged
+  everything, merging by per-peer maximum. Ops the copy holds beyond it are all the server can
+  lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
+  version in each text doc; a change with no words is dropped silently.
+- **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)
+  reads its copy beyond its mark (`LocalDocumentCopies.wordsBeyondMark`); the copy has every
+  write of the session's by then. Not at the reset: a session kept on screen still shows that
+  text, and a restore that restarts it delivers it. A 4409-style access change is no reset: the
+  room rejoins and keeps its typing. `LocalDocumentCopies.clear`, the only deletion on a final
+  fact, reads each copy beyond its mark before deleting it. A copy with no mark counts as marking
+  nothing: all of it counts.
+- What it cannot reach: a document no tab has open keeps its typing in its copy until its next
+  open or its purge.
 
-### Undeliverable edits (a room admitted read-only, or refused)
+### Undeliverable edits (a room admitted read-only, or ended below its history)
 
 **A room the server admits read-only holds none of the writer's edits that the server lacks.**
-It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
-from the wire alone, with nothing stored between handshakes. A room whose updates the server
-kept refusing (`updatesRefused`, the transport context's "Frames the server can't store") holds
-them by definition: the replacement skips the handshake, drops what its copy holds beyond the
-mark (with the pill) and advances the copy. It does that even when an owner retired
-the session first (a room nobody shows retires in the same emit that ends it), and then opens
-nothing; the next open loads from the server, and its older-copy read may show the pill once more.
+At a read admission the session asks whether its copy holds words beyond the server's version
+(`undeliverableWords()`); a room the server ended below its history cutoff (`historyCutOff`)
+holds them by definition. Either way the registry replaces the room
+(`DocumentSessionRegistry.replaceRoom`):
 
-- The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
-  except *display writes*, what the editor binding writes while drawing (it deletes a node the
-  schema can't build). A display write is told from a writer transaction by the sync plugin's own
-  `addToHistory` meta. A new reader that opens a Yjs transaction through
-  `readRepairedRoot` on a read-only room, with no origin, would be counted each time. The undo
-  manager captures a binding write only with that mark, so repairs never land on the writer's undo
-  stack (its other origins, the manager's own undo and redo, a Discard, are unchanged).
-- A display write is known wherever it travels: `LocalDocumentPeers` marks the update it relays
-  (the receiver adds its delete set before anything is decided) and the session records its
-  display writes in the copy's `custom` store, keyed by client id and schema tag, in the task of
-  the update. A reader takes the copy's updates first and its records after.
-- **Typing** is what the session wrote through any local transaction that is not a display write
-  and has an origin (an editor, Undo and Redo, a Discard; its ledger, by client id), plus every item of any other client id the server lacks.
-- A read-admitted connection sends no Update frame; a change that is not a display write asks for
-  one `forceSync`, and `serverHasLocalChanges` there is the handshake's verdict (Apply's
-  acknowledgement barrier waits on it, not on a `SyncStatus` the server always answers `false`).
-- **The replacement** (`DocumentSessionRegistry.replaceRoom`): the old session reads its copy and
-  takes one more handshake (it can end the replacement), the typing is dropped
-  (with the pill), the old session goes inert for
-  good (`attachTransport` does nothing on it, so no retain, restart or pending attachment can
-  reconnect it and upload the dropped words; its document stays readable), and a session on the room's *next incarnation* of
-  its copy opens read-only, loading from the server. Nothing is emptied and nothing is sent to
-  other tabs: the copy's database name has a trailing incarnation number (none means 0),
-  `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and two
-  tabs advancing at once end on the same number. The old session is destroyed when its editors
-  have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
-  older-copy path below, like any older incarnation: read whole against the new session's first
-  handshake, so words another tab wrote into the same copy meanwhile are dropped too. Holders
-  follow through `observeReplacement` (live bindings and open tabs); a mount keeps its
-  reading position across it, because the store is keyed by room (`use-reading-position.ts`).
-- **Who drops.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
-  it reads that and a snapshot, then makes the old session inert; for a refused room, its copy
-  beyond the mark), the older-copy read below
-  (everything an older incarnation holds beyond the new session's first handshake), a closing or
-  removing retirement and `LocalDocumentCopies.clear` (each, the copy beyond its mark). Nothing
-  is stored: the copies are working storage only, and a drop that is told twice shows the one pill
-  under its key.
-- A session that opens a room's current incarnation reads the older ones no tab holds against
-  its first handshake, drops what they hold beyond it, and deletes each one.
-
+- The typing is dropped with the pill, the old session goes inert for good (`makeInert`: no
+  transport, no tabs channel, so nothing can upload the dropped words; its document stays
+  readable), and a session on the room's *next incarnation* of its copy opens, loading from the
+  server. The copy's database name has a trailing incarnation number (none means 0);
+  `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and
+  two tabs advancing at once end on the same number.
+- The old session is destroyed when its editors have unmounted (`retireReplaced`), and its copy
+  then goes by the older-copy read: a session that opens a room's current incarnation reads the
+  older ones no tab holds once it has joined, drops what they hold beyond it (with the pill), and
+  deletes each one. Holders follow through `observeReplacement`; a mount keeps its reading
+  position across it, because the store is keyed by room (`use-reading-position.ts`).
+- A fork session reads through its Live session's docs, so replacing a Live room rebuilds every
+  fork session over it on the fork's same copy (its own words are intact), and the old Live
+  session retires only after the old forks have: the same forks-first order as `invalidateAll` and
+  `clearLocalCopy`. The rebuilt forks reach their editors through `observeReplacement` too.
+- A read-admitted connection sends no `DocUpdate`. Nothing is stored about a drop: the copies are
+  working storage only, and a drop that is told twice shows the one pill under its key.

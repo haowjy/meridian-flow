@@ -18,7 +18,7 @@ playwright-cli goto "$APP_URL/projects"
 ```
 
 **Expected:** the URL redirects to `/projects/{projectId}/agent`; the project
-shell is visible; thread and Yjs status indicators eventually show `subscribed`.
+shell is visible; the thread status indicator eventually shows `subscribed`.
 
 ### 2. Confirm the graph exists
 

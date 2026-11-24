@@ -13,7 +13,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { TrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
 import {
@@ -64,7 +64,7 @@ export type DocumentToolbarProps = {
   /** False behind a schema fence or a read-only host: every verb greys. */
   editable?: boolean;
   /** A code file takes no figures; the control greys rather than lying. */
-  schemaType?: YjsTrackedSchemaType;
+  schemaType?: TrackedSchemaType;
   onUploadFigure?: () => void;
   /** Uploads need a project to own the asset; without one the control greys. */
   uploadAvailable?: boolean;

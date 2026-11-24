@@ -1,6 +1,6 @@
 /** Defines document-toolbar state and commands. */
 
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { TrackedSchemaType } from "@meridian/contracts/protocol";
 import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import { type Editor, isActive } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
@@ -18,7 +18,6 @@ import {
   selectionIsQuoted,
   selectionListKind,
 } from "@/core/editor/extensions/nesting";
-import { shownState, suggestionView } from "@/core/editor/extensions/suggestion-mode";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -121,7 +120,7 @@ export type ToolbarContext = {
   /** False behind a schema fence or a read-only host; every verb greys. */
   editable: boolean;
   /** A code file holds one code block; the document-only verbs cannot serve it. */
-  schemaType: YjsTrackedSchemaType;
+  schemaType: TrackedSchemaType;
   canUndo: boolean;
   canRedo: boolean;
   /** Uploads land in a project's asset namespace; without one there is none. */
@@ -167,7 +166,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
     italic: blockedFirst(readOnly, textMarkState(editor, "em")),
     codeBlock: {
-      active: blockIsActive(editor, "code_block"),
+      active: isActive(editor.state, "code_block"),
       blockedBy: readOnly ?? codeBlockRefusal(editor),
     },
     bulletList: {
@@ -192,7 +191,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
 
 /** The alignment the dropdown should show for the blocks under the selection. */
 export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
-  const align = currentAlignableBlock(shownState(editor.state))?.node.attrs.align;
+  const align = currentAlignableBlock(editor.state)?.node.attrs.align;
   return align === "center" || align === "right" ? align : "default";
 }
 
@@ -225,7 +224,7 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
 export function textLevelStates(editor: Editor): { id: BlockTypeId; state: BlockTypeState }[] {
   const states = blockTypeStates(editor);
   // Undefined when the blocks share no level, so no row reads as current.
-  const level = blockIsActive(editor, "paragraph", { level: null })
+  const level = isActive(editor.state, "paragraph", { level: null })
     ? null
     : (currentHeadingLevel(editor) ?? undefined);
   return TEXT_LEVEL_BLOCK_TYPE_IDS.map((id) => ({
@@ -236,20 +235,19 @@ export function textLevelStates(editor: Editor): { id: BlockTypeId; state: Block
 
 /** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
-  if (blockIsActive(editor, "code_block")) return "codeBlock";
+  if (isActive(editor.state, "code_block")) return "codeBlock";
   const listKind = activeListKind(editor);
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
-  if (selectionIsQuoted(selectedSequence(editor.state.selection, suggestionView(editor.state))))
-    return "quote";
+  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
   const level = currentHeadingLevel(editor);
   if (level !== null) return `heading${level}`;
-  return blockIsActive(editor, "paragraph", { level: null }) ? "paragraph" : null;
+  return isActive(editor.state, "paragraph", { level: null }) ? "paragraph" : null;
 }
 
 /** The heading level every block under the selection has, or null when they share none. */
 export function currentHeadingLevel(editor: Editor): HeadingLevel | null {
-  return HEADING_LEVELS.find((level) => blockIsActive(editor, "paragraph", { level })) ?? null;
+  return HEADING_LEVELS.find((level) => isActive(editor.state, "paragraph", { level })) ?? null;
 }
 
 /** Convert the blocks under the selection in place. */
@@ -369,23 +367,23 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
 
 /** Toolbar and keymap traverse the same mounted editor history. */
 export function undoDocument(editor: Editor): boolean {
-  if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
+  if (!canWrite(editor)) return false;
   editor.commands.focus();
   return undoEditorHistory(editor);
 }
 
 export function redoDocument(editor: Editor): boolean {
-  if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
+  if (!canWrite(editor)) return false;
   editor.commands.focus();
   return redoEditorHistory(editor);
 }
 
 export function canUndoDocument(editor: Editor | null): boolean {
-  return Boolean(editor && hasCollaborativeHistory(editor) && canUndoEditorHistory(editor));
+  return Boolean(editor && !editor.isDestroyed && canUndoEditorHistory(editor));
 }
 
 export function canRedoDocument(editor: Editor | null): boolean {
-  return Boolean(editor && hasCollaborativeHistory(editor) && canRedoEditorHistory(editor));
+  return Boolean(editor && !editor.isDestroyed && canRedoEditorHistory(editor));
 }
 
 function canWrite(editor: Editor): boolean {
@@ -394,21 +392,9 @@ function canWrite(editor: Editor): boolean {
   return !editor.isDestroyed && editor.isEditable;
 }
 
-function hasCollaborativeHistory(editor: Editor): boolean {
-  return !editor.isDestroyed && typeof editor.commands.undo === "function";
-}
-
-/**
- * Whether the selected blocks are `name` with `attrs` as the writer sees them: in a Work's view a
- * block's pending heading or list is what is on.
- */
-function blockIsActive(editor: Editor, name: string, attrs?: Record<string, unknown>): boolean {
-  return isActive(shownState(editor.state), name, attrs);
-}
-
 /** The kind of list every selected block sits in, or null when they are not all in one kind. */
 function activeListKind(editor: Editor): "bullet" | "ordered" | null {
-  return selectionListKind(selectedSequence(editor.state.selection, suggestionView(editor.state)));
+  return selectionListKind(selectedSequence(editor.state.selection));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

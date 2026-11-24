@@ -62,6 +62,7 @@ export function placeAccess(facts: FileFacts): AiAccess {
   return access === "ask" && !isDrafted(facts.contentScheme) ? "deny" : access;
 }
 
+/** Where an agent's write lands: its chat's draft for a drafted source in draft mode or where the place asks for review. */
 function destinationAt(
   writeMode: AiWriteMode,
   access: AiAccess,

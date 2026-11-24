@@ -3,123 +3,76 @@
  * uses, records made with the package's writer, and the server's admission read back from a second
  * copy of the list. There is no route for a tree change: the list is the write path.
  */
-import { type TreeListRef, treeRoomName } from "@meridian/contracts/protocol";
+import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
+import {
+  type DocVersion,
+  decodeEnvelope,
+  decodeRoomVersion,
+  docCovers,
+  docVersion,
+  encodeEnvelope,
+  freshPeerId,
+  withVector,
+} from "@meridian/document-model";
 import {
   type CreateRecord,
   LIVE,
   lastSettlements,
-  recordsOf,
+  listRecords,
   replayView,
   type TreeProjection,
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import {
-  connectTreeList,
-  type ListCopy,
-  type ListSyncState,
-  type Replacement,
-} from "@meridian/tree-list-sync";
-import * as Y from "yjs";
+import { LoroDoc } from "loro-crdt";
 import { CliError } from "../../core/cli-error";
+import { LoroSocket } from "../../core/loro-socket";
 import type { Session } from "../../core/session";
-import { yjsSocketOptions } from "../../core/yjs-socket";
 
 const SYNC_TIMEOUT_MS = 15_000;
-const ADMISSION_TIMEOUT_MS = 15_000;
-const POLL_MS = 50;
 
-/** Ids below this are the server's; an admission refuses a client that uses one. */
-const FIRST_CLIENT_ID = 1000;
+/** The list's one doc in its room's envelope. */
+const LIST_DOC = "s";
 
-function newDoc(): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  while (doc.clientID < FIRST_CLIENT_ID) doc.clientID = Math.floor(Math.random() * 2 ** 32);
-  return doc;
-}
+type Connection = { doc: LoroDoc; socket: LoroSocket; room: string; sent: DocVersion };
 
-/** A copy that lives as long as the command: the records a replacement carries are kept in memory. */
-class MemoryCopy implements ListCopy {
-  doc = newDoc();
-  private held: readonly TreeRecord[] = [];
-
-  private list: string | null = null;
-  listId() {
-    return this.list;
-  }
-  async setListId(id: string) {
-    this.list = id;
-  }
-  async replace(replacement: Replacement) {
-    this.doc = newDoc();
-    this.held = replacement.kind === "recover" ? replacement.carried : [];
-    this.list = replacement.listId;
-  }
-  carried() {
-    return this.held;
-  }
-  async settleCarried() {
-    this.held = [];
-  }
-}
-
-type Connection = {
-  copy: MemoryCopy;
-  /** Settles when the copy holds the server's list. */
-  synced: Promise<"synced">;
-  dropped: TreeRecord[];
-  close(): void;
-};
-
-function connect(session: Session, list: TreeListRef): Connection {
-  const copy = new MemoryCopy();
-  const dropped: TreeRecord[] = [];
-  let settle!: (result: "synced" | CliError) => void;
-  const outcome = new Promise<"synced" | CliError>((resolve) => {
-    settle = resolve;
-  });
-  const timer = setTimeout(
-    () =>
-      settle(
-        new CliError(
+/** A fresh copy of the list, joined to its room and holding everything the server stores. */
+async function connect(session: Session, list: TreeListRef): Promise<Connection> {
+  const socket = await LoroSocket.open(session);
+  const doc = new LoroDoc();
+  const peer = freshPeerId();
+  doc.setPeerId(peer);
+  const room = loroRoomName({ kind: "tree", list });
+  try {
+    const answer = await socket.join(room, {
+      peer,
+      version: new Uint8Array(),
+      onBatch: (envelope) => {
+        const update = decodeEnvelope(envelope).get(LIST_DOC);
+        if (update) doc.import(update);
+      },
+    });
+    const served = decodeRoomVersion(answer.version).get(LIST_DOC);
+    const deadline = Date.now() + SYNC_TIMEOUT_MS;
+    while (served && !docCovers(docVersion(doc), served)) {
+      if (Date.now() > deadline)
+        throw new CliError(
           "unavailable",
           `The project's tree list did not sync in ${SYNC_TIMEOUT_MS}ms`,
-          {
-            hint: "Is the stack up? Start it with `pnpm dev`.",
-          },
-        ),
-      ),
-    SYNC_TIMEOUT_MS,
-  );
-  const onState = (state: ListSyncState) => {
-    if (state === "synced") settle(state);
-    if (state === "broken")
-      settle(new CliError("unavailable", "The server broke the connection for this copy twice"));
-    if (state === "denied")
-      settle(new CliError("unavailable", "This account has no access to the tree list"));
-  };
-  const socket = yjsSocketOptions(session);
-  const connection = connectTreeList({
-    roomName: treeRoomName(list),
-    url: () => socket.url,
-    WebSocketPolyfill: socket.WebSocketPolyfill,
-    copy,
-    onState,
-    onDropped: (records) => dropped.push(...records),
-  });
-  return {
-    copy,
-    dropped,
-    synced: outcome.then((result) => {
-      clearTimeout(timer);
-      if (result instanceof CliError) throw result;
-      return result;
-    }),
-    close() {
-      clearTimeout(timer);
-      connection.destroy();
-    },
-  };
+        );
+      await new Promise((done) => setTimeout(done, 20));
+    }
+    return { doc, socket, room, sent: docVersion(doc) };
+  } catch (error) {
+    socket.close();
+    doc.free();
+    throw error;
+  }
+}
+
+function close(connection: Connection) {
+  connection.socket.close();
+  connection.doc.free();
 }
 
 export class TreeList {
@@ -132,66 +85,43 @@ export class TreeList {
   ) {}
 
   static async open(session: Session, list: TreeListRef, actor: string): Promise<TreeList> {
-    const main = connect(session, list);
-    try {
-      await main.synced;
-      return new TreeList(session, list, main, actor);
-    } catch (error) {
-      main.close();
-      throw error;
-    }
+    return new TreeList(session, list, await connect(session, list), actor);
   }
 
   /** The list as the copy stands, records appended a moment ago included. */
   replay(): TreeProjection {
-    return replayView(this.main.copy.doc, LIVE);
+    return replayView(this.main.doc, LIVE);
   }
 
   /**
-   * Makes records with the package's writer on the copy, then waits until the server holds them:
-   * a second copy, synced after the append, must have each one and none dropped. A drop is the
-   * server's whole answer for that record, with its reason.
+   * Makes records with the package's writer on the copy, sends them, and once the room has
+   * acknowledged them reads the list again from a second copy: the server stores a client's
+   * records and its stamps on them in one transaction, so that copy has each record, and a
+   * `dropped` stamp is the server's whole answer for a record, with its reason.
    */
   async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
-    const records = [...make(new TreeWriter(this.main.copy.doc))];
-    await this.admitted(records);
+    const { main } = this;
+    const records = [...make(new TreeWriter(main.doc))];
+    const update = withVector(main.sent, (from) => main.doc.export({ mode: "update", from }));
+    main.sent = docVersion(main.doc);
+    await main.socket.send(main.room, encodeEnvelope(new Map([[LIST_DOC, update]])));
+    const check = await connect(this.session, this.list);
+    try {
+      const settled = lastSettlements(check.doc);
+      const held = new Set(listRecords(check.doc).map((record) => record.id));
+      for (const record of records) {
+        const answer = settled.get(record.id);
+        if (answer?.to === "dropped") throw refusal(record, answer.reason ?? "no reason given");
+        if (!held.has(record.id)) throw refusal(record, "the server does not hold it");
+      }
+    } finally {
+      close(check);
+    }
     return records;
   }
 
-  private async admitted(records: readonly TreeRecord[]) {
-    const check = connect(this.session, this.list);
-    try {
-      await check.synced;
-      const deadline = Date.now() + ADMISSION_TIMEOUT_MS;
-      for (;;) {
-        const given = this.main.dropped.find((record) => records.some((r) => r.id === record.id));
-        if (given) throw refusal(given, "this build of the client does not write it");
-        const settled = lastSettlements(check.copy.doc);
-        const held = new Set(
-          recordsOf(check.copy.doc)
-            .toArray()
-            .map((record) => record.id),
-        );
-        for (const record of records) {
-          const answer = settled.get(record.id);
-          if (answer?.to === "dropped") throw refusal(record, answer.reason ?? "no reason given");
-        }
-        if (records.every((record) => held.has(record.id))) return;
-        if (Date.now() > deadline)
-          throw new CliError(
-            "timeout",
-            `The server had not admitted ${records.length} record(s) after ${ADMISSION_TIMEOUT_MS}ms`,
-            { hint: "The records were sent; re-read the tree before repeating the command." },
-          );
-        await new Promise((done) => setTimeout(done, POLL_MS));
-      }
-    } finally {
-      check.close();
-    }
-  }
-
   close() {
-    this.main.close();
+    close(this.main);
   }
 }
 

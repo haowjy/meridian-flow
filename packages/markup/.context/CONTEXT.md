@@ -31,8 +31,8 @@ The root `@meridian/markup` exports:
   shares).
 
 Two subpath entries carry the link rules, so a consumer loads only what it
-uses (the client's assignment path loads neither codecs nor Yjs; the root
-loads neither Yjs nor the schema builder):
+uses (the client's assignment path loads no codec; the root loads no schema
+builder):
 
 - `@meridian/markup/links` (`links.ts`): the rules every host shares
   (`holder-link-scope.ts`, see Shared link rules): `createHolderLinkScope(holder,
@@ -41,11 +41,9 @@ loads neither Yjs nor the schema builder):
   `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
   (`link-occurrences.ts`), see Link occurrences. Also exports
   `formatMarkdownLink(label, href)` and `markdownLinkDestination(href)` for
-  non-editor messages and clipboard spelling without loading ProseMirror or Yjs.
-- `@meridian/markup/stored-links` (`stored-links.ts`): `extractStoredLinks(fragment)`
-  and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
-  fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
-  builder.
+  non-editor messages and clipboard spelling without loading ProseMirror.
+- `@meridian/markup/stored-links` (`stored-links.ts`): `storedLinkKeys(...)`, the
+  keys a host loads before spelling stored nodes, over the occurrence walk.
 
 Wiki-style link syntax ships at `@meridian/markup/wikilinks`: `scanWikilinks(text)`
 returns `{ source, findings }`. Findings are a discriminated
@@ -117,7 +115,7 @@ These concern wire semantics: what Markdown/MDX can say. A stored link's
 every link with `ref: null` and the destination the scope spelled; restoring a
 ref is ref assignment's job, never the codec's. They also exclude CRDT
 identity and history.
-A newly parsed document cannot replace an existing Yjs replica without losing
+A newly parsed document cannot replace an existing replica without losing
 that replica's identities and merge lineage. Arbitrary accepted Markdown may
 normalize on first parse; canonical wire spelling then stabilizes.
 
@@ -215,10 +213,8 @@ snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
 assignment for a written href or source: classify, then bind a directory href
 through `folderFor`, or a document href through `documentFor` (the document the tree's walk reaches: the exact name or its alias, then the unique
 extension-omitted one); only a missing document address mints an ahead ref. Agent-edit's
-`assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
-`stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
-side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf
-below agent-edit.
+`assignOccurrences` and the client's `assignWrittenHref` both call it. Markup
+stays a leaf below agent-edit.
 
 ## Link occurrences
 
@@ -232,10 +228,7 @@ image or figure, or the enclosing top-level block when the AST cannot place it
 ingress preprocessor rewrote it. A span always encloses its occurrence.
 `spelledLinks(blocks, links)` reports `{ ref, address }` for each ref-bearing
 occurrence, spelled by the given scope; a serialization itself never records
-what it showed. Its Yjs twin, `extractStoredLinks` (`stored-links.ts`), reads
-the live fragment for derive, scope loading
-and the revision digest; a parity row in agent-edit pins both walks to the same
-`(kind, ref, href)` sequence.
+what it showed.
 
 ## Image wire format
 

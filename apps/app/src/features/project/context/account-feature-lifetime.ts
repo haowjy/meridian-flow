@@ -60,17 +60,11 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
-    this.treeLists = new TreeListRegistry(accountId, (records) =>
-      notifyFailure({
-        key: "tree-list-dropped",
-        title: t`Couldn't save`,
-        detail: records,
-      }),
-    );
+    this.treeLists = new TreeListRegistry(accountId);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
-    this.draftCommands = new DraftCommandOwner(this.registry);
+    this.draftCommands = new DraftCommandOwner();
     this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
       copies: this.registry,

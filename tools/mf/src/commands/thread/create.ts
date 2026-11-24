@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { agentCatalogSchema } from "@meridian/contracts/agents";
 import { API_THREADS_PATH, type CreateThreadRequest } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type Thread, threadSchema } from "@meridian/contracts/threads";
+import { type AiWriteMode, aiWriteModeSchema } from "@meridian/contracts/works";
 import { CliError } from "../../core/cli-error";
 import { type CommandSpec, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
@@ -35,7 +36,13 @@ async function resolveAgentSelection(session: Session, projectId: string, slug: 
 
 export async function createThread(
   session: Session,
-  input: { project?: string; agent?: string; work?: string; title?: string },
+  input: {
+    project?: string;
+    agent?: string;
+    work?: string;
+    title?: string;
+    writeMode?: AiWriteMode;
+  },
 ): Promise<Thread> {
   const projectId = await resolveProjectId(session, input.project);
   const body: CreateThreadRequest = {
@@ -49,6 +56,7 @@ export async function createThread(
     workId: await resolveWorkId(session, projectId, input.work),
     overrides: NO_OVERRIDES,
     ...(input.title ? { title: input.title } : {}),
+    ...(input.writeMode ? { aiWriteMode: input.writeMode } : {}),
   };
   return session.request("POST", API_THREADS_PATH, body, { decode: jsonResponse(threadSchema) });
 }
@@ -62,6 +70,11 @@ export const threadCreateCommand: CommandSpec = {
     agent: { type: "string", description: `Agent slug (default ${DEFAULT_AGENT_SLUG})` },
     work: { type: "string", description: "Bind to a Work by handle, such as w3; omit for No Work" },
     title: { type: "string", description: "Thread title" },
+    "write-mode": {
+      type: "string",
+      description:
+        "direct or draft; omit to copy the Work's default (given, it becomes the default)",
+    },
   },
   examples: ["./mf thread create", "./mf thread create --work w2 --title 'Arc 3 planning' --json"],
   async run(ctx) {
@@ -71,6 +84,7 @@ export const threadCreateCommand: CommandSpec = {
       agent: stringOption(ctx, "agent"),
       work: stringOption(ctx, "work"),
       title: stringOption(ctx, "title"),
+      writeMode: writeModeOption(stringOption(ctx, "write-mode")),
     });
     ctx.out.result(
       { threadId: thread.id, ref: thread.ref, projectId: thread.projectId, workId: thread.workId },
@@ -79,3 +93,11 @@ export const threadCreateCommand: CommandSpec = {
     return undefined;
   },
 };
+
+function writeModeOption(value: string | undefined): AiWriteMode | undefined {
+  if (value === undefined) return undefined;
+  const mode = aiWriteModeSchema.safeParse(value);
+  if (!mode.success)
+    throw new CliError("usage", `--write-mode must be direct or draft, not "${value}"`);
+  return mode.data;
+}

@@ -1,43 +1,65 @@
-import type { CommandId, DraftId } from "../ids.js";
+import type { CommandId, DocumentId, DraftId, DraftItemKey, TurnId, WorkId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
 /**
- * Apply or Discard pressed on documents, folders or a whole draft. One recorded command over both halves: the draft's pending tree records and its
- * suggestions in each document's text. One Undo (`PressUndoRequest`) takes back both; pressing
- * again is the Redo.
+ * What a press takes. A document of a draft is its `DraftItemKey`. A change is named by the id of any one of its members
+ * (a block id, or a comment id for a comment-body change: `changedBlocks`'s `BlockChange`), the id `change=<id>` carries
+ * in the address; the press takes the whole change it belongs to. There is no folder scope.
  */
-export type PressVerdict = "apply" | "discard";
-
-export type PressRequest = {
-  commandId: CommandId;
-  /** The draft pressed on. */
-  draft: DraftId;
-  verdict: PressVerdict;
+export type PressScope =
+  | { kind: "change"; item: DraftItemKey; change: string }
+  | { kind: "document"; item: DraftItemKey }
+  | { kind: "draft"; draft: DraftId }
   /**
-   * Documents and folders (a folder takes what is under it), or everything the Work has pending.
-   * `half: "tree"` takes only the node's tree change (a move, rename or delete), not its text.
+   * The Changes tab's `Apply all`: the Work's drafts the pressing tab listed (`drafts`, those of them still the Work's),
+   * pressed one after another in draft id order, each on Live as the one before left it. Its Undo takes them back draft
+   * by draft in the reverse order. A browser orders the press after earlier presses of exactly these drafts.
    */
-  items: { node: string; half?: "tree" }[] | "all";
-  /** The tree cut the press was drawn from: records admitted after it stay pending. */
+  | { kind: "work"; work: WorkId; drafts: DraftId[] };
+
+/**
+ * What a press does, and to what. Apply or Discard on one change, a document, a draft or every draft of a Work; or a
+ * Draft chat turn's restore (its card's `Undo turn`) in one draft: the turn's writes into the draft's text (its fork of a
+ * document, or the Live room of a document only the draft holds) go back by the one Undo rule, newest first, whatever
+ * was written since, and the turn's tree changes the draft still holds pending are discarded, a node it created to
+ * Trash (design §2). Live's manuscript is untouched, so text and tree changes an Apply already put there stay. A turn that wrote in several drafts is one press per draft,
+ * each in that draft's lane. One recorded command; one Undo (`PressUndoRequest`) takes it back; pressing again is the
+ * Redo.
+ */
+export type PressAction =
+  | { verdict: "apply" | "discard"; scope: PressScope }
+  | { verdict: "restore"; scope: { kind: "turn"; turn: TurnId; draft: DraftId } };
+
+export type PressVerdict = PressAction["verdict"];
+
+export type PressRequest = PressAction & {
+  commandId: CommandId;
+  /**
+   * The tree cut the press was drawn from: records admitted after it stay pending, as do records it saw that the
+   * server has not received yet.
+   */
   saw?: TreeSaw;
   /**
-   * For every live room in the pressing tab with typing the server hasn't acknowledged, its Yjs
-   * state vector (base64): the server answers
-   * "not yet" (503) until it holds them all, so a keystroke typed just before the press is in it,
-   * in a document the press names or one it finds.
+   * For an Apply, the Live text the writer was shown, per document: an encoded `RoomVersion` (`encodeRoomVersion`) of
+   * Live's text docs as the pressing tab showed them, or as the Changes list was read (`DraftItem.liveVersion`). It only
+   * stamps the record of a removal the press applies, never a barrier: Live typing it does not count brings the block
+   * back. A document, or a text doc of one, it names no version for counts as never shown, so a removal there does not
+   * land.
    */
-  seen?: { documentId: string; vector: string }[];
+  liveVersions?: { documentId: DocumentId; version: string }[];
 };
 
-export type PressResult = {
+export type PressResult = PressAction & {
   status: "pressed";
   commandId: CommandId;
-  /** The draft pressed on. */
-  draft: DraftId;
-  verdict: PressVerdict;
-  /** The nodes the press changed, with the halves that changed: what its Undo takes back. */
-  items: { node: string; tree?: true; text?: true }[];
-  /** A Discard's: the tree's delete records that put the documents the Work created in Trash. */
+  /**
+   * Every document whose rooms the press committed to, in Live or a fork: text, structure or a comment body. What its
+   * Undo takes back. Empty when the scope had no change.
+   */
+  documents: DocumentId[];
+  /** The nodes whose tree change the press made. */
+  items: { node: string; tree?: true }[];
+  /** A Discard's or a restore's: the tree's delete records that put the documents it took out in Trash. */
   trashed?: string[];
 };
 
@@ -47,7 +69,8 @@ export type PressUndoResult = {
   status: "unpressed";
   commandId: CommandId;
   pressCommandId: CommandId;
-  /** The documents whose text came back, and the nodes whose tree change came back. */
-  text: string[];
+  /** Every document whose rooms the Undo committed to. */
+  documents: DocumentId[];
+  /** The nodes whose tree change came back. */
   tree: string[];
 };

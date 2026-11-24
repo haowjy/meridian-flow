@@ -27,7 +27,14 @@ export function createTestLinkAheadRegistry(db: Database, eventSink?: EventSink)
   return createDrizzleLinkAheadRegistry(db, eventSink ? { eventSink } : {});
 }
 
-/** The collab deps a DB suite passes for links: real scopes, no ahead-ref minting. */
+/**
+ * The collab deps a DB suite passes for links: real scopes, no ahead-ref minting. A short room
+ * debounce keeps the pending save, which the harness drains between cases, from taking seconds.
+ */
 export function testLinkDeps(db: Database) {
-  return { links: createTestDocumentLinkScopes(db), aheadRefs: UNSUPPORTED_AHEAD_REFS };
+  return {
+    links: createTestDocumentLinkScopes(db),
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
+    roomBounds: { debounceMs: 20, maxDebounceMs: 100 },
+  };
 }

@@ -1,19 +1,16 @@
 // Whole-document overwrite: the correspondence a `create` with overwrite=true resolves, also
 // applied directly to a host's document for a bound write that is not an actor's mutation.
-import type * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
-import { type DocHandle, toDocHandle } from "../handles.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
-  documentRevision,
   type ResolveWriteContext,
   type ResolveWriteParams,
   type ResolveWriteResult,
   resolveWrite,
 } from "../resolver/resolve.js";
-import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { applyEdits } from "./apply-edits.js";
 import type { ApplyTransactionOrigin } from "./types.js";
 
@@ -27,44 +24,49 @@ export function resolveOverwrite(
   written: Pick<ResolveWriteParams, "content" | "parsedContent" | "blocks">,
   empty: boolean,
 ): ResolveWriteResult {
-  const result = resolveWrite(
+  return resolveWrite(
     ctx,
     empty
       ? { command: "remove", documentAddress, wholeDocument: true }
       : { command: "replace", documentAddress, ...written, wholeDocument: true },
   );
-  if (result.ok) {
-    validateSemanticEditIRV1(result.ir, {
-      expectedDocumentId: documentAddress.documentId,
-      expectedInputRevision: documentRevision(ctx),
-    });
-  }
-  return result;
 }
 
 /**
  * Overwrite `doc` with nodes whose refs are already assigned (a host's bound
  * whole-document write, contract §6.2), under its owner's lock: the same
  * correspondence a `create` with overwrite=true resolves, so blocks left as
- * they were keep their items. An empty document takes the nodes as an insertion.
+ * they were keep their items. An empty document, or one that reads as one blank paragraph,
+ * takes the nodes as an insertion.
  */
 export function overwriteWithAssigned(input: {
-  doc: Y.Doc;
+  doc: DocHandle;
   model: AgentEditModel;
   codec: AgentEditCodec;
   documentId: string;
-  /** Source of `blocks`, for the overwrite's semantic IR only; never reparsed. */
+  /** Source of `blocks`; never reparsed. */
   content: string;
   blocks: readonly Block[];
   origin?: ApplyTransactionOrigin;
 }): { ok: true } | { ok: false; code: string; message: string } {
-  const handle = toDocHandle(input.doc);
-  if (input.model.getBlocks(handle).length === 0) {
-    if (input.blocks.length > 0) {
-      input.doc.transact(() => {
-        input.model.insertBlocks(handle, null, { blocks: [...input.blocks] });
-      }, input.origin);
-    }
+  const handle = input.doc;
+  const { model } = input;
+  const current = model.getBlocks(handle);
+  const blank = current.length === 1 && isBlankParagraph(model, current[0] as BlockRef);
+  if (current.length === 0 || blank) {
+    const only = current[0] ?? null;
+    model.transact(
+      handle,
+      () => {
+        if (input.blocks.length > 0)
+          model.insertBlocks(handle, only, { blocks: [...input.blocks] });
+        // A Loro document with no block reads as one unstored empty paragraph, which goes away
+        // by itself once a block shows; a stored one is deleted.
+        if (only && model.isLive(only) && model.getBlocks(handle).includes(only))
+          model.deleteBlock(handle, only);
+      },
+      input.origin,
+    );
     return { ok: true };
   }
   const resolved = resolveOverwrite(
@@ -77,4 +79,12 @@ export function overwriteWithAssigned(input: {
   if (resolved.edits.length === 0) return { ok: true };
   const applied = applyEdits(handle, input.model, resolved.edits, input.origin);
   return applied.ok ? { ok: true } : { ok: false, ...applied.error };
+}
+
+function isBlankParagraph(model: AgentEditModel, block: BlockRef): boolean {
+  return (
+    model.getBlockType(block) === "paragraph" &&
+    model.getHeadingLevel(block) === undefined &&
+    model.getText(block) === ""
+  );
 }

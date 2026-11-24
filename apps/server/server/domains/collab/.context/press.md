@@ -1,62 +1,123 @@
 # The press
 
-A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is suggestion marks in
-each Live document (`packages/suggestions`) plus its pending tree records. Apply or Discard pressed
-on documents, folders or the whole draft is one command, `press`, over both halves
-(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`).
+A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its pending tree
+records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
+a document, a draft or every draft of a Work, is one command, `press`
+(`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). So is a
+Draft chat turn's restore, its card's `Undo turn`. There is no folder scope.
 
 ## What a press does
 
-`{ draft, verdict, items | "all", saw?, seen? }`, addressed by the draft id. Every Work and root
-chat has its draft from its creation, so a press never makes one.
+`PressRequest` (`@meridian/contracts/drafts`): `{ verdict, scope, saw?, liveVersions? }`, where
+`PressAction` pairs the verdict with the scopes it takes: `apply` and `discard` take the review
+scopes below, and `restore` takes only `{ kind: "turn", turn, draft }`. The route's schema is the same
+union, so a mismatched pair does not parse. A
+`change` or `document` scope names its document by `DraftItemKey`; `draft` names one draft;
+`work` takes the drafts it names that are still the Work's and living, one after another in draft
+id order, each on Live as the one before left it. It names them because the browser orders it after
+earlier presses of exactly those drafts: a draft added since the tab listed the Work waits for its
+own press. Every Work and root chat has its draft from its creation, so a press
+never makes one.
 
-- **Selection.** `items` expands folders to what is under them in the Work's view. The tree half
-  takes the Work's pending records on those nodes; the text half takes every document among
-  them, since resolving a document with no suggestion changes nothing, except an item sent with
-  `half: "tree"` (a review's tree line), whose text stays pending. `"all"` takes every
-  pending record, and for text every document of the Work's project and account that can hold
-  its suggestions (`documentsHolding` in `drizzle-block-text.ts`): a row whose derived cut is
-  current and lists the Work in `pending_changes`, and every row `staleForReaders` (no room,
-  behind the head, another extractor). That set is exact for committed writes: every live write
-  moves its document's head (`allocateAdmission`), so a document the derivation hasn't caught up
-  on is stale and pressed; a stale one with nothing of the Work's costs one journal read and
-  resolves to nothing. While two builds overlap in a deploy, every room the newer extractor
-  certified is stale to the older build, so its Apply all reads every document in scope.
+- **The text half** runs first, per document of the draft in scope that has a fork row (a
+  `draft` or `work` scope takes the forks flagged pending). A loaded fork writes its row and flag
+  only when it saves, on a 2 s debounce, so the press first saves its drafts' loaded forks
+  (`saveLoadedForks`, outside its transaction): a tab's first words in a draft, acknowledged just
+  before the press (always the case for a press made while away, whose typing arrives with the
+  Join), would otherwise have no row yet and be skipped. It reads the fork room as a command
+  copy (its own peer, carrying its forwarded copy of Live), runs `applyBlocks` or
+  `discardBlocks` (a `change` scope selects the change by any member id), commits Live's room
+  then the fork's by the press (`commitMessage({ by: { press: <id> } })`), and stores each change's `PressedChange` in
+  `press_changes` (command, draft, document) for its Undo. It then sets the fork's `pending`
+  flag from the copy: an Apply writes only Live, so no fork save would.
+- **`liveVersions`** stamps the record of a removal the press applies, nothing else: the server
+  never waits for or refuses a press over the tab's typing. A document it names no version for
+  counts as never shown, so a removal there does not land.
+- **The tree half.** A `document` scope takes that node's pending records; `draft` and `work`
+  take every pending record of each draft; a `change` takes none. `saw` is the cut of the lists
+  the review was drawn from: records admitted after it stay pending. A `saw` past what the
+  server's list holds counts what the server holds of it, as `liveVersions` counts only the Live
+  the server holds: a record the tab saw that has not reached the server is not there to land, and
+  stays pending when it arrives. The press never waits for the tab's sync. Apply is the tree Apply
+  (`createApplyTreeOperations`, the same judge, locks and `apply_command_trees` rows); Discard is
+  `discardTreeRecords`. The tree lists take a command name once, so each draft's part is named
+  `<command>_<draft>` there.
 - **The draft's records are read under its owner's lock**, the lock an AI write takes
   (`lockForWrite`): a read before it could miss the first tree records an AI turn admitted in
   between.
-- **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
-  `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
-- **Text half.** For each selected document (for Apply, each that stands in Live after the tree
-  half), `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
-  it to the Live journal as `human:<account>`, and stores in `press_text_effects` the blocks it
-  changed, before and after (ProseMirror JSON, as an AI write's receipt stores its `delta`), and
-  the verdict entries the resolve wrote (`suggestion_verdicts` keys, each with the id of the map
-  item holding it), so its Undo takes them back with the text. A document a Discard puts in
-  Trash is rejected too, so a Restore brings it back without the draft's suggestions.
-- **`seen`.** The pressing tab's state vector of every live room with typing the server hasn't
-  acknowledged (`unsentStateVectors`), checked first, after the lists' keys and before the selection is read:
-  until Live holds them all, the press is `PressUnsynced` (503, nothing stored), and the command
-  driver resends. A held vector stays held, so the typing it covers has moved its document's
-  head and the selection finds the document. `seen` only waits; it adds no document to press.
-  A document with no stored authority (purged) is skipped. A session left with unsent typing
-  from before a version restore holds every press at 503 until the tab replaces it.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`
   (`storedAnswer` in `lib/draft-review-route.ts`). The driver then resolves the id: a `never`
   settles as never-ran, but an id that holds another body's `done` resolves to that body's result,
   since resolve reads the id alone. Every command route shares this; only a client bug reaches it.
-- Lock order is the Apply click's: Works, draft, lists, documents in id order, then writes.
-  Deliveries and the derivation hook run after commit.
+- Lock order is the Apply click's: Works, drafts in id order, lists, documents in id order, then
+  writes.
+  Deliveries run after commit.
+
+## Restore: the turn card's Undo turn
+
+`restore` on a turn in one draft takes back what the turn did there that the draft still holds,
+as one press: its writes into the draft's text and its tree changes still pending there. What
+the writer applied stays in the manuscript. A turn that wrote in several drafts is one press per
+draft, each in that draft's lane on the tab (`press:<draft>`), so it is ordered after an Apply or
+Discard pressed on the same draft before it. The plan (`adapters/drizzle-turn-restore.ts`,
+`restorePlan`) is read once and shared with the card (`restoreStates`): `TurnReceiptChip.restore`
+offers it in the drafts where pressing would change something now (a write of the turn would go
+back, or a tree change of it is still pending), so a turn already restored or undone there is
+not offered, and `restored` names the restore in force per draft (the latest done `restore` press
+that changed something and has no done `unpress`), so every tab and a reload read the same state.
+
+- **Rooms.** The turn's parts whose `origin` names the draft: its fork of a document, or the Live
+  room of a document only the draft still holds (a Draft chat writes such a document there). A
+  document the turn wrote while only the draft held it, and the writer has since applied, is the
+  manuscript's: it stays.
+- **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
+  first, taken back by design §2's Undo rule (`undoInRooms`, `takeBack`): each goes back whatever
+  was written since, except one older than the room's history cutoff (§4), which can't (`holdsEdit`).
+  A part already taken back (by an earlier restore, the model's undo in a later turn or the
+  writer's revert) is not taken again: taking it again would put the text it deleted back a
+  second time. The model's undo within the turn is one of the turn's writes: it goes back before
+  the write it took, so the draft ends as it was before the turn, not with the withdrawn words. A fork
+  copy is carried forward to today's Live first. Live's manuscript is never written: text an
+  Apply already put there stays in Live, and taking it out of the draft is a pending change.
+- **The tree changes** are the turn's drafted tree receipts' records (`tree_edit_receipts`, the
+  newest copy of each after a restored Discard, `newestDrafted`) still pending in the draft. They
+  are discarded by the Discard's tree half (`discardTreeRecords` with `records` and `trash`), with
+  whatever stands on a node they create: a rename, move or delete leaves the draft, and a node the
+  turn created goes to Trash with its text, so no write into it is taken back. A change the writer
+  applied stays in Live.
+- The answer names only the documents and nodes the press changed, so a press that changed
+  nothing names none and makes no Undo step.
+
+What a restore took back is recorded in the one ledger every Undo reads, `document_edits`, not
+in `press_changes`: one `undo` receipt per document (`actionId` and `commandId` the press), a part
+per room naming the parts it took (`targets`) and carrying the room's edit, its `origin` the room.
+So a second restore from a stale tab, the card and the model's `undo` and `revert` all find those
+parts taken, by the same `notTakenBack` / `effectiveActionIndex` rule. The plan is read inside the
+press, under the draft's key and its Work's, which a model's Undo of the same writes also holds.
+The Undo is the press's `unpress`: it takes the restore's own parts back (`restoredParts`, those no
+Undo has taken since) in their rooms and records an `undo` receipt with the turn's `turn_id` and
+its edit, so the text it brings back is the turn's again, and pressing the restore again (the
+Redo) takes that receipt's parts back, never the turn's first writes, whose text now lives
+elsewhere. The model's `undo` of a write a restore took reads it taken even after the restore's
+Undo: the writer brought it back, and it stays the writer's to take again. The tree changes
+come back by `restoreDiscard`. While a restore is in force, the turn
+card reads each tree change it took as `undone` (`TurnDraftState`), by the command that settled
+it.
+
+The card's own Undo (`reverse_turn`, [reversal](reversal.md)) takes none of this: it takes the
+turn's writes and tree changes outside a draft, so a Draft chat's reply has one action on its
+card. Restore takes back each write by the Undo rule, never by putting a text doc back to the
+turn's first version: that would also reverse whatever came after in the doc (half of a later
+split).
 
 ## Discard, and what goes to Trash
 
-A Discard rejects suggestions as Apply accepts them, and settles the Work's tree records
-discarded; Trash has no entry for that. Its Undo is the press's `unpress`, as Apply's is, sent
-from the tab that pressed it: the notice's Undo, the sidebar's Undo step and Ctrl+Z in an open
-editor share one send. After a reload nothing offers it, and the writer's own typing in the Work's
-view that it rejected is gone. That is the chosen cost: keeping it would need a store of its own.
+A Discard settles the Work's tree records discarded; Trash has no entry for that. Its Undo is the
+press's `unpress`, as Apply's is, sent from the tab that pressed it: the notice's Undo and the
+sidebar's Undo step share one send. After a reload nothing offers it. That is the chosen cost:
+keeping it would need a store of its own.
 
 A document or folder the Work created is a whole document, not a change, so a Discard puts it in
 Trash (`discardDraft` with `trash`): it is created in Live where the Work's view showed it (a
@@ -75,62 +136,41 @@ releases them.
 ## Work purge
 
 A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transaction) has its
-drafts' tree records discarded, and its suggestions, and those of the lineages the purge
-deletes, rejected in every document the press's enumeration finds for them (`documentsHolding`,
-over the Work's project and its creator's account: a project has one owner), with their
-`suggestion_authors` entries deleted (`dropDraft`). Their verdicts stay: a tab offline through
-the purge may bring back a mark of one of those changes, and a tab deletes it only while the
-change has a verdict (`dropResolvedMarks`). The reject reports
-every change it decided, a proposal Live has since matched included, which no review lists.
-Nothing records it: nothing can take it back. Changes the writer applied or discarded earlier
-keep their author entries: nothing reads them for a purged Work.
-Archive, delete and Trash leave the suggestions in place and open: the press, the editor and card
-Undo take an archived Work's or a trashed chat's suggestions as they take any. What archive and
-Trash stop is new AI writes, at the model's write (`lockForWrite` in `model-edit-write.ts`
-refuses a closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree judge
-below.
+drafts' tree records discarded. Archive, delete and Trash leave a draft's records pending: the
+press takes an archived Work's or a trashed chat's draft as it takes any. What archive and Trash
+stop is new AI writes, at the model's write (`lockForWrite` in `model-edit-write.ts` refuses a
+closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree judge below.
 
 ## Undo and Redo
 
-`unpress` takes a press back once, in the press's own project. The tree half is `undoApply`
-(Apply) or `restoreDiscard` (Discard). The text half is by content, the card Undo's rule
-(`takeBack` in `domain/inverse-text.ts`): each change of the stored blocks that still stands in
-the document is taken back out, written through `writeBlocks` so every item it leaves alone
-keeps its identity, and the verdicts of the changes now pending again are forgotten
-(`forgetVerdicts`). A change the writer typed inside since stands no more: its text and its
-verdict stay as they are. A change another client resolved the same way since, whose entry now
-holds that client's write (`resolvedElsewhere`), is left out of the take-back, text and verdict:
-undoing one of two identical resolves would otherwise show a change pending under a verdict that
-says it was resolved. It reads no deleted item: a checkpoint drops their content
-([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), and the content of an effect
-outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
-editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed
-is marked taken back without changing its text. A document or folder a draft created is the
-draft's again after the Undo of the press that put it in Live or in Trash: pending in the Work,
-in no Live row and no Trash entry. This rests on the tree's rule 15 (withdrawn nodes,
+`unpress` takes a press back once, in the press's own project, draft by draft, newest first. Per
+document, `undoPress` reads the press's `press_changes` rows (a restore's Undo reads its receipts
+instead, above): every change goes back, whatever
+was written since (design §2, "An Undo always runs"), each room its own, committed by the Undo's
+press (`commit-message.ts`). A change older than the room's history cutoff can't go back and is
+left as it is, silently.
+Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, restore) on that draft's part, with
+the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
+other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing
+to come back to.
+
+A document or folder a draft created is the draft's again after the
+Undo of the press that put it in Live or in Trash: pending in the Work, in no Live row and no
+Trash entry. This rests on the tree's rule 15 (withdrawn nodes,
 `packages/project-tree/.context/CONTEXT.md`): the press's Undo takes back such a create with a
 withdrawal, a delete Trash does not list. Any other Undo of it (the model's `undo`) still puts it
 in Trash, since nothing makes it pending again. A Trash Restore of part of a discarded folder
-keeps that part, and the folders above it, in Live on the press's Undo. Its text stays plain in its Live room, as before the press. There is no
-Redo command: pressing again is the Redo. Press and unpress rows are
-purged with discards after 30 days.
-
-## The pending index
-
-`document_block_rooms.pending_changes` holds, keyed by draft id, for each draft with suggestions
-in a document, its review's change count, the chats that wrote them and whether one is no chat's, written by the
-document derivation (`pendingChanges` in `packages/suggestions`). The Work's counts, the Changes
-list's rows and export's pending count read it. It lags the derivation's debounce (2–10 s for
-room typing), so no command takes a lagging row as its authority: the press and Work purge read
-it only where its cut is current, and read the room for the rest.
+keeps that part, and the folders above it, in Live on the press's Undo. Its text stays plain in
+its Live room, as before the press. There is no Redo command: pressing again is the Redo. Press
+and unpress rows are purged with discards after 30 days.
 
 ## Work-only documents
 
-A document that exists only in a Work is the tree's drafted create; its text is plain in Live,
-not suggestions (`model-edit-write.ts`, `existsOnlyIn`). Applying the create makes it
+A document that exists only in a Work is the tree's drafted create; its text is plain in Live
+(`draft_tree_nodes.exists_only_in_draft`, read by `agentRoomFor` in `adapters/drizzle-agent-room.ts`). Applying the create makes it
 visible; a press's Discard puts it in Trash. The browser opens it in its Live room as plain text:
 the project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the
-Yjs gateway admits the room through `documentSync.draftsHolding`.
+room gateway admits the room through `documentSync.draftsHolding`.
 
 ## Not covered yet
 

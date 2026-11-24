@@ -1,10 +1,9 @@
 /** Active destination editors used by passage navigation. */
+import { fullHashForBlockId } from "@meridian/agent-edit";
 import type { Editor } from "@tiptap/core";
-import type * as Y from "yjs";
+import type { Node } from "@tiptap/pm/model";
 import type { DocumentSession } from "./document-session";
-import { relativeRangeToEditorPositions } from "./extensions/LiveRangeNavigationExtension";
-import { suggestionView } from "./extensions/suggestion-mode";
-import { resolvePassage } from "./passage-resolution";
+import { resolvePassage, type TextRange } from "./passage-resolution";
 
 /** The one on-screen editor of a document: a document is mounted in at most one host. */
 export type LiveEditorTarget = {
@@ -78,50 +77,43 @@ export async function whenLiveEditor(
   });
 }
 
-export function showLiveRangeInTarget(
-  target: LiveEditorTarget,
-  range: { start: Y.RelativePosition; end: Y.RelativePosition },
-  boundary = false,
-): { shown: boolean } {
-  if (target.signal.aborted || target.editor.isDestroyed) return { shown: false };
-  const positions = relativeRangeToEditorPositions(target.editor, range);
-  if (!positions) return { shown: false };
-  const shown = boundary
-    ? target.editor.commands.showLivePosition(range.start)
-    : target.editor.commands.showLiveRange(range);
-  return { shown };
-}
-
+/**
+ * Mark a searched passage in the target's editor: the term inside the block the hash names, else
+ * its one occurrence anywhere. Null when the editor is gone or didn't take the mark.
+ */
 export function showPassageInTarget(
   target: LiveEditorTarget,
-  passage: {
-    block: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
-    term: string;
-  },
+  passage: { blockHash: string; term: string },
 ): { outcome: "landed" | "stale" } | null {
   if (target.signal.aborted || target.editor.isDestroyed) return null;
-  const blockRange = passage.block
-    ? relativeRangeToEditorPositions(target.editor, passage.block)
-    : null;
-  if (passage.block && !blockRange) return null;
-  const { state } = target.editor;
-  const resolution = resolvePassage(state.doc, blockRange, passage.term, suggestionView(state));
+  const { doc } = target.editor.state;
+  const resolution = resolvePassage(doc, blockRangeForHash(doc, passage.blockHash), passage.term);
   if (resolution.kind === "stale") return { outcome: "stale" };
   return target.editor.commands.showPassageMatches(resolution.ranges)
     ? { outcome: "landed" }
     : null;
 }
 
-export function showPeerMarkerInTarget(
-  target: LiveEditorTarget,
-  changeId: string,
-): { shown: boolean } {
-  return {
-    shown:
-      !target.signal.aborted &&
-      !target.editor.isDestroyed &&
-      target.editor.commands.showPeerMarker(changeId),
-  };
+/**
+ * The span of the block a search hit's hash names: the hash is a prefix of the full hash of the
+ * block's `id`. Null when it names none, or more than one: two candidate blocks cannot promise one
+ * passage, and picking either is the guess this feature refuses to make.
+ */
+function blockRangeForHash(doc: Node, hash: string): TextRange | null {
+  const prefix = hash.trim().toLowerCase();
+  if (!prefix) return null;
+  let found: TextRange | null = null;
+  let matches = 0;
+  doc.descendants((node, pos) => {
+    if (matches > 1) return false;
+    const id = node.attrs.id;
+    if (typeof id === "string" && fullHashForBlockId(id).startsWith(prefix)) {
+      matches += 1;
+      found = { from: pos, to: pos + node.nodeSize };
+    }
+    return !node.isTextblock;
+  });
+  return matches === 1 ? found : null;
 }
 
 export function waitForLiveRangeRetry(signal: AbortSignal, delayMs = 25): Promise<void> {

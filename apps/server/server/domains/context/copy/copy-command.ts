@@ -1,5 +1,6 @@
 import type { DraftId } from "@meridian/contracts";
 import type { ContextCommandDraft } from "../ports/context-command-transaction.js";
+
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -48,8 +49,8 @@ import type {
   CopyContextEntryCreated,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
-import { decodeStateVector } from "yjs";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -96,10 +97,10 @@ export interface CopySourceHandoff {
   /** The device-minted identity for this root's copy; descendants are server-minted. */
   copyId?: string;
   /**
-   * The client's own Yjs state vector, when it holds this document open. Only a file source
+   * The client's own room version (`encodeRoomVersion`), when it holds this document open. Only a file source
    * carries one; the cut compared against it is the view's room.
    */
-  stateVector?: Uint8Array;
+  roomVersion?: Uint8Array;
 }
 
 /** Where a copy lands: the destination parent, resolved to its adapter and path. */
@@ -378,7 +379,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const documents = new Map<string, PreparedDocument>();
     if (snapshot.kind === "file") {
       if (snapshot.fileType === null) {
-        const prepared = await prepareDocument(source, snapshot, source.stateVector);
+        const prepared = await prepareDocument(source, snapshot, source.roomVersion);
         if (!prepared.ok) return prepared;
         documents.set(snapshot.documentId, prepared.value);
       }
@@ -405,7 +406,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   ): Promise<Result<PreparedDocument, ContextError>> {
     const draft = source.view.kind === "draft" ? source.view : null;
     const documentId = file.documentId as DocumentId;
-    const client = clientVector ? decodeStateVector(clientVector) : null;
+    const client = clientVector ? decodeRoomVersion(clientVector) : null;
     const deadline = Date.now() + SOURCE_CATCH_UP_MS;
     for (;;) {
       const read = await deps.documentSync.readEffectiveBlocks(
@@ -421,7 +422,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             return Err({ code: "io_error", uri: source.uri, message: read.error.code });
         }
       }
-      if (client && behind(client, read.value.stateVector)) {
+      if (client && behind(client, read.value.roomVersion)) {
         if (Date.now() < deadline) {
           await delay(SOURCE_CATCH_UP_POLL_MS);
           continue;
@@ -661,13 +662,9 @@ function trimTrailingSlash(uri: string): string {
   return uri.endsWith("/") ? uri.slice(0, -1) : uri;
 }
 
-/** Whether the client's vector names updates this cut does not hold. */
-function behind(client: ReadonlyMap<number, number>, server: Uint8Array): boolean {
-  const held = decodeStateVector(server);
-  for (const [clientId, clock] of client) {
-    if (clock > (held.get(clientId) ?? 0)) return true;
-  }
-  return false;
+/** Whether the client's copy holds an op the server's cut lacks, in any doc of the room. */
+function behind(client: RoomVersion, server: Uint8Array): boolean {
+  return !versionCovers(decodeRoomVersion(server), client);
 }
 
 /**

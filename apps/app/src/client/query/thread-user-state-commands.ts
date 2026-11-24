@@ -10,13 +10,6 @@ export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
   | { status: "error"; error: Error };
 export type ThreadUserStateLifecycle = { beforeRollback?: () => void };
-export type ThreadUserStateCommandView = {
-  pending: boolean;
-  desiredValue?: boolean;
-  error?: Error;
-  /** Exact failed intent for Retry; `!isFavorite` is unsafe under overlap. */
-  retryValue?: boolean;
-};
 
 type BaseState = Pick<ProjectChatItem, "isFavorite">;
 type PendingFavorite = { revision: number; desiredValue: boolean; projectedValue: boolean };
@@ -177,21 +170,6 @@ export function admitThreadUserStateItems(
       item,
     );
   }
-}
-
-export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUserStateCommandView {
-  return record.favorite
-    ? {
-        pending: true,
-        desiredValue: record.favorite.desiredValue,
-        error: record.favoriteError?.error,
-        retryValue: record.favoriteError?.desiredValue,
-      }
-    : {
-        pending: false,
-        error: record.favoriteError?.error,
-        retryValue: record.favoriteError?.desiredValue,
-      };
 }
 
 function syncChatFeeds(client: QueryClient, projectId: string, threadId: string) {

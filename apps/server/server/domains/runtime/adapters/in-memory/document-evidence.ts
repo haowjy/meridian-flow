@@ -5,9 +5,11 @@
  * fail to persist rolls back with them. Rows are not removed with their block; a test deletes
  * no blocks.
  */
+import { parseLoroRoomName } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import {
+  type FrontierRooms,
   latestShowings,
   linkViewKey,
   type ObservationFrontier,
@@ -52,6 +54,21 @@ export function createInMemoryDocumentEvidence(deps: {
       return turn ? { threadId: turn.threadId, position: turn.position } : null;
     },
   };
+  /** The rows in `rooms` among `blockIds`, oldest recorded first. */
+  const rowsIn = (rooms: FrontierRooms, blockIds: readonly string[]) => {
+    const among = new Set(blockIds);
+    const inRooms = (room: string) => {
+      if ("room" in rooms) return room === rooms.room;
+      const parsed = parseLoroRoomName(room);
+      return (
+        (parsed?.kind === "live" || parsed?.kind === "fork") &&
+        parsed.documentId === rooms.documentId
+      );
+    };
+    return [...frontiers.values()]
+      .filter((row) => inRooms(row.room) && among.has(row.blockId))
+      .sort((a, b) => a.recordedSeq - b.recordedSeq);
+  };
   return {
     async resultStored(evidence) {
       for (const { blockId, frontier } of evidence.frontiers)
@@ -59,7 +76,6 @@ export function createInMemoryDocumentEvidence(deps: {
           blockId,
           room: frontier.room,
           snapshot: frontier.snapshot.slice(),
-          ...(frontier.position === undefined ? {} : { position: frontier.position }),
           recordedSeq: ++frontierSeq,
         });
       for (const showing of evidence.shown) {
@@ -90,34 +106,16 @@ export function createInMemoryDocumentEvidence(deps: {
         }
       }
     },
-    async latestFrontier(room, blockIds) {
-      let latest: FrontierRow | undefined;
-      const among = new Set(blockIds);
-      for (const row of frontiers.values())
-        if (
-          row.room === room &&
-          among.has(row.blockId) &&
-          (!latest || row.recordedSeq > latest.recordedSeq)
-        )
-          latest = row;
-      return latest
-        ? {
-            room,
-            snapshot: latest.snapshot.slice(),
-            ...(latest.position === undefined ? {} : { position: latest.position }),
-          }
-        : null;
+    async latestFrontier(documentId, blockIds) {
+      const [latest] = rowsIn({ documentId }, blockIds).reverse();
+      return latest ? { room: latest.room, snapshot: latest.snapshot.slice() } : null;
     },
-    async frontiersIn(room, blockIds) {
-      const among = new Set(blockIds);
-      return [...frontiers.values()]
-        .filter((row) => row.room === room && among.has(row.blockId))
-        .sort((a, b) => a.recordedSeq - b.recordedSeq)
-        .map((row) => ({
-          blockId: row.blockId,
-          recordedSeq: row.recordedSeq,
-          snapshot: row.snapshot.slice(),
-        }));
+    async frontiersIn(rooms, blockIds) {
+      return rowsIn(rooms, blockIds).map((row) => ({
+        blockId: row.blockId,
+        recordedSeq: row.recordedSeq,
+        snapshot: row.snapshot.slice(),
+      }));
     },
     async forDocument(threadId, documentId) {
       const lineage = await shownLinkLineage(threadId as ThreadId, lookup);

@@ -1,32 +1,28 @@
 /**
- * The server's `DocumentLinksPort` for one agent-edit core: the core names a
- * document and its write context, and this turns them into a holder and view
- * over the operation's document-link scope (contract §4.3–4.4).
+ * The server's `DocumentLinksPort` for agent-edit's core: the core names a document and its write
+ * context, and this turns them into a holder in the context's view (Live, or the Draft chat's
+ * draft, whose tree its links spell in) over the operation's document-link scope (contract
+ * §4.3–4.4).
  */
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
-import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { documentRevision, viewRevision } from "./document-revision.js";
+import { parseLinkRef } from "@meridian/contracts";
+import { cutRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function createScopedDocumentLinks(input: {
   scopes: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
-  /** The view a command on this document reads and writes in. */
-  viewFor(documentId: string, context: WriteContext | undefined): LinkView;
-  /** The draft whose view of Live the core reads; null for Live's. */
-  draft: string | null;
 }): DocumentLinksPort {
   const { scopes } = input;
-  const holder = (documentId: string, context: WriteContext | undefined) => ({
+  const holder = (documentId: string, context?: WriteContext) => ({
     documentId,
-    view: input.viewFor(documentId, context),
+    view: context?.linkView ?? ({ kind: "live" } as const),
   });
   return {
     prepare: (request) =>
       scopes.prepare({
         holders: [holder(request.documentId, request.context)],
-        docs: request.docs,
         written: request.written,
         ...(request.context?.uploadsChat ? { uploadsChat: request.context.uploadsChat } : {}),
         stored: request.stored,
@@ -41,13 +37,8 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.draft),
+    revision: cutRevision,
   };
-}
-
-/** The live utility core: every command reads and writes the live tree. */
-export function liveViewFor(_documentId: string, _context: WriteContext | undefined): LinkView {
-  return { kind: "live" };
 }
 
 /**

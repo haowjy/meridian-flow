@@ -251,10 +251,14 @@ export type LatestChildExecution = Pick<
 export interface CreateThreadInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: ThreadId;
-  /** The root chat's lineage draft, minted by the client beside `id`; the insert mints one if omitted. */
+  /**
+   * The root chat's draft: with No Work, its lineage's, minted by the client beside `id` (the
+   * insert mints one if omitted); in a Work, one of the Work's drafts, else the Work's default.
+   */
   draftId?: DraftId;
   userId: UserId;
   projectId: ProjectId;
+  /** The Work the chat is being made in, so its root names one of the Work's drafts. */
   workId?: WorkId | null;
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;

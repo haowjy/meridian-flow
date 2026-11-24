@@ -1,14 +1,12 @@
 # The content merge: its rules, repairs, rescues and known losses
 
 `src/content-merge/` merges two versions of a block list against their base. Production uses it in
-three places:
+two places:
 
 - `apps/server/server/domains/collab/domain/code-merge.ts` (`mergeCodeText`) brings an agent
   package's Save of a code document into the project's copy.
-- `packages/agent-edit/src/content-merge/stands.ts` checks and takes out recorded AI changes; the
-  Live turn inverse calls these helpers through `apps/server/server/domains/collab/domain/inverse-text.ts`.
-- `packages/agent-edit/src/tool/read-view.ts` (`readMergedContent`) merges a whole-document write
-  with the text the model read when checkpoint collection dropped part of that read.
+- `packages/agent-edit/src/tool/loro-write.ts` (`transcriptMerge`) merges a whole-document write
+  with the text the model read when the history cutoff dropped part of that read.
 
 The sides keep the names `base`, `live` and `draft`. This page lists everything in the system that
 changes document text other than a person's or a model's own edit, and everything that gives text
@@ -27,14 +25,17 @@ same change on both sides applies once. A **merge rule** is anything the merge d
 ## Where the code is
 
 `content-merge/` depends on `diff/` (tokens, `align`, `correspond`, `buildBlocks`), never the
-other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge` and the `stands.ts` reads.
+other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`, and `captureDelta`/`readDelta`,
+which record an AI write's blocks before and after (`document_edit_parts.delta`) for the card's
+rows and the model's edit listing. An AI write's Undo does not read the delta: it is the Loro
+Undo rule (`takeBack` in `@meridian/document-model`).
 
 `contentMerge(schema, base, live, draft)` returns `{ blocks, rules, overrode, conflicts, orderConflict }`.
 `rules` is the rule name to the number of times it fired in that merge. It carries no text.
 `overrode` is the count of live's words the draft replaced in contested text, and it overstates
 that when the draft deleted words live never touched. `conflicts` holds the clashes with their
 tokens for the tests' oracle; `mergeCodeText` reports their count as the file's clashes. Every
-block it returns has an id (a paragraph it makes from nothing gets a fresh one, so `writeBlocks`
+block it returns has an id (a paragraph it makes from nothing gets a fresh one, so `writeDocument`
 never throws on its output).
 
 Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both sides added
@@ -42,25 +43,6 @@ Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both
 merge attributes, merge block order (`mergeOrder`), align both sides to base as tokens, lift
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
-
-## Reading an AI edit against a text: `stands`
-
-`content-merge/stands.ts` answers one question about one change of an AI edit, from the edit's
-recorded delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and the
-manuscript, with no Yjs item id. `editChanges` cuts the delta into changes
-([diff](diff.md#hunks-and-changes)); `changeStateIn` reads each:
-
-- `stands` when the text holds the whole change, the merge can take it out
-  (`contentMerge(after, before, window)` has no conflict and changes the window), and putting the
-  change back on the result gives the window again, with either side named first, since words typed
-  at the very edge of the change sit on either side of it;
-- `altered` when the text holds it changed;
-- `out` when it is gone.
-
-`takeOut` writes the inverse for a change that stands. The window is the change's blocks, found by
-id, and one either side; a block of the change that was joined away leaves the whole text as the
-window. The server's Live turn inverse (`inverse-text.ts`) runs these for an AI edit written into
-Live. An Undo puts back `before` as the AI saw it.
 
 ## Merge rules
 
@@ -104,7 +86,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
 | `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `coords` |
 
-**Shape** (`buildBlocks` in `diff/tokens.ts`; `composeHunks` shares it and does not count)
+**Shape** (`buildBlocks` in `diff/tokens.ts`)
 
 | Rule | What it does |
 |---|---|
@@ -196,48 +178,18 @@ only after selecting the globally longest run. Filtering sources first would cha
 winner and can silently lose moved words. Both the modifying and report-only passes use this
 ordering.
 
-## Repairs
+## Repairs and rescues
 
-A repair is a write nobody asked for, made so a document is one the editor can show. It may remove
-text. There is one: the **binding's schema repair**, in `y-prosemirror`'s `sync-plugin.js`. It
-deletes an element the schema cannot build, and folds an adjacent text run the reading client
-made into its neighbour. It fires wherever ProseMirror nodes are built from Yjs.
+There are none: the codec reads every stored block, so nothing builds a document by deleting from
+it, and no text needs handing back.
 
-- **Where it fires, and its count.** `schemaRepairCounts()` (`@meridian/agent-edit`,
-  `model/schema-repair.ts`) returns how often it fired in this process under three paths:
-  `editor` (the witness in `apps/app/src/core/editor/schema-repair-witness.ts` counts its own
-  repairs with `countSchemaRepair("editor")`), `projectBlocks` (`model/y-prosemirror.ts`) and
-  `readBlocks` (`diff/fragments.ts`). The last two read through `readRepairedRoot`, which counts a
-  read that deleted something once. A read that repairs nothing is not counted.
-- **On the server.** The repair reaches the room as an ordinary Yjs update. `isSchemaRepairUpdate`
-  recognises it (the update adds nothing, and every item it deletes is, or sits inside, an element
-  whose node name the schema lacks), and `yjs-ws-handler.ts` journals it with a system origin: no
-  actor and no edit row. A repair of an element the schema knows but refuses the content of (a
-  block inside a paragraph) is not recognised, and journals as the writer's own update.
-- **In the editor.** The witness reports the removed words, and the "Some text was removed" bar
-  shows them with Copy, so the text is not silently gone (see Rescues).
-
-## Rescues
-
-A rescue gives typed text back to its author after something else took it away. It never removes.
-
-- **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
-  witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
-  bar's Details show it.
-
-The schema repair's removed text shows in one body, `RescuedText`
-(`apps/app/src/features/editor/RescuedText.tsx`): each passage with Copy, then Dismiss, so the
-writer cannot clear words they have not seen. It counts once through the client diagnostics
-channel (`/api/diagnostics/failures`), logged as `rescue.handed_back` with `rescue`
-(`schema-removed-text`), `chars` and `passages`; never the words.
-
-Not a rescue: typing a room never delivered (a draft closed or removed, a document removed, the
-room admitted read-only, its updates refused three times in a row) is dropped with one "Couldn't save" pill and nothing stored (the editor's
+Not a rescue: typing a room never delivered (a document removed, the room admitted read-only) is
+dropped with one "Couldn't save" pill and nothing stored (the editor's
 [CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md), "Unsent typing dropped").
 
 ## Other writes that are not merges
 
-- **The empty-document convention**: an empty fragment and one empty paragraph are one document,
+- **The empty-document convention**: no blocks and one empty paragraph are one document,
   because the editor cannot show zero blocks (`diff/equal.ts`, `buildBlocks`).
 
 ## Known losses
@@ -259,14 +211,7 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   draft) leaves that id on two blocks of the merge: 56 of 3,000 generated seeds, in the same four
   suites. Nothing in the app mints one id on two sides; the generator does. The merge does not
   repair it.
-- Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
-  person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
-  text under the splitter's byline.
-- Typing into a block that a peer, the model or a Discard deletes at the same moment, from a
-  tab that was offline or whose frame was still on its way, follows plain Yjs: the text lands under the deleted block and disappears with it. The browser's
-  outbox and the "Some text was removed" bar are the only trace.
-- The words a schema repair removed, after a reload: the notice lives in the session's memory, and
-  the words are no longer in the document.
+- A cut-and-paste racing an edit of the cut text doubles it.
 - Undoing a Discard, or restoring a document, after its room closed brings back the server's text
   without the unsent typing; the toast at the close is the only copy.
 

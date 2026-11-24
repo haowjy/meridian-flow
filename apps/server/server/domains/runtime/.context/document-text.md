@@ -55,7 +55,7 @@ about (`loop/frontier-recording.ts` names the blocks the request carries).
   that outlived its timeout attaches nothing. A failed hand-over logs
   `observation_frontier.record_failed` and the block keeps no frontier; a crash between the
   two loses that read's evidence, and the model's next write plans on its previous frontier
-  (Yjs still merges; the report of concurrent changes can name too much).
+  (Loro still merges; the report of concurrent changes can name too much).
 - Inverse echoes record a frontier without the concurrent-change lookup.
 
 ## Tool policy and elision
@@ -78,7 +78,7 @@ that also holds some other stale document keeps its stale stub.
 
 Successor preparation queries current revisions from raw retained blocks once per
 attempt. Stale text in pinned unanswered messages is replaced while writer words and
-mentions stay verbatim. `DocumentRevisions.current` reads settled authority only: a
-response-staged overlay visible to it is a contract failure, not a lookup fallback.
+mentions stay verbatim. `DocumentRevisions.current` reads each document at the version this
+thread's writes to it land in (Live or its draft's fork), as file access decides.
 
 [kb-model-view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/model-view.md

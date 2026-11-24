@@ -2,7 +2,7 @@
 
 The writer sends "tighten chapter 3" in chat and the model edits the chapter. The message travels
 over HTTP, the run streams its reply over the thread socket, and the model's edit reaches the browser
-over the Yjs socket. The numbers below are the steps in the list under the picture.
+over the Loro socket. The numbers below are the steps in the list under the picture.
 
 ```mermaid
 sequenceDiagram
@@ -30,10 +30,9 @@ sequenceDiagram
   threads-->>client: 10. events over the thread socket
   runtime->>context: 11. write tool: resolve the path
   runtime->>file-policy: 12. may this chat edit it?
-  runtime->>collab: 13. stage the edit under the grant
-  runtime->>collab: 14. the response ends: commit
-  collab->>postgres: 15. journal the rows
-  collab-->>core-transport: 16. push to open rooms
+  runtime->>collab: 13. write the edit under the grant
+  collab->>postgres: 14. save the room's rows, the receipt and the result
+  collab-->>core-transport: 15. push to open rooms
 ```
 
 1. **Send.** [chat](../app-conversation.md#chat) calls the optimistic send helper `lib/send-project-chat.ts`, which shows the message at once and keeps it in the send journal in `localStorage` until the server confirms.
@@ -48,8 +47,8 @@ sequenceDiagram
 10. **Stream.** The hub sends the events to every client subscribed on the thread socket (`routes/api/threads/ws.ts`, `lib/ws-thread-handler.ts`); the client's thread store updates and the transcript redraws.
 11. **Resolve.** The tool executor (`runtime/tools/tool-executor.ts`) runs the `write` handler. The handler is not in runtime: `lib/model-tools/document-tools.ts` binds it, and it resolves the path (`manuscript://chapter-3`) to a tracked document through [context](../server-documents.md#context).
 12. **Ask policy.** The handler asks [file-policy](../server-documents.md#file-policy) for an edit grant (`documentGrant`). A refusal from who is acting (`permission_denied`) goes back to the model as the tool result; an edit to an archived or deleted Work's draft, or a removed document, is returned with the document as it stands.
-13. **Write.** With the grant, it calls `documentSync.modelEdits().write(...)` on [collab](../server-documents.md#collab), inside the command the executor keyed the call by (`modelEdits().run`). In draft mode an edit to a manuscript, Knowledge, `user://` or `unfiled://` document is written into Live as the Work's suggestions (`workView`); `scratch://` is always edited directly.
-14. **Journal.** The command's one transaction in [postgres](../system.md#postgres) holds the edit's journal rows, its receipts and the stored tool result. A failure leaves nothing visible, and a retry of the call answers the stored result.
-15. **Push.** After commit, collab delivers the live writes into the open Hocuspocus room, and every connected tab gets them over `/ws/yjs` ([core-transport](../app-core.md#core-transport)).
+13. **Write.** With the grant, it calls `documentSync.modelEdits().write(...)` on [collab](../server-documents.md#collab), inside the command the executor keyed the call by (`modelEdits().run`). The grant's destination picks the room: Live, or in Draft mode the chat's draft fork (`agentRoomFor`).
+14. **Save.** The command's one transaction in [postgres](../system.md#postgres) holds the room's new snapshot rows, the edit's receipt and the stored tool result. A failure leaves nothing visible, and a retry of the call answers the stored result.
+15. **Push.** After commit, collab delivers the live writes into the open Loro room, and every connected tab gets them over `/ws/loro` ([core-transport](../app-core.md#core-transport)).
 
-State machines on this path: [runtime](../../../apps/server/server/domains/runtime/.context/state-machines.md), [threads](../../../apps/server/server/domains/threads/.context/state-machines.md), [collab](../../../apps/server/server/domains/collab/.context/state-machines.md), [chat submissions](../../../apps/app/src/client/chat-submissions/.context/state-machines.md), [chat](../../../apps/app/src/features/chat/.context/state-machines.md).
+State machines on this path: [runtime](../../../apps/server/server/domains/runtime/.context/state-machines.md), [threads](../../../apps/server/server/domains/threads/.context/state-machines.md), [chat submissions](../../../apps/app/src/client/chat-submissions/.context/state-machines.md), [chat](../../../apps/app/src/features/chat/.context/state-machines.md).

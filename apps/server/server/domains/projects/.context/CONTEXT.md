@@ -38,8 +38,7 @@ Work deletion marks primary chats, result rows and the Work's context sources wi
 its row's: the cascade writes no node, because the project's tree list is the only writer of
 node rows and its replay follows the source. Drafts and their drafts remain until purge, so
 restore finds them. Purge ends the Work's drafts through collab's Discard, which settles every
-pending record of the Work, and rejects the Work's suggestions in Live documents for good
-(`collab/.context/press.md`, "Work purge"); the documents it drafted are then in no view and
+pending record of the Work (`collab/.context/press.md`, "Work purge"); the documents it drafted are then in no view and
 context retention releases them after its window. Purge also deletes the documents of the Work's own nodes before
 their source rows go (the nodes follow the sources by foreign key).
 

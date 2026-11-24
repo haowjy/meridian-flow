@@ -25,8 +25,8 @@ SELECT
   of.recorded_seq,
   of.source_block_id,
   of.room_key,
-  of.journal_position,
-  length(of.snapshot) AS snap_bytes,
+  length(of.snapshot) AS frontier_bytes,
+  left(encode(of.snapshot, 'hex'), 48) AS frontier_head,
   tb.turn_id,
   of.thread_id,
   left(coalesce(tb.content->>'output', ''), 80) AS output_head

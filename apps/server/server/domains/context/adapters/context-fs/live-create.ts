@@ -1,6 +1,6 @@
 /**
  * ContextFS's live create (contract §6.3, §6.4): the document's `create` record, its first
- * Yjs state and its arrival in one command transaction. The record is made at the call, under
+ * text and its arrival in one command transaction. The record is made at the call, under
  * the list's lock; the content is then seeded under the new document's own lock, which sorts
  * after the list's. A live create never replaces or joins another document: beside one of its
  * name it makes a twin.
@@ -33,7 +33,7 @@ class DocumentCreationFault extends Error {
 export interface LiveCreateDeps {
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority" | "seedFromMarkdown">;
+  documentSync: Pick<MarkdownDocumentStore, "seedFromMarkdown">;
   documentCreation: DocumentCreationAggregate;
   boundWrites: BoundWrites;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
@@ -122,10 +122,7 @@ export class LiveCreate {
           return made.value.id as DocumentId;
         },
         initializeContent: async (documentId) => {
-          if (!content) {
-            await this.deps.documentSync.ensureDocumentAuthority(documentId);
-            return "";
-          }
+          if (!content) return "";
           const provenance = options?.origin;
           const origin: DocumentSeedOrigin =
             provenance?.type === "import"

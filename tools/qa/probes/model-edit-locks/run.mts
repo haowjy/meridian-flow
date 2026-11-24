@@ -22,7 +22,7 @@ import {
   state,
   waitForAssistantTurn,
 } from "../model-edit-harness/harness.mts";
-import { gate, Y } from "../model-edit-harness/scratch.mts";
+import { gate } from "../model-edit-harness/scratch.mts";
 
 type Harness = Parameters<typeof state>[0];
 
@@ -107,27 +107,11 @@ async function holdLock(
   return { release: released.open, done };
 }
 
-/** The live document with `suffix` typed at the end of paragraph `index`, as a human frame. */
-async function writerTypes(h: Harness, documentId: string, index: number, suffix: string) {
-  const doc = await h.liveDoc(documentId);
-  try {
-    const before = Y.encodeStateVector(doc);
-    const paragraph = doc.getXmlFragment("prosemirror").get(index) as Y.XmlElement;
-    const text = paragraph.get(0) as Y.XmlText;
-    text.insert(text.length, suffix);
-    await h.persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${h.ids.user}`,
-      seq: 0,
-    });
-  } finally {
-    doc.destroy();
-  }
-}
-
 const cases: ModelEditCase[] = [
   {
     name: "the writer types into the model's paragraph while its Undo captures the document",
-    expected: "the writer's typing is inside the model's paragraph: the Undo leaves it whole",
+    expected:
+      "the Undo runs: the model's words go and the writer's typing, which its capture did not read, stays",
     async run({ h, start }) {
       const { thread, documentId, path } = await seedCase(h, "capture", "direct");
       const child = await start();
@@ -137,7 +121,7 @@ const cases: ModelEditCase[] = [
       await child.arm("inverse.afterCaptureRead", "hold");
       const undo = child.call(undoOf(h, thread, await lastTurn(h, thread)));
       await child.at("inverse.afterCaptureRead");
-      await writerTypes(h, documentId, 1, " Writer keeps this.");
+      await h.writerTypes(documentId, 1, " Writer keeps this.");
       await child.release("inverse.afterCaptureRead");
       const answer = (await undo) as {
         status: string;
@@ -146,9 +130,9 @@ const cases: ModelEditCase[] = [
       };
       assert.deepEqual((await state(h, thread, documentId)).doc, [
         "Live seed.",
-        "Agent paragraph. Writer keeps this.",
+        " Writer keeps this.",
       ]);
-      assert.equal(answer.status === "success", false);
+      assert.equal(answer.status, "reversed");
     },
   },
   {

@@ -7,8 +7,8 @@
  * recounted at commit, and a moved count bumps the Work's revision and sends a notice. A live
  * change under a draft's rows (`liveChangedUnder`) only wakes the owner: the list reads live
  * where it has rows. Every owner a commit wakes gets one hint, in one publish. A keystroke never
- * enters it: the document's derivation recounts the Work's suggestions after it, through
- * `mutate`.
+ * enters it: a fork save whose pending flag changed recounts its draft's owners after it commits
+ * (`recountAfterCommit`).
  */
 import type { DraftId } from "@meridian/contracts";
 import type { DraftHint } from "@meridian/contracts/protocol";
@@ -21,6 +21,7 @@ import {
   LineageDraftsUnavailableError,
   lockLineageOwners,
   type OwnerLocks,
+  workDefaultDraftSql,
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
@@ -105,7 +106,7 @@ export type WorkProjectionMutation = {
   lifecycleChanged(work: { id: WorkId; projectId: string; draftId: string | null }): void;
   /**
    * A tree commit changed live rows that these drafts have rows on, their rows' parents, or a
-   * document their Work has suggestions in: once it commits, each
+   * document they have pending text in: once it commits, each
    * draft's owner gets its `draft-hint`, since its list reads live there (a move's
    * place) and neither its count nor its membership need have moved. No lock, no revision.
    */
@@ -307,7 +308,7 @@ export function createWorkProjectionMutation(input: {
             or(ne(works.pendingDocumentCount, documents), ne(works.pendingFolderCount, folders)),
           ),
         )
-        .returning({ projectId: works.projectId, draftId: works.draftId });
+        .returning({ projectId: works.projectId, draftId: workDefaultDraftSql() });
       for (const work of movedWorks) if (work.draftId) wake(work.projectId, work.draftId);
     }
     input.draftOwnerHints.publishDraftHints([...hints.values()]);

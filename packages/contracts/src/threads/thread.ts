@@ -63,8 +63,9 @@ export const threadSchema = z.object({
    */
   rootThreadId: z.string().min(1),
   /**
-   * The lineage's draft, named by the root chat: what this chat drafts into while it has no
-   * named Work (a named Work's chats draft into the Work's `draftId`).
+   * The draft this chat writes into: its root chat's (`threads.draft_id`) while that draft is
+   * one of the chat's Work's and not deleted, else its Work's default. With No Work, the
+   * lineage's own draft.
    */
   draftId: z.string().min(1),
   spawnDepth: z.number().int().nonnegative(),

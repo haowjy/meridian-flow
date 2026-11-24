@@ -20,21 +20,21 @@
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
  *
- * A copy is working storage only. What the server is known to have is in the copy, its mark
- * (`server-mark.ts`): what it holds beyond its mark is what a room that ends for good drops.
+ * A copy is working storage only (`local-copy-store.ts`). What the server is known to have is in
+ * the copy, its mark (`SERVER_META`): what it holds beyond its mark is what a room that ends for
+ * good drops.
  */
-import type { AccountId } from "@meridian/contracts/protocol";
+import type { DraftId } from "@meridian/contracts";
+import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
-import { IndexeddbPersistence } from "y-indexeddb";
-import * as Y from "yjs";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
-import type { Ranges } from "./item-ranges";
-import { beyondMark, SERVER_MARK_KEY } from "./server-mark";
+import { type LoadedCopy, openCopyDatabase, readCopy } from "./local-copy-store";
+import { storedWordsBeyond } from "./unsent-words";
 
-const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
+const LIVE_PREFIX = `meridian:loro:${collabSchemaKeyTag()}:live/`;
 const HOLD_WAIT_MS = 10_000;
 
 /** `#` is always encoded in the parts of a key, so it only ever starts an incarnation number. */
@@ -49,9 +49,14 @@ function parseName(name: string): { key: string; incarnation: number } {
     : { key: name.slice(0, at), incarnation: Number(name.slice(at + 1)) };
 }
 
-/** A room's copy key, with no incarnation: `LocalDocumentCopies.current` says which one is open now. */
-export function documentSessionPersistenceKey(accountId: AccountId, documentId: DocumentId) {
-  return `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(documentId)}`;
+/**
+ * A room's copy key, with no incarnation: `LocalDocumentCopies.current` says which one is open now.
+ * A fork room's copy is named under its document's, so the document's copies are its Live copy and
+ * every fork copy of it, found and deleted together.
+ */
+export function documentSessionPersistenceKey(accountId: AccountId, room: DocumentRoom) {
+  const live = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(room.documentId)}`;
+  return room.kind === "live" ? live : `${live}/fork/${encodeURIComponent(room.draftId)}`;
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
@@ -85,28 +90,18 @@ async function withExisting<T>(
 
 export type CopyHold = { release(): void };
 
-/** The document a database name belongs to, for one account; null for another account's or another kind of database. */
-function documentOf(name: string, accountId: AccountId): DocumentId | null {
+/** The room a database name is a copy of, for one account; null for any other database. */
+function roomOf(name: string, accountId: AccountId): DocumentRoom | null {
   const head = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/`;
-  return name.startsWith(head)
-    ? (decodeURIComponent(name.slice(head.length).split("/")[0]?.split("#")[0] ?? "") as DocumentId)
+  const { key } = parseName(name);
+  if (!key.startsWith(head)) return null;
+  const [document, fork, draft, ...rest] = key.slice(head.length).split("/");
+  if (!document || rest.length > 0) return null;
+  const documentId = decodeURIComponent(document) as DocumentId;
+  if (fork === undefined) return { kind: "live", documentId };
+  return fork === "fork" && draft
+    ? { kind: "fork", draftId: decodeURIComponent(draft) as DraftId, documentId }
     : null;
-}
-
-const NO_MARK = Y.encodeStateVector(new Map());
-
-/** A copy's items beyond its mark, and the copy they are read from. */
-export type BeyondMark = { update: Uint8Array; lacking: Ranges };
-
-function markedBeyond(
-  loaded: { update: Uint8Array; mark: Uint8Array | null } | null,
-  requireMark = false,
-): BeyondMark | null {
-  if (!loaded || (requireMark && !loaded.mark)) return null;
-  // No mark proves nothing the server holds (a copy written before marks, or a first write lost):
-  // the whole copy is offered, unless the caller needs a mark to claim that anything lacks.
-  const lacking = beyondMark(loaded.update, loaded.mark ?? NO_MARK);
-  return lacking.size > 0 ? { update: loaded.update, lacking } : null;
 }
 
 /** A copy no tab held, read whole; it stays locked until `finish`. */
@@ -114,32 +109,19 @@ export type UnheldCopy = {
   /** Its database name. */
   name: string;
   /** Everything the copy holds. */
-  update: Uint8Array;
+  loaded: LoadedCopy;
   /** Releases the copy, deleting it. */
   finish(): Promise<void>;
 };
 
-/**
- * Everything the database `name` holds, and its mark; read under a hold that keeps it. Null when
- * it is gone, and none is created.
- */
-async function load(
-  idb: IDBFactory,
-  name: string,
-): Promise<{ update: Uint8Array; mark: Uint8Array | null } | null> {
+/** Everything the database `name` holds; read under a hold that keeps it. Null when it is gone, and none is created. */
+async function load(idb: IDBFactory, name: string): Promise<LoadedCopy | null> {
   if (!(await withExisting(idb, name, async () => true))) return null;
-  const document = new Y.Doc();
-  const persistence = new IndexeddbPersistence(name, document);
+  const database = await openCopyDatabase(idb, name);
   try {
-    await persistence.whenSynced;
-    const mark: unknown = await persistence.get(SERVER_MARK_KEY);
-    return {
-      update: Y.encodeStateAsUpdate(document),
-      mark: mark instanceof Uint8Array ? mark : null,
-    };
+    return await readCopy(database);
   } finally {
-    await persistence.destroy();
-    document.destroy();
+    database.close();
   }
 }
 
@@ -157,7 +139,7 @@ export class LocalDocumentCopies {
     private readonly pointers: RecordStorage = browserStorage("local") ?? memoryStorage(),
   ) {
     this.loading = this.names().then((names) => {
-      const found = new Set(names.flatMap((name) => documentOf(name, accountId) ?? []));
+      const found = new Set(names.flatMap((name) => roomOf(name, accountId)?.documentId ?? []));
       this.known = new Set([...found, ...(this.known ?? [])]);
       this.publish();
     });
@@ -213,11 +195,7 @@ export class LocalDocumentCopies {
         if (!lock) return ready.resolve(null);
         const loaded = await load(idb, name);
         if (!loaded) return ready.resolve(null);
-        ready.resolve({
-          name,
-          update: loaded.update,
-          finish: async () => finished.resolve(),
-        });
+        ready.resolve({ name, loaded, finish: async () => finished.resolve() });
         await finished.promise;
         await this.deleteDatabase(name);
       })
@@ -237,9 +215,18 @@ export class LocalDocumentCopies {
     return () => this.observers.delete(observer);
   }
 
+  /** Each room's current copy here, by database name. */
+  async currentCopies(): Promise<{ name: string; room: DocumentRoom }[]> {
+    return (await this.names()).flatMap((name) => {
+      const room = roomOf(name, this.accountId);
+      const { key, incarnation } = parseName(name);
+      return room && incarnation === this.current(key) ? [{ name, room }] : [];
+    });
+  }
+
   /** Shared hold while a session has the database `name` open; release it once the session is destroyed. */
   async hold(name: string): Promise<CopyHold> {
-    const documentId = documentOf(name, this.accountId);
+    const documentId = roomOf(name, this.accountId)?.documentId;
     if (documentId) {
       this.known = new Set([...(this.known ?? []), documentId]);
       this.publish();
@@ -274,36 +261,31 @@ export class LocalDocumentCopies {
     );
   }
 
-  /**
-   * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone or
-   * holds nothing beyond it. `requireMark`: a copy with no mark holds nothing beyond it.
-   */
-  async beyondMark(name: string, requireMark = false): Promise<BeyondMark | null> {
+  /** Whether the copy `name` holds words beyond its mark, read under a shared hold. */
+  async wordsBeyondMark(name: string): Promise<boolean> {
     const idb = this.idb;
-    if (!idb) return null;
+    if (!idb) return false;
     const hold = await this.hold(name);
     try {
-      return markedBeyond(await load(idb, name), requireMark);
+      const loaded = await load(idb, name);
+      return loaded !== null && storedWordsBeyond(loaded);
     } finally {
       hold.release();
     }
   }
 
   /**
-   * Deletes every copy of the document, which can never come back, once `drop` has seen what each
-   * holds beyond its mark. False when another tab holds one open: that tab's own
-   * reading of the list clears it, and a copy left behind is found at the next start.
+   * Deletes every copy of the document, which can never come back, once `drop` has heard which
+   * held words beyond its mark. False when another tab holds one open: that tab's own reading of
+   * the list clears it, and a copy left behind is found at the next start.
    */
-  async clear(
-    documentId: DocumentId,
-    drop: (beyond: BeyondMark) => Promise<void>,
-  ): Promise<boolean> {
+  async clear(documentId: DocumentId, drop: () => void): Promise<boolean> {
     const names = await this.namesOf(documentId);
     const run = async () => {
       await Promise.all(
         names.map(async (name) => {
-          const beyond = this.idb && markedBeyond(await load(this.idb, name));
-          if (beyond) await drop(beyond);
+          const loaded = this.idb && (await load(this.idb, name));
+          if (loaded && storedWordsBeyond(loaded)) drop();
         }),
       );
       await this.deleteCopies(documentId, names);
@@ -319,7 +301,7 @@ export class LocalDocumentCopies {
    */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
-      (await this.names()).flatMap((name) => documentOf(name, this.accountId) ?? []),
+      (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
     );
     const results = await Promise.all(
       [...documents].map(async (documentId) => {
@@ -355,7 +337,9 @@ export class LocalDocumentCopies {
   }
 
   private async namesOf(documentId: DocumentId): Promise<string[]> {
-    return (await this.names()).filter((name) => documentOf(name, this.accountId) === documentId);
+    return (await this.names()).filter(
+      (name) => roomOf(name, this.accountId)?.documentId === documentId,
+    );
   }
 
   /** No copy of the document is left, so its pointers and its place in `known` go too. */

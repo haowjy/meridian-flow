@@ -3,40 +3,35 @@
 Each port's shape and method comments are in `src/ports/`. These are what a host
 must do that the types can't say.
 
-## `UpdateJournal`
+## `AgentEditRooms`
 
-`read` returns a checkpoint and the retained updates in order; `since` does not
-hide retained rows behind a newer checkpoint, and a persistence watermark includes
-the checkpoint cut even when no rows remain above it. The host, not this package,
-mints captured checkpoint cuts.
+`save(room, batch, record)` runs inside the host's command: `commit` the batch, then
+`recordWrite` the record and the batch in the same transaction, so a write and its Undo record
+land or fail together. The record's `delta` is the write's before and after text by block, which
+the card and the edits list show; its `edit` is what turn Undo and the model's `undo` and `revert`
+take back, whole or not at all, by design §2's Undo rule (`undoInRooms`) in the record's `room`, so
+the writer's later edits stay; a Draft turn's restore press takes the turn's edits back the same
+way, newest first. The record is self-describing; the batch is for storage, not to be decoded again.
+`readRoom` returns a copy the core frees; it holds none between calls.
 
-## `DocumentCoordinator`
+`roomFor` is the one place that picks a chat's room: a Draft chat's fork room from its first read,
+with no "does the fork exist" lookup (a fork with nothing stored reads as Live), and Live for a
+Live chat or a document only the draft holds.
 
-**`readRoom`.** A rejected entry leaves the scope and never reappears. The host reads the
-document's Live room without taking its mutex; a Work's view is the model's, over that same copy.
+## `FrontierLookups`
 
-**`prepareSave`.** It reconciles as `readRoom` does and keeps every entry.
-The host installs a write at root commit, never at `transfer`, or at once outside a
-transaction. `persist` captures the save's cut inside the append, where the host
-serializes it, before its transaction commits, for every outcome (appended,
-contained or nothing new). Nothing fallible runs between the rows becoming durable
-and `persist` resolving, so a stored write is never reported as a failed one. The
-rows are Yjs updates and land the same whatever the cut, so a moved base changes
-the report, not the write.
-
-**`SavePrecondition`.** A check before the lock would let two concurrent creates,
-or a create and a writer's frame, both land, so nothing judges it before the append,
-and a failure appends nothing even inside an ambient transaction. The host's
-`appendBatch` judges it on each document's state under the lock.
-
-The host does not fence a WebSocket transport from this port: nothing applies to a live
-room inside a transaction. See the [WebSocket concurrency
-contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md).
+`planning` and `recording` take a document id and answer the chat's latest recorded read of that
+document in any of its rooms (Live or any draft's fork), as recorded, with the room it read
+(`ObservationFrontier.room`). "Latest" is the order the reads were recorded in, across rooms: a chat
+switches between Live and Draft, and the core decides whether the room it writes in can check that
+read out. `planningShown` takes a document id and answers every block the planning blocks showed of
+it in full, from every room, oldest first. On the server each is a per-document query over
+`observation_frontiers`: its rooms are the document's Live room and its fork room in every
+draft of the project (`drizzle-model-evidence.ts`).
 
 ## `AgentEditCodec`
 
-The immutable block-origin map travels with every room copy, snapshot planning view
-and inverse cut, including deleted-block listings. A command takes one scoped codec
+A command takes one scoped codec
 at entry and passes it to every serialization door; the package has no default
 Meridian schema. The host's `codecFor(documentId)` picks the codec per document: a code
 document's is `verbatimCodec` (`@meridian/markup`), whose text is one code block and never
@@ -50,16 +45,11 @@ invented location.
 
 ## `AgentEditModel`
 
-`projectBlocks` runs the binding's repair (`@tiptap/y-tiptap`) on the document it is given (an
-unbuildable element is deleted and hashes cover the survivors), so hand it a private
-copy, never a shared document. The resolver projects once, first; its scopes, hashes
-and anchors index that repaired list, and a whole-document write takes its scope
-from it, never from a count taken earlier.
+The resolver projects once, first (`projectBlocks`); its scopes, hashes and anchors index that
+list, and a whole-document write takes its scope from it, never from a count taken earlier.
 
-`id` is the local CRDT item, used for mutation and provenance. `hash` and `fullHash`
-come from the block's origin identity, which differs from `id` for a Work-draft block
-seeded from live, so hash lookup matches `fullHash` and never rebuilds a hash from
-`id`.
+`key` names the block in this document: its block id. `hash` and `fullHash` come from the same id
+(`fullHashForBlockId`); hash lookup matches `fullHash`.
 
 ## `AgentEditCore`
 

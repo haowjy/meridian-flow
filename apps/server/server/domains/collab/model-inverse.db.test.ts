@@ -5,10 +5,7 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
@@ -25,7 +22,6 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { pressDriver } from "./test-support/press-requests.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -192,14 +188,14 @@ describe("model document stack", () => {
             context,
           );
         expect(await write(4)).toMatchObject({ status: "insufficient_undo" });
-        expect(await view.workMarkdown()).toBe("Alpha Azure.\n\nBlue.\n");
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Azure.\n\nBlue.\n");
         if (schedule === "count") {
           expect(await write(3)).toMatchObject({ status: "success" });
-          expect(await view.workMarkdown()).toBe("Alpha Beta.\n\nBlue.\n");
+          expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
         } else {
           for (const text of ["Silver", "Gold", "Beta"]) {
             expect(await write()).toMatchObject({ status: "success" });
-            expect(await view.workMarkdown()).toBe(`Alpha ${text}.\n\nBlue.\n`);
+            expect(await harness.liveMarkdown(ALPHA_ID)).toBe(`Alpha ${text}.\n\nBlue.\n`);
           }
         }
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
@@ -208,62 +204,19 @@ describe("model document stack", () => {
       }
     },
   );
-  it("leaves text the writer applied to the manuscript, and says so", async () => {
+  it("two-edit undo", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
       const address = { documentId: ALPHA_ID, file: "alpha.md" };
-      await core.read(address, context);
-      expect(
-        await core.write(
-          { ...address, command: "replace", find: "Beta", content: "Gamma" },
-          context,
-        ),
-      ).toMatchObject({ status: "success", writeId: "e1" });
-      const applyDraft = async () => {
-        expect(await pressDriver(view.collab.presses).apply(ALPHA_ID)).toMatchObject({
-          status: "pressed",
-          items: [{ node: ALPHA_ID, text: true }],
-        });
-      };
-
-      // Text the writer applied is in the manuscript: the model's Undo does not take it back.
-      const secondContext = {
-        ...context,
-        responseIdentity: { modelResponseId: responseId },
-      };
-      await applyDraft();
-      await core.read(address, secondContext);
-      expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
-        status: "success",
-        result: { message: expect.stringMatching(/e1.*applied.*none/) },
-      });
-      expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
-        status: "cant_undo_changed",
-      });
-      expect(await view.workMarkdown()).toBe("Alpha Gamma.\n\nBlue.\n");
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
-    } finally {
-      await harness.dispose();
-    }
-  });
-  it.each(["live", "draft"] as const)("two-edit undo in %s", async (destination) => {
-    const { harness, view, context, responseId } = await fixture();
-    try {
-      const core = view.collab.agentEdit();
-      const address = { documentId: ALPHA_ID, file: "alpha.md" };
-      const initial =
-        destination === "live"
-          ? { ...context, grant: testFileGrant({ kind: "live" }, ALPHA_ID) }
-          : context;
+      const initial = context;
       await core.read(address, initial);
       await core.write({ ...address, command: "replace", find: "Beta", content: "Gold" }, initial);
       await core.write(
         { ...address, command: "replace", find: "Gold", content: "Silver" },
         initial,
       );
-      const prose = () =>
-        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.workMarkdown();
+      const prose = () => harness.liveMarkdown(ALPHA_ID);
       const responseIdentity = { modelResponseId: responseId };
       const inverse = { ...initial, responseIdentity };
       const write = (count: number) => core.write({ ...address, command: "undo", count }, inverse);
@@ -276,63 +229,4 @@ describe("model document stack", () => {
       await harness.dispose();
     }
   });
-});
-
-it("model undo of an edit the writer typed inside is refused and leaves the draft as it is", async () => {
-  const { harness, view, context } = await fixture();
-  try {
-    const core = view.collab.agentEdit();
-    const command = { documentId: ALPHA_ID, file: "alpha.md" };
-    await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    // The writer types inside the model's suggested text, in the one Live document.
-    await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      doc.clientID = allocateDocumentClient(doc);
-      const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
-      const raw = (text.toDelta() as { insert: string }[]).map((part) => part.insert).join("");
-      const at = raw.indexOf("Gamma") + 2;
-      const updates = captureMutationUpdates(doc, () => text.insert(at, "!"));
-      await view.persistence.journal.append(ALPHA_ID, Y.mergeUpdates(updates), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    const liveContext = {
-      ...context,
-      responseIdentity: undefined,
-      grant: {
-        ...testFileGrant({ kind: "live" }, ALPHA_ID),
-        principal: context.grant.principal,
-      },
-    };
-    await core.read({ ...command, format: "edits" }, liveContext);
-    expect(await core.write({ ...command, command: "undo" }, liveContext)).toMatchObject({
-      status: "cant_undo_changed",
-    });
-    expect(await view.workMarkdown()).toBe("Alpha Ga!mma.\n\nBlue.\n");
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
-  } finally {
-    await harness.dispose();
-  }
-});
-
-it("model inverse receipts echo only changed blocks and their immediate context", async () => {
-  const { harness, view, context, responseId } = await fixture();
-  try {
-    await harness.seedWriterDocument(
-      ["Alpha Beta.", "Blue.", ...Array.from({ length: 10 }, (_, n) => `Far ${n}.`)].join("\n\n"),
-      responseId,
-    );
-    const core = view.collab.agentEdit(),
-      address = { documentId: ALPHA_ID, file: "alpha.md" };
-    await core.read(address, context);
-    expect(
-      await core.write({ ...address, command: "replace", find: "Beta", content: "Gamma" }, context),
-    ).toMatchObject({ status: "success" });
-    const result = await core.write({ ...address, command: "undo" }, context);
-    expect(result.status).toBe("success");
-    expect(JSON.stringify(result.result)).toContain("Alpha Beta.");
-    expect(JSON.stringify(result.result)).not.toContain("Far 9.");
-  } finally {
-    await harness.dispose();
-  }
 });

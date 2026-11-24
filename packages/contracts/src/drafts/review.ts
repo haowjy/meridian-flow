@@ -15,7 +15,7 @@ import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js
 
 /**
  * The cut the review rows were drawn from: for each list the Work's records are in, the list's
- * journal id and its Yjs state vector (base64) as the draft list read them. Records admitted
+ * id and its Loro version vector (base64) as the draft list read them. Records admitted
  * after it are ones the writer had not seen; they stay pending. A cut of another list (one
  * rebuilt under a new id) is no cut, and a scope left out is the server's own cut.
  */
@@ -87,8 +87,20 @@ export interface DraftItem {
   /** `${draftId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
-  /** The draft's suggested changes in the document's text, counted by the server after each write; 0 when it has none. */
-  textChanges: number;
+  /** The draft's fork of the document's text differs from Live: it has a change to review. */
+  pending: boolean;
+  /**
+   * Live's version of the text docs under the draft's pending removals in the document, as the fork's room last saved
+   * (`document_forks.live_version`): an encoded `RoomVersion`, which an Apply pressed from the row sends as its
+   * `PressRequest.liveVersions` entry. Null when the draft removes no block there.
+   */
+  liveVersion: string | null;
+  /**
+   * How many changes the draft's fork of the document has: `changedBlocks`' groups, the units Review changes steps
+   * through and a `change` press takes (text, structure-only and comment-body changes alike), as the fork's room last
+   * saved them. 0 when it has none. The document's own tree change (a create, move or delete) is not one of them.
+   */
+  changeCount: number;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;
@@ -106,11 +118,11 @@ export interface DraftItem {
     movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
     deleted?: true;
   } | null;
-  /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
+  /** Chats whose writes landed in the draft's fork of this item. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
-  /** The Work holds a suggestion no chat wrote: the writer's own. Like another chat in `actorThreads`, it makes the draft shared. */
+  /** The writer typed a change into the draft's fork. Like another chat in `actorThreads`, it makes the draft shared. */
   unattributed: boolean;
-  /** When the Work's suggestions in the document last changed. */
+  /** When the draft's fork of the document last saved. */
   updatedAt: string;
 }
 

@@ -1,27 +1,14 @@
 /**
- * One document host's review: its own controller, room owner and inline runtime, following what
- * that document paints. Every host that holds a document (main, the side, the phone)
- * gets one, so two documents on screen review two drafts without sharing state. Commands stay
- * account-wide and queued per item (`DraftCommandOwner`), so two hosts cannot interleave
- * commands on one item.
+ * One document host's review scope and paint: what the document shows (Live or a draft) and the
+ * draft's list. Every host that holds a document (main, the side, the phone) gets one, so two
+ * documents on screen show two drafts without sharing state. Commands stay account-wide and
+ * queued per item (`DraftCommandOwner`). Painting a draft opens the plain draft; Review changes is
+ * on only where the host's address (main) or stored slot (the side) says (`useHostReviewMode`).
  *
- * Admission is the host's too: a closed draft is reconciled with the server, and a hidden one (a
- * Discard in flight) is refused, for this host's document alone.
- *
- * Only a host on screen reviews. The kept document's host and a closed side's host stay mounted
- * hidden: a host that is not showing paints nothing of a draft, admits nothing, holds no draft
- * room and writes no pin, so Discard's Undo lands in the editor the writer sees.
+ * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
+ * mounted hidden and paint Live.
  */
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
@@ -30,30 +17,27 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { HostEditor, HostEditorContext } from "@/features/draft-review/host-editor";
-import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
-import { useShellTreeVersion } from "./tree-version";
 import {
-  type ReviewAddressAdmission,
-  type ReviewAdmissionPort,
-  useReviewAdmission,
-} from "./use-review-admission";
+  type DraftPage,
+  DraftPageProvider,
+  type ReviewMode,
+  ReviewModeProvider,
+  ReviewSurface,
+  ReviewSurfaceProvider,
+} from "@/features/draft-review/review-mode";
+import { useAccountId } from "./context/account-feature-context";
+import { useShellTreeVersion } from "./tree-version";
+import { useHostReviewMode } from "./use-review-mode";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
-
-/** The review main's address names, and the route's verdict on it. Null off a document address. */
-export type MainReviewAddress = {
-  documentId: string | undefined;
-  itemKey: string | undefined;
-  admission: ReviewAddressAdmission | undefined;
-};
-export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
 export type DocumentReview = {
   value: DraftReviewContextValue;
   paint: DocumentPaint;
-  /** The editor the host shows: suggestion mode's review chrome reads the review there. */
-  editor: HostEditor;
+  /** Review changes on this host; null on Live and on a plain draft. */
+  mode: ReviewMode | null;
+  page: DraftPage | null;
+  surface: ReviewSurface;
 };
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
@@ -81,16 +65,6 @@ export function useDocumentReview(
     (activeWorkId === noWork?.id
       ? noWork
       : (works?.find((work) => work.id === activeWorkId) ?? null));
-  const showChanges = paint.view.showChanges;
-  const marks = useMemo(
-    () => ({
-      visible: showChanges,
-      set: (visible: boolean) => {
-        if (documentId) setDocumentView(accountId, projectId, documentId, { showChanges: visible });
-      },
-    }),
-    [accountId, projectId, documentId, showChanges],
-  );
   // Live for the scope's draft is the toggle's Live (`shownDraft`); another owner's pin just goes.
   const shell = useShellTreeVersion();
   const scopeShown = paint.draft !== null && !paint.outOfScope;
@@ -103,57 +77,20 @@ export function useDocumentReview(
     work: reviewWork,
     draftId,
     threadId: null,
-    marks,
     showLive,
   });
 
-  const draftCommands = useDraftCommandOwner();
-  const queryClient = useQueryClient();
-  const reviewedItemKey = paint.draft?.itemKey ?? "";
-  const hidden = () => draftCommands.state(reviewedItemKey).hidden;
-  // The end of a press that hid the item is a new port: admission retries what it refused (a
-  // failed Discard leaves the draft pending).
-  const itemHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
-  const enterInlineReview = value.controller.enterInlineReview;
-  const port = useMemo<ReviewAdmissionPort>(
-    () => ({
-      write: (review) => {
-        if (documentId) setDocumentView(accountId, projectId, documentId, { pin: review });
-      },
-      // A draft a press has in flight has already left its review; admitting it again would
-      // re-open what the provider just closed, every render.
-      admit: async (target) => {
-        if (draftCommands.state(target.itemKey).hidden) return false;
-        enterInlineReview(target.documentId, target.itemKey);
-        return true;
-      },
-    }),
-    [accountId, projectId, documentId, enterInlineReview, draftCommands, queryClient, itemHidden],
-  );
-
-  const main = useContext(MainReviewAddressContext);
-  // An address naming this review is admitted by the route's answer; every other review is the
-  // view's own.
-  const admission: ReviewAddressAdmission =
-    main?.itemKey && main.documentId === documentId && paint.draft?.itemKey === main.itemKey
-      ? (main.admission ?? "pending")
-      : "admitted";
-  const presented = useMemo(
+  const mode = useHostReviewMode(projectId, documentId, paint);
+  const pin = paint.draft;
+  const page = useMemo(
     () =>
-      tab
-        ? {
-            documentId: tab.documentId,
-            scheme: tab.kind === "new" ? null : tab.scheme,
-            path: tab.kind === "new" ? null : tab.path,
-            review: paint.draft,
-            draftView: paint.view.version === "draft",
-          }
+      documentId && pin
+        ? { projectId, documentId, draftId: pin.draftId, itemKey: pin.itemKey }
         : null,
-    [tab, paint.draft, paint.view.version],
+    [projectId, documentId, pin],
   );
-  const [editor] = useState(() => new HostEditor());
-  useReviewAdmission({ review: value, presented, admission, port, editor });
-  return { value, paint, editor };
+  const [surface] = useState(() => new ReviewSurface());
+  return { value, paint, mode, page, surface };
 }
 
 /** Exposes one host's review to everything that host renders, in one or several subtrees. */
@@ -167,7 +104,11 @@ export function DocumentReviewBoundary({
   return (
     <DraftReviewBoundary value={review.value}>
       <DocumentPaintContext.Provider value={review.paint}>
-        <HostEditorContext.Provider value={review.editor}>{children}</HostEditorContext.Provider>
+        <DraftPageProvider value={review.page}>
+          <ReviewModeProvider value={review.mode}>
+            <ReviewSurfaceProvider value={review.surface}>{children}</ReviewSurfaceProvider>
+          </ReviewModeProvider>
+        </DraftPageProvider>
       </DocumentPaintContext.Provider>
     </DraftReviewBoundary>
   );

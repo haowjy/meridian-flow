@@ -2,8 +2,8 @@
  * The tree list's store: the rows never trail the list.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the list is stored through the document journal, keyed by the project's `tree_list_id`
- * - admission checks, journals and writes the rows in one transaction under the list's lock
+ * - the list is stored as one `document_snapshots` row, `tree:<tree_list_id>`, rewritten by each change
+ * - admission stores the update as sent and writes the rows in one transaction under the list's lock
  */
 
 import { spawn } from "node:child_process";
@@ -13,9 +13,8 @@ import path from "node:path";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  documentSnapshots,
   documents,
-  documentYjsHeads,
-  documentYjsUpdates,
   draftTreeNodes,
   projects,
   treeNodeIds,
@@ -23,8 +22,8 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { freshPeerId, isServerPeer } from "@meridian/document-model";
 import {
-  CopyFault,
   draftRows,
   LIVE,
   type ProjectedRow,
@@ -34,9 +33,9 @@ import {
   sourceRoot,
   TreeWriter,
 } from "@meridian/project-tree";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { LoroDoc, type VersionVector } from "loro-crdt";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import {
   currentDrizzleDb,
   runInDrizzleSavepoint,
@@ -45,8 +44,7 @@ import {
 import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { initializeHead } from "../../collab/adapters/drizzle-document-authority-head.js";
-import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
 import {
   closeDatabase,
   createTestDatabase,
@@ -67,9 +65,7 @@ const list = { kind: "project", projectId: PROJECT } as const;
 
 describe("the tree list store (postgres)", () => {
   const db = createTestDatabase();
-  const journal = createDrizzleJournal(db);
-  const newStore = (journalOverride = journal) =>
-    createDrizzleTreeListStore({ db, journal: journalOverride });
+  const newStore = () => createDrizzleTreeListStore({ db });
   /** The project's list id: its own, made with the project. */
   let LIST = "";
   /** The account's list id. */
@@ -99,7 +95,7 @@ describe("the tree list store (postgres)", () => {
       },
       { id: UNFILED, projectId: PROJECT, slug: "unfiled", scope: "project" },
     ]);
-    await db.insert(works).values({
+    await insertWorks(db, {
       id: WORK,
       projectId: PROJECT,
       createdByUserId: ACCOUNT,
@@ -110,43 +106,61 @@ describe("the tree list store (postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
 
-  /** A browser's copy of the list: its own client id, and what it has not yet sent. */
+  /** A browser's copy of the list: its own peer id, and what it has not yet sent. */
   function client(who = actor) {
-    const doc = new Y.Doc({ gc: false });
+    const doc = new LoroDoc();
+    doc.setPeerId(freshPeerId());
     const writer = new TreeWriter(doc);
-    let sent = Y.encodeStateVector(doc);
+    let sent: VersionVector | undefined;
     return {
       doc,
       writer,
       actor: who,
       /** Everything made since the last call, as one update. */
       send() {
-        const update = Y.encodeStateAsUpdate(doc, sent);
-        sent = Y.encodeStateVector(doc);
+        const update = doc.export(sent ? { mode: "update", from: sent } : { mode: "update" });
+        sent = doc.oplogVersion();
         return update;
       },
     };
   }
 
-  const updateCount = async () =>
-    (await db.select().from(documentYjsUpdates).where(eq(documentYjsUpdates.documentId, LIST)))
-      .length;
-
-  /** The list as a fresh replay of the journal reads it. */
-  async function journalReplay() {
-    const doc = new Y.Doc({ gc: false });
-    const snapshot = await journal.read(LIST);
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return replayView(doc, LIVE);
+  /** The list as its stored row holds it; null when nothing was stored. */
+  async function storedList(listId = LIST): Promise<LoroDoc | null> {
+    const [row] = await db
+      .select({ snapshot: documentSnapshots.snapshot })
+      .from(documentSnapshots)
+      .where(
+        and(eq(documentSnapshots.roomKey, `tree:${listId}`), eq(documentSnapshots.docKey, "s")),
+      );
+    if (!row) return null;
+    const doc = new LoroDoc();
+    doc.import(row.snapshot);
+    return doc;
   }
 
-  /** The rows a fresh replay of the journal gives, for live and the Work. */
+  /** The stored list's version, as JSON, for "nothing was stored" comparisons. */
+  const storedVersion = async () => {
+    const doc = await storedList();
+    const version = doc ? JSON.stringify([...doc.oplogVersion().toJSON()]) : null;
+    doc?.free();
+    return version;
+  };
+
+  /** The live view of a fresh replay of the stored list. */
+  async function storedReplay() {
+    const doc = await storedList();
+    if (!doc) throw new Error("the list was never stored");
+    try {
+      return replayView(doc, LIVE);
+    } finally {
+      doc.free();
+    }
+  }
+
+  /** The rows a fresh replay of the stored list gives, for live and the Work. */
   async function replayedRows() {
-    const doc = new Y.Doc({ gc: false });
-    const snapshot = await journal.read(LIST);
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+    const doc = (await storedList()) ?? new LoroDoc();
     const shown = (view: { draft: string | null }) => {
       const projection = replayView(doc, view);
       const rows = projectedRows(projection);
@@ -154,10 +168,9 @@ describe("the tree list store (postgres)", () => {
       return rows;
     };
     const live = shown(LIVE);
-    return {
-      live,
-      draft: draftRows(live, shown({ draft: DRAFT }), pendingRecords(doc, DRAFT)),
-    };
+    const draft = draftRows(live, shown({ draft: DRAFT }), pendingRecords(doc, DRAFT));
+    doc.free();
+    return { live, draft };
   }
 
   const pick = (row: ProjectedRow) => ({
@@ -263,14 +276,13 @@ describe("the tree list store (postgres)", () => {
     await send();
   }
 
-  it("keeps the rows equal to a fresh replay of the journal while several connections admit at once", async () => {
+  it("keeps the rows equal to a fresh replay of the stored list while several connections admit at once", async () => {
     // Two stores stand for two server processes: each holds its own copy of the list.
     const stores = [newStore(), newStore()];
     await Promise.all(
       ["a", "b", "c", "d", "e", "f"].map((tag, at) => session(stores[at % 2], tag)),
     );
 
-    expect(await updateCount()).toBeGreaterThanOrEqual(24);
     const { live, draft } = await storedRows();
     expect(live.filter((row) => row.kind === "folder")).toHaveLength(6);
     expect(live.filter((row) => row.kind === "document")).toHaveLength(12);
@@ -293,21 +305,31 @@ describe("the tree list store (postgres)", () => {
       return { store, honest, folder };
     }
 
-    it("turns away a copy the guard faults, storing nothing, and leaves the list admitting", async () => {
+    it("stores a list update as sent, turns away bytes that are no update, and leaves the list admitting", async () => {
       const { store, honest, folder } = await seededList();
-      // A deletion from the list, and bytes that are no update.
-      const deleting = client();
-      Y.applyUpdate(deleting.doc, Y.encodeStateAsUpdate(honest.doc));
-      deleting.doc.getArray("ops").delete(0);
-      const deletion = Y.encodeStateAsUpdate(deleting.doc, Y.encodeStateVector(honest.doc));
-      const before = { updates: await updateCount(), rows: await storedRows() };
-      for (const update of [deletion, new Uint8Array([1, 2, 3])])
-        await expect(store.admit({ list, accountId: ACCOUNT, update })).rejects.toThrow(CopyFault);
+      const before = { version: await storedVersion(), rows: await storedRows() };
+      await expect(
+        store.admit({ list, accountId: ACCOUNT, update: new Uint8Array([1, 2, 3]) }),
+      ).rejects.toThrow();
       // An account that does not own the list has nothing to admit to.
       await expect(
         store.admit({ list, accountId: STRANGER, update: honest.send() }),
       ).rejects.toThrow();
-      expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
+      expect({ version: await storedVersion(), rows: await storedRows() }).toEqual(before);
+
+      // A deletion from the list is no edit an honest copy makes, and it is stored as sent: the
+      // replay reads the list as it stands.
+      const deleting = client();
+      deleting.doc.import(honest.doc.export({ mode: "snapshot" }));
+      const seen = deleting.doc.oplogVersion();
+      deleting.doc.getList("ops").delete(0, 1);
+      deleting.doc.commit();
+      const deletion = deleting.doc.export({ mode: "update", from: seen });
+      expect(
+        (await store.admit({ list, accountId: ACCOUNT, update: deletion })).committed,
+      ).not.toBeNull();
+      await expectRowsEqualReplay();
+      honest.doc.import(deletion);
 
       honest.writer.rename(LIVE, actor, folder.node, "Part One");
       expect(
@@ -332,7 +354,7 @@ describe("the tree list store (postgres)", () => {
         parent: folder.node,
       });
       await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
-      const settled = await journalReplay();
+      const settled = await storedReplay();
       expect(settled.dropped.map((each) => [each.record.node, each.reason])).toEqual([
         [raced.node, "Work was closed"],
         [inside.node, "Work was closed"],
@@ -344,27 +366,14 @@ describe("the tree list store (postgres)", () => {
       await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
       honest.writer.rename(LIVE, actor, folder.node, "Part Three");
       await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
-      expect((await journalReplay()).dropped).toHaveLength(2);
+      expect((await storedReplay()).dropped).toHaveLength(2);
       expect(await db.select().from(documents).where(eq(documents.id, raced.node))).toEqual([]);
     });
   });
 
   describe("a server copy", () => {
-    it("catches up from the journal's new rows, and is reloaded after a failed transaction", async () => {
-      let reads = 0;
-      let tails = 0;
-      const counting = {
-        ...journal,
-        read: (...args: Parameters<typeof journal.read>) => {
-          reads += 1;
-          return journal.read(...args);
-        },
-        readUpdates: (...args: Parameters<typeof journal.readUpdates>) => {
-          tails += 1;
-          return journal.readUpdates(...args);
-        },
-      };
-      const behind = newStore(counting);
+    it("catches up from the stored list, and is reloaded after a failed transaction", async () => {
+      const behind = newStore();
       const ahead = newStore();
       const c = client();
       const admit = (store: ReturnType<typeof newStore>) =>
@@ -372,16 +381,14 @@ describe("the tree list store (postgres)", () => {
 
       c.writer.create(LIVE, actor, { kind: "folder", name: "A", parent: sourceRoot(MANUSCRIPT) });
       await admit(behind);
-      expect([reads, tails]).toEqual([1, 0]);
 
       c.writer.create(LIVE, actor, { kind: "folder", name: "B", parent: sourceRoot(MANUSCRIPT) });
       await admit(ahead);
       c.writer.create(LIVE, actor, { kind: "folder", name: "C", parent: sourceRoot(MANUSCRIPT) });
       await admit(behind);
-      expect([reads, tails]).toEqual([1, 1]);
       await expectRowsEqualReplay();
 
-      // A transaction that fails after it changed the copy leaves a copy ahead of the journal.
+      // A transaction that fails after it changed the copy leaves a copy ahead of the stored list.
       const remove = setTestHook("treeList.afterRows", async () => {
         remove();
         throw new Error("the connection dropped");
@@ -395,8 +402,14 @@ describe("the tree list store (postgres)", () => {
       ]);
       c.writer.create(LIVE, actor, { kind: "folder", name: "E", parent: sourceRoot(MANUSCRIPT) });
       // The client's copy holds D, which the failed transaction did not store: it sends all.
-      await behind.admit({ list, accountId: ACCOUNT, update: Y.encodeStateAsUpdate(c.doc) });
-      expect(reads).toBe(2);
+      await behind.admit({ list, accountId: ACCOUNT, update: c.doc.export({ mode: "update" }) });
+      expect((await storedRows()).live.map((row) => row.name).sort()).toEqual([
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+      ]);
       await expectRowsEqualReplay();
     });
   });
@@ -493,7 +506,7 @@ describe("the tree list store (postgres)", () => {
       "treeList.afterRows",
     ])("leaves neither the record nor its rows when killed at %s", async (step) => {
       await killAt(step);
-      expect(await updateCount()).toBe(0);
+      expect(await storedVersion()).toBeNull();
       expect(await storedRows()).toEqual({ live: [], draft: [] });
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
@@ -513,7 +526,7 @@ describe("the tree list store (postgres)", () => {
 
     it("leaves the record and its rows when killed after the commit", async () => {
       await killAt("treeList.afterCommit");
-      expect(await updateCount()).toBe(1);
+      expect(await storedVersion()).not.toBeNull();
       const stored = await storedRows();
       expect(stored.live.map((row) => row.name)).toEqual(["Killed"]);
       expect(stored.draft.map((row) => row.name)).toEqual(["killed draft"]);
@@ -538,15 +551,6 @@ describe("the tree list store (postgres)", () => {
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
       expect(await db.select().from(treeNodes)).toEqual([]);
-
-      // A document row that had a list's id would still take no head with it, and no document
-      // adopts a list's head.
-      await db.insert(documents).values({ id: LIST, projectId: PROJECT });
-      await db.delete(documents).where(eq(documents.id, LIST));
-      expect(
-        await db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, LIST)),
-      ).toHaveLength(1);
-      await expect(initializeHead(db, LIST as never)).rejects.toThrow("tree_list");
 
       // An id that is no uuid gets no row, and a sync after a record of one still writes the rest.
       const store = newStore();
@@ -625,7 +629,7 @@ describe("the tree list store (postgres)", () => {
     });
   });
 
-  it("keeps the server's items under one reserved client id while two processes write in turn", async () => {
+  it("writes the server's records under server peer ids, one per process's copy, while two processes write in turn", async () => {
     const stores = [newStore(), newStore()];
     for (let at = 0; at < 6; at++) {
       await stores[at % 2]?.submit({
@@ -639,10 +643,11 @@ describe("the tree list store (postgres)", () => {
         },
       });
     }
-    const doc = new Y.Doc({ gc: false });
-    const snapshot = await journal.read(LIST);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    expect([...Y.decodeStateVector(Y.encodeStateVector(doc)).keys()]).toEqual([1]);
+    const doc = await storedList();
+    const peers = [...(doc?.oplogVersion().toJSON().keys() ?? [])];
+    doc?.free();
+    expect(peers).toHaveLength(2);
+    expect(peers.every((peer) => isServerPeer(peer as never))).toBe(true);
     expect((await storedRows()).live).toHaveLength(6);
     await expectRowsEqualReplay();
   });
@@ -708,7 +713,7 @@ describe("the tree list store (postgres)", () => {
         filetype: "markdown",
       });
       await store.admit({ list, accountId: ACCOUNT, update: c.send() });
-      const before = { updates: await updateCount(), rows: await storedRows() };
+      const before = { version: await storedVersion(), rows: await storedRows() };
 
       // Rows written after the body leave the child under a parent no row has: the constraint
       // that says so is deferred, so only COMMIT refuses.
@@ -730,7 +735,7 @@ describe("the tree list store (postgres)", () => {
         }),
       ).rejects.toThrow();
       remove();
-      expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
+      expect({ version: await storedVersion(), rows: await storedRows() }).toEqual(before);
 
       c.writer.create(LIVE, actor, { kind: "folder", name: "After", parent: sourceRoot(UNFILED) });
       expect(
@@ -740,13 +745,13 @@ describe("the tree list store (postgres)", () => {
     });
   });
 
-  it("takes the list's journal and rows with its project, and leaves a document's delete out of it", async () => {
+  it("takes the stored list and its rows with its project", async () => {
     const c = client();
     c.writer.create(LIVE, actor, { kind: "folder", name: "Gone", parent: sourceRoot(MANUSCRIPT) });
     await newStore().admit({ list, accountId: ACCOUNT, update: c.send() });
-    expect(await updateCount()).toBe(1);
+    expect(await storedVersion()).not.toBeNull();
     await db.delete(projects).where(eq(projects.id, PROJECT));
-    expect(await updateCount()).toBe(0);
+    expect(await storedVersion()).toBeNull();
     expect(await db.select().from(treeNodes)).toEqual([]);
     expect(await db.select().from(treeNodeIds)).toEqual([]);
     expect(await db.select().from(draftTreeNodes).where(eq(draftTreeNodes.draftId, DRAFT))).toEqual(

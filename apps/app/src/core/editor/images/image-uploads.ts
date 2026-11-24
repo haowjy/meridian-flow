@@ -366,8 +366,7 @@ function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   // Two writes, and their order is the promise. The token leaves first and
   // outside history — an undo that brought it back would hand the writer a slot
   // whose upload is over — and that non-historical transaction also closes the
-  // Yjs UndoManager's capture window (y-tiptap calls `stopCapturing` for one), so
-  // the replacement below cannot merge with whatever the writer typed a moment
+  // open Undo step (`editor-history.ts`), so the replacement below cannot merge with whatever the writer typed a moment
   // before their bytes arrived.
   writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: null }, { history: false, closes: id });
   // The whole of the writer's edit, in one step they can take back: the same

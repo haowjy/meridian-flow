@@ -39,7 +39,6 @@ export type UndoOutcome =
 
 // Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
 export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
-export type WriteSuccessPhase = "committed";
 
 export interface AgentEditBlockItem {
   hash: string;
@@ -131,7 +130,7 @@ export interface AgentEditModelPayload {
     given: "media" | "text" | "description";
   };
   read?: {
-    format: "full" | "outline" | "edits";
+    format: "full" | "outline" | "edits" | "changes";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows the selected document draft. */
@@ -179,30 +178,21 @@ interface AgentEditResultBase extends AgentEditModelPayload {
   command: AgentEditResultCommand;
 }
 
-export type AgentEditResultV1 = AgentEditResultBase &
-  (
-    | { status: "success"; phase: WriteSuccessPhase }
-    | { status: Exclude<WriteStatus, "success">; phase?: never }
-  );
+export type AgentEditResultV1 = AgentEditResultBase & { status: WriteStatus };
 
 type ModelResultInput = {
   command: AgentEditResultCommand;
   payload?: AgentEditModelPayload;
-} & (
-  | { status: "success"; phase: WriteSuccessPhase }
-  | { status: Exclude<WriteStatus, "success">; phase?: never }
-);
+  status: WriteStatus;
+};
 
 export function modelResult(input: ModelResultInput): AgentEditResultV1 {
-  const base = {
+  return {
     ...input.payload,
     schema: AGENT_EDIT_RESULT_SCHEMA,
     command: input.command,
+    status: input.status,
   };
-  if (input.status === "success") {
-    return { ...base, status: "success", phase: input.phase };
-  }
-  return { ...base, status: input.status };
 }
 
 /** The result command for a `write` call's arguments, which may be malformed. */
@@ -214,7 +204,6 @@ type AgentEditResultEnvelope = Record<string, unknown> & {
   schema: typeof AGENT_EDIT_RESULT_SCHEMA;
   command: AgentEditResultCommand;
   status: WriteStatus;
-  phase?: WriteSuccessPhase;
 };
 
 /**
@@ -227,22 +216,16 @@ type AgentEditResultEnvelope = Record<string, unknown> & {
 export function isAgentEditResultEnvelope(input: unknown): input is AgentEditResultEnvelope {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false;
   const result = input as Record<string, unknown>;
-  if (
-    result.schema !== AGENT_EDIT_RESULT_SCHEMA ||
-    (result.command !== "unknown" &&
-      result.command !== "read" &&
-      writeCommandName(result) === undefined) ||
-    !isWriteStatus(result.status)
-  ) {
-    return false;
-  }
-  if (result.status === "success") {
-    return result.phase === "committed";
-  }
-  return result.phase === undefined;
+  return (
+    result.schema === AGENT_EDIT_RESULT_SCHEMA &&
+    (result.command === "unknown" ||
+      result.command === "read" ||
+      writeCommandName(result) !== undefined) &&
+    isWriteStatus(result.status)
+  );
 }
 
-export function isWriteStatus(status: unknown): status is WriteStatus {
+function isWriteStatus(status: unknown): status is WriteStatus {
   switch (status) {
     case "success":
     case "returned":

@@ -1,28 +1,141 @@
 /**
- * The press: Apply or Discard on documents, folders or a whole Work, and its Undo,
- * as commands the driver delivers (resent under one id until the server stores an answer). The
- * server runs both halves; an open document's text changes when its update arrives on the socket.
+ * The press: Apply or Discard on a change, a document, a draft or every draft of a Work, and its
+ * Undo, as commands the driver delivers (resent under one id until the server stores an answer).
+ * Each is journaled and shown at once and leaves once the server holds what this browser's copies
+ * of the rooms it presses had (`ready`), so the server presses what the writer saw (design §4).
+ * The server runs both halves; an open document's text changes when its update arrives on the
+ * socket.
  */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
-import type { PressRequest } from "@meridian/contracts/drafts";
+import {
+  type DocumentId,
+  type DraftId,
+  draftItemKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
+import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import { matchQuery, type QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
+import type { PressRooms } from "@/core/editor/document-session-registry";
+import { projectQueryKeys } from "./project-query-keys";
 import { refreshDraftReads } from "./useOwnerDrafts";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
 
-export type PressBody = { projectId: string } & Omit<PressRequest, "commandId">;
+/** `PressRequest` without its id, one member per verdict, so a body still pairs a verdict with its scope. */
+export type PressBody = { projectId: string } & (PressRequest extends infer R
+  ? R extends PressRequest
+    ? Omit<R, "commandId">
+    : never
+  : never);
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
-/** One Work's presses and Undos go in the order the writer made them. */
-const pressLane = (draft: string) => `press:${draft}`;
+/** Settles once the server holds what this browser's copies of the press's rooms had. */
+export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
-export function pressDomain(client: QueryClient): CommandDomain {
+/**
+ * A press or Undo holds the lane of each draft it presses, so it goes after every earlier press
+ * on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
+ */
+const PRESS_LANE = "press:";
+
+/** The drafts a press takes: a Work's are the ones the pressing tab listed, which its body names. */
+export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {
+  if (scope.kind === "work") return scope.drafts;
+  if (scope.kind === "draft" || scope.kind === "turn") return [scope.draft];
+  const parsed = parseDraftItemKey(scope.item);
+  return parsed ? [parsed.draftId] : [];
+}
+
+/**
+ * What a journaled press or Undo presses, read from its record: the drafts its lanes name, and the
+ * document of a press of one document or change.
+ */
+export function pressRooms(record: CommandRecord): PressRooms {
+  const scope = (record.body as Partial<PressBody>).scope;
+  const parsed =
+    scope && (scope.kind === "change" || scope.kind === "document")
+      ? parseDraftItemKey(scope.item)
+      : null;
+  return {
+    drafts: record.lanes.flatMap((lane) =>
+      lane.startsWith(PRESS_LANE) ? [lane.slice(PRESS_LANE.length) as DraftId] : [],
+    ),
+    documents: parsed ? [parsed.documentId] : null,
+  };
+}
+
+/** A press journaled before presses named a scope: one draft's documents and folders, or all of it. */
+type PressBodyV1 = {
+  projectId: string;
+  draft: DraftId;
+  verdict: "apply" | "discard";
+  items: { node: string }[] | "all";
+  saw?: TreeSaw;
+};
+
+/**
+ * An unsent version 1 press as a scope, where one says the same: all of a draft is the draft, one
+ * node is that document (a folder names no item, and presses nothing). A press of several nodes
+ * has no scope that takes exactly those, so it throws and the driver settles it as never sent:
+ * its rows stay listed to press again, where any scope would press more or less than was chosen.
+ */
+function pressBodyFromV1({ projectId, draft, verdict, items, saw }: PressBodyV1): PressBody {
+  let scope: PressScope;
+  if (items === "all") scope = { kind: "draft", draft };
+  else if (items.length === 1 && items[0])
+    scope = { kind: "document", item: draftItemKey(draft, items[0].node as DocumentId) };
+  else throw new Error("A press of several nodes has no scope");
+  return { projectId, verdict, scope, ...(saw ? { saw } : {}) };
+}
+
+/**
+ * An unsent version 2 press: a Work's named no drafts, and the drafts its tab listed then are not
+ * known offline, so it throws and the driver settles it as never sent: "Couldn't apply", and its
+ * rows come back to press again.
+ */
+function pressBodyFromV2(body: PressBody): PressBody {
+  if (body.scope.kind === "work" && !Array.isArray(body.scope.drafts))
+    throw new Error("A Work's press named no drafts");
+  return body;
+}
+
+/**
+ * Settles once every draft list of the project on screen has been read from the server since now:
+ * the journal's press holds its rows until then (`DraftCommandOwner.followPresses`), so a read that
+ * failed keeps them held until one succeeds. `loaded`: a list read already held counts, since all
+ * of them began after the press settled.
+ */
+function whenDraftListsRead(client: QueryClient, projectId: string, loaded: boolean) {
+  const cache = client.getQueryCache();
+  const queryKey = projectQueryKeys.draftsOf(projectId);
+  const lists = () => cache.findAll({ queryKey, type: "active" });
+  const waiting = new Set(lists().filter((query) => !loaded || query.state.status !== "success"));
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      const shown = new Set(lists());
+      for (const query of waiting) if (!shown.has(query)) waiting.delete(query);
+      if (waiting.size > 0) return false;
+      resolve();
+      return true;
+    };
+    if (done()) return;
+    const stop = cache.subscribe((event) => {
+      if (!matchQuery({ queryKey }, event.query)) return;
+      // `manual`: a write of this browser's own (`patchOwnerDrafts`), not a read.
+      if (event.type === "updated" && event.action.type === "success" && !event.action.manual)
+        waiting.delete(event.query);
+      if (done()) stop();
+    });
+  });
+}
+
+export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
   // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
   // own reads of drafts all begin after it opened, so a press settled before then is in them;
   // only the Works the server read for the page may predate it. A turn card follows its chat's
@@ -33,21 +146,27 @@ export function pressDomain(client: QueryClient): CommandDomain {
     const observed = () => void bound?.observe((each) => each.id === record.id);
     const { projectId } = record.body as PressBody | PressUndoBody;
     const since = record.settledAt ?? Date.now();
+    const before = since <= opened;
+    // Watched before the reads start, so their answers are seen.
+    const read = whenDraftListsRead(client, projectId, before);
     // A press can change any draft's list: two Works on one passage, the first applied wins.
-    void (
-      since <= opened
+    void Promise.all([
+      before
         ? refreshWorksSnapshotSince(client, projectId, since)
-        : refreshDraftReads(client, projectId, new Set([undefined]), since)
-    ).then(observed);
+        : refreshDraftReads(client, projectId, new Set([undefined]), since),
+      read,
+    ]).then(observed);
   };
   const kinds: Record<string, CommandKind> = {
     [PRESS_KIND]: {
-      version: 1,
-      migrate: (body) => body as PressBody,
+      version: 3,
+      migrate: (body, from) =>
+        from < 2 ? pressBodyFromV1(body as PressBodyV1) : pressBodyFromV2(body as PressBody),
       request: ({ body }) => {
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };
       },
+      ready: (record) => gate((record.body as PressBody).projectId, pressRooms(record)),
       onSettled: settled,
     },
     [PRESS_UNDO_KIND]: {
@@ -61,6 +180,7 @@ export function pressDomain(client: QueryClient): CommandDomain {
           body: { pressCommandId },
         };
       },
+      ready: (record) => gate((record.body as PressUndoBody).projectId, pressRooms(record)),
       onSettled: settled,
     },
   };
@@ -76,10 +196,22 @@ export function pressDomain(client: QueryClient): CommandDomain {
 }
 
 export function submitPress(driver: CommandDriver, body: PressBody) {
-  return submitCommand(driver, { kind: PRESS_KIND, lanes: [pressLane(body.draft)], body });
+  return submitCommand(driver, {
+    kind: PRESS_KIND,
+    lanes: pressDrafts(body.scope).map((draft) => `${PRESS_LANE}${draft}`),
+    body,
+  });
 }
 
-/** `draft` orders the Undo after the press it names. */
-export function submitPressUndo(driver: CommandDriver, draft: string, body: PressUndoBody) {
-  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(draft)], body });
+/** `drafts`: the press's own, so the Undo goes after it. */
+export function submitPressUndo(
+  driver: CommandDriver,
+  drafts: readonly string[],
+  body: PressUndoBody,
+) {
+  return submitCommand(driver, {
+    kind: PRESS_UNDO_KIND,
+    lanes: drafts.map((draft) => `${PRESS_LANE}${draft}`),
+    body,
+  });
 }

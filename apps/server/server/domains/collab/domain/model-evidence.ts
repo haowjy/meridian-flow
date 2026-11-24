@@ -1,6 +1,10 @@
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ShownLink, StoredEvidence } from "../../../shared/model-evidence.js";
+import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { FrontierRooms, ShownLink, StoredEvidence } from "../../../shared/model-evidence.js";
+
+export type ForgottenRooms =
+  | { room: string }
+  | { accountId: UserId; documentIds: readonly string[] };
 
 /**
  * What the model was shown of documents, kept for its next write: a frontier per result block
@@ -15,15 +19,27 @@ export interface ModelEvidence {
    * transaction: an edit records its own inside its command, a read's after its block is stored.
    */
   resultStored(evidence: StoredEvidence): Promise<void>;
-  /** The latest-recorded frontier for `room` among `blockIds`, or null. */
-  latestFrontier(room: string, blockIds: readonly string[]): Promise<ObservationFrontier | null>;
-  /** Every row for `room` among `blockIds`, oldest recorded first: the names shown. */
+  /**
+   * The latest-recorded frontier among `blockIds` in any room of the document, tagged with its
+   * room, or null.
+   */
+  latestFrontier(
+    documentId: string,
+    blockIds: readonly string[],
+  ): Promise<ObservationFrontier | null>;
+  /** Every row in `rooms` among `blockIds`, oldest recorded first. */
   frontiersIn(
-    room: string,
+    rooms: FrontierRooms,
     blockIds: readonly string[],
   ): Promise<{ blockId: string; recordedSeq: number; snapshot: Uint8Array }[]>;
   /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
   /** Deletes what these threads were shown and the tool results their model edits stored, when the threads are deleted. */
   forgetThreads(threadIds: readonly ThreadId[]): Promise<void>;
+  /**
+   * Deletes the frontiers recorded of rooms: one fork room deleted for being empty, or every room
+   * of documents whose content was purged, which only the owning account's threads can have shown.
+   * Joins an ambient transaction.
+   */
+  forgetFrontiers(rooms: ForgottenRooms): Promise<void>;
 }

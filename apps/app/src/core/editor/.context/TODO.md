@@ -11,11 +11,6 @@ during a healthy cold load.
 Preserve cursor and selection across live and review remounts; scroll restoration
 is best effort.
 
-## Block identity probe
-
-Add a probe that moves a figure and verifies every other block keeps its hash
-while the moved figure receives a fresh Yjs item identity.
-
 ## Lists and screen readers
 
 List markers are generated content on flat sibling blocks, with `aria-level` on each listed
@@ -30,13 +25,17 @@ decoration (flat model design, section 7).
 - Both views share the session's one undo stack (`DocumentSession.history`), so Ctrl+Z in
   either view reverts the writer's last edit in the document, whichever view made it.
 
-## Unsent edits in a detached session
+## What an Enter or a mark toggle costs outside the binding
 
-`hasUnacknowledgedEdits()` reads the transport provider, so an edit written into a retained
-session whose socket is detached (no editor, e.g. an upload finishing) does not count as
-unsent. The registry can then retire the session without holding it for delivery. Check
-whether local persistence alone carries that edit to the server on the next open; if not,
-count local-only updates as unsent while detached.
+The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800
+blocks in node). In the dev build an Enter still takes about 20–25 ms to the DOM and a mark toggle
+about 18 ms, at 150 and at 500 paragraphs alike. A mark toggle's profile: about 3 ms in
+ProseMirror's dispatch, about 16 ms in a synchronous render of `DocumentToolbar`, most of it
+React's dev-build component timing (`startProfilerTimer`). An Enter adds about 2 ms in
+`fixBlockIds` (`extensions/block-id/`), which maps every block of the old document through the
+transaction and so grows with it, and about 7 ms of native layout when ProseMirror puts the
+selection into the DOM. Measure a production build before changing any of them; the fixer could
+look only at blocks that are not the same node in both documents, as the binding does.
 
 ## Composition undo grouping
 

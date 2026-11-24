@@ -1,25 +1,19 @@
 /**
- * Purpose: Defines Meridian's shared ProseMirror document node/mark specs and builds the runtime Schema from them.
- * Why independent: These structural specs must be identical in server adapters and the frontend editor to keep y-prosemirror documents safe, so they live as a shared primitive instead of domain code.
- * MULTIPLE PURPOSES: structural node specs, structural mark specs, schema construction, and shared Yjs collaboration protocol constants.
+ * Meridian's shared ProseMirror document node and mark specs, and the Schema built from them. The
+ * server and the editor must read documents with the same specs, so they live here.
  */
-import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
-import { type Doc, decodeStateVector, encodeStateVector } from "yjs";
 
 export type { CollabSchemaVersion } from "./collab-schema-version.js";
 export {
   COLLAB_SCHEMA_VERSION,
-  clientSchemaVersionFromSubprotocolHeader,
   cmpMajorMinor,
   collabSchemaKeyTag,
-  formatCollabSchemaSubprotocol,
   formatCollabSchemaVersion,
   headAdmitsClient,
   packCollabSchemaVersion,
   parseCollabSchemaVersion,
-  selectCollabSchemaSubprotocol,
   serverServesHead,
   unpackCollabSchemaVersion,
 } from "./collab-schema-version.js";
@@ -36,9 +30,8 @@ function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | 
 
 /**
  * Block alignment is a wire-level Layout wrapper, not a schema node. No `validate` on this or
- * `level`: the binding deletes a Yjs element the schema cannot build (prosemirror-model runs
- * `validate` inside `create`), so a bad value must read as itself and fail where Flow writes
- * (the codec, paste parsers), never where it reads.
+ * `level` (prosemirror-model runs `validate` inside `create`): a bad value must read as itself and
+ * fail where Flow writes (the codec, paste parsers), never where it reads.
  */
 const layoutAlignAttr = { default: null };
 
@@ -50,8 +43,7 @@ const paragraphLevelAttr = { default: null };
 
 /**
  * Where a block sits in its quotes and lists (`nest`, in `nesting.ts`, reads them). No
- * `validate`: the binding deletes an element the schema cannot build, so a bad value must
- * read as something instead of failing.
+ * `validate`: a bad value must read as something instead of failing.
  */
 const nestingAttrs = {
   path: { default: null },
@@ -67,18 +59,8 @@ const nestingAttrs = {
  */
 const idAttr = { default: null };
 
-/**
- * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one draft's
- * suggestion (`{ id, draft }`); `sugAttrs` holds the layers of pending changes to a Live block, by
- * layer id: each sets attributes or removes the block (`{ id, draft, layer, order, attrs, remove? }`).
- * Yjs stores each layer as its own element attribute (`layer-key.ts`). Who wrote each change is
- * kept once per change beside the fragment, not here. The binding drops marks on blocks, so they
- * are attributes.
- */
-const suggestionBlockAttrs = { sug: { default: null }, sugAttrs: { default: null } };
-
-/** The attributes of a node that is a block: its identity, its nesting and its suggestions. */
-const blockAttrs = { id: idAttr, ...nestingAttrs, ...suggestionBlockAttrs };
+/** The attributes of a node that is a block: its identity and its nesting. */
+const blockAttrs = { id: idAttr, ...nestingAttrs };
 
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
@@ -99,8 +81,8 @@ const linkRefAttr = { default: null };
 // ─── Nodes from basic, customized ───────────────────────────────────
 const basicNodeOverrides = {
   // A heading is a paragraph with a level (null is body text, 1..6 a heading).
-  // Retyping a block then edits its Yjs element in place, so concurrent typing,
-  // authorship and anchors in it survive; a separate node name would rebuild it.
+  // Retyping a block then edits its attributes in place, so concurrent typing and
+  // anchors in it survive; a separate node name would rebuild it.
   paragraph: {
     ...specOnly(basicNodes.paragraph),
     attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...blockAttrs },
@@ -213,9 +195,6 @@ const customNodes = {
     },
     atom: true,
     defining: true,
-    // Not draggable: in-place drag-reorder re-binds block hashes (y-prosemirror
-    // reconciles by slot). Move figures via delete+insert instead — see the
-    // editor .context/TODO.md and agent-edit .context/CONTEXT.md reorder policy.
   },
 } satisfies Record<string, NodeSpec>;
 
@@ -248,35 +227,17 @@ const customMarks = {
 
   strike: {},
 
-  // Suggestion mode (`@meridian/suggestions`). `excludes: ""` lets two drafts mark the same text:
-  // the binding then keys each mark `name--<hash>` instead of overwriting one with the other.
-  suggest_ins: suggestionMark(),
-  suggest_del: suggestionMark(),
   // A comment's anchor; its body lives outside the document.
-  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it alone.
+  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it
+  // alone, except that on words the model replaces it moves onto the replacement (`lowerBlock`).
   comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "", markdown: false },
 } satisfies Record<string, MarkSpec>;
-
-// Only what a view reads per run: each changed word carries it, kept in history for good.
-function suggestionMark(): MarkSpec {
-  return {
-    attrs: {
-      id: { default: null },
-      draft: { default: null },
-    },
-    inclusive: false,
-    excludes: "",
-  };
-}
 
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
 export * from "./empty-document.js";
-export * from "./layer-key.js";
-export * from "./mark-key.js";
 export * from "./nesting.js";
-export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 export const documentNodes = {
   ...basicNodeDefaults,
@@ -291,17 +252,4 @@ export const documentMarks = {
 
 export function buildDocumentSchema(): Schema {
   return new Schema({ nodes: documentNodes, marks: documentMarks });
-}
-
-/** Allocate independent author identity, excluding every client already held by the document. */
-export function allocateDocumentClient(
-  doc: Doc,
-  excluded: ReadonlySet<number> = new Set(),
-): number {
-  const used = decodeStateVector(encodeStateVector(doc));
-  let client: number;
-  do {
-    client = uint32();
-  } while (client === doc.clientID || used.has(client) || excluded.has(client));
-  return client;
 }

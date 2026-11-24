@@ -1,4 +1,4 @@
-/** Atomic ownership of tracked-document identity, Yjs authority and arrival. */
+/** Atomic ownership of tracked-document identity, first text and arrival. */
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 

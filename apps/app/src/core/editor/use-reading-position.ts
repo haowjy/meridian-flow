@@ -1,12 +1,11 @@
 /**
  * Per-mounted-view device memory; a kept document retains their existing DOM and place. Keyed by
- * room: a document's Live and Draft views are different Yjs documents whose anchors don't resolve
- * in each other. A replaced session (a room rebuilt from the server) keeps its room, and the
- * anchors resolve in the new document for every item the server has.
+ * room. A replaced session (a room rebuilt from the server) keeps its room, and the anchors resolve
+ * in the new copy for every block and character the server has.
  */
+import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { type RefObject, useLayoutEffect, useMemo, useRef } from "react";
 import type { DocumentSession } from "./document-session";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
@@ -87,7 +86,10 @@ export function useReadingPosition({
         timer = setTimeout(flush, 200);
       };
       const selection = ({ transaction }: { transaction: Transaction }) => {
-        if (!transaction.getMeta(ySyncPluginKey) && (editor.isFocused || transaction.selectionSet))
+        if (
+          transaction.getMeta(loroSyncKey) !== REMOTE_META &&
+          (editor.isFocused || transaction.selectionSet)
+        )
           save();
       };
       scroller.addEventListener("scroll", save, { passive: true });

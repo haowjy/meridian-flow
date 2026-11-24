@@ -31,8 +31,7 @@
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
     "remend": "1.4.0",
-    "unified": "^11.0.5",
-    "yjs": "13.6.33"
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "typescript": "catalog:",

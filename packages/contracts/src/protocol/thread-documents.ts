@@ -3,7 +3,7 @@
  * Why independent: Chat rail data is shared by server routes and frontend query consumers.
  */
 
-import type { DraftId } from "../ids.js";
+import type { CommandId, DraftId } from "../ids.js";
 
 export type ThreadDocumentRelationship = "editing" | "reading" | "created";
 
@@ -26,6 +26,12 @@ export type TurnLiveLineageDocumentItem = {
   path: string;
   /** Present when the turn moved or deleted the document. */
   tree?: TurnTreeLine;
+  /**
+   * The id of the first block the turn's first write to the document changed, where the card opens
+   * it (Review changes at the turn's edit, for a draft). Absent for a document it only moved,
+   * created empty or deleted.
+   */
+  block?: string;
   /** A folder the turn changed: `documentId` is its node id, and it has no document to open. */
   folder?: true;
 } & (
@@ -37,8 +43,8 @@ export type TurnLiveLineageDocumentItem = {
 export type TurnReceiptControl = "undo" | "view_change";
 
 /**
- * What became of a turn's drafted change to one document, text and tree halves folded into the
- * less settled one: still waiting, applied, taken back by the card's Undo, or discarded.
+ * What became of a turn's drafted tree change to one document or folder: still waiting, applied,
+ * taken back by the turn's restore in force, or discarded.
  */
 export type TurnDraftState = "pending" | "applied" | "undone" | "discarded";
 
@@ -49,6 +55,19 @@ export interface TurnReceiptChip {
   control: TurnReceiptControl;
   /** The card's Undo ran and nothing is left for it; the card says "Undone". */
   undone?: true;
+  /**
+   * The drafts the turn wrote in whose restore (`Undo turn`) the card offers, one press each (`PressAction`'s `restore`):
+   * those where pressing it would change something now (a write of the turn there would go back by design §2's Undo
+   * rule, or a tree change of it is pending there). Absent when none: a turn already restored or undone there is
+   * left out.
+   */
+  restore?: DraftId[];
+  /**
+   * The restore in force for each draft the turn wrote in: the latest that changed something and has not
+   * been undone (its Undo is `PressUndoRequest` with this `press`). Absent when none, so every tab and a reload read
+   * the same state.
+   */
+  restored?: { draft: DraftId; press: CommandId }[];
 }
 
 export interface ListTurnLiveLineageResponse {

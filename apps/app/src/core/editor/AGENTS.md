@@ -1,7 +1,7 @@
 # core/editor — collaborative editor runtime
 
-The browser TipTap schema, the Yjs document-session binding and editor-only
-projections. It is not the server persistence authority; feature surfaces consume
+The browser TipTap schema, the Loro document-session binding (`@meridian/loro-prosemirror`
+over `RoomDocs`) and editor-only projections. It is not the server persistence authority; feature surfaces consume
 the headless seams here.
 
 - Assemble collaborative extensions only through `createEditorExtensions()`. The
@@ -13,19 +13,26 @@ the headless seams here.
 - Put every construction fact for a mount in `EditorMountIdentity`; reconcile
   editability and `editorProps` as live `EditorSurfaceOptions`, never by rebuilding
   from an effect dependency.
-- Remote writes rebuild the whole ProseMirror document and can move or replace
+- Remote writes rebuild the blocks they touch and can move or replace
   anything while a menu, picker, drag or review operation is open. Hold identity
   with `EditorAnchor`/`NodeHold`, then resolve and validate at use time. Never trust
   a raw position or DOM element.
-- Only `local-presence.ts` may call `setLocalState*`; don't expose raw Awareness to
-  an extension. Awareness cursor colors are design tokens, resolved to concrete RGB hex before
-  publication (y-prosemirror accepts concrete colors only).
-- In a Work's view the stored block attributes are Live's and the Work's pending ones sit in
-  `sugAttrs`. Any code that reads a block's attributes to decide or to write them back reads
-  `shownAttrs(view, node)` (`shownBlock`, `shownState`, `selectedSequence`), with the view from
-  `suggestionView(state)` or `transactionView(tr)`, never `node.attrs` directly.
-- Peer marks are projections: never persisted, draft-projected, or locally authored.
-- Reading memory persists only account-stamped Yjs anchors and dimensionless
+- Only `local-presence.ts` writes the presence `EphemeralStore`; don't expose the raw store
+  to an extension. Cursor colors are design tokens, resolved to concrete RGB hex before
+  publication.
+- A draft is a fork room with a session of its own, built over the Live session
+  ([session contract](.context/CONTEXT.md)): an editor binds one session's docs, Live's or a
+  fork's, and there is never a second editor on one room. Don't add an attribute view or marks.
+- Undo is the binding's `UndoHistory` (`editor-history.ts` wraps it): a step's text goes back
+  through a Loro `UndoManager` per text doc the tab changes, its structure values through the
+  rule in `document-model`'s `take-back.ts`, so Ctrl+Z after a collaborator's edit undoes only
+  the writer's. Every step runs, whatever was written since (design §2, "An Undo always runs").
+  A doc-changing transaction marked `addToHistory: false` commits under
+  `UNTRACKED_ORIGIN` and closes the open step; any other local write into the session's docs
+  outside the editor must commit under it too, or the next Ctrl+Z on that doc stops at it.
+- Positions that must survive remote writes are Loro cursors (`loro-points.ts`), and nodes are
+  found by block id (`findBlock`), never by a stored offset.
+- Reading memory persists only account-stamped Loro cursors and dimensionless
   viewport offsets. Only a new mount restores, without taking focus; an explicit
   destination always beats mount-time memory, so every new jump path claims through
   `reading-position-navigation.ts`.
@@ -39,10 +46,9 @@ the headless seams here.
   those seams rather than binding private listeners.
 - A picture enters as a document node before upload; see
   [`images/AGENTS.md`](images/AGENTS.md).
-- Draft identity is stable until close. Terminal draft retirement never transfers
-  queued unacknowledged updates to a replacement draft, and review projection never
-  replays a retired snapshot or transfers selection to a replacement
-  ([session contract](.context/CONTEXT.md)).
+- Every `RoomDocs` has one owner, the `DocumentSession`, which frees it on close; nothing else
+  calls `free()` on it ([session contract](.context/CONTEXT.md)). A fork session is freed before
+  the Live session it reads through.
 
 Child areas: [chrome](chrome/AGENTS.md), [objects](objects/AGENTS.md),
 [images](images/AGENTS.md), [links](links/AGENTS.md),

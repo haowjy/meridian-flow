@@ -87,7 +87,7 @@ export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
-  /** The chat is bound to No Work, so its drafts are shared with the project's other chats bound to No Work. */
+  /** The chat is bound to No Work, so its draft is its conversation's own. */
   noWork: boolean;
 }): { label: string; instructions: string[] } {
   if (input.archived) {
@@ -122,11 +122,11 @@ export function describeWriteMode(input: {
   return {
     label: "draft mode",
     instructions: [
-      "Your changes to a document wait in its draft for the writer to review, except scratch:// changes, which are written straight away. " +
+      "Your changes wait in this chat's draft for the writer to review, except scratch:// changes, which are written straight away. " +
         (input.noWork
-          ? "These drafts belong to this conversation: its forks and subagents share them, and a handoff starts a fresh set."
-          : "This Work's chats share these drafts."),
-      "The writer reviews and applies each draft; until then only chats that share the drafts see their changes. When you draft a change, tell the user it is waiting for their review.",
+          ? "The draft belongs to this conversation: its forks and subagents write into it too, and a handoff starts a fresh one."
+          : "The writer picks which of this Work's drafts the chat writes into; other chats on the same draft write into it too."),
+      "The writer can type in the draft, and applies or discards each change; until then only chats on this draft see its changes. When you draft a change, tell the user it is waiting for their review.",
     ],
   };
 }

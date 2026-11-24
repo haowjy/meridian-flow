@@ -18,7 +18,6 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN || !DATABASE_URL) describe.skip("project bootstrap (postgres)", () => {});
 else
   describe("project bootstrap (postgres)", async () => {
-    const { Hocuspocus } = await import("@hocuspocus/server");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -45,30 +44,7 @@ else
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
       });
-      domain.bindHocuspocus(
-        new Hocuspocus({
-          yDocOptions: { gc: false, gcFilter: () => true },
-          onStoreDocument: ({ documentName, document }) =>
-            domain.storeHocuspocusDocument(documentName, document),
-        }),
-      );
       return domain;
-    }
-    function boundCollab() {
-      const domain = createCollabDomain({
-        ...testLinkDeps(db),
-        fileAccess: createAllowAllFileAccess(),
-        db,
-        ...createTestRemovalDeps(db),
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-      });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        onStoreDocument: ({ documentName, document }) =>
-          domain.storeHocuspocusDocument(documentName, document),
-      });
-      domain.bindHocuspocus(hocuspocus);
-      return { domain, hocuspocus };
     }
     it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({
@@ -146,8 +122,7 @@ else
     });
 
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {
-      const { domain, hocuspocus } = boundCollab();
-      let interruptedDocumentId: string | undefined;
+      const domain = collab();
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         treeLists: createTestRemovalDeps(db).treeLists,
@@ -156,11 +131,6 @@ else
           createDocumentAtomically(input) {
             return domain.createDocumentAtomically({
               ...input,
-              async persistIdentity() {
-                const documentId = await input.persistIdentity();
-                interruptedDocumentId = documentId ?? undefined;
-                return documentId;
-              },
               async initializeContent(documentId) {
                 await input.initializeContent(documentId);
                 throw new Error("simulated interruption");
@@ -176,11 +146,9 @@ else
         Promise.all([
           db.select().from(schema.projects),
           db.select().from(schema.documents),
-          db.select().from(schema.documentYjsCheckpoints),
-          db.select().from(schema.documentYjsUpdates),
+          db.select().from(schema.documentSnapshots),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([0, 0, 0, 0]);
-      expect(hocuspocus.documents.has(interruptedDocumentId as string)).toBe(false);
+      ).resolves.toEqual([0, 0, 0]);
       const repaired = await createDrizzleProjectBootstrapRepository({
         db,
         treeLists: createTestRemovalDeps(db).treeLists,
@@ -192,18 +160,16 @@ else
       });
     });
 
-    it("converges a warm empty Hocuspocus room with the committed seed", async () => {
-      const { domain, hocuspocus } = boundCollab();
-      let warmConnection: Awaited<ReturnType<typeof hocuspocus.openDirectConnection>> | undefined;
+    it("converges a warm empty room with the committed seed", async () => {
+      const domain = collab();
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
         treeLists: createTestRemovalDeps(db).treeLists,
         documents: {
           ...domain,
           async seedFromMarkdown(documentId, markdown, origin) {
-            warmConnection = await hocuspocus.openDirectConnection(documentId, {
-              origin: { type: "system", reason: "bootstrap-race" },
-            });
+            // The room loads, empty, before the seed commits: a tab that opened it first.
+            (await domain.rooms.read({ kind: "live", documentId })).free();
             return domain.seedFromMarkdown(documentId, markdown, origin);
           },
         },
@@ -212,7 +178,6 @@ else
         ok: true,
         value: "# Chapter 1\n",
       });
-      await warmConnection?.disconnect();
       await expect(collab().readAsMarkdown(bootstrap?.documentId as never)).resolves.toEqual({
         ok: true,
         value: "# Chapter 1\n",

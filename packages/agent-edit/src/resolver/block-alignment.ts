@@ -3,7 +3,11 @@
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
 
-export type BlockAlignmentStep = { structuralBoundary?: object } & (
+export type BlockAlignmentStep = {
+  structuralBoundary?: object;
+  /** For a removed or added block that is a piece of a join or a split: the old block it belongs to. */
+  pieceOf?: number;
+} & (
   | { kind: "keep"; old: number; next: number }
   | { kind: "change"; old: number; next: number }
   | { kind: "remove"; old: number }
@@ -20,12 +24,17 @@ export function alignBlocks(
   oldBlocks: readonly Block[],
   newBlocks: readonly Block[],
 ): BlockAlignmentStep[] {
-  const { partner, oldPiece, nextPiece } = correspond(oldBlocks, newBlocks);
+  const { partner, back, oldPiece, nextPiece } = correspond(oldBlocks, newBlocks);
   const steps: BlockAlignmentStep[] = [];
   let [oldCursor, newCursor] = [0, 0];
+  const piece = (unit: number) => (unit >= 0 ? { pieceOf: unit } : {});
   const flush = (oldEnd: number, newEnd: number) => {
-    for (; oldCursor < oldEnd; oldCursor++) steps.push({ kind: "remove", old: oldCursor });
-    for (; newCursor < newEnd; newCursor++) steps.push({ kind: "add", next: newCursor });
+    for (; oldCursor < oldEnd; oldCursor++)
+      steps.push({ kind: "remove", old: oldCursor, ...piece(oldPiece[oldCursor]) });
+    for (; newCursor < newEnd; newCursor++) {
+      const unit = nextPiece[newCursor];
+      steps.push({ kind: "add", next: newCursor, ...piece(unit >= 0 ? back[unit] : -1) });
+    }
   };
   for (let old = 0; old < oldBlocks.length; old++) {
     const next = partner[old];

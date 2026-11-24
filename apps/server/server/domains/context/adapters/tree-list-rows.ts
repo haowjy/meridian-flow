@@ -32,7 +32,7 @@ import {
   type TreeRecord,
 } from "@meridian/project-tree";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type * as Y from "yjs";
+import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
@@ -168,7 +168,6 @@ async function loadDrafts(
   return out;
 }
 
-/** Documents a Work has suggestions in, which the list cannot see (rule 7). */
 /** An admitted `create`'s node id is refused: another node, a document or a list has it. */
 export class NodeIdRefusedError extends Error {
   /** The node id at fault, when the claim could tell which. */
@@ -182,9 +181,9 @@ export class NodeIdRefusedError extends Error {
 
 /**
  * Claims the node ids the records create, in the admitting transaction: the claim table's key is
- * the claim, so two lists that admit one id at once cannot both hold it. An id a document or a
- * list's journal already has is taken too. A document's own journal does not count: an import
- * writes each text under the id its create will have, before the create.
+ * the claim, so two lists that admit one id at once cannot both hold it. An id a document row or a
+ * list already has is taken too. A document's Live room does not count: an import seeds each
+ * text under the id its create will have, before the create.
  */
 export async function claimNodeIds(
   tx: DrizzleDb,
@@ -217,7 +216,8 @@ export async function claimNodeIds(
     );
     const used = await tx.execute(sql`
       SELECT id::text AS id FROM documents WHERE id IN (${list})
-      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
+      UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
+      UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list}) LIMIT 1`);
     if (used.length > 0)
       throw new NodeIdRefusedError("a node id already in use", (used[0] as { id: string }).id);
   }
@@ -225,7 +225,7 @@ export async function claimNodeIds(
 
 /**
  * Claims the node ids a client's creates name, each on its own: an id that is not a uuid, or that
- * a document, a list's journal or another list already has, is a failed claim. No row is made for
+ * a document, a list or another list's node already has, is a failed claim. No row is made for
  * it and the rest of the update stands: the node shows in its writer's own tree and opens
  * nothing, and nobody else's document is touched. Returns the node ids that failed.
  */
@@ -245,7 +245,8 @@ export async function claimNodeIdsEach(
     );
     const used = await tx.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM documents WHERE id IN (${list})
-      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list})`);
+      UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
+      UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list})`);
     for (const row of used) failed.add(row.id);
     const open = batch.filter((id) => !failed.has(id));
     if (open.length === 0) continue;
@@ -533,7 +534,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
 /**
  * Brings the rows to the list's replay: `added` are the records this transaction admitted, whose
  * documents get their `documents` rows. Call under the list's lock, after the update is
- * journaled, so the rows are never behind the list. The views replayed are live and every open
+ * in the list, so the rows are never behind the list. The views replayed are live and every open
  * Work with pending tree records or pending text. Returns the creates that made a document row,
  * and the Works' drafts whose rows changed (their review count may have moved).
  */
@@ -541,7 +542,7 @@ export async function syncRows(
   db: DrizzleDb,
   list: TreeList,
   listId: string,
-  doc: Y.Doc,
+  doc: LoroDoc,
   added: readonly TreeRecord[],
 ): Promise<{
   created: CreateRecord[];
@@ -616,7 +617,7 @@ export async function syncRows(
         ),
     ),
   );
-  // A live change to a document a Work has suggestions in changes the Work's list (a move's place),
+  // A live change to a document a draft has pending text in changes the Work's list (a move's place),
   // and a trash or restore its count, though the Work has no row there.
   const holding = await draftsWithText(tx, kept, [...liveIds].filter(isUuid));
   const changedDrafts: string[] = [...holding];
@@ -636,7 +637,7 @@ export async function syncRows(
   return { created, changedDrafts: [...new Set(changedDrafts)], liveChangedUnder, reassigned };
 }
 
-/** The list's drafts (`kept`) whose Work has suggestions in one of `documentIds`. */
+/** The list's drafts (`kept`) with pending text in one of `documentIds`. */
 async function draftsWithText(
   tx: DrizzleDb,
   kept: readonly string[],

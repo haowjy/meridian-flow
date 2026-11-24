@@ -38,8 +38,14 @@ export interface ShownLinkShowing {
   links: readonly SpelledLinkFact[];
 }
 
-/** The room of the names a result showed of the tree; its rows are not Yjs snapshots. */
+/** The room of the names a result showed of the tree; its rows are not document snapshots. */
 export const TREE_NAMES_ROOM = "tree";
+
+/**
+ * Which rows a frontier lookup reads: one room's (the tree's names), or every room of a document,
+ * Live's and each draft's fork (design §5: a chat's latest read is in whichever room it read).
+ */
+export type FrontierRooms = { room: string } | { documentId: string };
 
 /** Host-only: what one result showed the model; its frontiers are recorded under the result's block. */
 export interface ResultEvidence {

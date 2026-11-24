@@ -1,23 +1,18 @@
 # domains/collab
 
-Durable Yjs coordination and persistence for live documents. A Work's draft is its suggestion
-marks in the Live document, plus its draft's tree records; Apply and Discard is the press.
+Coordination and persistence for live documents. A document's Live text lives in its Loro room
+(`DocumentRooms` on `document_snapshots`, `rooms/postgres-document-rooms.ts`); every read, write,
+seed, copy and derivation goes through it. A draft's text is a fork room of the document
+(`fork:<draft>:<document>`): the file grant sends a Draft chat's write there (`destinationAt`), and
+the agent-edit host picks the room from the call's destination (`agentRoomFor`).
 
-- A model write is one `modelEdits().write` in its command transaction; a drafted one writes the Work's suggestions through `draftView`. Nothing holds a write for a later save.
-- Admit novel user content durably before Yjs apply, broadcast or ack.
-- Every server authority doc and every materialization of one is `gc: false`. A
-  client doc (gc on) can't be the origin of a Yjs snapshot: a once-collected store
-  restores the wrong text silently ([probe](../../../../../docs/qa/frontier-survives-compaction.md)).
-  A stored checkpoint, and the room once it is stored, drop deleted items' content (ids kept), so no reader may need it: Undo
-  reads content (`domain/inverse-text.ts`), and a snapshot reader goes through
-  `planningSnapshot`, which refuses a frontier that saw dropped content; a write then plans on
-  the transcript's read (agent-edit `tool/read-view.ts`).
-- Any apply after an `await` rechecks the durable authority and the
-  concurrency fence; a coordinator lock doesn't cover socket writes.
-- Anything that runs on a journal or receipt insert, triggers included, adds to every
-  keystroke's row hold.
-- Derive read models from a journal-locked durable cut, not a warm room paired with a
-  database watermark.
+- A model write is one `modelEdits().write` in its command transaction: it commits a Loro batch through `DocumentRooms` ([model edits](.context/model-edits.md#edits-on-loro-rooms)). Nothing holds a write for a later save.
+- Every room copy (`DocumentRooms.read`, a `RoomDocs`) has one owner that frees it.
+- Derive read models from a cut of the Live room taken under the document's lock and stamped with
+  `documents.content_seq`, which every committed Live save bumps. Anything that rewrites room rows
+  without changing the text (history compaction) leaves `content_seq` alone.
+- Never await `rooms.flush` in a transaction that holds the document's lock: the save takes that
+  lock on a connection of its own and waits on you.
 - Schema-aware reads, seeds and writes go through `domain/markdown-document.ts` and
   the scoped link codec.
 - A press's tree half is the project-tree package's `applyDraft` and `discardDraft`, run

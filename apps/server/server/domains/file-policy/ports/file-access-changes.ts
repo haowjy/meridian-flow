@@ -3,7 +3,7 @@
  * rooms admitted at the old level reconnect at the new one (file-access §7).
  */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import { treeRoomName } from "@meridian/contracts/protocol";
+import { loroRoomName } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 
 /**
@@ -35,7 +35,7 @@ export function ownerAccessKey(owner: { workId: string } | { rootThreadId: strin
 
 /** A project's key: its tree list's room name, so a deleted project ends its tree and document sockets. */
 export function projectAccessKey(projectId: string): string {
-  return treeRoomName({ kind: "project", projectId });
+  return loroRoomName({ kind: "tree", list: { kind: "project", projectId } });
 }
 
 export function documentAccessKey(documentId: string): string {

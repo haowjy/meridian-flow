@@ -27,7 +27,6 @@ export {
 } from "./domain/link-binding.js";
 export { ModelEditRefusal } from "./domain/model-edit.js";
 export type { ModelEvidence } from "./domain/model-evidence.js";
-export { liveRoom } from "./domain/observation-rooms.js";
 export {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -36,8 +35,3 @@ export {
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
 export type { Draft } from "./domain/ports/draft-store.js";
-export {
-  DocumentSchemaMajorMismatchError,
-  isDocumentSchemaMajorMismatchError,
-  isStaleSchema,
-} from "./domain/stale-schema.js";

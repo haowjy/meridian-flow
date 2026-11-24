@@ -1,11 +1,12 @@
 /**
  * The AI's edit that cannot land is answered, not refused: the writer deleted the document or a
- * paragraph, or the Work is closed. (An edit the writer's Discard left behind lands in a new draft.)
+ * paragraph, or the Work is closed. (A Discard closes no draft: the next edit lands in the same one.)
  * The call is a plain `done` command row that says `returned`, nothing opens, nothing is journalled, and the result
  * shows the document as it now stands, so the model's next edit lands.
  */
 import { randomUUID } from "node:crypto";
 import { createReplyMutations } from "@meridian/agent-edit/integration";
+import { draftItemKey } from "@meridian/contracts";
 import { toolContentText } from "@meridian/contracts/threads";
 import { LIVE } from "@meridian/project-tree";
 import { eq, sql } from "drizzle-orm";
@@ -20,6 +21,7 @@ import {
 } from "../domains/runtime/loop/frontier-recording.js";
 import { setTestHook } from "../shared/test-hooks.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
+import { defaultDraftOf } from "../test-support/work-rows.js";
 import { reverseTurnCard } from "./work-receipt-reversal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -170,20 +172,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.commands)
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
-    const draftRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
-    const workDraft = async () => {
-      const [row] = await db
-        .select({ draftId: schema.works.draftId })
-        .from(schema.works)
-        .where(eq(schema.works.id, WORK_ID));
-      return row?.draftId;
-    };
     const hashOf = (read: string, word: string) =>
       read
         .split("\n")
         .find((line) => line.includes(word))
         ?.split("|")[0] as string;
-
+    const draftRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
+    const workDraft = () => defaultDraftOf(db, WORK_ID);
     async function writerDiscards(runtime: Awaited<ReturnType<typeof reply>>["runtime"]) {
       const routes = selectDraftRouteServices(runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
@@ -197,9 +192,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...scope,
         request: {
           commandId: randomUUID(),
-          draft: await workDraft(),
           verdict: "discard",
-          items: [{ node: CH1 }],
+          scope: { kind: "document", item: draftItemKey(await workDraft(), CH1 as never) },
         },
       } as never);
     }

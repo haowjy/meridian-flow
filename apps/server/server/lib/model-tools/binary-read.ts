@@ -8,11 +8,11 @@ import {
   type AgentEditResultV1,
   createAgentEditCodecFactory,
   formatDocumentFile,
+  loroModel,
   modelResult,
   type ReadToolInput,
   readStaticMarkdown,
   splitDocumentFile,
-  yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -40,7 +40,7 @@ export const OUTLINE_FIRST_CHARS = 30_000;
 
 const schema = buildDocumentSchema();
 const staticReader = {
-  model: yProsemirrorModel(schema),
+  model: loroModel(schema),
   codec: createAgentEditCodecFactory(mdxCodec({ schema })),
   links: UNSCOPED_DOCUMENT_LINKS,
 };
@@ -189,7 +189,6 @@ function result(file: FileFacts, given: Given, payload: { message?: string }): A
   return modelResult({
     command: "read",
     status: "success",
-    phase: "committed",
     payload: { path: file.uri, file: { ...file, given }, ...payload },
   });
 }

@@ -1,11 +1,6 @@
-import type * as Y from "yjs";
-import {
-  recordsOf,
-  type Settlement,
-  type SettleRecord,
-  settleLogOf,
-  type TreeRecord,
-} from "./record.js";
+import type { LoroDoc } from "loro-crdt";
+import { listOf } from "./list-doc.js";
+import type { Settlement, SettleRecord, TreeRecord } from "./record.js";
 import { type DroppedRecord, replay, type TreeProjection } from "./replay.js";
 import { readStored } from "./validate.js";
 
@@ -14,9 +9,9 @@ export type View = { draft: string | null };
 export const LIVE: View = { draft: null };
 
 /** Each record's last settlement in list order; a record with none is pending (or live). */
-export function lastSettlements(doc: Y.Doc): Map<string, SettleRecord & { to: Settlement }> {
+export function lastSettlements(doc: LoroDoc): Map<string, SettleRecord & { to: Settlement }> {
   const state = new Map<string, SettleRecord & { to: Settlement }>();
-  for (const settle of settleLogOf(doc).toArray())
+  for (const settle of listOf(doc).settles())
     for (const target of settle.targets)
       if (settle.to === "pending") state.delete(target);
       else state.set(target, settle as SettleRecord & { to: Settlement });
@@ -24,7 +19,7 @@ export function lastSettlements(doc: Y.Doc): Map<string, SettleRecord & { to: Se
 }
 
 /** A record's state is its last settlement. */
-export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
+export function settlementsOf(doc: LoroDoc): Map<string, Settlement> {
   return new Map([...lastSettlements(doc)].map(([id, settle]) => [id, settle.to]));
 }
 
@@ -37,8 +32,8 @@ export function readRecords(values: readonly unknown[]): TreeRecord[] {
 }
 
 /** The list's records in order. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
-export function listRecords(doc: Y.Doc): TreeRecord[] {
-  return readRecords(recordsOf(doc).toArray());
+export function listRecords(doc: LoroDoc): TreeRecord[] {
+  return readRecords(listOf(doc).records());
 }
 
 const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
@@ -52,13 +47,13 @@ const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
  * reports it as `unreadable`: nobody can tell which Work it belonged to.
  */
 export function viewValues(
-  doc: Y.Doc,
+  doc: LoroDoc,
   view: View,
   settled: ReadonlyMap<string, Settlement> = settlementsOf(doc),
 ): unknown[] {
   const seen = new Set<string>();
   const all: unknown[] = [];
-  for (const value of recordsOf(doc).toArray()) {
+  for (const value of listOf(doc).records()) {
     const read = readStored(value);
     if (!read.ok) all.push(value);
     else if (!seen.has(read.record.id)) {
@@ -80,7 +75,7 @@ export function viewValues(
 
 /** `viewValues` without the values that are no record. */
 export function viewRecords(
-  doc: Y.Doc,
+  doc: LoroDoc,
   view: View,
   settled?: ReadonlyMap<string, Settlement>,
 ): TreeRecord[] {
@@ -94,7 +89,7 @@ export function viewRecords(
  * view.
  */
 export function lastOfFamily(
-  doc: Y.Doc,
+  doc: LoroDoc,
   view: View,
   id: string,
 ): TreeRecord | "unknown" | undefined {
@@ -107,7 +102,7 @@ export function lastOfFamily(
 }
 
 /** The Work's pending records, in order. */
-export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
+export function pendingRecords(doc: LoroDoc, draft: string): TreeRecord[] {
   return viewRecords(doc, { draft }).filter((record) => record.draft === draft);
 }
 
@@ -116,7 +111,7 @@ export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
  * to say so ("Work was closed") and hand back what the writer typed. The settle log and the
  * records together say it: the replay never sees a dropped record.
  */
-export function droppedRecords(doc: Y.Doc): DroppedRecord[] {
+export function droppedRecords(doc: LoroDoc): DroppedRecord[] {
   const dropped = new Map(
     [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped"),
   );
@@ -127,7 +122,7 @@ export function droppedRecords(doc: Y.Doc): DroppedRecord[] {
   });
 }
 
-export function replayView(doc: Y.Doc, view: View): TreeProjection {
+export function replayView(doc: LoroDoc, view: View): TreeProjection {
   return {
     ...replay(viewValues(doc, view), { draft: view.draft }),
     dropped: droppedRecords(doc),

@@ -1,7 +1,7 @@
 # features/editor — contracts and architecture
 
 This reference covers the app-facing editor boundary: session binding, review
-projection, scope, shared geometry, and peer marks. Read [`AGENTS.md`](../AGENTS.md)
+projection, scope, shared geometry. Read [`AGENTS.md`](../AGENTS.md)
 for the short operating rules; core editor contracts remain in `core/editor`.
 
 ## Boundary and geometry
@@ -64,32 +64,21 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review paints the Work's suggestions in the Live editor (`SuggestionModeExtension`): a
-deletion is red and struck, an insertion green, the writer's own typing in the Work's view
-included. Attribution supplies bylines without partitioning changes. Desktop review is editable; phone review is
-read-only. Projection, commands and history belong to the
+A Draft view edits the draft's fork room of the document (`registry.admit` with the draft's id),
+as Live's view edits the Live room. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 Each document host (main, the side, the phone) has its own review
-(`features/project/DocumentReview.tsx`); its chrome and change bars read that
-review's projection, and `EditorView` does not own a second review controller.
-The version chip (`DocumentVersionMenu`, Live with every draft one pick away) sits at the
-toolbar row's end on desktop and phone alike, and gives way to the review's own chip once a
-review of the document is entered. The chip names what the host paints: once a Discard or
-Apply ends the draft, the review stays open ("No changes left", its Undo) but the chip reads
-Live, as the text does. On desktop the review's controls live in the identity
-bar (`DraftReviewBand`), with no separate header above it. The focused
-change's bar (`surfaces/review`) never covers manuscript text: it sits in the
-right margin beside the change when there is room, else in a block slot after
-the change's last paragraph. Commands and Discard history belong to
+(`features/project/DocumentReview.tsx`), and `EditorView` owns none. The version chip
+(`DocumentVersionMenu`, Live with every draft one pick away) sits at the toolbar row's end on
+desktop and phone alike, beside "Review N changes" on a plain draft. Review changes paints in the
+editor (`core/editor/extensions/review-changes`, mounted by `surfaces/review`): Live's text of each
+changed paragraph above the draft's (Inline) or beside every paragraph (Side by side), with the
+change's pair in the right margin. Its controls take the review line above the toolbar
+(`ReviewBar`). Commands and their Undo belong to
 [`draft-review`](../../draft-review/.context/draft-review.md).
 
-`PaintHold` retains finished paint across lifecycle handoffs. Apply and Discard
-resolve the Work's marks in the same Live Y.Doc, without replacing the editor,
-selection or undo manager.
-
-`useSuggestionReviewFocus` registers the mounted editor as the review's, so the
-review's focus commands reach it, and keeps its emphasized change the review's. Same-entry URL replacements
+`PaintHold` retains finished paint across lifecycle handoffs. Same-entry URL replacements
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
@@ -114,25 +103,6 @@ width, so it fits a narrow side pane. Dismiss hides the bar until the session
 reports another repair and sends focus to the editor, or to Refresh while the
 fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
 and reports a refusal on that excerpt; a pending Copied reset never erases it.
-
-## Peer marks
-
-Dormant: no server code has sent `change_event` since `92967a8b80`, so no mark
-renders and none of this runs in the app. The lane is kept for the history feature;
-don't extend it and don't delete it
-([peer-marks](../surfaces/peer-marks/AGENTS.md)). The rules below describe the code
-as it stands, for whoever revives it.
-
-The peer-mark surface reads the projection plugin's click/Enter/caret state.
-The editor feature holds no duplicate mark state. Review drafts without a
-projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
-for AI changes. *Open conversation* routes through `useRequestConversationReveal`
-with the owning turn, so the chat side lands on that turn. Popover focus
-follows activation: a pointer open leaves the caret in the prose and a
-pointer close restores the held selection; keyboard activation moves focus into
-the popover, and Escape or close returns it to the mark's current span. Neither
-hands focus back when another surface opened in its place (Mod+K arrives as a
-close, and the caret then belongs to what opened).
 
 ## Related contracts
 

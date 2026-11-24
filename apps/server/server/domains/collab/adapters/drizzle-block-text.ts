@@ -1,12 +1,10 @@
-/** Reads of the stored block rows, and the freshness rules that decide who may trust them. */
-import type { DraftId } from "@meridian/contracts";
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   documentBlockRooms,
   documentBlocks,
+  documentForks,
   documents,
-  documentYjsHeads,
   treeNodes,
 } from "@meridian/database";
 import { and, eq, inArray, isNull, lte, ne, not, or, type SQL, sql } from "drizzle-orm";
@@ -23,11 +21,11 @@ export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVers
 );
 
 /**
- * Both predicates need `documentBlockRooms` left-joined to `documents`, `documentYjsHeads` and
- * `treeNodes`. `cutBehind`: the room's cut differs from the document's head or location.
+ * Both predicates need `documentBlockRooms` left-joined to `documents` and `treeNodes`.
+ * `cutBehind`: the derivation's cut differs from the document's saved content or location.
  */
 const cutBehind = [
-  ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
+  ne(documentBlockRooms.cutContentSeq, documents.contentSeq),
   sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,
 ];
 const otherExtractor = ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION);
@@ -56,42 +54,6 @@ export const staleForSweep = or(
   ),
 ) as SQL;
 
-/**
- * The documents of a project and an account that can hold any of `drafts`' suggestions, read in
- * the caller's transaction: every row whose cut is current and lists one of them in
- * `pending_changes`, and every row a reader may not trust (`staleForReaders`), which the caller
- * reads from the room. Exact for every committed write, since each live write moves its
- * document's head (`allocateAdmission`): what the derivation hasn't caught up on is stale.
- */
-export async function documentsHolding(
-  db: Database,
-  scope: { projectId: ProjectId | null; userId: UserId },
-  drafts: readonly DraftId[],
-): Promise<{ id: DocumentId; projectId: ProjectId | null; userId: UserId | null }[]> {
-  if (drafts.length === 0) return [];
-  return currentDrizzleDb(db)
-    .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
-    .from(documents)
-    .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-    .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
-    .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
-    .where(
-      and(
-        or(
-          scope.projectId ? eq(documents.projectId, scope.projectId) : undefined,
-          eq(documents.userId, scope.userId),
-        ),
-        or(
-          staleForReaders,
-          sql`${documentBlockRooms.pendingChanges} ?| array[${sql.join(
-            drafts.map((draft) => sql`${draft}`),
-            sql`, `,
-          )}]::text[]`,
-        ),
-      ),
-    );
-}
-
 export function createDrizzleBlockText(db: Database): BlockText {
   const current = (ids: DocumentId[]) =>
     and(inArray(documentBlockRooms.documentId, ids), not(staleForReaders));
@@ -111,13 +73,16 @@ export function createDrizzleBlockText(db: Database): BlockText {
         })
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(
           and(
             current(ids),
-            // A Work's reader sees its own suggestions, which the stored blocks leave out.
-            draft ? sql`not (${documentBlockRooms.pendingChanges} ? ${draft})` : undefined,
+            // The stored blocks are Live's: a reader whose draft has a fork of the document reads
+            // the fork instead.
+            draft
+              ? sql`not exists (select 1 from ${documentForks} where ${documentForks.documentId} = ${documents.id}
+                  and ${documentForks.draftId} = ${draft})`
+              : undefined,
           ),
         );
       return new Map(rows.map((row) => [row.id, row.text]));
@@ -128,7 +93,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .select({ id: documentBlockRooms.documentId, words: documentBlockRooms.wordCount })
         .from(documentBlockRooms)
         .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
         .where(current(ids));
       return new Map(rows.map((row) => [row.id, row.words]));

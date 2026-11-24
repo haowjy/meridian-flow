@@ -1,38 +1,49 @@
 /** Resolves stable editor anchors across document changes. */
 
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
+import {
+  type DocCursor,
+  loroSyncKey,
+  REMOTE_META,
+  resolveCursor,
+} from "@meridian/loro-prosemirror";
+import type { ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
-import * as Y from "yjs";
-
-import {
-  relativePositionForIndex,
-  relativePositionRuntimeFromState,
-  resolveRelativeRange,
-} from "./relative-position-runtime";
+import { docsOf, findBlock, pointAt } from "./loro-points";
 
 export type AnchorRange = { from: number; to: number };
 
 /** A range that survives what ProseMirror's own mapping cannot. */
 export type EditorAnchor = AnchorRange & {
-  relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
+  relative: { start: DocCursor; end: DocCursor } | null;
 };
 
-/** Pin a range so a surface can find it again after the document moves. */
+/**
+ * Pin a range so a surface can find it again after the document moves. Ends inside text are
+ * pinned as Loro cursors; an end between blocks has no character to hold, and the numbers,
+ * carried through each transaction, stand in for it.
+ */
 export function anchorRange(state: EditorState, range: AnchorRange): EditorAnchor {
-  const runtime = relativePositionRuntimeFromState(state);
-  const start = runtime && relativePositionForIndex(runtime, range.from);
-  const end = runtime && relativePositionForIndex(runtime, range.to);
+  const docs = docsOf(state);
+  const start = docs && pointAt(docs, state.doc, range.from);
+  const end = docs && pointAt(docs, state.doc, range.to);
   const relative = start && end ? { start, end } : null;
-  // The binding writes nothing for a document's first empty paragraph, so a
-  // position inside it has no Yjs seat and resolves to the fragment's edge,
-  // outside every block. A pin is kept only when it resolves back to where it
-  // was taken; the numbers, carried through each transaction, stand in for the
-  // rest.
-  const held = runtime && relative && resolveRelativeRange(runtime, relative);
+  // A pin is kept only when it resolves back to where it was taken.
+  const held = relative && resolveRelative(state, relative);
   const faithful = held?.from === range.from && held.to === range.to;
   return { from: range.from, to: range.to, relative: faithful ? relative : null };
+}
+
+function resolveRelative(
+  state: EditorState,
+  relative: { start: DocCursor; end: DocCursor },
+): AnchorRange | null {
+  const docs = docsOf(state);
+  if (!docs) return null;
+  const from = resolveCursor(docs, state.doc, relative.start);
+  const to = resolveCursor(docs, state.doc, relative.end);
+  if (from === null || to === null || to < from) return null;
+  return { from, to };
 }
 
 /** Carry the anchor's fallback numbers across one mapping. */
@@ -58,8 +69,7 @@ export function carryAnchor<Anchor extends EditorAnchor>(
 
 /** Where the anchor sits in this state, or null when it is gone. */
 export function resolveAnchorIn(state: EditorState, anchor: EditorAnchor): AnchorRange | null {
-  const runtime = relativePositionRuntimeFromState(state);
-  if (runtime && anchor.relative) return resolveRelativeRange(runtime, anchor.relative);
+  if (anchor.relative && docsOf(state)) return resolveRelative(state, anchor.relative);
   if (anchor.from < 0 || anchor.to > state.doc.content.size) return null;
   return { from: anchor.from, to: anchor.to };
 }
@@ -86,7 +96,8 @@ export function followAnchor(
 
 /** A node a surface has hold of: where it is, and WHICH node it is. */
 export type NodeHold = EditorAnchor & {
-  identity: Y.XmlElement | null;
+  /** The node's block `id`, the identity every peer shares; null for a node without one. */
+  identity: string | null;
   /** Read back at every resolution: coordinates outlive what was at them. */
   nodeType: string;
 };
@@ -96,27 +107,34 @@ export function holdNode(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
   const $pos = state.doc.resolve(pos);
   const node = $pos.nodeAfter;
-  // Text has no element of its own — a run of it is one Yjs item shared with
-  // its neighbours — so a range of text is an `EditorAnchor` plus a mark's
-  // attributes (`LinkAnchor`), never a hold.
+  // Text has no identity of its own, so a range of text is an `EditorAnchor`
+  // plus a mark's attributes (`LinkAnchor`), never a hold.
   if (!node || node.isText) return null;
   return {
     ...anchorRange(state, { from: pos, to: pos + node.nodeSize }),
-    identity: yElementAt(state, $pos),
+    identity: identityAt($pos),
     nodeType: node.type.name,
   };
 }
 
-/** Where the held node is now, or null once it is not that node any more. */
+/**
+ * Where the held node is now, or null once it is not that node any more. A node with a block `id`
+ * is found by it wherever it now stands; one without (an inline picture) by its seams.
+ */
 export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange | null {
+  if (hold.identity !== null) {
+    const found = findBlock(state.doc, hold.identity);
+    return found && found.node.type.name === hold.nodeType
+      ? { from: found.pos, to: found.pos + found.node.nodeSize }
+      : null;
+  }
   const at = resolveAnchorIn(state, hold);
   // Both seams on one point is a node that went away, which is all the answer
   // there is without a shared document behind the hold.
   if (!at || at.from >= at.to) return null;
   const $pos = state.doc.resolve(at.from);
   const node = $pos.nodeAfter;
-  if (!node || node.type.name !== hold.nodeType) return null;
-  if (yElementAt(state, $pos) !== hold.identity) return null;
+  if (!node || node.type.name !== hold.nodeType || identityAt($pos) !== null) return null;
   // The node's own size, not the far seam: a peer typing INSIDE it moves that
   // seam, and a verb acts on the node as it now stands.
   return { from: at.from, to: at.from + node.nodeSize };
@@ -176,44 +194,13 @@ function followHold(
   return at && { ...anchorRange(state, at), identity: hold.identity, nodeType: hold.nodeType };
 }
 
-/** The Yjs element behind the node after `$pos`, at any depth. */
-function yElementAt(state: EditorState, $pos: ResolvedPos): Y.XmlElement | null {
-  const runtime = relativePositionRuntimeFromState(state);
-  if (!runtime) return null;
-
-  let current: Y.XmlFragment = runtime.yFragment;
-  for (let depth = 0; depth <= $pos.depth; depth += 1) {
-    const parent = $pos.node(depth);
-    const child = parent.child($pos.index(depth));
-    const index = yChildIndex(parent, $pos.index(depth));
-    if (index === null || index >= current.length) return null;
-
-    const yChild = current.get(index);
-    // A name that does not match means the two trees are not walking in step —
-    // a node the binding refused to build, a repair mid-flight. Answering null
-    // lets the holder release rather than aim a verb by a guess.
-    if (!(yChild instanceof Y.XmlElement) || yChild.nodeName !== child.type.name) return null;
-    current = yChild;
-  }
-  return current instanceof Y.XmlElement ? current : null;
+/** The block id of the node after `$pos`. */
+function identityAt($pos: ResolvedPos): string | null {
+  const id = $pos.nodeAfter?.attrs.id;
+  return typeof id === "string" ? id : null;
 }
 
-/** Where `parent`'s `index`-th child sits among the Yjs element's children. */
-function yChildIndex(parent: PMNode, index: number): number | null {
-  if (index < 0 || index >= parent.childCount || parent.child(index).isText) return null;
-
-  let yIndex = 0;
-  let inTextRun = false;
-  for (let before = 0; before < index; before += 1) {
-    const text = parent.child(before).isText;
-    if (!text || !inTextRun) yIndex += 1;
-    inTextRun = text;
-  }
-  return yIndex;
-}
-
-/** True when this transaction is the binding rebuilding the document from Yjs — a peer's write or an AI write arriving, rather than anything done here. */
+/** True when this transaction is the binding bringing a peer's or the model's write in, rather than anything done here. */
 export function isRemoteDocumentRebuild(transaction: Transaction): boolean {
-  const meta = transaction.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined;
-  return meta?.isChangeOrigin === true;
+  return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }

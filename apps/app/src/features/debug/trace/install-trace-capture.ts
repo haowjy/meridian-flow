@@ -1,21 +1,20 @@
-/** Installs dev-only client trace capture before either socket transport is created. */
+/** Installs dev-only client trace capture before the thread and room sockets are created. */
 
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { setYjsWireTap } from "@/core/transport/tapped-websocket";
-import { setThreadWireTap } from "@/core/transport/wire-tap";
+import { setLoroWireTap, setThreadWireTap } from "@/core/transport/wire-tap";
 
 import { meridianTraceAPI } from "./agent-trace-api";
+import { createLoroWireTap, createLoroWireTapState, type LoroWireTapState } from "./loro-wire-tap";
 import {
   createThreadWireTap,
   createThreadWireTapState,
   type ThreadWireTapState,
 } from "./thread-wire-tap";
 import { appendTraceEvent, noteTapError } from "./trace-store";
-import { createYjsWireTap, createYjsWireTapState, type YjsWireTapState } from "./yjs-wire-tap";
 
 type HotData = {
   threadWireTapState?: ThreadWireTapState;
-  yjsWireTapState?: YjsWireTapState;
+  loroWireTapState?: LoroWireTapState;
 };
 
 export function installTraceCapture(): void {
@@ -25,12 +24,12 @@ export function installTraceCapture(): void {
 
   const hotData = import.meta.hot?.data as HotData | undefined;
   const threadState = hotData?.threadWireTapState ?? createThreadWireTapState();
-  const yjsState = hotData?.yjsWireTapState ?? createYjsWireTapState();
+  const loroState = hotData?.loroWireTapState ?? createLoroWireTapState();
   if (hotData) {
     hotData.threadWireTapState = threadState;
-    hotData.yjsWireTapState = yjsState;
+    hotData.loroWireTapState = loroState;
   }
 
   setThreadWireTap(createThreadWireTap(appendTraceEvent, noteTapError, threadState));
-  setYjsWireTap(createYjsWireTap(appendTraceEvent, noteTapError, yjsState));
+  setLoroWireTap(createLoroWireTap(appendTraceEvent, noteTapError, loroState));
 }

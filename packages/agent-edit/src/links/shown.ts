@@ -126,7 +126,7 @@ export interface LinkShowing {
 }
 
 /** A command's links as evidence needs them: the codec that rendered, and the holder it spelled for. */
-export interface ShownCommandLinks {
+interface ShownCommandLinks {
   codec: Pick<ShownLinkLedger, "shownLinks">;
   scope: { holder: { uri: string | null; view: LinkView } };
 }

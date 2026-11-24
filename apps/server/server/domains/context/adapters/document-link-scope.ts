@@ -198,7 +198,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const row of await loadRows({ ids: holderIds }, views)) remember(snapshot, row);
     const holderUri = holder ? await holderAddress(snapshot, holder) : null;
     const stored = storedLinkKeys({
-      docs: request.docs,
       nodes: request.stored,
       refs: request.refs,
       holderUri,

@@ -1,0 +1,21 @@
+{
+  "name": "@meridian/document-model",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rooms": "./src/rooms/index.ts",
+    "./test-support": "./src/test-support.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@meridian/contracts": "workspace:*",
+    "loro-crdt": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

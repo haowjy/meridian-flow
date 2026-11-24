@@ -1,48 +1,79 @@
 # Client transport seams
 
-## Outbox and acknowledgement edges
+## The document room on `loro-protocol`
 
-The outbox is the session layer's evidence that the writer has typing the server
-hasn't acknowledged.
+One socket per room, at `LORO_WS_PATH`. The room name is `loroRoomName(room)`; presence uses
+the same name with the ephemeral-store CRDT tag.
 
-- **Store, then send.** Yjs runs update listeners in registration order, so local
-  bytes are stored before the provider's own listener sends them. The provider
-  constructor doesn't mutate the document, and the explicit websocket keeps it from
-  attaching on its own, so the early registration sees no constructor updates.
-- **Edges only.** An acknowledgement clears the outbox before notifying.
-  `DocumentSession.recomputeStatus` deduplicates on status, server acknowledgement and
-  outbox presence, so a typing burst yields one pending snapshot and one clearing
-  snapshot.
+The Join exchange, which the server's handler speaks too (local-first design §4):
 
-`whenCurrentChangesAcknowledged()` captures the socket's current FIFO prefix. An Apply
-waits for that prefix, including update delete sets, not later keys. A reconnect moves
-unresolved barriers to the next handshake upload, which contains every pre-click local
-change. Terminal teardown rejects current and future barriers; ordinary disconnects
-leave them pending. In-band closes carry code
-1000, so consumers use disposition rather than numeric code.
+1. The client sends `JoinRequest` with its room version (`encodeRoomVersion`, one version
+   vector per doc key) and `encodeLoroJoinAuth({schema, peer})`.
+2. The server answers `JoinResponseOk` with the permission and its own room version, then
+   sends what the copy lacks as one `DocUpdate` (fragmented when large).
+3. The client joins presence, sends its presence state, and sends
+   `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
-## Held Updates
+The server relays presence (`apps/server/server/lib/loro-presence.ts`): a presence Join is answered
+with the presence the room holds, each update goes to the room's other sockets unacked, and a
+socket that leaves has its entries deleted for the others at once.
 
-No timeout releases held frames: a server that never sends SyncStep1 leaves them held
-and the room unacknowledged.
+A room without presence (a tree list) passes no store and joins no presence channel. `onJoined`
+sees each `JoinResponseOk`'s `extra` before anything is sent and may ask to rejoin: a tree copy of
+another list is replaced under the Join, so the Join's version must be taken again.
 
-## Frames the server can't store
+Every client `DocUpdate` is acknowledged by one `Ack` naming its batch id; server
+`DocUpdate`s are not. The transport keeps, per unacknowledged batch, the room version the
+batch ends at (read from the update metadata), and merges it into the server version on its
+`Ack`. A dropped socket forgets unacknowledged batches: the next Join sends what the version the
+server answers with lacks, so a batch the server imported before its `Ack` was lost is not sent
+again.
 
-A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), and the
-reconnect's handshake resends it; a frame that starts past the room's clock closes the same way,
-and the handshake repairs the gap. Holding Updates until the socket's SyncStep2 keeps that from
-happening on a reconnect: after a server restart the frames sent to the old process are gone,
-and an Update sent ahead of the handshake would start past them on every reconnect until the
-room ends. Three such closes in a row
-with no acknowledgement between end the room `UPDATES_REFUSED`, whether or not the outbox holds
-anything (typing replayed from the copy goes out in each handshake without passing through it), because a frame
-the server can never store (a replay of a retired generation, refused in `live-room.ts`) would
-otherwise resend forever. The session then holds undeliverable edits, and the registry replaces the room as it
-does a read admission's (editor context, "Undeliverable edits"): the typing is dropped with one
-"Couldn't save" pill and the editor shows the server's text. Any `1013` counts, whatever its
-reason.
+## Acknowledgement and barriers
 
-## Access scope and 4409
+`subscribeServerAcknowledgement` is true while the room is connected, joined, and every batch
+sent on this connection is acknowledged. `whenCurrentChangesAcknowledged()` captures the
+copy's version at the call and resolves once the server version covers it, whether through
+acks or through batches the server sent. A room's end rejects current and future barriers. A sign-in
+lapse (close 4401) is not an end: the room is `signed-out` and leaves them pending like an
+ordinary disconnect ([state machine](state-machines.md#room-connection)).
+
+`whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
+every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting, signed
+out) is waited for until it is connected again and the Join's own batch, which carries everything typed
+while away, is acknowledged; a socket that drops mid-wait moves the wait to the next Join. A
+waiter takes the batch ids it waits on only once the room reads as connected, which comes after
+the Join's batch is sent, so nothing emitted between the Join's answer and that batch can let it
+through early. It resolves when the room ends or is destroyed. Resolving at once on a room that
+was not joined let a press made offline reach the server before the offline typing did, so it
+pressed an older fork. A sign-in lapse used to end the room the same way: with the writer signed
+in again in another tab, the press went out over HTTP while the typing stayed in this tab's copy.
+
+The transport covers only a room that has one. The rest of the rule is above it:
+`DocumentSession.whenSentAcknowledged` waits while its copy is still loading and its transport is
+not attached yet, and the registry's `whenSentAcknowledged` names the press's rooms (the forks of
+its drafts, of its documents when it names them, and their Live rooms) and opens and retains the
+ones whose copy here holds unsent words but that the tab has no session for, which is how a reload
+or another tab's typing is covered. Not covered: an unsent deletion or format change with no
+words in it in a copy the tab has not opened, and, in a press of a whole draft or Work, the Live
+room of a document only the draft holds, which no fork names.
+
+## Errors
+
+- `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
+  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
+  Join this build formed wrong) ends it `terminal`;
+  any other app code (the server hasn't seen this browser's `create` yet) closes and rejoins.
+- `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
+  change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
+  `JoinResponseOk` permission decides; for a server error the rejoin sends what the server lacks.
+  Any other `RoomError` ends the room `terminal`. A read permission sends no `DocUpdate`.
+- Close code `PERMISSION_DENIED` ends the room `unauthorized`. `AUTH_FAILED` makes it
+  `signed-out`, which retries like any other close: with backoff (`RETRY_MS`), at once for a
+  `rejoin` close or a retry-now hint. It stays `signed-out` across the retries' other closes until
+  a Join is answered.
+
+## Access scope
 
 `DocumentSession` carries the server-named scope as `snapshot.access`: `null` until the
 server names one, then the last named scope, kept across drops and transport restarts.
@@ -52,57 +83,15 @@ room that drops offline stays read-only.
 `null` is what lets a named `edit` count. The Editor host's `readOnly` comes from its
 Works catalog, which can predate the room's first connect. The host's
 `RoomScopeCatalogCheck` (`features/project/context/ContextDocumentHost.tsx`) refreshes
-that catalog when a named scope disagrees with `readOnly`. Its own changes to
-`readOnly` don't ask, so the tab that archives fetches nothing extra.
-
-A 4409 `access-changed` close never resets the room, whatever is unacknowledged. It marks
-the room read-only at once, the transport reconnects, and the new admission decides: a
-read admission (an archived Work's view, a trashed chat's) sends no Update frame (the socket
-drops them; the server would answer each `false`), and each of its handshakes says what the
-document holds that the server lacks: the server's SyncStep1 and SyncStep2 pair, read by
-`handshake-difference.ts` (the document equals the server when the server's snapshot, state
-vector and delete set, contains `encodeStateAsUpdate(document, serverStateVector)`). The session
-decides what that means (`DocumentSession`, "Undeliverable edits" in the editor context): a room
-holding the writer's edits is replaced by one loaded from the server and the typing is handed
-back, so an Unarchive delivers nothing late. A local change the session does not count (not a
-display write) asks for one `forceSync`, whose handshake decides. Acknowledgement on a read
-admission is that verdict, not `SyncStatus`. An edit admission (an Unarchive) delivers what the
-room holds in the handshake. A room no editor holds is retired at the read-only mark, before the
-reconnect: its edits stay in the IndexedDB copy and are delivered the next time the
-document opens (an open while the Work is still closed hands them back). Writer text is never
-dropped for an access change. The
-server sends 4409 only when the scope it admitted no longer holds (an archive, an
-Unarchive, a lifecycle change under a Work's write), so the reconnect's admission matches
-what the write path accepts. A close because a Work or chat closed carries the cause,
-`access-changed:work_archived`, `work_deleted` or `chat_frozen`: read it with `accessChangedWhy(event)`
-and recognize any 4409 with `isAccessChangedClose(event)` (both in `ws-close.ts`); the transport's
-`handleClose` is the one place the editor reads 4409.
-
-## 4208: the document was removed
-
-Terminal: nothing rebuilds, replays or drops the room, and a review keeps the terminal
-session painted. Only a lookup after the close
-that proves the document present restarts the room, once per close. See
-`features/project/context/.context/presented-documents-and-editor-lifecycle.md`.
-
-## Stateless document messages
-
-Every `DocumentSession` subscribes to `change_event`.
+that catalog when a named scope disagrees with `readOnly`.
 
 ## Dev-only wire observation
 
-Runtime overlay enablement controls visibility, not capture. Separate `YjsWireTap` and
-`ThreadWireTap` interfaces keep thread strings from broadening the Yjs byte contract.
-The debug feature registers both in one authenticated-route composition action, before
-either socket can be created. `notifyYjsRoomAttached` supplies the local
-`Y.Doc.clientID` needed to attribute outgoing deletion-only updates, whose bytes contain
-the deleted items' creators but not the deleter.
-
-Provider hooks aren't the final-byte seam; use `TappedWebSocket`. Protocol inspection
-and `EventRecord` construction belong in the debug feature, preserving the dependency
-direction `features/debug -> core/transport`. Thread inspection emits only allowlisted
-classifications and identifiers: no agent, user, tool, catchup or error content enters
-an `EventRecord`.
+Both sockets are tapped in dev: the thread socket (`ThreadWireTap`) and the Loro room socket
+(`LoroWireTap` in `wire-tap.ts`, fed by `loro-room-transport.ts`: every message it sends or
+decodes, and each socket open and close). The debug overlay maps them to `wire.thread` and
+`wire.loro` records (`features/debug/trace/`), metadata only: a frame's class, bytes, batch id and
+channel, never its updates.
 
 Thread protocol, cursor and deadline contracts belong to the
 [shared thread client](../../../../../../packages/thread-client/.context/CONTEXT.md).
@@ -111,14 +100,5 @@ App `onGap` consumers refetch snapshots, and a gap burst coalesces into one resy
 ## Shared connectivity hints
 
 Retry hints restart aggressive backoff, so repeated wakes against a down server cost at
-most one attempt per cooldown. Success reports are transition-based and exclude the
-successful source. `disconnect()` disables reconnection, while offline takes the normal
-close path without awaiting a native handshake.
-
-The room adapter's `onOpen` and `onClose` overrides work around two Hocuspocus 4.3 retry
-races: native open clears the cancellation handle before the first frame settles the
-attempt, and post-settlement close schedules a delayed reconnect that can replace a
-still-CONNECTING hinted socket.
-
-These listeners stay outside the shared hints: local document peers and session wakeup (content recovery, independent of
-network jitter).
+most one attempt per cooldown. A `suspect-offline` hint closes the room socket through the
+normal close path; `retry-now` connects at once when no socket is open.

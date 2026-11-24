@@ -97,19 +97,6 @@ export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   );
 }
 
-const JOURNAL_WRITES = new Set(["append", "appendBatch"]);
-
-/** A journal whose agent writes run as a granted entry point's would. */
-export function grantedJournal<J extends object>(journal: J): J {
-  return new Proxy(journal, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof value !== "function" || !JOURNAL_WRITES.has(String(property))) return value;
-      return (...args: unknown[]) => asGrantedWriter(() => value.apply(target, args));
-    },
-  });
-}
-
 /**
  * The grant as if asked in `projectId` by `accountId`: the file is that project's, and so is the
  * agent's thread.

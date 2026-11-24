@@ -1,6 +1,6 @@
 # App: documents
 
-The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Yjs socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A Work's draft is suggestion marks in that same Live document: `draft-review` reads its Changes from the editor's session (5). Back to the [app](app.md).
+The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Loro socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A Work's draft is its tree changes and its fork rooms, one per document it changed: `draft-review` reads its Changes from the owner's draft list (5). Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
@@ -11,17 +11,17 @@ flowchart LR
   core["core<br/><small>document sessions and the socket</small>"]:::context
   shared["shared<br/><small>UI and rich text</small>"]:::context
   conversation["conversation<br/><small>chat</small>"]:::context
-  server["server<br/><small>the Yjs socket</small>"]:::context
+  server["server<br/><small>the document socket</small>"]:::context
   project -->|"1. opens a document in main or beside a chat"| editor
   editor -->|"2. binds the document session"| core
-  core -->|"3. connects the Yjs socket"| server
+  core -->|"3. connects the Loro socket"| server
   server -->|"4. sends the document's updates"| core
-  draft-review -->|"5. reads the Work's suggestions from the session"| core
+  draft-review -->|"5. reads the Work's draft list"| server
   editor -->|"shows review controls from"| draft-review
   editor -->|"follows links with"| links
   conversation -->|"shows Drafted-documents cards from"| draft-review
   editor -->|"renders with"| shared
-  note1["draft-review is where the model's edits become something the writer decides on: the Work's suggestions as Changes, then Apply, Discard or Undo."]:::note
+  note1["draft-review is where the model's edits become something the writer decides on: the Work's tree changes as Changes, then Apply, Discard or Undo."]:::note
   note1 -.- draft-review
 ```
 
@@ -40,9 +40,9 @@ Binds the document session, chooses live or review presentation and mounts the t
 
 Review of a Work's draft: Changes, Apply, Discard, Undo.
 
-A change is a run of the Work's suggestion marks in the Live document, read from the host's
-editor's session. Apply or Discard of one change is an editor transaction; of a
-document, folder or Work it is a press on the server.
+A change is a paragraph of a document's fork room that differs from Live, or one of the Work's
+tree records (a create, rename, move or delete). Review changes paints the text changes in the
+editor; Apply or Discard of a change, document, draft or Work is a press on the server.
 
 - Kind: feature
 - Paths: `apps/app/src/features/draft-review`
@@ -99,7 +99,7 @@ The group of `chat` and `agents`.
 
 The server.
 
-HTTP, the thread socket and the Yjs socket.
+HTTP, the thread socket and the document socket.
 
 - Kind: context
 - See: [server](system.md#server)

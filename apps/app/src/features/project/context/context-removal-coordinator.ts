@@ -197,39 +197,23 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The writer closed a document a view presents (a draft-only page has no Live to return to).
-   * Closing main's document takes main's address to the empty Editor; nothing is chosen in its
-   * place.
+   * The writer switched a page only a draft holds to Live, which lacks it (design §6): it closes
+   * as a Discarded one does, main going back to the document it showed before, else to Recently
+   * opened, and its tab closes once main has left it. `landed` hears where main went, as with
+   * `beginOwnRemoval`. Nothing happens when main doesn't show it; `isGoingBack` says whether main
+   * is leaving.
    */
-  writerClose(projectId: string, addressed: OpenDocument): void {
-    if (this.unavailable()) return;
-    const documentId = addressed.documentId;
-    this.presented.forget(projectId, [documentId]);
-    const finish = () => {
-      // After main's address has left the document, so its tab is not drawn again meanwhile.
-      this.tabs?.close(projectId, [documentId]);
-    };
-    const route = this.routePorts.get(projectId)?.port;
-    if (!route || this.presented.mainDocumentId(projectId) !== documentId) {
-      finish();
-      return;
-    }
-    void route
-      .transition(
-        projectId,
-        { kind: "clear" },
-        {
-          isCurrent: () =>
-            !this.unavailable() && this.presented.mainDocumentId(projectId) === documentId,
-          commit: finish,
-        },
-      )
-      .then(
-        (settlement) => {
-          if (settlement.kind === "failed") reportError(settlement.error);
-        },
-        (error: unknown) => reportError(error),
-      );
+  leaveDraftOnly(
+    projectId: string,
+    documentId: string,
+    landed?: (landing: MainLanding | null) => void,
+  ): void {
+    // The pin's follow asks again on each render until main has left.
+    if (this.unavailable() || this.isGoingBack(projectId, documentId)) return;
+    this.beginOwnRemoval(projectId, [documentId], (landing) => {
+      this.forget(projectId, [documentId]);
+      landed?.(landing);
+    });
   }
 
   /**

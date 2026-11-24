@@ -113,6 +113,11 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0, plural, one {# document discarded.} other {# documents discarded.}}"
+msgstr ""
+
 #. placeholder {0}: result.pendingDocuments
 #: src/features/export/ExportProjectDialog.tsx
 msgid "{0, plural, one {# document has changes waiting for review; the export has its live text.} other {# documents have changes waiting for review; the export has their live text.}}"
@@ -124,8 +129,6 @@ msgid "{0, plural, one {# document, deleted from {location}} other {# documents,
 msgstr ""
 
 #. placeholder {0}: counted(false)
-#. placeholder {0}: dock.files.length
-#: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr ""
@@ -143,6 +146,11 @@ msgstr ""
 #. placeholder {0}: counted(true)
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# folder} other {# folders}}"
+msgstr ""
+
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0, plural, one {# item deleted.} other {# items deleted.}}"
 msgstr ""
 
 #. placeholder {0}: result.outsideLinks.count
@@ -180,6 +188,11 @@ msgstr ""
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
+#. placeholder {0}: rows.length
+#: src/features/draft-review/ReviewChangesButton.tsx
+msgid "{0, plural, one {Review # change} other {Review # changes}}"
+msgstr ""
+
 #. placeholder {0}: block.rows.length
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "{0, plural, one {Show # unchanged line} other {Show # unchanged lines}}"
@@ -200,11 +213,6 @@ msgstr ""
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: subject.count
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{0} discarded."
-msgstr ""
-
 #. placeholder {0}: list(names)
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} finished"
@@ -221,19 +229,9 @@ msgstr ""
 msgid "{0} isn't available now, so replies use {1}."
 msgstr ""
 
-#. placeholder {0}: subject.count
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{0} items deleted."
-msgstr ""
-
 #. placeholder {0}: dock.more
 #: src/features/chat/DraftDock.tsx
 msgid "{0} more in this Work"
-msgstr ""
-
-#. placeholder {0}: dock.more
-#: src/features/chat/DraftDock.tsx
-msgid "{0} more to review"
 msgstr ""
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
@@ -310,14 +308,6 @@ msgstr "{answered, plural, other {# 个已回答}}"
 msgid "{binary} is a binary file."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
-msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "{count, plural, =0 {Read connection tools} one {Read how to use # connection tool} other {Read how to use # connection tools}}"
 msgstr ""
@@ -341,7 +331,7 @@ msgid "{count, plural, one {# call} other {# calls}}"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "{count, plural, one {# change} other {# changes}}"
+msgid "{count, plural, one {# document changed} other {# documents changed}}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -363,10 +353,6 @@ msgstr ""
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "{count, plural, one {# question:} other {# questions:}}"
 msgstr "{count, plural, other {# 个问题：}}"
-
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "{count, plural, one {# text change} other {# text changes}}"
-msgstr ""
 
 #: src/features/connections/connection-status.ts
 msgid "{count, plural, one {# tool} other {# tools}}"
@@ -416,6 +402,7 @@ msgstr ""
 msgid "{files, plural, one {{received} of # file} other {{received} of # files}}"
 msgstr ""
 
+#: src/features/draft-review/work-draft-menu.tsx
 #: src/features/import/import-presentation.ts
 msgid "{files, plural, one {# file} other {# files}}"
 msgstr ""
@@ -529,6 +516,10 @@ msgstr "{name}（@{handle}）"
 msgid "{name} (in the trash)"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name} applied to Live."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} can't be changed."
 msgstr ""
@@ -551,6 +542,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "{name} is unavailable"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{name} matches Live. What you or the AI change in it shows here."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
@@ -893,6 +888,10 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "against {name}"
+msgstr ""
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr ""
@@ -921,10 +920,6 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Agents not saved"
-msgstr ""
-
-#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "AI assistant"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
@@ -1008,6 +1003,14 @@ msgstr ""
 msgid "An Agent named {name} is already here."
 msgstr ""
 
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another draft"
+msgstr ""
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "another file"
+msgstr ""
+
 #: src/features/import/import-presentation.ts
 msgid "Another import in this project is organizing."
 msgstr ""
@@ -1027,6 +1030,7 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Apply"
 msgstr ""
 
@@ -1035,34 +1039,24 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Apply changes in {name}"
-msgstr ""
-
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "Apply draft of {name}"
 msgstr ""
 
-#. placeholder {0}: file.name
-#: src/features/chat/DraftDock.tsx
-msgid "Apply this chat's changes to {0}"
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Apply this chapter"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Apply this chat's changes to {documents} documents"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Apply this chat's changes to {name}"
+msgid "Apply this chat's draft"
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/draft-review/ReviewCompletion.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Applying"
 msgstr ""
 
@@ -1127,10 +1121,6 @@ msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Back to all Work"
-msgstr ""
-
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Back to live"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -1332,9 +1322,16 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
-#: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Change"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Change applied to Live."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Change discarded."
 msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
@@ -1371,10 +1368,6 @@ msgstr ""
 msgid "Changed {count} Work"
 msgstr ""
 
-#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Changed {relativeTime}"
-msgstr ""
-
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {what}"
 msgstr ""
@@ -1388,7 +1381,6 @@ msgstr ""
 msgid "Changed the position of {source}"
 msgstr ""
 
-#: src/features/project/mobile/MobileChangeSheet.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Changes"
 msgstr ""
@@ -1401,11 +1393,19 @@ msgstr ""
 msgid "Changes in {name}"
 msgstr ""
 
+#: src/features/draft-review/ReviewStepper.tsx
+msgid "Changes in this chapter"
+msgstr ""
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in this chat"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/ReviewStepper.tsx
+msgid "Changes in this draft"
+msgstr ""
+
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "Changing position"
 msgstr ""
 
@@ -1573,6 +1573,7 @@ msgstr ""
 #: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
+#: src/features/draft-review/ReviewBar.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileSideSheetHeader.tsx
@@ -1591,11 +1592,6 @@ msgstr ""
 msgid "Close artifact preview"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Close review"
-msgstr ""
-
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
 msgstr ""
@@ -1606,10 +1602,6 @@ msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Close sidebar  ["
-msgstr ""
-
-#: src/features/project/mobile/MobileChangeSheet.tsx
-msgid "Close the list"
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -1645,10 +1637,6 @@ msgstr ""
 msgid "Collaborative document editor"
 msgstr ""
 
-#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Collaborator"
-msgstr ""
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
 msgstr ""
@@ -1663,6 +1651,10 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
+msgstr ""
+
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Comment"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -1698,6 +1690,10 @@ msgstr ""
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Compaction stopped"
+msgstr ""
+
+#: src/features/draft-review/ReviewTargetPicker.tsx
+msgid "Compare with"
 msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -1757,7 +1753,6 @@ msgstr ""
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 #: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
@@ -1780,7 +1775,6 @@ msgid "Copied from {source} into"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Copy"
@@ -1850,7 +1844,7 @@ msgstr ""
 msgid "Couldn't add the connection."
 msgstr ""
 
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/draft-command-owner.ts
 msgid "Couldn't apply"
 msgstr ""
 
@@ -1893,10 +1887,6 @@ msgstr ""
 msgid "Couldn't copy"
 msgstr ""
 
-#: src/features/editor/RescuedText.tsx
-msgid "Couldn't copy. Select the text to copy it."
-msgstr ""
-
 #: src/features/home/NewProjectView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Couldn't create"
@@ -1927,7 +1917,7 @@ msgstr ""
 msgid "Couldn't delete that Work"
 msgstr ""
 
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/draft-command-owner.ts
 msgid "Couldn't discard"
 msgstr ""
 
@@ -2119,10 +2109,6 @@ msgstr ""
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
 
-#: src/features/draft-review/press-history.ts
-msgid "Couldn't redo"
-msgstr ""
-
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
 msgstr ""
@@ -2265,6 +2251,7 @@ msgstr ""
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/tool-renderers.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/draft-command-owner.ts
 #: src/features/draft-review/press-history.ts
 msgid "Couldn't undo"
 msgstr ""
@@ -2390,6 +2377,10 @@ msgstr ""
 msgid "Delete column"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Delete draft"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete row"
 msgstr ""
@@ -2408,6 +2399,7 @@ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
+#: src/features/draft-review/DraftFileRow.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2474,7 +2466,7 @@ msgstr ""
 msgid "Deleted from {place}."
 msgstr ""
 
-#: src/features/draft-review/DraftedDeleteNotice.tsx
+#: src/features/draft-review/ReviewTreeRow.tsx
 msgid "Deleted in this draft"
 msgstr ""
 
@@ -2525,14 +2517,6 @@ msgstr ""
 msgid "Destination deleted"
 msgstr ""
 
-#: src/features/editor/SchemaNotices.tsx
-msgid "Details"
-msgstr ""
-
-#: src/features/editor/SchemaNotices.tsx
-msgid "Details about removed text"
-msgstr ""
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Diagram"
@@ -2547,6 +2531,7 @@ msgid "Didn't run: {label}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2560,30 +2545,20 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Discard changes in {name}"
-msgstr ""
-
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Discard draft"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "Discard draft of {name}"
 msgstr ""
 
-#. placeholder {0}: file.name
-#: src/features/chat/DraftDock.tsx
-msgid "Discard this chat's changes to {0}"
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Discard this chapter"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Discard this chat's changes to {documents} documents"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Discard this chat's changes to {name}"
+msgid "Discard this chat's draft"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2595,15 +2570,10 @@ msgstr ""
 msgid "Discarded {what}"
 msgstr ""
 
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Discarding"
-msgstr ""
-
 #: src/components/app/ActionNotice.tsx
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/editor/RescuedText.tsx
 #: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
 msgstr ""
@@ -2621,7 +2591,7 @@ msgstr ""
 msgid "Divider"
 msgstr ""
 
-#: src/features/chat/useDraftDock.ts
+#: src/features/chat/DraftDock.tsx
 msgid "Document"
 msgstr ""
 
@@ -2663,16 +2633,25 @@ msgid "Downloaded"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/turn-card-drafts.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
+msgstr ""
+
+#: src/features/draft-review/draft-names.ts
+msgid "Draft {n}"
 msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr ""
 
-#: src/features/project/mobile/MobileReviewHeader.tsx
-msgid "Draft review"
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Draft this chat writes into"
+msgstr ""
+
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Draft this chat writes into: {name}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -2729,7 +2708,6 @@ msgid "Edit source"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-#: src/features/draft-review/ReviewChangeRow.tsx
 msgid "Edited"
 msgstr ""
 
@@ -2997,10 +2975,6 @@ msgstr ""
 msgid "Fork from here"
 msgstr ""
 
-#: src/features/draft-review/useSuggestionChanges.ts
-msgid "Formatting"
-msgstr ""
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
 msgstr "来自 {senderName}："
@@ -3090,10 +3064,6 @@ msgstr ""
 msgid "Hidden file."
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
-msgid "Hide changes"
-msgstr ""
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
 msgstr ""
@@ -3120,6 +3090,7 @@ msgstr "ID"
 
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Image"
 msgstr ""
@@ -3399,6 +3370,7 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewTargetPicker.tsx
 msgid "Live"
 msgstr ""
 
@@ -3537,6 +3509,10 @@ msgstr ""
 msgid "Low"
 msgstr ""
 
+#: src/features/draft-review/draft-names.ts
+msgid "Main draft"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Manage Agents"
 msgstr ""
@@ -3660,10 +3636,6 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: src/features/draft-review/ReviewChangeParts.tsx
-msgid "More chats"
-msgstr ""
-
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "More chats couldn't load."
 msgstr ""
@@ -3734,6 +3706,7 @@ msgid "Move…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Moved"
 msgstr ""
 
@@ -3787,7 +3760,7 @@ msgid "Moving into {into}"
 msgstr ""
 
 #. placeholder {0}: line.place
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "Moving to {0}"
 msgstr ""
 
@@ -3828,6 +3801,7 @@ msgstr ""
 msgid "Needs sign-in"
 msgstr ""
 
+#: src/features/draft-review/DraftFileRow.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "New"
 msgstr ""
@@ -3861,6 +3835,10 @@ msgstr ""
 msgid "New document"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "New draft"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -3877,8 +3855,12 @@ msgstr ""
 msgid "New in {address}"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "New in {place}"
+msgstr ""
+
+#: src/features/draft-review/ReviewTreeRow.tsx
+msgid "New in this draft"
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -3899,10 +3881,6 @@ msgstr "下一题"
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "Next change"
-msgstr ""
-
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Next document"
 msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
@@ -3945,10 +3923,6 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "No billing activity yet."
-msgstr ""
-
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "No changes left"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -4223,14 +4197,6 @@ msgstr ""
 msgid "Nothing to redo yet."
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Nothing to review in {name}."
-msgstr ""
-
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Nothing to review in this chat."
-msgstr ""
-
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."
 msgstr ""
@@ -4269,6 +4235,10 @@ msgstr ""
 msgid "ol"
 msgstr ""
 
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Only in draft"
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""
@@ -4286,12 +4256,6 @@ msgstr ""
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
-msgstr ""
-
-#. placeholder {0}: displayThreadTitle(chat.subagentTitle)
-#. placeholder {1}: chatName(chat)
-#: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Open {0} in {1}"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -4324,12 +4288,12 @@ msgstr ""
 msgid "Open chats"
 msgstr ""
 
-#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Open conversation"
-msgstr ""
-
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open documents"
+msgstr ""
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Open draft"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -4439,6 +4403,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Paragraph gone"
+msgstr ""
+
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "Paragraph removed elsewhere"
 msgstr ""
 
 #: src/features/chat/ReportContent.tsx
@@ -4755,7 +4723,6 @@ msgstr ""
 msgid "Removed: "
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
@@ -4859,7 +4826,9 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/draft-review/ReviewBar.tsx
 #: src/features/editor/InTrashStatus.tsx
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/work/DeletedWorkList.tsx
@@ -4882,6 +4851,10 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore before {sibling}"
+msgstr ""
+
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Restore this chapter"
 msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
@@ -5279,9 +5252,8 @@ msgstr ""
 msgid "Show all"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewBand.tsx
-msgid "Show changes"
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Show inline"
 msgstr ""
 
 #: src/features/chat/ClippedExpand.tsx
@@ -5297,20 +5269,12 @@ msgstr ""
 msgid "Show more"
 msgstr ""
 
+#: src/features/draft-review/ReviewBar.tsx
+msgid "Show side by side"
+msgstr ""
+
 #: src/rich-content/DocumentCodeBlock.tsx
 msgid "Show source"
-msgstr ""
-
-#: src/features/draft-review/DocumentChanges.tsx
-msgid "Show the {count} changes"
-msgstr ""
-
-#: src/features/draft-review/DocumentChanges.tsx
-msgid "Show the 1 change"
-msgstr ""
-
-#: src/features/draft-review/DocumentChanges.tsx
-msgid "Show the changes list"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5383,10 +5347,6 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Some of these items are no longer there"
-msgstr ""
-
-#: src/features/editor/SchemaNotices.tsx
-msgid "Some text was removed"
 msgstr ""
 
 #: src/core/editor/extensions/peer-carets.ts
@@ -5533,6 +5493,10 @@ msgstr ""
 msgid "Strikethrough"
 msgstr ""
 
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Style"
+msgstr ""
+
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "子代理对话路径"
@@ -5640,13 +5604,13 @@ msgstr ""
 msgid "Tabs"
 msgstr ""
 
+#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
+msgid "Take"
+msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
-
-#: src/features/project/mobile/MobileChangeSheet.tsx
-msgid "Tap a change to go to it in the document."
-msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "task"
@@ -5843,6 +5807,10 @@ msgstr ""
 msgid "This chat's Agent"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This chat's draft matches Live. What you or the AI change in it shows here."
+msgstr ""
+
 #. placeholder {0}: naming.current(outcome.currentWork)
 #. placeholder {0}: naming.current(work)
 #: src/features/chat/useComposerWorkBinding.ts
@@ -5930,10 +5898,6 @@ msgstr "无法使用这个名称，请换一个。"
 msgid "This part of the message can’t hold mentions"
 msgstr ""
 
-#: src/features/editor/RescuedText.tsx
-msgid "This passage couldn't be recovered."
-msgstr ""
-
 #: src/features/connections/AddConnectionForm.tsx
 msgid "This project"
 msgstr ""
@@ -5976,10 +5940,6 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "This switch already happened."
-msgstr ""
-
-#: src/features/editor/SchemaNotices.tsx
-msgid "This version of Meridian can't display it."
 msgstr ""
 
 #: src/features/project/work/EndedWorkNotice.tsx
@@ -6160,6 +6120,7 @@ msgstr ""
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/UndoCell.tsx
 #: src/features/connections/ConnectionRow.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -6188,6 +6149,10 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo discard of {name}"
+msgstr ""
+
+#: src/features/chat/TurnRestore.tsx
+msgid "Undo in {name}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -6219,14 +6184,23 @@ msgstr ""
 msgid "Undo switch to draft mode"
 msgstr ""
 
+#: src/features/chat/TurnRestore.tsx
+msgid "Undo turn"
+msgstr ""
+
+#: src/features/chat/TurnRestore.tsx
+msgid "Undo turn in {name}"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
-#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/UndoCell.tsx
 msgid "Undoing…"
 msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/chat/UndoCell.tsx
 msgid "Undone"
 msgstr ""
 
@@ -6279,9 +6253,14 @@ msgid "Untitled chat"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/draft-review/DraftFileRow.tsx
 #: src/features/draft-review/tree-line.ts
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Untitled document"
+msgstr ""
+
+#: src/features/draft-review/draft-names.ts
+msgid "Untitled draft"
 msgstr ""
 
 #: src/lib/project-title.ts
@@ -6436,8 +6415,12 @@ msgid "Waiting to organize {name}"
 msgstr ""
 
 #. placeholder {0}: line.name
-#: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/draft-review/DraftFileRow.tsx
 msgid "Was {0}"
+msgstr ""
+
+#: src/features/draft-review/ReviewTreeRow.tsx
+msgid "Was {moved}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -6566,6 +6549,10 @@ msgstr ""
 msgid "Write or chat"
 msgstr ""
 
+#: src/features/chat/ChatDraftControl.tsx
+msgid "Writes into"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Writing"
 msgstr "写作中"
@@ -6585,7 +6572,6 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/core/editor/extensions/peer-carets.ts
-#: src/features/draft-review/ReviewChangeParts.tsx
 msgid "You"
 msgstr ""
 

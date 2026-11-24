@@ -1,8 +1,8 @@
 /**
- * Production-composition regression for response credit and staged-push settlement.
+ * Production-composition regression for a removed bound model and a No Work chat's draft.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - typed removed-model failure and locked No Work ownership of drafts
+ * - typed removed-model failure and No Work ownership of a lineage's draft
  */
 
 import { toolContentText } from "@meridian/contracts/threads";
@@ -15,9 +15,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("production-composed draft settlement (postgres)", () => {});
+  describe.skip("production-composed runtime settlement (postgres)", () => {});
 } else {
-  describe("production-composed draft settlement (postgres)", async () => {
+  describe("production-composed runtime settlement (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -26,7 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../test-support/drizzle-reset.js"
     );
     const { createInMemoryEventSink } = await import("../domains/observability/index.js");
-    const { bindEditAgent, unloadHocuspocus, useComposedRuntimes } = await import(
+    const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
 
@@ -95,37 +95,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns a structured history tool error for a removed bound model", async () => {
       const runtime = await runtimes.compose();
-      try {
-        await runtime.app.agentRevisions.bindThread(
-          THREAD_ID,
-          null,
-          {
-            model: "removed-history-model",
-            skills: { load: [], available: [] },
-            namedTargets: [],
-            permission: "edit" as const,
-          },
-          null,
-        );
-        const result = await runtime.app.toolExecutor.executeTool(
-          {
-            id: "history-unavailable",
-            name: "thread_history",
-            arguments: {},
-          },
-          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
-        );
-        // The refusal keeps its typed shape beside the rendered text.
-        expect(result).toMatchObject({
-          isError: true,
-          result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
-        });
-        expect(toolContentText(result.content)).toBe(
-          "Model not found: removed-history-model (model_unavailable)",
-        );
-      } finally {
-        await unloadHocuspocus(runtime.hocuspocus);
-      }
+      await runtime.app.agentRevisions.bindThread(
+        THREAD_ID,
+        null,
+        {
+          model: "removed-history-model",
+          skills: { load: [], available: [] },
+          namedTargets: [],
+          permission: "edit" as const,
+        },
+        null,
+      );
+      const result = await runtime.app.toolExecutor.executeTool(
+        {
+          id: "history-unavailable",
+          name: "thread_history",
+          arguments: {},
+        },
+        { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+      );
+      // The refusal keeps its typed shape beside the rendered text.
+      expect(result).toMatchObject({
+        isError: true,
+        result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+      });
+      expect(toolContentText(result.content)).toBe(
+        "Model not found: removed-history-model (model_unavailable)",
+      );
     });
 
     it("writes a No Work draft onto a draft keyed by the chat's lineage", async () => {
@@ -206,7 +202,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!chat) throw new Error("The chat names no draft");
       const drafted = await runtime.ports.documentSync.readDraftMarkdown({
         documentId: DOC_ID,
-        draft: chat.draftId as string,
+        draft: chat.draftId as never,
       });
       expect(drafted.ok && drafted.value.content.trim()).toBe("Model draft content.");
       expect(await db.select().from(schema.threadWorks)).toEqual([
@@ -216,7 +212,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           isPrimary: true,
         }),
       ]);
-      await unloadHocuspocus(runtime.hocuspocus);
     });
   });
 }

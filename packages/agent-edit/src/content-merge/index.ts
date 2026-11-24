@@ -1,12 +1,4 @@
-/** `@meridian/agent-edit/content-merge`: the three-way block merge, and what an AI edit's change is in a text now. */
+/** `@meridian/agent-edit/content-merge`: the three-way block merge, and an AI edit's stored delta. */
 
+export { captureDelta, readDelta, type StoredDelta } from "./delta.js";
 export { contentMerge } from "./merge.js";
-export {
-  captureDelta,
-  changeStateIn,
-  type EditChange,
-  editChanges,
-  readDelta,
-  type StoredDelta,
-  takeOut,
-} from "./stands.js";

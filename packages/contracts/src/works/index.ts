@@ -6,19 +6,6 @@ import type { DraftId, ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
 
-/**
- * The draft a chat writes into: its named Work's, or with No Work its lineage's, which the root
- * chat names (`Thread.draftId`, the lineage's on every chat in it).
- */
-export function draftOf(
-  thread: { draftId: DraftId },
-  work: { draftId: DraftId | null; isNoWork: boolean },
-): DraftId {
-  if (work.isNoWork) return thread.draftId;
-  if (!work.draftId) throw new Error("A named Work names its draft");
-  return work.draftId;
-}
-
 export interface Work {
   id: WorkId;
   projectId: ProjectId;
@@ -27,7 +14,10 @@ export interface Work {
   /** Permanent project-unique handle (`w3`), never reused. Null on the locked No Work row. */
   handle: WorkHandle | null;
   isNoWork: boolean;
-  /** The Work's draft, minted with it; null on No Work, which owns nothing. */
+  /**
+   * The Work's default draft (a Work has several), minted with it: what a new chat of the Work
+   * writes into. Null on No Work, which owns nothing.
+   */
   draftId: DraftId | null;
   goal: string | null;
   /** AI-owned one-to-three-word progress summary. */

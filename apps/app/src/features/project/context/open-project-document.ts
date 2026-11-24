@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import type { DocumentSession } from "@/core/editor/document-session";
+import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
 import type {
-  LiveDocumentSessionLease,
+  DocumentSessionLease,
   LiveDocumentSessionRegistry,
 } from "@/core/editor/document-session-registry";
 import { contextRouteRequest } from "../routing/project-route";
@@ -77,8 +77,10 @@ export type ProjectDocumentLiveOpenRequest = {
   documentId: DocumentId;
   /** Also admits a document in Trash: its Trash view shows the text the session holds. */
   trashed?: true;
-  /** Suggestion mode: a document only a Work holds, which the project's list doesn't show yet. */
+  /** A document only a Work holds, which the project's list doesn't show yet. */
   workOnly?: true;
+  /** The draft whose fork room of the document opens, in place of its Live room. */
+  draftId?: string;
   signal?: AbortSignal;
 };
 
@@ -131,14 +133,16 @@ export class ProjectDocumentLiveOpener {
     try {
       return {
         kind: "opened",
-        admission: this.capability(this.dependencies.registry.admit(projectId, documentId)),
+        admission: this.capability(
+          this.dependencies.registry.admit(projectId, documentId, input.draftId),
+        ),
       };
     } catch {
       return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
     }
   }
 
-  private capability(lease: LiveDocumentSessionLease): AdmittedLiveDocument {
+  private capability(lease: DocumentSessionLease): AdmittedLiveDocument {
     const registry = this.dependencies.registry;
     return Object.freeze({
       projectId: lease.projectId,
@@ -150,7 +154,6 @@ export class ProjectDocumentLiveOpener {
           const snapshot = session.getSnapshot();
           if (
             snapshot.status === "access-lost" ||
-            snapshot.connectionState?.kind === "unauthorized" ||
             snapshot.connectionState?.kind === "terminal" ||
             session.resetDisposition === "removed"
           ) {
@@ -159,10 +162,13 @@ export class ProjectDocumentLiveOpener {
           }
           let released = false;
           const listeners = new Set<(session: DocumentSession) => void>();
-          const stopObserving = registry.observeReplacement(lease.documentId, (replacement) => {
-            session = replacement;
-            for (const listener of [...listeners]) listener(replacement);
-          });
+          const stopObserving = registry.observeReplacement(
+            sessionRoomKey(lease.room),
+            (replacement) => {
+              session = replacement;
+              for (const listener of [...listeners]) listener(replacement);
+            },
+          );
           return Object.freeze({
             projectId: lease.projectId,
             documentId: lease.documentId,

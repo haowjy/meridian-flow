@@ -61,7 +61,7 @@ offers Retry; the phone's document host (`DocumentHost`, phone presentation) use
 
 A document that exists only in a Work (a new document the Work created) opens in its Live room
 like any other: its text is plain Live text, and the project's list doesn't have it, so the host
-admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the Yjs gateway
+admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the room gateway
 admits the room for that Work. Both shells find the document through `route-document-owner.ts`:
 the bound identity in the live tree, then the document the answered address names
 (`addressedDocument`, built from the address's draft row when live lacks it), before any path
@@ -139,6 +139,20 @@ removed document. A tree delete's notice has an Undo (`entry-failure.ts`); a cre
 document's Discard has the press's Undo (in the tab that pressed); a restore from Trash never moves main. A Discard of an existing
 document's edits removes nothing. Discard is a server command, not a record the browser writes.
 
+A page only a draft holds closes the same way when it leaves that draft for Live, which lacks it
+(design §6): the toggle or the version chip moving to Live, or `Delete draft` on its draft. The
+route sees the pin drop on a draft-only address and calls the coordinator's `leaveDraftOnly`
+instead of writing the bare address; main goes back as above and the page's tab closes once main
+has left. When main isn't leaving (its presented document lags the address), the route writes the
+bare address after all, which shows "Only in draft". `Delete draft` begins it itself, so its notice
+follows main (`notices.landed`). One hook, `useDraftOnly`, decides "draft-only" for the route, the
+chip and `Delete draft`: the row is new and no live tree has the document, so a chapter another
+tab applied, whose list hasn't refetched, isn't closed. The
+document's chip offers no `Live` there. A Work switch is not a move to Live: the page stays pinned
+to its draft. A bare Live address that still reaches such a page (a reload, another tab, a stripped
+link) shows "Only in draft" with `Open draft` when the scope's draft list, which the route already
+holds, has it (`draftOnlyAt`); otherwise "This destination is unavailable".
+
 A document in Trash still takes text: the live room admits it until its node is purged and
 closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
 restore brings it back. A host still open on a purged room says nothing (`SyncStatus`).
@@ -159,4 +173,4 @@ A presented document carries no review state. Which Work's view a document shows
 pin. Whether it exists only in that Work comes from the pin's row in the owner's draft list
 (`useDocumentLiveness`: a drafted create, or a delete Live made): such a page offers Close where
 others offer Back to live. A live delete of a document closes its view like any removal; a
-Work's suggestions in it stay in the document and come back with a Restore.
+draft's fork of it stays and comes back with a Restore.

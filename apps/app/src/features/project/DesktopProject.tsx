@@ -113,7 +113,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const mask = {
     destinationKey: props.routeLocationKey,
     issue: props.routeIssues?.main ?? (mainChat ? undefined : props.routeIssues?.editor),
-    removed: props.routeIssues?.main ? undefined : props.routeIssues?.removed,
+    unavailable: props.routeIssues?.main ? undefined : props.routeIssues?.unavailable,
     onRetry: props.routeIssues?.main ? undefined : props.onRetryEditorRoute,
     retainWhileLoading: props.retainEditorWhileLoading,
   };
@@ -148,9 +148,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const mainKey = mainTab ? mainTabKey({ kind: "document", document: mainTab }) : null;
   const tabCommands = useMainTabCommands({ projectId, kind: "document", open, mainKey });
 
-  // Each document has its own host, so the draft that takes the focus when its controls show is
-  // kept here.
-  const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
     slot: place === "main" ? "center" : place === "side" && sideOpen ? "side" : null,
@@ -163,8 +160,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         main={place === "main" ? main.document : undefined}
         presentation="desktop"
         editorWorkId={props.editorWorkId}
-        focusReview={focusReview}
-        onFocusReview={setFocusReview}
         header={
           place === "main" ? (
             <MainHeader
@@ -374,6 +369,7 @@ function SideEmpty({ projectId }: { projectId: string }) {
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}
+              current={null}
               choose={(documentId) => place({ kind: "document", documentId })}
             />
           </div>

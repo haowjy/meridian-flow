@@ -36,9 +36,8 @@ have it:
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |
 | Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
-| Press text effect | One press's text change to one document: in force or taken back | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
-| Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| A joined `/ws/loro` room | One room a socket joined (a document's Live or fork, or a tree list): join, batches, how it ends | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
 
@@ -54,6 +53,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Room connection | One room's socket to `/ws/loro` (a document's Live or fork, or a tree list): connecting, connected, disconnected, or ended | [core/transport](../../apps/app/src/core/transport/.context/state-machines.md) |
 | Release | Whether this tab's code is current, deployed under, or must reload | [client/release](../../apps/app/src/client/release/.context/state-machines.md) |
 | Account session runtime | Whether the account's document sessions take new work: open, closing, closed | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
@@ -65,9 +65,9 @@ have it:
 | Queued control | One compaction or write-mode switch waiting behind a running reply | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
-| An Apply's Undo | One press Apply: in force, Undo or Redo in flight, taken back, or ended; every surface that undoes it reads it | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| Review changes | Whether a draft page reviews its changes, against what, and the change in focus | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| A press's Undo | One Apply, Discard or turn's restore (its card's Undo turn): sent, in force, its Undo in flight, or ended; the sidebar, a notice, a turn card and the editor's Ctrl+Z each undo it once, and a restore's card reads it by turn and draft | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Package Save word | What the last Save or Undo of one Agent package says where its state shows | [features/agents](../../apps/app/src/features/agents/.context/state-machines.md) |
-| Held paint | A document still painting a draft that left its list | [features/project](../../apps/app/src/features/project/.context/document-paint-state-machine.md) |
 | Sidebar version | Whether the sidebar and its actions show live or the picked Work's tree, and sidebar Undo | [features/project](../../apps/app/src/features/project/.context/tree-version-state-machine.md) |
 | Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |
 | Live document binding | One editor pane's hold on an open document | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
@@ -83,6 +83,6 @@ have it:
 
 Named states that no code steps: they are computed from other state on each read. Examples
 are the handoff brief card and compaction divider (from a turn's status), the import word the
-writer sees, undo part state in agent-edit, the state of a change of an AI edit in a draft (drawn in
+writer sees, undo part state in agent-edit, the state of an AI edit (drawn in
 [collab reversal](../../apps/server/server/domains/collab/.context/reversal.md)) and the Stop button's status. Two-way toggles and
 one-shot results are left out too.

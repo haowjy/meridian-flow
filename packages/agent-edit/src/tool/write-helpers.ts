@@ -2,14 +2,13 @@
 import { EDIT_FAILED_MESSAGE } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
-import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
-import type { UpdateMeta } from "../ports/types.js";
+import { isDocumentNotFoundError } from "../ports/document-rooms.js";
 import { writeCommandName } from "./command-schema.js";
 import type { RenderedRead } from "./document-renderer.js";
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { status } from "./response-format.js";
-import type { DocumentCommandName, MutationActor, WriteErrorStatus } from "./types.js";
+import type { DocumentCommandName, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
 
@@ -48,7 +47,6 @@ export function errorResponse(
 export function readSuccess(read: RenderedRead): InternalWriteResult {
   return {
     status: "success",
-    phase: "committed",
     model: {
       read: { format: read.format, documentBlocks: read.documentBlocks },
       blocks:
@@ -73,21 +71,6 @@ export function writeError(cause: unknown, commandName: DocumentCommandName): In
 
 export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-export function agentMeta(turnId: string, authoringResponseId?: string): UpdateMeta {
-  return {
-    origin: `agent:${turnId}`,
-    actorTurnId: turnId,
-    seq: 0,
-    ...(authoringResponseId ? { authoringResponseId } : {}),
-  };
-}
-
-export function mutationMeta(actor: MutationActor): UpdateMeta {
-  if (actor.kind === "agent") return agentMeta(actor.turnId, actor.responseId);
-  if (actor.kind === "human") return { origin: `human:${actor.userId}`, seq: 0 };
-  return { origin: `system:${actor.origin}`, seq: 0 };
 }
 
 export function fallbackCommandName(command: unknown): AgentEditResultCommand {

@@ -27,18 +27,14 @@ import {
   type AheadMint,
   assignLinkRefs,
   assignOccurrences,
-  isDocumentNotFoundError,
   rebuildOccurrences,
-  toDocHandle,
-  type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
-import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { classifyFiletype, type TrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { codeFileBlock, type MarkupCodec, type PMNode } from "@meridian/markup";
 import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import type { Schema } from "prosemirror-model";
-import * as Y from "yjs";
 import { type CopyIdentityMap, remapCopiedBlocks } from "./copied-blocks.js";
 import { aheadRegistrations } from "./document-links-port.js";
 import {
@@ -47,7 +43,6 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 declare const boundBrand: unique symbol;
 
@@ -74,7 +69,7 @@ export interface BoundWrite {
   /** Source Markdown, for provenance and diagnostics only; never reparsed. */
   readonly markdown: string;
   /** Code files bind to one code block; the engine refuses content of the other shape. */
-  readonly schemaType: YjsTrackedSchemaType;
+  readonly schemaType: TrackedSchemaType;
   readonly [boundBrand]: true;
 }
 
@@ -150,8 +145,8 @@ export class LinkBindingInsideTransactionError extends Error {
 export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
-  model: YProsemirrorDocumentModel;
-  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
+  /** The holder's current blocks; null when it has no state yet, so a write binds fresh. */
+  currentBlocks(documentId: DocumentId): Promise<PMNode[] | null>;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
@@ -174,7 +169,7 @@ function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   };
 }
 
-function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
+function schemaTypeOf(filetype: string | null): TrackedSchemaType {
   const classification = classifyFiletype(filetype);
   if (classification.kind === "tracked") return classification.schemaType;
   if (classification.kind === "unknown") return "document";
@@ -186,26 +181,6 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
 
   function boundWrite(input: Omit<BoundWrite, typeof boundBrand>): BoundWrite {
     return input as BoundWrite;
-  }
-
-  /** The holder's current nodes, projected from a private clone; null if it has no state yet. */
-  async function currentBlocks(documentId: DocumentId): Promise<PMNode[] | null> {
-    let state: Uint8Array;
-    try {
-      state = await deps.coordinator.withDocument(documentId, async (doc) =>
-        Y.encodeStateAsUpdate(doc),
-      );
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return null;
-      throw cause;
-    }
-    const clone = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(clone, state);
-      return deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node);
-    } finally {
-      clone.destroy();
-    }
   }
 
   async function bind(input: BindMarkdownInput): Promise<BoundWrite> {
@@ -220,7 +195,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       ? { kind: "document", documentId }
       : { kind: "new", uri: holderUri ?? "" };
     const previous =
-      input.against === "current" && documentId ? await currentBlocks(documentId) : null;
+      input.against === "current" && documentId ? await deps.currentBlocks(documentId) : null;
     const finish = (blocks: readonly PMNode[], markdown: string) =>
       boundWrite({ holder: boundHolder, fresh: previous === null, blocks, markdown, schemaType });
 
@@ -323,7 +298,7 @@ export type PlannedMarkdownInput = Pick<ImportBindInput, "markdown" | "targets" 
   planned: ReadonlySet<DocumentId>;
 };
 
-export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "coordinator" | "model">;
+export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "currentBlocks">;
 
 export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBinder {
   const makeBound = (input: Omit<BoundWrite, typeof boundBrand>) => input as BoundWrite;

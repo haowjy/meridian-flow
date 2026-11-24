@@ -1,43 +1,89 @@
 # Draft review state machines
 
-A Work's draft is its suggestion marks in each Live document. An Apply or Discard of a whole
-document, a folder or the Work is a press (`usePressCommands`, `client/query/press-commands.ts`):
-one command the server runs over the text and tree halves, sent through the command driver, which
-keeps resending it under the same id until the server answers. How the press fits review is in
-[draft-review.md](draft-review.md).
+An Apply or Discard of a change, a document, the draft or the Work is a press
+(`usePressCommands`, `client/query/press-commands.ts`): one command sent through the command
+driver, which waits until the rooms have this tab's edits and then resends it under the same id
+until the server answers. How it fits review is in [draft-review.md](draft-review.md).
 
-## A press's Undo
+## Review changes
 
-The browser keeps no state machine for a press, Apply or Discard alike. `PressEntries` (`press-history.ts`) holds the
-press's command id and puts one entry in the history of each live session of its documents, and
-one step on the sidebar's Undo stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`).
-Every Undo of it is `undo(from)`: its notice's or row's Undo, the sidebar's Ctrl+Z, or Ctrl+Z in
-an editor (`from`). A press while one is out hears the same answer. A chat card's Undo is not one of them: it is the server's
-`reverse_turn`.
+Not a store: the host's address (main) or stored slot (the side) holds it, and
+`useHostReviewMode` reads it. The rows its editor last read sit in the host's `ReviewSurface`
+(`review-mode.ts`), which "Review N changes" and the review line's stepper read.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> in_force: the press applied or discarded something
+  [*] --> plain: a draft page
+  plain --> reviewing: Review N changes (push)
+  reviewing --> reviewing: the stepper, a press, Retarget (replace)
+  reviewing --> plain: Close on the review line, or Esc (Back, or replace)
+  reviewing --> plain: the last change pressed (at once)
+  reviewing --> plain: a read finds no change and the list agrees
+  reviewing --> other_chapter: a step past either end
+  other_chapter --> reviewing: that chapter opens at its first change, or its last after ‹
+  plain --> [*]: Live
+```
+
+- **Pressing the last change closes at once**; only a read that comes back empty waits for the
+  list (`listed === false`), since a fork still syncing reads empty before the list does.
+- **Esc has one handler per host** (`ReviewEscapeScope`), at page scope: it skips a key a menu,
+  dialog or field already handled, and acts for its own host, or for main when the focus is in
+  no host.
+- **The stepper crosses chapters**: past the last change it opens the next chapter with changes;
+  ‹ before the first opens the previous one at its last change (`landOnLast`, per pane).
+
+## A press's Undo
+
+The browser keeps no state machine for a press, Apply, Discard or a turn's restore alike.
+`PressEntries` (`press-history.ts`) holds the press's command id and one step on the sidebar's Undo
+stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`). Every Undo of it is
+`undo()`: its notice's or row's Undo, the Undo beside a turn card's `Undone`, the sidebar's Ctrl+Z, or the
+editor's. A press while one is out hears the same answer, and `undoing` says one is out. A chat
+card's Undo is not one of them: it is the server's `reverse_turn`, for what the turn did outside
+a draft only.
+
+The editor's Ctrl+Z gets its step (`EditorPressStep`) when the press is made, on every editor open
+on a pressed document, so typing after the press is undone first. Its Undo waits for the press's
+answer and then is `undo()`; Redo presses again under the same step.
+
+```mermaid
+stateDiagram-v2
+  [*] --> sent: a press (the editor step is pushed)
+  sent --> [*]: it took nothing (the editor step leaves)
+  sent --> in_force: the press applied or discarded something
   in_force --> pressed: an Undo
-  pressed --> in_force: it never reached the server (a brief toast)
-  pressed --> redoable: taken back, pressed in an editor that keeps its Redo
-  pressed --> ended: taken back from elsewhere
-  redoable --> in_force: the Redo landed, as a new press
-  redoable --> ended: the Redo failed, or the editor dropped it (typing, session closed)
+  pressed --> in_force: it never reached the server (a brief toast; the editor step comes back)
+  pressed --> ended: taken back
   ended --> [*]
 ```
 
-- **The Undo is the press's `unpress`**, once: the server takes back that press's text effects
-  (`press_text_effects`, by content: a change typed inside since stays as it is) and tree
-  records, and a second Undo of the same press takes nothing.
-- **A Redo presses the same items again** as a new command, which becomes the one in force.
-- `owner.presses` holds every entry, so an editor session that opens after the press joins it
-  (`observeHistories`); the owner ends them when the account closes.
+- **The Undo is the press's `unpress`**, once: the server takes back that press's records, and a
+  second Undo of the same press takes nothing.
+- **Ended anywhere, the steps go together**: taken back from the sidebar or a notice, the editor's
+  step leaves too; one Ctrl+Z took back stays for Redo.
+- `owner.presses` holds every entry; the owner ends them when the account closes.
+
+### A turn's restore on its card
+
+A turn's restore in one draft (the card's `Undo turn`) is this press, keyed in the owner by turn and draft
+(`DraftCommandOwner.restore`), which the card reads: the slot keeps no state of its own. The
+card's read of the turn (`TurnReceiptChip.restored`) says which press is in force, so a reload or
+another tab converges on it.
+
+```mermaid
+stateDiagram-v2
+  [*] --> offered: the card's read offers it
+  offered --> sending: Undo turn
+  sending --> offered: it changed nothing, or never landed
+  sending --> in_force: it took something back, and the card reads Undone with its Undo (its Ctrl+Z and sidebar steps)
+  offered --> in_force: a newer read names a press (another tab's, or before a reload: the card's Undo only)
+  in_force --> offered: an Undo landed (card, Ctrl+Z, sidebar), or a newer read names none
+```
+
+- **One per turn and draft in a tab**: while one is sent or in force, the card offers its Undo,
+  never a second press.
+- **A read older than the entry's last change here is ignored** (`restoreChangedAt`); a press and
+  its Undo read the card again, dropping a read already out.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
-
-## Loads, not machines
-
-`DraftChangesData` in `draft-changes.ts` (`idle`, `loading`, `ready`, `gone`) is
-[load status](../../../../../../.context/state-machines/load-status.md).

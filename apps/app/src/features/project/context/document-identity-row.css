@@ -1,5 +1,5 @@
 /* The review line's give-up ladder for a line too narrow for the review controls
-   (levels 1 to 4, set by fitReviewLine in DocumentIdentityBar). */
+   (levels 1 to 4, set by fitReviewLine in features/draft-review/ReviewBar.tsx). */
 [data-document-identity-row] {
   min-width: 0;
   position: relative;

@@ -41,7 +41,7 @@ export type CommandRecord<Body = unknown> = {
 };
 
 export type HttpRequest = {
-  method: "POST" | "PATCH" | "DELETE";
+  method: "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   /** An object: the driver adds `commandId`. */
   body: Record<string, unknown>;
@@ -76,6 +76,12 @@ export type CommandKind<Body = unknown> = {
    * or dismissed, instead of releasing them. For a command later ones depend on succeeding.
    */
   holdsLane?: boolean;
+  /**
+   * What a record of this kind waits for before each send, a reload's included: the record is
+   * journaled and shown at once, and leaves once this resolves. A press waits for the edits the
+   * tab sent before it to be acknowledged, so the server presses what the writer saw.
+   */
+  ready?(record: CommandRecord<Body>, signal: AbortSignal): Promise<void>;
   /**
    * Every tab runs this once for each record it sees settle (also for one settled before it
    * opened), so it must be safe in every tab and safe to run twice. The domain then reads its

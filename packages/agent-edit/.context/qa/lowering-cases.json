@@ -1,0 +1,810 @@
+[
+  {
+    "id": "1661-1-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "“The glass still keeps very high,” he remarked as he sat down. “It is of importance that it should not rain before we are able to go over the ground. On the other hand, a man should be at his very best and keenest for such nice work as that, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”",
+    "e1": {
+      "kind": "insert",
+      "at": 117,
+      "text": " of course"
+    },
+    "base1": "“The glass still keeps very high,” he remarked as he sat down. “It is of importance that it should not rain before we of course are able to go over the ground. On the other hand, a man should be at his very best and keenest for such nice work as that, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”",
+    "ai": "“The glass is still very high,” he remarked as he sat down. “It matters that it does not rain before we can go over the ground. On the other hand, a man should be at his best and keenest for such nice work, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”"
+  },
+  {
+    "id": "1661-1-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "“The glass still keeps very high,” he remarked as he sat down. “It is of importance that it should not rain before we are able to go over the ground. On the other hand, a man should be at his very best and keenest for such nice work as that, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”",
+    "e1": {
+      "kind": "retype",
+      "from": 192,
+      "to": 196,
+      "text": "rather"
+    },
+    "base1": "“The glass still keeps very high,” he remarked as he sat down. “It is of importance that it should not rain before we are able to go over the ground. On the other hand, a man should be at his rather best and keenest for such nice work as that, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”",
+    "ai": "“The glass still keeps very high,” he remarked as he sat down. “It matters that it should not rain before we can go over the ground. On the other hand, a man should be at his best and keenest for such nice work, and I did not wish to do it when fagged by a long journey. I have seen young McCarthy.”"
+  },
+  {
+    "id": "1661-0-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "fix dialogue",
+    "base0": "“Well, then, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge; but he had sold the lot at once, and not one word would he tell me as to where they had gone. You heard him yourselves to-night. Well, he has always answered me like that. My sister thinks that I am going mad. Sometimes I think that I am myself. And now—and now I am myself a branded thief, without ever having touched the wealth for which I sold my character. God help me! God help me!” He burst into convulsive sobbing, with his face buried in his hands.",
+    "e1": {
+      "kind": "insert",
+      "at": 348,
+      "text": " of course"
+    },
+    "base1": "“Well, then, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge; but he had sold the lot at once, and not one word would he tell me as to where they had gone. You heard him yourselves to-night. Well, he has always answered me like that. My sister thinks that I am going mad. Sometimes I think that I am of course myself. And now—and now I am myself a branded thief, without ever having touched the wealth for which I sold my character. God help me! God help me!” He burst into convulsive sobbing, with his face buried in his hands.",
+    "ai": "Well, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge—but he'd sold the lot at once, and not one word would he tell me about where they'd gone. You heard him yourselves tonight. Well, he's always answered me like that. My sister thinks I'm going mad. Sometimes I think I am myself. And now—and now I'm a branded thief, without ever having touched the wealth I sold my character for. God help me! God help me!"
+  },
+  {
+    "id": "1661-2-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "“‘Perhaps you will have the kindness to wait in this room for a few minutes,’ said he, throwing open another door. It was a quiet, little, plainly furnished room, with a round table in the centre, on which several German books were scattered. Colonel Stark laid down the lamp on the top of a harmonium beside the door. ‘I shall not keep you waiting an instant,’ said he, and vanished into the darkness.",
+    "e1": {
+      "kind": "insert",
+      "at": 312,
+      "text": " at last"
+    },
+    "base1": "“‘Perhaps you will have the kindness to wait in this room for a few minutes,’ said he, throwing open another door. It was a quiet, little, plainly furnished room, with a round table in the centre, on which several German books were scattered. Colonel Stark laid down the lamp on the top of a harmonium beside the at last door. ‘I shall not keep you waiting an instant,’ said he, and vanished into the darkness.",
+    "ai": "\"‘Perhaps you will have the kindness to wait in this room for a few minutes,’ says he, throwing open another door. It is a quiet, little, plainly furnished room, with a round table in the centre, on which several German books are scattered. Colonel Stark lays down the lamp on the top of a harmonium beside the at last door. ‘I shall not keep you waiting an instant,’ says he, and vanishes into the darkness."
+  },
+  {
+    "id": "1661-2-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "“‘Perhaps you will have the kindness to wait in this room for a few minutes,’ said he, throwing open another door. It was a quiet, little, plainly furnished room, with a round table in the centre, on which several German books were scattered. Colonel Stark laid down the lamp on the top of a harmonium beside the door. ‘I shall not keep you waiting an instant,’ said he, and vanished into the darkness.",
+    "e1": {
+      "kind": "retype",
+      "from": 53,
+      "to": 57,
+      "text": "chamber"
+    },
+    "base1": "“‘Perhaps you will have the kindness to wait in this chamber for a few minutes,’ said he, throwing open another door. It was a quiet, little, plainly furnished room, with a round table in the centre, on which several German books were scattered. Colonel Stark laid down the lamp on the top of a harmonium beside the door. ‘I shall not keep you waiting an instant,’ said he, and vanished into the darkness.",
+    "ai": "“Perhaps you will have the kindness to wait in this chamber for a few minutes,” says he, throwing open another door. It is a quiet, little, plainly furnished room, with a round table in the centre, on which several German books are scattered. Colonel Stark lays down the lamp on the top of a harmonium beside the door. “I shall not keep you waiting an instant,” says he, and vanishes into the darkness."
+  },
+  {
+    "id": "1661-0-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "fix dialogue",
+    "base0": "“Well, then, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge; but he had sold the lot at once, and not one word would he tell me as to where they had gone. You heard him yourselves to-night. Well, he has always answered me like that. My sister thinks that I am going mad. Sometimes I think that I am myself. And now—and now I am myself a branded thief, without ever having touched the wealth for which I sold my character. God help me! God help me!” He burst into convulsive sobbing, with his face buried in his hands.",
+    "e1": {
+      "kind": "retype",
+      "from": 542,
+      "to": 546,
+      "text": "expression"
+    },
+    "base1": "“Well, then, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge; but he had sold the lot at once, and not one word would he tell me as to where they had gone. You heard him yourselves to-night. Well, he has always answered me like that. My sister thinks that I am going mad. Sometimes I think that I am myself. And now—and now I am myself a branded thief, without ever having touched the wealth for which I sold my character. God help me! God help me!” He burst into convulsive sobbing, with his expression buried in his hands.",
+    "ai": "“Well, of course I saw it all, and I ran off as hard as my feet would carry me to this man Breckinridge—but he had sold the lot at once, and not one word would he tell me as to where they had gone. You heard him yourselves to-night. Well, he has always answered me like that. My sister thinks I'm going mad. Sometimes I think I am myself. And now—and now I'm a branded thief myself, without ever having touched the wealth for which I sold my character. God help me! God help me!” He burst into convulsive sobbing, with his face buried in his hands."
+  },
+  {
+    "id": "1661-3-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is young John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years and have never set eyes on him yet.”",
+    "e1": {
+      "kind": "insert",
+      "at": 417,
+      "text": " slowly"
+    },
+    "base1": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is young John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we slowly never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years and have never set eyes on him yet.”",
+    "ai": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is young John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we slowly never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years and have never set eyes on him yet.” He tapped his stick twice on the flags, as though the admission nettled him."
+  },
+  {
+    "id": "1661-4-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Sherlock Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he looked her over in the minute and yet abstracted fashion which was peculiar to him.",
+    "e1": {
+      "kind": "insert",
+      "at": 367,
+      "text": " quietly"
+    },
+    "base1": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Sherlock Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he quietly looked her over in the minute and yet abstracted fashion which was peculiar to him.",
+    "ai": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he quietly looked her over in the minute yet abstracted fashion peculiar to him."
+  },
+  {
+    "id": "1661-4-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Sherlock Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he looked her over in the minute and yet abstracted fashion which was peculiar to him.",
+    "e1": {
+      "kind": "retype",
+      "from": 368,
+      "to": 374,
+      "text": "glanced"
+    },
+    "base1": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Sherlock Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he glanced her over in the minute and yet abstracted fashion which was peculiar to him.",
+    "ai": "As he spoke there was a tap at the door, and the boy in buttons entered to announce Miss Mary Sutherland, while the lady herself loomed behind his small black figure like a full-sailed merchant-man behind a tiny pilot boat. Holmes welcomed her with the easy courtesy for which he was remarkable, and, having closed the door and bowed her into an armchair, he glanced her over in the minute yet abstracted fashion peculiar to him."
+  },
+  {
+    "id": "1661-3-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is young John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years and have never set eyes on him yet.”",
+    "e1": {
+      "kind": "retype",
+      "from": 233,
+      "to": 238,
+      "text": "youthful"
+    },
+    "base1": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is youthful John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years and have never set eyes on him yet.”",
+    "ai": "“John Clay, the murderer, thief, smasher, and forger. He’s a young man, Mr. Merryweather, but he is at the head of his profession, and I would rather have my bracelets on him than on any criminal in London. He’s a remarkable man, is youthful John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of him at every turn, we never know where to find the man himself. He’ll crack a crib in Scotland one week, and be raising money to build an orphanage in Cornwall the next. I’ve been on his track for years”—he tapped the arm of his chair, and his voice dropped a little—“and have never set eyes on him yet.”"
+  },
+  {
+    "id": "1661-7-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "As we passed out he exchanged a few words with the landlord, explaining that we were going on a late visit to an acquaintance, and that it was possible that we might spend the night there. A moment later we were out on the dark road, a chill wind blowing in our faces, and one yellow light twinkling in front of us through the gloom to guide us on our sombre errand.",
+    "e1": {
+      "kind": "insert",
+      "at": 215,
+      "text": " of course"
+    },
+    "base1": "As we passed out he exchanged a few words with the landlord, explaining that we were going on a late visit to an acquaintance, and that it was possible that we might spend the night there. A moment later we were out of course on the dark road, a chill wind blowing in our faces, and one yellow light twinkling in front of us through the gloom to guide us on our sombre errand.",
+    "ai": "As we passed out he exchanged a few words with the landlord, explaining that we were on a late visit to an acquaintance and might spend the night there. A moment later we were out on the dark road, a chill wind in our faces, one yellow light twinkling ahead through the gloom to guide us on our sombre errand."
+  },
+  {
+    "id": "1661-7-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "tighten",
+    "base0": "As we passed out he exchanged a few words with the landlord, explaining that we were going on a late visit to an acquaintance, and that it was possible that we might spend the night there. A moment later we were out on the dark road, a chill wind blowing in our faces, and one yellow light twinkling in front of us through the gloom to guide us on our sombre errand.",
+    "e1": {
+      "kind": "insert",
+      "at": 218,
+      "text": " at last"
+    },
+    "base1": "As we passed out he exchanged a few words with the landlord, explaining that we were going on a late visit to an acquaintance, and that it was possible that we might spend the night there. A moment later we were out on at last the dark road, a chill wind blowing in our faces, and one yellow light twinkling in front of us through the gloom to guide us on our sombre errand.",
+    "ai": "As we passed out he exchanged a few words with the landlord, explaining that we were on a late visit to an acquaintance and might spend the night there. A moment later we were out on the dark road at last, a chill wind in our faces and one yellow light twinkling ahead through the gloom to guide us on our sombre errand."
+  },
+  {
+    "id": "1661-5-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "He was a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He was dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions were in absurd contrast to the dignity of his dress and features, for he was running hard, with occasional little springs, such as a weary man gives who is little accustomed to set any tax upon his legs. As he ran he jerked his hands up and down, waggled his head, and writhed his face into the most extraordinary contortions.",
+    "e1": {
+      "kind": "insert",
+      "at": 404,
+      "text": " quietly"
+    },
+    "base1": "He was a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He was dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions were in absurd contrast to the dignity of his dress and features, for he was running hard, with occasional little springs, such as a weary quietly man gives who is little accustomed to set any tax upon his legs. As he ran he jerked his hands up and down, waggled his head, and writhed his face into the most extraordinary contortions.",
+    "ai": "He is a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He is dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions are in absurd contrast to the dignity of his dress and features, for he is running hard, with occasional little springs, such as a weary quietly man gives who is little accustomed to set any tax upon his legs. As he runs he jerks his hands up and down, waggles his head, and writhes his face into the most extraordinary contortions."
+  },
+  {
+    "id": "1661-6-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o’clock that I found myself free and was able to spring into a hansom and drive to Baker Street, half afraid that I might be too late to assist at the dénouement of the little mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him.",
+    "e1": {
+      "kind": "insert",
+      "at": 263,
+      "text": " without a word"
+    },
+    "base1": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o’clock that I found myself free and was able to spring into a hansom and drive to without a word Baker Street, half afraid that I might be too late to assist at the dénouement of the little mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him.",
+    "ai": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o'clock that I found myself free and was able to spring into a hansom and drive to without a word Baker Street, half afraid that I might be too late to assist at the dénouement of the little mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him. He did not stir at my entrance, and I stood a moment in the doorway, watching the slow rise and fall of his breathing."
+  },
+  {
+    "id": "1661-5-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "He was a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He was dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions were in absurd contrast to the dignity of his dress and features, for he was running hard, with occasional little springs, such as a weary man gives who is little accustomed to set any tax upon his legs. As he ran he jerked his hands up and down, waggled his head, and writhed his face into the most extraordinary contortions.",
+    "e1": {
+      "kind": "retype",
+      "from": 547,
+      "to": 551,
+      "text": "expression"
+    },
+    "base1": "He was a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He was dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions were in absurd contrast to the dignity of his dress and features, for he was running hard, with occasional little springs, such as a weary man gives who is little accustomed to set any tax upon his legs. As he ran he jerked his hands up and down, waggled his head, and writhed his expression into the most extraordinary contortions.",
+    "ai": "He is a man of about fifty, tall, portly, and imposing, with a massive, strongly marked face and a commanding figure. He is dressed in a sombre yet rich style, in black frock-coat, shining hat, neat brown gaiters, and well-cut pearl-grey trousers. Yet his actions are in absurd contrast to the dignity of his dress and features, for he is running hard, with occasional little springs, such as a weary man gives who is little accustomed to set any tax upon his legs. As he runs he jerks his hands up and down, waggles his head, and writhes his expression into the most extraordinary contortions."
+  },
+  {
+    "id": "1661-8-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "It was, indeed, our friend the financier. I was shocked by the change which had come over him, for his face which was naturally of a broad and massive mould, was now pinched and fallen in, while his hair seemed to me at least a shade whiter. He entered with a weariness and lethargy which was even more painful than his violence of the morning before, and he dropped heavily into the armchair which I pushed forward for him.",
+    "e1": {
+      "kind": "insert",
+      "at": 225,
+      "text": " once more"
+    },
+    "base1": "It was, indeed, our friend the financier. I was shocked by the change which had come over him, for his face which was naturally of a broad and massive mould, was now pinched and fallen in, while his hair seemed to me at least once more a shade whiter. He entered with a weariness and lethargy which was even more painful than his violence of the morning before, and he dropped heavily into the armchair which I pushed forward for him.",
+    "ai": "It is, indeed, our friend the financier. I am shocked by the change which has come over him, for his face which is naturally of a broad and massive mould, is now pinched and fallen in, while his hair seems to me at least once more a shade whiter. He enters with a weariness and lethargy which is even more painful than his violence of the morning before, and he drops heavily into the armchair which I push forward for him."
+  },
+  {
+    "id": "1661-8-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "present tense",
+    "base0": "It was, indeed, our friend the financier. I was shocked by the change which had come over him, for his face which was naturally of a broad and massive mould, was now pinched and fallen in, while his hair seemed to me at least a shade whiter. He entered with a weariness and lethargy which was even more painful than his violence of the morning before, and he dropped heavily into the armchair which I pushed forward for him.",
+    "e1": {
+      "kind": "retype",
+      "from": 103,
+      "to": 107,
+      "text": "expression"
+    },
+    "base1": "It was, indeed, our friend the financier. I was shocked by the change which had come over him, for his expression which was naturally of a broad and massive mould, was now pinched and fallen in, while his hair seemed to me at least a shade whiter. He entered with a weariness and lethargy which was even more painful than his violence of the morning before, and he dropped heavily into the armchair which I pushed forward for him.",
+    "ai": "It is, indeed, our friend the financier. I am shocked by the change which has come over him, for his expression which is naturally of a broad and massive mould, is now pinched and fallen in, while his hair seems to me at least a shade whiter. He enters with a weariness and lethargy which is even more painful than his violence of the morning before, and he drops heavily into the armchair which I push forward for him."
+  },
+  {
+    "id": "1661-6-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o’clock that I found myself free and was able to spring into a hansom and drive to Baker Street, half afraid that I might be too late to assist at the dénouement of the little mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him.",
+    "e1": {
+      "kind": "retype",
+      "from": 350,
+      "to": 356,
+      "text": "small"
+    },
+    "base1": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o’clock that I found myself free and was able to spring into a hansom and drive to Baker Street, half afraid that I might be too late to assist at the dénouement of the small mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him.",
+    "ai": "A professional case of great gravity was engaging my own attention at the time, and the whole of next day I was busy at the bedside of the sufferer. It was not until close upon six o’clock that I found myself free and was able to spring into a hansom and drive to Baker Street, half afraid that I might be too late to assist at the dénouement of the small mystery. I found Sherlock Holmes alone, however, half asleep, with his long, thin form curled up in the recesses of his armchair. A formidable array of bottles and test-tubes, with the pungent cleanly smell of hydrochloric acid, told me that he had spent his day in the chemical work which was so dear to him. He did not stir as I entered, and for a moment I stood in the doorway listening to the slow, even rhythm of his breathing."
+  },
+  {
+    "id": "120-0-retype",
+    "book": "Treasure Island",
+    "instruction": "fix dialogue",
+    "base0": "This second trip fairly aroused the watchers along shore. “Lillibullero” was dropped again; and just before we lost sight of them behind the little point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared that Silver and the others might be close at hand, and all might very well be lost by trying for too much.",
+    "e1": {
+      "kind": "retype",
+      "from": 141,
+      "to": 147,
+      "text": "small"
+    },
+    "base1": "This second trip fairly aroused the watchers along shore. “Lillibullero” was dropped again; and just before we lost sight of them behind the small point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared that Silver and the others might be close at hand, and all might very well be lost by trying for too much.",
+    "ai": "This second trip fairly aroused the watchers along shore. \"Lillibullero\" was dropped again, and just before we lost sight of them behind the small point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared Silver and the others might be close at hand, and I might lose everything by trying for too much."
+  },
+  {
+    "id": "120-0-insert",
+    "book": "Treasure Island",
+    "instruction": "fix dialogue",
+    "base0": "This second trip fairly aroused the watchers along shore. “Lillibullero” was dropped again; and just before we lost sight of them behind the little point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared that Silver and the others might be close at hand, and all might very well be lost by trying for too much.",
+    "e1": {
+      "kind": "insert",
+      "at": 100,
+      "text": " quietly"
+    },
+    "base1": "This second trip fairly aroused the watchers along shore. “Lillibullero” was dropped again; and just quietly before we lost sight of them behind the little point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared that Silver and the others might be close at hand, and all might very well be lost by trying for too much.",
+    "ai": "This second trip fairly aroused the watchers along shore. “Lillibullero” was dropped again; and then, just quietly, before we lost sight of them behind the little point, one of them whipped ashore and disappeared. I had half a mind to change my plan and destroy their boats, but I feared Silver and the others might be close at hand, and everything might well be lost by trying for too much."
+  },
+  {
+    "id": "1661-9-insert",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a square, gaping hole, through which streamed the light of a lantern. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a hand on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair.",
+    "e1": {
+      "kind": "insert",
+      "at": 145,
+      "text": " slowly"
+    },
+    "base1": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a slowly square, gaping hole, through which streamed the light of a lantern. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a hand on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair.",
+    "ai": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a slowly square, gaping hole, through which streamed the light of a lantern. For a moment the lantern's glow wavered, as if the hand that held it were unsteady. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a hand on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair."
+  },
+  {
+    "id": "1661-9-retype",
+    "book": "Adventures of Sherlock Holmes",
+    "instruction": "add a beat",
+    "base0": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a square, gaping hole, through which streamed the light of a lantern. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a hand on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair.",
+    "e1": {
+      "kind": "retype",
+      "from": 314,
+      "to": 318,
+      "text": "fingers"
+    },
+    "base1": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a square, gaping hole, through which streamed the light of a lantern. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a fingers on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair.",
+    "ai": "Its disappearance, however, was but momentary. With a rending, tearing sound, one of the broad, white stones turned over upon its side and left a square, gaping hole, through which streamed the light of a lantern. Over the edge there peeped a clean-cut, boyish face, which looked keenly about it, and then, with a fingers on either side of the aperture, drew itself shoulder-high and waist-high, until one knee rested upon the edge, and he paused there a moment, breathing hard. In another instant he stood at the side of the hole and was hauling after him a companion, lithe and small like himself, with a pale face and a shock of very red hair."
+  },
+  {
+    "id": "120-1-insert",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "The paper had been sealed in several places with a thimble by way of seal; the very thimble, perhaps, that I had found in the captain’s pocket. The doctor opened the seals with great care, and there fell out the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular that would be needed to bring a ship to a safe anchorage upon its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, and had two fine land-locked harbours, and a hill in the centre part marked “The Spy-glass.” There were several additions of a later date, but above all, three crosses of red ink--two on the north part of the island, one in the southwest--and beside this last, in the same red ink, and in a small, neat hand, very different from the captain’s tottery characters, these words: “Bulk of treasure here.”",
+    "e1": {
+      "kind": "insert",
+      "at": 755,
+      "text": " slowly"
+    },
+    "base1": "The paper had been sealed in several places with a thimble by way of seal; the very thimble, perhaps, that I had found in the captain’s pocket. The doctor opened the seals with great care, and there fell out the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular that would be needed to bring a ship to a safe anchorage upon its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, and had two fine land-locked harbours, and a hill in the centre part marked “The Spy-glass.” There were several additions of a later date, but above all, three crosses of red ink--two on the north part of the island, one in the southwest--and beside this slowly last, in the same red ink, and in a small, neat hand, very different from the captain’s tottery characters, these words: “Bulk of treasure here.”",
+    "ai": "The paper had been sealed in several places with a thimble by way of seal—perhaps the very thimble I had found in the captain's pocket. The doctor opened the seals with great care, and out fell the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular needed to bring a ship to a safe anchorage on its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, with two fine land-locked harbours and a hill in the centre marked \"The Spy-glass.\" There were several additions of a later date, but above all three crosses of red ink—two on the north part of the island, one in the southwest—and beside this last, in the same red ink, in a small, neat hand very different from the captain's tottery characters, these words: \"Bulk of treasure here.\""
+  },
+  {
+    "id": "120-3-insert",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” he cried. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any great hurry after that treasure.”",
+    "e1": {
+      "kind": "insert",
+      "at": 266,
+      "text": " for a moment"
+    },
+    "base1": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the for a moment best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” he cried. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any great hurry after that treasure.”",
+    "ai": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the for a moment best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” He broke off, catching his breath. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any great hurry after that treasure.”"
+  },
+  {
+    "id": "120-2-retype",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "“Davis was a man too, by all accounts,” said Silver. “I never sailed along of him; first with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I laid by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Old Pew, as had lost his sight, and might have thought shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man was starving! He begged, and he stole, and he cut throats, and starved at that, by the powers!”",
+    "e1": {
+      "kind": "retype",
+      "from": 542,
+      "to": 545,
+      "text": "Ancient"
+    },
+    "base1": "“Davis was a man too, by all accounts,” said Silver. “I never sailed along of him; first with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I laid by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Ancient Pew, as had lost his sight, and might have thought shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man was starving! He begged, and he stole, and he cut throats, and starved at that, by the powers!”",
+    "ai": "“Davis is a man too, by all accounts,” says Silver. “I never sail along of him; first with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I lay by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Ancient Pew, as had lost his sight, and might have thought shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man is starving! He begs, and he steals, and he cuts throats, and starves at that, by the powers!”"
+  },
+  {
+    "id": "120-1-retype",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "The paper had been sealed in several places with a thimble by way of seal; the very thimble, perhaps, that I had found in the captain’s pocket. The doctor opened the seals with great care, and there fell out the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular that would be needed to bring a ship to a safe anchorage upon its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, and had two fine land-locked harbours, and a hill in the centre part marked “The Spy-glass.” There were several additions of a later date, but above all, three crosses of red ink--two on the north part of the island, one in the southwest--and beside this last, in the same red ink, and in a small, neat hand, very different from the captain’s tottery characters, these words: “Bulk of treasure here.”",
+    "e1": {
+      "kind": "retype",
+      "from": 79,
+      "to": 83,
+      "text": "rather"
+    },
+    "base1": "The paper had been sealed in several places with a thimble by way of seal; the rather thimble, perhaps, that I had found in the captain’s pocket. The doctor opened the seals with great care, and there fell out the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular that would be needed to bring a ship to a safe anchorage upon its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, and had two fine land-locked harbours, and a hill in the centre part marked “The Spy-glass.” There were several additions of a later date, but above all, three crosses of red ink--two on the north part of the island, one in the southwest--and beside this last, in the same red ink, and in a small, neat hand, very different from the captain’s tottery characters, these words: “Bulk of treasure here.”",
+    "ai": "The paper had been sealed in several places with a thimble by way of seal; perhaps the very thimble I had found in the captain’s pocket. The doctor opened the seals with great care, and out fell the map of an island, with latitude and longitude, soundings, names of hills and bays and inlets, and every particular needed to bring a ship to a safe anchorage upon its shores. It was about nine miles long and five across, shaped, you might say, like a fat dragon standing up, with two fine land-locked harbours and a hill in the centre marked “The Spy-glass.” There were several additions of a later date, but above all three crosses of red ink—two on the north part of the island, one in the southwest—and beside this last, in the same red ink, in a small, neat hand very different from the captain’s tottery characters, these words: “Bulk of treasure here.”"
+  },
+  {
+    "id": "120-3-retype",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” he cried. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any great hurry after that treasure.”",
+    "e1": {
+      "kind": "retype",
+      "from": 538,
+      "to": 543,
+      "text": "vast"
+    },
+    "base1": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” he cried. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any vast hurry after that treasure.”",
+    "ai": "“There is a kind of fate in this,” he observed when I had done. “Every step, it’s you that saves our lives; and do you suppose by any chance that we are going to let you lose yours? That would be a poor return, my boy. You found out the plot; you found Ben Gunn--the best deed that ever you did, or will do, though you live to ninety. Oh, by Jupiter, and talking of Ben Gunn! Why, this is the mischief in person. Silver!” He broke off, his eyes narrowing as he looked past me. “Silver! I’ll give you a piece of advice,” he continued as the cook drew near again; “don’t you be in any vast hurry after that treasure.”"
+  },
+  {
+    "id": "120-5-insert",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "We had some heavy weather, which only proved the qualities of the HISPANIOLA. Every man on board seemed well content, and they must have been hard to please if they had been otherwise, for it is my belief there was never a ship’s company so spoiled since Noah put to sea. Double grog was going on the least excuse; there was duff on odd days, as, for instance, if the squire heard it was any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that had a fancy.",
+    "e1": {
+      "kind": "insert",
+      "at": 48,
+      "text": " for a moment"
+    },
+    "base1": "We had some heavy weather, which only proved the for a moment qualities of the HISPANIOLA. Every man on board seemed well content, and they must have been hard to please if they had been otherwise, for it is my belief there was never a ship’s company so spoiled since Noah put to sea. Double grog was going on the least excuse; there was duff on odd days, as, for instance, if the squire heard it was any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that had a fancy.",
+    "ai": "We have some heavy weather, which only proves the for a moment qualities of the HISPANIOLA. Every man on board seems well content, and they must be hard to please if they are otherwise, for it is my belief there is never a ship’s company so spoiled since Noah puts to sea. Double grog is going on the least excuse; there is duff on odd days, as, for instance, if the squire hears it is any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that has a fancy."
+  },
+  {
+    "id": "120-2-insert",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "“Davis was a man too, by all accounts,” said Silver. “I never sailed along of him; first with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I laid by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Old Pew, as had lost his sight, and might have thought shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man was starving! He begged, and he stole, and he cut throats, and starved at that, by the powers!”",
+    "e1": {
+      "kind": "insert",
+      "at": 88,
+      "text": " quietly"
+    },
+    "base1": "“Davis was a man too, by all accounts,” said Silver. “I never sailed along of him; first quietly with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I laid by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Old Pew, as had lost his sight, and might have thought shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man was starving! He begged, and he stole, and he cut throats, and starved at that, by the powers!”",
+    "ai": "“Davis is a man too, by all accounts,” says Silver. “I never sail along of him; first quietly with England, then with Flint, that’s my story; and now here on my own account, in a manner of speaking. I lay by nine hundred safe, from England, and two thousand after Flint. That ain’t bad for a man before the mast--all safe in bank. ’Tain’t earning now, it’s saving does it, you may lay to that. Where’s all England’s men now? I dunno. Where’s Flint’s? Why, most on ’em aboard here, and glad to get the duff--been begging before that, some on ’em. Old Pew, as has lost his sight, and might think shame, spends twelve hundred pound in a year, like a lord in Parliament. Where is he now? Well, he’s dead now and under hatches; but for two year before that, shiver my timbers, the man is starving! He begs, and he steals, and he cuts throats, and starves at that, by the powers!”"
+  },
+  {
+    "id": "120-4-insert",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "The explosion of disapproval, which nothing but Silver’s black looks had restrained, broke out immediately the doctor had left the house. Silver was roundly accused of playing double--of trying to make a separate peace for himself, of sacrificing the interests of his accomplices and victims, and, in one word, of the identical, exact thing that he was doing. It seemed to me so obvious, in this case, that I could not imagine how he was to turn their anger. But he was twice the man the rest were, and his last night’s victory had given him a huge preponderance on their minds. He called them all the fools and dolts you can imagine, said it was necessary I should talk to the doctor, fluttered the chart in their faces, asked them if they could afford to break the treaty the very day they were bound a-treasure-hunting.",
+    "e1": {
+      "kind": "insert",
+      "at": 68,
+      "text": " once more"
+    },
+    "base1": "The explosion of disapproval, which nothing but Silver’s black looks once more had restrained, broke out immediately the doctor had left the house. Silver was roundly accused of playing double--of trying to make a separate peace for himself, of sacrificing the interests of his accomplices and victims, and, in one word, of the identical, exact thing that he was doing. It seemed to me so obvious, in this case, that I could not imagine how he was to turn their anger. But he was twice the man the rest were, and his last night’s victory had given him a huge preponderance on their minds. He called them all the fools and dolts you can imagine, said it was necessary I should talk to the doctor, fluttered the chart in their faces, asked them if they could afford to break the treaty the very day they were bound a-treasure-hunting.",
+    "ai": "The explosion of disapproval, which only Silver's black looks had restrained, broke out as soon as the doctor left. Silver was roundly accused of playing double—of trying to make a separate peace, of sacrificing his accomplices and victims—in a word, of the exact thing he was doing. It seemed so obvious that I could not imagine how he would turn their anger. But he was twice the man the rest were, and his last night's victory had given him a huge preponderance over their minds. He called them all the fools and dolts imaginable, said it was necessary I should talk to the doctor, fluttered the chart in their faces, and asked if they could afford to break the treaty the very day they were bound a-treasure-hunting."
+  },
+  {
+    "id": "120-5-retype",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "We had some heavy weather, which only proved the qualities of the HISPANIOLA. Every man on board seemed well content, and they must have been hard to please if they had been otherwise, for it is my belief there was never a ship’s company so spoiled since Noah put to sea. Double grog was going on the least excuse; there was duff on odd days, as, for instance, if the squire heard it was any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that had a fancy.",
+    "e1": {
+      "kind": "retype",
+      "from": 127,
+      "to": 131,
+      "text": "should"
+    },
+    "base1": "We had some heavy weather, which only proved the qualities of the HISPANIOLA. Every man on board seemed well content, and they should have been hard to please if they had been otherwise, for it is my belief there was never a ship’s company so spoiled since Noah put to sea. Double grog was going on the least excuse; there was duff on odd days, as, for instance, if the squire heard it was any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that had a fancy.",
+    "ai": "We have some heavy weather, which only proves the qualities of the HISPANIOLA. Every man on board seems well content, and they should be hard to please if they were otherwise, for it is my belief there was never a ship’s company so spoiled since Noah put to sea. Double grog is going on the least excuse; there is duff on odd days, as, for instance, if the squire hears it is any man’s birthday, and always a barrel of apples standing broached in the waist for anyone to help himself that has a fancy."
+  },
+  {
+    "id": "120-6-insert",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I took a disgust of the place that was almost as strong as fear.",
+    "e1": {
+      "kind": "insert",
+      "at": 216,
+      "text": " without a word"
+    },
+    "base1": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by without a word any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I took a disgust of the place that was almost as strong as fear.",
+    "ai": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by without a word any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I took a disgust of the place that was almost as strong as fear. I wiped my brow and flicked the sweat from my fingers, though it did no good."
+  },
+  {
+    "id": "120-7-retype",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "I began to feel pretty desperate at this, for I felt altogether helpless; and yet, by an odd train of circumstances, it was indeed through me that safety came. In the meantime, talk as we pleased, there were only seven out of the twenty-six on whom we knew we could rely; and out of these seven one was a boy, so that the grown men on our side were six to their nineteen.",
+    "e1": {
+      "kind": "insert",
+      "at": 222,
+      "text": " quietly"
+    },
+    "base1": "I began to feel pretty desperate at this, for I felt altogether helpless; and yet, by an odd train of circumstances, it was indeed through me that safety came. In the meantime, talk as we pleased, there were only seven out quietly of the twenty-six on whom we knew we could rely; and out of these seven one was a boy, so that the grown men on our side were six to their nineteen.",
+    "ai": "I grew desperate, feeling altogether helpless; yet by an odd train of circumstances it was through me that safety came. Meanwhile, talk as we pleased, only seven of the twenty-six we could rely on had gone out quietly, and one of the seven was a boy, leaving six grown men on our side to their nineteen."
+  },
+  {
+    "id": "120-8-insert",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "It was no wonder the men were in a good humour now. For my part, I was horribly cast down. Should the scheme he had now sketched prove feasible, Silver, already doubly a traitor, would not hesitate to adopt it. He had still a foot in either camp, and there was no doubt he would prefer wealth and freedom with the pirates to a bare escape from hanging, which was the best he had to hope on our side.",
+    "e1": {
+      "kind": "insert",
+      "at": 115,
+      "text": " quietly"
+    },
+    "base1": "It was no wonder the men were in a good humour now. For my part, I was horribly cast down. Should the scheme he had quietly now sketched prove feasible, Silver, already doubly a traitor, would not hesitate to adopt it. He had still a foot in either camp, and there was no doubt he would prefer wealth and freedom with the pirates to a bare escape from hanging, which was the best he had to hope on our side.",
+    "ai": "It is no wonder the men are in a good humour now. For my part, I am horribly cast down. Should the scheme he has quietly now sketched prove feasible, Silver, already doubly a traitor, will not hesitate to adopt it. He has still a foot in either camp, and there is no doubt he will prefer wealth and freedom with the pirates to a bare escape from hanging, which is the best he has to hope on our side."
+  },
+  {
+    "id": "120-7-insert",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "I began to feel pretty desperate at this, for I felt altogether helpless; and yet, by an odd train of circumstances, it was indeed through me that safety came. In the meantime, talk as we pleased, there were only seven out of the twenty-six on whom we knew we could rely; and out of these seven one was a boy, so that the grown men on our side were six to their nineteen.",
+    "e1": {
+      "kind": "insert",
+      "at": 321,
+      "text": " without a word"
+    },
+    "base1": "I began to feel pretty desperate at this, for I felt altogether helpless; and yet, by an odd train of circumstances, it was indeed through me that safety came. In the meantime, talk as we pleased, there were only seven out of the twenty-six on whom we knew we could rely; and out of these seven one was a boy, so that the without a word grown men on our side were six to their nineteen.",
+    "ai": "I began to feel desperate, for I was altogether helpless; yet by an odd train of circumstances it was through me that safety came. Talk as we pleased, only seven of the twenty-six could be relied on, and one of these was a boy, leaving six grown men on our side to their nineteen."
+  },
+  {
+    "id": "120-6-retype",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I took a disgust of the place that was almost as strong as fear.",
+    "e1": {
+      "kind": "retype",
+      "from": 523,
+      "to": 527,
+      "text": "grabbed"
+    },
+    "base1": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I grabbed a disgust of the place that was almost as strong as fear.",
+    "ai": "I was right, as appeared later; but in the meantime, the house being stifling hot and the little patch of sand inside the palisade ablaze with midday sun, I began to get another thought into my head, which was not by any means so right. What I began to do was to envy the doctor walking in the cool shadow of the woods with the birds about him and the pleasant smell of the pines, while I sat grilling, with my clothes stuck to the hot resin, and so much blood about me and so many poor dead bodies lying all around that I grabbed a disgust of the place that was almost as strong as fear. I wiped my brow and found my hand shaking."
+  },
+  {
+    "id": "120-8-retype",
+    "book": "Treasure Island",
+    "instruction": "present tense",
+    "base0": "It was no wonder the men were in a good humour now. For my part, I was horribly cast down. Should the scheme he had now sketched prove feasible, Silver, already doubly a traitor, would not hesitate to adopt it. He had still a foot in either camp, and there was no doubt he would prefer wealth and freedom with the pirates to a bare escape from hanging, which was the best he had to hope on our side.",
+    "e1": {
+      "kind": "retype",
+      "from": 35,
+      "to": 39,
+      "text": "fine"
+    },
+    "base1": "It was no wonder the men were in a fine humour now. For my part, I was horribly cast down. Should the scheme he had now sketched prove feasible, Silver, already doubly a traitor, would not hesitate to adopt it. He had still a foot in either camp, and there was no doubt he would prefer wealth and freedom with the pirates to a bare escape from hanging, which was the best he had to hope on our side.",
+    "ai": "It is no wonder the men are in a fine humour now. For my part, I am horribly cast down. Should the scheme he has now sketched prove feasible, Silver, already doubly a traitor, would not hesitate to adopt it. He has still a foot in either camp, and there is no doubt he would prefer wealth and freedom with the pirates to a bare escape from hanging, which is the best he has to hope on our side."
+  },
+  {
+    "id": "120-4-retype",
+    "book": "Treasure Island",
+    "instruction": "tighten",
+    "base0": "The explosion of disapproval, which nothing but Silver’s black looks had restrained, broke out immediately the doctor had left the house. Silver was roundly accused of playing double--of trying to make a separate peace for himself, of sacrificing the interests of his accomplices and victims, and, in one word, of the identical, exact thing that he was doing. It seemed to me so obvious, in this case, that I could not imagine how he was to turn their anger. But he was twice the man the rest were, and his last night’s victory had given him a huge preponderance on their minds. He called them all the fools and dolts you can imagine, said it was necessary I should talk to the doctor, fluttered the chart in their faces, asked them if they could afford to break the treaty the very day they were bound a-treasure-hunting.",
+    "e1": {
+      "kind": "retype",
+      "from": 480,
+      "to": 483,
+      "text": "fellow"
+    },
+    "base1": "The explosion of disapproval, which nothing but Silver’s black looks had restrained, broke out immediately the doctor had left the house. Silver was roundly accused of playing double--of trying to make a separate peace for himself, of sacrificing the interests of his accomplices and victims, and, in one word, of the identical, exact thing that he was doing. It seemed to me so obvious, in this case, that I could not imagine how he was to turn their anger. But he was twice the fellow the rest were, and his last night’s victory had given him a huge preponderance on their minds. He called them all the fools and dolts you can imagine, said it was necessary I should talk to the doctor, fluttered the chart in their faces, asked them if they could afford to break the treaty the very day they were bound a-treasure-hunting.",
+    "ai": "The explosion of disapproval that only Silver’s black looks had restrained broke out the moment the doctor left. Silver was roundly accused of playing double—of trying to make a separate peace for himself, of sacrificing his accomplices and victims, and, in a word, of doing the exact thing he was doing. It seemed so obvious to me that I could not imagine how he would turn their anger. But he was twice the fellow the rest were, and his last night’s victory had given him a huge preponderance over their minds. He called them all the fools and dolts you can imagine, said it was necessary I should talk to the doctor, fluttered the chart in their faces, and asked whether they could afford to break the treaty the very day they were bound a-treasure-hunting."
+  },
+  {
+    "id": "120-9-insert",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "Mr. Arrow, first of all, turned out even worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his little bunk at one side of the companion; sometimes for a day or two he would be almost sober and attend to his work at least passably.",
+    "e1": {
+      "kind": "insert",
+      "at": 40,
+      "text": " of course"
+    },
+    "base1": "Mr. Arrow, first of all, turned out even of course worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his little bunk at one side of the companion; sometimes for a day or two he would be almost sober and attend to his work at least passably.",
+    "ai": "Mr. Arrow, first of all, turned out even of course worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his little bunk at one side of the companion, his jaw slack and one hand trailing on the floor; sometimes for a day or two he would be almost sober and attend to his work at least passably."
+  },
+  {
+    "id": "120-9-retype",
+    "book": "Treasure Island",
+    "instruction": "add a beat",
+    "base0": "Mr. Arrow, first of all, turned out even worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his little bunk at one side of the companion; sometimes for a day or two he would be almost sober and attend to his work at least passably.",
+    "e1": {
+      "kind": "retype",
+      "from": 451,
+      "to": 457,
+      "text": "small"
+    },
+    "base1": "Mr. Arrow, first of all, turned out even worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his small bunk at one side of the companion; sometimes for a day or two he would be almost sober and attend to his work at least passably.",
+    "ai": "Mr. Arrow, first of all, turned out even worse than the captain had feared. He had no command among the men, and people did what they pleased with him. But that was by no means the worst of it, for after a day or two at sea he began to appear on deck with hazy eye, red cheeks, stuttering tongue, and other marks of drunkenness. Time after time he was ordered below in disgrace. Sometimes he fell and cut himself; sometimes he lay all day long in his small bunk at one side of the companion; sometimes for a day or two he would be almost sober and attend to his work at least passably."
+  },
+  {
+    "id": "1342-0-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "fix dialogue",
+    "base0": "“I cannot be so easily reconciled to myself. The recollection of what I then said, of my conduct, my manners, my expressions during the whole of it, is now, and has been many months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You know not, you can scarcely conceive, how they have tortured me; though it was some time, I confess, before I was reasonable enough to allow their justice.”",
+    "e1": {
+      "kind": "retype",
+      "from": 342,
+      "to": 346,
+      "text": "understand"
+    },
+    "base1": "“I cannot be so easily reconciled to myself. The recollection of what I then said, of my conduct, my manners, my expressions during the whole of it, is now, and has been many months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You understand not, you can scarcely conceive, how they have tortured me; though it was some time, I confess, before I was reasonable enough to allow their justice.”",
+    "ai": "“I can’t be so easily reconciled to myself. The recollection of what I said then—my conduct, my manners, my expressions during the whole of it—is now, and has been for many months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You don’t understand—you can scarcely conceive—how they have tortured me; though it was some time, I confess, before I was reasonable enough to allow their justice.”"
+  },
+  {
+    "id": "1342-0-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "fix dialogue",
+    "base0": "“I cannot be so easily reconciled to myself. The recollection of what I then said, of my conduct, my manners, my expressions during the whole of it, is now, and has been many months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You know not, you can scarcely conceive, how they have tortured me; though it was some time, I confess, before I was reasonable enough to allow their justice.”",
+    "e1": {
+      "kind": "insert",
+      "at": 424,
+      "text": " of course"
+    },
+    "base1": "“I cannot be so easily reconciled to myself. The recollection of what I then said, of my conduct, my manners, my expressions during the whole of it, is now, and has been many months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You know not, you can scarcely conceive, how they have tortured me; though it was some of course time, I confess, before I was reasonable enough to allow their justice.”",
+    "ai": "“I can’t be so easily reconciled to myself. The recollection of what I said then—my conduct, my manners, my expressions through the whole of it—is now, and has been for months, inexpressibly painful to me. Your reproof, so well applied, I shall never forget: ‘Had you behaved in a more gentlemanlike manner.’ Those were your words. You know not—you can scarcely conceive—how they have tortured me; though it was some time, of course, I confess, before I was reasonable enough to allow their justice.”"
+  },
+  {
+    "id": "1342-1-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, in eagerness to follow him, without losing a moment of the time so precious; but as she reached the door, it was opened by a servant, and Mr. Darcy appeared. Her pale face and impetuous manner made him start, and before he could recover himself enough to speak, she, in whose mind every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”",
+    "e1": {
+      "kind": "retype",
+      "from": 266,
+      "to": 270,
+      "text": "expression"
+    },
+    "base1": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, in eagerness to follow him, without losing a moment of the time so precious; but as she reached the door, it was opened by a servant, and Mr. Darcy appeared. Her pale expression and impetuous manner made him start, and before he could recover himself enough to speak, she, in whose mind every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”",
+    "ai": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, eager to follow him without losing a moment; but as she reached the door, a servant opened it and Mr. Darcy appeared. Her pale expression and impetuous manner made him start, and before he could recover himself to speak, she, whose every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”"
+  },
+  {
+    "id": "1342-1-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, in eagerness to follow him, without losing a moment of the time so precious; but as she reached the door, it was opened by a servant, and Mr. Darcy appeared. Her pale face and impetuous manner made him start, and before he could recover himself enough to speak, she, in whose mind every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”",
+    "e1": {
+      "kind": "insert",
+      "at": 350,
+      "text": " of course"
+    },
+    "base1": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, in eagerness to follow him, without losing a moment of the time so precious; but as she reached the door, it was opened by a servant, and Mr. Darcy appeared. Her pale face and impetuous manner made him start, and before he could recover himself enough of course to speak, she, in whose mind every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”",
+    "ai": "“Oh! where, where is my uncle?” cried Elizabeth, darting from her seat as she finished the letter, eager to follow him without losing a moment of the precious time; but as she reached the door, a servant opened it and Mr. Darcy appeared. Her pale face and impetuous manner made him start, and before he could recover himself to speak, she, whose every idea was superseded by Lydia’s situation, hastily exclaimed, “I beg your pardon, but I must leave you. I must find Mr. Gardiner this moment on business that cannot be delayed; I have not an instant to lose.”"
+  },
+  {
+    "id": "1342-3-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What do you think has happened this morning? Mr. Collins has made an offer to Lizzy, and she will not have him.”",
+    "e1": {
+      "kind": "insert",
+      "at": 231,
+      "text": " quietly"
+    },
+    "base1": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What quietly do you think has happened this morning? Mr. Collins has made an offer to Lizzy, and she will not have him.”",
+    "ai": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What quietly do you think has happened this morning? Mr. Collins has made an offer to Lizzy, and she will not have him.” Charlotte paused with her hand still on the latch, her smile not yet formed."
+  },
+  {
+    "id": "1342-3-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What do you think has happened this morning? Mr. Collins has made an offer to Lizzy, and she will not have him.”",
+    "e1": {
+      "kind": "retype",
+      "from": 239,
+      "to": 244,
+      "text": "believe"
+    },
+    "base1": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What do you believe has happened this morning? Mr. Collins has made an offer to Lizzy, and she will not have him.”",
+    "ai": "While the family were in this confusion, Charlotte Lucas came to spend the day with them. She was met in the vestibule by Lydia, who, flying to her, cried in a half whisper, “I am glad you are come, for there is such fun here! What do you believe has happened this morning? Mr. Collins has made an offer to Lizzy\"—she paused to catch her breath—\"and she will not have him.”"
+  },
+  {
+    "id": "1342-4-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "Elizabeth’s spirits were so high on the occasion, that though she did not often speak unnecessarily to Mr. Collins, she could not help asking him whether he intended to accept Mr. Bingley’s invitation, and if he did, whether he would think it proper to join in the evening’s amusement; and she was rather surprised to find that he entertained no scruple whatever on that head, and was very far from dreading a rebuke, either from the Archbishop or Lady Catherine de Bourgh, by venturing to dance.",
+    "e1": {
+      "kind": "insert",
+      "at": 165,
+      "text": " of course"
+    },
+    "base1": "Elizabeth’s spirits were so high on the occasion, that though she did not often speak unnecessarily to Mr. Collins, she could not help asking him whether he intended of course to accept Mr. Bingley’s invitation, and if he did, whether he would think it proper to join in the evening’s amusement; and she was rather surprised to find that he entertained no scruple whatever on that head, and was very far from dreading a rebuke, either from the Archbishop or Lady Catherine de Bourgh, by venturing to dance.",
+    "ai": "Elizabeth’s spirits were so high that, though she seldom spoke unnecessarily to Mr. Collins, she asked whether he meant to accept Mr. Bingley’s invitation and, if so, thought it proper to join the evening’s amusement. She was surprised to find he had no scruple on that head and did not dread a rebuke from the Archbishop or Lady Catherine de Bourgh for venturing to dance."
+  },
+  {
+    "id": "1342-2-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "“There was just such an informality in the terms of the bequest as to give me no hope from law. A man of honour could not have doubted the intention, but Mr. Darcy chose to doubt it--or to treat it as a merely conditional recommendation, and to assert that I had forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living became vacant two years ago, exactly as I was of an age to hold it, and that it was given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me.”",
+    "e1": {
+      "kind": "retype",
+      "from": 98,
+      "to": 101,
+      "text": "fellow"
+    },
+    "base1": "“There was just such an informality in the terms of the bequest as to give me no hope from law. A fellow of honour could not have doubted the intention, but Mr. Darcy chose to doubt it--or to treat it as a merely conditional recommendation, and to assert that I had forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living became vacant two years ago, exactly as I was of an age to hold it, and that it was given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me.”",
+    "ai": "There is just such an informality in the terms of the bequest as to give me no hope from law. A fellow of honour could not have doubted the intention, but Mr. Darcy chooses to doubt it--or to treat it as a merely conditional recommendation, and to assert that I have forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living becomes vacant two years ago, exactly as I am of an age to hold it, and that it is given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me."
+  },
+  {
+    "id": "1342-4-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "Elizabeth’s spirits were so high on the occasion, that though she did not often speak unnecessarily to Mr. Collins, she could not help asking him whether he intended to accept Mr. Bingley’s invitation, and if he did, whether he would think it proper to join in the evening’s amusement; and she was rather surprised to find that he entertained no scruple whatever on that head, and was very far from dreading a rebuke, either from the Archbishop or Lady Catherine de Bourgh, by venturing to dance.",
+    "e1": {
+      "kind": "retype",
+      "from": 385,
+      "to": 389,
+      "text": "rather"
+    },
+    "base1": "Elizabeth’s spirits were so high on the occasion, that though she did not often speak unnecessarily to Mr. Collins, she could not help asking him whether he intended to accept Mr. Bingley’s invitation, and if he did, whether he would think it proper to join in the evening’s amusement; and she was rather surprised to find that he entertained no scruple whatever on that head, and was rather far from dreading a rebuke, either from the Archbishop or Lady Catherine de Bourgh, by venturing to dance.",
+    "ai": "Elizabeth’s spirits were so high that, though she seldom spoke unnecessarily to Mr. Collins, she asked whether he meant to accept Mr. Bingley’s invitation and, if so, whether he thought it proper to join the evening’s amusement. She was rather surprised to find he had no scruple on that head and was far from dreading a rebuke from the Archbishop or Lady Catherine de Bourgh for venturing to dance."
+  },
+  {
+    "id": "1342-2-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "“There was just such an informality in the terms of the bequest as to give me no hope from law. A man of honour could not have doubted the intention, but Mr. Darcy chose to doubt it--or to treat it as a merely conditional recommendation, and to assert that I had forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living became vacant two years ago, exactly as I was of an age to hold it, and that it was given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me.”",
+    "e1": {
+      "kind": "insert",
+      "at": 38,
+      "text": " once more"
+    },
+    "base1": "“There was just such an informality in once more the terms of the bequest as to give me no hope from law. A man of honour could not have doubted the intention, but Mr. Darcy chose to doubt it--or to treat it as a merely conditional recommendation, and to assert that I had forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living became vacant two years ago, exactly as I was of an age to hold it, and that it was given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me.”",
+    "ai": "There is just such an informality in once more the terms of the bequest as to give me no hope from law. A man of honour could not have doubted the intention, but Mr. Darcy chooses to doubt it--or to treat it as a merely conditional recommendation, and to assert that I have forfeited all claim to it by extravagance, imprudence, in short, anything or nothing. Certain it is that the living becomes vacant two years ago, exactly as I am of an age to hold it, and that it is given to another man; and no less certain is it, that I cannot accuse myself of having really done anything to deserve to lose it. I have a warm unguarded temper, and I may perhaps have sometimes spoken my opinion of him, and to him, too freely. I can recall nothing worse. But the fact is, that we are very different sort of men, and that he hates me."
+  },
+  {
+    "id": "1342-6-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "Mr. Wickham was the happy man towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of the speaker.",
+    "e1": {
+      "kind": "insert",
+      "at": 418,
+      "text": " slowly"
+    },
+    "base1": "Mr. Wickham was the happy man towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of slowly the speaker.",
+    "ai": "Mr. Wickham was the happy man towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of slowly the speaker. She paused with her cup halfway to her lips, caught by the ease of his voice."
+  },
+  {
+    "id": "1342-5-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "In the dining-room they were soon joined by Mary and Kitty, who had been too busily engaged in their separate apartments to make their appearance before. One came from her books, and the other from her toilette. The faces of both, however, were tolerably calm; and no change was visible in either, except that the loss of her favourite sister, or the anger which she had herself incurred in the business, had given something more of fretfulness than usual to the accents of Kitty. As for Mary, she was mistress enough of herself to whisper to Elizabeth, with a countenance of grave reflection, soon after they were seated at table,--",
+    "e1": {
+      "kind": "insert",
+      "at": 572,
+      "text": " of course"
+    },
+    "base1": "In the dining-room they were soon joined by Mary and Kitty, who had been too busily engaged in their separate apartments to make their appearance before. One came from her books, and the other from her toilette. The faces of both, however, were tolerably calm; and no change was visible in either, except that the loss of her favourite sister, or the anger which she had herself incurred in the business, had given something more of fretfulness than usual to the accents of Kitty. As for Mary, she was mistress enough of herself to whisper to Elizabeth, with a countenance of course of grave reflection, soon after they were seated at table,--",
+    "ai": "In the dining-room they are soon joined by Mary and Kitty, who have been too busily engaged in their separate apartments to make their appearance before. One comes from her books, and the other from her toilette. The faces of both, however, are tolerably calm; and no change is visible in either, except that the loss of her favourite sister, or the anger which she has herself incurred in the business, has given something more of fretfulness than usual to the accents of Kitty. As for Mary, she is mistress enough of herself to whisper to Elizabeth, with a countenance of course of grave reflection, soon after they are seated at table,--"
+  },
+  {
+    "id": "1342-7-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total silence. It was absolutely necessary, therefore, to think of something; and in this emergency recollecting when she had seen him last in Hertfordshire, and feeling curious to know what he would say on the subject of their hasty departure, she observed,--",
+    "e1": {
+      "kind": "insert",
+      "at": 106,
+      "text": " at last"
+    },
+    "base1": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total at last silence. It was absolutely necessary, therefore, to think of something; and in this emergency recollecting when she had seen him last in Hertfordshire, and feeling curious to know what he would say on the subject of their hasty departure, she observed,--",
+    "ai": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total silence. It was necessary, therefore, to think of something; and recollecting when she had last seen him in Hertfordshire, and feeling curious to know what he would say on their hasty departure, she observed,--"
+  },
+  {
+    "id": "1342-5-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "In the dining-room they were soon joined by Mary and Kitty, who had been too busily engaged in their separate apartments to make their appearance before. One came from her books, and the other from her toilette. The faces of both, however, were tolerably calm; and no change was visible in either, except that the loss of her favourite sister, or the anger which she had herself incurred in the business, had given something more of fretfulness than usual to the accents of Kitty. As for Mary, she was mistress enough of herself to whisper to Elizabeth, with a countenance of grave reflection, soon after they were seated at table,--",
+    "e1": {
+      "kind": "retype",
+      "from": 158,
+      "to": 162,
+      "text": "walked"
+    },
+    "base1": "In the dining-room they were soon joined by Mary and Kitty, who had been too busily engaged in their separate apartments to make their appearance before. One walked from her books, and the other from her toilette. The faces of both, however, were tolerably calm; and no change was visible in either, except that the loss of her favourite sister, or the anger which she had herself incurred in the business, had given something more of fretfulness than usual to the accents of Kitty. As for Mary, she was mistress enough of herself to whisper to Elizabeth, with a countenance of grave reflection, soon after they were seated at table,--",
+    "ai": "In the dining-room they are soon joined by Mary and Kitty, who have been too busily engaged in their separate apartments to make their appearance before. One walks from her books, and the other from her toilette. The faces of both, however, are tolerably calm; and no change is visible in either, except that the loss of her favourite sister, or the anger which she has herself incurred in the business, has given something more of fretfulness than usual to the accents of Kitty. As for Mary, she is mistress enough of herself to whisper to Elizabeth, with a countenance of grave reflection, soon after they are seated at table,--"
+  },
+  {
+    "id": "1342-6-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "Mr. Wickham was the happy man towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of the speaker.",
+    "e1": {
+      "kind": "retype",
+      "from": 26,
+      "to": 29,
+      "text": "fellow"
+    },
+    "base1": "Mr. Wickham was the happy fellow towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of the speaker.",
+    "ai": "Mr. Wickham was the happy fellow towards whom almost every female eye was turned, and Elizabeth was the happy woman by whom he finally seated himself; and the agreeable manner in which he immediately fell into conversation, though it was only on its being a wet night, and on the probability of a rainy season, made her feel that the commonest, dullest, most threadbare topic might be rendered interesting by the skill of the speaker. He paused to straighten his cuff, and somehow even that small gesture seemed to hold her attention."
+  },
+  {
+    "id": "1342-7-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "tighten",
+    "base0": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total silence. It was absolutely necessary, therefore, to think of something; and in this emergency recollecting when she had seen him last in Hertfordshire, and feeling curious to know what he would say on the subject of their hasty departure, she observed,--",
+    "e1": {
+      "kind": "retype",
+      "from": 159,
+      "to": 164,
+      "text": "believe"
+    },
+    "base1": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total silence. It was absolutely necessary, therefore, to believe of something; and in this emergency recollecting when she had seen him last in Hertfordshire, and feeling curious to know what he would say on the subject of their hasty departure, she observed,--",
+    "ai": "They then sat down, and when her inquiries after Rosings were made, seemed in danger of sinking into total silence. It was absolutely necessary, therefore, to think of something; and in this emergency, recollecting when she had last seen him in Hertfordshire, and feeling curious to know what he would say on the subject of their hasty departure, she observed,--"
+  },
+  {
+    "id": "1342-8-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "As no objection was made to the young people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit were most steadily resisted, the coach conveyed him and his five cousins at a suitable hour to Meryton; and the girls had the pleasure of hearing, as they entered the drawing-room, that Mr. Wickham had accepted their uncle’s invitation, and was then in the house.",
+    "e1": {
+      "kind": "insert",
+      "at": 427,
+      "text": " at last"
+    },
+    "base1": "As no objection was made to the young people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit were most steadily resisted, the coach conveyed him and his five cousins at a suitable hour to Meryton; and the girls had the pleasure of hearing, as they entered the drawing-room, that Mr. Wickham had accepted their uncle’s invitation, and was then in at last the house.",
+    "ai": "As no objection is made to the young people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit are most steadily resisted, the coach conveys him and his five cousins at a suitable hour to Meryton; and the girls have the pleasure of hearing, as they enter the drawing-room, that Mr. Wickham has accepted their uncle’s invitation, and is then in at last the house."
+  },
+  {
+    "id": "1342-8-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "present tense",
+    "base0": "As no objection was made to the young people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit were most steadily resisted, the coach conveyed him and his five cousins at a suitable hour to Meryton; and the girls had the pleasure of hearing, as they entered the drawing-room, that Mr. Wickham had accepted their uncle’s invitation, and was then in the house.",
+    "e1": {
+      "kind": "retype",
+      "from": 32,
+      "to": 37,
+      "text": "youthful"
+    },
+    "base1": "As no objection was made to the youthful people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit were most steadily resisted, the coach conveyed him and his five cousins at a suitable hour to Meryton; and the girls had the pleasure of hearing, as they entered the drawing-room, that Mr. Wickham had accepted their uncle’s invitation, and was then in the house.",
+    "ai": "As no objection is made to the youthful people’s engagement with their aunt, and all Mr. Collins’s scruples of leaving Mr. and Mrs. Bennet for a single evening during his visit are most steadily resisted, the coach conveys him and his five cousins at a suitable hour to Meryton; and the girls have the pleasure of hearing, as they enter the drawing-room, that Mr. Wickham has accepted their uncle’s invitation, and is then in the house."
+  },
+  {
+    "id": "1342-9-insert",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence before the family went to bed.",
+    "e1": {
+      "kind": "insert",
+      "at": 146,
+      "text": " at last"
+    },
+    "base1": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first at last introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence before the family went to bed.",
+    "ai": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first at last introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence—clearing his throat twice before he began—before the family went to bed."
+  },
+  {
+    "id": "1342-9-retype",
+    "book": "Pride and Prejudice",
+    "instruction": "add a beat",
+    "base0": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence before the family went to bed.",
+    "e1": {
+      "kind": "retype",
+      "from": 478,
+      "to": 482,
+      "text": "hurried"
+    },
+    "base1": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence before the family hurried to bed.",
+    "ai": "Mr. Collins returned most punctually on the Monday fortnight, but his reception at Longbourn was not quite so gracious as it had been on his first introduction. He was too happy, however, to need much attention; and, luckily for the others, the business of love-making relieved them from a great deal of his company. The chief of every day was spent by him at Lucas Lodge, and he sometimes returned to Longbourn only in time to make an apology for his absence, clearing his throat twice before he began, before the family hurried to bed."
+  }
+]

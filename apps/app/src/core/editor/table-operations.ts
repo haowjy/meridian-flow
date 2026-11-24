@@ -13,7 +13,6 @@ import {
   TableMap,
   tableNodeTypes,
 } from "@tiptap/pm/tables";
-import { shownAttrs, suggestionView } from "./extensions/suggestion-mode/SuggestionModeExtension";
 
 export type TableSelection = {
   table: ProseMirrorNode;
@@ -151,8 +150,8 @@ export function moveTableRow(direction: -1 | 1): Command {
 
     if (!dispatch) return true;
     // A move, not a rebuilt table: the selected rows are deleted and inserted at their new
-    // place, so the Yjs binding sees which rows moved and the rows they pass keep their
-    // elements (and a collaborator's typing in them).
+    // place, so the Loro binding sees which rows moved and the rows they pass keep their
+    // blocks (and a collaborator's typing in them).
     const rowStart = (index: number) => {
       let pos = selection.tablePos + 1;
       for (let i = 0; i < index; i++) pos += selection.table.child(i).nodeSize;
@@ -300,7 +299,7 @@ export function setTablePlacement(align: "center" | "right" | null): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection) return false;
-    const attrs = shownAttrs(suggestionView(state), selection.table);
+    const attrs = selection.table.attrs;
     if (attrs.align === align) return true;
     dispatch?.(state.tr.setNodeMarkup(selection.tablePos, undefined, { ...attrs, align }));
     return true;

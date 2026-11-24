@@ -98,11 +98,11 @@ describe("sanitizeEventRecord byte boundary", () => {
         errorCode: huge,
         documentId: huge,
         draftId: huge,
-        yjsSpans: huge,
+        batchId: huge,
       },
       stream: {
         streamId: huge,
-        transport: "yjs",
+        transport: "loro",
         observedAt: "server",
         messageClass: huge,
         observerSeq: 1,

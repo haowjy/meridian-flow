@@ -50,7 +50,7 @@ the notes say.
 | [Thread socket](../../packages/thread-client/.context/state-machines.md) | Client | The connection half |
 | [Thread subscription, client half](../../packages/thread-client/.context/state-machines.md) | Client | The subscription half |
 | [Thread subscription, server half](../../apps/server/server/lib/.context/state-machines.md) | Server | Buffers live events while it reads the replay |
-| [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Computed from the same connection states. There is no replay: Yjs sync brings the document up to date |
-| [Tree list connection](../../apps/app/src/core/tree-list/.context/state-machines.md) | Client | The connection only, as for a document; reconnecting levels the copy and the server by Yjs sync, and a copy the server broke the connection for (`copy-broken`) is replaced once, then is its own terminal state |
-| [Tree list room connection](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: a SyncStep1 brings the room to the journal's head, and a read-only connection's updates are dropped |
+| [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Computed from the same connection states. There is no replay: the Join's version exchange brings the document up to date |
+| [Tree list connection](../../apps/app/src/core/tree-list/.context/state-machines.md) | Client | The connection only, as for a document; reconnecting levels the copy and the server by the Join's version exchange, and a copy of another list (`extra` names the list) is dropped and joins again from nothing |
+| [A joined `/ws/loro` room](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: subscribed before the Join's catch-up, with what it hears meanwhile held and sent after the answer |
 | [Server feed](../../apps/app/src/features/debug/.context/state-machines.md) | Client | The connection only: the browser's `EventSource` reconnects, and nothing is replayed |

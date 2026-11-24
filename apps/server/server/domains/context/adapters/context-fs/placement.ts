@@ -3,7 +3,7 @@ import type { DraftId } from "@meridian/contracts";
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
  * differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`, and the
- * refusals a draft placement makes (a draft never seeds live Yjs). A drafted write is a record
+ * refusals a draft placement makes (a draft never seeds Live text). A drafted write is a record
  * of the Work's draft (`{ draft: draftId }`), which the command transaction ensures and
  * locks; a live one is a live record.
  */
@@ -12,7 +12,6 @@ import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contrac
 import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Ok, type Result } from "../../../../shared/result.js";
-import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
@@ -78,7 +77,6 @@ export interface CreatePlacementDeps {
   store: ContextDocumentStore;
   tree: SourceTree;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces">;
   liveCreate: LiveCreate;
   scheme: ContextScheme;
@@ -104,7 +102,6 @@ async function existingTracked(
   const leaf = entrySegment(renderFilename(at.name, at.extension), at.suffix);
   const existing = await deps.tree.find(target, at.dir, leaf, options?.into);
   if (existing?.kind !== "document") return null;
-  await deps.documentSync.ensureDocumentAuthority(existing.id as DocumentId);
   return { documentId: existing.id, path: existing.path };
 }
 

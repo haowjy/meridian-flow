@@ -13,7 +13,6 @@ import { projectQueryKeys } from "./project-query-keys";
 import {
   admitThreadUserStateItems,
   beginThreadUserStateFeedRequest,
-  getFavoriteCommandView,
   getThreadUserStateRecord,
   runFavoriteCommand,
 } from "./thread-user-state-commands";
@@ -88,11 +87,11 @@ describe("runFavoriteCommand", () => {
     second.reject(new Error("refused"));
     await secondRun;
 
-    const view = getFavoriteCommandView(readRecord(client));
-    expect(view.pending).toBe(false);
-    expect(view.error).toBeInstanceOf(Error);
+    const record = readRecord(client);
+    expect(record.favorite).toBeUndefined();
+    expect(record.favoriteError?.error).toBeInstanceOf(Error);
     // The failed intent was `false`; the inverse derivation would yield `true`.
-    expect(view.retryValue).toBe(false);
+    expect(record.favoriteError?.desiredValue).toBe(false);
     // The first write confirmed `true`, so the base is not reverted to `false`.
     expect(readRecord(client).base.isFavorite).toBe(true);
   });

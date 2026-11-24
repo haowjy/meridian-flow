@@ -136,16 +136,16 @@ if (( ${#forbidden_safety_fallbacks[@]} > 0 )); then
   exit 1
 fi
 
-# This client's own awareness fields have exactly one write path, the presence
-# port in apps/app/src/core/editor/local-presence.ts. A raw local write anywhere
-# else is the suspension defect returning: y-protocols silently drops the write
-# while local state is null (which is what inline review and a schema fence look
-# like), and resume then republishes the snapshot over it.
+# This client's own presence has exactly one owner, the presence port in
+# apps/app/src/core/editor/local-presence.ts, which holds the room's one
+# EphemeralStore. A second store, or writes past the port, is the suspension
+# defect returning: a write made while presence is suspended is lost, and resume
+# republishes a stale snapshot over it.
 local_presence_bypass=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && local_presence_bypass+=("$hit")
 done < <(
-  git grep -n -E 'setLocalStateField|setLocalState\(' \
+  git grep -n -E 'new EphemeralStore\(' \
     -- \
     'apps/app/src/**/*.ts' \
     'apps/app/src/**/*.tsx' \
@@ -155,7 +155,7 @@ done < <(
 )
 
 if (( ${#local_presence_bypass[@]} > 0 )); then
-  echo "ERROR: local awareness written outside the presence port (core/editor/local-presence.ts):"
+  echo "ERROR: a presence store made outside the presence port (core/editor/local-presence.ts):"
   printf '  %s\n' "${local_presence_bypass[@]}"
   exit 1
 fi

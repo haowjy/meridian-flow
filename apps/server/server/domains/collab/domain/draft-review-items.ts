@@ -1,9 +1,9 @@
 /**
  * The review list (contract §13.1, sync 8 §3.1): a draft's items are its tree state (every
  * document it created, moved or deleted, and the documents it edited) merged by document with its
- * owner's suggestions in Live. An item is listed when the tree view's one reviewable-pending
+ * pending forks. An item is listed when the tree view's one reviewable-pending
  * predicate holds (`TreeStateNode.pending`): a created document, a move or delete live doesn't
- * already agree with, or suggestions in a document the draft isn't deleting, so a write and its
+ * already agree with, or a pending fork of a document the draft isn't deleting, so a write and its
  * undo net to no item. That one predicate feeds the list, the Work counts and the confirmation.
  * Every item is keyed `${draftId}:${documentId}` (F12) and carries the tree-derived address and
  * whether it has text changes.
@@ -19,8 +19,12 @@ export type DraftReviewItem = {
   draftId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The text changes the document's derivation last counted; 0 without any. */
-  textChanges: number;
+  /** The draft's text of the document has a change to review. */
+  pending: boolean;
+  /** Live's version under the fork's removals, base64 (`DraftItem.liveVersion`); null when none. */
+  liveVersion: string | null;
+  /** How many changes the draft's fork of the document has (`DraftItem.changeCount`). */
+  changeCount: number;
   /** created: the draft has a `created` row; edited: text changes only. */
   origin: "created" | "edited";
   /** A creation only the Work shows: derived on read, nothing rewrites it. */
@@ -58,7 +62,7 @@ export interface DraftReviewItems {
 
 export function createDraftReviewItems(deps: {
   tree: DraftTreeStateReader;
-  /** The documents the draft's owner has suggestions in (only these documents' when given). */
+  /** The documents the draft has a pending fork of (only these documents' when given). */
   text(
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
@@ -125,7 +129,9 @@ function toItem(
           deleted: node.change === "deleting",
         }
       : null,
-    textChanges: text?.textChanges ?? 0,
+    pending: text !== undefined,
+    liveVersion: text?.liveVersion ?? null,
+    changeCount: text?.changeCount ?? 0,
     documentName: documentTitleFromUri(path),
     path,
     actorThreadIds: [...new Set([...(text?.writers.threadIds ?? []), ...treeActorThreadIds])],

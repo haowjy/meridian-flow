@@ -8,12 +8,12 @@
 import type { TreeWriter } from "@meridian/project-tree";
 
 /**
- * A list is one project's, or one account's (`user://`). Its journal id is the owner's
- * `tree_list_id`, a column of its own, never the owner's id or a node's.
+ * A list is one project's, or one account's (`user://`). Its id is the owner's `tree_list_id`, a
+ * column of its own, never the owner's id or a node's; its snapshot row is `tree:<list id>`.
  */
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
-/** One list's copy handed to a change or a read: the writer on it, and the list's journal id. */
+/** One list's copy handed to a change or a read: the writer on it, and the list's id. */
 export type ListWriter = { writer: TreeWriter; list: string };
 
 /**
@@ -40,10 +40,8 @@ export class TreeRefusal<R = unknown> extends Error {
 /** What a commit added to the list: the update every other copy of it needs. */
 export type CommittedTreeUpdate = {
   listId: string;
-  /** The client's new items, with the verdicts the server appended after them. */
+  /** The Loro update of the client's new records, with the stamps the server appended after them. */
   update: Uint8Array;
-  /** The journal row that holds it. */
-  seq: number;
 };
 
 /** What `admit` stored; null when the list already held every item. */
@@ -51,24 +49,24 @@ export type AdmitResult = { committed: CommittedTreeUpdate | null };
 
 export interface TreeListStore {
   /**
-   * The journal id of the list, or null when the list is not the account's: the project (or
+   * The id of the list, or null when the list is not the account's: the project (or
    * account) decides, never a document.
    */
   open(input: { list: TreeList; accountId: string }): Promise<{ listId: string } | null>;
   /**
-   * The list's state past journal row `afterSeq` as one update, and the row it reaches: the
-   * rows after it, or the whole state when `afterSeq` is 0 or behind a checkpoint. Read
-   * without the list's lock, which is safe because rows are only ever added at the head.
+   * The stored list past `version` (an encoded Loro version vector; empty for none) as one
+   * update, and the stored list's version. Read without the list's lock: every commit stores the
+   * whole list.
    */
   readSince(input: {
     listId: string;
-    afterSeq: number;
-  }): Promise<{ seq: number; update: Uint8Array }>;
+    version: Uint8Array;
+  }): Promise<{ update: Uint8Array; version: Uint8Array }>;
   /**
-   * Admits a client's Yjs update for the connection of `accountId`: the guard, then the stamp
-   * `dropped` on each create raced into a closed Work, then the journal row and the rows it
-   * changes. Rejects with the package's `CopyFault` when the update does something an honest
-   * client's copy never does; nothing is stored. A create whose node id is another's has no row.
+   * Admits a client's Loro update for the connection of `accountId`, as sent: the stamp `dropped`
+   * on each create raced into a closed Work, then the stored list and the rows it changes. Throws
+   * Loro's import error for bytes that are no Loro update; nothing is stored. A create whose node
+   * id is another's has no row.
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
   /**
@@ -77,7 +75,7 @@ export interface TreeListStore {
    * one order (by list id) whatever order the caller names them, so no two paths on the same
    * lists deadlock. The records join the lists and the rows follow with them; the updates reach
    * `onCommitted` after the outermost commit. `make` runs under the keys on copies at the
-   * journal's head, holds no document or namespace key and does no I/O. `committed` has an entry
+   * stored list, holds no document or namespace key and does no I/O. `committed` has an entry
    * per list, in the caller's order, null where the list gained nothing.
    */
   submit<T>(input: {
@@ -85,7 +83,7 @@ export interface TreeListStore {
     make: ServerChange<T>;
   }): Promise<{ committed: readonly (CommittedTreeUpdate | null)[]; result: T }>;
   /**
-   * Reads the lists' replays at the journal's head without a key: every row a commit made is
+   * Reads the lists' replays as stored, without a key: every row a commit made is
    * there, and a change in this process that has not committed is not. `view` changes nothing.
    * Hold the lists' keys through `submit` when the answer must not change before the transaction
    * ends.
@@ -109,8 +107,8 @@ export interface TreeListStore {
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */
   onCommitted(listener: (committed: CommittedTreeUpdate) => void): () => void;
   /**
-   * Called with the list's id once any server process has committed a journal row to it: a room
-   * that holds the list reads the rows it lacks. Only commits are announced, never a rollback.
+   * Called with the list's id once any server process has committed a change to it: a room that
+   * holds the list reads what it lacks. Only commits are announced, never a rollback.
    */
-  onJournalAdvanced(listener: (listId: string) => void): () => void;
+  onListAdvanced(listener: (listId: string) => void): () => void;
 }

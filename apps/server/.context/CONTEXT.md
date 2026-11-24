@@ -21,9 +21,9 @@ composeAppServices(ports)
 - **Concrete adapters**: Drizzle repositories, context/collab stores, package
   store, project repositories, credit ledger, package seeder, and
   provider gateway.
-- **Pure service wiring**: event hub, checkpoint registry, tool
-  registry/executor, late-bound turn runner, child-run coordination,
-  orchestrator, and returned `AppServices` aggregate.
+- **Pure service wiring**: event hub, tool registry/executor, late-bound turn
+  runner, child-run coordination, orchestrator, and returned `AppServices`
+  aggregate.
 
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
@@ -152,7 +152,7 @@ journal/AG-UI cursor path.
 
 ## WebSocket auth & resilience
 
-Thread events (`/api/threads/ws`) and Yjs documents (`/ws/yjs`) share hardening
+Thread events (`/api/threads/ws`) and Loro rooms (`/ws/loro`) share hardening
 primitives in `server/lib/`:
 
 - **Upgrade-time auth** returns authenticated or deferred-close contexts. There
@@ -185,6 +185,15 @@ Each model attempt has a stall timer and an absolute ceiling, owned by
 In dev, the repository `logs/` tree is generated observability output, not source input. `nitro.config.ts` excludes it through Rolldown's active `watch.exclude` seam so JSONL mirror writes cannot rebuild Nitro and orphan in-flight work. Keep the exclusion rooted at the repository log directory and on the Rolldown seam; Nitro's own watcher option is inert. The same `watch.exclude` also skips `**/node_modules/**`: a `pnpm install` in a sibling worktree hardlinks shared store files, and the resulting ctime change would otherwise rebuild Nitro mid-reply. The glob is computed here, independently of `tools/dev/lib/dev-env.ts`'s `resolveDevLogDir`: moving the dev log directory, or setting an absolute `LOG_DIR` under a watched tree, needs this exclusion to move in the same change.
 
 Editing `nitro.config.ts` under a running `nitro dev` drops the server's listener: the process stays alive and every route answers 502 until `pnpm dev:restart`.
+
+## Production build
+
+`loro-crdt` is traced whole (`traceDeps: ["loro-crdt*"]` in `nitro.config.ts`): its Node build requires a
+WASM snippet by a `String.raw` path the tracer cannot follow, so a file-by-file trace boots into
+`Cannot find module './snippets/…/inline0.js'` (`pnpm smoke:prod-boot` catches it). That ships all five
+builds, about 22 MB of `.output`, where the server loads only `nodejs/` (about 4 MB). A
+`traceOpts.hooks.tracedFiles` hook that deletes the other builds' entries did not shrink the output on
+nitro 3.0.261103-rc, so the 18 MB stays until nitro can narrow a package's trace.
 
 ## Route conventions
 

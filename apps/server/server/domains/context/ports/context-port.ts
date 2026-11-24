@@ -17,7 +17,7 @@ import type {
   CopyContextEntriesResult,
   DocumentFileType,
   Filetype,
-  YjsTrackedSchemaType,
+  TrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -88,7 +88,6 @@ export interface ContextWriteResult {
   uri: string;
   documentId?: string;
   markdown?: string;
-  updateSeq?: number;
 }
 
 /** A binary write's outcome: where it landed, as the adapter's placement decided (§2.3). */
@@ -124,7 +123,7 @@ export type EditableFileEntry = BaseListEntry & {
   kind: "file";
   editable: true;
   filetype: Filetype;
-  schemaType: YjsTrackedSchemaType;
+  schemaType: TrackedSchemaType;
   /** Words as the current derivation counted them; set only when {@link ContextListOptions.wordCounts} asks and the derivation is current. */
   wordCount?: number;
 };
@@ -170,11 +169,11 @@ interface BaseFileRef {
   aliases?: string[];
 }
 
-/** A Yjs/projected text file ref returned by {@link ContextPort.stat}. */
+/** A tracked text file ref returned by {@link ContextPort.stat}. */
 export interface TrackedFileRef extends BaseFileRef {
   kind: "tracked";
   filetype: Filetype;
-  schemaType: YjsTrackedSchemaType;
+  schemaType: TrackedSchemaType;
 }
 
 /** A storage-backed binary file ref returned by {@link ContextPort.stat}. */
@@ -300,8 +299,8 @@ export interface ContextCopyRequest {
     expected: { kind: "file" | "folder"; nodeId: string };
     /** The device-minted identity for this root's copy; descendants are server-minted. */
     copyId?: string;
-    /** The client's own Yjs state vector for a file it holds open, decoded by the route. */
-    stateVector?: Uint8Array;
+    /** The client's own room version for a file it holds open, decoded by the route. */
+    roomVersion?: Uint8Array;
   }[];
   /** Canonical address of the destination parent folder. */
   destinationUri: string;
@@ -418,7 +417,7 @@ export interface ContextPort {
     documentId: string,
   ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
 
-  /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
+  /** Ensure a tracked text document row exists without replacing content. */
   ensureTrackedDocument(
     uri: string,
     options?: import("./context-adapter.js").ContextEnsureTrackedPortOptions,
@@ -436,7 +435,7 @@ export interface ContextPort {
    */
   treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
 
-  /** The tree of `area` as this port's reader sees it, at the journal's head. */
+  /** The tree of `area` as this port's reader sees it, as the list stands. */
   readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;

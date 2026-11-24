@@ -40,11 +40,3 @@ export function withBlockIds<T extends PMNode>(node: T): T {
 export function withoutBlockIds<T extends PMNode>(node: T): T {
   return mapIds(node, () => null) as T;
 }
-
-/** Throws on the first block under `node` (itself included) that has no id. */
-export function assertBlockIds(node: PMNode): void {
-  if (hasBlockId(node) && node.attrs.id == null) {
-    throw new Error(`A ${node.type.name} block has no id`);
-  }
-  node.forEach(assertBlockIds);
-}

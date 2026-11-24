@@ -203,7 +203,7 @@ export const ImageIngressExtension = Extension.create({
         /**
          * Read at the end of the task rather than inside the update itself.
          * Two reasons, and they are the same reason: a plugin must not dispatch
-         * from its own `update`, and identity can only be read once the Yjs
+         * from its own `update`, and identity can only be read once the Loro
          * binding has finished describing the document this transaction
          * produced (`anchors.ts`).
          */

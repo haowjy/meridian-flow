@@ -1,7 +1,7 @@
 /**
  * The session-bound half of an open document: one live room binding. Main's and the side's
  * documents both render through it, so a document has exactly one way to reach its
- * `DocumentSession` and no view owns a second Y.Doc or room. The session paints from the
+ * `DocumentSession` and no view owns a second copy of its Loro docs or room. The session paints from the
  * browser's local copy and connects to the room by itself; there is nothing to hand over when
  * the server learns of a document made here.
  */
@@ -16,6 +16,10 @@ type OpenDocumentSessionProps = {
   documentId: string;
   /** The live room of a document only a Work holds. */
   workOnly?: boolean;
+  /** The draft whose fork room opens (a plain draft or Review changes); absent for Live. */
+  draftId?: string;
+  /** Which room to open isn't known yet: open none. */
+  held?: boolean;
   bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
@@ -42,18 +46,28 @@ function OpenDocumentSession({
   projectId,
   documentId,
   workOnly = false,
+  draftId,
+  held = false,
   bindingOwner = "desktop-document-host",
   children,
   onReopen,
 }: OpenDocumentSessionProps & { onReopen: () => void }) {
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId,
+    documentId: held ? null : documentId,
     owner: bindingOwner,
     ...(workOnly ? { workOnly: true as const } : {}),
+    ...(draftId ? { draftId } : {}),
   });
   const state = binding.state;
-  const opened = state.kind === "opened" && state.documentId === documentId ? state.session : null;
+  // Until the binding catches up with a switch between Live and a draft, the old room is not shown.
+  const room = state.kind === "opened" ? state.session.room : null;
+  const opened =
+    state.kind === "opened" &&
+    state.documentId === documentId &&
+    (room?.kind === "fork" ? room.draftId : undefined) === draftId
+      ? state.session
+      : null;
   const failed = state.kind === "failed" && state.documentId === documentId;
   const [localReady, setLocalReady] = useState<{ session: DocumentSession; ready: boolean } | null>(
     null,

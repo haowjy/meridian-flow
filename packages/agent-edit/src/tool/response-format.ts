@@ -8,11 +8,10 @@ import {
   modelBlockItem,
   modelResult,
 } from "./model-result.js";
-import type { WriteErrorStatus, WriteOutcome, WriteStatus, WriteSuccessPhase } from "./types.js";
+import type { WriteErrorStatus, WriteOutcome, WriteStatus } from "./types.js";
 
 export interface ApplySuccessResponseInput {
   revision?: string | null;
-  phase: WriteSuccessPhase;
   writeId?: string;
   echo: ApplyEchoHunk[];
   deletedBlocks?: readonly string[];
@@ -25,12 +24,11 @@ export interface ApplySuccessResponseInput {
 
 /**
  * A write that changes nothing: the document as the model last read it already held its content.
- * Nothing is reserved, applied or journaled; the result still reports what changed since.
+ * Nothing is reserved, applied or saved; the result still reports what changed since.
  */
 export function formatUnchangedSuccess(): InternalWriteResult {
   return {
     status: "success",
-    phase: "committed",
     revision: null,
     model: { unchanged: true },
   };
@@ -42,7 +40,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
 
   return {
     status: "success",
-    phase: input.phase,
     revision: input.revision ?? null,
     model: {
       ...(input.writeId || deletedHashes.length > 0
@@ -81,11 +78,7 @@ export function toOutcome(
   path?: string,
 ): WriteOutcome {
   const payload = { ...(path ? { path } : {}), ...result.model };
-  const model =
-    result.status === "success"
-      ? modelResult({ command, status: "success", phase: result.phase, payload })
-      : modelResult({ command, status: result.status, payload });
-  const base = {
+  return {
     command,
     revision: result.revision ?? null,
     isError: isWriteErrorStatus(result.status),
@@ -95,12 +88,9 @@ export function toOutcome(
     ...(result.showing ? { showing: result.showing } : {}),
     ...(result.frontier ? { frontier: result.frontier } : {}),
     ...(result.occupied ? { occupied: true as const } : {}),
-    result: model,
+    result: modelResult({ command, status: result.status, payload }),
+    status: result.status,
   };
-  if (result.status === "success") {
-    return { ...base, status: "success", phase: result.phase };
-  }
-  return { ...base, status: result.status };
 }
 
 function copiedGroups(edges: readonly string[]): AgentEditBlockGroup[] {

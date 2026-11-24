@@ -5,17 +5,6 @@ import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 
-export interface CanonicalBlockIdentity {
-  clientID: number;
-  clock: number;
-}
-
-export interface ContentLineage {
-  clientID: number;
-  clock: number;
-  length: number;
-}
-
 /**
  * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
  * `content` may hold inline atoms (a line break, an image); one that lands inside a run of
@@ -31,7 +20,7 @@ export interface TextSplice {
 export interface FormatRange {
   from: number;
   to: number;
-  /** The mark's stored key (`yjsMarkKey`): its name, or `name--<hash>` for one that may overlap. */
+  /** The mark's name. */
   mark: string;
   attrs: Record<string, unknown> | null;
 }
@@ -60,7 +49,7 @@ export type EditOp =
       unit?: number;
     };
 
-export type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
+type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
 
 /**
  * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.
@@ -75,9 +64,6 @@ export interface DocumentModel {
 
   /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockRef): string;
-
-  /** Full immutable identity used by provenance. */
-  getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
 
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];
@@ -94,28 +80,8 @@ export interface DocumentModel {
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
 
-  /**
-   * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
-   * the model's view; an inline atom is a unit with no identity.
-   */
-  textblockLineage(
-    block: BlockRef,
-    path: readonly number[],
-    from: number,
-    to: number,
-  ): ContentLineage[];
-
-  /** Immutable CRDT identities of the visible text under the node at `path` under `block`. */
-  nodeLineage(block: BlockRef, path: readonly number[]): ContentLineage[];
-
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
-
-  /** Encode the document's current CRDT state vector (sync cursor). */
-  encodeStateVector(doc: DocHandle): Uint8Array;
-
-  /** Apply a concurrent CRDT update with its persisted origin metadata. */
-  applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
 
   /**
    * Insert new blocks after a reference block.
@@ -127,13 +93,21 @@ export interface DocumentModel {
    * Delete a block. Clears text instead of removing when it is the last block.
    */
   deleteBlock(doc: DocHandle, block: BlockRef): void;
+
+  /** Record that an edit moved text between two blocks (a split, a join); `b` may be gone. */
+  recordPieces(doc: DocHandle, a: BlockRef, b: BlockRef): void;
 }
 
 /**
- * Full structural model surface required by @meridian/agent-edit's write tool.
- * Hosts may provide any implementation that satisfies this port; the built-in
- * y-prosemirror adapter is only one implementation.
+ * Full structural model surface required by @meridian/agent-edit's write tool, implemented on
+ * Loro by `loroModel`.
  */
+/**
+ * An opaque key for the editor that typed a unit: a Loro peer, one per editing session (each AI
+ * write gets a fresh one), so equal keys mean one session typed both units, not one person.
+ */
+export type EditorOf = (unit: number) => string | undefined;
+
 export interface AgentEditModel extends DocumentModel {
   /**
    * Apply operations to one top-level block, addressed on its state before any of them.
@@ -144,13 +118,16 @@ export interface AgentEditModel extends DocumentModel {
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
 
   /**
+   * The editor that typed each unit of the textblock at `path` (child indexes) under a top-level
+   * block, as its document holds it now.
+   */
+  unitEditors(block: BlockRef, path: readonly number[]): EditorOf;
+
+  /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so
    * `ref`, `id`, `hash` and `node` always describe the same block.
    *
-   * Projects on the document it is given. An element the schema can't build is deleted from
-   * that document (y-prosemirror's repair) and left out of the result, so callers must hand
-   * over a private copy (one no other peer writes to), never a shared document. Hashes cover the surviving
-   * blocks only.
+   * Projects on the document it is given. Hashes cover the blocks it returns.
    */
   projectBlocks(doc: DocHandle): ProjectedBlock[];
 }
@@ -158,8 +135,8 @@ export interface AgentEditModel extends DocumentModel {
 /** One top-level block, aligned across its handle, identity, display hash and node. */
 export interface ProjectedBlock {
   ref: BlockRef;
-  /** The block's own CRDT item id (what `getCanonicalBlockIdentity` returns). */
-  id: CanonicalBlockIdentity;
+  /** The block's identity in its document, for pairing cuts: its Loro `id`. */
+  key: string;
   /** Display hash, unique among the projected blocks and origin-aware. */
   hash: string;
   /** Immutable full hash behind `hash`, origin-aware; what a held hash prefix resolves against. */

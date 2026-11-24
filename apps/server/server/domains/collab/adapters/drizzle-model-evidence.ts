@@ -1,6 +1,7 @@
 /** Postgres `ModelEvidence` over `observation_frontiers` and `thread_shown_links`. */
 import { createHash } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
+import { loroRoomName } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -9,7 +10,11 @@ import {
   type DrizzleDatabase,
   runIsolatedFromAmbientTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { linkViewKey, shownLinkLineage } from "../../../shared/model-evidence.js";
+import {
+  type FrontierRooms,
+  linkViewKey,
+  shownLinkLineage,
+} from "../../../shared/model-evidence.js";
 import type { ModelEvidence } from "../domain/model-evidence.js";
 
 export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
@@ -40,6 +45,21 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
   const amongBlocks = (blockIds: readonly string[]) =>
     sql`${frontiers.sourceBlockId}::text = ANY(string_to_array(${blockIds.join(",")}, ','))`;
 
+  /**
+   * The rows of every room of the documents: Live's, and their fork in any draft, matched by the
+   * document id a room key ends with. No index serves it: a caller bounds it by blocks or project.
+   */
+  const ofDocuments = (documentIds: readonly string[]) => {
+    const ids = documentIds.join(",");
+    const lives = documentIds.map((documentId) => loroRoomName({ kind: "live", documentId }));
+    return sql`(${frontiers.roomKey} = ANY(string_to_array(${lives.join(",")}, ','))
+      OR (${frontiers.roomKey} LIKE 'fork:%'
+        AND split_part(${frontiers.roomKey}, ':', 3) = ANY(string_to_array(${ids}, ','))))`;
+  };
+  /** The rows of one room, or of every room of a document. */
+  const inRooms = (rooms: FrontierRooms) =>
+    "room" in rooms ? eq(frontiers.roomKey, rooms.room) : ofDocuments([rooms.documentId]);
+
   return {
     async resultStored(evidence) {
       const owner = {
@@ -58,7 +78,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
               sourceBlockId: blockId as never,
               roomKey: frontier.room,
               snapshot: Buffer.from(frontier.snapshot),
-              journalPosition: frontier.position,
             })),
           );
       }
@@ -96,29 +115,21 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       }
     },
 
-    async latestFrontier(room, blockIds) {
+    async latestFrontier(documentId, blockIds) {
       if (blockIds.length === 0) return null;
-      // Ordered as the index is (`room_key, recorded_seq DESC NULLS LAST`) so the scan walks the
-      // room newest first and stops at the first row among these blocks. Inside a transaction a
-      // savepoint, so a failed lookup leaves the caller's usable.
+      // Inside a transaction a savepoint, so a failed lookup leaves the caller's usable.
       const [row] = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
-          .select({ snapshot: frontiers.snapshot, journalPosition: frontiers.journalPosition })
+          .select({ room: frontiers.roomKey, snapshot: frontiers.snapshot })
           .from(frontiers)
-          .where(and(eq(frontiers.roomKey, room), amongBlocks(blockIds)))
+          .where(and(inRooms({ documentId }), amongBlocks(blockIds)))
           .orderBy(sql`${frontiers.recordedSeq} DESC NULLS LAST`)
           .limit(1),
       );
-      return row
-        ? {
-            room,
-            snapshot: new Uint8Array(row.snapshot),
-            ...(row.journalPosition === null ? {} : { position: row.journalPosition }),
-          }
-        : null;
+      return row ? { room: row.room, snapshot: new Uint8Array(row.snapshot) } : null;
     },
 
-    async frontiersIn(room, blockIds) {
+    async frontiersIn(rooms, blockIds) {
       if (blockIds.length === 0) return [];
       const rows = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
@@ -128,7 +139,7 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
             snapshot: frontiers.snapshot,
           })
           .from(frontiers)
-          .where(and(eq(frontiers.roomKey, room), amongBlocks(blockIds)))
+          .where(and(inRooms(rooms), amongBlocks(blockIds)))
           .orderBy(frontiers.recordedSeq),
       );
       return rows.map((row) => ({
@@ -184,6 +195,21 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       await db_()
         .delete(schema.commands)
         .where(inArray(schema.commands.threadId, [...threadIds]));
+    },
+
+    async forgetFrontiers(rooms) {
+      if ("room" in rooms) {
+        await db_().delete(frontiers).where(inRooms(rooms));
+        return;
+      }
+      if (rooms.documentIds.length === 0) return;
+      const accountProjects = db_()
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.userId, rooms.accountId));
+      await db_()
+        .delete(frontiers)
+        .where(and(inArray(frontiers.projectId, accountProjects), ofDocuments(rooms.documentIds)));
     },
   };
 }

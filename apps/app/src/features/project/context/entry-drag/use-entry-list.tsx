@@ -68,8 +68,8 @@ export function useEntryList({
   const actions = useEntryActions(projectId);
   const removal = useOptionalContextRemovalCoordinator();
   const registry = useOptionalLiveDocumentSessionRegistry();
-  const stateVectorOf = useCallback(
-    (documentId: string) => registry?.openStateVector(documentId as DocumentId) ?? null,
+  const roomVersionOf = useCallback(
+    (documentId: string) => registry?.openRoomVersion(documentId as DocumentId) ?? null,
     [registry],
   );
   const { restoreInto } = useDocumentTrashRestore();
@@ -88,8 +88,8 @@ export function useEntryList({
   );
   const runListCopy = useCallback(
     (copy: ReadyCopy) =>
-      void runCopy({ actions, projectId, removal, stateVectorOf }, copy, latest.current.selection),
-    [actions, projectId, removal, stateVectorOf],
+      void runCopy({ actions, projectId, removal, roomVersionOf }, copy, latest.current.selection),
+    [actions, projectId, removal, roomVersionOf],
   );
 
   const route = useMemo<EntriesRoute>(() => {

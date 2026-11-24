@@ -5,7 +5,6 @@
  * - MIME and extension precedence for canonical upload names and Markdown conversion
  */
 
-import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -22,7 +21,6 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import {
@@ -100,7 +98,7 @@ if (!RUN) {
     ) {
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
-        treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
+        treeLists: createDrizzleTreeListStore({ db }),
         pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
@@ -262,16 +260,9 @@ if (!RUN) {
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
         });
-        collab.bindHocuspocus(
-          new Hocuspocus({
-            yDocOptions: { gc: false, gcFilter: () => true },
-            onStoreDocument: ({ documentName, document }) =>
-              collab.storeHocuspocusDocument(documentName, document),
-          }),
-        );
         const contextPorts = createProductionUnifiedContextPortFactory({
           sourceHints: NO_PROJECT_HINTS,
-          treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
+          treeLists: createDrizzleTreeListStore({ db }),
           pendingDraft: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
@@ -351,15 +342,12 @@ if (!RUN) {
       }
     });
 
-    it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {
+    it("finalizes tracked content and catalog identity in the authoritative boundary", async () => {
       await seed();
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
-        treeLists: createDrizzleTreeListStore({
-          db: database.current,
-          journal: createDrizzleJournal(database.current),
-        }),
+        treeLists: createDrizzleTreeListStore({ db: database.current }),
         pendingDraft: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,

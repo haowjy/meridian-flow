@@ -1,18 +1,12 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
 
 import { randomUUID } from "node:crypto";
-import {
-  type DocumentEditResult,
-  type ModelInverseCommand,
-  storedPendingTurns,
-  writeVerdict,
-} from "@meridian/agent-edit/integration";
+import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { FileEditRefusedError } from "../../file-policy/index.js";
+import { deltaExcerpt } from "./edit-excerpt.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseStep } from "./inverse-stream.js";
-import { deltaExcerpt } from "./inverse-text.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
@@ -21,8 +15,6 @@ import type {
   StoredInversePart,
   TurnInverseStore,
 } from "./turn-inverse-service.js";
-
-const schema = buildDocumentSchema();
 
 export function createModelInversePolicy(store: TurnInverseStore) {
   type ModelPlanPreview = { status: "planned" };
@@ -38,6 +30,19 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         message: "File not found. Read the project to find the right path.",
       };
     const policy = createCapturedReversalPlanner(document, query);
+    try {
+      return await planWith(document, policy, query, command, preview);
+    } finally {
+      policy.free();
+    }
+  }
+  async function planWith(
+    document: InverseDocument,
+    policy: ReturnType<typeof createCapturedReversalPlanner>,
+    query: ModelInverseQuery,
+    command: ModelInverseCommand,
+    preview: boolean,
+  ): Promise<DocumentEditResult | ModelPlanPreview> {
     const own = policy.own,
       actionId = randomUUID();
     const steps: InverseStep[] = [],
@@ -65,7 +70,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const apply = (entry: Entry, selection: StoredInversePart[], kind: "undo" | "revert") => {
       stepEntries.push({ kind, handle: entry.handle });
       steps.push({
-        destination: document.destination,
         actionId: stepAction(kind),
         actionKind: kind,
         at: Math.max(...entry.parts.map((part) => part.id)),
@@ -75,13 +79,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     };
     const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
       const planned = policy.textPlan(entry, direction);
-      if (planned.failure) return textPlanRefusal(document.uri, entry.handle, planned.failure);
+      if (planned.failure) return textPlanRefusal(document.uri, planned.failure);
       return {
         selection: planned.selection,
         actionKind: planned.actionKind as "undo" | "revert",
         omissions: planned.omissions.map((omission) =>
           textOmission(entry.handle, direction, omission),
         ),
+        compacted: planned.omissions.filter((omission) => omission.cause === "compacted").length,
       };
     };
     if (command.command === "revert") {
@@ -107,11 +112,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const textPlan = modelTextPlan(entry, "undo");
         if ("status" in textPlan) return textPlan;
         partial.push(...textPlan.omissions);
-        if (!textPlan.selection.length)
-          return {
-            status: "cant_undo_changed",
-            message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
-          };
+        if (!textPlan.selection.length) return cantUndo(entry.handle, textPlan.compacted);
         apply(entry, textPlan.selection, textPlan.actionKind);
       }
     if (!steps.length)
@@ -139,10 +140,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "nothing_to_revert",
             message: `Nothing was reverted: none of ${first?.handle} remains to revert in ${document.uri}.${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`,
           }
-        : {
-            status: "cant_undo_changed",
-            message: `Can't undo ${first?.handle}: none of that edit remains unchanged. Nothing was changed.`,
-          };
+        : cantUndo(first?.handle ?? "", committed.compacted?.get(document.documentId) ?? 0);
     }
     const performed = (kind: "undo" | "revert") => [
       ...new Set(took.filter((entry) => entry.kind === kind).map((entry) => entry.handle)),
@@ -150,10 +148,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     return {
       status: "success",
       actionId,
-      room: document.liveRoom,
-      ...(committed.cut ?? {}),
+      room: null,
       updates: committed.updates,
-      destination: "live" as const,
+      destination: versionOf(document),
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
       message: [
         command.command === "revert"
@@ -168,6 +165,81 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? ` (${parts} of ${planned + partial.length} parts)`
               : ""),
         ...partial.map((reason) => `not undone: ${reason}`),
+        ...(committed.inManuscript
+          ? [
+              "The manuscript still has the text: it was applied before this. The draft now differs from it there, and Review changes shows that as a change.",
+            ]
+          : []),
+      ].join("\n"),
+    };
+  }
+  async function listEdits(
+    document: InverseDocument,
+    policy: ReturnType<typeof createCapturedReversalPlanner>,
+    query: ModelInverseQuery,
+    before: string | undefined,
+  ): Promise<DocumentEditResult> {
+    const own = policy.own,
+      topEntry = policy.actions.top;
+    if (before && !own.some((entry) => entry.handle === before))
+      return {
+        status: "invalid_write",
+        message: `Unknown edit ${before} in ${document.uri}. Read with format: "edits" without before for valid handles.`,
+      };
+    const older = own.filter(
+        (entry) => !before || Number(entry.handle.slice(1)) < Number(before.slice(1)),
+      ),
+      page = older.slice(0, 20);
+    const undo = topEntry
+      ? await plan(
+          document,
+          query,
+          { command: "undo", file: document.uri, documentId: document.documentId },
+          true,
+        )
+      : null;
+    const index = policy.actions.actions;
+    const lines = await Promise.all(
+      page.map(async (entry) => {
+        const undos = index.actions.filter((action) =>
+          entry.parts.some((part) => action.targets.has(key(part))),
+        );
+        const popped = index.byPart;
+        const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
+        const state = fullyUndone
+          ? undos.some((undo) =>
+              undo.parts.some((part) => part.actor !== "agent" || part.threadId !== query.threadId),
+            )
+            ? "undone by the user"
+            : "undone"
+          : entry.parts.some((part) => policy.unavailable(part) === "compacted")
+            ? "too old to undo"
+            : "live";
+        let command = "none";
+        const revertPlan = policy.textPlan(entry, "revert");
+        const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
+        if (revert)
+          command =
+            revert === entry.parts.length ? "revert" : `revert ${revert} of ${entry.parts.length}`;
+        if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
+        const excerpt = deltaExcerpt(entry.parts[0].delta);
+        const summary =
+          excerpt.before && excerpt.after
+            ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
+            : excerpt.after
+              ? `+ ${JSON.stringify(excerpt.after)}`
+              : `− ${JSON.stringify(excerpt.before)}`;
+        return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
+      }),
+    );
+    return {
+      status: "success",
+      actionId: randomUUID(),
+      room: null,
+      message: [
+        `your edits to ${document.uri}, newest first (version: ${versionOf(document)})`,
+        ...lines,
+        ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
       ].join("\n"),
     };
   }
@@ -177,7 +249,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
      * receipt of the same document is ordered against.
      */
     async modelStack(documentId: DocumentId, threadId: string) {
-      const history = await store.readHistory(documentId);
+      const history = await store.readHistory(documentId, threadId);
       const inspection = inspectionActions(history, entries(history, threadId));
       const ordinal = (handle: string) => Number(handle.slice(1));
       return {
@@ -211,97 +283,32 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "document_not_found",
             message: "File not found. Check the path with ls.",
           };
-        const policy = createCapturedReversalPlanner(document, query),
-          own = policy.own,
-          topEntry = policy.actions.top;
-        if (before && !own.some((entry) => entry.handle === before))
-          return {
-            status: "invalid_write",
-            message: `Unknown edit ${before} in ${document.uri}. Read with format: "edits" without before for valid handles.`,
-          };
-        const older = own.filter(
-            (entry) => !before || Number(entry.handle.slice(1)) < Number(before.slice(1)),
-          ),
-          page = older.slice(0, 20);
-        const undo = topEntry
-          ? await plan(
-              document,
-              query,
-              { command: "undo", file: document.uri, documentId: document.documentId },
-              true,
-            )
-          : null;
-        const index = policy.actions.actions;
-        // A write whose turn still has suggestions here is pending, not Live.
-        const pending = storedPendingTurns(document.live, schema);
-        const suggesting = (turnId: string | null | undefined) => !!turnId && pending.has(turnId);
-        const updates = await store.partUpdates(
-          page.flatMap((entry) => entry.parts.map((part) => part.id)),
-        );
-        const lines = await Promise.all(
-          page.map(async (entry) => {
-            const undos = index.actions.filter((action) =>
-              entry.parts.some((part) => action.targets.has(key(part))),
-            );
-            const popped = index.byPart;
-            const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
-            // What the writer did with the suggestions each part left: the model reads Apply and
-            // Discard apart from an edit of its text.
-            const verdicts = entry.parts.map((part) => {
-              const update = updates.get(part.id);
-              return update ? writeVerdict(document.live, update) : null;
-            });
-            const applied = verdicts.filter((verdict) => verdict === "applied").length;
-            const state = fullyUndone
-              ? undos.some((undo) =>
-                  undo.parts.some(
-                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-                  ),
-                )
-                ? "undone by the user"
-                : "undone"
-              : applied
-                ? applied === entry.parts.length
-                  ? "applied"
-                  : `partly applied (${applied} of ${entry.parts.length})`
-                : verdicts.every((verdict) => verdict === "discarded")
-                  ? "discarded"
-                  : entry.parts.some((part) => policy.changed(part))
-                    ? "changed"
-                    : entry.parts.some((part) => suggesting(part.turnId))
-                      ? "pending"
-                      : "live";
-            let command = "none";
-            const revertPlan = policy.textPlan(entry, "revert");
-            const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
-            if (revert)
-              command =
-                revert === entry.parts.length
-                  ? "revert"
-                  : `revert ${revert} of ${entry.parts.length}`;
-            if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
-            const excerpt = deltaExcerpt(entry.parts[0].delta);
-            const summary =
-              excerpt.before && excerpt.after
-                ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
-                : excerpt.after
-                  ? `+ ${JSON.stringify(excerpt.after)}`
-                  : `− ${JSON.stringify(excerpt.before)}`;
-            return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
-          }),
-        );
-        const shownVersion = suggesting(topEntry?.parts[0]?.turnId) ? "draft" : "live";
-        return {
-          status: "success",
-          actionId: randomUUID(),
-          room: null,
-          message: [
-            `your edits to ${document.uri}, newest first (version: ${shownVersion})`,
-            ...lines,
-            ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
-          ].join("\n"),
-        };
+        const policy = createCapturedReversalPlanner(document, query);
+        try {
+          return await listEdits(document, policy, query, before);
+        } finally {
+          policy.free();
+        }
       });
     },
   };
 }
+
+/**
+ * An undo that took nothing: the room cut the history of the edit's parts, or another Undo took
+ * them between the capture and the commit.
+ */
+const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
+  compacted > 0
+    ? {
+        status: "expired",
+        message: `Can't undo ${handle}: the document no longer keeps history that old, so it stays as it is. Nothing was changed.`,
+      }
+    : {
+        status: "nothing_to_undo",
+        message: `${handle} is already undone. Nothing was changed.`,
+      };
+
+/** The version the chat writes this document in, as the model names it. */
+const versionOf = (document: InverseDocument) =>
+  document.room.kind === "fork" ? ("draft" as const) : ("live" as const);

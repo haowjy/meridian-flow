@@ -23,6 +23,11 @@ export const COMMAND_KINDS = [
   "thread_set_overrides",
   "press",
   "unpress",
+  "draft_create",
+  "draft_rename",
+  "draft_delete",
+  "draft_restore",
+  "chat_draft",
 ] as const;
 export type CommandKind = (typeof COMMAND_KINDS)[number];
 

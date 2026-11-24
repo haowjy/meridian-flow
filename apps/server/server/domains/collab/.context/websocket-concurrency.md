@@ -1,30 +1,23 @@
 # Collab — WebSocket concurrency boundary
 
-`withDocument()` serializes coordinator callers only. It does not exclude writer
-WebSocket mutations, and writer admission is journal-first. Any content apply after
-an `await` rechecks durable authority synchronously before applying or broadcasting.
-Concurrent-change reporting may degrade without affecting apply authority.
+A tab's batch is imported into the loaded room as sent (`DocumentRooms.write`), relayed to the
+room's other sockets and acknowledged at once; nothing is judged or refused for what it says. The
+room saves the docs it changed within seconds (`debounceMs` 2 s after the last batch, at most
+`maxDebounceMs` 10 s after the first unsaved one). A batch acked but not yet saved is lost if the
+server stops; the tab still holds it, and its next Join sends what the room's version lacks.
+Two sockets relaying one update import it twice; Loro ignores the copy.
 
-A live-room writer frame is judged in the room's memory, in `admitLiveWriterUpdate`: contained
-(acknowledged, nothing stored), a
-gap (the frame starts past the room's clock for one of its clients: `1013`, and the reconnect's
-handshake carries the prefix), or new, trimmed to what the room lacks. A new frame is stored by
-`LiveWriterJournal.appendWriterUpdate` before Hocuspocus applies, broadcasts and acknowledges it,
-in one short transaction: the head row's counter bump and one insert. The head row's lock is the
-whole lock a keystroke takes; it keeps journal order equal to commit order. The head it returns is
-compared with the room's authority before the insert (the insert stamps what the bump returned);
-a room bound to another authority stores nothing and is retired. Two sockets relaying one new
-update can both pass the room's judgement and store it twice: Yjs ignores the copy, and the cost
-is a redundant row.
+A command takes the document's advisory lock (`lockDocumentMutation`) and reads its copy of the
+room inside its transaction, merged from the stored rows and the loaded room
+(`DocumentRooms.read`, `commit`). It writes the rows of the docs it changed and hands its batch to
+the loaded room only after commit, so a rollback never reaches an open editor. A tab's batch
+takes no lock; the room's save of it takes the document's lock, so a save never lands between a
+command's read and its commit.
 
-A Live command takes the same lock: `lockDocumentMutation` takes the advisory key and then the
-head row `FOR UPDATE`, before the command reads anything, so a keystroke cannot commit between a
-command's read and its rows, below the command's own ids and outside its recorded cut. Typing
-holds only the row; commands hold both, always the key first.
-
-Access is decided when the socket opens and ends when the gateway closes it: a frame takes
-no edit grant and locks no Work. Document sockets register under their Work and lineage owners,
-their project and their document (`accessKeys` in `yjs-ws-handler.ts`), so an archive, a project's
+Access is decided at the Join and ends when the gateway ends the room: a batch takes no edit
+grant and locks no Work. Document rooms register under their Work and lineage owners, their
+project and their document (`accessKeys` in `lib/loro-ws-handler.ts`), so an archive, a project's
 deletion, a document's move to another source, or its coming into Live from a Work's draft (an
-applied create, whose socket was admitted as the Work's) closes them (`4409`), and the client
-reconnects at the new access (`writeLive` in `context/adapters/tree-list-rows.ts` names both).
+applied create, whose room was admitted as the Work's) ends them (`RoomError` `access-changed`),
+and the client joins again at the new access (`writeLive` in `context/adapters/tree-list-rows.ts`
+names both).

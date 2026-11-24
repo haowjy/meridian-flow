@@ -11,7 +11,7 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-/** Bytes in object storage rather than a Yjs document: stored bytes, or a binary file type. */
+/** Bytes in object storage rather than a Loro room: stored bytes, or a binary file type. */
 export function isStorageBackedDocument(document: {
   fileType: string;
   storageUrl: string | null;

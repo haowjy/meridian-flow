@@ -4,12 +4,11 @@ import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Block } from "../codec-types.js";
 import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
-import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
+import type { AgentEditModelPayload } from "./model-result.js";
 import { removedFile } from "./removal-copy.js";
-import type { DocumentCommandName, WriteStatus, WriteSuccessPhase } from "./types.js";
+import type { DocumentCommandName, WriteStatus } from "./types.js";
 
-export type InternalWriteResult = InternalWriteResultBase &
-  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+export type InternalWriteResult = InternalWriteResultBase & { status: WriteStatus };
 
 interface InternalWriteResultBase {
   revision?: string | null;
@@ -42,15 +41,6 @@ export function documentNotFoundMessage(commandName: DocumentCommandName): strin
   return commandName === "read"
     ? "File not found. Check the path with `ls`."
     : "File not found. Read the project to find the right path.";
-}
-
-export function isInternalWriteResult(value: unknown): value is InternalWriteResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "status" in value &&
-    isWriteStatus((value as { status: unknown }).status)
-  );
 }
 
 /** An internal failure that must abort the caller, carrying the model-facing message. */

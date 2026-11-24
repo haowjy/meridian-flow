@@ -1,293 +1,247 @@
-/* Draft-review decorations: continuous inline highlights and block rings. Red and green only: text the
-   draft wrote is green, text it removed is a struck red widget. Inline emphasis thickens the underline; no
-   padding or rounded span boxes, so adjacent green and struck ranges join without tiled seams.
-   Every mark sits on one alpha ladder of its accent: tint 12%, emphasis 22%, line 40%. */
-.meridian-editor .ProseMirror .meridian-review-added {
-  --review-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
-  --review-border: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  --review-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
-  --review-ring: color-mix(in oklab, var(--color-primary) 40%, transparent);
+/* Review changes (ReviewChangesExtension): Live's text of a changed paragraph above the draft's
+   (Inline) or beside every paragraph (Side by side), in muted ink, with separated word highlights
+   on main's alpha ladder: tint 12%, emphasis 22%, line 40%. No strike-through, no mixed sentences.
+   The reference is read-only DOM, never document text. */
+.meridian-editor .ProseMirror.meridian-review {
+  --review-add-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  --review-add-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  --review-add-line: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  --review-del-tint: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  --review-del-emphasis: color-mix(in oklab, var(--color-destructive) 22%, transparent);
+  --review-del-line: color-mix(in oklab, var(--color-destructive) 40%, transparent);
 }
 
-.meridian-editor .ProseMirror .meridian-review-added {
-  background: var(--review-tint);
-  box-shadow: inset 0 -1px 0 0 var(--review-border);
-  transition: background-color var(--default-transition-duration) ease;
+/* Room in the right margin for each change's pair. */
+.meridian-editor .ProseMirror.meridian-review {
+  padding-right: 64px;
 }
 
-.meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
-  background: var(--review-emphasis);
-  box-shadow: inset 0 -2px 0 0 var(--review-ring);
-}
-
-/* Removed base text: a read-only widget (never document text) struck through where it used to be.
-   Unselectable by design: the writer can click it to select the change but cannot select into it. */
-.meridian-editor .ProseMirror .meridian-review-removal {
-  --removal-border: color-mix(in oklab, var(--color-destructive) 40%, transparent);
-  --removal-tint: color-mix(in oklab, var(--color-destructive) 12%, transparent);
-  color: var(--color-destructive);
+.meridian-editor .ProseMirror .meridian-review-chg {
+  position: relative;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
+  scroll-margin: 64px 0 96px;
 }
 
-.meridian-editor .ProseMirror .meridian-review-removal-text {
-  --removal-emphasis: color-mix(in oklab, var(--color-destructive) 22%, transparent);
-  --removal-ring: color-mix(in oklab, var(--color-destructive) 40%, transparent);
-  color: var(--color-destructive);
-  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+.meridian-editor .ProseMirror .meridian-review-ref {
+  margin: 0 0 2px;
+  color: var(--color-muted-foreground);
+  font-size: 0.94em;
+  line-height: 1.625;
+  white-space: pre-wrap;
+}
+
+.meridian-editor .ProseMirror .meridian-review-ref + .meridian-review-ref {
+  margin-top: 0.5em;
+}
+
+.meridian-editor .ProseMirror h1.meridian-review-ref,
+.meridian-editor .ProseMirror h2.meridian-review-ref,
+.meridian-editor .ProseMirror h3.meridian-review-ref {
+  font-size: 1.125em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.meridian-editor .ProseMirror .meridian-review-del {
+  background: var(--review-del-tint);
+  border-radius: 2px;
+  color: var(--color-paper-ink);
+}
+
+.meridian-editor .ProseMirror .meridian-review-ins {
+  background: var(--review-add-tint);
+  box-shadow: inset 0 -1px 0 0 var(--review-add-line);
+}
+
+.meridian-editor .ProseMirror .meridian-review-chg.is-focused .meridian-review-del {
+  background: var(--review-del-emphasis);
+  box-shadow: inset 0 -2px 0 0 var(--review-del-line);
+}
+
+.meridian-editor .ProseMirror .meridian-review-ins.is-focused {
+  background: var(--review-add-emphasis);
+  box-shadow: inset 0 -2px 0 0 var(--review-add-line);
+}
+
+/* The change's pair in the right margin, level with its first line. */
+.meridian-editor .ProseMirror .meridian-review-pair {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 6px);
+  display: flex;
+  gap: 2px;
+}
+
+.meridian-editor .ProseMirror .meridian-review-act {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-sm);
-  text-decoration: line-through;
-  text-decoration-thickness: 1.5px;
-  text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
-  padding-inline-end: 0.15em;
+  color: var(--color-muted-foreground);
 }
 
-/* An empty manuscript paragraph may still display removed prose. Its placeholder
-   would occupy the same line as that widget. */
-.meridian-editor .ProseMirror p.is-empty:has(.meridian-review-removal)::before {
+.meridian-editor .ProseMirror .meridian-review-act::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  mask: var(--review-glyph) center / contain no-repeat;
+}
+
+.meridian-editor .ProseMirror .meridian-review-act[data-glyph="discard"] {
+  --review-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.meridian-editor .ProseMirror .meridian-review-act[data-glyph="restore"] {
+  --review-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
+}
+
+.meridian-editor .ProseMirror .meridian-review-act[data-glyph="apply"] {
+  --review-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+/* Against another draft: a quiet word, not a glyph. */
+.meridian-editor .ProseMirror .meridian-review-take {
+  width: auto;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.meridian-editor .ProseMirror .meridian-review-take::before {
   content: none;
 }
 
-/* A struck removal beside the text that replaced it must read as two things,
-   not "his" fused into "one". The air is a margin on the widget, never a space
-   character, so it is not text and cannot be selected or saved. Before a
-   space there is none (the space separates), and before punctuation or a line
-   end there is none either: a gap before "," reads as a typo.
-   Inline removals only; a block removal is its own paragraph. The tight case is
-   excluded in this one selector: a separate zero-margin rule loses on specificity. */
-.meridian-editor
-  .ProseMirror
-  span.meridian-review-removal:not(.meridian-review-removal-block, .meridian-review-removal-tight) {
-  margin-inline-end: 0.12em;
-}
-
-.meridian-editor
-  .ProseMirror
-  .meridian-review-removal-tight
-  > .meridian-review-removal-text:last-child {
-  padding-inline-end: 0;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-block > p {
-  margin: 0;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-block > p + p {
-  margin-top: 0.9em;
-}
-
-.meridian-editor
-  .ProseMirror
-  .meridian-review-removal.meridian-review-emphasized
-  .meridian-review-removal-text {
-  background: var(--removal-emphasis);
-  box-shadow: inset 0 -2px 0 0 var(--removal-ring);
-}
-
-/* The focused change's bar, when the margin has no room for it: a block of its
-   own after the change's paragraph. It sits in the manuscript's flow, so the
-   text below moves down for it. The manuscript's serif and prose rhythm stop
-   at its edge; the bar is app chrome. */
-.meridian-editor .ProseMirror .meridian-review-bar-slot {
-  margin-block: 0.5rem 0.75rem;
-  font-family: var(--font-sans);
-  font-weight: 400;
-  line-height: 1.4;
+.meridian-editor .ProseMirror .meridian-review-act:hover {
+  background: var(--color-ink-fill);
   color: var(--color-foreground);
-  cursor: default;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
-/* A long removal folds to one quiet line the writer can open. Its text stays in the widget, hidden. */
-.meridian-editor .ProseMirror .meridian-review-removal-folded > :not(button) {
-  display: none;
+.meridian-editor .ProseMirror .meridian-review-apply {
+  color: var(--color-jade-text);
 }
 
-.meridian-editor .ProseMirror .meridian-review-removal-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  margin: 0 0.15em 0 0;
-  padding: 0.05em 0.6em;
-  border: 1px dashed var(--removal-border);
-  border-radius: var(--radius-sm);
-  background: var(--removal-tint);
-  color: inherit;
-  font: inherit;
-  font-size: 0.8125em;
-  line-height: 1.5;
-  cursor: pointer;
-  user-select: none;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-block > .meridian-review-removal-toggle {
-  display: flex;
-  width: fit-content;
-  margin: 0;
-}
-
-.meridian-editor
-  .ProseMirror
-  .meridian-review-removal-block
-  > .meridian-review-removal-toggle[aria-expanded="true"] {
-  margin-bottom: 0.4em;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
-  content: "";
-  width: 0.4em;
-  height: 0.4em;
-  border-inline-end: 1.5px solid currentColor;
-  border-block-end: 1.5px solid currentColor;
-  transform: translateY(-0.1em) rotate(-45deg);
-  transition: transform var(--default-transition-duration) ease;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-toggle[aria-expanded="true"]::before {
-  transform: translateY(-0.15em) rotate(45deg);
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-toggle:hover {
-  background: color-mix(in oklab, currentColor 12%, transparent);
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal-toggle:focus-visible {
+.meridian-editor .ProseMirror .meridian-review-act:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
 }
 
-/* Whole-block review decorations — non-text blocks (lists, rules, quotes)
-   review at block granularity. The inserted node keeps the insert tint from
-   its base class and swaps the underline hint for an outer ring, so nodes
-   with no paintable area of their own (a 1px horizontal rule) still read as
-   "new block." */
-.meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {
-  border-radius: var(--radius-sm);
-  box-shadow:
-    0 0 0 3px var(--review-tint),
-    0 0 0 4px var(--review-border);
+.meridian-editor .ProseMirror .meridian-review-chg.is-focused .meridian-review-act {
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  box-shadow: var(--shadow-raise);
 }
 
-.meridian-editor
-  .ProseMirror
-  .meridian-review-block.meridian-review-added.meridian-review-emphasized {
-  box-shadow:
-    0 0 0 3px var(--review-emphasis),
-    0 0 0 5px var(--review-ring);
+.meridian-editor .ProseMirror .meridian-review-chg.is-focused .meridian-review-apply {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-foreground);
 }
 
-/* A block whose nesting changed with its text untouched: only its marker, indent and bar are painted, in
-   the insert tint. The indent is an inset shadow as wide as the block's own indent, so the text keeps
-   no mark; the marker gets a ring, because a pseudo-element cannot take a decoration of its own. */
-.meridian-editor .ProseMirror .meridian-review-nested {
-  --review-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
-  --review-border: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  --review-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
-  --review-ring: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  box-shadow: inset var(--nest-indent) 0 0 0 var(--review-tint);
-  transition: box-shadow var(--default-transition-duration) ease;
+/* A change that left the text alone: a one-word tag (Moved, Style, Comment), then a comment's body. */
+.meridian-editor .ProseMirror .meridian-review-note {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75em;
+  color: var(--color-muted-foreground);
 }
 
-.meridian-editor .ProseMirror .meridian-review-nested:dir(rtl) {
-  box-shadow: inset calc(-1 * var(--nest-indent)) 0 0 0 var(--review-tint);
+.meridian-editor .ProseMirror .meridian-review-tag {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
-.meridian-editor .ProseMirror .meridian-review-nested.meridian-review-emphasized {
-  box-shadow: inset var(--nest-indent) 0 0 0 var(--review-emphasis);
+.meridian-editor .ProseMirror .meridian-review-comment {
+  min-width: 0;
+  color: var(--color-foreground);
 }
 
-.meridian-editor .ProseMirror .meridian-review-nested.meridian-review-emphasized:dir(rtl) {
-  box-shadow: inset calc(-1 * var(--nest-indent)) 0 0 0 var(--review-emphasis);
+/* A block with no text of its own (a rule, an image): Live's rule muted, or struck in its tint;
+   the draft's, added whole, ringed in the added tint. */
+.meridian-editor .ProseMirror hr.meridian-review-ref {
+  margin-block: 0.75em;
+  border: 0;
+  border-top: 2px solid color-mix(in oklab, var(--color-muted-foreground) 40%, transparent);
 }
 
-.meridian-editor .ProseMirror .meridian-review-nested[data-item]::before {
-  outline: 1.5px solid var(--review-ring);
-  outline-offset: 1px;
-  border-radius: var(--radius-sm);
-}
-
-/* Forced colours drop the tint and the shadow lines, which are all that mark added text. It is
-   underlined instead, a whole added block framed, and the change in focus drawn heavier. */
-@media (forced-colors: active) {
-  .meridian-editor .ProseMirror .meridian-review-added {
-    text-decoration: underline 1px;
-    text-underline-offset: 0.2em;
-  }
-
-  .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
-    text-decoration-thickness: 3px;
-  }
-
-  .meridian-editor .ProseMirror .meridian-review-nested {
-    box-shadow: inset var(--nest-indent) 0 0 0 Highlight;
-  }
-
-  .meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {
-    outline: 1px solid CanvasText;
-    outline-offset: 3px;
-  }
-
-  .meridian-editor
-    .ProseMirror
-    .meridian-review-block.meridian-review-added.meridian-review-emphasized {
-    outline-width: 3px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .meridian-editor .ProseMirror .meridian-review-added,
-  .meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
-    transition: none;
-  }
-}
-
-/* A change that arrived while the writer was reviewing pulses once: its marks
-   (and its row in the dock) light up and settle. Reduced motion: no pulse. */
-@keyframes meridian-review-arrive {
-  from {
-    background-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  }
-}
-
-/* A change the writer just discarded, until the server's write reaches the room: it reads as the base
-   text it goes back to. The words it added are hidden and the words it removed are plain. */
-.meridian-editor .ProseMirror .meridian-review-added.meridian-review-discarded {
-  display: none;
-}
-
-.meridian-editor .ProseMirror .meridian-review-removal.meridian-review-discarded {
-  color: unset;
-}
-
-.meridian-editor
-  .ProseMirror
-  .meridian-review-removal.meridian-review-discarded
-  .meridian-review-removal-text {
-  color: unset;
+.meridian-editor .ProseMirror .meridian-review-chg hr.meridian-review-ref.meridian-review-del {
+  border-top-color: var(--review-del-line);
   background: none;
-  text-decoration: none;
-  padding-inline-end: 0;
+  box-shadow: none;
 }
 
-.meridian-editor .ProseMirror .meridian-review-arrived {
-  animation: meridian-review-arrive 1.3s ease-out 1;
+.meridian-editor .ProseMirror .meridian-review-added {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 4px var(--review-add-tint);
+  background-color: var(--review-add-tint);
 }
 
-.meridian-editor
-  .ProseMirror
-  .meridian-review-removal.meridian-review-arrived
-  .meridian-review-removal-text {
-  animation: meridian-review-arrive 1.3s ease-out 1;
+.meridian-editor .ProseMirror .meridian-review-added.is-focused {
+  box-shadow: 0 0 0 4px var(--review-add-emphasis);
+  background-color: var(--review-add-emphasis);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .meridian-editor .ProseMirror .meridian-review-arrived,
-  .meridian-editor
-    .ProseMirror
-    .meridian-review-removal.meridian-review-arrived
-    .meridian-review-removal-text {
-    animation: none;
+.meridian-editor .ProseMirror .meridian-review-same {
+  color: color-mix(in oklab, var(--color-muted-foreground) 70%, transparent);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Side by side: the reference in the left column, the draft in the right. Every paragraph puts one
+   cell in each column, in DOM order (an empty one where a side lacks it), so the grid's rows pair
+   them; margins move to the row gap, so both cells of a row start level. */
+.meridian-editor .ProseMirror.meridian-review-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 0.75em;
+  align-items: start;
+}
+
+.meridian-editor .ProseMirror.meridian-review-side > * {
+  grid-column: 2;
+}
+
+.meridian-editor .ProseMirror.meridian-review-side > *,
+.meridian-editor .ProseMirror.meridian-review-side .meridian-review-ref {
+  margin-block: 0;
+}
+
+.meridian-editor .ProseMirror.meridian-review-side > .meridian-review-chg,
+.meridian-editor .ProseMirror.meridian-review-side > .meridian-review-same {
+  grid-column: 1;
+}
+
+/* A comment's change has no paragraph of its own to pair: it reads across both columns. */
+.meridian-editor .ProseMirror.meridian-review-side > .meridian-review-chg.meridian-review-across {
+  grid-column: 1 / -1;
+}
+
+.meridian-editor .ProseMirror.meridian-review-side .meridian-review-pair {
+  left: calc(200% + 24px + 6px);
+}
+
+.meridian-editor .ProseMirror.meridian-review-side .meridian-review-across .meridian-review-pair {
+  left: calc(100% + 6px);
+}
+
+/* A paragraph deleted under the caret, kept while it stays (KeptExtension, design §1). */
+.meridian-editor .ProseMirror .meridian-kept {
+  color: var(--color-muted-foreground);
+}
+
+@media (forced-colors: active) {
+  .meridian-editor .ProseMirror .meridian-review-ins,
+  .meridian-editor .ProseMirror .meridian-review-del {
+    forced-color-adjust: none;
+    text-decoration: underline;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-del {
+    text-decoration-style: dotted;
   }
 }

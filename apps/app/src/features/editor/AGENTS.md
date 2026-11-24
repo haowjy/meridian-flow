@@ -2,7 +2,7 @@
 
 The app side of the editor: `SessionEditor` binds a session and scope, `EditorView`
 composes live or review presentation, and `chrome/` and `surfaces/` hold the
-writer-facing controls. Schemas, Yjs sessions and ProseMirror extensions belong to
+writer-facing controls. Schemas, Loro sessions and ProseMirror extensions belong to
 `core/editor`; pane composition to `features/project/context`.
 
 - Mount every control surface through `chrome/chrome-surfaces.tsx` and the single

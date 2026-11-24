@@ -8,7 +8,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { EventJournalWriter, LiveEventWriter } from "../../threads/index.js";
+import type { LiveEventWriter } from "../../threads/index.js";
 
 export async function appendSubagentActivity(input: {
   eventWriter: LiveEventWriter;

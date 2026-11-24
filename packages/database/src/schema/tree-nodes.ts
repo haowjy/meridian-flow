@@ -13,9 +13,9 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { treeLists } from "./collab";
 import { contextSources } from "./content";
 import { draftIdColumn } from "./drafts";
-import { documentYjsHeads } from "./yjs";
 
 type NodeKind = "folder" | "document";
 
@@ -33,7 +33,7 @@ export const treeNodeIds = pgTable(
     listId: uuid("list_id")
       .$type<DocumentId>()
       .notNull()
-      .references(() => documentYjsHeads.documentId, { onDelete: "cascade" }),
+      .references(() => treeLists.id, { onDelete: "cascade" }),
   },
   (table) => [unique("tree_node_ids_id_list").on(table.id, table.listId)],
 );

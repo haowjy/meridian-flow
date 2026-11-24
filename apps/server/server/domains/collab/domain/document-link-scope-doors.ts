@@ -23,40 +23,28 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
-    serializeDocument: (documentId, doc, view) =>
-      scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
-    serializeVersionedDocument: (documentId, doc, view, model) =>
-      scopes.within(by(documentId), () =>
-        engine.serializeVersionedDocument(documentId, doc, view, model),
-      ),
-    readFrozenMarkdown: (documentId) =>
-      scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
+    // The caller spells: a room copy is only text, and `serializeVersionedDocument` is scoped.
+    readRoom: engine.readRoom,
+    currentBlocks: engine.currentBlocks,
+    serializeVersionedDocument: (documentId, doc, view) =>
+      scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
     readVersionedMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readVersionedMarkdown(documentId)),
-    restoreFromYDoc: (documentId, snapshot, origin) =>
-      scopes.within(by(documentId), () => engine.restoreFromYDoc(documentId, snapshot, origin)),
     readForExport: (documentId, scope) =>
       scopes.within(by(documentId), () => engine.readForExport(documentId, scope)),
     readAsMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readAsMarkdown(documentId)),
-    setMarkdown: (input) => scopes.within(by(input.documentId), () => engine.setMarkdown(input)),
     seedFromMarkdown: (documentId, content, origin) =>
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    changeLiveDocument: (input) =>
-      scopes.within(by(input.documentId), () => engine.changeLiveDocument(input)),
+    writeCreatedContent: (input) =>
+      scopes.within(by(input.documentId), () => engine.writeCreatedContent(input)),
     mergeCodeText: (input) =>
       scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
-    // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
-    // empty document.
+    // Neither spells a link: a seed is encoded from bound blocks.
     encodeSeed: engine.encodeSeed,
     installSeeds: engine.installSeeds,
-    ensureDocumentAuthority: engine.ensureDocumentAuthority,
-    // The lease spells nothing; the held write spells as the document it admits.
-    withLiveDocument: engine.withLiveDocument,
-    writeDocumentHeld: (input) =>
-      scopes.within(by(input.held.documentId), () => engine.writeDocumentHeld(input)),
   };
 }
 
@@ -83,8 +71,6 @@ export function scopeAgentEdit(
   scopes: DocumentLinkScopes,
 ): AgentEditRouter {
   return {
-    // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    readRoom: router.readRoom,
     read: (command, context) =>
       scopes.within(
         {
@@ -118,14 +104,13 @@ export function scopeModelEditWrite(
 }
 
 /**
- * Draft-aware reads, in the reader's thread: its draft and its reply's
- * staged creates decide what a draft view holds. The revision depends on the
- * tree, so it is scoped like the text.
+ * Reads in the reader's link scope: its thread decides the tree view links spell
+ * in. The revision depends on the tree, so it is scoped like the text.
  */
 export function scopeEffectiveReader(
-  access: Omit<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
+  access: Omit<EffectiveDocumentReader, "writeWorkCreatedContent">,
   scopes: DocumentLinkScopes,
-  created: Pick<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
+  created: Pick<EffectiveDocumentReader, "writeWorkCreatedContent">,
 ): EffectiveDocumentReader {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,

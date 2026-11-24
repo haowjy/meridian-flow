@@ -89,7 +89,7 @@ whole hook, or `pnpm typecheck:staged` to isolate typechecking.
    Nx or TypeScript task. Repeat with an empty index and with unstaged source
    errors: selection must still skip. Unstage and restore the documentation.
 2. Stage a source change in `packages/contracts/src/`. Expect contracts and
-   its dependent Nx projects, including app and server, but not yjs-inspect.
+   its dependent Nx projects, including app and server, but not design-tokens.
    Compare with:
 
    ```sh

@@ -6,7 +6,10 @@ export function createEditorSessions() {
   const get = (roomKey: string) => {
     let session = sessions.get(roomKey);
     if (!session) {
-      session = new DocumentSession({ roomKey, persistence: { kind: "none" } });
+      session = new DocumentSession({
+        room: { kind: "live", documentId: roomKey },
+        persistence: { kind: "none" },
+      });
       sessions.set(roomKey, session);
     }
     return session;

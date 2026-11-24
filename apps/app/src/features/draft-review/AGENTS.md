@@ -1,14 +1,15 @@
-# features/draft-review — review of a Work's suggestions
+# features/draft-review — review of a Work's draft
 
-A Work's draft is its suggestion marks in the Live document (`packages/suggestions`). Review reads
-them from the host's Live editor (`host-editor.ts`, `useSuggestionChanges`); there are no draft rooms.
+A Work's draft is a fork room per changed document plus its tree records (creates, renames, moves,
+deletes). Review changes is the page's address, not a store (`review-mode.ts`); the editor paints
+it. Review lists the owner's draft items (`useOwnerDrafts`) and acts on them with a press
+(`usePressCommands`): one server command over a change, a document, the draft or the Work, with
+one Undo (`unpress`).
 
-- One change's Apply or Discard is an editor transaction (`acceptSuggestion` /
-  `rejectSuggestion`), one Ctrl+Z entry. A document's, folder's, selection's or Work's is a press
-  (`usePressCommands`): one server command over text and tree, with one Undo (`unpress`).
-- A press's items are in flight (`DraftCommandOwner.hold`) until the list is read again: a pressed
-  row leaves the list and comes back if the press fails. Items never end on their own.
-- A press (Apply or Discard) sits in each open editor's history and on the sidebar's Undo stack
+- A press's items are in flight while the journal holds it (`DraftCommandOwner.followPresses`),
+  until a list read after its answer succeeds: a pressed row leaves the list, in every tab and
+  through a reload, and comes back if the press fails. Items never end on their own.
+- A press (Apply or Discard) sits on the sidebar's Undo stack
   (`PressEntries`); Ctrl+Z there, a row's Undo or its notice's Undo takes it back once, and Redo
   presses the same items again.
 - A tree line's row presses its tree change alone (`half: "tree"`).

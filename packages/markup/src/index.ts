@@ -1,6 +1,6 @@
 /**
  * Public API for canonical Markdown/MDX codecs. The shared link rules live at
- * `@meridian/markup/links` and the Yjs stored-link walks at
+ * `@meridian/markup/links` and the stored-link keys at
  * `@meridian/markup/stored-links`, so neither drags the other (or the codecs) in.
  */
 

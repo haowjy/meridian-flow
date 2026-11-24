@@ -16,7 +16,6 @@ import {
   readHandoffSeed,
   readWriteModeSwitch,
   replyProviderError,
-  type Thread,
   type ThreadAsk,
   type Turn,
 } from "@meridian/contracts/threads";

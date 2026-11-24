@@ -80,7 +80,7 @@ Resolves which Agent and skills a thread uses, from the saved version of each pa
 
 The writer's browser tab.
 
-Holds the HTTP client, the thread socket and the Yjs socket.
+Holds the HTTP client, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [browser](system.md#browser)

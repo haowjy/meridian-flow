@@ -1,44 +1,21 @@
-/**
- * A room's text as a ProseMirror document, kept current as the room changes: one retained copy
- * per Y.Doc, so every reader shares its nodes instead of converting again.
- */
-import { fragmentOf } from "@meridian/agent-edit/integration";
+/** The document schema every copy in this browser shapes its docs by (design §1). */
+import type { RoomDocs, ShapeSchema } from "@meridian/document-model";
+import { readProseMirror, shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { Schema } from "@tiptap/pm/model";
-import { initProseMirrorDoc, refreshProseMirrorDoc } from "@tiptap/y-tiptap";
-import type * as Y from "yjs";
 
 let schema: ReturnType<typeof buildDocumentSchema> | null = null;
-const roomSchema = () => (schema ??= buildDocumentSchema());
+let shape: ShapeSchema | null = null;
 
-const roomContents = new WeakMap<Y.Doc, ReturnType<typeof initProseMirrorDoc>>();
-export function roomContent(doc: Y.Doc) {
-  let content = roomContents.get(doc);
-  if (!content) {
-    const fragment = fragmentOf(doc);
-    const retained = retainFragment(fragment, roomSchema());
-    roomContents.set(doc, retained);
-    doc.once("destroy", () => roomContents.delete(doc));
-    content = retained;
-  }
-  return content;
-}
+/** The shared schema: the one the server and agent-edit read the same docs with. */
+export const roomSchema = () => (schema ??= buildDocumentSchema());
 
-function retainFragment(fragment: Y.XmlFragment, schema: Schema) {
-  const retained = initProseMirrorDoc(fragment, schema);
-  const refresh = (_events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
-    retained.doc = refreshProseMirrorDoc(
-      fragment,
-      retained.doc.type.schema,
-      retained.meta,
-      transaction,
-    ).doc;
-  };
-  const dispose = () => {
-    fragment.unobserveDeep(refresh);
-    fragment.doc?.off("destroy", dispose);
-  };
-  fragment.observeDeep(refresh);
-  fragment.doc?.on("destroy", dispose);
-  return Object.assign(retained, { dispose });
+/**
+ * Every copy configures its styles from the shared schema, not the editor's TipTap schema, so every
+ * peer stores marks alike.
+ */
+export const documentShape = (): ShapeSchema => (shape ??= shapeSchemaOf(roomSchema()));
+
+/** What the copy shows now, as a ProseMirror document in the shared schema. */
+export function roomContent(docs: RoomDocs) {
+  return readProseMirror(docs, roomSchema());
 }

@@ -14,10 +14,8 @@ import type {
   ProjectContextTreeScheme,
   TrashRetention,
 } from "@meridian/contracts/protocol";
-import { liveView, viewDoc } from "@meridian/suggestions";
 import { ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type * as Y from "yjs";
 import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import {
   useAccountContextSources,
@@ -29,8 +27,8 @@ import { FileCard } from "@/components/app/FileCard";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
+import type { DocumentSession } from "@/core/editor/document-session";
 import { roomContent } from "@/core/editor/room-content";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
@@ -63,9 +61,7 @@ export function TrashedDocument({
     owner: "trash-view",
     trashed: true,
   });
-  const text = useSessionText(
-    binding.state.kind === "opened" ? binding.state.session.document : null,
-  );
+  const text = useSessionText(binding.state.kind === "opened" ? binding.state.session : null);
   const { restore } = useDocumentTrashRestore();
   useOpenOnceLiving(projectId, documentId, standing.kind === "in-tree");
 
@@ -140,19 +136,17 @@ export function TrashedDocument({
 }
 
 /** The document's Live text as its session holds it now, offline typing included. */
-function useSessionText(document: Y.Doc | null): string {
+function useSessionText(session: DocumentSession | null): string {
   const [text, setText] = useState("");
   useEffect(() => {
-    if (!document) return;
-    const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    if (!session) return;
     const read = () => {
-      const doc = viewDoc(roomContent(document).doc, liveView);
+      const doc = roomContent(session.docs);
       setText(doc.textBetween(0, doc.content.size, "\n\n"));
     };
     read();
-    fragment.observeDeep(read);
-    return () => fragment.unobserveDeep(read);
-  }, [document]);
+    return session.subscribeContent(read);
+  }, [session]);
   return text;
 }
 

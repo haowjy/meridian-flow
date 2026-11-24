@@ -3,12 +3,11 @@
  * certifies and the text of a room-copy read, so the two agree by construction.
  */
 import { destinationFreeBlocks, grepBlockText } from "@meridian/agent-edit";
-import {
-  type AgentEditCodecFactory,
-  type AgentEditModel,
-  toDocHandle,
+import type {
+  AgentEditCodecFactory,
+  AgentEditModel,
+  DocHandle,
 } from "@meridian/agent-edit/integration";
-import type * as Y from "yjs";
 
 type ProjectedBlock = ReturnType<AgentEditModel["projectBlocks"]>[number];
 
@@ -21,12 +20,12 @@ export type GrepBlock = {
 };
 
 export function grepBlocksOf(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   markup: AgentEditCodecFactory["markup"],
   verbatim: boolean,
 ): GrepBlock[] {
-  const blocks = model.projectBlocks(toDocHandle(doc));
+  const blocks = model.projectBlocks(doc);
   const free = destinationFreeBlocks(
     markup,
     blocks.map((block) => block.node),

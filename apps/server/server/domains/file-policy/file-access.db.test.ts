@@ -3,25 +3,15 @@
  * grant covers the document it writes.
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import {
-  contextSources,
-  documentYjsUpdates,
-  projects,
-  threads,
-  turns,
-  users,
-  works,
-} from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { contextSources, projects, threads, turns, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
+import {
+  requireAgentWriteGrant,
+  UngrantedAgentWriteError,
+} from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
-import {
-  createDrizzleCollabPersistence,
-  createDrizzleJournal,
-} from "../collab/adapters/drizzle-journal.js";
+import { insertWorks } from "../../test-support/work-rows.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -71,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(u, "agent-journal-grant"));
       await db.insert(projects).values({ id: p, userId: u, name: "Probe", slug: "probe" });
-      await db.insert(works).values({
+      await insertWorks(db, {
         id: w,
         projectId: p,
         createdByUserId: u,
@@ -92,24 +82,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readAgentChain: async () => chain,
       });
 
-    it("refuses an agent's journal write that carries no grant", async () => {
-      const journal = createDrizzleJournal(database.current);
-      const update = Y.encodeStateAsUpdate(new Y.Doc());
-      const meta = { origin: `agent:${turn}`, actorTurnId: turn, seq: 0 };
-      await expect(journal.append(probe, update, meta)).rejects.toBeInstanceOf(
+    it("refuses an agent's write that carries no grant", async () => {
+      await expect(requireAgentWriteGrant([probe])).rejects.toBeInstanceOf(
         UngrantedAgentWriteError,
       );
-      await expect(journal.appendBatch([{ docId: probe, update, meta }])).rejects.toBeInstanceOf(
-        UngrantedAgentWriteError,
-      );
-      const rows = await database.current
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, probe));
-      expect(rows).toEqual([]);
     });
 
-    it("refuses an agent's journal write its bound grants don't cover", async () => {
+    it("refuses an agent's write its bound grants don't cover", async () => {
       const kbSource = "00000000-0000-4000-8000-000000000b06";
       await database.current
         .insert(contextSources)
@@ -136,15 +115,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         if (isFileAccessDenied(grant)) throw new Error(`Denied: ${grant.reason}`);
         return grant;
       };
-      const journal = createDrizzleJournal(database.current);
-      const update = Y.encodeStateAsUpdate(new Y.Doc());
-      await createDrizzleCollabPersistence(database.current).seeds.seedInitialDocument(
-        probe as never,
-        update,
-      );
-      const meta = { origin: `agent:${turn}`, actorTurnId: turn, seq: 0 };
       const appendUnder = (grant: FileGrant<"edit">) =>
-        runWithEditGrants(access(), [grant], () => journal.append(probe, update, meta));
+        runWithEditGrants(access(), [grant], () => requireAgentWriteGrant([probe]));
 
       // A create's grant in the knowledge base doesn't reach a scratch file.
       const kb = await containerGrant({

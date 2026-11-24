@@ -3,7 +3,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import type { View } from "@meridian/suggestions";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -54,7 +53,6 @@ import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
-import { useAgentNames } from "./useAgentNames";
 import { WordCount } from "./WordCount";
 import "./editor.css";
 
@@ -64,7 +62,7 @@ export type EditorSurfaceOptions = {
   active?: boolean;
   ariaLabel?: string;
   localContentReady?: boolean;
-  /** Warm live editors retain UndoManager but stand down their chrome and navigation. */
+  /** Warm live editors keep their history but stand down their chrome and navigation. */
   held?: boolean;
 };
 
@@ -74,24 +72,28 @@ type SessionEditorProps = {
   surfaceOptions: EditorSurfaceOptions;
   /** Review's addressed document record; live surfaces derive this from their catalog. */
   holderUri?: string | null;
-  /** An addressed construction receipt; null withdraws this editor's receipt. */
-  onConstructed?: (editor: Editor | null) => void;
   /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
-  /** Suggestion mode: the view this Live editor shows, and whether its changes are marked. */
-  suggestion?: { view: View; marks: boolean };
 };
 
 export function SessionEditor(props: SessionEditorProps) {
-  const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
+  const [snapshot, setSnapshot] = useState(() => viewOf(props.session.getSnapshot()));
   const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
   const requiresFirstServerSync = !(
     props.identity.detached || props.surfaceOptions.localContentReady
   );
 
-  useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
+  // Not on every save-status change: the first edit after a pause flips it, and a render of the
+  // whole editor view then lands inside that keystroke.
+  useEffect(
+    () =>
+      props.session.subscribe((next) =>
+        setSnapshot((shown) => (sameView(shown, next) ? shown : viewOf(next))),
+      ),
+    [props.session],
+  );
   useEffect(() => {
     let active = true;
     const firstServerSync = requiresFirstServerSync ? props.session.whenSynced() : undefined;
@@ -128,8 +130,26 @@ export function SessionEditor(props: SessionEditorProps) {
   );
 }
 
+/** What the editor view reads of its session: the rest (the save status) is `SyncStatus`'s. */
+type SessionView = Pick<DocumentSessionSnapshot, "connectionState" | "schemaFence" | "access">;
+
+const viewOf = ({
+  connectionState,
+  schemaFence,
+  access,
+}: DocumentSessionSnapshot): SessionView => ({
+  connectionState,
+  schemaFence,
+  access,
+});
+
+const sameView = (shown: SessionView, next: DocumentSessionSnapshot) =>
+  shown.connectionState === next.connectionState &&
+  shown.schemaFence === next.schemaFence &&
+  shown.access === next.access;
+
 type ActiveSessionEditorViewProps = SessionEditorProps & {
-  snapshot: DocumentSessionSnapshot;
+  snapshot: SessionView;
   evidenceDegraded: boolean;
 };
 
@@ -137,13 +157,11 @@ function ActiveSessionEditorView({
   identity,
   surfaceOptions,
   session,
-  onConstructed,
   focusKey,
   inMain = false,
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
-  suggestion,
 }: ActiveSessionEditorViewProps) {
   const {
     editable = true,
@@ -167,7 +185,6 @@ function ActiveSessionEditorView({
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
-  const agentNames = useAgentNames(projectId);
   const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
@@ -306,7 +323,6 @@ function ActiveSessionEditorView({
   const editor = useMountedEditor({
     identity,
     session,
-    agentNames,
     user: { accountId },
     placeholder: t`Start writing…`,
     slashCommandCatalog,
@@ -314,7 +330,6 @@ function ActiveSessionEditorView({
     referenceDrop,
     wikilinkPasteCatalog,
     surface: { editable: effectiveEditable, editorProps, publishPresence: active },
-    evidenceDegraded,
   });
 
   usePaintPending(editor === null);
@@ -378,28 +393,6 @@ function ActiveSessionEditorView({
     });
   }, [active, documentId, editor, session, surfaceOptions.localContentReady]);
 
-  // The view's author is this tab's writer: what they type in a Work's view is their suggestion.
-  const suggestionView = suggestion?.view ?? null;
-  const suggestionMarks = suggestion?.marks ?? true;
-  useEffect(() => {
-    if (!editor || !suggestionView) return;
-    editor.commands.setSuggestionView(
-      suggestionView,
-      suggestionView.draft ? { chat: null, turn: null, by: `user:${accountId}` } : null,
-    );
-  }, [editor, suggestionView, accountId]);
-  useEffect(() => {
-    if (editor && suggestionView) editor.commands.setSuggestionReview({ marks: suggestionMarks });
-  }, [editor, suggestionView, suggestionMarks]);
-
-  const constructionCallback = useRef(onConstructed);
-  constructionCallback.current = onConstructed;
-  useEffect(() => {
-    if (!editor) return;
-    constructionCallback.current?.(editor);
-    return () => constructionCallback.current?.(null);
-  }, [editor]);
-
   useEffect(
     () => () => {
       editorRef.current = null;
@@ -437,13 +430,7 @@ function ActiveSessionEditorView({
         <EditorCanvas
           editor={editor}
           active={active}
-          notices={
-            <SchemaNotices
-              fence={snapshot.schemaFence}
-              repairs={snapshot.schemaRepairs}
-              editor={editor}
-            />
-          }
+          notices={<SchemaNotices fence={snapshot.schemaFence} />}
           toolbar={
             showToolbar ? (
               <DocumentToolbar

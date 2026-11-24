@@ -4,18 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./protocol": "./src/protocol.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "lib0": "^0.2.120",
     "prosemirror-model": "^1.25.13",
-    "prosemirror-schema-basic": "^1.2.5",
-    "yjs": "13.6.33"
+    "prosemirror-schema-basic": "^1.2.5"
   },
   "devDependencies": {
     "typescript": "catalog:",

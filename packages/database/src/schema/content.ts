@@ -1,7 +1,6 @@
 import type {
   ContextSourceId,
   DocumentId,
-  DraftId,
   ProjectId,
   ProjectSettings,
   ThreadId,
@@ -9,9 +8,9 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
+import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -26,7 +25,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { drafts } from "./drafts";
 import { users } from "./users";
 
 export const projects = pgTable(
@@ -85,12 +83,7 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    /** The Work's draft, minted with it; null only on No Work, which owns nothing. */
-    draftId: text("draft_id")
-      .$type<DraftId>()
-      .unique("works_draft_id")
-      .references((): AnyPgColumn => drafts.id),
-    // The Works badge: documents the Work's draft changes, as the collab pending
+    // The Works badge: documents the Work's drafts change, as the collab pending
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
@@ -117,7 +110,6 @@ export const works = pgTable(
       "works_no_work_handle",
       sql`(${table.isNoWork} AND ${table.handle} IS NULL) OR (NOT ${table.isNoWork} AND ${table.handle} IS NOT NULL)`,
     ),
-    check("works_draft_unless_no_work", sql`${table.isNoWork} = (${table.draftId} IS NULL)`),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
     // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
@@ -244,6 +236,18 @@ export const documents = pgTable(
      * retention purges it on the Trash window.
      */
     inNoViewSince: timestamp("in_no_view_since", { withTimezone: true, mode: "date" }),
+    /**
+     * The newest collab schema (packed `major.minor.patch`) that wrote the document's text: a
+     * room save raises it to the server's. A client below its major.minor is refused at Join.
+     */
+    schemaVersion: integer("schema_version")
+      .notNull()
+      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+    /**
+     * Counts the saves of the document's Live room (its `document_snapshots` rows): a derivation
+     * certifies the count it read, and is stale once a save moves it.
+     */
+    contentSeq: bigint("content_seq", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     check(

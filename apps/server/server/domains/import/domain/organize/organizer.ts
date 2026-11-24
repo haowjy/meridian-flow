@@ -148,7 +148,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       uris,
       planned,
       entriesById,
-      // An entry still `received` has had no batch: its first text is not in the journal yet.
+      // An entry still `received` has had no batch: its first text is not stored yet.
       pending: tree.nodes.filter(
         (node) => node.state === "planned" && entriesById.get(node.id)?.state === "received",
       ),
@@ -161,8 +161,8 @@ export function createImportOrganizer(deps: OrganizerDeps) {
   }
 
   /**
-   * Writes the next batch of `build.pending` from `offset`: each document's first state into the
-   * journal under the id its create will have, and what else the batch worked out onto the
+   * Writes the next batch of `build.pending` from `offset`: each document's first state into its
+   * Live room's rows under the id its create will have, and what else the batch worked out onto the
    * entry. Returns how many nodes it consumed.
    */
   async function buildBatch(
@@ -233,7 +233,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         };
       }
       const stagedBytes = state.byteLength + Buffer.byteLength(JSON.stringify(ahead), "utf8");
-      // A Yjs seed is indivisible. If one seed exceeds the batch cap, write it alone;
+      // A seed is indivisible. If one seed exceeds the batch cap, write it alone;
       // otherwise the import could never advance past that document.
       if (batch.length && bytes + stagedBytes > BUILD_BYTES) break;
       batch.push(node);

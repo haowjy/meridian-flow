@@ -1,7 +1,7 @@
 /** The account's document sessions: one registry per signed-in account, closed on sign-out. */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
-import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
+import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { LiveDocumentSessionRegistry } from "./document-session-registry";
 import { DocumentSessionRegistry } from "./document-session-registry-implementation";
 
@@ -31,13 +31,8 @@ function createCore(
   accountId: AccountId,
   connectivityHints: ConnectivityHintsPort | undefined,
 ): AccountDocumentSessionCore {
-  const registry = new DocumentSessionRegistry(accountId, ({ roomKey, document, awareness }) =>
-    createHocuspocusDocumentTransport({
-      roomName: roomKey,
-      document,
-      awareness,
-      connectivityHints,
-    }),
+  const registry = new DocumentSessionRegistry(accountId, (options) =>
+    createLoroRoomTransport({ ...options, connectivityHints }),
   );
   return Object.freeze({
     accountId,

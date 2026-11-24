@@ -4,10 +4,16 @@
  */
 import type { DraftId } from "@meridian/contracts";
 import type { TreeSaw } from "@meridian/contracts/drafts";
+import { docVersion, encodeDocVersion } from "@meridian/document-model";
 import { sql } from "drizzle-orm";
-import * as Y from "yjs";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
+
+/**
+ * A draft's part of a command in its tree lists, which take each command name once; a record
+ * names it as a tree id (64 of `[0-9a-zA-Z_-]`).
+ */
+export const treeCommand = (commandId: string, draft: DraftId) => `${commandId}_${draft}`;
 
 /** The lists a Work's draft can hold records in: its project's, and its owner's account list. */
 export async function treeListsOfDraft(db: DrizzleDb, draftId: DraftId): Promise<TreeList[]> {
@@ -68,8 +74,8 @@ export async function treeListsOfNodes(
 }
 
 /**
- * The cut a review list is drawn at: each of the draft's lists, its journal id and state vector
- * at the journal's head. Read before the rows, at READ COMMITTED: the copy is never ahead of what
+ * The cut a review list is drawn at: each of the draft's lists, its id and version vector
+ * as the list stands. Read before the rows, at READ COMMITTED: the copy is never ahead of what
  * committed and rows read after it are at least as new, so the only error is a record the cut
  * misses, which stays pending. A REPEATABLE READ snapshot would let the copy run ahead of rows.
  */
@@ -88,7 +94,7 @@ export async function treeCutOf(
           (lists[at] as TreeList).kind,
           {
             list: end.list,
-            vector: Buffer.from(Y.encodeStateVector(end.writer.doc)).toString("base64"),
+            vector: Buffer.from(encodeDocVersion(docVersion(end.writer.doc))).toString("base64"),
           },
         ]),
       ),

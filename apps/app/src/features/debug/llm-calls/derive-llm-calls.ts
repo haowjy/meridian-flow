@@ -121,10 +121,10 @@ const CORRELATION_STRING_KEYS = [
   "errorCode",
   "documentId",
   "draftId",
-  "yjsSpans",
+  "batchId",
 ] as const;
 
-const CORRELATION_NUMBER_KEYS = ["iteration", "yjsClient"] as const;
+const CORRELATION_NUMBER_KEYS = ["iteration"] as const;
 const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
 
 type GatewayEventRecord = EventRecord & {
@@ -187,7 +187,7 @@ function normalizeStream(value: unknown): TraceStreamRef | undefined {
   if (
     !isRecord(value) ||
     typeof value.streamId !== "string" ||
-    (value.transport !== "thread" && value.transport !== "yjs" && value.transport !== "gateway") ||
+    (value.transport !== "thread" && value.transport !== "loro" && value.transport !== "gateway") ||
     (value.observedAt !== "client" && value.observedAt !== "server") ||
     typeof value.observerSeq !== "number" ||
     !Number.isFinite(value.observerSeq)

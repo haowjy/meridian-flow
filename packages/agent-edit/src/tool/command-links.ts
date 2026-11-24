@@ -13,7 +13,7 @@ export interface CommandLinks {
 export interface CommandLinksDeps {
   codec: AgentEditCodecFactory;
   codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
-  links: DocumentLinksPort;
+  links: Pick<DocumentLinksPort, "prepare" | "scopeFor">;
 }
 
 /** Prepare the scope (the one await), then take its codec synchronously; call at the entry of every command. */

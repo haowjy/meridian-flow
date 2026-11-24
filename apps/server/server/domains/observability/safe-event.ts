@@ -25,6 +25,7 @@ const SAFE_METRIC_KEYS = new Set([
   "providerFirstOutputMs",
 ]);
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
+  "batchId",
   "byTurnId",
   "callbackKind",
   "failureCode",
@@ -60,7 +61,6 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "toolUseId",
   "turnId",
   "workId",
-  "yjsSpans",
 ]);
 /**
  * Finite diagnostic codes, allowed by key and by exactly these values (the
@@ -100,7 +100,6 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   level: new Set(["debug", "error", "fatal", "info", "trace", "warn"]),
   originType: new Set(["fork", "handoff"]),
   outcome: new Set(["cancelled", "error", "ok"]),
-  phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set([
     "client-schema-superseded",
     "decode_failed",
@@ -143,7 +142,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "rolledBack",
     "success",
   ]),
-  transport: new Set(["gateway", "http", "thread_ws", "yjs"]),
+  transport: new Set(["gateway", "http", "loro", "thread_ws"]),
   verdict: new Set(["apply", "discard"]),
 };
 const SAFE_ERROR_CODES = new Set([

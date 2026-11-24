@@ -14,20 +14,42 @@ import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id"
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
 
-/** A document in a slot. One followed from a link keeps the link's Work. */
-export type ShownDocument = { documentId: string; workId?: string };
-
-const WORK = "?work=";
+/**
+ * A document in a slot. One followed from a link keeps the link's Work. The side has no address, so
+ * its slot carries what main's address says beyond the document's pin: Review changes on
+ * (`review`, what it compares against) and the change in focus.
+ */
+export type ShownDocument = {
+  documentId: string;
+  workId?: string;
+  review?: string;
+  changeId?: string;
+};
 
 function encodeDocument(document: ShownDocument): string {
-  return `${document.documentId}${document.workId ? `${WORK}${document.workId}` : ""}`;
+  const query = new URLSearchParams();
+  if (document.workId) query.set("work", document.workId);
+  if (document.review) query.set("review", document.review);
+  if (document.review && document.changeId) query.set("change", document.changeId);
+  const rest = query.toString();
+  return rest ? `${document.documentId}?${rest}` : document.documentId;
 }
 
 function decodeDocument(stored: string | null): ShownDocument | null {
   if (!stored) return null;
-  const [documentId, workId] = stored.split(WORK);
+  const at = stored.indexOf("?");
+  const documentId = at < 0 ? stored : stored.slice(0, at);
   if (!documentId) return null;
-  return workId ? { documentId, workId } : { documentId };
+  const query = new URLSearchParams(at < 0 ? "" : stored.slice(at + 1));
+  const workId = query.get("work");
+  const review = query.get("review");
+  const changeId = review ? query.get("change") : null;
+  return {
+    documentId,
+    ...(workId ? { workId } : {}),
+    ...(review ? { review } : {}),
+    ...(changeId ? { changeId } : {}),
+  };
 }
 
 const listeners = new Map<string, Set<() => void>>();
@@ -64,6 +86,33 @@ export function writeTreeVersionChoice(
 ): void {
   if (readTreeVersionChoice(accountId, projectId) === choice) return;
   writeRememberedId("tree-version", accountId, projectId, choice === "draft" ? choice : null);
+  notify(accountId, projectId);
+}
+
+/**
+ * Which of the picked Work's drafts the shell shows on Draft, as `<workId>:<draftId>`. A choice
+ * for another Work, or for a draft the Work no longer lists, is the Work's default.
+ */
+export type ShownWorkDraft = { workId: string; draftId: string };
+
+export function readShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
+  return decodeWorkDraft(readRememberedId("work-draft", accountId, projectId));
+}
+
+function decodeWorkDraft(stored: string | null): ShownWorkDraft | null {
+  const at = stored?.indexOf(":") ?? -1;
+  if (!stored || at < 1) return null;
+  return { workId: stored.slice(0, at), draftId: stored.slice(at + 1) };
+}
+
+export function writeShownWorkDraft(
+  accountId: string,
+  projectId: string,
+  shown: ShownWorkDraft | null,
+): void {
+  const next = shown ? `${shown.workId}:${shown.draftId}` : null;
+  if (readRememberedId("work-draft", accountId, projectId) === next) return;
+  writeRememberedId("work-draft", accountId, projectId, next);
   notify(accountId, projectId);
 }
 
@@ -123,6 +172,16 @@ export function useTreeVersionChoice(accountId: string, projectId: string): Tree
     () => readTreeVersionChoice(accountId, projectId),
     () => "live",
   );
+}
+
+/** The picked Work's draft on Draft, re-read when it changes. */
+export function useShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
+  const stored = useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readRememberedId("work-draft", accountId, projectId),
+    () => null,
+  );
+  return useMemo(() => decodeWorkDraft(stored), [stored]);
 }
 
 /** The document slot, re-read when it changes. Decoded from one stored string, so stable. */

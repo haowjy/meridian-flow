@@ -1,26 +1,25 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, a review's controls). The state chips portal into the document's state slot; a
- * review's controls take a line of their own above the toolbar.
+ * move, "Review N changes"). They portal into the document's state slot in the toolbar row;
+ * Review changes' controls and a draft's notice take a line of their own above the toolbar.
  */
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { fitReviewLine, ReviewBar } from "@/features/draft-review/ReviewBar";
+import { ReviewChangesButton } from "@/features/draft-review/ReviewChangesButton";
+import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
-import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
-import { useItemLauncher } from "../review-launch";
+import { useFocusSuccession } from "@/lib/focus-follow";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -37,13 +36,6 @@ export type DocumentIdentityBarProps = {
   document: OpenDocument;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
-  onCloseDraftOnly?: () => void;
-  /**
-   * The draft whose review controls take the focus when they show: one opened from
-   * the previous draft's controls. Held above this bar, which remounts per document.
-   */
-  focusReview?: string | null;
-  onFocusReview?: (itemKey: string | null) => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -59,9 +51,6 @@ export function DocumentIdentityBar({
   readOnly: readOnlyDocument = false,
   onCommitted,
   onOpenExisting,
-  onCloseDraftOnly,
-  focusReview,
-  onFocusReview,
 }: DocumentIdentityBarProps) {
   // On Draft of a deleted Work the placement field is not offered: its tree takes no change.
   const workDeleted = useTreeVersion().ended === "deleted";
@@ -75,45 +64,34 @@ export function DocumentIdentityBar({
     onCommitted,
   });
 
-  const { controller } = useDraftReview();
-  const { openReviewFile } = useItemLauncher();
-  const review = controller.inlineReview;
-  const reviewItemKey =
-    review?.documentId === document.documentId && review.shown ? review.itemKey : null;
-  // A review that has been entered but not yet painted is a review destination in flight:
-  // it must not read as the live document's chip until its preview answers.
-  const reviewPending = review?.documentId === document.documentId && !review.shown;
-  const openItem = (row: ReviewFileTarget, takeFocus?: boolean) => {
-    if (takeFocus) onFocusReview?.(row.item.itemKey);
-    openReviewFile(row, controller.draftId);
-  };
+  const mode = useReviewMode();
+  const draftItemKey = mode?.documentId === document.documentId ? mode.itemKey : null;
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
-    !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
+    !draftItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
   const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, document.documentId);
   const lineFocus = useRef<HTMLDivElement>(null);
   useFocusSuccession(lineFocus);
 
-  // Reviewing a draft is a mode, not a notice: its controls take a line of their own
-  // above the toolbar, and a Discard's notice takes that line when it ends the review (or
-  // shares it, wrapping, when it does not). The version chip and other state stay on the
-  // toolbar row.
-  const renderState = (version: ReactNode, controls: ReactNode) => (
+  // Reviewing a draft is a mode, not a notice: its controls take a line of their own above the
+  // toolbar, so the formatting controls stay whole. A Discard's notice takes that line when it
+  // ends the review, and shares it, wrapping, when it does not.
+  return (
     <>
       {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
           Undo and an Undo's back to the controls. */}
       <div ref={lineFocus} className="contents">
-        {controls || notice ? (
+        {mode || notice ? (
           <div
             ref={fitReviewLine}
             data-review-line
             className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
           >
             {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
-            {controls}
+            {mode ? <ReviewBar /> : null}
           </div>
         ) : null}
       </div>
@@ -144,31 +122,11 @@ export function DocumentIdentityBar({
             onChooseHome={() => setFieldOpen(true)}
           />
           <AgentFileState projectId={projectId} document={document} />
-          {/* The version chip holds one place: Live while the document has a draft, or Draft while reviewing. */}
-          {version ??
-            (reviewItemKey || reviewPending ? null : (
-              <DocumentVersionMenu projectId={projectId} document={document} />
-            ))}
+          <ReviewChangesButton document={document} />
+          <DocumentVersionMenu projectId={projectId} document={document} />
         </div>
       </DocumentStatePortal>
     </>
-  );
-  return (
-    <DraftReviewBand
-      projectId={projectId}
-      document={document}
-      documentId={document.documentId}
-      itemKey={reviewItemKey ?? ""}
-      onOpenItem={openItem}
-      onCloseDraftOnly={onCloseDraftOnly}
-      onFocusDocument={() =>
-        focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)
-      }
-      focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
-      onOpenFocused={() => onFocusReview?.(null)}
-    >
-      {({ version, controls }) => renderState(version, controls)}
-    </DraftReviewBand>
   );
 }
 
@@ -228,54 +186,7 @@ const editorProse = (documentId: string) =>
     ),
   ].find((prose) => !prose.closest("[inert]")) ?? null;
 
-const mainProse = (leftDocumentId: string) =>
-  [...document.querySelectorAll<HTMLElement>('[role="main"] [contenteditable="true"]')].find(
-    (prose) =>
-      !prose.closest("[inert]") &&
-      !prose.closest(`[data-context-editor-document-id="${escapeCssIdent(leftDocumentId)}"]`),
-  ) ?? null;
-
 /** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
   editorProse(documentId)?.focus();
 }
-
-/**
- * A closing review swaps the document's editor once the live one has painted, so the
- * prose may not be there yet: holds the focus for it until the writer takes the focus.
- */
-function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
-  // A draft-only document's discard sends main back: its prose never returns, main's does.
-  holdFocus(() => editorProse(documentId) ?? (leaving ? mainProse(documentId) : null));
-}
-
-/**
- * The review line's ref: it gives up labels, in order (`ACTIONS_DENSITY` and
- * document-identity-row.css), only while its controls don't fit the line's width.
- */
-function fitReviewLine(line: HTMLDivElement) {
-  const fit = () => {
-    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
-    const style = getComputedStyle(line);
-    const available =
-      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
-    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
-      line.dataset.collapse = String(level);
-      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
-      if (!controls || controls.getBoundingClientRect().width <= available) break;
-    }
-  };
-  fit();
-  const resize = new ResizeObserver(fit);
-  resize.observe(line);
-  const mutations = new MutationObserver(fit);
-  mutations.observe(line, { childList: true, subtree: true, characterData: true });
-  return () => {
-    resize.disconnect();
-    mutations.disconnect();
-  };
-}
-
-/** The review actions' form at each collapse level (document-identity-row.css has the rest). */
-const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;

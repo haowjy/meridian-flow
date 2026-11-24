@@ -68,12 +68,12 @@ export const threadShownLinks = pgTable(
 /**
  * Observation frontiers: the document state the model was shown by one
  * transcript block (a tool result, or a writer turn's reference block whose
- * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
- * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
- * captured with that cut.
- * `room_key` is `live:<documentId>`; the room
- * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
- * names shown, `domains/context/tree/names-shown.ts`).
+ * materialized read it is sent), per room. `snapshot` holds the frontiers of the docs it
+ * showed (agent-edit's `encodeFrontierMap`).
+ * `room_key` is the Loro room name, `live:<documentId>` or `fork:<draftId>:<documentId>`; the
+ * room `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map
+ * of names shown, `domains/context/tree/names-shown.ts`). A document's purge deletes the rows of
+ * its rooms, and an empty fork's deletion its room's (`ModelEvidence.forgetFrontiers`).
  *
  * Keyed by the block's own id and the room, so a fork that renders the inherited block
  * finds its rows with nothing copied. The key has no foreign key to the block: the
@@ -94,7 +94,6 @@ export const observationFrontiers = pgTable(
     threadId: uuid("thread_id").$type<ThreadId>().notNull(),
     roomKey: text("room_key").notNull(),
     snapshot: byteaColumn("snapshot").notNull(),
-    journalPosition: bigint("journal_position", { mode: "number" }),
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [

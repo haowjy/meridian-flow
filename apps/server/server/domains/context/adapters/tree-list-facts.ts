@@ -38,16 +38,17 @@ export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise
 
 /**
  * The drafts of a list's projects, as ids: a Work's (open, archived, or deleted and restorable)
- * or a chat's. A draft ends only when its Work is purged for good, which discards it first. A
+ * or a chat's. A draft ends only when it or its Work is purged for good, which discards it first;
+ * a deleted draft is not open. A
  * project's list holds its project's drafts, an account's its projects'. Only `open` ones may
  * write.
  */
 async function activeDrafts(db: DrizzleDb, list: TreeList, open: boolean): Promise<Set<string>> {
   const rows = await currentDrizzleDb(db as Database).execute<{ id: string }>(sql`
     SELECT b.id AS id FROM drafts b
-    LEFT JOIN works w ON w.draft_id = b.id
+    LEFT JOIN works w ON w.id = b.work_id
     WHERE true
-      ${open ? sql`AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))` : sql``}
+      ${open ? sql`AND b.deleted_at IS NULL AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))` : sql``}
       AND b.project_id IN (SELECT id FROM projects WHERE ${
         list.kind === "project"
           ? sql`id = ${list.projectId}::uuid`

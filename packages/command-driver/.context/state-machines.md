@@ -56,6 +56,6 @@ stateDiagram-v2
 - The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`. `project_create` is the second (`project-commands.ts`): its record is the unsent project, it has `holdsLane`, and a Work command submitted while the project's create is unsettled (judged inside the saving transaction) also queues on its lane `project:<id>`, so it waits through a refusal and Retry of the create. The loader (by account) and the read gate read it through `awaitPendingProjectCreation` and `readPendingProjectCreation`.
 - `press` and `unpress` (`press-commands.ts`) share one lane per Work, `press:<owner>`, so an Undo goes after the press it names. Its `onSettled` reads what
   a draft-hint reads (`refreshDraftReads`); one settled before the tab opened reads only the
-  route's Works, and only when that read began before it. A press waits on 503 until the server holds the tab's typing, which the driver's resend covers.
+  route's Works, and only when that read began before it.
 
 Pattern: [a command that may have landed](../../../.context/state-machines/command-that-may-have-landed.md).

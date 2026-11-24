@@ -3,7 +3,7 @@
 `apps/app/src`: the web app. Follow the numbers for one chat turn: a route mounts the workspace (1),
 which shows the chat (2). The chat sends the message (3) through the client, which posts it and
 listens on the thread socket (4). The server streams the reply back (5) and the chat draws it from
-the thread store (6). When the model edits a document, the edit arrives over the Yjs socket (7) and
+the thread store (6). When the model edits a document, the edit arrives over the Loro socket (7) and
 the editor shows it (8). No dependency rule is written for these layers, so read an arrow as
 "uses". The server's side: [a message becomes an edit](flows/message-becomes-edit.md).
 
@@ -25,13 +25,13 @@ flowchart LR
   client -->|"4. posts it, subscribes to the thread socket"| server
   server -->|"5. streams the reply events"| client
   conversation -->|"6. draws the events from the thread store"| client
-  server -->|"7. sends the model's edit over the Yjs socket"| core
+  server -->|"7. sends the model's edit over the Loro socket"| core
   documents -->|"8. shows the change from the editor session"| core
   project -->|"opens documents in main's tabs or beside a chat"| documents
   routes -->|"mounts the project list and the pages around it"| library
   conversation -->|"renders text and UI with"| shared
   routes -->|"mounts the debug overlay"| debug
-  note1["Steps 7 and 8 do not call each other: the server pushes the edit to core over the Yjs socket, and the editor shows it from its document session."]:::note
+  note1["Steps 7 and 8 do not call each other: the server pushes the edit to core over the Loro socket, and the editor shows it from its document session."]:::note
   note1 -.- core
 ```
 
@@ -56,7 +56,7 @@ The largest feature: every other feature except `billing` imports it or is impor
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
-- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [held paint](../../apps/app/src/features/project/.context/document-paint-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
+- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
 - Drift: Features import each other freely: `project` imports `draft-review` from 22 files, `project` imports `chat` from 14, `chat` imports `project` from 19, `editor` imports `draft-review` from 7 (tests left out). No rule forbids it.
 
 ## conversation
@@ -131,7 +131,7 @@ Shared UI, helpers and rich text.
 
 The server.
 
-HTTP, the thread socket and the Yjs socket.
+HTTP, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [server](system.md#server)

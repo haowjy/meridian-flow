@@ -1,7 +1,7 @@
 /**
  * ContextFS: filesystem-shaped adapter for Meridian-managed context schemes
  * (`manuscript`/`kb`/`scratch`/`user`/`uploads`). It hides the document-store +
- * Yjs backing behind path-oriented filesystem operations; every create, move and delete is a
+ * Loro room backing behind path-oriented filesystem operations; every create, move and delete is a
  * record of the project's list made at the call (`tree-writes.ts`).
  */
 
@@ -125,7 +125,7 @@ export interface ContextFSDeps {
 /**
  * Store-backed file tree for project and work context schemes.
  *
- * Content is Yjs-canonical: the tree is the project's list (read through the store's views,
+ * Content lives in Loro rooms: the tree is the project's list (read through the store's views,
  * written by records made at the call), and read/write content flows through the collab domain.
  * A create, move or delete runs in one command transaction: the Work and draft locks first,
  * then the list's lock inside `treeListStore.submit`, then the document's own.
@@ -209,7 +209,6 @@ export class ContextFS implements ContextSchemeAdapter {
       store: deps.store,
       tree: deps.writes,
       executor: this.commandExecutor,
-      documentSync: deps.documentSync,
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
       liveCreate: this.liveCreate,
     });
@@ -230,15 +229,13 @@ export class ContextFS implements ContextSchemeAdapter {
       case "not_found":
         return {
           code: "io_error",
-          message: `Yjs document not found: ${error.documentId}`,
+          message: `Document not found: ${error.documentId}`,
         };
       case "stale_document":
         return {
           code: "io_error",
           message: `Document changed under the write: ${error.documentId}`,
         };
-      case "checkpoint_not_found":
-        return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
         return { code: "io_error", message: error.message };
     }
@@ -366,7 +363,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       documentId: existing.id,
       markdown: write.markdown,
-      updateSeq: write.updateSeq,
     });
   }
 

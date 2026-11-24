@@ -1,13 +1,21 @@
 /**
- * Whose material a chat writes (`chatOwner`), which draft an owner names, who names a draft, and
- * the lock that serializes a lineage's writes. An owner is a Work or a conversation lineage; it
- * names its draft (`works.draft_id`, the root chat's `threads.draft_id`), and the draft names no
- * owner.
+ * Whose material a chat writes (`chatOwner`), which draft an owner names, who owns a draft, and
+ * the lock that serializes a lineage's writes. An owner is a Work or a conversation lineage. A
+ * Work's drafts name it (`drafts.work_id`), one of them its default; a No Work lineage's draft is
+ * the one its root chat names (`threads.draft_id`).
  */
-import type { DraftOwner } from "@meridian/contracts";
+import {
+  type DraftId,
+  type DraftOwner,
+  newDraftId,
+  type ProjectId,
+  type ThreadId,
+  type UserId,
+  type WorkId,
+} from "@meridian/contracts";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import { drafts, threads } from "@meridian/database/schema";
-import { inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
+import { drafts, threads, works } from "@meridian/database/schema";
+import { and, eq, inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 /** Owners a write set names: Works by id, lineages by root thread id. */
@@ -58,9 +66,8 @@ export function chatOwner(
 }
 
 /**
- * Who names a draft, as SQL over a query that reads `drafts`: the Work whose `draft_id` it is, or
- * the root chat whose lineage it is, and the handle the writer knows it by (`w3`, `c12`). A draft
- * names no owner itself; this is the one reverse read, for labels and the AI-write lifecycle.
+ * Who owns a draft, as SQL over a query that reads `drafts`: its Work (`work_id`), or the root
+ * chat whose lineage's draft it is, and the handle the writer knows it by (`w3`, `c12`).
  */
 export function draftOwnerSql(): {
   workId: SQL<string | null>;
@@ -70,14 +77,22 @@ export function draftOwnerSql(): {
   // Qualified by hand: Drizzle renders a lone table's column bare, which inside these subqueries
   // would name the subquery's own `id`.
   const draftId = sql`${drafts}.${sql.identifier("id")}`;
+  const workId = sql`${drafts}.${sql.identifier("work_id")}`;
+  const lineageRoot = sql`(SELECT ot.id FROM threads ot WHERE ot.draft_id = ${draftId} AND ${workId} IS NULL LIMIT 1)`;
   return {
-    workId: sql<string | null>`(SELECT ow.id FROM works ow WHERE ow.draft_id = ${draftId})`,
-    rootThreadId: sql<string | null>`(SELECT ot.id FROM threads ot WHERE ot.draft_id = ${draftId})`,
+    workId: sql<string | null>`${workId}::text`,
+    rootThreadId: sql<string | null>`${lineageRoot}`,
     handle: sql<string | null>`COALESCE(
-      (SELECT ow.handle FROM works ow WHERE ow.draft_id = ${draftId}),
-      (SELECT ot.ref FROM threads ot WHERE ot.draft_id = ${draftId})
+      (SELECT ow.handle FROM works ow WHERE ow.id = ${workId}),
+      (SELECT ot.ref FROM threads ot WHERE ot.id = ${lineageRoot})
     )`,
   };
+}
+
+/** A Work's default draft, as SQL over a query that reads `works`. */
+export function workDefaultDraftSql(): SQL<DraftId | null> {
+  return sql<DraftId | null>`(SELECT dd.id FROM drafts dd
+    WHERE dd.work_id = ${works}.${sql.identifier("id")} AND dd.is_default)`;
 }
 
 /** The owner a draft's naming columns name; null when nothing names it any more. */
@@ -92,10 +107,12 @@ export function ownerOfColumns(columns: {
   return null;
 }
 
-/** The draft an owner names, as SQL: its Work's `draft_id`, or its lineage root's. */
+/** The draft an owner names, as SQL: its Work's default, or its lineage root's. */
 export function draftOfOwnerSql(owner: DraftOwner): SQL<string | null> {
   return owner.kind === "work"
-    ? sql<string | null>`(SELECT w.draft_id FROM works w WHERE w.id = ${owner.workId})`
+    ? sql<
+        string | null
+      >`(SELECT d.id FROM drafts d WHERE d.work_id = ${owner.workId}::uuid AND d.is_default)`
     : sql<
         string | null
       >`(SELECT t.draft_id FROM threads t WHERE t.id = ${owner.rootThreadId} AND t.project_id = ${owner.projectId})`;
@@ -168,4 +185,100 @@ export class LineageDraftsUnavailableError extends Error {
     super("No chat in this lineage is live, so its draft takes no new writes");
     this.name = "LineageDraftsUnavailableError";
   }
+}
+
+/**
+ * The draft a new root chat bound to `workId` names: `requested` while it is one of the Work's
+ * drafts and not deleted, else the Work's default. With No Work (or no Work yet) the lineage has
+ * its own, `requested` or minted by `mint_named_draft`.
+ */
+export async function rootDraftFor(
+  db: DrizzleDb,
+  workId: string | null | undefined,
+  requested: string | null | undefined,
+): Promise<string | null> {
+  if (!workId) return requested ?? null;
+  const [row] = await currentDrizzleDb(db).execute<{
+    no_work: boolean;
+    named: string | null;
+    fallback: string | null;
+  }>(sql`
+    SELECT w.is_no_work AS no_work,
+      (SELECT d.id FROM drafts d WHERE d.work_id = w.id AND d.id = ${requested ?? null}
+        AND d.deleted_at IS NULL) AS named,
+      (SELECT d.id FROM drafts d WHERE d.work_id = w.id AND d.is_default) AS fallback
+    FROM works w WHERE w.id = ${workId}::uuid`);
+  if (!row || row.no_work) return requested ?? null;
+  return row.named ?? row.fallback;
+}
+
+/**
+ * A root chat bound to another Work carries its draft (design §2): when no other chat names the
+ * draft, the draft moves (`drafts.work_id`), becoming the destination's default if it has none,
+ * and a Work it leaves without a default gets a fresh one; when others name it, the chat names
+ * the destination's default instead, or a fresh lineage draft with No Work. Nothing in a document
+ * changes: a fork is named by its draft. A non-root chat writes its root's draft and has nothing
+ * to carry. Call it in the binding's transaction, after the new primary row. Answers the Works a
+ * draft left or joined: their pending totals, the sum of their drafts', moved.
+ */
+export async function carryRootDraft(
+  db: DrizzleDb,
+  threadId: string,
+  workId: string,
+): Promise<string[]> {
+  const tx = currentDrizzleDb(db);
+  const [row] = await tx.execute<{
+    draft_id: string;
+    draft_work: string | null;
+    was_default: boolean;
+    dest: string | null;
+    project_id: string;
+    created_by: string;
+    shared: boolean;
+  }>(sql`
+    SELECT t.draft_id, d.work_id::text AS draft_work, d.is_default AS was_default,
+      CASE WHEN w.is_no_work THEN NULL ELSE w.id::text END AS dest,
+      t.project_id::text AS project_id, t.created_by_user_id::text AS created_by,
+      EXISTS (SELECT 1 FROM threads o WHERE o.draft_id = t.draft_id AND o.id <> t.id) AS shared
+    FROM threads t JOIN drafts d ON d.id = t.draft_id, works w
+    WHERE t.id = ${threadId}::uuid AND t.root_thread_id = t.id AND w.id = ${workId}::uuid
+    FOR NO KEY UPDATE OF d`);
+  if (!row || row.draft_work === row.dest) return [];
+  if (!row.shared) {
+    await tx.execute(sql`
+      UPDATE drafts SET work_id = ${row.dest}::uuid,
+        is_default = ${row.dest}::uuid IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM drafts o WHERE o.work_id = ${row.dest}::uuid AND o.is_default)
+      WHERE id = ${row.draft_id}`);
+    if (row.draft_work && row.was_default)
+      await tx.insert(drafts).values({
+        id: newDraftId() as DraftId,
+        projectId: row.project_id as ProjectId,
+        workId: row.draft_work as WorkId,
+        isDefault: true,
+        createdBy: row.created_by as UserId,
+      });
+    return [row.draft_work, row.dest].filter((work) => work !== null);
+  }
+  let next: string | null = null;
+  if (row.dest) {
+    const [found] = await tx
+      .select({ id: drafts.id })
+      .from(drafts)
+      .where(and(eq(drafts.workId, row.dest as WorkId), eq(drafts.isDefault, true)));
+    next = found?.id ?? null;
+  } else {
+    next = newDraftId();
+    await tx.insert(drafts).values({
+      id: next as DraftId,
+      projectId: row.project_id as ProjectId,
+      createdBy: row.created_by as UserId,
+    });
+  }
+  if (next)
+    await tx
+      .update(threads)
+      .set({ draftId: next as DraftId })
+      .where(eq(threads.id, threadId as ThreadId));
+  return [];
 }

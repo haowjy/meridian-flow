@@ -1,34 +1,44 @@
-/** Account-scoped owner of live document sessions. Acquisition is lease-required. */
-import type { AccountId } from "@meridian/contracts/protocol";
+/**
+ * Account-scoped owner of document room sessions, keyed by `sessionRoomKey`: a document's Live
+ * room, and each draft's fork room of it. Acquisition is lease-required. A fork room's session is
+ * built over its document's Live session, so the Live room counts as retained while any fork
+ * session of it lives, and is torn down after them.
+ */
+import type { DraftId } from "@meridian/contracts";
+import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import * as Y from "yjs";
-import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
+import { deferred } from "@/core/cross-context-locks";
+import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import { DocumentSession, type DocumentSessionAccess, updatesRefused } from "./document-session";
+import {
+  DocumentSession,
+  type DocumentSessionAccess,
+  historyCutOff,
+  sessionRoomKey,
+} from "./document-session";
 import type {
-  LiveDocumentSessionLease,
+  DocumentSessionLease,
+  PressRooms,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import type { DocumentHistory } from "./editor-history";
-import type { Ranges } from "./item-ranges";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
-import { readBeyond, readCopy, typedText } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
+import { storedWordsBeyond } from "./unsent-words";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 /** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
 
-type LiveRoomState = {
+type RoomState = {
   session: DocumentSession | null;
-  lease: LiveDocumentSessionLease;
+  lease: DocumentSessionLease;
   /** The shared hold on the session's local copy, taken with the session and released with it. */
   hold: Promise<CopyHold> | null;
 };
@@ -41,7 +51,7 @@ type LiveRoomState = {
 const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
 /** `detached`: this owner does not want the socket open. The registry attaches when any owner does. */
-type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
+type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry {
   private accountRuntimeState: "open" | "closing" | "closed" = "open";
@@ -50,8 +60,10 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
   );
-  private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
-  private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
+  /** By `sessionRoomKey`. */
+  private readonly rooms = new Map<string, RoomState>();
+  /** Each owner's retained rooms, by `sessionRoomKey`. */
+  private readonly retainedByOwner = new Map<string, Map<string, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
@@ -61,7 +73,8 @@ export class DocumentSessionRegistry {
   /** Sessions no host holds, kept while their history has something to undo or redo. */
   private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
-  private readonly historyObservers = new Set<() => void>();
+  /** Names each press's wait, which retains its rooms under its own owner. */
+  private pressWaits = 0;
   private liveDocCapWarningEmitted = false;
   private readonly droppedTypingObservers = new Set<() => void>();
   /** Each session's copy: the room's key and the incarnation it opened. */
@@ -74,45 +87,59 @@ export class DocumentSessionRegistry {
 
   constructor(
     private readonly accountId: AccountId,
-    private readonly transportFactory: DocumentSessionTransportFactory = ({
-      roomKey,
-      document,
-      awareness,
-    }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    private readonly transportFactory: DocumentSessionTransportFactory = createLoroRoomTransport,
     private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
   ) {
     this.copies = copies;
   }
 
-  admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease {
+  admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
     this.requireAccountRuntimeOpen();
-    this.teardownOwner.assertAvailable(documentId);
-    const lease = Object.freeze({ accountId: this.accountId, projectId, documentId });
-    const state = this.liveRooms.get(documentId);
+    // A fork reads through its Live room, so the Live room is admitted with it.
+    if (draftId !== undefined) this.admit(projectId, documentId);
+    const room: DocumentRoom =
+      draftId === undefined ? { kind: "live", documentId } : { kind: "fork", draftId, documentId };
+    const key = sessionRoomKey(room);
+    this.teardownOwner.assertAvailable(key);
+    const lease = Object.freeze({ accountId: this.accountId, projectId, documentId, room });
+    const state = this.rooms.get(key);
     if (state) state.lease = lease;
-    else this.liveRooms.set(documentId, { session: null, lease, hold: null });
+    else this.rooms.set(key, { session: null, lease, hold: null });
     return lease;
+  }
+
+  openSession(room: DocumentRoom): DocumentSession | null {
+    return this.rooms.get(sessionRoomKey(room))?.session ?? null;
+  }
+
+  /** The rooms of one document: its forks first, then its Live room, the order they are torn down in. */
+  private roomsOf(documentId: DocumentId): string[] {
+    const keys = [...this.rooms.keys()].filter(
+      (key) => this.rooms.get(key)?.lease.documentId === documentId,
+    );
+    return keys.sort((a, b) => Number(a === documentId) - Number(b === documentId));
   }
 
   /** The session closes without waiting for unsent edits: nothing can deliver them to this account. */
   async clearLocalCopy(documentId: DocumentId): Promise<void> {
-    this.cancelPendingTeardown(documentId);
+    const keys = this.roomsOf(documentId);
     let retainedChanged = false;
-    for (const retained of this.retainedByOwner.values()) {
-      retainedChanged = retained.delete(documentId) || retainedChanged;
+    for (const key of keys) {
+      this.cancelPendingTeardown(key);
+      for (const retained of this.retainedByOwner.values())
+        retainedChanged = retained.delete(key) || retainedChanged;
     }
     if (retainedChanged) this.publishRetainedLiveDocuments();
-    const state = this.liveRooms.get(documentId);
-    this.liveRooms.delete(documentId);
-    if (state?.session) {
-      await this.teardownOwner.retire(documentId, state.session);
+    // Forks first: each reads through the Live copy until it is freed.
+    for (const key of keys) {
+      const state = this.rooms.get(key);
+      this.rooms.delete(key);
+      if (state?.session) await this.teardownOwner.retire(key, state.session);
+      await this.teardownOwner.drainRoom(key);
+      (await state?.hold)?.release();
     }
-    await this.teardownOwner.drainRoom(documentId);
-    (await state?.hold)?.release();
-    await this.copies.clear(documentId, ({ update, lacking }) =>
-      readCopy(update, (document) => this.dropWords(document, lacking)),
-    );
+    await this.copies.clear(documentId, () => this.dropWords());
   }
 
   /**
@@ -121,9 +148,7 @@ export class DocumentSessionRegistry {
    * not waited for.
    */
   async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
-    const sessions = [...this.liveRooms.values()].flatMap(({ session }) =>
-      session ? [session] : [],
-    );
+    const sessions = [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : []));
     const pending = (session: DocumentSession) =>
       session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
     const settled = sessions.map(
@@ -150,71 +175,104 @@ export class DocumentSessionRegistry {
     return this.copies.observe(observer);
   }
 
-  get(lease: LiveDocumentSessionLease): DocumentSession {
+  get(lease: DocumentSessionLease): DocumentSession {
     const state = this.requireLease(lease);
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  openStateVector(documentId: DocumentId): Uint8Array | null {
-    const session = this.liveRooms.get(documentId)?.session;
-    return session ? Y.encodeStateVector(session.document) : null;
+  openRoomVersion(documentId: DocumentId): Uint8Array | null {
+    return this.rooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  unsentStateVectors(): Map<DocumentId, Uint8Array> {
-    const vectors = new Map<DocumentId, Uint8Array>();
-    for (const [documentId, { session }] of this.liveRooms)
-      if (session?.hasUnacknowledgedEdits())
-        vectors.set(documentId, Y.encodeStateVector(session.document));
-    return vectors;
+  /**
+   * The press's rooms are the forks of its drafts (of its documents, when it names them) and
+   * those documents' Live rooms. One this tab has open is waited on; one it doesn't is opened
+   * when its copy here holds words beyond its mark (a reload, or another tab's typing), and the
+   * Join sends them. Each is retained while the press waits, so a detached one connects.
+   */
+  async whenSentAcknowledged(
+    projectId: ProjectId,
+    { drafts, documents }: PressRooms,
+  ): Promise<void> {
+    const copies = await this.copies.currentCopies();
+    const forks = new Map<string, DocumentRoom>();
+    for (const room of [
+      ...[...this.rooms.values()].map(({ lease }) => lease.room),
+      ...copies.map(({ room }) => room),
+    ])
+      if (
+        room.kind === "fork" &&
+        drafts.includes(room.draftId) &&
+        (!documents || documents.includes(room.documentId))
+      )
+        forks.set(sessionRoomKey(room), room);
+    const lives = new Set([...(documents ?? []), ...[...forks.values()].map((r) => r.documentId)]);
+    const rooms: DocumentRoom[] = [
+      ...forks.values(),
+      ...[...lives].map((documentId): DocumentRoom => ({ kind: "live", documentId })),
+    ];
+    const leases = (
+      await Promise.all(
+        rooms.map(async (room) => {
+          const key = sessionRoomKey(room);
+          const state = this.rooms.get(key);
+          if (state?.session) return state.lease;
+          const copy = copies.find((each) => sessionRoomKey(each.room) === key);
+          if (!copy || !(await this.copies.wordsBeyondMark(copy.name))) return null;
+          return this.admit(
+            projectId,
+            room.documentId,
+            room.kind === "fork" ? room.draftId : undefined,
+          );
+        }),
+      )
+    ).filter((lease) => lease !== null);
+    if (leases.length === 0) return;
+    const owner = `press:${++this.pressWaits}`;
+    this.retain(owner, leases);
+    try {
+      await Promise.all(
+        leases.map((lease) =>
+          this.rooms.get(sessionRoomKey(lease.room))?.session?.whenSentAcknowledged(),
+        ),
+      );
+    } finally {
+      this.release(owner);
+    }
   }
 
-  whenLiveHeld(documentId: DocumentId): Promise<void> {
-    return (
-      this.liveRooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve()
-    );
-  }
-
-  history(roomKey: string): DocumentHistory | null {
-    return this.liveRooms.get(roomKey as DocumentId)?.session?.history ?? null;
-  }
-
-  observeHistories(observer: () => void): () => void {
-    this.historyObservers.add(observer);
-    return () => this.historyObservers.delete(observer);
-  }
-
-  async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
+  async restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean> {
     const state = this.requireLease(lease);
     const session = state.session;
     if (!session) return false;
     const snapshot = session.getSnapshot();
     if (snapshot.schemaFence || snapshot.status === "detached") return false;
-    if (
-      snapshot.status !== "access-lost" &&
-      snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "terminal"
-    ) {
+    if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "terminal") {
       return false;
     }
-    this.cancelPendingTeardown(lease.documentId);
+    const key = sessionRoomKey(lease.room);
+    this.cancelPendingTeardown(key);
     try {
       await session.restartTransport(this.transportFactory);
     } finally {
-      this.scheduleTeardownIfUnretained(lease.documentId);
+      this.scheduleTeardownIfUnretained(key);
     }
     return true;
   }
 
   retain(
     ownerId: string,
-    leases: Iterable<LiveDocumentSessionLease>,
+    leases: Iterable<DocumentSessionLease>,
     options: { detachedDocumentIds?: Iterable<DocumentId> } = {},
   ): void {
-    const detached = new Set(options.detachedDocumentIds);
-    const retained = new Map<DocumentId, RetainedLiveDocument>();
+    const detached = new Set<string>(options.detachedDocumentIds);
+    const retained = new Map<string, RetainedLiveDocument>();
     for (const lease of leases) {
       this.requireLease(lease);
-      retained.set(lease.documentId, { lease, detached: detached.has(lease.documentId) });
+      retained.set(sessionRoomKey(lease.room), {
+        lease,
+        detached: detached.has(lease.documentId),
+      });
     }
     this.retainedByOwner.set(ownerId, retained);
     this.reconcileRetainedSessions();
@@ -272,15 +330,20 @@ export class DocumentSessionRegistry {
     this.holdCapStops.clear();
     for (const kept of this.keptForUndo.values()) kept.stop();
     this.keptForUndo.clear();
-    const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session, hold }]) =>
-      session ? [{ documentId, session, hold }] : [],
+    const open = [...this.rooms.entries()].flatMap(([key, { session, hold }]) =>
+      session ? [{ key, session, hold }] : [],
     );
-    this.liveRooms.clear();
-    const retired = liveSessions.map(async ({ documentId, session, hold }) => {
-      await this.teardownOwner.retire(documentId, session);
+    this.rooms.clear();
+    const retire = async ({ key, session, hold }: (typeof open)[number]) => {
+      await this.teardownOwner.retire(key, session);
       (await hold)?.release();
-    });
-    return Promise.all([...retired, this.teardownOwner.drain()]).then(() => undefined);
+    };
+    // Forks first: each reads through its Live copy until it is freed.
+    const forks = open.filter(({ session }) => session.room.kind === "fork");
+    const retired = Promise.all(forks.map(retire)).then(() =>
+      Promise.all(open.filter(({ session }) => session.room.kind === "live").map(retire)),
+    );
+    return Promise.all([retired, this.teardownOwner.drain()]).then(() => undefined);
   }
 
   private clearRetainedLiveDocuments(): void {
@@ -291,20 +354,22 @@ export class DocumentSessionRegistry {
     if (hadRetainedReferences) this.publishRetainedLiveDocuments();
   }
 
-  private requireLease(lease: LiveDocumentSessionLease): LiveRoomState {
+  private requireLease(lease: DocumentSessionLease): RoomState {
     if (lease.accountId !== this.accountId) throw new Error("Lease belongs to another account");
-    const state = this.liveRooms.get(lease.documentId);
-    if (!state) throw new Error(`Lease is stale for ${lease.documentId}`);
+    const key = sessionRoomKey(lease.room);
+    const state = this.rooms.get(key);
+    if (!state) throw new Error(`Lease is stale for ${key}`);
     return state;
   }
 
   private getOrCreateLiveSession(
-    lease: LiveDocumentSessionLease,
-    state: LiveRoomState,
+    lease: DocumentSessionLease,
+    state: RoomState,
     attach: boolean,
   ): DocumentSession {
-    this.cancelPendingTeardown(lease.documentId);
-    this.teardownOwner.assertAvailable(lease.documentId);
+    const key = sessionRoomKey(lease.room);
+    this.cancelPendingTeardown(key);
+    this.teardownOwner.assertAvailable(key);
     if (state.session) {
       if (attach && state.session.getSnapshot().status === "detached") {
         this.attachSessionTransport(state.session);
@@ -312,8 +377,8 @@ export class DocumentSessionRegistry {
       return state.session;
     }
     const { session, hold } = this.openCopy(
-      lease.documentId,
-      documentSessionPersistenceKey(lease.accountId, lease.documentId),
+      lease.room,
+      documentSessionPersistenceKey(lease.accountId, lease.room),
     );
     state.hold = hold;
     state.session = session;
@@ -326,39 +391,39 @@ export class DocumentSessionRegistry {
    * A session on the room's current incarnation, and the hold on it. The words an older incarnation
    * held that the server lacks are dropped once the session has
    * synced, and it goes. A copy is never deleted on one session's say-so: a session that `replaced`
-   * another retires it by the same path, once its editors have gone and its hold is released, so
-   * words another tab wrote into the same copy meanwhile come back too.
+   * another retires it by the same path, once its editors have gone, `after` has settled and its
+   * hold is released, so words another tab wrote into the same copy meanwhile come back too.
    */
   private openCopy(
-    roomKey: string,
+    room: DocumentRoom,
     copyKey: string,
-    replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
-  ): { session: DocumentSession; hold: Promise<CopyHold> } {
+    replaced?: {
+      session: DocumentSession;
+      hold: Promise<CopyHold> | null | undefined;
+      after?: Promise<unknown>;
+    },
+  ): { session: DocumentSession; hold: Promise<CopyHold>; retired: Promise<void> } {
     const incarnation = this.copies.current(copyKey);
     // Named from the incarnation just read: another tab can advance the pointer in between.
     const name = incarnationName(copyKey, incarnation);
     const hold = this.copies.hold(name);
     const session = this.createSession(
-      roomKey,
+      room,
       { kind: "indexeddb", key: name },
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
-    // Each caller files the session under its room after this returns, where `history` finds it.
-    queueMicrotask(() => {
-      for (const observer of [...this.historyObservers]) observer();
-    });
+    let retired = Promise.resolve();
     if (replaced) {
-      void this.teardownOwner
-        .retireReplaced(replaced.session)
+      retired = Promise.resolve(replaced.after)
+        .then(() => this.teardownOwner.retireReplaced(replaced.session))
         .catch((error: unknown) => reportError(error))
-        .then(async () => (await replaced.hold)?.release())
-        .then(() => this.dropOlder(session, copyKey, incarnation))
-        .catch(reportError);
+        .then(async () => (await replaced.hold)?.release());
+      void retired.then(() => this.dropOlder(session, copyKey, incarnation)).catch(reportError);
     } else if (incarnation > 0) {
       void this.dropOlder(session, copyKey, incarnation).catch(reportError);
     }
-    return { session, hold };
+    return { session, hold, retired };
   }
 
   private async dropOlder(
@@ -368,17 +433,14 @@ export class DocumentSessionRegistry {
   ): Promise<void> {
     const older = await this.copies.openOlder(copyKey, incarnation);
     if (older.length === 0) return;
-    // Until the first handshake the document is not the server's, and everything would look unsent.
+    // Until the first Join the copy is not the server's, and everything would look unsent.
     await session.whenSynced();
-    const settled = session.getSnapshot().status !== "destroyed";
-    const server = Y.encodeStateVector(session.document);
+    const settled = session.getSnapshot().status !== "destroyed" && !session.docs.isFreed;
+    const server = settled ? session.docs.version() : null;
     await Promise.all(
-      older.map(async ({ update, finish }) => {
+      older.map(async ({ loaded, finish }) => {
         try {
-          if (settled)
-            await readBeyond(update, server, (document, lacking) =>
-              this.dropWords(document, lacking),
-            );
+          if (server && storedWordsBeyond(loaded, server)) this.dropWords();
         } finally {
           await finish();
         }
@@ -386,39 +448,38 @@ export class DocumentSessionRegistry {
     );
   }
 
+  /**
+   * A fork room's session is made over its Live room's, which is open by then: the fork's
+   * room counts as retaining it (`isRetained`) from here until the fork's session is destroyed.
+   */
   private createSession(
-    roomKey: string,
+    room: DocumentRoom,
     persistence: DocumentSessionOptions["persistence"],
     access: DocumentSessionAccess | null,
   ): DocumentSession {
-    const session = this.constructSession(roomKey, persistence, access);
-    return session;
-  }
-
-  private constructSession(
-    roomKey: string,
-    persistence: DocumentSessionOptions["persistence"],
-    access: DocumentSessionAccess | null,
-  ): DocumentSession {
+    const live =
+      room.kind === "fork" ? (this.rooms.get(room.documentId)?.session ?? undefined) : undefined;
+    if (room.kind === "fork" && !live)
+      throw new Error(`No Live session under ${sessionRoomKey(room)}`);
+    const roomKey = sessionRoomKey(room);
     let session!: DocumentSession;
     session = new DocumentSession({
-      roomKey,
+      room,
+      live,
       persistence,
       access,
-      ownUserId: this.accountId,
-      persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
+      persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.roomKey, fence),
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
     session.subscribe((snapshot) => {
       if (snapshot.holdsUndeliverableEdits)
-        this.requestReplacement(session, updatesRefused(snapshot.connectionState));
+        this.requestReplacement(session, historyCutOff(snapshot.connectionState));
     });
-    if (session.room.kind === "live")
-      session.subscribe(() => {
-        this.settleDrainedRoom(session);
-        this.settleRetainedTransport(session);
-      });
+    session.subscribe(() => {
+      this.settleDrainedRoom(session);
+      this.settleRetainedTransport(session);
+    });
     return session;
   }
 
@@ -429,7 +490,7 @@ export class DocumentSessionRegistry {
   }
 
   private isRoomSession(session: DocumentSession): boolean {
-    return this.liveRooms.get(session.documentId as DocumentId)?.session === session;
+    return this.rooms.get(session.roomKey)?.session === session;
   }
 
   /**
@@ -439,36 +500,69 @@ export class DocumentSessionRegistry {
    * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
    * said to other tabs: each tab replaces its own session at its own read admission.
    *
-   * A room whose updates the server refused holds them with no handshake to ask: its copy's typing
-   * beyond the mark is dropped and the copy advanced even when its owner retired the session first
-   * (a draining room retires in the same emit), so no later open resends them.
+   * A room the server ended below its history cutoff holds updates no Join can deliver: its copy's
+   * typing beyond the mark is dropped and the copy advanced even when its owner retired the session
+   * first (a draining room retires in the same emit), so no later open resends them.
    */
   private async replaceRoom(old: DocumentSession, refused: boolean): Promise<void> {
     if (this.replacing.has(old) || !(refused || this.isRoomSession(old))) return;
     this.replacing.add(old);
-    // Words another tab stored that this one never received count too, and the verdict can end here.
-    if (!refused && (!(await old.decideAgain()) || !this.isRoomSession(old))) {
-      this.replacing.delete(old);
-      return;
-    }
     const copy = this.copyOfSession(old);
-    const edits = old.undeliverableEdits();
+    const words = old.undeliverableWords();
     void old.makeInert().catch(reportError);
     // Typing into the old editor after this read goes to its copy, and the older-copy read's.
-    if (edits) await readCopy(edits.copy, (document) => this.dropWords(document, edits.lacking));
+    if (words) this.dropWords();
     if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
-    const state = this.liveRooms.get(old.documentId as DocumentId);
+    const state = this.rooms.get(old.roomKey);
     if (!state) return;
-    const { session, hold } = this.openCopy(old.roomKey, copy.key, {
+    // A fork reads through its Live session's docs: each fork over this room is rebuilt over the
+    // new one, and the old Live session retires only after the old forks have.
+    const forks = old.room.kind === "live" ? this.forkStatesOver(old.documentId) : [];
+    const forksRetired = deferred<unknown>();
+    this.installReplacement(
+      state,
+      this.openCopy(old.room, copy.key, {
+        session: old,
+        hold: state.hold,
+        after: forksRetired.promise,
+      }),
+    );
+    forksRetired.resolve(Promise.all(forks.map((fork) => this.rebuildFork(fork))));
+  }
+
+  private forkStatesOver(documentId: DocumentId): RoomState[] {
+    return [...this.rooms.values()].filter(
+      ({ session }) => session?.room.kind === "fork" && session.documentId === documentId,
+    );
+  }
+
+  /** On the same copy: only the Live session under the fork changed. */
+  private rebuildFork(state: RoomState): Promise<void> {
+    const old = state.session;
+    if (!old) return Promise.resolve();
+    this.replacing.add(old);
+    void old.makeInert().catch(reportError);
+    const opened = this.openCopy(old.room, this.copyOfSession(old).key, {
       session: old,
       hold: state.hold,
     });
+    this.installReplacement(state, opened);
+    return opened.retired;
+  }
+
+  private installReplacement(
+    state: RoomState,
+    { session, hold }: { session: DocumentSession; hold: Promise<CopyHold> },
+  ): void {
     state.session = session;
     state.hold = hold;
+    // A pending teardown watched the old session; the new one is judged afresh.
+    this.cancelPendingTeardown(session.roomKey);
     this.attachSessionTransport(session);
-    this.notifyReplacement(old.roomKey, session);
+    this.notifyReplacement(session.roomKey, session);
+    this.scheduleTeardownIfUnretained(session.roomKey);
   }
 
   /** Calls `observer` with the session that replaces a document's room. */
@@ -512,14 +606,11 @@ export class DocumentSessionRegistry {
   }
 
   private async dropCopy(name: string): Promise<void> {
-    const beyond = await this.copies.beyondMark(name);
-    if (beyond)
-      await readCopy(beyond.update, (document) => this.dropWords(document, beyond.lacking));
+    if (await this.copies.wordsBeyondMark(name)) this.dropWords();
   }
 
-  /** Words in `lacking` are lost: tell the observers, who show one "Couldn't save". A change with no words (a deletion, a format change) is lost silently. */
-  private dropWords(document: Y.Doc, lacking: Ranges): void {
-    if (typedText(document, lacking) === null) return;
+  /** Typing with words in it is lost: tell the observers, who show one "Couldn't save". */
+  private dropWords(): void {
     for (const observer of this.droppedTypingObservers) observer();
   }
 
@@ -527,6 +618,7 @@ export class DocumentSessionRegistry {
     const references = new Map<string, RetainedLiveDocumentReference>();
     for (const retained of this.retainedByOwner.values()) {
       for (const { lease } of retained.values()) {
+        if (lease.room.kind !== "live") continue;
         const reference = Object.freeze({
           projectId: lease.projectId,
           documentId: lease.documentId,
@@ -560,24 +652,32 @@ export class DocumentSessionRegistry {
   }
 
   private reconcileRetainedSessions(): void {
-    const keep = new Map<DocumentId, RetainedLiveDocument>();
-    for (const retained of this.retainedByOwner.values()) {
-      for (const [documentId, owner] of retained) {
-        const prior = keep.get(documentId);
-        keep.set(documentId, {
-          lease: owner.lease,
-          detached: (prior?.detached ?? true) && owner.detached,
-        });
+    const keep = new Map<string, RetainedLiveDocument>();
+    const add = (key: string, owner: RetainedLiveDocument) => {
+      const prior = keep.get(key);
+      keep.set(key, { lease: owner.lease, detached: (prior?.detached ?? true) && owner.detached });
+    };
+    for (const retained of this.retainedByOwner.values())
+      for (const [key, owner] of retained) {
+        add(key, owner);
+        // A retained fork wants its Live room open on the same terms.
+        if (owner.lease.room.kind === "fork") {
+          const live = this.rooms.get(owner.lease.documentId);
+          if (live) add(owner.lease.documentId, { lease: live.lease, detached: owner.detached });
+        }
       }
-    }
-    for (const owner of keep.values()) {
+    // Live rooms first: a fork's session is made over its Live room's.
+    const ordered = [...keep].sort(
+      ([, a], [, b]) => Number(a.lease.room.kind === "fork") - Number(b.lease.room.kind === "fork"),
+    );
+    for (const [, owner] of ordered) {
       const state = this.requireLease(owner.lease);
       const session = this.getOrCreateLiveSession(owner.lease, state, !owner.detached);
       if (owner.detached) this.detachUnwantedTransport(session);
     }
-    for (const [documentId, state] of this.liveRooms) {
-      if (state.session && !keep.has(documentId)) {
-        this.scheduleTeardown(documentId);
+    for (const [key, state] of this.rooms) {
+      if (state.session && !keep.has(key) && !this.isRetained(key)) {
+        this.scheduleTeardown(key);
       }
     }
   }
@@ -593,11 +693,11 @@ export class DocumentSessionRegistry {
 
   /** A session whose unsent edits were acknowledged or became undeliverable no longer needs its socket. */
   private settleRetainedTransport(session: DocumentSession): void {
-    const documentId = session.documentId as DocumentId;
-    if (this.liveRooms.get(documentId)?.session !== session) return;
+    const key = session.roomKey;
+    if (this.rooms.get(key)?.session !== session) return;
     let retained = false;
     for (const owners of this.retainedByOwner.values()) {
-      const owner = owners.get(documentId);
+      const owner = owners.get(key);
       if (!owner) continue;
       if (!owner.detached) return;
       retained = true;
@@ -614,7 +714,7 @@ export class DocumentSessionRegistry {
       return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
-      const state = this.liveRooms.get(roomKey);
+      const state = this.rooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
       this.releaseUnheld(roomKey, state, state.session);
     }, this.teardownGraceMs);
@@ -629,7 +729,7 @@ export class DocumentSessionRegistry {
    * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
    * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
    */
-  private releaseUnheld(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+  private releaseUnheld(roomKey: string, state: RoomState, session: DocumentSession): void {
     if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
     else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
       this.keepForUndo(roomKey, state, session);
@@ -637,7 +737,7 @@ export class DocumentSessionRegistry {
   }
 
   /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
-  private keepForUndo(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+  private keepForUndo(roomKey: string, state: RoomState, session: DocumentSession): void {
     const history = session.history;
     const kept = { changed: ++this.undoClock, stop: () => {} };
     kept.stop = history.subscribe(() => {
@@ -650,15 +750,11 @@ export class DocumentSessionRegistry {
     const [oldest] = [...this.keptForUndo].reduce((least, entry) =>
       entry[1].changed < least[1].changed ? entry : least,
     );
-    const oldestState = this.liveRooms.get(oldest);
+    const oldestState = this.rooms.get(oldest);
     if (oldestState) this.retireLiveSession(oldest, oldestState);
   }
 
-  private holdUntilAcknowledged(
-    roomKey: string,
-    state: LiveRoomState,
-    session: DocumentSession,
-  ): void {
+  private holdUntilAcknowledged(roomKey: string, state: RoomState, session: DocumentSession): void {
     let capTimer: ReturnType<typeof setTimeout> | undefined;
     const stopClock = () => {
       clearTimeout(capTimer);
@@ -680,7 +776,7 @@ export class DocumentSessionRegistry {
     return session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
   }
 
-  private retireLiveSession(roomKey: string, state: LiveRoomState): void {
+  private retireLiveSession(roomKey: string, state: RoomState): void {
     const session = state.session;
     if (!session) return;
     const hold = state.hold;
@@ -689,14 +785,18 @@ export class DocumentSessionRegistry {
     this.cancelPendingTeardown(roomKey);
     void this.teardownOwner
       .retire(roomKey, session)
-      .then(async () => (await hold)?.release())
+      .then(async () => {
+        (await hold)?.release();
+        // Its Live room no longer reads for it.
+        if (session.room.kind === "fork") this.scheduleTeardownIfUnretained(session.documentId);
+      })
       .catch(() => undefined);
   }
 
   private settleDrainedRoom(session: DocumentSession): void {
-    const roomKey = session.documentId;
+    const roomKey = session.roomKey;
     if (!this.holdCapStops.has(roomKey)) return;
-    const state = this.liveRooms.get(roomKey);
+    const state = this.rooms.get(roomKey);
     if (state?.session !== session) return;
     if (this.mustKeepForUnsentEdits(session)) return;
     this.cancelPendingTeardown(roomKey);
@@ -704,8 +804,9 @@ export class DocumentSessionRegistry {
   }
 
   // A restart cancels the pending teardown; a room no host retains still needs one.
-  private scheduleTeardownIfUnretained(documentId: DocumentId): void {
-    if (!this.isRetained(documentId)) this.scheduleTeardown(documentId);
+  private scheduleTeardownIfUnretained(roomKey: string): void {
+    if (this.rooms.get(roomKey)?.session && !this.isRetained(roomKey))
+      this.scheduleTeardown(roomKey);
   }
 
   private cancelPendingTeardown(roomKey: string): void {
@@ -719,13 +820,16 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.delete(roomKey);
   }
 
-  private isRetained(documentId: DocumentId): boolean {
-    for (const retained of this.retainedByOwner.values()) if (retained.has(documentId)) return true;
+  /** An owner retains the room, or it is a Live room a fork session of it still reads through. */
+  private isRetained(roomKey: string): boolean {
+    for (const retained of this.retainedByOwner.values()) if (retained.has(roomKey)) return true;
+    for (const { session } of this.rooms.values())
+      if (session?.room.kind === "fork" && session.documentId === roomKey) return true;
     return false;
   }
 
   private maybeWarnLiveDocCap(): void {
-    const liveCount = [...this.liveRooms.values()].filter(({ session }) => session).length;
+    const liveCount = [...this.rooms.values()].filter(({ session }) => session).length;
     if (this.liveDocCapWarningEmitted || liveCount <= LIVE_DOC_SOFT_CAP) return;
     this.liveDocCapWarningEmitted = true;
     console.warn(

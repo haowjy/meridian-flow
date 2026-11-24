@@ -14,18 +14,16 @@ import {
   projects,
   threads,
   users,
-  works,
 } from "@meridian/database/schema";
 import { LIVE as TREE_LIVE } from "@meridian/project-tree";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
-import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
+import { insertWorks } from "../../../test-support/work-rows.js";
+import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { createDrizzleDocumentLinkScopes } from "./document-link-scope.js";
@@ -68,9 +66,11 @@ const DRAFT = "linkscopebr1";
 
 const schema = buildDocumentSchema();
 
-/** A holder whose Yjs text carries one occurrence per stored `[ref, href]`. */
-function holderDoc(links: readonly (readonly [string, string])[], sources: readonly string[] = []) {
-  const doc = new Y.Doc({ gc: false });
+/** A holder's blocks, carrying one occurrence per stored `[ref, href]`. */
+function holderBlocks(
+  links: readonly (readonly [string, string])[],
+  sources: readonly string[] = [],
+) {
   const paragraph = schema.node(
     "paragraph",
     null,
@@ -82,11 +82,7 @@ function holderDoc(links: readonly (readonly [string, string])[], sources: reado
   const images = sources.map((src) =>
     schema.node("paragraph", null, [schema.node("image", { src, alt: "map" })]),
   );
-  prosemirrorToYXmlFragment(
-    schema.node("doc", null, [paragraph, ...images]),
-    doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-  );
-  return doc;
+  return [paragraph, ...images];
 }
 
 /** The file policy's list path, with one document the reader may not read. */
@@ -145,7 +141,7 @@ if (!RUN) {
         slug: "scratch",
         deletedAt: new Date(),
       });
-      await db.insert(works).values({
+      await insertWorks(db, {
         id: WORK,
         projectId: PROJECT,
         createdByUserId: USER,
@@ -219,7 +215,7 @@ if (!RUN) {
       await scopes.within({ documentId: HOLDER }, async () => {
         await scopes.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
-          docs: [holderDoc(stored)],
+          stored: holderBlocks(stored),
         });
         expect(
           scopes.holder({ documentId: HOLDER, view: LIVE }).spellLink({ ref: stored[0][0], href }),
@@ -249,17 +245,15 @@ if (!RUN) {
       await scopes.within({ documentId: HOLDER }, async () => {
         await scopes.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
-          docs: [
-            holderDoc(stored, [
-              `asset:${MAP}`,
-              `asset:${SEAL}`,
-              `asset:${OLD_CREST}`,
-              `asset:${MISSING_ASSET}`,
-              `asset:${FOREIGN}`,
-              `asset:${WRECK}`,
-              `asset:${RETIRED_IMAGE}`,
-            ]),
-          ],
+          stored: holderBlocks(stored, [
+            `asset:${MAP}`,
+            `asset:${SEAL}`,
+            `asset:${OLD_CREST}`,
+            `asset:${MISSING_ASSET}`,
+            `asset:${FOREIGN}`,
+            `asset:${WRECK}`,
+            `asset:${RETIRED_IMAGE}`,
+          ]),
           addresses: [
             "manuscript://part1/target",
             "manuscript://part1/target.md.md",
@@ -334,7 +328,7 @@ if (!RUN) {
       await recorded.within({ documentId: HOLDER }, async () => {
         await recorded.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
-          docs: [holderDoc([], [`asset:${MAP}`, `asset:${SEAL}`])],
+          stored: holderBlocks([], [`asset:${MAP}`, `asset:${SEAL}`]),
           addresses: ["manuscript://part1/map.png"],
         });
         const unloaded = recorded.holder({
@@ -377,11 +371,9 @@ if (!RUN) {
             registered.push(...rows.map((row) => row.holderProjectId));
           },
         },
-        viewFor: liveViewFor,
-        draft: null,
       });
       await scopes.within({ projectId: "test-project" }, async () => {
-        await port.prepare({ documentId: HOLDER, docs: [] });
+        await port.prepare({ documentId: HOLDER });
         await port.registerAhead([
           {
             ref: `ahead:${id(90)}`,

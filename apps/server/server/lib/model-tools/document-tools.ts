@@ -401,9 +401,9 @@ async function writeUnderGrant(
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
-    // A removal that won the document's lock after the grant (a pull, a staged or immediate
-    // commit): a text edit is returned with who removed it; any other call's interim answer is
-    // `document_not_found`, with the record's sentence.
+    // A removal that won the document's lock after the grant: a text edit is returned with who
+    // removed it; any other call's interim answer is `document_not_found`, with the record's
+    // sentence.
     if (isDocumentNotFoundError(cause)) {
       if (cause.removal && settlesOnRemoval(parsed.command))
         return returnedEdit(deps, principal, parsed, address, ctx, "document_removed", {
@@ -425,8 +425,8 @@ async function writeUnderGrant(
       ...(removal ? { removal } : {}),
     });
   }
-  // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo. Whatever frontier a result carries records,
+  // The echo and an undo or redo result were shown; so was a partial failure's
+  // echo. Whatever frontier a result carries records,
   // error or not.
   const evidence = evidenceOf(address.documentId, written);
   if (written.isError)

@@ -53,8 +53,8 @@ stateDiagram-v2
   handle, and a name that matches two Works resolves to neither in the model's lookups
   (`context/owner-lookup.ts`), which answer with every handle (the lookup caps at 5 and says "5 or
   more" when full). Turn Undo/Redo checks handles only, never names.
-- **Drafts and suggestions outlive the delete** until purge, so restore finds them; purge
-  discards the tree records and rejects the suggestions for good.
+- **Drafts outlive the delete** until purge, so restore finds them; purge discards the
+  tree records.
 - No Work, the project's Work for chats outside any task, is never archived (the
   `works_no_work_not_archived` check), and the repository refuses to change it
   (`WorkLockedError`, answered 400 `work_locked`).

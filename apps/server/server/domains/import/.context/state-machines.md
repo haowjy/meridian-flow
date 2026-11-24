@@ -1,7 +1,7 @@
 # Import state machines
 
 An import is a durable job (`imports.state`) over its entries, one per file
-(`import_entries.state`). The server converts each uploaded file and writes its first text into the journal, where
+(`import_entries.state`). The server converts each uploaded file and seeds its first text into the document's Live room, where
 nothing shows it, then makes every node a record of the project's tree list in one transaction,
 the reveal. The wire
 states are in `packages/contracts/src/imports.ts`; the lifecycle rules are in
@@ -58,5 +58,5 @@ stateDiagram-v2
 ```
 
 `transitionEntries` updates only rows in the named source states, which is what stops a late
-receipt or an old organizer from overwriting newer work. A `prepared` entry has its first text in the journal and
+receipt or an old organizer from overwriting newer work. A `prepared` entry has its first text in its Live room and
 what the batch worked out on the entry; the plan is stored once, so nothing sends it back.

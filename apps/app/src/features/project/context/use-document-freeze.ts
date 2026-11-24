@@ -5,8 +5,8 @@ import type { OpenDocument } from "@/client/stores";
 
 /**
  * The archived or deleted Work whose own file `tab` is, which keeps it read-only until the Work
- * is unarchived or restored; null otherwise. A Work's suggestions in a document are never frozen:
- * archive stops only new AI writes.
+ * is unarchived or restored; null otherwise. A Work's draft of a document is never frozen: archive
+ * stops only new AI writes.
  */
 export function useDocumentFreeze(projectId: string, tab: OpenDocument | null): Work | null {
   const { works, deleted } = useWorks(projectId);

@@ -2,8 +2,9 @@
  * Browser project addresses. After `/p/<projectId>` the first segment is the kind of main's item
  * (`chats`, `editor` or `trash`) and the rest names it: a chat by id, or `chats/recent`, the chat
  * lane's Recent chats page. The Work scope is not in the address; the
- * query holds the owner of a Scratch document, the draft item under review (its key names the
- * draft), and overlays.
+ * query holds the owner of a Scratch document, the draft the page shows (`item`, whose key names
+ * the draft), whether Review changes is on and against what (`review`), the change in focus
+ * there (`change`), and overlays. `review` is legal only with `item`, `change` only with `review`.
  */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
@@ -11,6 +12,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
+import type { ReviewTarget } from "@/features/draft-review/review-mode";
 
 export type ProjectDestination =
   | { kind: "new-chat" | "chat-recents" | "editor" }
@@ -27,16 +29,21 @@ export type ProjectAddress = {
    * belong in a link.
    */
   owner?: ScratchOwnerKey;
-  /** The draft item under review: `${draftId}:${documentId}`, so it names its draft. */
+  /** The draft the page shows: `${draftId}:${documentId}`, so it names its draft. No review. */
   itemKey?: string;
-  /** Stable selected closure class within the addressed review. */
+  /** Review changes is on, against this: `live`, a draft id, or `file:<documentId>`. */
+  review?: ReviewTarget;
+  /** The change in focus in Review changes: the id of one of its members. */
   changeId?: string;
   settings?: SettingsSection;
 };
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
-const RECOGNIZED_QUERY = new Set(["owner", "item", "change", "settings"]);
+const RECOGNIZED_QUERY = new Set(["owner", "item", "review", "change", "settings"]);
+
+export type { ReviewTarget };
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -78,9 +85,14 @@ export function addressScratchWorkId(address: ProjectAddress): string | undefine
     : undefined;
 }
 
-/** The address with its review dropped. */
+/** The address with Review changes off: the plain draft page it was on. */
 export function withoutReview(address: ProjectAddress): ProjectAddress {
-  return { ...address, itemKey: undefined, changeId: undefined };
+  return { ...address, review: undefined, changeId: undefined };
+}
+
+/** The address with its draft dropped: the page's Live address. */
+export function withoutDraft(address: ProjectAddress): ProjectAddress {
+  return { ...address, itemKey: undefined, review: undefined, changeId: undefined };
 }
 
 /** The path names the kind of main's item, then which one. */
@@ -133,7 +145,8 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
   }
   const document = destination.kind === "document";
   const itemKey = document ? query.get("item") || undefined : undefined;
-  const changeId = itemKey ? query.get("change") || undefined : undefined;
+  const review = itemKey ? query.get("review") || undefined : undefined;
+  const changeId = review ? query.get("change") || undefined : undefined;
   const ownerParam = query.get("owner");
   const parsedOwner = ownerParam === null ? null : parseScratchOwner(ownerParam);
   // The owner is part of the address only where the path alone does not name the resource:
@@ -148,6 +161,7 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
     destination,
     ...(owner ? { owner } : {}),
     ...(itemKey ? { itemKey } : {}),
+    ...(review ? { review } : {}),
     ...(changeId ? { changeId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
   };
@@ -183,7 +197,10 @@ export function projectAddressHref(address: ProjectAddress): string {
     if (address.owner) query.set("owner", address.owner);
     if (address.itemKey) {
       query.set("item", address.itemKey);
-      if (address.changeId) query.set("change", address.changeId);
+      if (address.review) {
+        query.set("review", address.review);
+        if (address.changeId) query.set("change", address.changeId);
+      }
     }
   }
   if (address.settings) query.set("settings", address.settings);

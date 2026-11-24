@@ -8,7 +8,6 @@ import { t } from "@lingui/core/macro";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentDraftHint, DraftItem } from "@meridian/contracts/drafts";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
-import type { ReviewChange } from "./review-model";
 
 export type TreeLine =
   | { kind: "rename" | "move" | "reorder"; name: string; place: string }
@@ -41,9 +40,9 @@ export function hasTreeLine(
  * in place has no tree line).
  */
 export function hasApply(
-  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
-  return item.textChanges > 0 || item.isNew || hasTreeLine(item);
+  return item.pending || item.isNew || hasTreeLine(item);
 }
 
 /**
@@ -51,9 +50,9 @@ export function hasApply(
  * the live document with the draft's tree line.
  */
 export function isTreeOnly(
-  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
-  return item.tree?.deleted === true || (item.textChanges === 0 && hasTreeLine(item));
+  return item.tree?.deleted === true || (!item.pending && hasTreeLine(item));
 }
 
 /**
@@ -63,27 +62,10 @@ export function isTreeOnly(
 export function opensAsDocument(
   item: Pick<
     DraftItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges" | "binary"
+    "tree" | "contextLocation" | "documentName" | "isNew" | "pending" | "binary"
   >,
 ): boolean {
-  return item.textChanges > 0 || (item.isNew && !item.binary) || isTreeOnly(item);
-}
-
-/** The tree line as a review row: one change with no text, keyed apart from text. */
-export function treeChange(item: Pick<DraftItem, "itemKey">, line: TreeLine): ReviewChange {
-  return {
-    id: `tree:${item.itemKey}`,
-    excerpt:
-      line.kind === "delete"
-        ? { removed: line.name, inserted: "" }
-        : { removed: "", inserted: line.place },
-    byline: [],
-    chats: [],
-    members: [],
-    attributed: false,
-    tree: line,
-    whole: true,
-  };
+  return item.pending || (item.isNew && !item.binary) || isTreeOnly(item);
 }
 
 /** "ch12: renaming to ch12-old", "ch12: changing position", "ch13: Deleted". */

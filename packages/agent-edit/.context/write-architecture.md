@@ -1,7 +1,7 @@
 # Write architecture
 
-`write.ts` is a composition facade. The resolver-to-apply currency is typed
-ProseMirror content, not Markdown strings or raw Yjs diffs: `applyEdits` never
+`tool/loro-write.ts` is the composition facade. The resolver-to-apply currency is typed
+ProseMirror content, not Markdown strings or raw CRDT updates: `applyEdits` never
 parses or serializes. Resolver and apply code stay CRDT-neutral through the opaque
 `DocHandle` and `BlockRef`.
 
@@ -10,16 +10,9 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 
 ## Identity and targeting
 
-- Navigation targets store a block's canonical Yjs item tuple, never the displayed
-  hash, which is the shortest sibling-unique prefix and can change width.
-- Echo targeting and deletion anchors carry Yjs item identities, not display hashes:
-  the same block can have a different unique prefix among the room's siblings. Only
-  the rendered cut chooses the display hash.
-- In-place block reorder is unsupported: position-based drag would silently rebind
-  content to another block identity. A move deletes the old item and inserts a new
-  one, so never wire a node's `draggable` or default DnD to reposition blocks.
-  Figures move by cut and paste; drag-to-place is wanted and must be built as delete
-  plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
+- Navigation targets and echo targeting store a block's id, never the displayed hash, which is
+  the shortest sibling-unique prefix and can change width. Only the rendered cut chooses the
+  display hash.
 - A find write rewrites only its matches. It splices the content into the serialized
   block group, reparses it, and word-diffs each match's text window on its own
   (`cutTextWindows`), so a word outside the match anchors nothing and a word inside it that
@@ -36,7 +29,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   the containers they shared in their source and take those of the block they land beside
   (`landCopies`). A new quote written next to an existing quote joins it: only the editor
   writes `|`.
-- A write is planned on the model's view and never reads the room. `lowerBlock`
+- A write is planned on the model's view and never reads the room; the one thing it reads beyond
+  the view's text is who typed each character of the view (below). `lowerBlock`
   (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
   per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
   table cell; a list item or a quoted paragraph is a paragraph with nesting attributes), text splices with format ranges; per node at any depth,
@@ -44,11 +38,32 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   for an inline atom the model kept (an image, a line break), attribute sets
   addressed by its unit; and for a container whose children differ (a table that gains a row),
   `insert` and `delete` of nodes, the children paired by `correspond`. A unit is one UTF-16 code unit of text, or one inline atom. The
-  model's changes come from the word diff, over a find's windows or the whole block (`wordDiff`, the Yjs writer's own: it splits words with
+  model's changes come from the word diff, over a find's windows or the whole block (`wordDiff`: it splits words with
   the review tokenizer (`segmentText`), so each character of a script written without spaces (Chinese, Japanese, Thai) is a word, and the word the model
   changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
   formatting is not part of a token). A changed run that only gained characters (the old run is a subsequence of the new)
-  writes just the insertions (`retainShared`), so the old characters keep their items and author; any other change writes the run whole. Every operation is made and Yjs merges it,
+  writes just the insertions (`retainShared`), so the old characters keep their ops; any other change writes the run whole.
+  This runs on each word change first. Then changes that delete text and that only whitespace
+  separates become one change; an insertion never joins them, so `the cat dog` → `the cats hound`
+  still writes just the `s`, and a writer's `r` typed into `cat` meanwhile gives `carts`. A change
+  that deletes words takes one bordering space with them and keeps the other: the one whose
+  editor also typed the kept word beyond it, read with `LoroText.getEditorOf` on the view
+  (`AgentEditModel.unitEditors`; an editor is a Loro peer, one per editing session), else the
+  one after. The take stops short of a neighbouring insertion's point. The word diff alone keeps
+  either of two equal spaces, and when it keeps the one the writer typed beside words the model
+  deleted, the writer's Ctrl+Z takes that space out and glues the model's words (`before we of
+  course are able` rewritten as `before we can go` gave `before wecan go`). Editors come from
+  the view, never the room: they are part of what the model read, so the plan still depends only
+  on the read. A space typed during the write is not in the view, and the default side decides it.
+  A comment (any mark with `markdown: false`, which the model cannot see or write) follows the
+  word diff, not the written changes (`carriedMarks`): a unit the model kept keeps its comments,
+  and a changed run's new words take those of the old words they stand for, paired in order
+  (`one, two` → `three—four` puts `one`'s comment on `three` and `two`'s on `four`), as bold the
+  model could see would. A space between new words keeps a comment only where the words on both
+  sides have it and the old space it stands for had it. Words the model only deletes take their
+  comments with them. Nothing new is stored and nothing is reported. The marks ride in the
+  splice's content, so the one text write sets them.
+  Every operation is made and Loro merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it. The owner chose that the writer's edit to a word the model kept wins, even where that
   leaves a fragment, and to trust the model to notice an odd merge in the write's echo and its
@@ -56,29 +71,18 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   `DRAFT-B3 line.` over a deleted `DRAFT-B line.` lands `3`). A word the model
   replaces lands as the model's whole replacement: `Gamma` over a deleted `Beta` lands whole, because a trim of the
   shared edges loses model letters (`Gamm`) and was removed. The apply step never reads the room either: the update deletes what the model's
-  view held, including units the writer has since deleted, and Yjs merges it. The write's
-  record is made when the write is journalled, where the journal takes `heldDeletes` of the room before the
-  update applies and `captureEditParts` drops those items from the part's `deleted`
-  (a stale read, or a writer's delete that landed between the call's read and its append). The record
-  and turn Undo therefore never claim the writer's deletion. An attribute the codec does
+  view held, including units the writer has since deleted, and Loro merges it. The write's
+  record is its `delta` (the blocks before and after, in the model's view), so the record and turn
+  Undo never claim the writer's deletion. An attribute the codec does
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block, read where it sits), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
 - Block ids (`id` on every block): the model's Markdown has none, so `projectBlocks` hands the
   resolver nodes with ids removed, and a block it leaves alone still compares equal to its own
-  Markdown. A block edited by operations keeps its element and id; an inserted block, and a node
-  inserted inside it, take fresh ids. `insertBlocks` is the door where the codec's
-  id-free blocks become stored blocks, so it assigns ids; `writeBlocks` refuses a block with none.
-- `lowerBlock` is total for two blocks of one type: a block is never rebuilt, so it keeps its
-  element and id. An inline atom put into the middle of a run of text (a verse line broken in
-  two) slides to the nearest run edge over equal text when it is a pure insert; otherwise the
-  run is cut: its tail moves to a text of its own after the atom, re-created from the model's
-  view, so typing the writer did in that tail lands before the break and a word they deleted
-  there comes back (a `Y.XmlText` cannot be split). An atom added or removed at
-  the edge of a run of text is an operation. Deleting an atom between two runs leaves
-  them as two adjacent `Y.XmlText` children, which the editor's binding never writes;
-  merging them would re-insert the writer's text as the model's, so they stay
-  (the minimal-ops design, section 6).
+  Markdown. A block edited by operations keeps its id; an inserted block, and a node inserted
+  inside it, take fresh ids (`withBlockIds` in `applyOps`).
+- `lowerBlock` is total for two blocks of one type: a block is never rebuilt, so it keeps its id.
+  An inline atom added or removed is a splice of the block's text.
 - What that guarantees, for a block it keeps, and no more:
   - The write's record holds only what the model changed in the room it merged into, so
     Undo restores the writer's exact text.
@@ -90,48 +94,24 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
     move that lands can carry them (`First. Second. Third.`, `Second. ` deleted, written
     as `Second. First. Third.`, gives `Second. Third.`).
 - The view keeps the room's deletions. Never drop them from the view and re-diff: the
-  word diff would then place the model's text at the dropped run's edge, where Yjs
-  orders it against what the writer typed there by client id (`He  loudlygroaned.`).
+  word diff would then place the model's text at the dropped run's edge, where Loro
+  orders it against what the writer typed there by peer id (`He  loudlygroaned.`).
 - What the lowering does not cover:
-  - A line break or image put into the middle of a run while the writer types or deletes
-    after that point (above).
   - A write that removes a block and adds another (merging or splitting top-level
-    paragraphs): the writer's typing in the removed
-    block goes, and text deleted from it can come back in the added one.
-  - Two changes the model makes to one word where the writer retyped it merge by client
+    paragraphs) writes no record of the move. Typing the write didn't read brings the
+    removed block back beside the added one (`answerRemovals`), so those words can show
+    twice; text deleted from the removed block can come back in the added one.
+  - Two changes the model makes to one word where the writer retyped it merge by peer
     id, as two people's concurrent typing does.
-- Equal serialized content does not preserve Yjs identity, tombstones or authorship,
-  so rebuilding an existing replica from Markdown as a merge path loses all three.
+- Equal serialized content does not preserve CRDT identity or history, so rebuilding an
+  existing copy from Markdown as a merge path loses both.
 
-## Room copies and views
+## Room copies
 
-- A view replays only updates the current room contains, so a retired one never enters it.
-- Each captured segment takes a fresh client absent from both the view and the room
-  copy, so parallel calls and write/undo/write in one reply never reuse a client.
-- A draft read carries its resolved Work-draft identity into the concurrent lookup;
-  attribution never requires or provisions a draft.
-
-## Capture and receipts
-
-The write listener captures synchronous Yjs update events for one logical write,
-including its own structs and deletes but not inherited tombstones, and detaches
-before journal submission, synchronization, recovery or failure. A state-vector diff
-is not a per-write deletion delta.
-
-Forward-write attribution comes from explicit actor context and immutable receipts,
-never transaction-origin identity.
-
-Receipt capture removes cross-part insert/delete transients as ranges,
-then intersects each range with the retained `prosemirror` item structs; other roots
-and GC structs never expand into per-clock identities.
-
-## Draft write granularity
-
-One logical draft write may contain paragraph-level segments. Each segment is one
-transaction with a fresh shared-protocol client; receipts stay per
-tool call while storage expands segments into rows. Recognized adjacent splits and
-merges and contiguous insertion or deletion runs stay one structural segment. Sharing
-a paragraph alone never joins independent writes. A live write merges one update.
+- A call reads one copy of the room's docs (`AgentEditRooms.readRoom`) and frees it at the call's
+  end; every write is planned on that copy at the read's frontiers (`docs.at`), with a fresh peer.
+- Forward-write attribution comes from the commit message (`by: {turn}`, `commitMessage`) and the immutable
+  receipt, never transaction-origin identity.
 
 ## Results and lifecycle
 
@@ -143,18 +123,16 @@ a paragraph alone never joins independent writes. A live write merges one update
 - A write's result names, by block hash and author, the blocks others changed after the model
   last read them, and marks those its echo already shows (the merged text, where a mangled merge
   would be visible). The list never tells the model to read again: the write landed, and the
-  next write plans on what the result showed. Authors come from Yjs identities joined
-  to the host's provenance, never a text diff. Every person prints as `the user`.
+  next write plans on what the result showed. Authors come from the changes' commit messages
+  (`tool/loro-observation.ts`), never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
-  is gone from a draft still open (`block_gone`, decided by `hasMissingTarget` against the room
-  copy), or the host found its Work closed or its document removed. The result carries the
+  is gone (`block_gone`, decided by `missingTarget` against the room copy), or the host found
+  its Work closed or its document removed. The result carries the
   document as it stands, recorded as the model's latest view, so its next write plans on it. A
   hash or number the view does not hold (`not_found`) carries the current text for the same
   reason. An insert whose anchor block was deleted is not missing its target: it is new words,
-  applied on the view, and Yjs places it after the anchor's tombstone, where the anchor was. A
-  draft the writer discarded is the same open draft, so its words land in it like any other.
-  An undo
+  applied on the view, and Loro places it where the anchor was. An undo
   or revert that finds its text applied, discarded or changed since is `done` and says what was
   left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so

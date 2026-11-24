@@ -11,8 +11,6 @@ import {
   SOURCE_ID,
   THREAD_ID,
   TURN_ID,
-  WORK_DRAFT_ID,
-  WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
@@ -24,19 +22,7 @@ afterAll(() => closeDatabase(db));
 it("a document in no view (deleted after its edit) does not stop another document's receipt from offering Undo", async () => {
   const { harness, view, context } = await fixture();
   try {
-    const betaContext = {
-      ...context,
-      grant: testFileGrant(
-        {
-          kind: "draft",
-          draftId: WORK_DRAFT_ID,
-          owner: { kind: "work", workId: WORK_ID },
-          ownerHandle: "atomicity-work",
-        },
-        BETA_ID,
-      ),
-    };
-    await view.provisionDraft(BETA_ID);
+    const betaContext = { ...context, grant: testFileGrant({ kind: "live" }, BETA_ID) };
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },
       {
