@@ -102,6 +102,12 @@ export interface DocumentModel {
  * Full structural model surface required by @meridian/agent-edit's write tool, implemented on
  * Loro by `loroModel`.
  */
+/**
+ * An opaque key for the editor that typed a unit: a Loro peer, one per editing session (each AI
+ * write gets a fresh one), so equal keys mean one session typed both units, not one person.
+ */
+export type EditorOf = (unit: number) => string | undefined;
+
 export interface AgentEditModel extends DocumentModel {
   /**
    * Apply operations to one top-level block, addressed on its state before any of them.
@@ -110,6 +116,12 @@ export interface AgentEditModel extends DocumentModel {
    * an inserted node keeps an id it already has and takes a new one otherwise.
    */
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
+
+  /**
+   * The editor that typed each unit of the textblock at `path` (child indexes) under a top-level
+   * block, as its document holds it now.
+   */
+  unitEditors(block: BlockRef, path: readonly number[]): EditorOf;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

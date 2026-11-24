@@ -116,4 +116,8 @@ A block write keeps who wrote which characters only where text was inserted: `re
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
-word never has letters of two authors.
+word never has letters of two authors. This runs on each word change before anything joins
+changes, so a word that only grew keeps its letters beside a replaced neighbour. Spaces follow
+their own rule (which bordering space a deletion keeps, by which editor typed it), and comments
+follow the word diff: [write architecture](write-architecture.md). Probe:
+[lowering](qa/lowering.md).
