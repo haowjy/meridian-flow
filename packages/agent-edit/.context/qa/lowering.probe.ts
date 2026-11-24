@@ -399,8 +399,9 @@ function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentP
 const cases: Case[] = JSON.parse(
   readFileSync(new URL("./lowering-cases.json", import.meta.url), "utf8"),
 );
+const say = (line: string) => process.stdout.write(`${line}\n`);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-console.log(
+say(
   "typing | Ctrl+Z breaks AI words | AI words broken | as asked | no-op | kept-word comments right | changed-word comments whole/fragment/lost | concurrent in place/glued/displaced | review off | ops",
 );
 for (const typing of ["lead", "trail"] as const) {
@@ -416,7 +417,7 @@ for (const typing of ["lead", "trail"] as const) {
     };
   });
   const land = (k: string) => rows.filter((r) => r.concurrent.landed === k).length;
-  console.log(
+  say(
     [
       typing === "lead" ? '" word"' : '"word "',
       `${rows.filter((r) => r.holes.broken > 0).length}/${rows.length}`,
@@ -435,10 +436,10 @@ for (const typing of ["lead", "trail"] as const) {
   if (process.argv.includes("--examples"))
     for (const r of rows) {
       if (r.holes.broken > 0)
-        console.log(`  [${r.id}] Ctrl+Z\n    ideal: ${r.holes.ideal}\n    final: ${r.holes.final}`);
-      for (const line of r.comments.astray) console.log(`  [${r.id}] comment ${line}`);
+        say(`  [${r.id}] Ctrl+Z\n    ideal: ${r.holes.ideal}\n    final: ${r.holes.final}`);
+      for (const line of r.comments.astray) say(`  [${r.id}] comment ${line}`);
       if (r.concurrent.landed !== "in place")
-        console.log(
+        say(
           `  [${r.id}] concurrent ${r.concurrent.landed}\n    ideal:  ${r.concurrent.ideal}\n    merged: ${r.concurrent.merged}`,
         );
     }
