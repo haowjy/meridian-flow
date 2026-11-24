@@ -3,9 +3,9 @@ import {
   type AgentEditCodecFactory,
   type AgentEditRooms,
   createAgentEditCodecFactory,
-  createLoroEditCore,
+  createEditCore,
   type DocumentEdits,
-  type LoroEditCoreOptions,
+  type EditCoreOptions,
   type WriteOrdinals,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -22,7 +22,7 @@ import { createMarkdownDocumentEngine } from "./markdown-document.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type AgentEditObservability = Pick<
-  LoroEditCoreOptions,
+  EditCoreOptions,
   "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 >;
 
@@ -59,7 +59,7 @@ export function createAgentEditRuntime<Tx>(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const core: AgentEditCore = createLoroEditCore({
+  const core: AgentEditCore = createEditCore({
     rooms: input.loro.rooms,
     ordinals: input.loro.ordinals,
     schema,

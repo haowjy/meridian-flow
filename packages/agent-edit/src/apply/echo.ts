@@ -2,7 +2,7 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
-import type { ProjectedBlock } from "../ports/model.js";
+import type { ProjectedBlock } from "../model/types.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {

@@ -4,7 +4,6 @@ import {
   isDocumentNotFoundError,
   type LoroDocument,
   loroModel,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
@@ -50,7 +49,7 @@ export function createEffectiveDocumentReader(input: {
 
   async function spelling(command: EffectiveReadInput, doc: LoroDocument) {
     const holder = { documentId: command.documentId, view: viewOf(command) };
-    const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+    const blocks = model.projectBlocks(doc).map((block) => block.node);
     await input.links.prepare({ holders: [holder], stored: blocks });
     return input.links.holder(holder);
   }
@@ -78,7 +77,7 @@ export function createEffectiveDocumentReader(input: {
       try {
         const result = await readEffective(command, async (doc, view) => {
           const scope = await spelling(command, doc);
-          const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+          const blocks = model.projectBlocks(doc).map((block) => block.node);
           return viewRevision(cutRevision({ version: versionOf(doc), blocks }, scope), view);
         });
         return result.ok ? result.value : null;
@@ -119,7 +118,7 @@ export function createEffectiveDocumentReader(input: {
         { documentId: command.documentId, destination: "live" },
         async (doc, view): Promise<EffectiveBlocksRead> => {
           const scope = await spelling(command, doc);
-          const blocks = model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+          const blocks = model.projectBlocks(doc).map((block) => block.node);
           const version = versionOf(doc);
           return {
             content: blocks,
@@ -140,7 +139,7 @@ export function createEffectiveDocumentReader(input: {
           isCodeDocument(input.resolveFiletype, command.documentId),
         ]);
         return inView(
-          readHashlines(toLoroHandle(doc), versionOf(doc), scope, model, input.codec, verbatim),
+          readHashlines(doc, versionOf(doc), scope, model, input.codec, verbatim),
           view,
         );
       });

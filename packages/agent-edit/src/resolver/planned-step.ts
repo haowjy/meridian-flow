@@ -1,7 +1,7 @@
 import type { ParsedContentWithSpans } from "@meridian/markup";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
-import type { BlockRef } from "../handles.js";
+import type { LoroBlock } from "../model/loro-model.js";
 import type { SplicedGroup, TextWindow } from "./find.js";
 import type { BlockScope } from "./scope.js";
 
@@ -12,7 +12,7 @@ export type PlainEdit = Extract<ResolvedEdit, { kind: "insert" | "delete" }>;
 export type PlannedStep =
   /** Edits that need no ref assignment: removes and copies. */
   | { kind: "edits"; edits: PlainEdit[] }
-  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
+  | { kind: "insert"; after: LoroBlock | undefined; blocks: Block[]; assign: boolean }
   /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
   | { kind: "replace"; scope: BlockScope; blocks: Block[] }
   /** A find's reconstructed group: only the splice's occurrences are assigned. */

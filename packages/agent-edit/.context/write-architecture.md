@@ -1,6 +1,6 @@
 # Write architecture
 
-`tool/loro-write.ts` is the composition facade. The resolver-to-apply currency is typed
+`tool/edit-core.ts` is the composition facade. The resolver-to-apply currency is typed
 ProseMirror content, not Markdown strings or raw CRDT updates: `applyEdits` never
 parses or serializes. Resolver and apply code stay CRDT-neutral through the opaque
 `DocHandle` and `BlockRef`.
@@ -123,7 +123,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 - A write's result names, by block hash and author, the blocks others changed after the model
   last read them. The list never tells the model to read again or to repair a merge: the write
   landed, and the next write plans on what the result showed. Authors come from the changes' commit messages
-  (`tool/loro-observation.ts`), never a text diff. Every person prints as `the user`.
+  (`tool/observation.ts`), never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
   is gone (`block_gone`, decided by `missingTarget` against the room copy), or the host found

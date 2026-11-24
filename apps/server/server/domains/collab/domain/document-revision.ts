@@ -11,9 +11,9 @@ import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
 import type {
   AgentEditCodecFactory,
-  AgentEditModel,
-  DocHandle,
   DocumentCut,
+  DocumentModel,
+  LoroDocument,
 } from "@meridian/agent-edit/integration";
 import { spelledLinks, walkLinkOccurrences } from "@meridian/markup/links";
 import type { HashlineRead } from "../contracts.js";
@@ -58,10 +58,10 @@ export function inView<T extends { revision: string | null }>(read: T, draft: st
  * `verbatim` is a code file, whose grep text is its code node's text.
  */
 export function readHashlines(
-  doc: DocHandle,
+  doc: LoroDocument,
   version: Uint8Array,
   scope: HolderLinkScope,
-  model: AgentEditModel,
+  model: DocumentModel,
   codecs: AgentEditCodecFactory,
   verbatim: boolean,
 ): HashlineRead {

@@ -7,7 +7,7 @@
 // tool calls, then `ok: live scenarios pass on <model>`, or the transcript and the failed step.
 import {
   createAgentEditCodecFactory,
-  createLoroEditCore,
+  createEditCore,
   createReplyMutations,
   createStaticDocumentLinks,
   type ObservationFrontier,
@@ -16,7 +16,7 @@ import {
   WriteCommandSchema,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import { createInMemoryLoroHost } from "@meridian/agent-edit/test-support";
+import { createInMemoryHost } from "@meridian/agent-edit/test-support";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Message, Tool } from "@meridian-flow/runtime/gateway";
@@ -27,11 +27,11 @@ const model = process.env.LIVE_TEST_MODEL;
 if (!model) throw new Error("Set LIVE_TEST_MODEL (deepseek-flash)");
 const { gateway, cleanup } = await createGatewayFromEnv(process.env);
 const schema = buildDocumentSchema();
-const host = createInMemoryLoroHost(schema);
+const host = createInMemoryHost(schema);
 /** The chat's core: Live (`null`), or Draft on the draft's fork room once the writer switches it. */
 const coreFor = (draftId: string | null) => {
   const chat = host.chat(draftId);
-  return createLoroEditCore({
+  return createEditCore({
     rooms: chat.rooms,
     ordinals: host.ordinals,
     schema,

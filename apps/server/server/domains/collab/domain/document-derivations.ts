@@ -6,7 +6,6 @@ import {
   type AgentEditCodecFactory,
   type LoroDocument,
   loroModel,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { encodeRoomVersion } from "@meridian/document-model";
@@ -149,7 +148,7 @@ export function createCutReader(deps: {
   const model = loroModel(deps.schema);
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
-    const read = grepBlocksOf(toLoroHandle(doc), model, deps.codec().markup, verbatim);
+    const read = grepBlocksOf(doc, model, deps.codec().markup, verbatim);
     return {
       blocks: read.map(({ block, destinationFree, text }) => ({
         id: block.key,

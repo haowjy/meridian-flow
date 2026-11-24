@@ -1,7 +1,7 @@
 // Resolves agent-visible block hashes to document positions with structured ambiguity.
 
-import type { BlockRef } from "../handles.js";
-import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
+import type { DocumentModel, LoroBlock } from "../model/loro-model.js";
+import type { ProjectedBlock } from "../model/types.js";
 
 /**
  * The one projection the resolver indexes into. Projecting repairs the document (an element
@@ -12,7 +12,7 @@ export interface HashLocateContext {
   model: DocumentModel;
   projected: readonly ProjectedBlock[];
   /** `projected`'s refs, in order. */
-  blocks: readonly BlockRef[];
+  blocks: readonly LoroBlock[];
 }
 
 export function hashLocateContext(
@@ -24,10 +24,10 @@ export function hashLocateContext(
 
 export type HashLocationFailure =
   | { ok: false; code: "not_found"; message: string }
-  | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
+  | { ok: false; code: "ambiguous"; message: string; matches: LoroBlock[] };
 
 export type HashLocationResult =
-  | { ok: true; block: BlockRef; index: number; blocks: readonly BlockRef[] }
+  | { ok: true; block: LoroBlock; index: number; blocks: readonly LoroBlock[] }
   | HashLocationFailure;
 
 export function locateBlockByHash(
@@ -64,7 +64,7 @@ export function locateBlockByHash(
 function ambiguousHashMessage(
   model: Pick<DocumentModel, "getBlockId">,
   hash: string,
-  matches: readonly BlockRef[],
+  matches: readonly LoroBlock[],
 ): string {
   const candidateHashes = matches.map((match) => model.getBlockId(match)).join(", ");
   return `Block hash "${hash}" is ambiguous (matches: ${candidateHashes}).`;

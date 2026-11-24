@@ -12,7 +12,6 @@ import {
   LoroDocument,
   loroModel,
   overwriteWithAssigned,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import {
@@ -176,7 +175,7 @@ export function createMarkdownDocumentEngine<Tx>(
 
   /** The document's top-level blocks as every reader sees them, without ids. */
   const blocksOf = (doc: LoroDocument): PMNode[] =>
-    model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
+    model.projectBlocks(doc).map((block) => block.node);
 
   function serializeForSchema(
     blocks: readonly PMNode[],
@@ -265,7 +264,7 @@ export function createMarkdownDocumentEngine<Tx>(
     }
     const links = await spelling(documentId, current, LIVE_VIEW, content.blocks);
     const written = overwriteWithAssigned({
-      doc: toLoroHandle(doc),
+      doc: doc,
       model,
       codec: agentEditCodecs.forScope(links),
       documentId,
@@ -335,8 +334,7 @@ export function createMarkdownDocumentEngine<Tx>(
     const docs = RoomDocs.create(shape, freshServerPeerId());
     try {
       const doc = new LoroDocument(docs, deps.schema, writeOptionsOf(origin));
-      if (content.blocks.length > 0)
-        model.insertBlocks(toLoroHandle(doc), null, { blocks: [...content.blocks] });
+      if (content.blocks.length > 0) model.insertBlocks(doc, null, { blocks: [...content.blocks] });
       return encodeEnvelope(docs.snapshots());
     } finally {
       docs.free();

@@ -35,7 +35,7 @@ export interface InMemoryChatRooms {
   documentEdits: DocumentEdits;
 }
 
-export interface InMemoryLoroHost {
+export interface InMemoryHost {
   rooms: MemoryDocumentRooms;
   /**
    * A chat's door: Live for `null`, else the draft's fork room from the first read, whether or not
@@ -93,7 +93,7 @@ const fork = (documentId: string, draftId: string): DocumentRoom => ({
   documentId,
 });
 
-export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
+export function createInMemoryHost(schema: Schema): InMemoryHost {
   const rooms = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const records: AgentWriteRecord[] = [];
   /** Writes an inverse took back: the model's undo goes past them, as the server's does. */

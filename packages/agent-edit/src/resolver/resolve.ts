@@ -3,9 +3,8 @@ import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
-import type { BlockRef, DocHandle } from "../handles.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { DocumentModel, LoroBlock, LoroDocument } from "../model/loro-model.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   cutTextWindows,
@@ -53,8 +52,8 @@ export interface ResolveWriteParams {
 }
 
 export interface ResolveWriteContext {
-  doc: DocHandle | null | undefined;
-  model: AgentEditModel;
+  doc: LoroDocument | null | undefined;
+  model: DocumentModel;
   codec: AgentEditCodec;
   /**
    * Ref assignment over the command's prepared link scope; parse itself is
@@ -262,7 +261,7 @@ const COPY_WITH_FIND_MESSAGE = "from copies whole blocks, so it can't be combine
 
 function insertEdit(
   params: NormalizedParams,
-  after: BlockRef | undefined,
+  after: LoroBlock | undefined,
   blocks: readonly Block[],
   newText = params.content,
 ): Extract<ResolvedEdit, { kind: "insert" }> {
@@ -360,7 +359,7 @@ function writeScope(
 interface ConcreteResolveContext
   extends Omit<ResolveWriteContext, "links">,
     Omit<HashLocateContext, "model"> {
-  doc: DocHandle;
+  doc: LoroDocument;
 }
 
 function normalizeParams(
@@ -451,7 +450,7 @@ function validateSectionContent(
 function lowerInsertPosition(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-): ResolveWriteFailure | { ok: true; after?: BlockRef; beside: number | null } {
+): ResolveWriteFailure | { ok: true; after?: LoroBlock; beside: number | null } {
   const { blocks } = ctx;
   if (params.after) {
     const located = locateBlockByHash(ctx, params.after);
@@ -479,7 +478,7 @@ function deleteEdits(params: NormalizedParams, scope: BlockScope): PlainEdit[] {
 }
 
 interface FindMatchGroup {
-  elements: BlockRef[];
+  elements: LoroBlock[];
   startIndex: number;
   endIndex: number;
   rangeStart: number;
@@ -634,10 +633,10 @@ function replaceScope(
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
-  let anchor: BlockRef | undefined =
+  let anchor: LoroBlock | undefined =
     scope.startIndex > 0 ? ctx.projected[scope.startIndex - 1]?.ref : undefined;
   let pendingInsert: Block[] = [];
-  let pendingDelete: BlockRef[] = [];
+  let pendingDelete: LoroBlock[] = [];
   let structuralBoundary: object | undefined;
   let pieceOf: number | undefined;
   let insertionRun = {};

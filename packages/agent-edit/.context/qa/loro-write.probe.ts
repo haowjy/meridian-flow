@@ -8,7 +8,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import {
   createAgentEditCodecFactory,
-  createLoroEditCore,
+  createEditCore,
   createReplyMutations,
   createStaticDocumentLinks,
   type ObservationFrontier,
@@ -17,7 +17,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "../../src/integration.js";
-import { createInMemoryLoroHost } from "../../src/test-support/in-memory-loro-agent-edit.js";
+import { createInMemoryHost } from "../../src/test-support/in-memory-host.js";
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
@@ -81,11 +81,11 @@ function chat(threadId: string, turnId: string) {
   };
 }
 
-const host = createInMemoryLoroHost(schema);
+const host = createInMemoryHost(schema);
 /** A core for a Live chat (`null`) or a Draft chat on `draftId`, as the server's host builds one. */
 const coreFor = (draftId: string | null) => {
   const chatRooms = host.chat(draftId);
-  return createLoroEditCore({
+  return createEditCore({
     rooms: chatRooms.rooms,
     ordinals: host.ordinals,
     schema,

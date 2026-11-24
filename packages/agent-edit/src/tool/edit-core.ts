@@ -24,17 +24,12 @@ import type { Block } from "../codec-types.js";
 import { captureDelta } from "../content-merge/delta.js";
 import { contentMerge } from "../content-merge/merge.js";
 import type { ShownBlock } from "../frontier.js";
+import { latestRead, planningFrontiers } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
-import { latestRead, planningFrontiers } from "../loro-frontier.js";
 import { fullHashForBlockId } from "../model/block-hash.js";
-import {
-  LoroDocument,
-  type LoroDocumentModel,
-  loroModel,
-  toLoroHandle,
-} from "../model/loro-model.js";
+import { type DocumentModel, LoroDocument, loroModel } from "../model/loro-model.js";
 import type { DocumentEdits } from "../ports/document-edits.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditRooms, AgentRoomRead } from "../ports/document-rooms.js";
@@ -48,8 +43,8 @@ import { copySummary } from "./copy-receipt.js";
 import { createDocumentRenderer, type ParseForCommandResult } from "./document-renderer.js";
 import { draftChangeLines } from "./draft-changes.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { recordLoroObservation } from "./loro-observation.js";
 import type { AgentEditResultCommand } from "./model-result.js";
+import { recordObservation } from "./observation.js";
 import { renderReceipt, returnedWriteResult } from "./receipt.js";
 import { formatUnchangedSuccess, status, toOutcome } from "./response-format.js";
 import type {
@@ -74,7 +69,7 @@ import {
   writeSchemaError,
 } from "./write-helpers.js";
 
-export interface LoroEditCoreOptions {
+export interface EditCoreOptions {
   rooms: AgentEditRooms;
   /** Mints the `e<N>` handle of each write. */
   ordinals: WriteOrdinals;
@@ -95,15 +90,15 @@ export interface LoroEditCoreOptions {
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
 }
 
-export interface LoroEditCore {
+export interface EditCore {
   read: ReadFunction;
   write: WriteFunction;
-  model: LoroDocumentModel;
+  model: DocumentModel;
 }
 
 type Address = Extract<ReturnType<typeof parseFileAddress>, { ok: true }>;
 
-export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
+export function createEditCore(options: EditCoreOptions): EditCore {
   const { schema, rooms } = options;
   const model = loroModel(schema);
   const renderer = createDocumentRenderer({ model });
@@ -247,7 +242,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           },
         });
       }
-      const selection = renderer.selectReadBlocks(toLoroHandle(copy), command, address);
+      const selection = renderer.selectReadBlocks(copy, command, address);
       if (!selection.ok)
         return errorResponse(
           selection.code,
@@ -382,7 +377,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         if (existing) {
           const resolved = resolveOverwrite(
             {
-              doc: toLoroHandle(planned.doc),
+              doc: planned.doc,
               model,
               codec: commandLinks.codec,
               links: assigner,
@@ -484,10 +479,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
             };
         }
         const resolveOn = async (doc: LoroDocument) => {
-          const plan = planWrite(
-            { doc: toLoroHandle(doc), model, codec: commandLinks.codec },
-            params,
-          );
+          const plan = planWrite({ doc: doc, model, codec: commandLinks.codec }, params);
           if (plan.ok && plan.written.length > 0)
             await options.links.prepare({
               documentId: address.documentId,
@@ -618,10 +610,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     try {
       writeDocument(scratch, shapeBlocksOf(schema.topNodeType.create(null, base)));
       const read = new LoroDocument(scratch, schema);
-      const plan = planWrite({ doc: toLoroHandle(read), model, codec: commandLinks.codec }, params);
+      const plan = planWrite({ doc: read, model, codec: commandLinks.codec }, params);
       const resolved = plan.ok ? plan.assign(assigner) : plan;
-      if (!resolved.ok || !applyEdits(toLoroHandle(read), model, resolved.edits, "read-view").ok)
-        return null;
+      if (!resolved.ok || !applyEdits(read, model, resolved.edits).ok) return null;
       const merged = contentMerge(schema, base, theirs, blocksOf(read));
       return commandLinks.codec.serialize(
         merged.blocks.map((block) => withoutBlockIds(block) as PMNode),
@@ -675,7 +666,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       });
     }
     const identity = await nextWriteIdentity(docId, threadId, context, command.tool_use_id);
-    const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
+    const planned = snapshotProjected(model.projectBlocks(planDoc), edit.links.codec);
     const textBefore = blocksOf(copy);
     const since = read.docs.shownVersion();
     // Who the concurrent-change report names (design §5): none is the writer.
@@ -684,13 +675,13 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     let deleted: string[] = [];
     let inserted: string[] = [];
     if ("edits" in plan) {
-      const applied = applyEdits(toLoroHandle(planDoc), model, plan.edits, "agent-write");
+      const applied = applyEdits(planDoc, model, plan.edits);
       if (!applied.ok)
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       ({ changedBlocks: changed, deletedBlocks: deleted, insertedBlocks: inserted } = applied);
     } else {
       inserted = model
-        .insertBlocks(toLoroHandle(planDoc), null, { blocks: [...plan.blocks] })
+        .insertBlocks(planDoc, null, { blocks: [...plan.blocks] })
         .map((ref) => model.getBlockId(ref));
       changed = inserted;
     }
@@ -729,7 +720,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       delta: captureDelta(textBefore, textAfter),
     });
     context.frontiers?.reply?.append(docId, [batch]);
-    const echoProjected = model.projectBlocks(toLoroHandle(copy));
+    const echoProjected = model.projectBlocks(copy);
     const shown = new Set(echoProjected.map((block) => block.key));
     const deletedKeys = removedKeys.filter((key) => !shown.has(key));
     const result = renderReceipt(
@@ -762,7 +753,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     result: InternalWriteResult,
     own: { ownRemoved?: ReadonlySet<string> } = {},
   ): Promise<InternalWriteResult> {
-    return recordLoroObservation(result, {
+    return recordObservation(result, {
       copy,
       model,
       room: read.room,
@@ -790,11 +781,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     address: Address,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const selection = renderer.selectReadBlocks(
-      toLoroHandle(copy),
-      { file: address.filePath },
-      address,
-    );
+    const selection = renderer.selectReadBlocks(copy, { file: address.filePath }, address);
     if (!selection.ok) return Promise.resolve(result);
     const { model: payload } = readSuccess(
       renderer.renderRead(selection, commandLinks.codec, "full"),
@@ -810,7 +797,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   function missingTarget(edits: readonly ResolvedEdit[], current: LoroDocument): boolean {
     return edits.some((edit) => {
       if (edit.kind === "insert" || !edit.block) return false;
-      return current.shape((edit.block as unknown as { id: string }).id) === undefined;
+      return current.shape(edit.block.id) === undefined;
     });
   }
 

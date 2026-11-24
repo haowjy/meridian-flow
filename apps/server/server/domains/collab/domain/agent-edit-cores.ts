@@ -1,5 +1,5 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
-import type { LoroEditCore, WriteContext } from "@meridian/agent-edit/integration";
+import type { EditCore, WriteContext } from "@meridian/agent-edit/integration";
 import type { FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -19,4 +19,4 @@ export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?:
  * The model's reads and writes: agent-edit's Loro core on the server's rooms, one for every chat.
  * The call's destination (`runAtDestination`) picks Live or the chat's draft fork.
  */
-export type AgentEditCore = Pick<LoroEditCore, "read" | "write">;
+export type AgentEditCore = Pick<EditCore, "read" | "write">;

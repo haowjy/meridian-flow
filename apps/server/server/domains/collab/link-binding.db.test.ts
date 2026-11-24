@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { LoroDocument, loroModel, toLoroHandle } from "@meridian/agent-edit/integration";
+import { LoroDocument, loroModel } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -58,9 +58,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const storedRefs = (rooms: Rooms, documentId: string) =>
       withLive(rooms, documentId, (docs) =>
         walkLinkOccurrences(
-          model
-            .projectBlocks(toLoroHandle(new LoroDocument(docs, schema)))
-            .map((block) => block.node),
+          model.projectBlocks(new LoroDocument(docs, schema)).map((block) => block.node),
         ).map(({ attrs }) => attrs.ref),
       );
     async function registeredAddress(ref: string | null) {

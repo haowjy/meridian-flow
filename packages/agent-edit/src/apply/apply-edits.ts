@@ -1,18 +1,15 @@
 // Preflight and mutation of resolved block-operation and structural edits.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
-import { editSegments } from "./segments.js";
+import type { DocumentModel, LoroBlock, LoroDocument } from "../model/loro-model.js";
 import {
   type ApplyErrorCode,
   type ApplyResult,
-  type ApplyTransactionOrigin,
   EDIT_FAILED_MESSAGE,
   type ResolvedEdit,
 } from "./types.js";
 
-type Ref = BlockRef;
+type Ref = LoroBlock;
 
 type PlannedEdit =
   | {
@@ -32,7 +29,7 @@ type PlannedEdit =
     };
 
 interface ApplyAccumulator {
-  insertionTails: Map<object, BlockRef>;
+  insertionTails: Map<object, LoroBlock>;
   insertedBlocks: string[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
@@ -42,11 +39,9 @@ type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
 /** Mutate an agent-local document without rendering; the write owner snapshots and reports. */
 export function applyEdits(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edits: ResolvedEdit | readonly ResolvedEdit[],
-  origin: ApplyTransactionOrigin,
-  beforeSegment?: () => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -63,31 +58,13 @@ export function applyEdits(
     deletedHashes: new Set(),
   };
 
-  const segments = beforeSegment
-    ? editSegments(doc, model, editList)
-    : editList.map((edit) => [edit]);
   let committedEdits = 0;
-  for (const segment of segments) {
-    const plans: PlannedEdit[] = [];
-    for (const edit of segment) {
-      const planned = preflightEdit(doc, model, edit);
-      if (!planned.ok)
-        return applyError(planned.code, planned.message, planned.details, { committedEdits });
-      plans.push(planned.plan);
-    }
+  for (const edit of editList) {
+    const planned = preflightEdit(doc, model, edit);
+    if (!planned.ok)
+      return applyError(planned.code, planned.message, planned.details, { committedEdits });
     try {
-      beforeSegment?.();
-      let failure: ApplyFailure | undefined;
-      model.transact(
-        doc,
-        () => {
-          for (const plan of plans) {
-            failure = executePlan(doc, model, plan, accumulator);
-            if (failure) break;
-          }
-        },
-        origin,
-      );
+      const failure = executePlan(doc, model, planned.plan, accumulator);
       if (failure) return failure;
     } catch {
       return applyError(
@@ -97,7 +74,7 @@ export function applyEdits(
         { committedEdits },
       );
     }
-    committedEdits += segment.length;
+    committedEdits += 1;
   }
 
   return {
@@ -111,8 +88,8 @@ export function applyEdits(
 }
 
 function preflightEdit(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edit: ResolvedEdit,
 ):
   | { ok: true; plan: PlannedEdit }
@@ -128,8 +105,8 @@ function preflightEdit(
 }
 
 function preflightOps(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edit: Extract<ResolvedEdit, { kind: "ops" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
@@ -141,8 +118,8 @@ function preflightOps(
 }
 
 function preflightInsert(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
 ): ReturnType<typeof preflightEdit> {
   if (edit.after) {
@@ -163,8 +140,8 @@ function preflightInsert(
 }
 
 function preflightDelete(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edit: Extract<ResolvedEdit, { kind: "delete" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
@@ -183,8 +160,8 @@ function preflightDelete(
 }
 
 function executePlan(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   plan: PlannedEdit,
   accumulator: ApplyAccumulator,
 ): ApplyFailure | undefined {
@@ -225,8 +202,8 @@ function executePlan(
 }
 
 function validateNoSameTurnTombstones(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
   const shadowBlocks = [...model.getBlocks(doc)];
@@ -265,8 +242,8 @@ function referencedElements(edit: ResolvedEdit): Ref[] {
 }
 
 function validateLiveBlock(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   block: Ref,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {

@@ -1,7 +1,7 @@
 # agent-edit on Loro, scripted
 
-`loro-write.probe.ts` drives the Loro core (`createLoroEditCore`) over the in-memory rooms
-(`createInMemoryLoroHost`) with scripted commands, no stack and no model. Run it when the core, the
+`loro-write.probe.ts` drives the Loro core (`createEditCore`) over the in-memory rooms
+(`createInMemoryHost`) with scripted commands, no stack and no model. Run it when the core, the
 Loro model, the frontiers, the concurrent-change report or the host's write records change:
 
 ```sh

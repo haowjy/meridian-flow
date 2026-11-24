@@ -1,6 +1,6 @@
 import type { Block } from "../codec-types.js";
-import type { BlockRef } from "../handles.js";
-import type { EditOp } from "../ports/model.js";
+import type { LoroBlock } from "../model/loro-model.js";
+import type { EditOp } from "../model/types.js";
 
 /**
  * Resolver → apply seam. Block references are live objects from one local document;
@@ -15,22 +15,22 @@ export type ResolvedEdit = {
    * On an insert or a delete: the block these blocks were split from, or joined into. The write
    * records each with it as pieces of one text, so a draft reviews them as one change.
    */
-  pieceOf?: BlockRef;
+  pieceOf?: LoroBlock;
 } & (
   | {
       /** The smallest changes to one block: its text, formatting, attributes and nodes. */
       kind: "ops";
-      block: BlockRef;
+      block: LoroBlock;
       ops: readonly EditOp[];
       /**
        * Neighbours whose text at the shared boundary this block took, word for word. The write
        * records each with it as pieces of one text, like a split or a join.
        */
-      tookFrom?: readonly BlockRef[];
+      tookFrom?: readonly LoroBlock[];
     }
   | {
       kind: "insert";
-      after?: BlockRef;
+      after?: LoroBlock;
       /** Ordered insertions sharing an old anchor chain through their newly inserted tail. */
       insertionRun?: object;
       /** The inserted source text; it names the empty-content refusal and never drives the insert. */
@@ -43,7 +43,7 @@ export type ResolvedEdit = {
     }
   | {
       kind: "delete";
-      block: BlockRef;
+      block: LoroBlock;
     }
 );
 
@@ -57,8 +57,6 @@ export type EditResolutionErrorCode =
 export const EDIT_FAILED_MESSAGE = "The edit did not land: the server failed while applying it.";
 
 export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "internal_error";
-
-export type ApplyTransactionOrigin = unknown;
 
 export interface ApplyEchoHunk {
   mode: "suppressed" | "truncated" | "full";

@@ -13,8 +13,7 @@ export type {
   ReplyMutations,
   ShownBlock,
 } from "./frontier.js";
-export { createReplyMutations } from "./frontier.js";
-export type { BlockRef, DocHandle } from "./handles.js";
+export { createReplyMutations, encodeFrontierMap } from "./frontier.js";
 export * from "./index.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
 export { assignLinkRefs, assignOccurrences } from "./links/assign-refs.js";
@@ -22,9 +21,12 @@ export type { ShownLink } from "./links/correspondence.js";
 export type { OccurrenceAttrs } from "./links/occurrences.js";
 export { rebuildOccurrences, sameAttrs } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";
-export { encodeFrontierMap } from "./loro-frontier.js";
-export type { LoroDocumentModel } from "./model/loro-model.js";
-export { LoroDocument, loroModel, toLoroHandle } from "./model/loro-model.js";
+export {
+  type DocumentModel,
+  type LoroBlock,
+  LoroDocument,
+  loroModel,
+} from "./model/loro-model.js";
 export type {
   DocumentEditRequest,
   DocumentEditResult,
@@ -48,10 +50,6 @@ export {
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-rooms.js";
-export type {
-  AgentEditModel,
-  DocumentModel,
-} from "./ports/model.js";
 export {
   createStaticDocumentLinks,
   type StaticDocumentCatalog,
@@ -59,10 +57,10 @@ export {
 export type { WriteOrdinals } from "./ports/write-ordinals.js";
 export { editHandle, parseEditHandle } from "./ports/write-ordinals.js";
 export {
-  createLoroEditCore,
-  type LoroEditCore,
-  type LoroEditCoreOptions,
-} from "./tool/loro-write.js";
+  createEditCore,
+  type EditCore,
+  type EditCoreOptions,
+} from "./tool/edit-core.js";
 export { returnedWriteResult } from "./tool/receipt.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/types.js";
 export { type RoomPart, undoInRooms } from "./undo-in-rooms.js";

@@ -21,16 +21,16 @@ import {
   type FrontierMap,
   latestRead,
   planningFrontiers,
-} from "../loro-frontier.js";
+} from "../frontier.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "../model/block-hash.js";
-import type { LoroDocument, LoroDocumentModel } from "../model/loro-model.js";
+import type { DocumentModel, LoroDocument } from "../model/loro-model.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditConcurrentGroup } from "./model-result.js";
 
-export interface LoroListingSource {
+export interface ListingSource {
   /** The room copy the result rendered from, the call's own write merged in. */
   copy: LoroDocument;
-  model: LoroDocumentModel;
+  model: DocumentModel;
   room: DocumentRoom;
   documentId: string;
   recording?: FrontierLookup;
@@ -49,9 +49,9 @@ export interface LoroListingSource {
  * reads as `the user`, a press as their Apply or Discard, a Live chat's writes as that chat. Never
  * fails the result: a failure goes out without it.
  */
-export async function recordLoroObservation(
+export async function recordObservation(
   result: InternalWriteResult,
-  source: LoroListingSource,
+  source: ListingSource,
 ): Promise<InternalWriteResult> {
   if (!source.recording) return result;
   try {
@@ -73,7 +73,7 @@ export async function recordLoroObservation(
 type Changes = { changed: Set<BlockId>; removed: Set<BlockId>; overwritten: Set<BlockId> };
 
 async function listing(
-  source: LoroListingSource,
+  source: ListingSource,
   recorded: FrontierMap,
 ): Promise<AgentEditConcurrentGroup[]> {
   const { copy } = source;
@@ -168,7 +168,7 @@ async function listing(
 
 /** Who a commit message names: null for the reader's own turn. */
 async function labelOf(
-  source: LoroListingSource,
+  source: ListingSource,
   by: CommitAuthor | undefined,
   cache: Map<string, string | null>,
 ): Promise<string | null> {

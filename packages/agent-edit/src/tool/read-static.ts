@@ -7,7 +7,7 @@ import type { DocumentLinkScope } from "@meridian/markup";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { parseDocumentAddress } from "../document-address.js";
-import { LoroDocument, type LoroDocumentModel, toLoroHandle } from "../model/loro-model.js";
+import { type DocumentModel, LoroDocument } from "../model/loro-model.js";
 import type { ReadCommand } from "./command-schema.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { toOutcome } from "./response-format.js";
@@ -15,7 +15,7 @@ import type { WriteOutcome } from "./types.js";
 import { errorResponse, readSuccess } from "./write-helpers.js";
 
 export function readStaticMarkdown(
-  deps: { model: LoroDocumentModel; codec: AgentEditCodecFactory; links: DocumentLinkScope },
+  deps: { model: DocumentModel; codec: AgentEditCodecFactory; links: DocumentLinkScope },
   markdown: string,
   command: ReadCommand,
 ): WriteOutcome {
@@ -24,7 +24,7 @@ export function readStaticMarkdown(
     return toOutcome("read", errorResponse("invalid_write", address.message, command.file));
   const docs = RoomDocs.create(shapeSchemaOf(deps.model.schema), freshPeerId());
   try {
-    const handle = toLoroHandle(new LoroDocument(docs, deps.model.schema));
+    const handle = new LoroDocument(docs, deps.model.schema);
     // A block's hash comes from its id, and every read builds a fresh copy: ids by position keep
     // one text's hashes the same from one read to the next.
     let next = 0;

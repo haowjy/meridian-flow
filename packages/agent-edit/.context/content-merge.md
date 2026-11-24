@@ -5,7 +5,7 @@ two places:
 
 - `apps/server/server/domains/collab/domain/code-merge.ts` (`mergeCodeText`) brings an agent
   package's Save of a code document into the project's copy.
-- `packages/agent-edit/src/tool/loro-write.ts` (`transcriptMerge`) merges a whole-document write
+- `packages/agent-edit/src/tool/edit-core.ts` (`transcriptMerge`) merges a whole-document write
   with the text the model read when the history cutoff dropped part of that read.
 
 The sides keep the names `base`, `live` and `draft`. This page lists everything in the system that

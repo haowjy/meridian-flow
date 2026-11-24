@@ -35,6 +35,7 @@ import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { createNoopEventSink, type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
+import { createAgentEditHost } from "./adapters/agent-edit-host.js";
 import {
   createAgentEditObservabilityOptions,
   createDocumentProjectionDiagnostics,
@@ -75,7 +76,6 @@ import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
 import { createDrizzleWorkDrafts } from "./adapters/drizzle-work-drafts.js";
 import { createDrizzleWriteOrdinals } from "./adapters/drizzle-write-ordinals.js";
-import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -249,7 +249,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
   });
-  const loroHost = createLoroAgentEditHost({ db: deps.db, rooms });
+  const loroHost = createAgentEditHost({ db: deps.db, rooms });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,

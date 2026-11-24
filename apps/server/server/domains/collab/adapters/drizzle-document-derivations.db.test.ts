@@ -12,7 +12,6 @@ import {
   createAgentEditCodecFactory,
   LoroDocument,
   loroModel,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
@@ -172,7 +171,7 @@ describe("durable document derivations", () => {
     const docs = await rooms.read(live);
     try {
       const before = docs.version();
-      const doc = toLoroHandle(new LoroDocument(docs, schema));
+      const doc = new LoroDocument(docs, schema);
       model.insertBlocks(doc, model.getBlocks(doc).at(-1) ?? null, { blocks });
       const batch = encodeEnvelope(docs.exportSince(before));
       await runInDrizzleTransaction(db, () =>

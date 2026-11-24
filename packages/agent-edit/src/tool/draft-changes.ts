@@ -12,8 +12,8 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { wordDiff } from "../diff/tokens.js";
 import { toHashline } from "../model/hashline.js";
-import { LoroDocument, type LoroDocumentModel, toLoroHandle } from "../model/loro-model.js";
-import type { ProjectedBlock } from "../ports/model.js";
+import { type DocumentModel, LoroDocument } from "../model/loro-model.js";
+import type { ProjectedBlock } from "../model/types.js";
 
 /**
  * The draft's pending changes, one line each:
@@ -29,7 +29,7 @@ import type { ProjectedBlock } from "../ports/model.js";
 export function draftChangeLines(
   docs: RoomDocs,
   schema: Schema,
-  model: LoroDocumentModel,
+  model: DocumentModel,
   codec: AgentEditCodec,
 ): string[] {
   const live = docs.live;
@@ -100,14 +100,14 @@ function commentChange(was: CommentBody | null, now: CommentBody | null): string
   return `${state}${critic(was.body, now.body)}`;
 }
 
-function side(doc: LoroDocument, model: LoroDocumentModel, codec: AgentEditCodec) {
+function side(doc: LoroDocument, model: DocumentModel, codec: AgentEditCodec) {
   const topOf = new Map<BlockId, BlockId>();
   const walk = (block: ShapeBlock, root: BlockId) => {
     topOf.set(block.id, root);
     if (block.kind === "container") for (const child of block.children) walk(child, root);
   };
   for (const block of doc.top()) walk(block, block.id);
-  const projected: readonly ProjectedBlock[] = model.projectBlocks(toLoroHandle(doc));
+  const projected: readonly ProjectedBlock[] = model.projectBlocks(doc);
   const entries = codec.serializeSelection(
     projected.map((block) => block.node),
     projected.map((block) => block.hash),

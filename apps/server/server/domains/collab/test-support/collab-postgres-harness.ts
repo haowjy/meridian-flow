@@ -20,6 +20,7 @@ import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { insertWorks } from "../../../test-support/work-rows.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
+import { createAgentEditHost } from "../adapters/agent-edit-host.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
 import {
@@ -35,7 +36,6 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
-import { createLoroAgentEditHost } from "../adapters/loro-agent-edit-host.js";
 import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import { createAgentEditRouter } from "../domain/agent-edit-router.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
@@ -282,7 +282,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     eventSink,
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
   });
-  const loroHost = createLoroAgentEditHost({ db, rooms });
+  const loroHost = createAgentEditHost({ db, rooms });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,

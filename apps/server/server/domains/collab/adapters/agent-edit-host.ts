@@ -25,7 +25,7 @@ import { currentDestination } from "../domain/agent-destination.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
-export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRooms<DrizzleDb> }): {
+export function createAgentEditHost(input: { db: Database; rooms: DocumentRooms<DrizzleDb> }): {
   rooms: AgentEditRooms;
   /** `agent (<chat ref>)` for the chat a turn belongs to; null for a turn the database lacks. */
   authorOfTurn(turnId: string): Promise<string | null>;

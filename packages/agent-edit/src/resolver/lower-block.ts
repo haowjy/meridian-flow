@@ -4,7 +4,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
 import { diffKeys, segmentText, wordDiff } from "../diff/tokens.js";
-import type { EditOp, EditorOf, FormatRange, TextSplice } from "../ports/model.js";
+import type { EditOp, EditorOf, FormatRange, TextSplice } from "../model/types.js";
 import type { TextWindow } from "./find.js";
 
 /** A model change: base units [from, to) become the model's units [at, end). */
