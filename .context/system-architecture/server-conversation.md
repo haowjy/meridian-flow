@@ -89,7 +89,7 @@ Holds the HTTP client, the thread socket and the Loro socket.
 
 The model providers.
 
-Called through the runtime's gateway.
+Called through the model gateway `lib/gateway/` builds and hands the runtime (`LlmGateway`).
 
 - Kind: context
 - See: [models](system.md#models)
