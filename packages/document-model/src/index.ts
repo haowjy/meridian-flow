@@ -19,13 +19,12 @@ export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./
 export { inMap, inText, scoped } from "./handles.js";
 export {
   editSince,
-  frontiersOf,
   holdsEdit,
   type StoredEdit,
   undoEdits,
   versionOf,
 } from "./invert.js";
-export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
+export { keyBetween, type Random } from "./order-key.js";
 export {
   freshPeerId,
   freshServerPeerId,
@@ -59,7 +58,6 @@ export {
   HistoryCutoffError,
   type Imported,
   RoomDocs,
-  RoomDocsFreedError,
 } from "./room-docs.js";
 export {
   type Attrs,
@@ -75,7 +73,6 @@ export {
   markNameOf,
   membersOf,
   type NodeRule,
-  overrideMap,
   SENTINEL,
   type ShapeBlock,
   type ShapeSchema,
@@ -88,7 +85,6 @@ export {
   TEXT_KEY,
 } from "./shape.js";
 export {
-  isOrderKey,
   type Removal,
   removalOf,
   StructureView,
@@ -120,13 +116,11 @@ export {
   versionCovers,
   withVector,
 } from "./version.js";
-export { type WordPart, wordDiff } from "./word-diff.js";
 export {
   commitStructure,
   type DocChange,
   encodeChanges,
   StructureWriter,
-  setCommentBody,
   type WriteOptions,
   writeDocument,
   writeText,

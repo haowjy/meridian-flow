@@ -23,16 +23,15 @@ import {
   docVersion,
   editSince,
   encodeRoomVersion,
-  isOrderKey,
   removalOf,
   RoomDocs,
   STRUCTURE_KEY,
   StructureView,
-  setCommentBody,
   undoEdits,
   undoPress,
   visibleComments,
 } from "@meridian/document-model";
+import { isOrderKey, setCommentBody } from "@meridian/document-model/test-support";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Fragment, type Node, Slice } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";

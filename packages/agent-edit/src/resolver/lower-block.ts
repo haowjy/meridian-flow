@@ -1,4 +1,4 @@
-import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
+import { DIFF_DELETE, DIFF_EQUAL } from "@sanity/diff-match-patch";
 import { Fragment, Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
@@ -554,19 +554,19 @@ function wordHunks(a: string, b: string): Hunk[] {
   let base = 0;
   let model = 0;
   let open: Hunk | undefined;
-  for (const [op, text] of wordDiff(a, b)) {
-    if (op === DIFF_EQUAL) {
+  for (const { kind, text } of wordDiff(a, b)) {
+    if (kind === "same") {
       open = undefined;
       base += text.length;
       model += text.length;
       continue;
     }
     open ??= hunks[hunks.push({ from: base, to: base, at: model, end: model }) - 1];
-    if (op === DIFF_DELETE) {
+    if (kind === "removed") {
       base += text.length;
       open.to = base;
     }
-    if (op === DIFF_INSERT) {
+    if (kind === "added") {
       model += text.length;
       open.end = model;
     }

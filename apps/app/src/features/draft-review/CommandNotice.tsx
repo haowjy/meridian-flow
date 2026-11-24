@@ -125,7 +125,8 @@ export function CommandNotice({
 
 /**
  * One notice: "Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
- * or what an Apply did.
+ * or what an Apply did: in a document's band, "Change applied to Live." with Undo, since the page
+ * has no rows to say it.
  * An Undo that failed shows the pill toast, and the notice keeps its Undo. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
  * nothing moves.
@@ -141,6 +142,8 @@ export function DraftNoticeLine({
   const openDocument = useOpenProjectDocument(notice.projectId);
   const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
+    if (notice.surface.kind === "band")
+      return <BandAppliedLine notice={notice} className={className} />;
     if (landed.length === 0) return null;
     const [only] = landed;
     // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
@@ -178,13 +181,40 @@ export function DraftNoticeLine({
         ? plural(subject.count, { one: "# item deleted.", other: "# items deleted." })
         : subject.kind === "deleted"
           ? (name: string) => t`${name} deleted.`
-          : (name: string) => t`${name} discarded.`;
+          : subject.kind === "change"
+            ? t`Change discarded.`
+            : (name: string) => t`${name} discarded.`;
   return (
     <ActionNotice
       data-command-notice="discarded"
       sentence={sentence}
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
+      onDismiss={notice.dismiss}
+      className={className}
+    />
+  );
+}
+
+/** A band's Apply: one change, or the whole document, now in Live, with the press's Undo. */
+function BandAppliedLine({
+  notice,
+  className,
+}: {
+  notice: Extract<DraftNotice, { kind: "applied" }>;
+  className?: string;
+}) {
+  const step = notice.facts.find((fact) => fact.step)?.step;
+  const [first] = notice.facts;
+  if (!step || !first) return null;
+  return (
+    <ActionNotice
+      data-command-notice="applied"
+      sentence={
+        notice.change ? t`Change applied to Live.` : (name: string) => t`${name} applied to Live.`
+      }
+      name={notice.change ? null : first.name}
+      action={{ label: <Trans>Undo</Trans>, onClick: () => void step.undo() }}
       onDismiss={notice.dismiss}
       className={className}
     />

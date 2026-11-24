@@ -12,8 +12,6 @@ export type NoticeSurface =
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string }
-  /** One change's card in a document: a Discard pressed there answers on the card, not the band. */
-  | { kind: "card"; documentId: string }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -80,6 +78,8 @@ export type DraftNotice =
       kind: "applied";
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
+      /** It took one change of its document (Review changes' Apply), not the whole document. */
+      change: boolean;
       dismiss(): void;
     });
 
@@ -119,35 +119,22 @@ export class DraftNotices {
   }
 
   /**
-   * The notice a document's identity row shows: a Discard made in a document's band, on that
-   * document, or on the one main went back to when the Discard made it leave (null: Recently
-   * opened, whose top slot shows it), or what an Undo made there left in place. A list or strip
-   * keeps its own notice where it was made.
+   * The notice a document's identity row shows: an Apply or Discard made in a document's band, on
+   * that document, or a Discard on the one main went back to when it made main leave (null:
+   * Recently opened, whose top slot shows it), or what an Undo made there left in place. A list or
+   * strip keeps its own notice where it was made.
    */
   forDocument(projectId: string, documentId: string | null): DraftNotice | null {
     for (const notice of this.notices.values()) {
       if (notice.projectId !== projectId) continue;
+      const left = notice.kind === "discarded" ? notice.left : null;
       if (
-        notice.kind === "discarded" &&
-        (notice.surface.kind === "band"
-          ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
-          : notice.surface.kind === "landing" && documentId === null)
+        notice.surface.kind === "band"
+          ? (left ? left.landed : notice.surface.documentId) === documentId
+          : notice.surface.kind === "landing" && documentId === null
       )
         return notice;
     }
-    return null;
-  }
-
-  /** The Discard notice on one change card of `documentId` (`NoticeSurface` `card`). */
-  forCard(projectId: string, documentId: string): DraftNotice | null {
-    for (const notice of this.notices.values())
-      if (
-        notice.kind === "discarded" &&
-        notice.projectId === projectId &&
-        notice.surface.kind === "card" &&
-        notice.surface.documentId === documentId
-      )
-        return notice;
     return null;
   }
 

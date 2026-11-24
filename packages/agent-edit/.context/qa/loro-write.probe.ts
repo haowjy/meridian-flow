@@ -1,7 +1,8 @@
 // Hand-run probe of agent-edit on Loro (design §5) over the in-memory rooms, with a scripted model.
 // Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/loro-write.probe.ts
 import { type DocumentRoom, parseLoroRoomName } from "@meridian/contracts/protocol";
-import { encodeEnvelope, freshPeerId, setCommentBody } from "@meridian/document-model";
+import { encodeEnvelope, freshPeerId } from "@meridian/document-model";
+import { setCommentBody } from "@meridian/document-model/test-support";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -401,7 +402,7 @@ const changes9 = d9.record(await draftCore.read({ ...file("ch6"), format: "chang
 const listed9 = text(changes9);
 check(
   !changes9.isError &&
-    listed9.includes("{~~shut.~>shut tight.~~}") &&
+    listed9.includes("shut{++ tight++}.") &&
     listed9.includes("Rain {++fell ++}all night.") &&
     !listed9.includes("dog"),
   'format "changes" shows each pending change as CriticMarkup, and nothing else',
@@ -706,7 +707,7 @@ const changes19 = text(await draftCore.read({ ...file("ch15"), format: "changes"
 check(
   changes19.includes("|{>>moved<<}First.") &&
     changes19.includes(String.raw`|plain{++ \{++odd++\} \~\~\} x \~\> y++}`) &&
-    /\ncomment on [0-9a-f]+: Check \{~~this\.~>this twice\.~~\}/.test(changes19),
+    /\ncomment on [0-9a-f]+: Check this\{\+\+ twice\+\+\}\./.test(changes19),
   'format "changes" marks a move, escapes delimiters, and lists a comment-only change',
   changes19,
 );
