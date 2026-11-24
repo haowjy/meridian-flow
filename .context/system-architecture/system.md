@@ -91,7 +91,8 @@ One process serves `/api/*`, the thread socket at `/api/threads/ws`, and the Lor
 
 Postgres 16 with the `pg_bigm` extension: the only database.
 
-The server listens on `thread_events` to wake the thread hub. Project search needs `pg_bigm`, so a hosted Postgres without it won't do.
+The server listens on `thread_events` to wake the thread hub. The baseline creates the `pg_bigm`
+extension, so a hosted Postgres without it won't do.
 
 - Kind: store
 - Paths: `packages/database/src/schema`, `packages/database/src/migrations`, `tools/postgres/Dockerfile`
@@ -102,7 +103,8 @@ The server listens on `thread_events` to wake the thread hub. Project search nee
 
 Where uploaded and imported file bytes live, behind `ObjectStorePort`.
 
-Two adapters, `local` (disk) and `s3`, chosen by `resolveBackends` in `lib/backend-policy.ts`. No deployment's provider is decided.
+Two adapters, `local` (disk) and `s3`, built by `createObjectStoreFromEnv` in
+`lib/object-store-factory.ts` from `OBJECT_STORE_PROVIDER`. No deployment's provider is decided.
 
 - Kind: store
 - Paths: `apps/server/server/domains/storage/ports/object-store.ts`, `apps/server/server/lib/object-store-factory.ts`
@@ -156,4 +158,4 @@ Builds the three apps, runs migrations when `STAGING_DATABASE_URL` is set, and c
 
 - Kind: external
 - Paths: `.github/workflows/deploy-staging.yml`, `tools/deploy/deploy-staging.sh`
-- Drift: the hosting page says a `staging` branch was ruled out, but `deploy-staging.yml` still deploys on a push to `staging` and root `AGENTS.md` names `staging` as a merge target. `docs/deploy/README.md` says a release pipeline promotes images by digest; no such pipeline exists.
+- Drift: the hosting page says a `staging` branch was ruled out, but `deploy-staging.yml` still deploys on a push to `staging`. `docs/deploy/README.md` says a release pipeline promotes images by digest; no such pipeline exists.

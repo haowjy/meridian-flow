@@ -39,9 +39,8 @@ Markdown, for reads, parses and echoes alike.
 
 ## `DocumentLinksPort`
 
-Save-time replicas are disposable and are released even when link preparation
-fails. An unprepared ref, settlement or address is a snapshot miss, never an
-invented location.
+A `prepare` that is never called leaves the operation's scope without the row: an unprepared ref or
+address is a snapshot miss (`undefined`), never an invented location.
 
 ## `AgentEditModel`
 
@@ -53,7 +52,8 @@ list, and a whole-document write takes its scope from it, never from a count tak
 
 ## `AgentEditCore`
 
-`responseIdentity` separates provider authorship from the rotated edit scope.
+`responseIdentity` names the response a write is authored in (the host's `ResponseAuthorship`),
+separate from the writing session.
 
 ## Performance
 

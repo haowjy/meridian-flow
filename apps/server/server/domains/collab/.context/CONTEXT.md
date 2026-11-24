@@ -205,8 +205,9 @@ whose hash changed (all of them when the room's `extractor_version` is older tha
 since a hash does not cover how the text was extracted) and delete the removed ones, replace `document_links`, and write the
 room row (`block_order` only when the order moved). Text is produced and hashed before
 the transaction, so certify never reads text back and a later normalizer can run there
-too. Certify reads the project only for a new room or a moved one (`cut_location_version`
-differs): a move bumps the location version, so the re-derive corrects `project_id`.
+too. A move is certified like an edit: it bumps the node's `location_version`, which
+fails the compare-and-set, and the re-derive writes the room's rows again with no
+`documents.updated_at` bump (`document_hash` is unchanged).
 
 Reads of the block rows go through one port, `BlockText` (`domain/ports/block-text.ts`,
 `adapters/drizzle-block-text.ts`): `grepTexts` and `wordCounts`. The adapter owns freshness. A

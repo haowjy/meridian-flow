@@ -1,8 +1,8 @@
 # A document's content, from shown to released
 
 What a document's text and bytes are held for, as the tree's rows and the drafts say it. Retention
-(`tree/drizzle-document-trash.ts`) is the only path that releases content: it moves a document to
-`released`, which nothing undoes.
+(`tree/drizzle-document-trash.ts`) and a Work's purge are the only paths that release content
+(`releaseDocumentContent`): they move a document to `released`, which nothing undoes.
 
 ```mermaid
 stateDiagram-v2

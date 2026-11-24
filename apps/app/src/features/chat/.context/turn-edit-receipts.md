@@ -92,7 +92,7 @@ a held owner (a closed, archived or Trashed Work or chat): the Undo is simply ab
 owner reopens. Only a press that failed, or never got an answer, shows a message: the floating
 pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo gets 200 `expired`.
 
- where they are now: pending in the
+A reply's write rows say where its writes are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
 only this reply's own changes, applied ones included, and sends nothing else: the server takes back each of the
 reply's writes in the room it was written in (Live or the draft's fork), whatever was written

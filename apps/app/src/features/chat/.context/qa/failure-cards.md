@@ -13,9 +13,12 @@ at 1280 wide. `T` is a new thread (`./mf thread create`). Fault injection is the
 from queue controls; the Retry route ends in `/retry` and a brief Stop's in `/cancel`.
 
 Selectors: `[data-chat-card=<copy>]` is a card's sentence (`reply-failed`, `reply-declined`,
-`compaction-failed`, `brief-failed`, `retry-refused`, `retry-refused-another-reply`, `retry-lost`,
-`brief-retry-lost`, `brief-stop-failed`, `stop-failed`, `usage-blocked` and the queue's), and
-`[data-chat-card-action=<retry|try_again|add_usage>]` its action button. A refused card's Dismiss icon is `button[aria-label="Dismiss"]`. The live region is
+`compaction-failed`, `brief-failed`, `retry-refused`, `retry-lost`,
+`brief-retry-lost`, `brief-stop-failed`, `stop-failed`, `usage-blocked`, `hand-back-failed`,
+`send-now-failed` and the queue's), and
+`[data-chat-card-action=<retry|try_again|add_usage>]` its action button. A card that can only be
+dismissed, such as `hand-back-failed` or `send-now-failed`, carries its Dismiss icon as
+`button[aria-label="Dismiss"]`; a `retry-refused` card has no action. The live region is
 `[aria-live=assertive]`. Read it and the page text with
 `agent-browser eval "document.querySelector('[aria-live=assertive]').textContent"` and
 `document.body.innerText`. `./mf thread view T` prints a `card ...` line for each card the durable

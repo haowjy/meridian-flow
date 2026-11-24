@@ -12,8 +12,8 @@
   message content. Sending a draft that is a registered verb (`/compact`, with any
   trailing text as `instructions`) runs it and clears the draft; an unregistered
   verb sends as a message. Server refusal stays on its row.
-- A Stop with nothing queued is moot once its reply ends (`failedStopIsMoot`), so
-  its card goes and the button is no longer failed.
+- A Stop with nothing queued is moot once its reply ends (`useTurnStop` retires it
+  as moot), so its card goes and the button is no longer failed.
 - A per-tab record keeps unsent text and ready reference atoms through reload;
   in-flight bytes are not draft state. A submission snapshot carries the draft's
   revision and exact selection, so an older response clears or restores only the

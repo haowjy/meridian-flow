@@ -31,9 +31,9 @@ stay chat resources, not documents main opens.
   list; "Loading files…" until the list has synced (`isComplete` false);
   an empty line once it is installed and the source is empty. A failed or in-flight load must never read as an
   empty project.
-- Document opening records what main shows, not the intent: the device record updates before
-  the server request, which waits for the project's list to sync (`whenListSynced`). The side and the kept document don't
-  count.
+- Document opening records what main shows, not the intent: the device's recents update before
+  the server request, which waits until the project's list has synced (`whenListSynced`). The side
+  and the kept document don't count.
 - Main with no document is a chooser. Selecting a recent document navigates; route and
   removal owners handle continuity and removal. Main's tabs
   (`client/project-shell/main-tabs.ts`) are the one record of open documents;

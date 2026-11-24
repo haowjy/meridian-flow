@@ -24,8 +24,8 @@ must say `N of at least M files`.
 Run the output and scope cases as separate replies, saving each result:
 
 ```bash
-grep_case '{"pattern":"Azure Dragon Seal","output":"count"}'
-grep_case '{"pattern":"Azure Dragon Seal","output":"files_with_matches"}'
+grep_case '{"pattern":"Azure Dragon Seal","output_mode":"count"}'
+grep_case '{"pattern":"Azure Dragon Seal","output_mode":"files_with_matches"}'
 grep_case '{"pattern":"Azure Dragon Seal","head_limit":2}'
 grep_case '{"pattern":"Azure Dragon Seal","path":"manuscript://Act 1"}'
 grep_case '{"pattern":"Azure Dragon Seal","path":"manuscript://Act 1/Chapter 1.md"}'

@@ -24,8 +24,9 @@ composer's connection line (`ConnectionLine`) only describes transient reconnect
 
 ## Failure logging
 
-Command owners emit `failure.recorded` and `failure.ended` at their transitions,
-under the card's occurrence key; rendering and announcing don't log.
+Command owners call `FailureLog.record` with `phase: "recorded"` and then
+`phase: "ended"` at their transitions, under the card's occurrence key; rendering and
+announcing don't log.
 `FailureLogProvider` keeps a bounded local trace and sends bounded, best-effort
 metadata batches to authenticated `/api/diagnostics/failures`. It fences batches to
 the account and gives each request a two-second deadline; ingestion failure stays

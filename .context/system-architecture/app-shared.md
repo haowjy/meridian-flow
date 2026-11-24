@@ -1,6 +1,6 @@
 # App: shared
 
-Small shared parts. Chat messages and reviewed drafts both render their text through `rich-content` (1), which turns it into a document with the markup codec (2) and draws it with `components` (3). `lib` holds the helpers, including the optimistic send, and `hooks` the small React hooks. Back to the [app](app.md).
+Small shared parts. Chat messages, the text viewer and the model-request inspector render their text through `rich-content` (1), which turns it into a document with the markup codec (2) and draws it with `components` (3). `lib` holds the helpers, including the optimistic send, and `hooks` the small React hooks. Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,6 @@ flowchart LR
   rich-content -->|"3. draws with the primitives in"| components
   hooks -->|"uses helpers from"| lib
   lib -->|"keeps optimistic thread state in"| client
-  documents -->|"renders text with"| rich-content
 ```
 
 ## components
@@ -56,7 +55,7 @@ Context-URI parsing, formatting, thread titles and the optimistic send helper `s
 
 `Markdown` and `DocumentMarkdown`: render text through the markup codec.
 
-Chat messages and reviewed drafts both render through it, so they show the same text the same way.
+Chat messages, the text viewer and the model-request inspector render through it, so they show the same text the same way. A draft under review is painted by the editor's own extensions instead.
 
 - Kind: module
 - Paths: `apps/app/src/rich-content`

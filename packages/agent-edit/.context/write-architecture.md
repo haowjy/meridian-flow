@@ -139,7 +139,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 - Copies pass nodes from host read results rather than reading source documents inside
   the kernel, so whitespace and blank paragraphs survive and copied blocks receive fresh
   identities.
-- `move` and `delete` are on `WriteToolInputSchema` but not `WriteCommandSchema`: they
+- `move`, `delete` and `restore` are on `WriteToolInputSchema` but not `WriteCommandSchema`: they
   change where a document lives, so the host runs them and reports through the same
   envelope.
 

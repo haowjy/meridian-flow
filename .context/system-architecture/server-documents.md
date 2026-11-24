@@ -42,7 +42,7 @@ Holds each document's Live text in a Loro room stored as `document_snapshots` ro
 
 ## context
 
-The context filesystem behind `manuscript://`, `kb://`, `user://`, `unfiled://`, `scratch://` and `uploads://`.
+The context filesystem behind `manuscript://`, `kb://`, `user://`, `unfiled://`, `scratch://`, `uploads://` and `agents://`.
 
 The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is a Loro document stored as one `document_snapshots` row, its rows written in the same transaction (the tree list store), and synced to clients in its room on `/ws/loro`. The model's tree commands (move, delete, restore, folders) are one command per tool call on that list; each resolves paths through the names the chat was shown and keeps a receipt for its Undo. Trash entries for a view are read from the same list.
 
@@ -50,7 +50,7 @@ The sources query, the tree, copy, uploads, links and arrivals. `skills://` exis
 - Paths: `apps/server/server/domains/context`
 - Docs: [CONTEXT](../../apps/server/server/domains/context/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/context/AGENTS.md)
 - Machines: [document content](../../apps/server/server/domains/context/.context/state-machines.md), [context uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
+- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `projects/index.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
 
 ## file-policy
 
@@ -61,7 +61,7 @@ Answers who may read or write a document, and why not. A route asks `requireFile
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`
 - Docs: [CONTEXT](../../apps/server/server/domains/file-policy/.context/CONTEXT.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-drafts.ts`.
+- Breaks: In the import cycle, which the root CONTEXT.md rules out.
 
 ## conversation
 

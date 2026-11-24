@@ -15,7 +15,7 @@ Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md).
 `src/diff/correspond.ts` decides which old block is which new block. The content merge asks by
 id (`byId`: [diff](diff.md#block-correspondence-by-id)). Everyone else asks in guess
 mode, for every writer of a sequence of blocks: `resolver/block-alignment.ts` (the model's write)
-and, inside a block, the writer's atoms (breaks, images). Identity comes from content with attributes left out, chosen over the
+and, inside a block, a container's children (`lowerChildren`). Identity comes from content with attributes left out, chosen over the
 whole run, so an attribute-only change (an indent) pairs a block with itself; blocks of
 one type only, since an element cannot change type; a split or join is one unit rooted
 at its first block, and its pieces are of that type too. The pairing is always one ordered
@@ -93,7 +93,7 @@ write carries no ids (it writes text), so its pairing is by content only; the co
 
 The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
 this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
-commit's transaction (`room`, `before`, `after` and `edit` on the part), and the model's `undo`
+commit's transaction (`origin`, `delta` and `edit` on the part), and the model's `undo`
 and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
 frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
 document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each

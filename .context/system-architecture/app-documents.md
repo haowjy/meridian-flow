@@ -29,7 +29,7 @@ flowchart LR
 
 Editor chrome and its surfaces over `core/editor`.
 
-Binds the document session, chooses live or review presentation and mounts the toolbar, identity bar and sync pill.
+Binds the document session, chooses live or review presentation and mounts the toolbar and the sync pill. The identity bar is the pane's, mounted by the project's document host.
 
 - Kind: feature
 - Paths: `apps/app/src/features/editor`

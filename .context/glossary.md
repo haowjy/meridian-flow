@@ -21,8 +21,10 @@ is in the [knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/mai
 - **Document.** One file of text, edited as a Loro document so the writer's and the model's edits
   merge.
 - **Context.** The project's files as the server and the model address them, like a file system
-  with areas: `manuscript://`, `kb://` (reference notes, shown as Knowledge), `user://`,
-  `scratch://` and `uploads://`.
+  with areas: `manuscript://` (Manuscript), `kb://` (reference notes, shown as Knowledge),
+  `unfiled://` (Unfiled: documents not filed in the tree), `user://` (Your files), `scratch://`
+  (Scratch), `uploads://` (files attached to chats) and `agents://` (the project's `.agents`
+  folder).
 - **Live.** A document's current shared text.
 - **Draft.** A set of pending changes across the project: tree records (creates, moves, renames,
   deletes) and fork rooms of documents' text. It is its own row (`drafts`, a 12-character id). A Work

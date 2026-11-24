@@ -47,7 +47,8 @@ The pattern, and its other instances:
 
 One thread's subscription on that socket (`ThreadSubscription` in
 `src/socket/ws-thread-subscription.ts`). There is no status field: the state is the
-combination of `lease`, `request` and `retry.timer`.
+combination of `lease`, `request`, `retry.timer` and `unavailable` (the failure that makes a
+subscription unavailable rather than waiting).
 
 ```mermaid
 stateDiagram-v2
@@ -69,7 +70,7 @@ stateDiagram-v2
 | leased | `active` | none | Delivered as they arrive |
 | retrying | `none` | none, timer set | None |
 | waiting | `none` | none | None, until the socket is back |
-| unavailable | `none` | none | None; the failure is kept for the UI |
+| unavailable | `none` | none | None; the failure is kept for the UI (`unavailable`) |
 
 - **One request per thread at a time.** A newer request supersedes the older one; the older
   one's catch-up may still add frames, but it can no longer settle the subscription.

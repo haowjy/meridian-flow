@@ -7,7 +7,9 @@ is in the [Agent definition][definitions] and [package][packages] pages.
 
 ## Contracts
 
-- `domain/mars.ts` is the only module that imports `@meridian-flow/mars-schema`.
+- `domain/mars.ts` is the only module in this domain that reads packages with
+  `@meridian-flow/mars-schema`; the model gateway also imports the package for Mars's effort ladder
+  and alias rule (`lib/gateway/`, `routes/api/models.get.ts`).
   A package is read whole by `readPackage` (Mars's `prepare`, `migrate` off) for its definitions,
   and judged by `checkFiles` (Mars's `check()`) for its findings, both once per `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
   the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a

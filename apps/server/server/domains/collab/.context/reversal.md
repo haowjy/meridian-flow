@@ -263,8 +263,9 @@ its successors are read from, and it judges the sources that read names, until t
   from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
 - `changed_since` or `purged`: the receipt stays, and nothing is said.
 - `closed`: an opposite record would change a closed owner's notes (an archived or deleted Work, a
-  chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and the
-  owner's name. A source with no `context_sources` row reads `purged`. The card's Undo and the
+  chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and no
+  owner name (the model's result says "its owner"). A source with no `context_sources` row reads
+  `purged`. The card's Undo and the
   model's `undo` ask the same `TreeJudge` as Apply and Un-Apply, so a note the model moved out of
   an archived Work's notes does not go back into them. The model's `undo` locks the owners with
   its grants (`runWithEditGrants`' `alsoLock`), judges inside `treeCommand`, and restarts through

@@ -1,7 +1,7 @@
 # @meridian/loro-prosemirror
 
 Our binding of ProseMirror to the document shape in `@meridian/document-model`. Design:
-`loro-build/design.md` §6 in the docs repository.
+`work/local-first-design/loro-build/design.md` §6 in the docs repository.
 
 - Between transactions the editor's document is the docs' read plus the removed blocks it keeps
   for its caret (`readProseMirror` with `LoroSyncState.kept`, almost always empty). Start an

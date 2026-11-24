@@ -19,10 +19,11 @@ use, persists every side effect through the threads repositories, and emits
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port and paid-row settlement. |
 | [recovery.md](recovery.md) | Placeholder repair, stale-lease settlement, process recovery lanes. |
-| [gateway context](../gateway/.context/CONTEXT.md) | The provider-neutral gateway. |
+| [gateway context](../../../lib/gateway/.context/CONTEXT.md) | The provider-neutral gateway. |
 
 Deferred work: [TODO](TODO) and [FUTURE](FUTURE).
 
 Runtime reaches `domains/collab` and `domains/context` through ports the composition
-root fills, apart from the `scratchOwnerFor` import in `loop/permissions/agent-chain.ts`;
-compaction imports just the `DocumentRevisions` port type.
+root fills. The one value import from `domains/context` is `scratchOwnerFor`
+(`loop/permissions/agent-chain.ts`); the other eight are type-only, which the
+[dependency map](../../../../../../.context/system-architecture/dependencies.md) counts as ties.

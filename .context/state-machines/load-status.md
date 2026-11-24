@@ -32,6 +32,5 @@ The rules that go wrong in practice:
 | Machine | Its states |
 |---|---|
 | [Live document binding](../../apps/app/src/features/project/context/.context/state-machines.md) | `absent`, `opening`, `opened`, `failed` |
-| [Draft changes](../../apps/app/src/features/draft-review/.context/state-machines.md) | `idle`, `loading`, `ready`, `gone` |
 | [Upload store](../../apps/app/src/core/uploads/.context/state-machines.md) | `uploading`, `failed`; success removes the entry |
 
