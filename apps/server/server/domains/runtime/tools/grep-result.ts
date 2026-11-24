@@ -33,8 +33,7 @@ const WINDOW = 120;
 /** A cut that would drop fewer characters than this keeps them instead. */
 const SLACK = 24;
 
-const CLEARED_GREP_PASSAGES =
-  "[Cleared at compaction: changed since this grep; read it for current text]";
+const CLEARED_GREP_PASSAGES = "[Cleared at compaction: changed since this grep]";
 
 export function isGrepResult(value: JsonValue | undefined): value is JsonObject {
   return (
@@ -69,9 +68,7 @@ export function renderGrepFiles(
   cleared: (hit: GrepHit) => boolean = () => false,
 ): string {
   if (files.length === 0)
-    return exact
-      ? "No matches."
-      : "No matches found before the search stopped. Narrow with path or glob.";
+    return exact ? "No matches." : "No matches found before the search stopped.";
   const verbose = input.verbose === true;
   const mode = input.output_mode;
   const lines = files.map((hit) => {
@@ -94,17 +91,16 @@ export function renderGrepFiles(
     return [head, ...passages].join("\n");
   });
   const body = lines.join(mode === "files_with_matches" || mode === "count" ? "\n" : "\n\n");
-  if (stopped)
-    return `${body}\n\nThe search stopped before it finished, so these may not be all the matches. Narrow with path or glob.`;
+  if (stopped) return `${body}\n\nThe search stopped before it finished.`;
   return totalFiles > files.length || !exact
-    ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files. Narrow with path or glob, or raise head_limit.`
+    ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files.`
     : body;
 }
 
 /** Each file and how often it matched, with no passages: compaction's history form. */
 export function renderGrepFileList({ files }: GrepToolResult): string {
   return [
-    "[grep passages omitted; read a file for its current text]",
+    "[grep passages omitted]",
     ...files.map((hit) =>
       hit.matchCount === undefined ? hit.uri : `${hit.uri} (${matches(hit.matchCount)})`,
     ),

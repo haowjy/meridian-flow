@@ -498,7 +498,7 @@ export function createToolExecutor(
         const fragment = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
         return executionErrorResult(call.id, registration, {
           kind: "arguments_parse",
-          message: `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).`,
+          message: `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment}`,
           arguments: call.arguments,
         });
       }

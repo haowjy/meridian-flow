@@ -13,5 +13,5 @@ export function advertiseTools(tools: Tool[] | undefined, policy: ToolPolicy): T
 
 /** What the model reads when it calls a tool outside its policy. */
 export function missingToolRefusal(toolName: string): string {
-  return `This agent has no "${toolName}" tool. Tell the user you can't do this here.`;
+  return `This agent has no "${toolName}" tool.`;
 }

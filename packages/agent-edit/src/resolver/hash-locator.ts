@@ -67,7 +67,7 @@ function ambiguousHashMessage(
   matches: readonly BlockRef[],
 ): string {
   const candidateHashes = matches.map((match) => model.getBlockId(match)).join(", ");
-  return `Block hash "${hash}" is ambiguous (matches: ${candidateHashes}). Read the block to disambiguate.`;
+  return `Block hash "${hash}" is ambiguous (matches: ${candidateHashes}).`;
 }
 
 /**

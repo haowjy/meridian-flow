@@ -17,7 +17,7 @@ interface CopySourceIssue {
   message: string;
 }
 
-const CONTENT_OR_FROM_MESSAGE = "Give exactly one of `content` or `from`";
+const CONTENT_OR_FROM_MESSAGE = "Exactly one of `content` or `from` is required";
 
 /** Every `from` rule the given fields break, in a stable order. */
 export function copySourceIssues(
@@ -35,7 +35,7 @@ export function copySourceIssues(
   if (from.in !== undefined && sourceFragment !== undefined) {
     issues.push({
       path: ["from", "in"],
-      message: "Use one of from.in or a #fragment in from.path",
+      message: "from.in and a #fragment in from.path are alternatives, not both",
     });
   }
   if (fields.find !== undefined) {

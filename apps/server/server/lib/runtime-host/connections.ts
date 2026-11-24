@@ -112,7 +112,7 @@ export function createConnections(deps: {
             ...["_", "__", "-", "."].map((join) => `${held.name}${join}${tool.name}`),
           ];
           if (own.includes(name))
-            return `${name} is not a tool of its own: it is the tool ${tool.name} of the ${held.name} connection. Call it with mcp_call, with tool "${held.name}/${tool.name}" and its arguments.`;
+            return `${name} is not a tool of its own: it is the tool ${tool.name} of the ${held.name} connection, called through mcp_call as "${held.name}/${tool.name}".`;
         }
       }
       return null;

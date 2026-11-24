@@ -93,7 +93,7 @@ describe("skills:// at the model tools", () => {
       "skills://story-review/../creative-writing-modes/SKILL.md",
     ]) {
       expect(await call("read", { path })).toBe(
-        `status: document_not_found; path: ${path.replace(/\.md$/, "")}\n\nFile not found. Check the path with \`ls\`.`,
+        `status: document_not_found; path: ${path.replace(/\.md$/, "")}\n\nFile not found.`,
       );
     }
     expect(await call("ls", { path: "skills://creative-writing-modes" })).toBe(

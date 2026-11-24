@@ -171,7 +171,7 @@ describe("owner lookup", () => {
     });
     await expect(lookup.workReference("project", "Gone")).resolves.toMatchObject({
       ok: false,
-      message: "Unknown Work Gone. Use work list.",
+      message: "Unknown Work Gone.",
     });
     await expect(lookup.scratchOwners("project")).resolves.toEqual([
       { uri: "scratch://@w3/", label: "Tea Notes" },

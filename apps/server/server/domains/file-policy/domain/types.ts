@@ -285,11 +285,6 @@ export interface FileAccessDenied {
   /** The refused file's facts; null when it wasn't found. */
   readonly facts: FileFacts | null;
   readonly destination: FileDestination | null;
-  /**
-   * The asking agent's delegation chain, so refusal copy offers only calls
-   * the action policy allows; null for a person.
-   */
-  readonly agentChain: AgentChain | null;
 }
 
 /** The document a document or draft target names; a container names none. */

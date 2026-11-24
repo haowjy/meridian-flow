@@ -517,7 +517,7 @@ export function defineThreadHistoryContract(
           metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
         });
         if (input.include?.includes("tool_results")) {
-          expect(text).toContain("[grep passages omitted; read a file for its current text]");
+          expect(text).toContain("[grep passages omitted]");
           expect(text).toContain("manuscript://chapter.md (1 match)");
         }
         for (const handle of ["1.1", "1.2", "1.3"])

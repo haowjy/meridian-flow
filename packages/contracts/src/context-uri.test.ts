@@ -100,20 +100,20 @@ describe("parseContextUri", () => {
     const refusals = [
       [
         "manuscript://~b7/Chapter 1",
-        'Names cannot start with "~". Use manuscript://Chapter 1, or a name without "~".',
+        'Names cannot start with "~". Without that segment: manuscript://Chapter 1.',
       ],
       [
         "manuscript://~drafts/Chapter 1",
-        'Names cannot start with "~". Use manuscript://Chapter 1, or a name without "~".',
+        'Names cannot start with "~". Without that segment: manuscript://Chapter 1.',
       ],
-      ["scratch://~ideas", 'Names cannot start with "~". Use scratch://ideas.'],
-      ["scratch://@c19/~ideas", 'Names cannot start with "~". Use scratch://ideas.'],
+      ["scratch://~ideas", 'Names cannot start with "~". Without it: scratch://ideas.'],
+      ["scratch://@c19/~ideas", 'Names cannot start with "~". Without it: scratch://ideas.'],
       [
         "scratch://@c19/~drafts/idea",
-        'Names cannot start with "~". Use scratch://@c19/idea, or a name without "~".',
+        'Names cannot start with "~". Without that segment: scratch://@c19/idea.',
       ],
       ["scratch://~", 'Names cannot start with "~".'],
-      ["scratch://~~ideas", 'Names cannot start with "~". Use scratch://～ideas.'],
+      ["scratch://~~ideas", 'Names cannot start with "~". Without it: scratch://～ideas.'],
     ] as const;
 
     for (const [uri, reason] of refusals) {

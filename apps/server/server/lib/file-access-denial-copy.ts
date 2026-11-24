@@ -10,7 +10,6 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord, FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
-import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 import type { WriteToolErrorOutput } from "./model-tools/tool-context.js";
 
 /** A file-policy refusal the model sees as `permission_denied`; a deleted Work's file reads as gone. */
@@ -29,7 +28,7 @@ const AI_ACCESS_DENIED_MESSAGE =
   "This place is set to deny AI changes, so this change wasn't made. You can read it.";
 
 const CHAT_FROZEN_MESSAGE =
-  "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made. Ask the user to restore the chat.";
+  "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made.";
 
 /** Matches the read agent's permission line. */
 const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only scratch://.";
@@ -74,26 +73,12 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
 
 /**
  * An archived Work's own files are read-only; a draft-mode chat's write
- * that would land in this Work's drafts meets frozen drafts, and switching
- * the chat to auto-apply is the writer's way out. Only an agent the
- * action policy lets unarchive is offered the call.
+ * that would land in this Work's drafts meets frozen drafts.
  */
 function workArchivedMessage(denial: FileAccessDenied): string {
   const handle = denial.archivedWork?.handle ?? null;
   const work = handle === null ? "This chat's Work" : `Work ${handle}`;
-  const named = handle === null ? "it" : handle;
-  const unarchive = handle === null ? null : `\`work({"command":"unarchive","work":"${handle}"})\``;
-  const mayUnarchive =
-    unarchive !== null &&
-    denial.agentChain !== null &&
-    mayChangeWorks(chainPermission(denial.agentChain));
-  if (denial.destination?.kind === "draft") {
-    const frozen = `${work} is archived, so its drafts are frozen and this change wasn't made.`;
-    return mayUnarchive
-      ? `${frozen} Unarchive it with ${unarchive}, or ask the user to switch this chat to auto-apply.`
-      : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;
-  }
-  return mayUnarchive
-    ? `${work} is archived. To change its files, use ${unarchive}.`
-    : `${work} is archived and read-only. Ask the user to unarchive ${named}.`;
+  return denial.destination?.kind === "draft"
+    ? `${work} is archived, so its drafts are frozen and this change wasn't made.`
+    : `${work} is archived and read-only.`;
 }

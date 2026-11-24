@@ -27,7 +27,7 @@ export function assertSpawnDepthAllowed(
   if (childDepth > budget.maxDepth) {
     return meridianErrorFromSystem(
       "spawn_depth_exceeded",
-      `Spawn depth ${childDepth} exceeds maxDepth ${budget.maxDepth}. Complete the task directly instead of spawning another subagent.`,
+      `Spawn depth ${childDepth} exceeds maxDepth ${budget.maxDepth}.`,
     );
   }
   return null;

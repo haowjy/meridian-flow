@@ -30,7 +30,6 @@ import {
   actionPolicy,
   handlerToolResult,
   type ModelWork,
-  mayChangeWorks,
   type RequestToolHandlerContext,
   type ToolRegistry,
   type WorkCommand,
@@ -170,7 +169,7 @@ async function resolveSwitch(
       ok: false,
       result: toolError({
         code: "work_archived",
-        message: `Work ${named} is archived. Ask the user to unarchive it before switching.`,
+        message: `Work ${named} is archived.`,
       }),
     };
   }
@@ -207,22 +206,16 @@ async function resolveWorkCommand(
   }
 }
 
-/**
- * A `work` command on an archived or gone Work. Offers the unarchive call only
- * when the action policy would allow it.
- */
+/** A `work` command on an archived or gone Work. */
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workHandle: string | null,
-  mayUnarchive: boolean,
 ): string {
   if (reason !== "work_archived") {
     return workHandle ? `Work ${workHandle} is unavailable.` : "The requested Work is unavailable.";
   }
   if (!workHandle) return "The requested Work is archived and read-only.";
-  return mayUnarchive
-    ? `Work ${workHandle} is archived. To change it, use \`work({"command":"unarchive","work":"${workHandle}"})\`.`
-    : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
+  return `Work ${workHandle} is archived and read-only.`;
 }
 
 function policyRefusal(message: string): ToolErrorOutput {
@@ -327,11 +320,7 @@ async function resolveStored(
  * Every expected refusal the Work writer commands raise, as the model's tool
  * error. Anything else is an infrastructure failure and propagates.
  */
-function expectedWorkError(
-  error: unknown,
-  workHandle: string | undefined,
-  mayUnarchive: boolean,
-): ToolErrorOutput | null {
+function expectedWorkError(error: unknown, workHandle: string | undefined): ToolErrorOutput | null {
   if (error instanceof WorkStatusInvalidError)
     return toolError({ code: "invalid_work_status", message: error.message });
   if (error instanceof WorkNameRequiredError)
@@ -341,18 +330,14 @@ function expectedWorkError(
   if (error instanceof WorkLifecycleUnavailableError)
     return toolError({
       code: error.state === "archived" ? "work_archived" : "work_not_found",
-      message: workLifecycleMessage(
-        `work_${error.state}`,
-        workHandle ?? error.workHandle,
-        mayUnarchive,
-      ),
+      message: workLifecycleMessage(`work_${error.state}`, workHandle ?? error.workHandle),
     });
   if (error instanceof RebindThreadWorkError)
     return toolError({
       code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
       message:
         error.code === "target_work_unavailable"
-          ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
+          ? "That Work is no longer available."
           : "This chat or Work is no longer available.",
     });
   return null;
@@ -513,7 +498,7 @@ export function createAllowedWorkExecutor(
     try {
       return await deps.savepoint(() => executeWorkCommand(deps, thread, resolution.command));
     } catch (error) {
-      const expected = expectedWorkError(error, undefined, true);
+      const expected = expectedWorkError(error, undefined);
       if (!expected) throw error;
       return expected;
     }
@@ -552,10 +537,7 @@ export function createWorkHandler(deps: ToolWiringDeps) {
 
     const permission = await deps.readChainPermission(thread.id as ThreadId);
     const decision = actionPolicy(permission, `work.${resolved.command}`);
-    if (decision === "deny")
-      return policyRefusal(
-        "This agent can read but can't change Works. Ask the user to make this change.",
-      );
+    if (decision === "deny") return policyRefusal("This agent can read but can't change Works.");
     if (decision === "ask") {
       // The policy table's type forbids `ask` for any other action; this keeps it from
       // becoming a silent allow if that ever slips.
@@ -565,9 +547,7 @@ export function createWorkHandler(deps: ToolWiringDeps) {
       const action = `work.${resolved.command}` as const;
       if (!(await deps.permissionGrants.has(thread.projectId as ProjectId, action))) {
         if (thread.kind === "subagent")
-          return policyRefusal(
-            "Only the main chat can ask the writer to allow this change. If your task needs it, stop and say in your report what is missing.",
-          );
+          return policyRefusal("Only the main chat can ask the writer to allow this change.");
         const outcome = await ctx.request({
           kind: "permission",
           payload: permissionPayload(thread, resolved),
@@ -582,7 +562,6 @@ export function createWorkHandler(deps: ToolWiringDeps) {
       const expected = expectedWorkError(
         error,
         "work" in command && command.work ? command.work : undefined,
-        mayChangeWorks(permission),
       );
       if (expected) return expected;
       return toolError({

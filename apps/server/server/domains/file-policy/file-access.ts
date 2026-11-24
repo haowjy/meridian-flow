@@ -115,9 +115,9 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
     async authorize(principal, target, need) {
       const facts = await loadFor(principal, target);
-      if (!facts) return notFound(principal, target);
+      if (!facts) return notFound(target);
       const result = await decision(principal, facts);
-      if (!allows(result, need)) return denied(principal, facts, result);
+      if (!allows(result, need)) return denied(facts, result);
       return mint(principal, facts, result, need);
     },
 
@@ -126,11 +126,11 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         target,
         ...(destination.kind === "draft" ? { draftOwner: destination.draftId } : {}),
       });
-      if (!facts) return notFound(principal, target);
+      if (!facts) return notFound(target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
       const result = levelAt(principal, facts, grants, destination);
       const asked: FileNeed = need ?? "edit";
-      if (!allows(result, asked)) return denied(principal, facts, result);
+      if (!allows(result, asked)) return denied(facts, result);
       return mint(principal, facts, result, asked);
     },
 
@@ -166,13 +166,13 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       for (const [index, grant] of grants.entries()) {
         const facts = fresh[index];
         if (!facts) {
-          refused.push(notFound(grant.principal, grant.facts.target));
+          refused.push(notFound(grant.facts.target));
           continue;
         }
         const principal = await refreshPrincipal(grant.principal, freshChain);
         const personGrants = await deps.grants.personGrants(principal.accountId, facts);
         const at = levelAt(principal, facts, personGrants, grant.destination);
-        if (!allows(at, grant.need)) refused.push(denied(principal, facts, at));
+        if (!allows(at, grant.need)) refused.push(denied(facts, at));
       }
       return refused;
     },
@@ -282,7 +282,7 @@ function mint<N extends FileNeed>(
   return { principal, facts, destination: result.destination, need } as unknown as FileGrant<N>;
 }
 
-function denied(principal: Principal, facts: FileFacts, result: FileDecision): FileAccessDenied {
+function denied(facts: FileFacts, result: FileDecision): FileAccessDenied {
   return {
     denied: true,
     target: facts.target,
@@ -291,11 +291,10 @@ function denied(principal: Principal, facts: FileFacts, result: FileDecision): F
     archivedWork: result.archivedWork,
     facts,
     destination: result.destination,
-    agentChain: principal.agent?.chain ?? null,
   };
 }
 
-function notFound(principal: Principal, target: FileTarget): FileAccessDenied {
+function notFound(target: FileTarget): FileAccessDenied {
   return {
     denied: true,
     target,
@@ -304,6 +303,5 @@ function notFound(principal: Principal, target: FileTarget): FileAccessDenied {
     archivedWork: null,
     facts: null,
     destination: null,
-    agentChain: principal.agent?.chain ?? null,
   };
 }

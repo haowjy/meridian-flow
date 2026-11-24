@@ -97,7 +97,7 @@ export type Gone = {
 export function goneMessage(path: string, gone: Gone): string {
   if (gone.why === "deleted") {
     const by = gone.by === "you" ? "you" : removerName(gone.by ?? null);
-    return `${path} is in Trash${by ? `: deleted by ${by}` : ""}. Restore it to use it.`;
+    return `${path} is in Trash${by ? `: deleted by ${by}` : ""}.`;
   }
   if (gone.why === "purged") return `${path} was emptied from Trash and is gone for good.`;
   return `${path} names something in the other version of the tree, not this one.`;
@@ -165,8 +165,8 @@ export function wrongKindMessage(
   tool: "read" | "ls",
 ): string | null {
   if (node.kind === "folder" && tool === "read")
-    return `${uri} is a folder with ${node.entries} ${node.entries === 1 ? "entry" : "entries"}; use \`ls\` to list it.`;
+    return `${uri} is a folder with ${node.entries} ${node.entries === 1 ? "entry" : "entries"}.`;
   if (node.kind !== "folder" && tool === "ls")
-    return `${uri} is a ${node.kind === "file" ? "file" : "document"}, not a folder; use \`read\` to read it.`;
+    return `${uri} is a ${node.kind === "file" ? "file" : "document"}, not a folder.`;
   return null;
 }

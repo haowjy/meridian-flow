@@ -468,7 +468,7 @@ function parseOwnerToken(
       return invalidContextUri(rawUri, `Invalid handle "${token}": no leading zeros.`);
     case "name":
       return scheme === "scratch"
-        ? invalidContextUri(rawUri, `Unknown Work ${token}. Use work list.`, {
+        ? invalidContextUri(rawUri, `Unknown Work ${token}.`, {
             kind: "name",
             scheme,
             token,
@@ -500,13 +500,13 @@ function noHandleError(scheme: OwnedContextUriScheme, rawUri: string): ContextUr
 }
 
 function retiredEmptyOwner(scheme: OwnedContextUriScheme): string {
-  return `"@/" is not an address. Use ls ${scheme}://@.`;
+  return `"@/" is not an address; owners are listed by ls ${scheme}://@.`;
 }
 
 function unknownOwnerHandle(scheme: OwnedContextUriScheme): string {
   return scheme === "scratch"
-    ? "List owners with ls scratch://@; copy an address."
-    : "List chats with files with ls uploads://@; copy an address.";
+    ? "Owners are listed by ls scratch://@."
+    : "Chats with files are listed by ls uploads://@.";
 }
 
 /** Schemes whose address takes an owner authority; the complement of the project-scoped ones. */
@@ -545,14 +545,14 @@ function draftNameRefusal(
       ...segments.slice(draftSegmentIndex + 1),
     ].join("/");
     const repairedUri = formatParsedContextUri(scheme, repairedPath, authority);
-    return `${DRAFT_NAME_RULE} Use ${repairedUri}, or a name without "~".`;
+    return `${DRAFT_NAME_RULE} Without that segment: ${repairedUri}.`;
   }
 
   const repairedName = validateContextEntryName(segment.slice(DRAFT_SIGIL.length));
   if (!repairedName.ok) return DRAFT_NAME_RULE;
   const repairedPath = [...segments.slice(0, draftSegmentIndex), repairedName.value].join("/");
   const repairedUri = formatParsedContextUri(scheme, repairedPath, { kind: "contextual" });
-  return `${DRAFT_NAME_RULE} Use ${repairedUri}.`;
+  return `${DRAFT_NAME_RULE} Without it: ${repairedUri}.`;
 }
 
 /** The one serializer for addresses: the canonical identity. Spells parsed syntax; it does not resolve or grant authority. */
@@ -641,5 +641,5 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
 }
 
 const uploadsBelongToChat =
-  "Uploads belong to chats. Use uploads://x for this chat, or ls uploads://@ for others.";
-const SUBAGENT_NOT_AN_OWNER = "Use the chat's handle, not a subagent's.";
+  "Uploads belong to chats. This chat's are at uploads://x; other chats' are listed by ls uploads://@.";
+const SUBAGENT_NOT_AN_OWNER = "An owner is a chat's handle, not a subagent's.";

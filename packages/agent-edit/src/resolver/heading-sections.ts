@@ -52,7 +52,7 @@ export function sectionEndIndex(
 }
 
 export function sectionNotFoundMessage(slug: string): string {
-  return `Section "#${slug}" was not found. A read with \`format: "outline"\` lists each heading's #slug.`;
+  return `Section "#${slug}" was not found.`;
 }
 
 /** A markdown heading line and the lines its section spans (`end` exclusive). */

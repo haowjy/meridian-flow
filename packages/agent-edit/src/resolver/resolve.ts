@@ -330,7 +330,7 @@ function planReplace(
   }
   // Parsed content stands for itself: an empty paragraph is a block even though it spells "".
   if (params.content.length === 0 && !params.parsedContent) {
-    return error("invalid_write", "Use `remove` to remove blocks");
+    return error("invalid_write", "replace content must not be empty; `remove` removes blocks");
   }
   const parsed = parseAt(ctx, params, params.wholeDocument ? null : scope.scope.startIndex);
   if (!parsed.ok) return parsed;

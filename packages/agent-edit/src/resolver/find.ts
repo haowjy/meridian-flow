@@ -72,7 +72,7 @@ function matchSerializedText(
     return {
       ok: false,
       code: "ambiguous_match",
-      message: `Found ${matches.length} matches for "${find}". Narrow with in/around or use all=true.`,
+      message: `Found ${matches.length} matches for "${find}".`,
       count: matches.length,
     };
   }

@@ -131,7 +131,7 @@ describe("context router owner resolution", () => {
 
   it.each([
     ["scratch://@w4/notes.md", "Work w4 was deleted; restorable for 12 days."],
-    ["scratch://@tea-notes/notes.md", 'Use scratch://@w3/… (Work "Tea Notes").'],
+    ["scratch://@tea-notes/notes.md", '"tea-notes" is Work "Tea Notes": scratch://@w3/….'],
     [
       "scratch://@W2/notes.md",
       'Handles are lowercase: scratch://@w2/… w2 is "Second pass"; "W2" is w7.',

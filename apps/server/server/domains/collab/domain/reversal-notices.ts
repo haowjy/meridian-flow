@@ -38,8 +38,7 @@ export async function recordAwarenessDegradedNotice(input: {
   await input.notices.record({
     kind: "awareness_degraded",
     scope: { kind: "thread", threadId: input.threadId },
-    message:
-      "Your changes are committed, but concurrent user content could not be verified. Re-read to confirm current state.",
+    message: "Your changes are committed, but concurrent user content could not be verified.",
     data: { documentIds: [...input.documentIds], documentNames },
   });
 }

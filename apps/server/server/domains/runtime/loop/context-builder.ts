@@ -283,8 +283,8 @@ function completeToolResultGroups(
     const unfinished =
       sourceTurn?.status === "cancelled"
         ? "Tool call cancelled; no result recorded."
-        : "Tool call did not finish: the turn ended before it returned (for example, Flow's server restarted); no result recorded. This is not a time limit.";
-    const missingResultMessage = `${unfinished} Side effects unknown — re-read state before retrying.`;
+        : "Tool call did not finish: the turn ended before it returned (for example, Flow's server restarted); no result recorded.";
+    const missingResultMessage = `${unfinished} Side effects unknown.`;
     for (const toolCallId of missingResultIds) {
       const recorded = sourceTurn
         ? recordedCalls.get(connectionCallKey(sourceTurn.id, toolCallId))

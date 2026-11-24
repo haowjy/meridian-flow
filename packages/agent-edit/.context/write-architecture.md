@@ -66,8 +66,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   Every operation is made and Loro merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it. The owner chose that the writer's edit to a word the model kept wins, even where that
-  leaves a fragment, and to trust the model to notice an odd merge in the write's echo and its
-  listing of concurrent edits (`sighed softly` over a deleted `sighed` lands `He softly,`;
+  leaves a fragment. The model is one more collaborator: nothing tells it to repair a merge, and the
+  result only lists what the writer changed (`sighed softly` over a deleted `sighed` lands `He softly,`;
   `DRAFT-B3 line.` over a deleted `DRAFT-B line.` lands `3`). A word the model
   replaces lands as the model's whole replacement: `Gamma` over a deleted `Beta` lands whole, because a trim of the
   shared edges loses model letters (`Gamm`) and was removed. The apply step never reads the room either: the update deletes what the model's
@@ -121,9 +121,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   normalizes what it keeps, because a whitespace-collapsing cleanup breaks the model's
   retry on text it was just shown (find-all deletion legitimately leaves double spaces).
 - A write's result names, by block hash and author, the blocks others changed after the model
-  last read them, and marks those its echo already shows (the merged text, where a mangled merge
-  would be visible). The list never tells the model to read again: the write landed, and the
-  next write plans on what the result showed. Authors come from the changes' commit messages
+  last read them. The list never tells the model to read again or to repair a merge: the write
+  landed, and the next write plans on what the result showed. Authors come from the changes' commit messages
   (`tool/loro-observation.ts`), never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
