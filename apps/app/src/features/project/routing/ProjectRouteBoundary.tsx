@@ -1,10 +1,12 @@
 /** Retain usable content during document navigation; mask unavailable destinations. */
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
 import { DraftNoticeLine, useDiscardingNotice } from "@/features/draft-review/CommandNotice";
 import { MainSurface } from "@/features/editor/MainSurface";
+import { useItemLauncher } from "../review-launch";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
@@ -32,6 +34,8 @@ export type ProjectRouteMask = {
    * Undo, while one can bring it back. A deleted one says nothing of its own.
    */
   removed?: { documentId: string };
+  /** An unavailable destination only a draft holds: it offers that draft. */
+  inDraft?: { file: ReviewFileTarget; draftId: string };
 };
 
 export function ProjectRouteBoundary({
@@ -41,6 +45,7 @@ export function ProjectRouteBoundary({
   destinationKey,
   onRetry,
   removed,
+  inDraft,
 }: ProjectRouteMask & { children: ReactNode }) {
   const blocked = isProjectRouteMasked({ issue, retainWhileLoading });
   return (
@@ -77,6 +82,8 @@ export function ProjectRouteBoundary({
               <Trans>This destination couldn’t load.</Trans>
             ) : removed ? (
               <RemovedDestination removed={removed} />
+            ) : inDraft ? (
+              <OnlyInDraft {...inDraft} />
             ) : (
               <Trans>This destination is unavailable.</Trans>
             )}
@@ -93,5 +100,19 @@ function RemovedDestination({ removed }: { removed: { documentId: string } }) {
     <DraftNoticeLine notice={discarded} className="max-w-md" />
   ) : (
     <Trans>This destination is unavailable.</Trans>
+  );
+}
+
+function OnlyInDraft({ file, draftId }: { file: ReviewFileTarget; draftId: string }) {
+  const { openDraftFile } = useItemLauncher();
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <p>
+        <Trans>Only in draft</Trans>
+      </p>
+      <Button size="sm" variant="outline" onClick={() => openDraftFile(file, draftId)}>
+        <Trans>Open draft</Trans>
+      </Button>
+    </div>
   );
 }

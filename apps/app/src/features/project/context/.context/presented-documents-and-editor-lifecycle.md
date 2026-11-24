@@ -139,6 +139,16 @@ removed document. A tree delete's notice has an Undo (`entry-failure.ts`); a cre
 document's Discard has the press's Undo (in the tab that pressed); a restore from Trash never moves main. A Discard of an existing
 document's edits removes nothing. Discard is a server command, not a record the browser writes.
 
+A page only a draft holds closes the same way when it leaves that draft for Live, which lacks it
+(design §6): the toggle or the version chip moving to Live, or `Delete draft` on its draft. The
+route sees the pin drop on a draft-only address and calls the coordinator's `leaveDraftOnly`
+instead of writing the bare address; main goes back as above and the page's tab closes once main
+has left. `Delete draft` begins it itself, so its notice follows main (`notices.landed`). The
+document's chip offers no `Live` there. A Work switch is not a move to Live: the page stays pinned
+to its draft. A bare Live address that still reaches such a page (a reload, another tab, a stripped
+link) shows "Only in draft" with `Open draft` when the scope's draft list, which the route already
+holds, has it (`draftOnlyAt`); otherwise "This destination is unavailable".
+
 A document in Trash still takes text: the live room admits it until its node is purged and
 closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
 restore brings it back. A host still open on a purged room says nothing (`SyncStatus`).

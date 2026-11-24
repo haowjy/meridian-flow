@@ -78,6 +78,8 @@ export type ProjectViewProps = {
     editor?: ProjectRouteIssue;
     /** Why an unavailable Editor destination is gone, when its document was removed. */
     removed?: ProjectRouteMask["removed"];
+    /** An unavailable Editor destination the scope's draft holds. */
+    inDraft?: ProjectRouteMask["inDraft"];
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;

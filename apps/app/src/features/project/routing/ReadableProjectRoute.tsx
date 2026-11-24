@@ -19,7 +19,6 @@ import { useDraftStanding } from "@/client/query/useDraftStanding";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
-import { useWorks } from "@/client/query/useWorks";
 import { isEditorScheme } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
@@ -32,11 +31,12 @@ import { useDocumentStanding } from "../context/use-document-standing";
 import { useRemovalAnswer } from "../context/use-removal-answer";
 import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
-import { useWorkScopeState } from "../use-work-scope";
+import { useScopeDraftOwner, useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
 import { addressDraftOwner } from "./document-address-draft";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
+  draftOnlyAt,
   draftOnlyTarget,
   type ReplayAddress,
   resolveReplayAddress,
@@ -109,8 +109,8 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
-  const { works } = useWorks(projectId);
-  const scopeDraft = works?.find((work) => work.id === workId)?.draftId ?? null;
+  // The draft the scope shows: a Work's picked draft, not only its default.
+  const scopeDraft = useScopeDraftOwner(projectId, null).draftId || null;
   const presented = useOptionalPresentedDocuments();
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
@@ -441,6 +441,15 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
   const removalNow = useRemovalAnswer(projectId, removedDocumentId);
+  // A bare Live address to a page only the scope's draft holds offers that draft.
+  const inDraftFile =
+    documentIssue === "unavailable" && addressKind === "plain" && documentDestination
+      ? draftOnlyAt(documentDestination, boundDocumentId, listedDrafts)
+      : undefined;
+  const inDraft =
+    inDraftFile && listedDrafts.draftId
+      ? { file: inDraftFile, draftId: listedDrafts.draftId }
+      : undefined;
   // A link to a draft the project no longer has opens the document on Live, at once.
   const draftStanding = useDraftStanding(projectId, draftOwner);
   const draftGone =
@@ -495,20 +504,34 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       owner: undefined,
     };
   }
-  const setEditorReviewItemKey = useCallback((review: DraftPin | null) => {
-    const current = latest.current;
-    if (!current.navigation) return;
-    const ticket = current.navigation.capture();
-    const { address } = current;
-    // A draft's item key is part of its link, and names the draft. Review changes is of the
-    // draft it was opened on: another draft, or Live, drops it.
-    const next = review
-      ? review.itemKey === address.itemKey
-        ? address
-        : { ...withoutReview(address), itemKey: review.itemKey }
-      : withoutDraft(address);
-    void current.navigation.replaceIfCurrent(ticket, next);
-  }, []);
+  const leaving = useRef({ addressed, live: documentTree });
+  leaving.current = { addressed, live: documentTree };
+  const setEditorReviewItemKey = useCallback(
+    (review: DraftPin | null) => {
+      const current = latest.current;
+      if (!current.navigation) return;
+      // Live has no page here: leaving the draft closes the page (design §6).
+      const { addressed, live } = leaving.current;
+      if (!review && addressed?.draftOnly) {
+        const { documentId } = addressed.document;
+        if (!live.findDocument(documentId)) {
+          coordinator.leaveDraftOnly(projectId, documentId);
+          return;
+        }
+      }
+      const ticket = current.navigation.capture();
+      const { address } = current;
+      // A draft's item key is part of its link, and names the draft. Review changes is of the
+      // draft it was opened on: another draft, or Live, drops it.
+      const next = review
+        ? review.itemKey === address.itemKey
+          ? address
+          : { ...withoutReview(address), itemKey: review.itemKey }
+        : withoutDraft(address);
+      void current.navigation.replaceIfCurrent(ticket, next);
+    },
+    [coordinator, projectId],
+  );
   const { history } = useRouter();
   // Main's Review changes: the address turns it on, and these move within it or leave it.
   const reviewControls = useMemo<MainReviewControls>(
@@ -631,6 +654,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
                 removalNow?.kind === "removed" && removedDocumentId
                   ? { documentId: removedDocumentId }
                   : undefined,
+              inDraft,
             }}
             onRetryEditorRoute={retryEditorAddress}
             routeCommands={routeCommands}

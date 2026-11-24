@@ -10,6 +10,7 @@ import { Trans } from "@lingui/react/macro";
 import type { DocumentDraftHint } from "@meridian/contracts/drafts";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
@@ -43,6 +44,9 @@ export function DocumentVersionMenu({
   // The picked Work's drafts are listed whether or not they change this document; picking one
   // shows it on every page, as the sidebar's chip does.
   const menu = useWorkDraftMenu(projectId, shell, (draftId) => shown?.draftId === draftId);
+  const draftOnly = useOwnerDrafts(projectId, shown?.draftId ?? null).fileForDocument(
+    documentId,
+  )?.draftOnly;
   if (document.kind === "new") return null;
 
   const draftWork = (draft: string) => works?.find((candidate) => candidate.draftId === draft);
@@ -123,11 +127,15 @@ export function DocumentVersionMenu({
       showing={showing}
       drafts={drafts}
       owner={outOfScope ?? menu?.owner}
-      onShowLive={() => {
-        setDocumentView(accountId, projectId, documentId, { version: "live" });
-        shell?.show("live");
-        followToChip(documentId);
-      }}
+      onShowLive={
+        draftOnly
+          ? undefined
+          : () => {
+              setDocumentView(accountId, projectId, documentId, { version: "live" });
+              shell?.show("live");
+              followToChip(documentId);
+            }
+      }
       onNewDraft={menu?.onNewDraft}
       onDeleteDraft={
         menu?.onDeleteDraft && shown?.draftId === shell?.draftId ? menu.onDeleteDraft : undefined

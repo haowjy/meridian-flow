@@ -114,6 +114,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     destinationKey: props.routeLocationKey,
     issue: props.routeIssues?.main ?? (mainChat ? undefined : props.routeIssues?.editor),
     removed: props.routeIssues?.main ? undefined : props.routeIssues?.removed,
+    inDraft: props.routeIssues?.main ? undefined : props.routeIssues?.inDraft,
     onRetry: props.routeIssues?.main ? undefined : props.onRetryEditorRoute,
     retainWhileLoading: props.retainEditorWhileLoading,
   };

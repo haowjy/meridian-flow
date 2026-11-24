@@ -146,6 +146,7 @@ export function MobileProject(props: MobileProjectProps) {
           retainWhileLoading={props.retainEditorWhileLoading}
           onRetry={props.routeIssues?.main ? undefined : props.onRetryEditorRoute}
           removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
+          inDraft={props.routeIssues?.main ? undefined : props.routeIssues?.inDraft}
           issue={props.routeIssues?.main ?? (onChat ? undefined : props.routeIssues?.editor)}
         >
           <PanePlaceContext.Provider value="main">
