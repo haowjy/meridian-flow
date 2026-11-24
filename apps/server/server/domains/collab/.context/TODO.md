@@ -26,6 +26,14 @@
   `document_forks` row and in no snapshot `rooms.read` copies inside a transaction
   (`copyInTransaction`), so the press flushes loaded forks before its transaction. Dropping it
   needs the press to read loaded rooms, or a fork's row and snapshot written with its first write.
+- The model's `undo` after the writer undid an Undo turn answers "already removed" while the
+  turn's words show again: `effectiveActionIndex` counts a write taken once any undo targets it,
+  where `restorePlan` follows the chain to the undo receipt that carries the turn's text again.
+  Following it needs a stack entry built from another edit's parts (selection, the `edits`
+  listing, `commitStep`'s receipt), not one predicate.
+- The card offers Undo turn for a turn whose only text change the model undid within the turn:
+  `someStands` sees both parts hold their edits, though taking both back changes nothing. The
+  press is harmless (the draft reads as before) and the card then shows it restored.
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931

@@ -75,8 +75,10 @@ that changed something and has no done `unpress`), so every tab and a reload rea
 - **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
   first, taken back by design §2's Undo rule (`undoInRooms`, `takeBack`): each goes back whatever
   was written since, except one older than the room's history cutoff (§4), which can't (`holdsEdit`).
-  A part already taken back (by an earlier restore, the model's undo or the writer's revert) is
-  not taken again: taking it again would put the text it deleted back a second time. A fork
+  A part already taken back (by an earlier restore, the model's undo in a later turn or the
+  writer's revert) is not taken again: taking it again would put the text it deleted back a
+  second time. The model's undo within the turn is one of the turn's writes: it goes back before
+  the write it took, so the draft ends as it was before the turn, not with the withdrawn words. A fork
   copy is carried forward to today's Live first. Live's manuscript is never written: text an
   Apply already put there stays in Live, and taking it out of the draft is a pending change.
 - **The tree changes** are the turn's drafted tree receipts' records (`tree_edit_receipts`, the

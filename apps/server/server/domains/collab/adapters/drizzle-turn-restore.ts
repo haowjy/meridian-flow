@@ -9,8 +9,9 @@
  * so does a tree change of the turn the writer applied.
  *
  * The writes go back by the one Undo rule (`undoInRooms`), whatever was written since; a write an
- * Undo or the writer's revert already took back is no part of the plan, and one whose history the
- * room cut (design §4's cutoff) stays as it is.
+ * Undo from outside the turn or the writer's revert already took back is no part of the plan, and
+ * one whose history the room cut (design §4's cutoff) stays as it is. The turn's own undos are its
+ * writes too: they go back with the writes they took, newest first.
  *
  * What a restore took back is in the one ledger every Undo reads, `document_edits`: the restore
  * records an `undo` receipt naming the parts it took, as the card's Undo does, so a second restore,
@@ -61,10 +62,15 @@ const onlyInDraft = (draft: DraftId, node: unknown) => sql`EXISTS (
   SELECT 1 FROM ${draftTreeNodes} n
   WHERE n.draft_id = ${draft} AND n.id = ${node} AND n.exists_only_in_draft)`;
 
-/** A part no Undo, nor the writer's revert, has taken back: taking it back again would put its deleted text back twice. */
-const notTakenBack = sql`NOT EXISTS (
+/**
+ * A part no Undo, nor the writer's revert, has taken back: taking it back again would put its
+ * deleted text back twice. An Undo of `ownTurn` doesn't count: the turn's own undo is in its plan
+ * too, and taking back both, newest first, leaves the text as it was before the turn.
+ */
+const notTakenBack = (ownTurn?: TurnId) => sql`NOT EXISTS (
   SELECT 1 FROM ${documentEditParts} u JOIN ${documentEdits} e ON e.id = u.edit_id
   WHERE (e.kind = 'undo' OR (e.kind = 'revert' AND e.actor = 'human'))
+    ${ownTurn ? sql`AND e.turn_id IS DISTINCT FROM ${ownTurn}` : sql``}
     AND u.targets @> jsonb_build_array(jsonb_build_object(
       'editId', ${documentEditParts.editId}::text, 'ordinal', ${documentEditParts.ordinal})))`;
 
@@ -85,6 +91,7 @@ export async function restorePlan(
         sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
         sql`(${documentEditParts.origin}->>'kind' = 'fork' OR ${onlyInDraft(draft, documentEdits.documentId)})`,
       ),
+      notTakenBack(turn),
     )
   ).filter((part) => !gone.has(part.documentId));
   return { parts, records: tree.records, nodes: tree.nodes };
@@ -99,11 +106,16 @@ export function restoredParts(tx: DrizzleDb, press: CommandId): Promise<RestoreP
       eq(documentEdits.kind, "undo"),
       eq(documentEdits.actor, "human"),
     ),
+    notTakenBack(),
   );
 }
 
 /** The parts `where` names that carry an edit and stand (`notTakenBack`), newest first, each in its room. */
-async function standingParts(tx: DrizzleDb, where: SQL | undefined): Promise<RestorePart[]> {
+async function standingParts(
+  tx: DrizzleDb,
+  where: SQL | undefined,
+  stands: SQL,
+): Promise<RestorePart[]> {
   const rows = await tx
     .select({
       documentId: documentEdits.documentId,
@@ -114,7 +126,7 @@ async function standingParts(tx: DrizzleDb, where: SQL | undefined): Promise<Res
     })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(and(where, isNotNull(documentEditParts.edit), notTakenBack))
+    .where(and(where, isNotNull(documentEditParts.edit), stands))
     .orderBy(desc(documentEditParts.id));
   return rows.map((row) => {
     const documentId = row.documentId as DocumentId;
