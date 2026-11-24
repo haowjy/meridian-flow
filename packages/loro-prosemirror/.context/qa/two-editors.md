@@ -135,7 +135,7 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets
-structure ends it, except typing into an empty paragraph, which stores it and joins as typing. `WHY=1` prints how many steps each run left, `TRACE=1` both screens after
+structure ends it, except typing into an empty paragraph, which stores it and joins as typing. `TRACE=1` prints both screens after
 every step.
 
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold

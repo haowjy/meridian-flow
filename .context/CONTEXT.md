@@ -20,6 +20,3 @@ The running system, the code's boxes (with the broken dependency rules in a tabl
   adapters.
 - **"Harness" is a concept, not a package:** the runtime, threads, packages,
   projects, context and collab domains together.
-- **Billing.** Credits are user-scoped in the schema, but the runtime's billing
-  port still takes project-shaped inputs in places; the Drizzle adapter ignores
-  the project id.

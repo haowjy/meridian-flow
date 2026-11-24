@@ -56,8 +56,8 @@ have it:
 | Room connection | One room's socket to `/ws/loro` (a document's Live or fork, or a tree list): connecting, connected, disconnected, or ended | [core/transport](../../apps/app/src/core/transport/.context/state-machines.md) |
 | Release | Whether this tab's code is current, deployed under, or must reload | [client/release](../../apps/app/src/client/release/.context/state-machines.md) |
 | Account session runtime | Whether the account's document sessions take new work: open, closing, closed | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
-| Tree list connection | One tab's view of its list's connection: waiting, synced, offline, rebuilding | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
-| Sync pill outage phase | Whether the pill is reporting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
+| Tree list connection | One tab's view of its list's connection: waiting, synced, offline, denied, unauthenticated or broken | [core/tree-list](../../apps/app/src/core/tree-list/.context/state-machines.md) |
+| Sync pill outage phase | Whether the pill is awaiting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
 | Upload store | One file being sent from the editor or composer | [core/uploads](../../apps/app/src/core/uploads/.context/state-machines.md) |
 | Chat submission | One sent message, from the journal to the server's answer | [client/chat-submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md) |
 | Composer toolbar | Which toolbar surface is open, and whether it is locked | [composer-toolbar](../../apps/app/src/components/app/composer-toolbar/.context/state-machines.md) |

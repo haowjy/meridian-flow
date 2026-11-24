@@ -17,7 +17,7 @@ and exits non-zero on a failure. A seed takes about 0.1 s; split 10,000 across p
 `--start`/`--n`. `--seed N` replays one script; with `FUZZ_TRACE=1` it prints, after each step,
 every block where Live (L), the fork (F) and the Draft tab (T) differ, and the fork's overrides.
 `FUZZ_OFF=split,join` leaves edit kinds out of the generator (`block-changes.gen.ts`).
-`FUZZ_NO_PIECES=1` writes no `pieces` record, to see the split and join checks fail (188 of 300 seeds).
+`FUZZ_NO_PIECES=1` writes no `pieces` record, to see the split and join checks fail (158 of 300 seeds).
 
 ## The copies
 

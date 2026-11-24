@@ -12,7 +12,7 @@ It prints `ok: <n> checks` or the first failed check with the two documents, and
 
 What it covers:
 
-- Fixtures parsed from Markdown and MDX through `@meridian/markup` (prose with every mark, hard
+- Fixtures written as plain Markdown and as MDX, all parsed through `mdxCodec` from `@meridian/markup` (prose with every mark, hard
   breaks and Unicode, nested lists and quotes, a table with alignment, an empty cell and an image,
   a code block, inline images, a `jsx_container` holding a `jsx_leaf`) plus overlapping comments
   and a comment on an image. Each goes doc → shape → ProseMirror and must be `eq` to the fixture;

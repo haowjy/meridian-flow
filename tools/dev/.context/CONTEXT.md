@@ -113,8 +113,7 @@ applied: the stack keeps what it was started with, the checks see the same value
 and the keys the plan computes (`COMPUTED_STACK_KEYS`) are derived afresh. The session is the only copy, since
 `.meridian/dev-session.json` holds no values; after the session dies there is
 nothing to keep. `legacyDefaultServerHasSession` refuses a start while
-an old default-server stack of this checkout runs (read-only `-L default`); remove
-it with the TODO in `.context/TODO`.
+an old default-server stack of this checkout runs (read-only `-L default`).
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
 its live tmux session. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A

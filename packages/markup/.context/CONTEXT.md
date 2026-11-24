@@ -17,9 +17,7 @@ The root `@meridian/markup` exports:
   the default configuration.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
   href and src spells as written, `asset:` refs stay refs). It is for
-  comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
-  `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
-  not a package export.
+  comparing stored bytes and for tests; no reader is ever spelled through it.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
@@ -29,6 +27,9 @@ The root `@meridian/markup` exports:
 - `builtInComponents` (reserved wire components handled by dedicated codecs) and
   `documentComponentRegistry` (the product component set every document surface
   shares).
+- `verbatimCodec` and `codeFileBlock`: the code-document codec, whose text is one code block
+  byte for byte and never Markdown. `presentationTextRange(run, source, range)` maps a source
+  range into a presentation run's text.
 
 Two subpath entries carry the link rules, so a consumer loads only what it
 uses (the client's assignment path loads no codec; the root loads no schema
@@ -249,7 +250,7 @@ alignment (`align`) and table column widths (`widths`) that live as attrs on
 markdown; only a styled block gains a wrapper. Parsing goes through
 `createLayoutCodec()`, which re-parses its single child through
 `parseRecognizedBlockAst()` and falls back to inert raw text when the wrapper is
-malformed. `layout` is therefore excluded from `mdxRequiredBlockNames`.
+malformed. `layout` is wire-only, with no schema node, so schema coverage never asks for it.
 
 Tables serialize as canonical raw HTML unconditionally. GFM pipes remain
 liberal ingress and normalize to HTML in one parse-serialize pass, including

@@ -3,7 +3,7 @@
 [CI](../../.github/workflows/ci.yml) runs on manual dispatch, or when Deploy Staging calls it,
 and its four parallel quality jobs are:
 
-- `quality-static`: lint, debug probes, negative space, tree visibility, i18n and the Nx graph.
+- `quality-static`: lint, debug probes, negative space, slop lint, i18n, the Nx graph, the architecture map and PR-body checks.
 - `quality-typecheck`: typecheck, with runner-local Nx caching only.
 - `quality-test-1` and `quality-test-2`: the default unit test projects, using
   Vitest `--shard=1/2` and `--shard=2/2` on the same `test` script.
@@ -24,8 +24,9 @@ script; static and typecheck reject them. New steps automatically join `quality-
 Unsupported chain syntax or a missing isolated/DB step fails explicitly.
 `check:db` stays local; CI's separate `db-tests` job provisions Postgres,
 forces the DB suite, then runs `pnpm test:probes`, the self-contained database probes in
-`tools/qa/probes/` (under a minute, each killed and failed after five), inside the job's
-10-minute reference. Every job sets `timeout-minutes`, several times its usual run. It starts the Postgres server preinstalled on its pinned
+`tools/qa/probes/` (under a minute, each killed and failed after five), inside a `db-tests` job
+that sets `timeout-minutes: 30`, several times its usual run. Every job sets `timeout-minutes` that
+way. It starts the Postgres server preinstalled on its pinned
 runner image, so it pulls nothing from a registry. Migration checks and the two app boot jobs are unchanged.
 
 Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is

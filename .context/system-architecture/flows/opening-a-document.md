@@ -33,7 +33,7 @@ sequenceDiagram
 3. **Place.** [core-tree-list](../app-core.md#core-tree-list) holds the browser's copy of the project's list. The tab's name, path and type are the replay's for the document's id, so a rename elsewhere shows at once; an address the copy cannot place yet waits for the list to sync.
 4. **Connect.** The session asks [core-transport](../app-core.md#core-transport) to join the room (`loro-room-transport.ts`).
 5. **Upgrade.** The transport opens a WebSocket at `/ws/loro` with the `wos-session` cookie ([routes](../server.md#routes), `routes/ws/loro.ts`) and sends a `JoinRequest` for `live:<documentId>` with its room version and the client's schema version.
-6. **Admit.** The route hands the connection to `lib/loro-ws-handler.ts` (in [lib](../server.md#lib)), which checks the session, the room name and the schema version.
+6. **Admit.** The route's `upgrade` authenticates the request (`lib/ws-upgrade-auth.ts`) and hands the socket to `lib/loro-ws-handler.ts` (in [lib](../server.md#lib)), which checks the join's auth, the room name and the schema version.
 7. **Ask policy.** `admit` calls `fileAccess.authorize` for an `edit` grant on the document; a denied edit with read access gives a read-only room, anything else is a `JoinError` ([file-policy](../server-documents.md#file-policy)).
 8. **Load.** The handler subscribes the socket to the room and asks `DocumentRooms.sync` on [collab](../server-documents.md#collab) for what the tab's version lacks.
 9. **Read.** A room not yet loaded is built from its `document_snapshots` rows in [postgres](../system.md#postgres).

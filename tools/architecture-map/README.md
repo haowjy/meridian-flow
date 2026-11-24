@@ -20,7 +20,8 @@ node tools/architecture-map/serve.mjs tools/architecture-map/example/map.config.
 1. Copy this directory into the project (`tools/architecture-map/`). There is no package: one
    consumer so far, so nothing to shape one around.
 2. Write `map.config.mjs` and the pages beside each other, in the directory the config's
-   `pagesDir` names. Start from `example/`: `example/architecture/` shows each kind of page, and "The pages"
+   `pagesDir` names. Start from `example/`: `example/architecture/` shows a level page, the
+   dependencies table and a journey, and "The pages"
    below gives the format in brief.
 3. Serve it. With Vite, in `vite.config.ts`: `plugins: [architectureMapPlugin("<path to map.config.mjs>")]`,
    imported from `tools/architecture-map/vite-plugin.mjs` (dev only; a build never includes it). Without Vite,
