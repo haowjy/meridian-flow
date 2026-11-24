@@ -147,10 +147,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     ];
     return {
       status: "success",
-      actionId,
-      room: null,
       updates: committed.updates,
-      destination: versionOf(document),
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
       message: [
         command.command === "revert"
@@ -234,8 +231,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     );
     return {
       status: "success",
-      actionId: randomUUID(),
-      room: null,
       message: [
         `your edits to ${document.uri}, newest first (version: ${versionOf(document)})`,
         ...lines,

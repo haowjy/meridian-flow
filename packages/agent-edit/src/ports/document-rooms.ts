@@ -4,7 +4,6 @@ import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/delta.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
-import type { DocumentEditRequest, ModelInverseCommand } from "./document-edits.js";
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
@@ -48,8 +47,7 @@ export interface AgentWriteRecord {
    * Undo and the model's undo and revert take it back (`takeBack`).
    */
   edit: StoredEdit;
-  /** Stable write id (`turn:<turn>:tool:<call>`), and its ordinal, rendered `e<N>`. */
-  writeId: string;
+  /** The write's ordinal in its thread, rendered `e<N>`. */
   wId: number;
   toolCallId?: string;
   threadId: string;
@@ -80,7 +78,7 @@ export interface AgentEditRooms {
    * Store one write's batch, and its record, in the host's command: its docs' snapshots and the
    * record in the command's transaction, the import into the room after it commits.
    */
-  save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord | null): Promise<void>;
+  save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord): Promise<void>;
 }
 
 /** What a host supplies to run agent-edit over its `DocumentRooms`. */
@@ -95,11 +93,8 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /**
-   * Store a write's record in `tx`, beside its committed batch. The record says all an inverse
-   * needs; the batch is there to store, not to read back.
-   */
-  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
+  /** Store a write's record in `tx`, beside its committed batch: the record says all an inverse needs. */
+  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -114,7 +109,7 @@ export function agentEditRooms<Tx>(
     async save(room, batch, record) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record, batch);
+      await host.recordWrite(tx, record);
     },
   };
 }
@@ -125,27 +120,4 @@ export interface DocumentCut {
   version: Uint8Array;
   /** Its top-level blocks, with ids. */
   blocks: readonly PMNode[];
-}
-
-/**
- * The host's record of a document's AI edits and their inverses, on Loro: the requests of
- * `DocumentEdits`, answered with a message (the model's `undo`/`revert` echo is its message).
- */
-export interface LoroDocumentEdits {
-  /** The model's list of its edits (`read` with `format: "edits"`). */
-  read(request: DocumentEditRequest & { command: ReadCommand }): Promise<{
-    status: "success" | Exclude<WriteStatus, "success">;
-    message: string;
-  }>;
-  /** The model's `undo` or `revert`: the host writes the inverse and says what it did. */
-  execute(request: DocumentEditRequest & { command: ModelInverseCommand }): Promise<
-    | { status: Exclude<WriteStatus, "success">; message: string }
-    | {
-        status: "success";
-        message: string;
-        writeId?: string;
-        /** The batches the inverse committed: the reply's later writes plan on them. */
-        updates?: readonly Uint8Array[];
-      }
-  >;
 }

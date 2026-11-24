@@ -39,7 +39,6 @@ export type {
 export type {
   AgentWriteRecord,
   DocumentCut,
-  LoroDocumentEdits,
 } from "./ports/document-rooms.js";
 export {
   type AgentEditRooms,

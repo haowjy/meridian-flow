@@ -35,8 +35,9 @@ import {
   loroModel,
   toLoroHandle,
 } from "../model/loro-model.js";
+import type { DocumentEdits } from "../ports/document-edits.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
-import type { AgentEditRooms, AgentRoomRead, LoroDocumentEdits } from "../ports/document-rooms.js";
+import type { AgentEditRooms, AgentRoomRead } from "../ports/document-rooms.js";
 import { isDocumentNotFoundError } from "../ports/document-rooms.js";
 import { editHandle, type WriteOrdinals } from "../ports/write-ordinals.js";
 import { landCopies } from "../resolver/land-copies.js";
@@ -83,12 +84,12 @@ export interface LoroEditCoreOptions {
   /** A document's own codec where it is not `codec`: a code document's text is not Markdown. */
   codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
   links: DocumentLinksPort;
-  documentEdits?: LoroDocumentEdits;
+  documentEdits: DocumentEdits;
   /**
    * The chat a commit by a turn (`CommitAuthor`) names, as the model reads it (`agent (c15)`); null for a
-   * turn the host can't trace. Absent: every turn but the reader's own is `another agent`.
+   * turn the host can't trace.
    */
-  authorOfTurn?(turnId: string): Promise<string | null>;
+  authorOfTurn(turnId: string): Promise<string | null>;
   onLinkSpliceFallback?: (event: { documentId: string; reason: SpliceFallback }) => void;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
@@ -268,10 +269,8 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }
 
   async function readEdits(command: ReadCommand, threadId: string, context: WriteContext) {
-    const port = options.documentEdits;
-    if (!port) return status("invalid_write", "This host has no edit history.");
     const address = parseFileAddress(command) as Address;
-    const result = await port.read({
+    const result = await options.documentEdits.read({
       documentId: address.documentId,
       threadId,
       context,
@@ -289,10 +288,8 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     threadId: string,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const port = options.documentEdits;
-    if (!port) return status("invalid_write", "This host has no edit history.");
     const address = parseFileAddress(command) as Address;
-    const result = await port.execute({
+    const result = await options.documentEdits.execute({
       documentId: address.documentId,
       threadId,
       context,
@@ -721,7 +718,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       documentId: docId,
       room: read.room,
       edit: editSince(copy.docs, since, written),
-      writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
       threadId,

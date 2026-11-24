@@ -38,7 +38,7 @@ export interface LoroListingSource {
   ownTurn: string | null;
   /** Blocks the result's own write removed. */
   ownRemoved: ReadonlySet<string>;
-  authorOfTurn?(turnId: string): Promise<string | null>;
+  authorOfTurn(turnId: string): Promise<string | null>;
   onFailed(cause: unknown): void;
 }
 
@@ -178,7 +178,7 @@ async function labelOf(
   if (turn === source.ownTurn) return null;
   let label = cache.get(turn);
   if (label === undefined) {
-    label = (await source.authorOfTurn?.(turn)) ?? "another agent";
+    label = (await source.authorOfTurn(turn)) ?? "another agent";
     cache.set(turn, label);
   }
   return label;

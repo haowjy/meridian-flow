@@ -38,6 +38,7 @@ const coreFor = (draftId: string | null) => {
     codec: createAgentEditCodecFactory(mdxCodec({ schema })),
     links: createStaticDocumentLinks(),
     documentEdits: chat.documentEdits,
+    authorOfTurn: async () => null,
   });
 };
 let core = coreFor(null);

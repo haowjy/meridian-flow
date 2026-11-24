@@ -4,7 +4,7 @@ import {
   type AgentEditRooms,
   createAgentEditCodecFactory,
   createLoroEditCore,
-  type LoroDocumentEdits,
+  type DocumentEdits,
   type LoroEditCoreOptions,
   type WriteOrdinals,
 } from "@meridian/agent-edit/integration";
@@ -31,7 +31,7 @@ export function createAgentEditRuntime<Tx>(input: {
   loro: {
     rooms: AgentEditRooms;
     ordinals: WriteOrdinals;
-    documentEdits: LoroDocumentEdits;
+    documentEdits: DocumentEdits;
     authorOfTurn(turnId: string): Promise<string | null>;
   };
   lockDocument(documentId: DocumentId): Promise<void>;
