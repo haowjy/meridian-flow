@@ -16,7 +16,6 @@ import { useId, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { AgentFileSave } from "@/features/agents/PackageSave";
@@ -33,8 +32,9 @@ import {
 import { DocumentName } from "./DocumentName";
 import { describeModelMove, documentDisplayName, folderDisplayName } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
-import { UndoTurnSlot } from "./TurnUndoTurn";
+import { TurnRestoreSlot } from "./TurnRestore";
 import { useTurnCardDrafts } from "./turn-card-drafts";
+import { UndoCell } from "./UndoCell";
 import { workReceiptLine } from "./work-receipt-copy";
 
 /** The answers that mean the press failed; every other answer is a press that took what it could. */
@@ -83,7 +83,7 @@ export function TurnEditsReceipt({
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
-  const undoTurn = useUndoTurn(turn, documents, receipt, receiptReadAt);
+  const restores = useTurnRestores(turn, documents, receipt, receiptReadAt);
   const hasEditedDocuments = documents.length > 0;
   const names = useOwnerNames();
   // Reversible Work mutation receipts are content in their own right: their
@@ -138,14 +138,14 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        {undoTurn.drafts.length === 1 ? undoTurn.slot(undoTurn.drafts[0] as DraftId, false) : null}
-        {/* A draft's writes are Undo turn's: the card's Undo is for the rest, when there is any. */}
-        {reversible || receipt?.undone || undoTurn.drafts.length === 0 ? (
-          <UndoSlot
-            reversible={reversible}
-            pending={pending}
+        {restores.drafts.length === 1 ? restores.slot(restores.drafts[0] as DraftId, false) : null}
+        {/* What the turn did in a draft is its restore's: the card's Undo is for the rest, when there is any. */}
+        {reversible || receipt?.undone || restores.drafts.length === 0 ? (
+          <UndoCell
+            offer={
+              reversible ? { label: t`Undo`, pending, onPress: () => void reverseTurn() } : null
+            }
             undone={receipt?.undone === true}
-            onUndo={() => void reverseTurn()}
           />
         ) : null}
       </div>
@@ -154,12 +154,12 @@ export function TurnEditsReceipt({
       ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {undoTurn.groups.map((group) => (
+          {restores.groups.map((group) => (
             <div key={group.draft ?? "live"}>
               {group.draft ? (
                 <div className="flex min-h-6 items-center px-[var(--chat-card-pad-x)] text-foreground">
                   <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
-                  {undoTurn.slot(group.draft, true)}
+                  {restores.slot(group.draft, true)}
                 </div>
               ) : null}
               <ul className="flex flex-col">
@@ -194,12 +194,12 @@ export function TurnEditsReceipt({
 }
 
 /**
- * The card's `Undo turn`, one per draft the card's read offers it in or names a press in
- * force for, or this tab pressed it in: with one, in the header; with several, each heads its
+ * The turn's restores (`Undo turn`), one per draft the card's read offers it in or names a press
+ * in force for, or this tab pressed it in: with one, in the header; with several, each heads its
  * draft's rows, named. `groups` are the rows to list: the turn's Live rows, then each such draft's
  * under its name (one group, unnamed, with fewer than two).
  */
-function useUndoTurn(
+function useTurnRestores(
   turn: Turn,
   documents: readonly TurnEditDocument[],
   receipt: TurnReceiptChip | null,
@@ -245,7 +245,7 @@ function useUndoTurn(
     groups: groups.filter((group) => group.draft || group.documents.length > 0),
     slot: (draft: DraftId, named: boolean) =>
       cards ? (
-        <UndoTurnSlot
+        <TurnRestoreSlot
           key={draft}
           commands={cards.commands}
           turn={turnId}
@@ -256,8 +256,8 @@ function useUndoTurn(
           name={named ? nameOf(draft) : null}
           offered={offered.includes(draft)}
           named={
-            receipt?.restored
-              ? (receipt.restored.find((each) => each.draft === draft)?.press ?? null)
+            receipt
+              ? (receipt.restored?.find((each) => each.draft === draft)?.press ?? null)
               : undefined
           }
           readAt={readAt}
@@ -507,47 +507,6 @@ function documentCountLabel(
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
     return t`Changed ${what}`;
   return t`Edited ${what}`;
-}
-
-/**
- * The card's one slot: Undo while a press would take something back, "Undoing…" while it runs,
- * "Undone" once it did, else empty. Its width never changes, so none of these moves what sits
- * beside it.
- */
-function UndoSlot({
-  reversible,
-  pending,
-  undone,
-  onUndo,
-}: {
-  reversible: boolean;
-  pending: boolean;
-  undone: boolean;
-  onUndo: () => void;
-}) {
-  return (
-    <span className="ml-auto flex min-w-[5rem] shrink-0 items-center justify-end">
-      {reversible ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          onClick={(event) => {
-            event.stopPropagation();
-            onUndo();
-          }}
-          disabled={pending}
-          className="text-jade-text"
-        >
-          {pending ? t`Undoing…` : t`Undo`}
-        </Button>
-      ) : undone ? (
-        <span className="text-muted-foreground" role="status">
-          <Trans>Undone</Trans>
-        </span>
-      ) : null}
-    </span>
-  );
 }
 
 /** The Work-only header: same counting grammar as documents, wearing the

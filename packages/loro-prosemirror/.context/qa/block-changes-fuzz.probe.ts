@@ -1,6 +1,6 @@
 /**
  * The block-change fuzz (`block-changes-fuzz.md`): seeded scripts of Live, Draft and AI writes, presses, their
- * Undos, Discards and `Undo turn` on `@meridian/document-model` itself, on the real schema through the
+ * Undos, Discards and a turn's restore press on `@meridian/document-model` itself, on the real schema through the
  * binding's codec. Gate 5's fuzz (`gate/loro-fuzz` at 39f49e50ee) moved onto the product, with its `reset`
  * step named discard, removals as records, and dependent presses undone in turn and out of order.
  *
@@ -672,7 +672,7 @@ export function runScript(seed, { verbose = false } = {}) {
   }
   /**
    * The writer adds a paragraph of their own words inside a container the turn made: the turn's
-   * `Undo turn` must leave the words on screen. Returns the word, or null.
+   * A restore press must leave the words on screen. Returns the word, or null.
    */
   function nestIn(turn) {
     syncTab();
@@ -691,7 +691,7 @@ export function runScript(seed, { verbose = false } = {}) {
     stats.nestIn = (stats.nestIn ?? 0) + 1;
     return word;
   }
-  /** `Undo turn` the turn: its writes taken back by the Undo rule, newest first (design §2). */
+  /** The turn's restore press: its writes taken back by the Undo rule, newest first (design §2). */
   function restore(turn) {
     syncTab();
     fwdLive();
@@ -1224,7 +1224,7 @@ export function runScript(seed, { verbose = false } = {}) {
     const [first, node, pos] = paragraphs[at];
     const [second, next, nextPos] = alone ? [] : paragraphs[at + 1];
     const idsBefore = new Set(textblocks(tab).keys());
-    // Words the draft or Live already shows twice (an `Undo turn` over a split leaves such a
+    // Words the draft or Live already shows twice (a restore press over a split leaves such a
     // copy, and so can two writes clashing earlier): only a copy this solo sequence makes fails.
     const twiceIn = (shown) => shown.filter((t) => shown.indexOf(t) !== shown.lastIndexOf(t));
     const already = new Set([...twiceIn(tokens(tab)), ...twiceIn(tokens(live))]);
@@ -1341,7 +1341,7 @@ export function runScript(seed, { verbose = false } = {}) {
     if (turn && g.chance(0.6)) {
       const nested = turn.made.size && g.chance(0.5) ? nestIn(turn) : null;
       restore(turn);
-      if (nested) check(tokens(fork).includes(nested), "lost-word", () => `Undo turn took the writer's ${nested} off the screen:\n${render(fork)}`);
+      if (nested) check(tokens(fork).includes(nested), "lost-word", () => `the restore press took the writer's ${nested} off the screen:\n${render(fork)}`);
     }
 
     for (let a = 0, n = 2 + g.int(3); a < n; a++) {

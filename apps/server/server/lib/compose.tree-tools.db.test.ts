@@ -35,9 +35,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const { handleDraftListRequest, handlePressRequest, selectDraftRouteServices } = await import(
-      "./draft-review-route.js"
-    );
+    const {
+      handleDraftListRequest,
+      handlePressRequest,
+      handlePressUndoRequest,
+      selectDraftRouteServices,
+    } = await import("./draft-review-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000d02";
@@ -477,59 +480,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.name).toBe("ch1");
       });
 
-      const cardUndo = () =>
-        reverseTurnCard(
-          {
-            ...composed.ports,
-            workContextNotices: { workChanged: async () => {} },
-            stopThreads: async () => {},
-          },
-          {
-            threadId: OTHER.threadId as never,
-            turnId: OTHER.turnId as never,
-            userId: USER_ID as never,
-            commandId: randomUUID() as never,
-          },
-        );
-
-      it("the card's Undo takes back a move an Apply landed, though one drafted document was discarded", async () => {
+      it("a drafted move is the turn's restore's: it takes the move back, its Undo brings it back, the card offers no Undo", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
-          await edit("write", { command: "create", path: "part1/fresh", content: "Fresh." });
         });
+        const sync = composed.ports.documentSync;
+        const chip = () =>
+          sync.getDocumentAndTreeChip(OTHER.threadId as never, OTHER.turnId as never);
+        const draft = await draftOf(OTHER_WORK_ID);
+        expect(await chip()).toMatchObject({ control: "view_change", restore: [draft] });
         const routes = selectDraftRouteServices(script.runtime.app);
         const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-        const draft = await draftOf(OTHER_WORK_ID);
-        const { items } = await handleDraftListRequest(routes, { ...scope, draft } as never);
-        const created = items.find((item) => item.documentId !== CH1);
-        await review(script).discard(created?.documentId as string);
-        await handlePressRequest(routes, {
+        const restored = await handlePressRequest(routes, {
           ...scope,
-          request: { commandId: randomUUID(), verdict: "apply", scope: { kind: "draft", draft } },
+          request: {
+            commandId: randomUUID(),
+            verdict: "restore",
+            scope: { kind: "turn", turn: OTHER.turnId, draft },
+          },
         } as never);
-        const [part1] = await placementsNamed("part1");
-        expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
-        await cardUndo();
-        expect((await placement(CH1))?.parentId).toBeNull();
-        // The discarded created document is in Trash, and the card's Undo leaves it there.
-        expect(await placementsNamed("fresh")).toEqual([
-          { id: created?.documentId, deletedAt: expect.any(Date) },
-        ]);
-      });
-
-      it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
-        const script = await start();
-        await drafting(script).reply(async (edit) => {
-          await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
+        expect(restored.items).toEqual([{ node: CH1, tree: true }]);
+        expect(await review(script).item(CH1)).toBeUndefined();
+        expect(await chip()).toMatchObject({
+          drafts: { [CH1]: "undone" },
+          restored: [{ draft, press: restored.commandId }],
         });
-        await db
-          .update(schema.works)
-          .set({ deletedAt: new Date() })
-          .where(eq(schema.works.id, OTHER_WORK_ID));
-        const undone = await cardUndo();
-        expect(undone).toMatchObject({ status: "permission_denied" });
+        await handlePressUndoRequest(routes, {
+          ...scope,
+          request: { commandId: randomUUID(), pressCommandId: restored.commandId },
+        } as never);
+        expect(await review(script).item(CH1)).toBeDefined();
+        expect(await chip()).toMatchObject({ drafts: { [CH1]: "pending" }, restore: [draft] });
+        expect((await placement(CH1))?.parentId).toBeNull();
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {

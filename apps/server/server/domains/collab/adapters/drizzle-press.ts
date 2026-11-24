@@ -73,7 +73,8 @@ import type { TreeCut } from "../domain/press.js";
 import { markFork } from "../rooms/postgres-document-rooms.js";
 import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
-import { type RestorePlan, readRooms, restorePlan } from "./drizzle-restore-before.js";
+import { treeCommand } from "./drizzle-draft-tree-lists.js";
+import { type RestorePlan, readRooms, restorePlan } from "./drizzle-turn-restore.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 import type { UsageEvents } from "./usage-events.js";
 
@@ -102,17 +103,11 @@ type DraftPart = {
   change: string | null;
   /** The tree records it settles: one document's, every pending one, or none (a change, a turn). */
   tree: DocumentId[] | "all";
-  /** An `Undo turn`'s turn, whose writes into the draft's forks it takes back. */
+  /** A restore's turn, whose writes and pending tree records in the draft it takes back. */
   turn?: TurnId;
 };
 
 const ORIGIN = "server:press";
-
-/**
- * A draft's part of a command in its tree lists, which take each command name once; a record
- * names it as a tree id (64 of `[0-9a-zA-Z_-]`).
- */
-const treeCommand = (commandId: string, draft: DraftId) => `${commandId}_${draft}`;
 
 export function createDrizzlePress(
   db: Database,
@@ -262,8 +257,8 @@ export function createDrizzlePress(
   }
 
   /**
-   * A Draft chat turn's `Undo turn` in one draft (design §2), from its plan
-   * (`drizzle-restore-before.ts`): the turn's writes into the draft's text go back by the one Undo
+   * The text half of a Draft chat turn's restore in one draft (design §2), from its plan
+   * (`drizzle-turn-restore.ts`): the turn's writes into the draft's text go back by the one Undo
    * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
    * first (`undoInRooms`); Live's manuscript is untouched. A write whose history the room cut
    * stays as it is. Each room's restore is one
@@ -384,11 +379,13 @@ export function createDrizzlePress(
             await deps.treeLists.lock(lists);
             const plan = [];
             for (const part of living) {
-              const restore = part.turn ? await restorePlan(tx(), part.turn, part.draft) : null;
+              const restore = part.turn
+                ? await restorePlan(tx(), deps.treeLists, part.turn, part.draft)
+                : null;
               plan.push({
                 part,
                 restore,
-                nodes: restore ? restore.created : await treeNodes(lists, part),
+                nodes: restore ? restore.nodes : await treeNodes(lists, part),
                 texts: restore
                   ? [...new Set(restore.parts.map((one) => one.documentId))]
                   : await textDocuments(part),
@@ -431,7 +428,11 @@ export function createDrizzlePress(
                   userId: envelope.accountId as UserId,
                   commandId: treeCommand(envelope.commandId, part.draft),
                   trash: true,
-                  ...(part.tree === "all" ? {} : { documents: nodes as DocumentId[] }),
+                  ...(restore
+                    ? { records: restore.records }
+                    : part.tree === "all"
+                      ? {}
+                      : { documents: nodes as DocumentId[] }),
                 });
                 for (const node of discarded.had) tree.add(node);
                 trashed.push(...discarded.trashed);
@@ -444,7 +445,7 @@ export function createDrizzlePress(
         ),
       );
 
-    // A Discard and an Undo turn change no Live tree record: no owner to judge.
+    // A Discard and a restore change no Live tree record: no owner to judge.
     if (request.verdict !== "apply") return run(NO_OWNERS);
     // The sources the drafts' pending records change, and where Live has the nodes they name:
     // their owners are locked with the drafts' and judged under the locks. A guess read before
@@ -541,7 +542,7 @@ export function createDrizzlePress(
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
                   const changes = row.changes as PressedChange[];
-                  // An Undo turn of a document only the draft holds wrote its Live room. An
+                  // A restore of a document only the draft holds wrote its Live room. An
                   // Apply's change has no fork side either when the fork kept nothing to delete.
                   const liveRoom =
                     pressed.verdict === "restore" &&

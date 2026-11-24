@@ -1950,7 +1950,7 @@ function racedRemovals(): string[] {
     name: string,
     edit: (de: Editor) => void,
     writesText: boolean,
-    then: "nothing" | "Ctrl+Z" | "Undo turn",
+    then: "nothing" | "Ctrl+Z" | "restore press",
   ): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
@@ -1990,9 +1990,9 @@ function racedRemovals(): string[] {
           return holds(shown(de), before) ? null : `applied ${name}, undone, then Ctrl+Z lost text: "${shown(de)}" from "${pending}"`;
       } else {
         const back = command((cmd) => undoEdits(cmd, [stored]));
-        if (back.compacted.size) return `applied ${name}, then undone: Undo turn found no history`;
+        if (back.compacted.size) return `applied ${name}, then undone: the restore press found no history`;
         if (writesText)
-          return holds(shown(de), before) ? null : `applied ${name}, undone, then Undo turn gave "${shown(de)}"`;
+          return holds(shown(de), before) ? null : `applied ${name}, undone, then the restore press gave "${shown(de)}"`;
       }
       return shown(de) === before
         ? null
@@ -2036,7 +2036,7 @@ function racedRemovals(): string[] {
     ],
   ];
   for (const [name, edit, writesText] of edits)
-    for (const then of ["nothing", "Ctrl+Z", "Undo turn"] as const) {
+    for (const then of ["nothing", "Ctrl+Z", "restore press"] as const) {
       const applied = draftUndoAfterApply(name, edit, writesText, then);
       if (applied) failures.push(applied);
     }

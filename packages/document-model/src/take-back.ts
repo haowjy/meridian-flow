@@ -18,7 +18,7 @@ import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
 /**
  * The rule every Undo follows (design §2, "An Undo always runs"): the editor's Ctrl+Z and Redo, a
- * press's Undo, `Undo turn` and agent-edit's undo. An Undo takes its edit back whatever was
+ * press's Undo, a turn's restore press and agent-edit's undo. An Undo takes its edit back whatever was
  * written since. Text goes back by its inverse, which deletes the characters the edit put in that
  * still stand and puts back the ones it deleted (Loro's `UndoManager` in the editor,
  * `textInverse` here). Structure goes back key by key, each to the value it held before the edit,

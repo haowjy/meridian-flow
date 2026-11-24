@@ -4,7 +4,7 @@ A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is its 
 records and its fork rooms (`document_forks`, design §2). Apply or Discard, pressed on one change,
 a document, a draft or every draft of a Work, is one command, `press`
 (`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`). So is a
-Draft chat turn card's Undo turn. There is no folder scope.
+Draft chat turn's restore, its card's `Undo turn`. There is no folder scope.
 
 ## What a press does
 
@@ -49,17 +49,18 @@ never makes one.
   writes.
   Deliveries run after commit.
 
-## Undo turn
+## Restore: the turn card's Undo turn
 
-`restore` on a turn in one draft returns the draft to how it read before the turn, as one press.
-A turn that wrote in several drafts is one press per draft, each in that draft's lane on the tab
-(`press:<draft>`), so it is ordered after an Apply or Discard pressed on the same draft before it.
-The plan (`adapters/drizzle-restore-before.ts`, `restorePlan`) is read once and shared with the
-card (`restoreStates`): `TurnReceiptChip.restore` offers it in the drafts where pressing would
-change something now (a write of the turn would go back, or a node it created would go to Trash),
-so a turn already restored or undone there is not offered, and `restored` names the restore press
-in force per draft (the latest done `restore` press that changed something and has no done
-`unpress`), so every tab and a reload read the same state.
+`restore` on a turn in one draft takes back what the turn did there that the draft still holds,
+as one press: its writes into the draft's text and its tree changes still pending there. What
+the writer applied stays in the manuscript. A turn that wrote in several drafts is one press per
+draft, each in that draft's lane on the tab (`press:<draft>`), so it is ordered after an Apply or
+Discard pressed on the same draft before it. The plan (`adapters/drizzle-turn-restore.ts`,
+`restorePlan`) is read once and shared with the card (`restoreStates`): `TurnReceiptChip.restore`
+offers it in the drafts where pressing would change something now (a write of the turn would go
+back, or a tree change of it is still pending), so a turn already restored or undone there is
+not offered, and `restored` names the restore in force per draft (the latest done `restore` press
+that changed something and has no done `unpress`), so every tab and a reload read the same state.
 
 - **Rooms.** The turn's parts whose `origin` names the draft: its fork of a document, or the Live
   room of a document only the draft still holds (a Draft chat writes such a document there). A
@@ -68,20 +69,29 @@ in force per draft (the latest done `restore` press that changed something and h
 - **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
   first, taken back by design §2's Undo rule (`undoInRooms`, `takeBack`): each goes back whatever
   was written since, except one older than the room's history cutoff (§4), which can't (`holdsEdit`).
-  A part already taken back (by the card's Undo or the model's revert) is not taken again. A fork
+  A part already taken back (by the model's undo or the writer's revert) is not taken again. A fork
   copy is carried forward to today's Live first. Live's manuscript is never written: text an
   Apply already put there stays in Live, and taking it out of the draft is a pending change.
-- **The nodes the turn created** in the draft that only the draft still holds go to Trash, by the
-  Discard's tree half (`discardTreeRecords` with `trash`): the draft read without them before the
-  turn. Their text goes with them, so no room of theirs is restored. Other tree changes the turn
-  drafted (moves, renames, deletes) stay.
-- The answer names only the documents the press changed, so a press that changed nothing names
-  none and makes no Undo step.
+- **The tree changes** are the turn's drafted tree receipts' records (`tree_edit_receipts`, the
+  newest copy of each after a restored Discard, `newestDrafted`) still pending in the draft. They
+  are discarded by the Discard's tree half (`discardTreeRecords` with `records` and `trash`), with
+  whatever stands on a node they create: a rename, move or delete leaves the draft, and a node the
+  turn created goes to Trash with its text, so no write into it is taken back. A change the writer
+  applied stays in Live.
+- The answer names only the documents and nodes the press changed, so a press that changed
+  nothing names none and makes no Undo step.
 
 Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
 for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is
-the press's `unpress` (`undoPress` in a fork, `undoEdits` in a Live room), and the created nodes
-come back by `restoreDiscard`; pressing again is the Redo.
+the press's `unpress` (`undoPress` in a fork, `undoEdits` in a Live room), and the tree changes
+come back by `restoreDiscard`; pressing again is the Redo. While a restore is in force, the turn
+card reads each tree change it took as `undone` (`TurnDraftState`), by the command that settled
+it.
+
+The card's own Undo (`reverse_turn`, [reversal](reversal.md)) takes none of this: it takes the
+turn's writes and tree changes outside a draft, so a Draft chat's reply has one action on its
+card. It replaced (2026-11-23) a card Undo that also took the turn's drafted tree changes, which
+put two Undos for one reply side by side.
 
 It replaced (2026-11-23, `loro-build/gate/press-whole/`) a frontier restore that put each text doc
 back to the turn's first version, which reversed whatever came after in those docs (half of a later
@@ -123,7 +133,7 @@ document, `undoPress` reads the press's `press_changes` rows: every change goes 
 was written since (design §2, "An Undo always runs"), each room its own, committed by the Undo's
 press (`commit-message.ts`). A change older than the room's history cutoff can't go back and is
 left as it is, silently.
-Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, Undo turn) on that draft's part, with
+Then the tree half: `undoApply` (Apply) or `restoreDiscard` (Discard, restore) on that draft's part, with
 the Trash deletes whose nodes its creates made. A deleted draft's text comes back like any
 other's (Delete draft keeps its rows); a purged draft's forks went with it, so its text has nothing
 to come back to.

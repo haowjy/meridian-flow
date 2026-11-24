@@ -11,8 +11,8 @@ import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
 /**
  * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
- * the records of those documents' items (and what stands on a node they create); without, all
- * of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`).
+ * the records of those documents' items, or with `records` those records (and, either way, what
+ * stands on a node they create); with neither, all of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`).
  * Returns the documents that had records, and the Trash deletes the press records for its Undo.
  */
 export async function discardTreeRecords(
@@ -23,6 +23,7 @@ export async function discardTreeRecords(
     userId?: UserId;
     commandId: string;
     documents?: readonly DocumentId[];
+    records?: readonly string[];
     trash?: boolean;
   },
 ): Promise<{ had: Set<DocumentId>; trashed: string[] }> {
@@ -35,18 +36,16 @@ export async function discardTreeRecords(
       copies.flatMap(({ writer }) => {
         const pending = pendingRecords(writer.doc, input.draftId);
         const draft = writer.view({ draft: input.draftId });
-        const items = input.documents;
-        const only = items
-          ? [...new Set(items.flatMap((id) => recordsOfItem(draft, pending, id)))]
-          : pending;
-        const done = discardDraft(
-          writer,
-          input.draftId,
-          by,
-          input.commandId,
-          items ? only.map((r) => r.id) : undefined,
-          { trash: input.trash === true },
-        );
+        const only = input.documents
+          ? [
+              ...new Set(
+                input.documents.flatMap((id) => recordsOfItem(draft, pending, id).map((r) => r.id)),
+              ),
+            ]
+          : input.records;
+        const done = discardDraft(writer, input.draftId, by, input.commandId, only, {
+          trash: input.trash === true,
+        });
         const discarded = new Set(done.discarded);
         trashed.push(...done.trashed);
         // A discarded delete had what it covered in the Work's view, not what its author saw.

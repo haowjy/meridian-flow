@@ -43,7 +43,7 @@ const WORK_LANE = "work:";
 /** One draft's presses and Undos go in the order the writer made them; a Work's press orders after its drafts'. */
 const pressLane = (key: string) => `press:${key}`;
 
-/** The draft a scope presses on (a turn's Undo turn names its draft); a Work's press names its Work. */
+/** The draft a scope presses on (a turn's restore names its draft); a Work's press names its Work. */
 export function pressLaneKey(scope: PressAction["scope"]): string {
   if (scope.kind === "turn" || scope.kind === "draft") return scope.draft;
   if (scope.kind === "work") return `${WORK_LANE}${scope.work}`;

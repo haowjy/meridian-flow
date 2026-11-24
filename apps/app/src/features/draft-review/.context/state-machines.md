@@ -34,13 +34,13 @@ stateDiagram-v2
 
 ## A press's Undo
 
-The browser keeps no state machine for a press, Apply, Discard or Undo turn alike.
+The browser keeps no state machine for a press, Apply, Discard or a turn's restore alike.
 `PressEntries` (`press-history.ts`) holds the press's command id and one step on the sidebar's Undo
 stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`). Every Undo of it is
 `undo()`: its notice's or row's Undo, the Undo beside a turn card's `Undone`, the sidebar's Ctrl+Z, or the
 editor's. A press while one is out hears the same answer, and `undoing` says one is out. A chat
-card's Undo is not one of them: it is the server's `reverse_turn`, for the turn's Live writes and
-tree changes only.
+card's Undo is not one of them: it is the server's `reverse_turn`, for what the turn did outside
+a draft only.
 
 The editor's Ctrl+Z gets its step (`EditorPressStep`) when the press is made, on every editor open
 on a pressed document, so typing after the press is undone first. Its Undo waits for the press's
@@ -63,9 +63,9 @@ stateDiagram-v2
   step leaves too; one Ctrl+Z took back stays for Redo.
 - `owner.presses` holds every entry; the owner ends them when the account closes.
 
-### Undo turn on a turn card
+### A turn's restore on its card
 
-A turn's Undo turn in one draft is this press, keyed in the owner by turn and draft
+A turn's restore in one draft (the card's `Undo turn`) is this press, keyed in the owner by turn and draft
 (`DraftCommandOwner.restore`), which the card reads: the slot keeps no state of its own. The
 card's read of the turn (`TurnReceiptChip.restored`) says which press is in force, so a reload or
 another tab converges on it.

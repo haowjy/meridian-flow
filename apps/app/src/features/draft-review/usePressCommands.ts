@@ -90,7 +90,7 @@ type Pressed = {
 type Unpressed = "failed" | "told";
 /**
  * What a press does, and the documents it expects to take whole (`null`: every row listed). A
- * change press or an Undo turn takes part of a document: its row stays listed.
+ * change press or a restore takes part of a document: its row stays listed.
  */
 type PressTarget = { action: PressAction; documents: readonly string[] | null; whole: boolean };
 
@@ -322,7 +322,7 @@ export function usePressCommands({
     };
 
     /**
-     * An Undo turn in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
+     * A turn's restore in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
      * and in the owner under its turn and draft, where the turn's card reads it and offers its
      * Undo. Taken back anywhere, it leaves the owner.
      */
@@ -587,7 +587,7 @@ export function usePressCommands({
         { documentId: item.documentId },
       );
     /**
-     * A Draft chat turn card's `Undo turn` in one draft it wrote: `documents` are the ones
+     * A Draft chat turn's restore (its card's `Undo turn`) in one draft it wrote: `documents` are the ones
      * the turn wrote there, whose editors get the press's Ctrl+Z step. One at a time per turn and
      * draft: while one is out or in force, the card offers its Undo instead.
      */
@@ -607,15 +607,15 @@ export function usePressCommands({
         if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
       });
     };
-    /** The Undo of the turn's Undo turn in force in `draft`, the same as its Ctrl+Z. */
+    /** The Undo of the turn's restore in force in `draft`, the same as its Ctrl+Z. */
     const undoRestore = (turn: TurnId, draft: DraftId) => {
       const entry = owner.restore(turn, draft);
       if (entry?.kind === "in-force") void entry.press.undo();
     };
     /**
      * What a read of the turn's card (`TurnReceiptChip.restored`, read at `readAt`) says is in
-     * force in `draft`: `named`, a press id, or null for none; undefined where the server doesn't
-     * say. A press this tab doesn't hold (another tab's, or one from before a reload) is taken on
+     * force in `draft`: `named`, a press id, or null for none; undefined before the card has a
+     * read. A press this tab doesn't hold (another tab's, or one from before a reload) is taken on
      * with the card's Undo alone; one the read says ended elsewhere ends here, its Ctrl+Z and
      * sidebar steps with it. A read from before the entry last changed here is out of date.
      */

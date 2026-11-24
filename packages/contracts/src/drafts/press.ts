@@ -18,10 +18,10 @@ export type PressScope =
 
 /**
  * What a press does, and to what. Apply or Discard on one change, a document, a draft or every draft of a Work; or a
- * Draft chat turn card's `Undo turn` on a turn in one draft: the turn's writes into the draft's text (its fork of a
+ * Draft chat turn's restore (its card's `Undo turn`) in one draft: the turn's writes into the draft's text (its fork of a
  * document, or the Live room of a document only the draft holds) go back by the one Undo rule, newest first, whatever
- * was written since, and the nodes the turn created in the draft go to Trash (design §2). Live's manuscript is
- * untouched, so text an Apply already put there stays. A turn that wrote in several drafts is one press per draft,
+ * was written since, and the turn's tree changes the draft still holds pending are discarded, a node it created to
+ * Trash (design §2). Live's manuscript is untouched, so text and tree changes an Apply already put there stay. A turn that wrote in several drafts is one press per draft,
  * each in that draft's lane. One recorded command; one Undo (`PressUndoRequest`) takes it back; pressing again is the
  * Redo.
  */
@@ -58,7 +58,7 @@ export type PressResult = PressAction & {
   documents: DocumentId[];
   /** The nodes whose tree change the press made. */
   items: { node: string; tree?: true }[];
-  /** A Discard's or an Undo turn's: the tree's delete records that put the documents it took out in Trash. */
+  /** A Discard's or a restore's: the tree's delete records that put the documents it took out in Trash. */
   trashed?: string[];
 };
 
