@@ -33,6 +33,15 @@ export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCache
   return threadKind === "subagent" ? "short" : "long";
 }
 
+function cacheTtlSeconds(
+  promptCache: PromptCacheDescriptor | undefined,
+  threadKind: Thread["kind"],
+): number | null {
+  return promptCache
+    ? resolvePromptCacheTtlSeconds(promptCache, promptCacheRetentionFor(threadKind))
+    : null;
+}
+
 const DEFAULT_LINK_WINDOW_SECONDS = 3600;
 
 export function linkWindowSeconds(
@@ -40,10 +49,16 @@ export function linkWindowSeconds(
   threadKind: Thread["kind"],
   override?: number,
 ): number {
-  const ttl = model
-    ? resolvePromptCacheTtlSeconds(model.promptCache, promptCacheRetentionFor(threadKind))
-    : null;
-  return override ?? ttl ?? DEFAULT_LINK_WINDOW_SECONDS;
+  return override ?? cacheTtlSeconds(model?.promptCache, threadKind) ?? DEFAULT_LINK_WINDOW_SECONDS;
+}
+
+export function cacheColdAt(
+  model: Pick<ModelInfo, "promptCache"> | null,
+  threadKind: Thread["kind"],
+  requestStartMs: number,
+): number | null {
+  const ttl = cacheTtlSeconds(model?.promptCache, threadKind);
+  return ttl === null ? null : requestStartMs + ttl * 1_000;
 }
 
 export interface PrefixCacheHistory {
@@ -209,18 +224,15 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;
-  const ttlSeconds = resolvePromptCacheTtlSeconds(
-    input.promptCache,
-    promptCacheRetentionFor(input.history.thread.kind),
-  );
-  if (ttlSeconds === null) return cold("ttl_unknown");
+  if (cacheTtlSeconds(input.promptCache, input.history.thread.kind) === null)
+    return cold("ttl_unknown");
   if (response.requestStartedAt === null) return cold("facts_unavailable");
   const responseTimeMs = Date.parse(response.requestStartedAt);
   if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
     return cold("facts_unavailable");
   }
-  const ageMs = Math.max(0, input.nowMs - responseTimeMs);
-  if (ageMs >= ttlSeconds * 1_000) return cold("ttl_expired");
+  const coldAt = cacheColdAt(input, input.history.thread.kind, responseTimeMs);
+  if (coldAt !== null && input.nowMs >= coldAt) return cold("ttl_expired");
   if (
     input.mediaLinkWindowSeconds !== undefined &&
     linkWindowAt(responseTimeMs, input.mediaLinkWindowSeconds).startMs !==

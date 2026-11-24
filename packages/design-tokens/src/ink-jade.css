@@ -56,6 +56,8 @@
   --color-collab-cursor-6: oklch(0.55 0.12 120);
   --color-collab-cursor-7: oklch(0.54 0.09 250);
   --color-collab-cursor-8: oklch(0.52 0.1 310);
+  /* keep: Agent hue must not match any writer caret hue */
+  --color-collab-agent: oklch(0.52 0.16 275);
 
   --shadow-*: initial;
   --shadow-raise: 0 1px 2px rgb(26 26 23 / 0.08);

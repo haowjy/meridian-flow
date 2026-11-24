@@ -59,7 +59,9 @@ sink built without it writes raw payloads. `errorMessage` is free text by design
 **How.** Every edit, undo, revert and rollback writes an immutable receipt naming its actor
 (`document_edits`); an inverse is an ordinary forward edit with its own receipt. A model's change
 carries its turn in the Loro change's commit message (`commitMessage`'s `by`), which is how a later write
-reports who changed what since a read. Contracts:
+reports who changed what since a read. The message also says when the change was made in a draft,
+so a copy that imports it into Live through an Apply does not credit the turn with a write there.
+Every authored commit goes through `RoomDocs.commit`, which takes the draft flag from the copy. Contracts:
 `apps/server/server/domains/collab/.context/reversal.md`; reasons: the KB's
 `wiki/architecture/collaboration/turn-receipts.md`.
 

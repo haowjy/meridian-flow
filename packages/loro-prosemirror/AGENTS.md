@@ -7,7 +7,7 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   for its caret (`readProseMirror` with `LoroSyncState.kept`, almost always empty). Start an
   editor's state from the read, and keep it true: every local write is computed against it, and
   every read or write the binding makes while blocks are kept passes them (`kept`).
-- Import a peer's batch with `importRemoteUpdate`, never `RoomDocs.importBatch` or `doc.import`.
+- Import a peer's batch with `importRemoteUpdate` (`room-imports.ts`, the room's one import door), never `RoomDocs.importBatch` or `doc.import`.
   It holds the batch while an editor on the room is composing (an import mid-composition doubles
   or drops the composed text), and forwards a Live batch into every draft its holder registered
   (`registerDraft`, for the fork's whole life, editor or not); a Live copy's own writes forward

@@ -23,6 +23,7 @@ import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { NO_AGENT_CARETS } from "../../collab/test-support/agent-carets.js";
 import {
   createTestDocumentLinkScopes,
   testLinkDeps,
@@ -259,6 +260,7 @@ if (!RUN) {
           ...createTestRemovalDeps(db),
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
+          agentCarets: NO_AGENT_CARETS,
         });
         const contextPorts = createProductionUnifiedContextPortFactory({
           sourceHints: NO_PROJECT_HINTS,

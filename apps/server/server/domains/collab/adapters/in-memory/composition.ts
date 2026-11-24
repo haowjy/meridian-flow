@@ -61,8 +61,9 @@ export function createInMemoryCollabDomain(
         // The memory rooms run each commit as its own transaction.
         transaction: () => null as unknown as DrizzleDb,
         origin: "server:agent",
-        // Nothing in memory keeps an edit history.
+        // Nothing in memory keeps an edit history, or shows a caret.
         recordWrite: async () => {},
+        wrote: () => {},
       }),
       ordinals: inMemoryWriteOrdinals(),
       documentEdits: NO_EDIT_HISTORY,

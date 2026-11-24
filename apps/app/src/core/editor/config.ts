@@ -19,6 +19,7 @@ import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import type { DocumentHistory } from "./editor-history";
+import { AgentEditFlash } from "./extensions/agent-edit-flash";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
@@ -282,6 +283,7 @@ function createCollaborationExtensions({
       presence,
       user: { accountId: user?.accountId ?? "", color: pickCursorColor(presence.peers) },
     }),
+    AgentEditFlash,
   ];
 }
 

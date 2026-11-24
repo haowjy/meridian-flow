@@ -1,4 +1,3 @@
-import { commitMessage } from "./commit-message.js";
 import { inText } from "./handles.js";
 import { keyBetween, orderKeys } from "./order-key.js";
 import { commentVisibility, derivedEmptyParent, shownUnits } from "./read.js";
@@ -187,7 +186,7 @@ export function applyOps(
     // Right to left, so earlier offsets stay where they were planned.
     for (const { from, to, content } of [...op.splices].reverse())
       replaceText(doc, rules, from, to, content);
-    doc.commit({ message: commitMessage(options.by), origin: options.origin });
+    docs.commit(doc, options);
     record({ key: block, doc, before: start, after: doc.frontiers() });
   }
 
@@ -209,7 +208,7 @@ export function applyOps(
         attrs,
       } as never),
     );
-    doc.commit({ message: commitMessage(options.by), origin: options.origin });
+    docs.commit(doc, options);
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 

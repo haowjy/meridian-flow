@@ -445,15 +445,6 @@
   background: var(--caret-color, var(--color-primary));
 }
 
-.meridian-collab-cursor .meridian-collab-cursor__label {
-  display: none;
-  background: var(--caret-color, var(--color-primary));
-}
-
-.meridian-collab-cursor[data-hovered] .meridian-collab-cursor__label {
-  display: block;
-}
-
 .meridian-collab-cursor__label {
   position: absolute;
   bottom: calc(100% + 0.125rem);
@@ -467,6 +458,17 @@
   white-space: nowrap;
 }
 
+.meridian-collab-cursor .meridian-collab-cursor__label {
+  display: none;
+  background: var(--caret-color, var(--color-primary));
+}
+
+/* A writer's name shows on hover; an agent's always, so the writer sees where it works. */
+.meridian-collab-cursor[data-hovered] .meridian-collab-cursor__label,
+.meridian-collab-cursor[data-agent] .meridian-collab-cursor__label {
+  display: block;
+}
+
 /* A comment's anchor in the text. */
 .meridian-editor .meridian-comment {
   box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
@@ -474,6 +476,29 @@
 
 .meridian-collab-selection {
   background: color-mix(in oklab, var(--caret-color, var(--color-primary)) 20%, transparent);
+}
+
+/* Text a chat's agent just wrote: held a moment, then faded out (`agent-edit-flash.ts`). */
+.meridian-agent-flash {
+  border-radius: 0.125rem;
+  animation: meridian-agent-flash var(--agent-flash-ms) ease-in forwards;
+}
+
+@keyframes meridian-agent-flash {
+  0%,
+  35% {
+    background: color-mix(in oklab, var(--color-collab-agent) 24%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-agent-flash {
+    animation: none;
+    background: color-mix(in oklab, var(--color-collab-agent) 24%, transparent);
+  }
 }
 
 .meridian-editor .ProseMirror .meridian-figure-node {

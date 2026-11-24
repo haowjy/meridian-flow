@@ -104,6 +104,7 @@ import { missingToolRefusal } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Lease, RunClaim, ThreadPhase } from "./ports.js";
 import {
+  cacheColdAt,
   createPrefixCacheStateService,
   linkWindowSeconds,
   type PrefixCacheState,
@@ -211,6 +212,12 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
+  agentPresence?: {
+    requested(
+      threadId: ThreadId,
+      request: { agentName: string | null; warmUntil: number | null },
+    ): void;
+  };
   lineage: LineageCancellation;
   askRequests: Pick<AskService, "request">;
   afterCommit(task: () => void): void;
@@ -1729,6 +1736,10 @@ async function executeLoop({
             payload: unknownToEventPayload(cause),
           });
         }
+        deps.agentPresence?.requested(input.threadId, {
+          agentName: thread.agentName,
+          warmUntil: cacheColdAt(built.resolvedModel, thread.kind, Date.now()),
+        });
 
         try {
           deps.modelRequestDebug.capture({

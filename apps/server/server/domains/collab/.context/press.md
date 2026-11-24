@@ -27,7 +27,7 @@ never makes one.
   Join), would otherwise have no row yet and be skipped. It reads the fork room as a command
   copy (its own peer, carrying its forwarded copy of Live), runs `applyBlocks` or
   `discardBlocks` (a `change` scope selects the change by any member id), commits Live's room
-  then the fork's by the press (`commitMessage({ by: { press: <id> } })`), and stores each change's `PressedChange` in
+  then the fork's by the press (`commitMessage`'s `by: { press: <id> }`), and stores each change's `PressedChange` in
   `press_changes` (command, draft, document) for its Undo. It then sets the fork's `pending`
   flag from the copy: an Apply writes only Live, so no fork save would.
 - **`liveVersions`** stamps the record of a removal the press applies, nothing else: the server

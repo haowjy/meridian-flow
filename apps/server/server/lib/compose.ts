@@ -288,10 +288,12 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
+import { type AgentPresence, createAgentPresence } from "./agent-presence.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
+import { createPresenceRelay, type PresenceRelay } from "./loro-presence.js";
 import {
   addressRefusal,
   createProcessMcpClient,
@@ -321,6 +323,8 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
+  /** Each room's presence on `/ws/loro`, sockets' and the server's own. */
+  presence: PresenceRelay;
   /** The command record every kind of request claims its id in. */
   commands: CommandStore;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
@@ -418,6 +422,9 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
+  presence: PresenceRelay;
+  /** Each chat's agent as a peer in the room it last wrote in. */
+  agentPresence: AgentPresence;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
@@ -673,8 +680,11 @@ export async function createProductionAppPorts(input: {
     availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
   });
+  const presence = createPresenceRelay();
+  const agentPresence = createAgentPresence(presence);
   const documentSync = createCollabDomain({
     db,
+    agentCarets: agentPresence,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
@@ -799,6 +809,8 @@ export async function createProductionAppPorts(input: {
   return {
     db,
     backgroundTasks,
+    presence,
+    agentPresence,
     runClaim,
     statusReader,
     gateway,
@@ -973,7 +985,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
-  const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
+  const stopThreads = async (threadIds: readonly ThreadId[]) => {
+    await runner.stopThreads(threadIds);
+    // A deleted chat's caret goes once the delete commits, not when its cache goes cold.
+    runAfterDrizzleCommit(() => {
+      for (const threadId of threadIds) ports.agentPresence.deleted(threadId);
+    });
+  };
   const commandResolver: CommandResolver = {
     resolveCommand: (key) => ports.documentSync.modelEdits().resolve(key),
   };
@@ -1268,7 +1286,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     onRunStarted: refreshSubagentActivity,
     onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
+      ports.agentPresence.settled(threadId);
     },
+    agentPresence: ports.agentPresence,
     lineage: createLineageCancellation({
       transaction: ports.threadRepos.transaction,
       threads: ports.threadRepos.threads,
@@ -1345,6 +1365,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       objects: ports.objectStore,
     }),
     gateway: ports.gateway,
+    presence: ports.presence,
     threadRepos: ports.threadRepos,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -1713,6 +1734,7 @@ export function createInMemoryAppServices(
       },
     },
     documentSync,
+    presence: createPresenceRelay(),
     commands: {
       async lookup() {
         throw new Error("The command record requires durable persistence");

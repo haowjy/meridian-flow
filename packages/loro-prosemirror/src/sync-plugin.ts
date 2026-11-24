@@ -1,5 +1,6 @@
 import {
   type BlockId,
+  type CommitAuthor,
   commentVisibility,
   type DocChange,
   type DocKey,
@@ -31,10 +32,10 @@ import {
   readProseMirror,
   writeProseMirror,
 } from "./codec.js";
-import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
 import { movedPieces } from "./pieces.js";
+import { attachCompositionHold, listenToImports } from "./room-imports.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 
@@ -67,6 +68,8 @@ export interface LoroSyncState {
 export const REMOTE_META = "remote";
 /** Meta on a remote transaction: the blocks its read kept. */
 const KEPT_META = "loro-kept";
+/** Meta on a remote transaction: who wrote what its batch brought (`remoteAuthors`). */
+const AUTHORS_META = "loro-authors";
 /** Meta on a local transaction: each placeholder id it stored, with the fresh id it took. */
 const STORED_META = "loro-stored";
 const NONE: ReadonlySet<BlockId> = new Set();
@@ -203,6 +206,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
               ? null
               : view.state.tr.setMeta(loroSyncKey, REMOTE_META).setMeta("addToHistory", false));
           cursors = null;
+          if (tr && remote) tr.setMeta(AUTHORS_META, remote.authors);
           if (tr) view.dispatch(tr.setMeta(KEPT_META, kept));
         },
       });
@@ -215,6 +219,17 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       };
     },
   });
+}
+
+/**
+ * The turn whose write a peer's batch brought into the editor, by doc key (a block's text doc is
+ * keyed by its block id): a doc is named only when that turn wrote all the batch brought into it,
+ * and the batch is a write landing, not a catch-up (`importRemoteUpdate`). Null for any
+ * transaction that is not a peer's batch.
+ */
+export function remoteAuthors(tr: Transaction): ReadonlyMap<DocKey, CommitAuthor> | null {
+  const authors = tr.getMeta(AUTHORS_META) as (() => ReadonlyMap<DocKey, CommitAuthor>) | undefined;
+  return authors ? authors() : null;
 }
 
 /** The kept blocks the selection's head is still in. */

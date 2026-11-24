@@ -34,27 +34,3 @@ export function findBlock(doc: Node, id: string): { node: Node; pos: number } | 
   });
   return found;
 }
-
-/** A point as plain JSON, for presence and device storage. */
-export type EncodedPoint = { block: string; cursor: string; after: boolean };
-
-export function encodePoint(point: DocCursor): EncodedPoint {
-  let binary = "";
-  for (const byte of point.cursor) binary += String.fromCharCode(byte);
-  return { block: point.block, cursor: btoa(binary), after: point.after };
-}
-
-export function decodePoint(value: unknown): DocCursor | null {
-  if (typeof value !== "object" || value === null) return null;
-  const { block, cursor, after } = value as Record<string, unknown>;
-  if (typeof block !== "string" || typeof cursor !== "string") return null;
-  try {
-    return {
-      block,
-      cursor: Uint8Array.from(atob(cursor), (c) => c.charCodeAt(0)),
-      after: after === true,
-    };
-  } catch {
-    return null;
-  }
-}

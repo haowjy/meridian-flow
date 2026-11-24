@@ -1,6 +1,7 @@
 import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
 import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
+import type { DocCursor } from "@meridian/loro-prosemirror";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/delta.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
@@ -78,9 +79,16 @@ export interface AgentEditRooms {
 
   /**
    * Store one write's batch, and its record, in the host's command: its docs' snapshots and the
-   * record in the command's transaction, the import into the room after it commits.
+   * record in the command's transaction, the import into the room after it commits. `caret` is
+   * where the write's chat's caret goes (`writeCaret`): beside what it changed, or null to clear it
+   * when no block is left to hold it.
    */
-  save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord | null): Promise<void>;
+  save(
+    room: DocumentRoom,
+    batch: Uint8Array,
+    record: AgentWriteRecord,
+    caret: DocCursor | null,
+  ): Promise<void>;
 }
 
 /** What a host supplies to run agent-edit over its `DocumentRooms`. */
@@ -95,11 +103,10 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /**
-   * Store a write's record in `tx`, beside its committed batch. The record says all an inverse
-   * needs; the batch is there to store, not to read back.
-   */
-  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
+  /** Store a write's record in `tx`, beside its committed batch: all an inverse needs. */
+  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
+  /** A write was saved in `tx`: its chat's caret goes to `caret` once the command commits. */
+  wrote(record: AgentWriteRecord, caret: DocCursor | null): void;
 }
 
 export function agentEditRooms<Tx>(
@@ -111,10 +118,11 @@ export function agentEditRooms<Tx>(
       const room = await host.roomFor(documentId);
       return { room, docs: await rooms.read(room) };
     },
-    async save(room, batch, record) {
+    async save(room, batch, record, caret) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record, batch);
+      await host.recordWrite(tx, record);
+      host.wrote(record, caret);
     },
   };
 }

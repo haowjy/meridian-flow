@@ -345,7 +345,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   if (last.kind !== "text") throw new Error("fixture");
   live.importBatch(tab.exportSince(live.version()));
   writeDocument(live, [...readDocument(live).slice(0, -1), { ...last, inline: [{ kind: "text", text: "Second, remote.", marks: {} }] }]);
-  const status = importRemoteUpdate(tab, encodeEnvelope(live.exportSince(tab.version())), () => {});
+  const status = importRemoteUpdate(tab, encodeEnvelope(live.exportSince(tab.version())), () => {}, true);
   check("remote import is not held without a composition", status !== null);
   check("remote edit reads in the shape", readProseMirror(tab, schema).lastChild?.textContent === "Second, remote.");
 }
@@ -387,7 +387,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const peerFirst = readDocument(peer)[0];
   if (peerFirst.kind !== "text") throw new Error("fixture");
   writeDocument(peer, [{ ...peerFirst, inline: [{ kind: "text", text: "Remote ", marks: {} }, ...peerFirst.inline] }, ...readDocument(peer).slice(1)]);
-  importRemoteUpdate(tab, encodeEnvelope(peer.exportSince(tab.version())), () => {});
+  importRemoteUpdate(tab, encodeEnvelope(peer.exportSince(tab.version())), () => {}, true);
   check("remote batch reaches the editor", view.state.doc.eq(readProseMirror(tab, schema)), () => ({ want: show(readProseMirror(tab, schema)), got: show(view.state.doc) }));
   check("caret stays after the same character", view.state.selection.head === 7 + "Remote ".length, () => view.state.selection.head);
   check("the binding's own transaction wrote nothing back", writes.length === 2);
@@ -397,7 +397,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   if (gamma.kind !== "text") throw new Error("fixture");
   peer.importBatch(tab.exportSince(peer.version()));
   writeDocument(peer, [readDocument(peer)[0], { ...gamma, inline: [{ kind: "text", text: "Gamma, held.", marks: {} }] }]);
-  const held = importRemoteUpdate(tab, encodeEnvelope(peer.exportSince(tab.version())), () => {});
+  const held = importRemoteUpdate(tab, encodeEnvelope(peer.exportSince(tab.version())), () => {}, true);
   check("a batch mid-composition is held", held === null && heldUpdateCount(tab) === 1 && view.state.doc.lastChild?.textContent === "Gamma.");
   check("held bytes are not in the docs yet", readProseMirror(tab, schema).lastChild?.textContent === "Gamma.");
   view.composing = false;
@@ -434,7 +434,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("draft shows its typing", readProseMirror(tabDraft, schema).eq(view.state.doc));
   if (second.kind !== "text") throw new Error("fixture");
   writeDocument(live, [readDocument(live)[0], { ...second, inline: [{ kind: "text", text: "Live edited this.", marks: {} }] }]);
-  importRemoteUpdate(tabLive, encodeEnvelope(live.exportSince(tabLive.version())), () => {});
+  importRemoteUpdate(tabLive, encodeEnvelope(live.exportSince(tabLive.version())), () => {}, true);
   check("a Live batch shows in the Draft editor", view.state.doc.lastChild?.textContent === "Live edited this.", () => show(view.state.doc));
   check("and keeps the draft's own typing", view.state.doc.firstChild?.textContent === "Draft me. Now.");
   handle.destroy?.();

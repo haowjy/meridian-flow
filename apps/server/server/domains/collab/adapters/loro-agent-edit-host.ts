@@ -2,6 +2,7 @@
  * agent-edit's Loro core on the server's `DocumentRooms`: the room a call reads (`agentRoomFor`, at
  * the call's destination), its writes committed in the model edit's command transaction with
  * their receipts, each naming the room it merged into, and the chat a turn's commit message names.
+ * Once a chat's write commits, its caret moves to where the write ended, or goes (`AgentCarets`).
  */
 import {
   type AgentEditRooms,
@@ -19,13 +20,28 @@ import type {
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
+import type { DocCursor } from "@meridian/loro-prosemirror";
 import { eq } from "drizzle-orm";
-import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDb,
+  runAfterDrizzleCommit,
+} from "../../../shared/drizzle-transaction.js";
 import { currentDestination } from "../domain/agent-destination.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
-export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRooms<DrizzleDb> }): {
+/** Where each chat's agent last wrote, shown in that room as its caret (`lib/agent-presence.ts`). */
+export type AgentCarets = {
+  /** Moves the chat's caret to `caret` in `room`, or clears it with null. */
+  place(threadId: string, room: DocumentRoom, caret: DocCursor | null): void;
+};
+
+export function createLoroAgentEditHost(input: {
+  db: Database;
+  rooms: DocumentRooms<DrizzleDb>;
+  carets: AgentCarets;
+}): {
   rooms: AgentEditRooms;
   /** `agent (<chat ref>)` for the chat a turn belongs to; null for a turn the database lacks. */
   authorOfTurn(turnId: string): Promise<string | null>;
@@ -37,6 +53,11 @@ export function createLoroAgentEditHost(input: { db: Database; rooms: DocumentRo
       transaction: db,
       origin: "server:agent",
       recordWrite,
+      wrote({ threadId, room, actor }, caret) {
+        // After the room's own after-commit import, so the batch reaches a tab before the caret.
+        if (actor.kind === "agent")
+          runAfterDrizzleCommit(() => input.carets.place(threadId, room, caret));
+      },
     }),
     async authorOfTurn(turnId) {
       const [row] = await db()

@@ -1,4 +1,5 @@
-import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
+import { decodeImportBlobMeta, type Frontiers, type ImportStatus, LoroDoc } from "loro-crdt";
+import { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
@@ -26,6 +27,41 @@ export interface Imported {
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange[];
+}
+
+/** What a peer's batch brought (`importBatch`): an import, and the turn whose write it is. */
+export interface ImportedBatch extends Imported {
+  /**
+   * The turn that wrote everything the import brought into a doc, by doc, read only when asked: a
+   * turn's write landing. A doc is absent when anything else came with it (the writer's own
+   * commits, a press, another turn), and when the turn wrote it in a draft and this is a Live copy,
+   * or the other way round: an Apply brings a draft's commits into Live as they are.
+   */
+  authors(): ReadonlyMap<DocKey, CommitAuthor>;
+}
+
+/** The ops an import brought into each doc, as Loro's import status names them. */
+type Brought = Map<DocKey, { doc: LoroDoc; spans: ImportStatus["success"] }>;
+
+function authorsOf(brought: Brought, intoDraft: boolean): ReadonlyMap<DocKey, CommitAuthor> {
+  const out = new Map<DocKey, CommitAuthor>();
+  for (const [key, { doc, spans }] of brought) {
+    let turn: string | null = null;
+    let only = true;
+    for (const [peer, span] of spans) {
+      let counter = span.start;
+      while (only && counter < span.end) {
+        const change = doc.getChangeAt({ peer, counter });
+        const { by, draft } = readCommitMessage(change.message);
+        const same = by && "turn" in by && draft === intoDraft && (turn ?? by.turn) === by.turn;
+        if (same) turn = by.turn;
+        else only = false;
+        counter = change.counter + change.length;
+      }
+    }
+    if (only && turn !== null) out.set(key, { turn });
+  }
+  return out;
 }
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
@@ -192,6 +228,15 @@ export class RoomDocs {
 
   get draft(): boolean {
     return this.live !== null;
+  }
+
+  /**
+   * Commit `doc`, one of this copy's docs, as written by `by` (none is the writer's own), and in a
+   * draft's fork when this is one: every authored commit goes through here, so none can say the
+   * wrong copy.
+   */
+  commit(doc: LoroDoc, options: { by?: CommitAuthor; origin?: string }): void {
+    doc.commit({ message: commitMessage(options.by, this.draft), origin: options.origin });
   }
 
   get isFreed(): boolean {
@@ -392,7 +437,7 @@ export class RoomDocs {
    * ops not yet seen, and the restore this copy wrote, which its holder sends and saves like a
    * local write.
    */
-  importBatch(batch: Envelope): Imported {
+  importBatch(batch: Envelope): ImportedBatch {
     this.alive();
     for (const [key, bytes] of batch) {
       const meta = checkBytes(key, bytes, false);
@@ -402,6 +447,7 @@ export class RoomDocs {
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
+    const brought: Brought = new Map();
     let pending = false;
     for (const [key, bytes] of batch) {
       let doc = this.doc(key);
@@ -414,14 +460,21 @@ export class RoomDocs {
       const status = doc.import(bytes);
       if (status.pending) pending = true;
       if (!sameFrontiers(doc.oplogFrontiers(), at)) changed.push(key);
+      if (status.success.size > 0) brought.set(key, { doc, spans: status.success });
     }
-    return { changed, pending, restore: this.answer(before, changed) };
+    return {
+      changed,
+      pending,
+      restore: this.answer(before, changed),
+      authors: () => authorsOf(brought, this.draft),
+    };
   }
 
   /**
    * Bring a draft's fork up to Live (design §2, "Forwarding"): Live's structure into the structure
    * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
-   * needs nothing. An import like any other (`importBatch`); it never waits on ops.
+   * needs nothing. An import like any other (`importBatch`); it never waits on ops. It brings only
+   * what Live's copy already imported, so Live's import says who wrote it.
    */
   forward(): Imported {
     const live = this.live;

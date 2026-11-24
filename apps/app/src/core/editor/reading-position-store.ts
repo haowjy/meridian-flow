@@ -1,7 +1,7 @@
 /** Account-stamped device memory of places per document room, bounded by LRU. */
 
+import { decodePoint, type EncodedPoint } from "@meridian/loro-prosemirror";
 import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
-import { decodePoint, type EncodedPoint } from "./loro-points";
 
 export const READING_POSITION_STORAGE_KEY = "meridian:reading-position:v2";
 export const READING_POSITION_LIMIT = 300;

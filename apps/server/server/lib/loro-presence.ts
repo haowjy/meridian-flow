@@ -2,10 +2,11 @@
  * Presence on `/ws/loro` (design §4): each room's `%EPH` channel, relayed between the sockets on
  * it. The server keeps one ephemeral store per room so a socket that joins hears who is there,
  * and clears what a socket wrote when it leaves, so its caret goes from the other screens at once
- * instead of when its entry times out.
+ * instead of when its entry times out. The server publishes entries of its own too (an agent's
+ * caret, `agent-presence.ts`): held until it clears them, whether or not a socket is on the room.
  */
 import { freshBatchId } from "@meridian/contracts/protocol";
-import { EphemeralStore } from "loro-crdt";
+import { EphemeralStore, type Value } from "loro-crdt";
 import { CrdtType, MessageType, type ProtocolMessage } from "loro-protocol";
 
 /** A peer's entry expires this long after its last update, as the client's does. */
@@ -24,6 +25,14 @@ interface PresenceRoom {
 
 export function createPresenceRelay() {
   const rooms = new Map<string, PresenceRoom>();
+  /** The server's own entries, by room and key. */
+  const held = new Map<string, Map<string, Value>>();
+  // Peers drop an entry PRESENCE_TIMEOUT_MS after its last write, so a held entry is re-sent.
+  let refresh: ReturnType<typeof setInterval> | null = null;
+  const refreshHeld = () => {
+    for (const [roomId, entries] of held)
+      for (const [key, value] of entries) rooms.get(roomId)?.store.set(key, value);
+  };
 
   function open(roomId: string): PresenceRoom {
     const existing = rooms.get(roomId);
@@ -36,7 +45,7 @@ export function createPresenceRelay() {
       for (const key of [...event.added, ...event.updated]) keys?.add(key);
       for (const key of event.removed) keys?.delete(key);
     });
-    // The server writes only deletions: a leaving member's keys, which the others must drop.
+    // The server's own writes: its entries, and a leaving member's keys, which the others drop.
     const offLocal = store.subscribeLocalUpdates((bytes) => {
       for (const member of room.members.values()) member.send(frame(roomId, bytes));
     });
@@ -46,6 +55,7 @@ export function createPresenceRelay() {
       store.destroy();
     };
     rooms.set(roomId, room);
+    for (const [key, value] of held.get(roomId) ?? []) store.set(key, value);
     return room;
   }
 
@@ -85,8 +95,35 @@ export function createPresenceRelay() {
       }
     },
 
+    /**
+     * The server's own entry `key` in a room, sent to its sockets and to every socket that joins
+     * until it is cleared with null.
+     */
+    publish(roomId: string, key: string, value: Value | null) {
+      const entries = held.get(roomId) ?? new Map<string, Value>();
+      if (value === null) {
+        entries.delete(key);
+        rooms.get(roomId)?.store.delete(key);
+      } else {
+        entries.set(key, value);
+        rooms.get(roomId)?.store.set(key, value);
+      }
+      if (entries.size > 0) held.set(roomId, entries);
+      else held.delete(roomId);
+      if (held.size > 0 && !refresh) {
+        refresh = setInterval(refreshHeld, PRESENCE_TIMEOUT_MS / 3);
+        refresh.unref?.();
+      } else if (held.size === 0 && refresh) {
+        clearInterval(refresh);
+        refresh = null;
+      }
+    },
+
     /** Free every room's store: the server is stopping. */
     dispose() {
+      if (refresh) clearInterval(refresh);
+      refresh = null;
+      held.clear();
       for (const room of rooms.values()) room.stop();
       rooms.clear();
     },

@@ -92,7 +92,7 @@ write carries no ids (it writes text), so its pairing is by content only; the co
   counter per chat and document.
 
 The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
-this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
+this core for every chat: `recordWrite` gets the record and writes the receipt in the
 commit's transaction (`room`, `before`, `after` and `edit` on the part), and the model's `undo`
 and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
 frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per

@@ -29,7 +29,7 @@ design §1) and frees it at teardown; nothing else frees it. Every local write l
 `publish`: appended to the IndexedDB copy, posted to this browser's other tabs
 (`BroadcastChannel` named after the copy), then sent to the server. Every peer's batch, from the
 server or another tab, arrives by `importRemote`, which calls the binding's `importRemoteUpdate`
-and so goes through its composition guard: a batch is held, as bytes, while any editor on the
+and so goes through the room's import door (`room-imports.ts`): a batch is held, as bytes, while any editor on the
 room is composing.
 
 The browser's local copy of a room is the IndexedDB database
@@ -68,7 +68,22 @@ synchronously, then drains transports and leases.
 - The binding rebuilds only the blocks a remote batch touched and dispatches them as one
   transaction marked `setMeta(loroSyncKey, REMOTE_META)` and `addToHistory: false`. Code that
   must tell a writer's move from a remote write reads that meta; `notifyChanged` (a write made
-  outside the editor, an Undo, a `writeDocument`) dispatches the same way.
+  outside the editor, an Undo, a `writeDocument`) dispatches the same way. A peer's batch also
+  says whose write it is: `remoteAuthors(tr)` names, by doc key, the turn that wrote everything
+  the batch brought into that doc (`RoomDocs.importBatch`'s `authors`, from the commits' messages).
+  A doc that took anything else (the writer's own typing, a press, a second turn) is absent, and
+  so is everything in a batch that is no write landing: a Join's catch-up, the stored copy, another
+  tab's batch (`DocumentSession.importRemote`'s source, passed on as `importRemoteUpdate`'s
+  `landing`). An Apply brings a draft's commits into Live as
+  they are; their messages say they were made in a draft, so a Live copy credits no turn for them.
+- `extensions/agent-edit-flash.ts` highlights, in the agent colour, the text of each block a
+  turn's write landed in (the span that differs from before, or a block the batch made), and drops
+  it after `FLASH_MS`. Because a block is credited only when the turn wrote all the batch brought
+  into it, that span is the turn's own text. It is decorations only and maps through typing; each
+  decoration carries when its write landed, so a span the editor redraws resumes its fade instead
+  of restarting it. The fade is CSS (`.meridian-agent-flash` in `features/editor/editor.css`), so
+  its look retunes there. It works in Live and in a draft alike: a forward of Live into a draft
+  carries the Live batch's authors.
 - Review changes (`extensions/review-changes`) is decorations only: Live's text of a changed
   paragraph is a widget, never document text, so typing, Undo and the binding see the draft alone.
   Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
@@ -112,7 +127,7 @@ synchronously, then drains transports and leases.
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
 orthogonal. `synced` means the transport handed the copy what the server held at the first
-Join (the catch-up batch, which the composition guard may still be holding), not that all
+Join (the catch-up batch, which the composition hold may still be holding), not that all
 local edits are saved. `serverHasLocalChanges` is true only after that Join and every batch
 sent on the current connection is acknowledged (see
 [`../../transport/.context/CONTEXT.md`](../../transport/.context/CONTEXT.md)).
@@ -133,10 +148,16 @@ the outer boundary. A second presence write path creates ghost carets. `detachTr
 one suspension and the next attach releases it; the session also suspends on `pagehide` and
 resumes on `pageshow` only if it holds that suspension.
 
+A chat's agent is one more peer in the room it last wrote in, published by the server
+(`apps/server/server/lib/agent-presence.ts`) as `{ user: { name, agent: true }, cursor }`.
+`peer-carets.ts` draws it in `--color-collab-agent` with its name always showing ("AI" when the
+Agent has none); the server decides when it comes and goes, the editor only draws it.
+
 ## Anchors and holds
 
 A remote write can move or replace any block. Long-lived UI uses `EditorAnchor` backed by Loro
-cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `anchors.ts`:
+cursors (`loro-points.ts`: `pointAt`; the binding's `encodePoint`/`decodePoint` for storage and
+presence, shared with the server; `anchors.ts`:
 `resolveAnchor`), resolves it at use time, and validates the object found there. `NodeHold` adds the node's block id and
 type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
 replacement; an inline atom with no id resolves by the seams around it. `carryAnchor` is used

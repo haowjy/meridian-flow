@@ -45,6 +45,7 @@ import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { createPostgresDocumentRooms } from "../rooms/postgres-document-rooms.js";
+import { NO_AGENT_CARETS } from "./agent-carets.js";
 import { liveMarkdown, writeLiveMarkdown } from "./live-room-text.js";
 import { modelWrite } from "./model-write.js";
 
@@ -282,7 +283,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     eventSink,
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
   });
-  const loroHost = createLoroAgentEditHost({ db, rooms });
+  const loroHost = createLoroAgentEditHost({ db, rooms, carets: NO_AGENT_CARETS });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,

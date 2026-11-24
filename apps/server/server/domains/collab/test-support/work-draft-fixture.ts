@@ -20,6 +20,7 @@ import { insertWorks } from "../../../test-support/work-rows.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
+import { NO_AGENT_CARETS } from "./agent-carets.js";
 import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
 
 export const USER_ID = "00000000-0000-4000-8000-000000000701";
@@ -45,6 +46,7 @@ export function createWorkDraftFixture(db: Database) {
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),
       ...createTestRemovalDeps(db),
+      agentCarets: NO_AGENT_CARETS,
     });
     collabs.push(collab);
     return collab;

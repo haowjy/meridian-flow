@@ -14,7 +14,7 @@ export {
   selectChanges,
   undoPress,
 } from "./changes.js";
-export { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
+export { type CommitAuthor, readCommitMessage } from "./commit-message.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export {
@@ -57,6 +57,7 @@ export {
   CorruptDocBytesError,
   HistoryCutoffError,
   type Imported,
+  type ImportedBatch,
   RoomDocs,
 } from "./room-docs.js";
 export {

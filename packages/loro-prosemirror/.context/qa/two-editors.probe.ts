@@ -143,7 +143,7 @@ function editor(name: string, docs: RoomDocs, fresh: () => string = madeId): Edi
 const sync = (from: Editor, to: Editor, keys?: readonly DocKey[]) => {
   const batch = from.docs.exportSince(to.docs.version());
   if (keys) for (const key of batch.keys()) if (!keys.includes(key)) batch.delete(key);
-  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {});
+  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {}, true);
 };
 
 const keptOf = (e: Editor) => loroSyncKey.getState(e.view.state)?.kept ?? new Set<string>();
@@ -911,7 +911,7 @@ function racedRemovals(): string[] {
   /** Send `from`'s docs (from an agent's copy, or an editor's) to `to`. */
   const send = (from: RoomDocs, to: Editor) => {
     const batch = from.exportSince(to.docs.version());
-    if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {});
+    if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {}, true);
   };
   const text = (doc: Node) => doc.textBetween(0, doc.content.size, "|");
   const shown = (e: Editor) => text(e.view.state.doc);

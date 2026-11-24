@@ -1,5 +1,5 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, commitMessage } from "./commit-message.js";
+import type { CommitAuthor } from "./commit-message.js";
 import { Groups } from "./groups.js";
 import { inMap } from "./handles.js";
 import { loadEdit, type StoredEdit, storeEdit } from "./invert.js";
@@ -501,7 +501,7 @@ export function discardBlocks(
     if (!text || !base) continue;
     const before = text.frontiers();
     text.applyDiff(text.diff(before, base.frontiers(), false));
-    text.commit({ message: commitMessage(options.by) });
+    draft.commit(text, options);
     if (sameValue(before, text.frontiers())) continue;
     const change = { key: id, doc: text, before, after: text.frontiers() };
     result.fork.push(change);
@@ -561,7 +561,7 @@ export function undoPress(
     const after = doc.frontiers();
     if (sameValue(at, after)) continue;
     doc.applyDiff(doc.diff(after, at, false));
-    doc.commit({ message: commitMessage(options.by) });
+    draft.commit(doc, options);
     result.fork.push({ key, doc, before: after, after: doc.frontiers() });
   }
   result.fork.push(...takeBack(draft, sides("fork", draft), new StructureView(draft), options.by));

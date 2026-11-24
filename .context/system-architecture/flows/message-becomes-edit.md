@@ -33,6 +33,7 @@ sequenceDiagram
   runtime->>collab: 13. write the edit under the grant
   collab->>postgres: 14. save the room's rows, the receipt and the result
   collab-->>core-transport: 15. push to open rooms
+  collab-->>core-transport: 16. the agent's caret, over presence
 ```
 
 1. **Send.** [chat](../app-conversation.md#chat) calls the optimistic send helper `lib/send-project-chat.ts`, which shows the message at once and keeps it in the send journal in `localStorage` until the server confirms.
@@ -49,6 +50,7 @@ sequenceDiagram
 12. **Ask policy.** The handler asks [file-policy](../server-documents.md#file-policy) for an edit grant (`documentGrant`). A refusal from who is acting (`permission_denied`) goes back to the model as the tool result; an edit to an archived or deleted Work's draft, or a removed document, is returned with the document as it stands.
 13. **Write.** With the grant, it calls `documentSync.modelEdits().write(...)` on [collab](../server-documents.md#collab), inside the command the executor keyed the call by (`modelEdits().run`). The grant's destination picks the room: Live, or in Draft mode the chat's draft fork (`agentRoomFor`).
 14. **Save.** The command's one transaction in [postgres](../system.md#postgres) holds the room's new snapshot rows, the edit's receipt and the stored tool result. A failure leaves nothing visible, and a retry of the call answers the stored result.
-15. **Push.** After commit, collab delivers the live writes into the open Loro room, and every connected tab gets them over `/ws/loro` ([core-transport](../app-core.md#core-transport)).
+15. **Push.** After commit, collab delivers the live writes into the open Loro room, and every connected tab gets them over `/ws/loro` ([core-transport](../app-core.md#core-transport)). The batch's commits name the turn, so the editor flashes the text it wrote in the agent colour (`extensions/agent-edit-flash.ts`).
+16. **Caret.** Collab hands where the write ended to `lib/agent-presence.ts`, which publishes the chat's agent as a peer in the room's presence (`lib/loro-presence.ts`); `peer-carets.ts` draws it with the Agent's name. It stays while the run is awake and its prompt cache is warm ([the machine](../../../apps/server/server/lib/.context/state-machines.md#an-agents-caret)).
 
-State machines on this path: [runtime](../../../apps/server/server/domains/runtime/.context/state-machines.md), [threads](../../../apps/server/server/domains/threads/.context/state-machines.md), [chat submissions](../../../apps/app/src/client/chat-submissions/.context/state-machines.md), [chat](../../../apps/app/src/features/chat/.context/state-machines.md).
+State machines on this path: [an agent's caret](../../../apps/server/server/lib/.context/state-machines.md#an-agents-caret), [runtime](../../../apps/server/server/domains/runtime/.context/state-machines.md), [threads](../../../apps/server/server/domains/threads/.context/state-machines.md), [chat submissions](../../../apps/app/src/client/chat-submissions/.context/state-machines.md), [chat](../../../apps/app/src/features/chat/.context/state-machines.md).
