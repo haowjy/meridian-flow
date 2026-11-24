@@ -5,7 +5,6 @@ import type { DocumentEditResult } from "@meridian/agent-edit/integration";
 type Direction = "undo" | "revert";
 
 export function textPlanRefusal(
-  uri: string,
   failure: "draft_archived" | "document_deleted",
 ): Exclude<DocumentEditResult, { status: "success" }> {
   return failure === "draft_archived"

@@ -26,7 +26,7 @@ The edit holds its document's lock while it plans, so a second connection or a p
 | Room read stepped outside the transaction | `DocumentRooms.read` inside it copies the stored rows |
 | Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock: the one place the order is reversed, because the refs a write mints are known only while it plans (lock order in `CONTEXT.md`) |
 | `runInRootDrizzleReadSnapshot` in address resolution | joins the command transaction |
-| The model undo's capture snapshot | the capture plans off the locks; the commit plans each step again under them and the answer reports what it took (`CommittedInverse.taken`) |
+| The model undo's capture snapshot | the ledger-only selection runs off the locks; the selection runs again under them on the rooms read there, and the answer is that selection's ([reversal](reversal.md)) |
 
 Receipts (`document_edits.command_id`) take the id from `bindEditsToCommand`, bound by `run`, so text and tree receipts of one command share it without each writer passing it.
 

@@ -21,16 +21,16 @@ one test (`unavailable` in the planner), so an Undo never takes a part the offer
 Every part goes back in the room it was written in, whatever room the chat writes in now: a chat
 switched between Draft and Live still undoes and reverts the edits it made before the switch. The
 capture (`capture` in `adapters/drizzle-turn-inverse.ts`) reads each room the chat's parts were
-written in, and the one it writes in now; the planner (`createCapturedReversalPlanner`) and the
-commit both take parts back through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
+written in, and the one it writes in now; the planner (`createReversalPlanner`) takes parts back
+through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
 them by room and runs `undoEdits` in each. The in-memory host's turn Undo and the model's undo run
 the same function. The card's Undo takes only what the turn did outside a draft: its parts whose `origin` has no
 `draftId`, and its live tree receipts. What it did in a draft, text and tree, is the turn's
 restore (the card's `Undo turn`, [press](press.md)), a press with its own Undo (design §5), so one
 action takes a reply back and the card offers Undo only when the turn wrote in Live or changed
 the Live tree. The model's `undo` and `revert` still take a draft's parts. The card's
-Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps before it leave (the planner takes planned
-steps back on private copies of the captured rooms). A step's receipt has one part per room, with
+Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps before it leave (the planner's `takeOut` takes each
+step back on private copies of the captured rooms, and the commit commits those batches). A step's receipt has one part per room, with
 the targeted parts' own `origin`. Only the batches the chat's current room holds (its own, and
 Live's in a fork) join the reply's frontier. History is read in SQL to the chat's own parts and
 every Undo and revert, and a fork part whose draft is gone is left out.
@@ -217,24 +217,27 @@ are one step, taken together; `revert` names a handle and takes that receipt onl
 
 Every text inverse (model undo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,
-with its action and its place on the history axis, planned against the text the steps
-before it leave (`planned` in the planner, one text per document). A model count-N Undo records N separate
+with its action and its place on the history axis, taken back on the text the steps
+before it leave (`takeOut` in the planner, one copy per room). A model count-N Undo records N separate
 actions. The commit runs the steps in planned order (the card merges documents newest first).
-A document removed at capture plans no live text (`document_deleted`). Commit takes the attempt's
-document mutation locks in id order.
+A document removed at capture plans no live text (`document_deleted`). Commit takes the
+documents' mutation locks in id order.
 
 ## Effects and failures
 
-An inverse is an attempt. It captures its documents with no lock or lease
-(live state, history) and plans off every
-lock; those reads need not agree with each other. Its commit scope is one
-savepoint whose first locks are the Work rows (the bound grants' Works in id order, the grants
-confirmed: a seam boundary), then its documents' mutation locks in id order; the
-inverse takes no lock of its own, since those locks order two inverses
-of one edit. Under them each step plans again on the committed room: it reads each captured room again and
-re-runs `undoInRooms`. A write that landed after the capture changes what a step takes, never whether the
-inverse runs: the card and the model's Undo and Revert are never told to read and try again.
-Delivery runs after the commit, outside the scope.
+An inverse selects twice with one function (`TurnInverseStore.run`). First off every lock, on
+the ledger alone (`InverseDocument.copies` false: no room is read, and every part not taken
+counts as standing): that selection names the rooms the command may write, which it admits
+(the grants) and from which it chooses the locks. Its commit scope is one savepoint whose first
+locks are the lists', then the Work rows (the bound grants' Works in id order, the grants
+confirmed: a seam boundary), then its documents' mutation locks in id order; the inverse takes no
+lock of its own, since those locks order two inverses of one edit. Under them it reads the
+history and the rooms again and runs the same selection on those copies; its steps' batches are
+what it commits. A write that landed after the ledger read changes what a step takes, never
+whether the inverse runs; one that put the selection in a room the admission did not grant
+restarts the command (`TreeOwnersMoved`). The card and the model's Undo and Revert are never told
+to read and try again. With nothing to take and no tree change, nothing locks and the ledger
+selection's answer stands. Delivery runs after the commit, outside the scope.
 
 The card's chip and its Undo use the `prepare` plan and its `unavailable` check: one load of each
 room the chat wrote the document in, one document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on

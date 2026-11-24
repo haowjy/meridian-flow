@@ -28,7 +28,7 @@ import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
-import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
+import { createReversalPlanner } from "./model-reversal-planner.js";
 
 type EditKind = "write" | "undo" | "revert";
 /** A part an undo or revert part takes back. */
@@ -87,8 +87,8 @@ export type TurnInverseQuery = {
 /** A room an inverse's parts were written in, as the capture read it. */
 export type CapturedRoom = {
   room: DocumentRoom;
-  /** A private copy, freed when the attempt ends. */
-  docs: RoomDocs;
+  /** A private copy, freed when the read ends; none on a ledger-only read. */
+  docs?: RoomDocs;
   /** Why the room's owner (an archived or deleted Work, or its draft) takes no write, else null. */
   closed: ClosedOwnerWhy | null;
 };
@@ -104,23 +104,45 @@ export type InverseDocument = {
   /** The card's Undo deletes this created document, leaving its text intact. */
   createdInTurn: boolean;
   history: StoredInversePart[];
+  /** Whether `rooms` carry their copies; a ledger-only read has none. */
+  copies: boolean;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
-  /** The document's steps, in the order they plan and run. */
+  /** The document's steps, newest original first. */
   steps: InverseStep[];
   /** The turn's parts whose history the room cut, which the steps leave as they are. */
-  compacted?: number;
+  compacted: number;
+};
+/** One selection over a read of the documents: the steps to commit, in order, and what it says. */
+export type InverseSelection<T> = {
+  steps: { document: InverseDocument; step: InverseStep }[];
+  value: T;
+};
+/** What an inverse's commit did, beside what its selection said. */
+export type InverseCommitted = {
+  /** The model's write handle of each step, in order; empty for the writer's. */
+  handles: string[];
+  /** The batches the steps committed into the room the chat writes in, in order. */
+  updates: Uint8Array[];
+  /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
+  treeReversed: number;
+  /** A step took text out of a draft that Live still holds (an Apply put it there). */
+  inManuscript: boolean;
 };
 export interface TurnInverseStore {
+  /** `use` reads the documents with private room copies and no lock: what a chip or a list shows. */
+  read<T>(query: TurnInverseQuery, use: (documents: InverseDocument[]) => Promise<T>): Promise<T>;
   /**
-   * `run` plans on a lock-free capture and commits through `commit`, whose steps resolve
-   * against the committed text under their locks.
+   * An inverse: `select` runs on a ledger-only read for what it may write, which the command admits
+   * and locks; then, under the locks, on the documents read again, where its steps take their
+   * parts back on the locked copies, and the command commits them. With no step and no tree
+   * change, nothing locks and the ledger read's answer stands (`committed` is null).
    */
-  withCapturedDocuments<T>(
-    query: TurnInverseQuery,
-    run: (documents: InverseDocument[]) => Promise<T>,
-  ): Promise<T>;
+  run<T>(
+    input: { query: TurnInverseQuery; kind: "undo" | "revert"; userId?: UserId },
+    select: (documents: InverseDocument[]) => Promise<InverseSelection<T>>,
+  ): Promise<{ value: T; committed: InverseCommitted | null }>;
   /**
    * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
    * reply's tree receipts and the grants of every document it writes.
@@ -147,28 +169,6 @@ export interface TurnInverseStore {
   ): Promise<Record<string, TurnDraftState>>;
   /** A document's stored edit parts a chat's inverse reads, in order: its Undo stack is chosen from them. */
   readHistory(documentId: DocumentId, threadId: string): Promise<StoredInversePart[]>;
-  /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
-  commit(input: {
-    plans: PreparedDocumentInverse[];
-    sequence: { plan: PreparedDocumentInverse; step: InverseStep }[];
-    kind: "undo" | "revert";
-    userId?: UserId;
-    query: TurnInverseQuery;
-  }): Promise<{
-    handles: string[];
-    /** Parts each step of `sequence` took, in order: a step the committed text left nothing for took none. */
-    taken: number[];
-    /** The batches the steps committed, in order. */
-    updates: Uint8Array[];
-    /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
-    treeReversed: number;
-    /** Text parts committed, by document. */
-    reversed: ReadonlyMap<DocumentId, number>;
-    /** Text parts a step planned whose history the room cut before the commit, by document. */
-    compacted?: ReadonlyMap<DocumentId, number>;
-    /** A step took text out of a draft that Live still holds (an Apply put it there). */
-    inManuscript?: boolean;
-  }>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId" | "origin">;
 /**
@@ -183,11 +183,11 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
 
 /**
  * Each document's ordered steps, for both command and chip. Each of the turn's original edits is
- * one step, newest first, judged on what the steps before it leave. A part an Undo already took
- * out (the planner's `takenBy`) is neither a step nor a skip: the card's own Undo is done with
- * it, and the model's undo in the same chat is part of what the chat did. `undoneByWriter` says
- * the card's Undo was among them. The chip and the press plan the same way, so the card offers
- * Undo exactly when a press takes something back.
+ * one step, newest first, taken back on what the steps before it leave. A part an Undo already
+ * took out (the planner's `takenBy`) is neither a step nor a skip: the card's own Undo is done
+ * with it, and the model's undo in the same chat is part of what the chat did. `undoneByWriter`
+ * says the card's Undo was among them. The chip and the press select the same way, so the card
+ * offers Undo exactly when a press takes something back.
  */
 async function prepare(
   documents: InverseDocument[],
@@ -198,8 +198,8 @@ async function prepare(
   const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
     // The server answers its other requests between documents.
     await setImmediate();
-    const entryPlanner = createCapturedReversalPlanner(document, query);
-    try {
+    const entryPlanner = createReversalPlanner(document, query);
+    {
       const targets = document.history.filter((part) => {
         if (!targetsTurn(part, query)) return false;
         const takenBy = entryPlanner.takenBy(part);
@@ -223,7 +223,6 @@ async function prepare(
         .sort((a, b) => b.at - a.at);
       const steps: InverseStep[] = [];
       let compacted = 0;
-      // Each step is judged on what the steps before it leave, as its commit will find it.
       for (const { at, parts } of originals) {
         const entry = {
           id: parts[0]?.editId ?? "",
@@ -232,15 +231,18 @@ async function prepare(
         };
         const planned = entryPlanner.turnTextPlan(entry, query);
         if (!planned) continue;
-        const { taken, compacted: cut } = entryPlanner.planTakeOut(planned.selection);
-        compacted += cut;
-        if (taken.length)
-          steps.push({ parts: taken, actionId, actionKind: planned.actionKind, at });
+        const took = entryPlanner.takeOut(planned.selection);
+        compacted += took.compacted;
+        if (took.taken.length)
+          steps.push({
+            parts: took.taken,
+            rooms: took.rooms,
+            actionId,
+            actionKind: planned.actionKind,
+            at,
+          });
       }
-      steps.sort((a, b) => b.at - a.at);
       return { document, steps, compacted };
-    } finally {
-      entryPlanner.free();
     }
   };
   const plans: PreparedDocumentInverse[] = [];
@@ -248,17 +250,15 @@ async function prepare(
   return { plans, undoneByWriter };
 }
 
-/**
- * Every document's steps as one sequence for the commit, newest original first, so a renumber
- * across documents never meets a location it vacated later. Each document's own steps already
- * run in that order.
- */
+/** Every document's steps as one sequence for the commit, newest original first. */
 function inSequence(plans: readonly PreparedDocumentInverse[]) {
   return plans
-    .flatMap((plan) => plan.steps.map((step) => ({ plan, step })))
+    .flatMap(({ document, steps }) => steps.map((step) => ({ document, step })))
     .sort((a, b) => b.step.at - a.step.at);
 }
 const hasSteps = (plans: PreparedDocumentInverse[]) => plans.some((plan) => plan.steps.length > 0);
+const partsOf = (plan: PreparedDocumentInverse) =>
+  plan.steps.reduce((n, step) => n + step.parts.length, 0);
 
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
@@ -268,7 +268,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
       turnId: TurnId,
     ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
-      return store.withCapturedDocuments(query, async (documents) => {
+      return store.read(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
         const tree = await store.treeSteps(query);
         const { offered, restored } = await store.restoreStates(query);
@@ -302,63 +302,57 @@ export function createTurnInverseService(store: TurnInverseStore) {
     async reverseTurn(
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
-      return store.withCapturedDocuments(query, async (documents) => {
-        const { plans, undoneByWriter } = await prepare(documents, query, randomUUID());
-        const tree = await store.treeSteps(query);
-        const treeSteps = tree.acting + tree.taken;
-        if (!query.documentIds && !plans.length && !treeSteps)
-          return { status: "nothing_to_undo", documents: [] };
-        const committed =
-          hasSteps(plans) || treeSteps
-            ? await store.commit({
-                plans,
-                sequence: inSequence(plans),
-                kind: "undo",
-                query,
-                userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
-              })
-            : {
-                treeReversed: 0,
-                reversed: new Map<DocumentId, number>(),
-                compacted: undefined,
-              };
-        const accepted =
-          committed.treeReversed + [...committed.reversed.values()].reduce((n, m) => n + m, 0);
-        // An AI edit whose history the room cut stays as it is (design §2): planned with no step,
-        // or found so under the locks.
-        const compactedIn = (plan: PreparedDocumentInverse) =>
-          (plan.compacted ?? 0) + (committed.compacted?.get(plan.document.documentId) ?? 0);
-        const compacted = plans.some((plan) => compactedIn(plan) > 0);
-        return {
-          // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
-          status: accepted
-            ? compacted
-              ? "partial"
-              : "reversed"
-            : undoneByWriter
-              ? "reversed"
-              : "expired",
-          // One row per document whose text the steps reversed or left; a document with no text
-          // to reverse (it left, or comes back, with its node) has none.
-          documents: plans.flatMap((plan): DocumentReversalResult[] => {
-            const reversed = committed.reversed.get(plan.document.documentId) ?? 0;
-            const old = compactedIn(plan);
-            if (!reversed && !old) return [];
-            return [
-              {
-                documentId: plan.document.documentId,
-                uri: plan.document.uri,
-                status: old ? (reversed ? "partial" : "expired") : "reversed",
-                ...(old
-                  ? {
-                      text: `${old} of the reply's edits ${old === 1 ? "stays" : "stay"}: the document no longer keeps history that old.`,
-                    }
-                  : {}),
-              },
-            ];
-          }),
-        };
-      });
+      const tree = await store.treeSteps(query);
+      const treeSteps = tree.acting + tree.taken;
+      const actionId = randomUUID();
+      const { value, committed } = await store.run(
+        {
+          query,
+          kind: "undo",
+          userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
+        },
+        async (documents) => {
+          const prepared = await prepare(documents, query, actionId);
+          return { steps: inSequence(prepared.plans), value: prepared };
+        },
+      );
+      const { plans, undoneByWriter } = value;
+      if (!query.documentIds && !plans.length && !treeSteps)
+        return { status: "nothing_to_undo", documents: [] };
+      const accepted =
+        (committed?.treeReversed ?? 0) +
+        (committed ? plans.reduce((n, plan) => n + partsOf(plan), 0) : 0);
+      // An AI edit whose history the room cut stays as it is (design §2).
+      const compacted = plans.some((plan) => plan.compacted > 0);
+      return {
+        // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
+        status: accepted
+          ? compacted
+            ? "partial"
+            : "reversed"
+          : undoneByWriter
+            ? "reversed"
+            : "expired",
+        // One row per document whose text the steps reversed or left; a document with no text
+        // to reverse (it left, or comes back, with its node) has none.
+        documents: plans.flatMap((plan): DocumentReversalResult[] => {
+          const reversed = committed ? partsOf(plan) : 0;
+          const old = plan.compacted;
+          if (!reversed && !old) return [];
+          return [
+            {
+              documentId: plan.document.documentId,
+              uri: plan.document.uri,
+              status: old ? (reversed ? "partial" : "expired") : "reversed",
+              ...(old
+                ? {
+                    text: `${old} of the reply's edits ${old === 1 ? "stays" : "stay"}: the document no longer keeps history that old.`,
+                  }
+                : {}),
+            },
+          ];
+        }),
+      };
     },
   };
 }

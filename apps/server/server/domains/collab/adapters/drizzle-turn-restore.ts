@@ -130,11 +130,12 @@ async function standingParts(
     .orderBy(desc(documentEditParts.id));
   return rows.map((row) => {
     const documentId = row.documentId as DocumentId;
-    const room: DocumentRoom =
-      row.origin.kind === "fork"
-        ? { kind: "fork", draftId: row.origin.draftId, documentId }
-        : { kind: "live", documentId };
-    return { ...row, documentId, room, edit: row.edit as StoredEdit };
+    return {
+      ...row,
+      documentId,
+      room: roomOfOrigin(row.origin, documentId),
+      edit: row.edit as StoredEdit,
+    };
   });
 }
 
@@ -280,3 +281,9 @@ async function pressInForce(
     .limit(1);
   return row?.id ?? null;
 }
+
+/** The room a part was written in: its draft's fork, or Live. */
+export const roomOfOrigin = (origin: EditOrigin, documentId: DocumentId): DocumentRoom =>
+  origin.kind === "fork"
+    ? { kind: "fork", draftId: origin.draftId as DraftId, documentId }
+    : { kind: "live", documentId };
