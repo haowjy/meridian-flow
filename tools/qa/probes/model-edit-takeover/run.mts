@@ -81,7 +81,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(await state(h, thread, documentId), {
         doc: ["Live seed.", "Added."],
         turns: ["error"],
-        results: ["call-1:committed"],
+        results: ["call-1:success"],
         edits: ["call-1"],
         commands: ["done"],
       });
@@ -106,7 +106,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(await state(h, thread, documentId), {
         doc: ["Live seed.", "Added."],
         turns: ["error", "complete"],
-        results: ["call-1:committed"],
+        results: ["call-1:success"],
         edits: ["call-1"],
         commands: ["done"],
       });
@@ -138,11 +138,11 @@ const cases: ModelEditCase[] = [
       assert.equal(after.results.length, 1);
       // The old process lost its claim and may abort its edit before the commit; the records
       // agree either way.
-      if (after.results[0] === "call-1:committed")
+      if (after.results[0] === "call-1:success")
         assert.deepEqual(after, {
           doc: ["Live seed.", "Added."],
           turns: ["error"],
-          results: ["call-1:committed"],
+          results: ["call-1:success"],
           edits: ["call-1"],
           commands: ["done"],
         });
@@ -234,8 +234,8 @@ const cases: ModelEditCase[] = [
       const b = await state(h, two, doc.documentId);
       assert.deepEqual(a.doc, ["Live seed.", "Added.", "Then."]);
       assert.deepEqual([...a.edits, ...b.edits], ["call-a", "call-b"]);
-      assert.deepEqual(a.results, ["call-a:committed"]);
-      assert.deepEqual(b.results, ["call-b:committed"]);
+      assert.deepEqual(a.results, ["call-a:success"]);
+      assert.deepEqual(b.results, ["call-b:success"]);
     },
   },
   {
@@ -266,7 +266,7 @@ const cases: ModelEditCase[] = [
         commands: ["never"],
       });
       const other = await state(h, living, doc.documentId);
-      assert.deepEqual(other.results, ["call-b:committed"]);
+      assert.deepEqual(other.results, ["call-b:success"]);
       assert.deepEqual(other.edits, ["call-b"]);
     },
   },

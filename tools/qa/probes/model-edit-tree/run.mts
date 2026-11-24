@@ -50,7 +50,7 @@ function killed(
       await second.call({ op: "sweep" });
       await waitForAssistantTurn(h, thread);
       const after = await state(h, thread, documentId);
-      assert.deepEqual(after.results, ["call-1:committed"]);
+      assert.deepEqual(after.results, ["call-1:success"]);
       assert.deepEqual(after.commands, ["done"]);
       assert.deepEqual(after.turns, ["error"]);
       await check(h, tag);
@@ -158,7 +158,7 @@ const cases: ModelEditCase[] = [
       await send(child, h, thread, "undo it");
       await waitForAssistantTurn(h, thread, { count: 2 });
       const after = await state(h, thread, documentId);
-      assert.deepEqual(after.results, ["call-1:committed", "call-2:reversed"]);
+      assert.deepEqual(after.results, ["call-1:success", "call-2:reversed"]);
       const found = await documentsNamed(h, `${tag}-born`);
       assert.deepEqual(
         found.map((d) => d.deleted),
@@ -191,7 +191,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(await state(h, thread, documentId), {
         doc: ["Live seed."],
         turns: ["complete", "error"],
-        results: ["call-1:committed", "call-2:committed"],
+        results: ["call-1:success", "call-2:success"],
         edits: ["call-1", "call-2"],
         commands: ["done", "done"],
       });
@@ -219,10 +219,10 @@ const cases: ModelEditCase[] = [
       await waitForAssistantTurn(h, thread);
       const after = await state(h, thread, documentId);
       assert.deepEqual(after.results, [
-        "call-1:committed",
-        "call-2:committed",
-        "call-3:committed",
-        "call-4:committed",
+        "call-1:success",
+        "call-2:success",
+        "call-3:success",
+        "call-4:success",
       ]);
       assert.deepEqual(after.turns, ["complete"]);
     },

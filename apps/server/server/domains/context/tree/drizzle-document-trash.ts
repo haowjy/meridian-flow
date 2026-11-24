@@ -28,7 +28,11 @@ import { createObjectRelease, type ObjectStorePort } from "../../storage/index.j
 import { trashActorsOf } from "../adapters/trash-removals.js";
 import type { DocumentPurgeDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
-import { type Released, releaseDocumentContent } from "./release-document-content.js";
+import {
+  type DocumentContentEnd,
+  type Released,
+  releaseDocumentContent,
+} from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
 import {
   ownedByRequestSql,
@@ -69,7 +73,8 @@ export function createDrizzleDocumentTrash(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   purges: DocumentPurgeDisposal;
-  endRooms(documentIds: readonly DocumentId[]): Promise<void>;
+  /** What collab ends with a purged document's content. */
+  collab: DocumentContentEnd;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
   const objects = createObjectRelease({
@@ -298,7 +303,7 @@ export function createDrizzleDocumentTrash(deps: {
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
-        return releaseDocumentContent(deps.db, deps.endRooms, taken.documentIds);
+        return releaseDocumentContent(deps.db, deps.collab, taken.documentIds);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;
@@ -388,7 +393,7 @@ export function createDrizzleDocumentTrash(deps: {
             }
           },
         });
-        return releaseDocumentContent(deps.db, deps.endRooms, [documentId]);
+        return releaseDocumentContent(deps.db, deps.collab, [documentId]);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;

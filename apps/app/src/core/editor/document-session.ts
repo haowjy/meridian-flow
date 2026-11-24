@@ -125,14 +125,6 @@ export type DocumentSessionSnapshot = {
 
 export type DocumentSessionAccess = "edit" | "read";
 
-/**
- * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
- * edits like an offline one, and the account's list shows the "sign in again" prompt.
- */
-export function isSignInLapse(state: RoomConnectionState | null | undefined): boolean {
-  return state?.kind === "unauthorized" && state.code === WS_CLOSE.AUTH_FAILED.code;
-}
-
 /** The server ended the room: its update depends on history below the room's cutoff. */
 export function historyCutOff(state: RoomConnectionState | null | undefined): boolean {
   return state?.kind === "terminal" && state.reason === "history-cutoff";
@@ -493,8 +485,7 @@ export class DocumentSession {
     this.unsubscribers.push(
       provider.subscribeStatus((state) => {
         this.transportState = state;
-        if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
-          this.stopTabs();
+        if (state.kind === "unauthorized" || state.kind === "reset") this.stopTabs();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
           requireReload();
           this.raiseSchemaFence({ reason: "client-superseded" });
@@ -664,13 +655,8 @@ export class DocumentSession {
 
   /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
   isRoomEnded(): boolean {
-    const state = this.transportState;
     return (
-      this.destroyed ||
-      this.status === "access-lost" ||
-      state?.kind === "reset" ||
-      (state?.kind === "unauthorized" && !isSignInLapse(state)) ||
-      state?.kind === "terminal"
+      this.destroyed || this.status === "access-lost" || this.transportState?.kind === "terminal"
     );
   }
 
@@ -879,12 +865,12 @@ export class DocumentSession {
 
   private deriveStatus(): DocumentSessionStatus {
     if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";
-    if (!this.localPersistenceSynced) return "syncing";
     const state = this.transportState;
-    if (isSignInLapse(state)) return "offline";
-    if (state?.kind === "unauthorized") return "access-lost";
-    if (state?.kind === "reset") return "access-lost";
-    if (state?.kind === "terminal") return "offline";
+    if (state?.kind === "unauthorized" || state?.kind === "reset") return "access-lost";
+    if (!this.localPersistenceSynced) return "syncing";
+    // A lapsed sign-in keeps the text and takes edits like offline; the account's list asks the
+    // writer to sign in again.
+    if (state?.kind === "terminal" || state?.kind === "signed-out") return "offline";
     if (!this.transportInitialSyncComplete) return "syncing";
     if (state?.kind === "disconnected") return "offline";
     if (state?.kind === "connected") return "synced";

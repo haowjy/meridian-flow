@@ -6,7 +6,7 @@ import { useEndedSources } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { logInAgain } from "@/components/app/AppStatus";
-import { notifyFailure } from "@/components/app/failure-toast";
+import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import {
   useContextRemovalCoordinator,
@@ -17,6 +17,8 @@ import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 import { type ListRemovalObserver, observeListRemovals } from "./list-removal-observer";
 import { useOpenProjectDocument } from "./open-project-document";
 import { openRecent } from "./RecentDocumentsLanding";
+
+const SIGN_IN_EXPIRED = "sign-in-expired";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
@@ -79,10 +81,11 @@ export function ProjectContextRemovalController({
       registry,
       signInRequired: () =>
         notifyFailure({
-          key: "sign-in-expired",
+          key: SIGN_IN_EXPIRED,
           title: t`Sign-in expired`,
           action: { label: t`Log in`, run: logInAgain },
         }),
+      signInRestored: () => dismissFailure(SIGN_IN_EXPIRED),
     });
     setObserver(created);
     return () => {

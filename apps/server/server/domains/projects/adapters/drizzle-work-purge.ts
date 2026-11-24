@@ -29,7 +29,7 @@ import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "
 import { workDefaultDraftSql } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
-import { releaseDocumentContent } from "../../context/index.js";
+import { type DocumentContentEnd, releaseDocumentContent } from "../../context/index.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
@@ -80,13 +80,17 @@ export function createDrizzleWorkPurger(deps: {
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
   drafts: WorkDraftDisposal;
-  endRooms(documentIds: readonly DocumentId[]): Promise<void>;
   /** The project's list, where the Work's sources' nodes end. */
   tree: Pick<TreeListStore, "submit">;
   /** A purged Work leaves the project's Works list, which is woken for it. */
   works: Pick<WorkProjectionMutation, "lifecycleChanged">;
-  /** What the model was shown of documents, kept by the document side. */
-  evidence: { forgetThreads(threadIds: readonly ThreadId[]): Promise<void> };
+  /** What collab ends with the Work's documents and chats: their rooms, and what the model was shown. */
+  collab: {
+    endRooms: DocumentContentEnd["endRooms"];
+    evidence: DocumentContentEnd["evidence"] & {
+      forgetThreads(threadIds: readonly ThreadId[]): Promise<void>;
+    };
+  };
   now?: () => Date;
 }) {
   const now = deps.now ?? (() => new Date());
@@ -258,7 +262,7 @@ export function createDrizzleWorkPurger(deps: {
                 lists: [{ kind: "project", projectId: work.projectId }],
                 make: ([{ writer }]) => purgeSources(writer, sources),
               })
-              .then(({ result }) => releaseDocumentContent(deps.db, deps.endRooms, result));
+              .then(({ result }) => releaseDocumentContent(deps.db, deps.collab, result));
       const objectKeys = [
         // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [
@@ -296,7 +300,7 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.execute(sql`SET CONSTRAINTS threads_origin_turn_id_turns_id_fk DEFERRED`);
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
-        await deps.evidence.forgetThreads(lockedTree.threadIds);
+        await deps.collab.evidence.forgetThreads(lockedTree.threadIds);
       }
       // A chat that moved to another Work keeps this Work's membership as non-primary history.
       // Its readers (the Work's chat list, the Work switcher's recent summary) filter by this Work,

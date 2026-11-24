@@ -60,5 +60,4 @@ export type {
   WriteFunction,
   WriteOutcome,
   WriteStatus,
-  WriteSuccessPhase,
 } from "./tool/types.js";

@@ -25,7 +25,7 @@ import type {
 } from "@meridian/contracts";
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { PressAction, PressResult, PressUndoResult } from "@meridian/contracts/drafts";
-import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
+import { type DocumentRoom, loroRoomName, parseLoroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   applyCommandTrees,
@@ -200,6 +200,19 @@ export function createDrizzlePress(
     });
   }
 
+  /**
+   * A loaded fork saves on a debounce, and its row (that it exists, that it is pending) is what
+   * `textDocuments` reads: a tab's first words in a draft, acknowledged just before the press, are
+   * in the room but not yet in a row. Saved before the press's transaction, which holds the locks
+   * a save takes.
+   */
+  async function saveLoadedForks(drafts: readonly string[]): Promise<void> {
+    for (const name of deps.rooms.loaded()) {
+      const room = parseLoroRoomName(name);
+      if (room?.kind === "fork" && drafts.includes(room.draftId)) await deps.rooms.flush(room);
+    }
+  }
+
   async function lockDocuments(documents: Iterable<string>): Promise<void> {
     for (const id of [...new Set(documents)].sort())
       await lockDocumentMutation(tx(), id as DocumentId);
@@ -364,6 +377,7 @@ export function createDrizzlePress(
     const lists = listsOf(envelope);
     const parts = await partsOf(request.scope);
     const draftIds = parts.map((part) => part.draft);
+    await saveLoadedForks(draftIds);
     const answer = (documents: Set<string>, tree: Set<string>, trashed: string[]): PressResult => ({
       status: "pressed",
       commandId: envelope.commandId as CommandId,

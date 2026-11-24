@@ -100,7 +100,6 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   level: new Set(["debug", "error", "fatal", "info", "trace", "warn"]),
   originType: new Set(["fork", "handoff"]),
   outcome: new Set(["cancelled", "error", "ok"]),
-  phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set([
     "client-schema-superseded",
     "decode_failed",

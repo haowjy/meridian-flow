@@ -255,7 +255,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           : null;
         return withEvidence(commandLinks, room, copy, address.documentId, context, {
           status: "success",
-          phase: "committed",
           model: {
             message: !lines
               ? "No changes: this chat writes to live, so nothing waits for review."
@@ -300,7 +299,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     if (result.status !== "success") return status(result.status, result.message);
     return {
       status: "success" as const,
-      phase: "committed" as const,
       model: { message: result.message, read: { format: "edits" as const } },
     };
   }
@@ -324,7 +322,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       context.frontiers?.reply?.append(address.documentId, result.updates);
     return {
       status: "success",
-      phase: "committed",
       ...(result.writeId ? { writeId: result.writeId } : {}),
       model: { message: result.message },
     };
@@ -771,7 +768,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       planned,
       snapshotProjected(echoProjected, edit.links.codec),
       {
-        phase: "committed",
         revision: revision(copy, edit.links.scope),
         writeId: editHandle(identity.ordinal),
         awarenessDegraded: false,

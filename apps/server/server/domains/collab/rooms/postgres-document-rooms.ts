@@ -83,8 +83,6 @@ const LOADED_SIZE_FACTOR = 10;
 const FORK_RETIRE_BATCH = 200;
 
 export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
-  /** Room names loaded now. */
-  loaded(): string[];
   /** Save every loaded room and free it: the process is stopping. */
   close(): Promise<void>;
   /**
@@ -220,6 +218,8 @@ export function createPostgresDocumentRooms(input: {
    * A save that leaves the flag as it was (most keystrokes) does not call it.
    */
   onForkPendingChanged?(draftId: DraftId): Promise<void>;
+  /** In the delete's transaction: the retention pass deleted an empty fork with its rows. */
+  onForkDeleted?(room: ForkRoom): Promise<void>;
   bounds?: Partial<RoomBounds>;
 }): PostgresDocumentRooms {
   const { db, shape, eventSink, schemaVersion } = input;
@@ -981,7 +981,9 @@ export function createPostgresDocumentRooms(input: {
                 ),
               )
               .returning({ draftId: documentForks.draftId });
-            return deleted.length > 0;
+            if (deleted.length === 0) return false;
+            await input.onForkDeleted?.(room);
+            return true;
           }),
         );
         if (gone) retired++;

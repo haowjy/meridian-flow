@@ -16,11 +16,14 @@ stateDiagram-v2
   offline --> synced: it rejoins
   synced --> waiting: the Join names another list: a fresh copy, joined from nothing
   waiting --> denied: a permission-denied Join error, or close 4403
-  waiting --> unauthenticated: a bad-auth Join error, or close 4401
+  waiting --> unauthenticated: close 4401
+  synced --> unauthenticated: close 4401
+  offline --> unauthenticated: close 4401
+  unauthenticated --> synced: it rejoins once the writer has signed in again
+  waiting --> broken: a bad-auth Join error ends the room
   synced --> broken: the server ended the room (a corrupt update)
   offline --> broken: the same, on rejoining
   denied --> [*]
-  unauthenticated --> [*]
   broken --> [*]
 ```
 

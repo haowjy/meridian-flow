@@ -70,9 +70,10 @@ export const threadShownLinks = pgTable(
  * transcript block (a tool result, or a writer turn's reference block whose
  * materialized read it is sent), per room. `snapshot` holds the frontiers of the docs it
  * showed (agent-edit's `encodeFrontierMap`).
- * `room_key` is `live:<documentId>`; the room
- * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
- * names shown, `domains/context/tree/names-shown.ts`).
+ * `room_key` is the Loro room name, `live:<documentId>` or `fork:<draftId>:<documentId>`; the
+ * room `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map
+ * of names shown, `domains/context/tree/names-shown.ts`). A document's purge deletes the rows of
+ * its rooms, and an empty fork's deletion its room's (`ModelEvidence.forgetFrontiers`).
  *
  * Keyed by the block's own id and the room, so a fork that renders the inherited block
  * finds its rows with nothing copied. The key has no foreign key to the block: the

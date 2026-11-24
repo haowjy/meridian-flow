@@ -27,6 +27,7 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { defaultDraftOf } from "../../../test-support/work-rows.js";
 import { createDrizzleDocumentPurgeDisposal } from "../../collab/adapters/drizzle-document-purge-disposal.js";
+import { createDrizzleModelEvidence } from "../../collab/adapters/drizzle-model-evidence.js";
 import { discardTreeRecords } from "../../collab/adapters/drizzle-work-tree-discard.js";
 import { createDrizzleDocumentTrash } from "./drizzle-document-trash.js";
 
@@ -49,7 +50,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     objectStore: { delete: async () => ({ ok: true as const, value: undefined }) } as never,
     eventSink: { emit() {}, emitBatch() {}, async flush() {} },
     purges: createDrizzleDocumentPurgeDisposal(db, { closeRemovedRooms: async () => {} }),
-    endRooms: async () => {},
+    collab: { endRooms: async () => {}, evidence: createDrizzleModelEvidence(db) },
     tree: treeLists,
   });
 

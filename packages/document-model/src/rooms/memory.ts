@@ -26,8 +26,6 @@ export interface MemoryDocumentRooms extends DocumentRooms<MemoryRoomTx> {
   transaction<T>(work: (tx: MemoryRoomTx) => Promise<T>): Promise<T>;
   /** The stored rows by room name, as a reload would read them. */
   rows(): ReadonlyMap<string, ReadonlyMap<DocKey, SnapshotRow>>;
-  /** Room names loaded now. */
-  loaded(): string[];
   /** Unload every room, freeing every doc. */
   close(): Promise<void>;
 }

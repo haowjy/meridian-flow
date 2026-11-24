@@ -247,11 +247,7 @@ export class DocumentSessionRegistry {
     if (!session) return false;
     const snapshot = session.getSnapshot();
     if (snapshot.schemaFence || snapshot.status === "detached") return false;
-    if (
-      snapshot.status !== "access-lost" &&
-      snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "terminal"
-    ) {
+    if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "terminal") {
       return false;
     }
     const key = sessionRoomKey(lease.room);
