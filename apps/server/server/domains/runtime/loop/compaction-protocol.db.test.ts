@@ -1722,8 +1722,7 @@ else
                   type: "text",
                   text: JSON.stringify({
                     error: "permission_denied",
-                    reason:
-                      'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
+                    reason: 'This agent has no "unavailable_probe_tool" tool.',
                   }),
                 },
               ],

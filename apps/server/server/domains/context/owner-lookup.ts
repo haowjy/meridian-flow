@@ -47,7 +47,7 @@ export type OwnerReceiptNote = { notice: string } | { owner: string };
 
 /** The one error for a Work handle that names no Work. It points to `work list` instead of listing. */
 export function unknownWorkMessage(handle: string): string {
-  return `Unknown Work ${handle}. Use work list.`;
+  return `Unknown Work ${handle}.`;
 }
 
 /** The owner the caller's own port supplies for a concrete no-handle repair. */

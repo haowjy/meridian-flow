@@ -167,11 +167,11 @@ function closedMessage(closed: ClosedSource | undefined): string {
   const who = "its owner";
   switch (closed?.why) {
     case "chat_frozen":
-      return `Not undone: ${who} is in Trash, so the change stayed. It comes undone only after the writer restores it.`;
+      return `Not undone: ${who} is in Trash, so the change stayed.`;
     case "work_deleted":
-      return `Not undone: ${who} is deleted, so the change stayed. It comes undone only after the writer restores it.`;
+      return `Not undone: ${who} is deleted, so the change stayed.`;
     default:
-      return `Not undone: ${who} is archived, so the change stayed. It comes undone only after the writer unarchives it.`;
+      return `Not undone: ${who} is archived, so the change stayed.`;
   }
 }
 

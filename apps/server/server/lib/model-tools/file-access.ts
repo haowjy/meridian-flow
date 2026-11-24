@@ -4,8 +4,8 @@
  * error. Refusal copy lives in `file-access-denial-copy.ts`.
  */
 import {
+  DOCUMENT_NOT_FOUND_MESSAGE,
   type DocumentCommandName,
-  documentNotFoundMessage,
   modelResult,
 } from "@meridian/agent-edit/integration";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
@@ -147,7 +147,7 @@ export function documentNotFoundError(
   command: DocumentCommandName,
   path?: string,
 ): WriteToolErrorOutput {
-  const message = documentNotFoundMessage(command);
+  const message = DOCUMENT_NOT_FOUND_MESSAGE;
   return {
     isError: true,
     output: modelResult({

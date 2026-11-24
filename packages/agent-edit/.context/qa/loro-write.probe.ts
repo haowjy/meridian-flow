@@ -423,7 +423,7 @@ check(
 );
 const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
-  !liveChanges.isError && /writes to live, so nothing waits for review/.test(text(liveChanges)),
+  !liveChanges.isError && /writes to live/.test(text(liveChanges)),
   "a Live chat's changes read succeeds and says nothing waits",
   text(liveChanges),
 );

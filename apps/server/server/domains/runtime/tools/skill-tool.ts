@@ -5,12 +5,11 @@
  * and `grep` refuse.
  */
 import {
-  documentNotFoundMessage,
+  DOCUMENT_NOT_FOUND_MESSAGE,
   markdownSections,
   modelResult,
   normalizeRequestedSlug,
   type ReadToolInput,
-  readCall,
   sectionNotFoundMessage,
   splitDocumentFile,
   type WriteErrorStatus,
@@ -43,13 +42,13 @@ const SkillToolInputSchema = z
 type SkillToolInput = z.output<typeof SkillToolInputSchema>;
 
 const SKILL_WRITE = "Files under skills:// can only be read.";
-const SKILL_GREP = "grep doesn't cover skills://. Use ls and read.";
+const SKILL_GREP = "grep doesn't cover skills://.";
 
 function blockSelectorRefusal(field: "in" | "around"): string {
-  return `skills:// files have no block hashes, so ${field} doesn't work here. Read the whole file or a #heading.`;
+  return `skills:// files have no block hashes, so ${field} doesn't work here.`;
 }
 
-const NOT_MARKDOWN = "only markdown files under skills:// have headings. Read the whole file.";
+const NOT_MARKDOWN = "only markdown files under skills:// have headings.";
 
 export function createSkillToolRegistrations(deps: SkillFilesDeps): ToolRegistration[] {
   return [
@@ -117,7 +116,7 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
     return readError("binary_file", "The file is binary, so it can't be read as text.", path);
   }
   if (file.kind === "not_found") {
-    return readError("document_not_found", documentNotFoundMessage("read"), path);
+    return readError("document_not_found", DOCUMENT_NOT_FOUND_MESSAGE, path);
   }
   const outline = format === "outline";
   if (fragment === undefined && !outline) return renderSkillFile(file.skill, file.path, file.text);
@@ -143,17 +142,12 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
       lines.slice(span.start, span.end).join("\n").trimEnd(),
     );
   }
-  const uri = `${SKILLS_URI_ROOT}${file.skill}/${file.path}`;
   return renderSkillFile(
     file.skill,
     address,
-    [
-      "format: outline",
-      "",
-      `Read a section with ${readCall(`${uri}#<slug>`)}.`,
-      "",
-      ...headings.map(({ heading, slug }) => `${heading}  #${slug}`),
-    ].join("\n"),
+    ["format: outline", "", ...headings.map(({ heading, slug }) => `${heading}  #${slug}`)].join(
+      "\n",
+    ),
   );
 }
 

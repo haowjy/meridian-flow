@@ -15,7 +15,7 @@ export function textPlanRefusal(
       }
     : {
         status: "document_not_found",
-        message: "File not found. Read the project to find the right path.",
+        message: "File not found.",
       };
 }
 

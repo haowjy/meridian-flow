@@ -10,7 +10,7 @@ import type {
   WriteToolInput,
 } from "@meridian/agent-edit/integration";
 import {
-  documentNotFoundMessage,
+  DOCUMENT_NOT_FOUND_MESSAGE,
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
@@ -104,7 +104,7 @@ export async function resolveCopySource(
     if (ref.error.code === "not_found") {
       return writeToolError(
         command,
-        fromMessage(source, documentNotFoundMessage(command)),
+        fromMessage(source, DOCUMENT_NOT_FOUND_MESSAGE),
         "document_not_found",
       );
     }

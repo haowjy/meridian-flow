@@ -94,7 +94,7 @@ function issueMessage(issue: Issue): string {
             : undefined;
         if (value === undefined) return `required; expected ${oneOf(options)}`;
         // A transcript from before `redo` was removed can still send it.
-        const gone = value === "redo" ? "; there is no redo, write the edit again" : "";
+        const gone = value === "redo" ? "; there is no redo" : "";
         return `expected ${oneOf(options)}, got ${quote(value)}${gone}`;
       }
       return issue.message;

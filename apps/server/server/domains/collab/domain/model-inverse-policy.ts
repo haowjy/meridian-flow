@@ -27,7 +27,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     if (!document)
       return {
         status: "document_not_found",
-        message: "File not found. Read the project to find the right path.",
+        message: "File not found.",
       };
     const policy = createCapturedReversalPlanner(document, query);
     try {
@@ -281,7 +281,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!document)
           return {
             status: "document_not_found",
-            message: "File not found. Check the path with ls.",
+            message: "File not found.",
           };
         const policy = createCapturedReversalPlanner(document, query);
         try {

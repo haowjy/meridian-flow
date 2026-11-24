@@ -256,7 +256,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           status: "success",
           model: {
             message: !lines
-              ? "No changes: this chat writes to live, so nothing waits for review."
+              ? "No changes: this chat writes to live."
               : lines.length
                 ? lines.join("\n")
                 : "No changes: this chat's draft of the document reads as live.",
@@ -888,6 +888,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }
 }
 
-const CHANGED_SINCE_READ = "It has been edited since you read it; below is how it reads now.";
+const CHANGED_SINCE_READ = "It has been edited since you read it.";
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";

@@ -468,7 +468,7 @@ function parseOwnerToken(
       return invalidContextUri(rawUri, `Invalid handle "${token}": no leading zeros.`);
     case "name":
       return scheme === "scratch"
-        ? invalidContextUri(rawUri, `Unknown Work ${token}. Use work list.`, {
+        ? invalidContextUri(rawUri, `Unknown Work ${token}.`, {
             kind: "name",
             scheme,
             token,

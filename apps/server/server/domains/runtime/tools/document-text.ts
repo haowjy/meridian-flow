@@ -35,7 +35,7 @@ export function reshownReadStub(documents: string): string {
 }
 
 export function staleReadStub(documents: string): string {
-  return `[Cleared at compaction: ${documents} has changed since this read. Read it again before relying on its text.]`;
+  return `[Cleared at compaction: ${documents} has changed since this read.]`;
 }
 
 function documentsLabel(changed: readonly DocumentRef[], input: JsonObject): string {
@@ -92,7 +92,7 @@ export const writeDocumentText: DocumentTextPolicy = {
       text:
         treatment === "reshown"
           ? `[Cleared at compaction: you edited ${documents} here (${input.command}); its current text is shown after the summary.]`
-          : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
+          : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since.]`,
     };
   },
 };
@@ -113,7 +113,7 @@ export const grepDocumentText: DocumentTextPolicy = {
 };
 
 export function historyReadStub(documents: string): string {
-  return `[omitted: ${documents}; read it for current text]`;
+  return `[omitted: ${documents}]`;
 }
 
 export const historyDocumentText: DocumentTextPolicy = {
@@ -123,7 +123,7 @@ export const historyDocumentText: DocumentTextPolicy = {
       text:
         treatment === "history"
           ? "[thread_history output omitted]"
-          : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}. Call thread_history again.]`,
+          : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}.]`,
     };
   },
 };

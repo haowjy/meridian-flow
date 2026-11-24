@@ -14,7 +14,7 @@ const runningAgainCopy = (ref: string, notified = true) =>
     : `${ref} is running again; this report is from its previous run. You won't be notified when it finishes.`;
 const reportUnavailableCopy = (ref: string, notified = true) =>
   notified
-    ? `${ref} has no finished report yet. You'll be notified when it finishes; don't call \`thread_report\` again until then.`
+    ? `${ref} has no finished report yet. You'll be notified when it finishes.`
     : `${ref} has no finished report yet. You won't be notified when it finishes.`;
 
 export async function readModelThreadReport(input: {

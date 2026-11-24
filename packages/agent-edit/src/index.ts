@@ -29,7 +29,7 @@ export {
   WriteToolInputSchema,
   writeCommandName,
 } from "./tool/command-schema.js";
-export { documentNotFoundMessage } from "./tool/internal-result.js";
+export { DOCUMENT_NOT_FOUND_MESSAGE } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
@@ -48,7 +48,6 @@ export { readStaticMarkdown } from "./tool/read-static.js";
 export { removedFile, removerName, survivingDraftNotice } from "./tool/removal-copy.js";
 export {
   agentEditResultSummary,
-  readCall,
   renderAgentEditResult,
 } from "./tool/result-text.js";
 export type {
