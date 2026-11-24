@@ -24,6 +24,7 @@ import { submitCommand } from "@/client/commands/submit";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { refreshDraftReads } from "./useOwnerDrafts";
+import { whenRead } from "./when-read";
 
 const KINDS = {
   create: "draft_create",
@@ -126,9 +127,9 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
   const settled = (record: CommandRecord) => {
     const { projectId, workId } = record.body as DraftCommandBody;
     const since = record.settledAt ?? Date.now();
-    void client
-      .refetchQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) })
-      .then(() => bound?.observe((each) => each.id === record.id));
+    const queryKey = projectQueryKeys.workDrafts(projectId, workId);
+    void whenRead(client, { queryKey }).then(() => bound?.observe((each) => each.id === record.id));
+    void client.refetchQueries({ queryKey });
     // Its chats moved to the default, and its changes left every list and count.
     void refreshDraftReads(client, projectId, new Set([undefined]), since);
   };
@@ -152,9 +153,9 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
     },
     onSettled: (record) => {
       const { projectId } = record.body as ChatDraftBody;
-      void client
-        .refetchQueries({ queryKey: projectQueryKeys.threads(projectId), exact: true })
-        .then(() => bound?.observe((each) => each.id === record.id));
+      const threads = { queryKey: projectQueryKeys.threads(projectId), exact: true };
+      void whenRead(client, threads).then(() => bound?.observe((each) => each.id === record.id));
+      void client.refetchQueries(threads);
       void refreshDraftReads(
         client,
         projectId,

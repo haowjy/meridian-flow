@@ -8,7 +8,9 @@ it as Markdown.
 A document's text is its Live room, `live:<documentId>`: a structure doc and a text doc per block,
 stored as `document_snapshots` rows (one per doc, keyed `room_key`, `doc_key`) and loaded by
 `DocumentRooms` (`rooms/postgres-document-rooms.ts`). There is no head, journal or checkpoint: a
-loaded room is a cache of its rows, and a save writes the docs that changed. A room with no rows
+loaded room is a cache of its rows, and a save writes the docs that changed. A doc whose row
+already holds all of it is not saved again: rows a commit or seed just wrote, or a save's merge
+just read, pass their versions to the import (`imported`'s `stored`). A room with no rows
 reads as an empty document, so a document created without text needs no row and no repair.
 
 A command reads its copy of the room in its transaction (`DocumentRooms.read` merges the stored

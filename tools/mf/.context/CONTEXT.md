@@ -133,7 +133,10 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   documents are made (a name with another extension is a usage error). `doc put --overwrite`
   deletes, waits for the delete's admission, then creates (new id, drafts and history gone),
   reports `previousDocumentId`, and says the old document was already deleted if the create
-  then fails. `doc rm` deletes documents, not folders. Seed scenario names use writer spelling.
+  then fails. `doc rm` deletes documents, not folders. `doc read/edit --draft` find the path in
+  the draft's view of the list and open the room the editor and the model use: the draft's fork,
+  or Live's room for a document only the draft holds (`TreeList.onlyInDraft`, the `draftRows`
+  rule behind the server's `exists_only_in_draft`). Seed scenario names use writer spelling.
   `doc copy` stays the server's Copy route: one Copy command per run under a fresh operation
   ID, each source's identity (`expected`) read from the list, no room version (it holds nothing
   open); `--draft-work` reads every source through that Work's draft.

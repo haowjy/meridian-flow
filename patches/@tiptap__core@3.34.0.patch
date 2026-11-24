@@ -1,15 +1,16 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 30371677b4e32734cd44d826b683d6affb0a368b..6152647e09b545568ba711638725e68aa83bc125 100644
+index 30371677b4e32734cd44d826b683d6affb0a368b..19822a20124de6429ff0784c18cb41c71a1fb1bf 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -5213,7 +5213,20 @@ function applyRule(config) {
+@@ -5213,7 +5213,21 @@ function applyRule(config) {
  	}) === null || !tr.steps.length) return false;
  	if (inputTransaction) {
  		view.dispatch(inputTransaction);
 -		if (!view.state.doc.eq(inputTransaction.doc)) return true;
 +		if (!view.state.doc.eq(inputTransaction.doc)) {
-+			// Meridian: a dispatch hook rewrote the typed text (suggestion mode marks it). Run the
-+			// rule again on the text as it landed, as composition end does, instead of dropping it.
++			// Meridian: a filterTransaction hook added steps to the typed text (block ids: the
++			// first keystroke gives an empty document's paragraph its id). Run the rule again on
++			// the text as it landed, as composition end does, instead of dropping it.
 +			const { $cursor } = view.state.selection;
 +			if ($cursor) run$1({
 +				editor,
@@ -24,7 +25,7 @@ index 30371677b4e32734cd44d826b683d6affb0a368b..6152647e09b545568ba711638725e68a
  	}
  	(0, _tiptap_pm_history.closeHistory)(tr);
  	tr.setMeta("inputRule", true);
-@@ -5500,7 +5513,6 @@ function run(config) {
+@@ -5500,7 +5514,6 @@ function run(config) {
  	});
  	return handlers.every((handler) => handler !== null);
  }
@@ -32,7 +33,7 @@ index 30371677b4e32734cd44d826b683d6affb0a368b..6152647e09b545568ba711638725e68a
  const createClipboardPasteEvent = (text) => {
  	var _event$clipboardData;
  	const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer() });
-@@ -5547,42 +5559,22 @@ function pasteRulesPlugin(props) {
+@@ -5547,42 +5560,22 @@ function pasteRulesPlugin(props) {
  		pasteEvent = typeof ClipboardEvent !== "undefined" ? new ClipboardEvent("paste") : null;
  		return tr;
  	};
@@ -76,17 +77,18 @@ index 30371677b4e32734cd44d826b683d6affb0a368b..6152647e09b545568ba711638725e68a
  				},
  				paste: (_view, event) => {
 diff --git a/dist/index.js b/dist/index.js
-index 158d419e30c111209ff390b864013124767636e0..7ac00e39f6b2acd7245d7381e9a16d53bbb2f0c3 100644
+index 158d419e30c111209ff390b864013124767636e0..5dc260bb295384d153bcb31e9b806f4082996c64 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -5201,7 +5201,20 @@ function applyRule(config) {
+@@ -5201,7 +5201,21 @@ function applyRule(config) {
  	}) === null || !tr.steps.length) return false;
  	if (inputTransaction) {
  		view.dispatch(inputTransaction);
 -		if (!view.state.doc.eq(inputTransaction.doc)) return true;
 +		if (!view.state.doc.eq(inputTransaction.doc)) {
-+			// Meridian: a dispatch hook rewrote the typed text (suggestion mode marks it). Run the
-+			// rule again on the text as it landed, as composition end does, instead of dropping it.
++			// Meridian: a filterTransaction hook added steps to the typed text (block ids: the
++			// first keystroke gives an empty document's paragraph its id). Run the rule again on
++			// the text as it landed, as composition end does, instead of dropping it.
 +			const { $cursor } = view.state.selection;
 +			if ($cursor) run$1({
 +				editor,
@@ -101,7 +103,7 @@ index 158d419e30c111209ff390b864013124767636e0..7ac00e39f6b2acd7245d7381e9a16d53
  	}
  	closeHistory(tr);
  	tr.setMeta("inputRule", true);
-@@ -5488,7 +5501,6 @@ function run(config) {
+@@ -5488,7 +5502,6 @@ function run(config) {
  	});
  	return handlers.every((handler) => handler !== null);
  }
@@ -109,7 +111,7 @@ index 158d419e30c111209ff390b864013124767636e0..7ac00e39f6b2acd7245d7381e9a16d53
  const createClipboardPasteEvent = (text) => {
  	var _event$clipboardData;
  	const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer() });
-@@ -5535,42 +5547,22 @@ function pasteRulesPlugin(props) {
+@@ -5535,42 +5548,22 @@ function pasteRulesPlugin(props) {
  		pasteEvent = typeof ClipboardEvent !== "undefined" ? new ClipboardEvent("paste") : null;
  		return tr;
  	};

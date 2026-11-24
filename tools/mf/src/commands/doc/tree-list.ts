@@ -16,13 +16,17 @@ import {
 } from "@meridian/document-model";
 import {
   type CreateRecord,
+  draftRows,
   LIVE,
   lastSettlements,
   listRecords,
+  pendingRecords,
+  projectedRows,
   replayView,
   type TreeProjection,
   type TreeRecord,
   TreeWriter,
+  type View,
 } from "@meridian/project-tree";
 import { LoroDoc } from "loro-crdt";
 import { CliError } from "../../core/cli-error";
@@ -88,9 +92,22 @@ export class TreeList {
     return new TreeList(session, list, await connect(session, list), actor);
   }
 
-  /** The list as the copy stands, records appended a moment ago included. */
-  replay(): TreeProjection {
-    return replayView(this.main.doc, LIVE);
+  /** The list as the copy stands, records appended a moment ago included: Live's, or a draft's. */
+  replay(view: View = LIVE): TreeProjection {
+    return replayView(this.main.doc, view);
+  }
+
+  /**
+   * Whether only `draft` holds `node`, by the rule the server stores as `exists_only_in_draft`:
+   * such a document keeps its text in its Live room, where the editor and the model write it.
+   */
+  onlyInDraft(node: string, draft: string): boolean {
+    const rows = draftRows(
+      projectedRows(this.replay()),
+      projectedRows(this.replay({ draft })),
+      pendingRecords(this.main.doc, draft),
+    );
+    return rows.get(node)?.existsOnlyInDraft === true;
   }
 
   /**

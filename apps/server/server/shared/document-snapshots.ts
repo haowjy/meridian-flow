@@ -55,3 +55,11 @@ export function holdsFrontiers(doc: LoroDoc | undefined, frontiers: StoredFronti
     return false;
   }
 }
+
+/** Whether two frontiers name the same version, in any order. */
+export function sameFrontiers(a: StoredFrontiers, b: StoredFrontiers): boolean {
+  return (
+    a.length === b.length &&
+    a.every(({ peer, counter }) => b.some((id) => id.peer === peer && id.counter === counter))
+  );
+}

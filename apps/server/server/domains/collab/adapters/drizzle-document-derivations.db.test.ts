@@ -38,11 +38,7 @@ import {
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  currentDrizzleDb,
-  isInDrizzleTransaction,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import {
@@ -182,8 +178,6 @@ describe("durable document derivations", () => {
       await runInDrizzleTransaction(db, () =>
         rooms.commit(currentDrizzleDb(db), live, batch, "server:test"),
       );
-      // The loaded room saves the batch again after its 2 s debounce, which a slow case would race.
-      if (!isInDrizzleTransaction()) await rooms.flush(live);
     } finally {
       docs.free();
     }

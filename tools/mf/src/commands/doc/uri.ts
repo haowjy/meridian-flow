@@ -1,4 +1,4 @@
-/** URI → project context route inputs and live document identity, via the app's own address route. */
+/** URI → project context route inputs and document identity, in Live or a draft. */
 import {
   formatParsedContextUri,
   type ParsedContextAuthority,
@@ -8,6 +8,7 @@ import { parseHandle } from "@meridian/contracts/handles";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
+  type DocumentRoom,
   documentAddressSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
@@ -17,6 +18,7 @@ import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveWork } from "../project/resolve";
 import { resolveThreadId } from "../thread/resolve";
+import { lookupPath, Trees } from "./tree-address";
 
 export type ResolvedUri = {
   scheme: ProjectContextTreeScheme;
@@ -125,12 +127,33 @@ export async function resolveDocument(session: Session, projectId: string, targe
   return address.document;
 }
 
-export async function resolveDocumentId(
+/**
+ * The room that holds the document at a URI: Live's, through the server's address route, or, given
+ * a draft, the path in the draft's view of the tree, in the draft's fork, except for a document
+ * only the draft holds, whose text is in its own Live room (as the server's `agentRoomFor` picks).
+ */
+export async function resolveDocumentRoom(
   session: Session,
   projectId: string,
   target: ResolvedUri,
-): Promise<string> {
-  return (await resolveDocument(session, projectId, target)).documentId;
+  draft?: string,
+): Promise<DocumentRoom> {
+  if (!draft) {
+    const { documentId } = await resolveDocument(session, projectId, target);
+    return { kind: "live", documentId };
+  }
+  const trees = new Trees(session, projectId);
+  try {
+    const { list, source } = await trees.at(target);
+    const { node } = lookupPath(list.replay({ draft }), source, target.path);
+    if (node?.kind !== "document")
+      throw new CliError("not_found", `No document at ${target.uri} in draft ${draft}`);
+    return list.onlyInDraft(node.id, draft)
+      ? { kind: "live", documentId: node.id }
+      : { kind: "fork", draftId: draft, documentId: node.id };
+  } finally {
+    await trees.close();
+  }
 }
 
 /** `--project`/`--work`/`--chat` shared by every command that takes a document URI. */

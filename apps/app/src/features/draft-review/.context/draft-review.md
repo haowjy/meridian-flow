@@ -101,7 +101,7 @@ and comes back with a pill if the press fails. The journal is the one holder of 
 in every tab and through a reload: a press not yet answered, or answered and not yet `observed`
 (`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). A press is observed once
 every draft list on screen in that tab has been read from the server since it settled
-(`whenDraftListsRead`): a read that failed keeps the rows held until one succeeds. The pressing
+(`whenRead`): a read that failed keeps the rows held until one succeeds. The pressing
 tab also takes whole rows out of its cached list in the frame it presses, before the journal
 commits, so neither that gap nor a read already out shows them. The Work's review count leaves
 out what the journal holds (`changeCount`, `pressedDrafts` in `tree-version.tsx`), so its badges
