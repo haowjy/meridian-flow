@@ -4,6 +4,7 @@ export {
   createLinkScopeObserver,
   type LinkScopeObserver,
 } from "./adapters/agent-edit-observability.js";
+export { runDocumentCommand } from "./adapters/drizzle-document-commands.js";
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
@@ -25,6 +26,7 @@ export {
   LinkBindingInsideTransactionError,
   type PlannedMarkdownInput,
 } from "./domain/link-binding.js";
+export { DocumentSyncError } from "./domain/markdown-document.js";
 export { ModelEditRefusal } from "./domain/model-edit.js";
 export type { ModelEvidence } from "./domain/model-evidence.js";
 export {

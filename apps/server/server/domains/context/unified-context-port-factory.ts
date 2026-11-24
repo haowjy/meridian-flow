@@ -15,8 +15,7 @@ import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/work
 import type { Database } from "@meridian/database";
 import { approveDraftWriteJoin } from "../../shared/draft-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type { Drafts } from "../collab/domain/drafts.js";
-import type { DocumentCreationAggregate } from "../collab/index.js";
+import type { DocumentCreationAggregate, Drafts } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";

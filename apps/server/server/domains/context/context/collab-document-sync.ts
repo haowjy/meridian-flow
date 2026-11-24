@@ -8,13 +8,13 @@
  * fresh write that finds the document already holds content is `stale_target`.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { DocumentSyncError } from "../../collab/domain/markdown-document.js";
-import type {
-  BoundWrite,
-  DocumentSeedOrigin,
-  DocumentWriteOrigin,
-  MarkdownDocumentStore,
-  SyncError,
+import {
+  type BoundWrite,
+  type DocumentSeedOrigin,
+  DocumentSyncError,
+  type DocumentWriteOrigin,
+  type MarkdownDocumentStore,
+  type SyncError,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
