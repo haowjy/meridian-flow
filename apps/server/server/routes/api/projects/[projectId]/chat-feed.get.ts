@@ -1,4 +1,3 @@
-/** GET project chat feed: owner-gated, cursor-paginated, optionally filtered by Work, Favorites, and title search. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";

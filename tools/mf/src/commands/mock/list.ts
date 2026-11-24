@@ -1,4 +1,3 @@
-/** `mock list`: show queued mock scripts. */
 import {
   API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
   mockModelScriptStateSchema,

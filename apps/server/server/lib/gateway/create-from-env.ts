@@ -1,13 +1,3 @@
-/**
- * Env-driven gateway construction: reads provider env vars, builds provider
- * configs, optionally spins up the mock server, and returns a ready Gateway.
- * The environment->gateway wiring seam used by the composition root.
- *
- * This is the convenience factory for local dev and tests. The production
- * composition root may bypass this and call createGateway() directly with
- * secrets from a secret store.
- */
-
 import { effortLevels } from "@meridian-flow/mars-schema";
 import {
   assertModelsOnWire,
@@ -35,11 +25,8 @@ import { MODEL_REGISTRY, registryProviderConfigs } from "./registry.js";
 
 export interface GatewayFromEnv {
   gateway: Gateway;
-  /** Concrete default after enabled-provider selection and local mock fallback. */
   defaultModel: string;
-  /** Closes the in-process mock server when one was started for this instance. */
   cleanup?: () => Promise<void>;
-  /** Scripted-reply queue of the in-process mock server; absent for real providers. */
   mockScript?: MockScriptQueue;
 }
 
@@ -80,17 +67,6 @@ function formatGatewayStartupInfo(
   };
 }
 
-/**
- * Build a gateway from environment inputs.
- *
- * When no real provider keys are configured (or MODEL_PROVIDER is "mock"),
- * starts an in-process OpenAI-compatible mock server with deterministic
- * sample responses. Returns a cleanup function so the caller can shut down the mock
- * server when the gateway is no longer needed.
- *
- * The `mockBaseUrl` option lets tests provide a pre-existing mock server URL
- * instead of spawning a new one.
- */
 export async function createGatewayFromEnv(
   env: GatewayEnvInput,
   options?: {
@@ -99,13 +75,11 @@ export async function createGatewayFromEnv(
     onInfo?: (info: GatewayStartupInfo) => void;
   },
 ): Promise<GatewayFromEnv> {
-  // A bad row must fail here, not in the deployment that happens to hold that provider's key.
   for (const provider of registryProviderConfigs(MODEL_REGISTRY)) assertModelsOnWire(provider);
   let cleanup: (() => Promise<void>) | undefined;
   let mockScript: MockScriptQueue | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
 
-  // Validate before starting the mock server, so a bad value leaves nothing to clean up.
   const liveTestModel = env.LIVE_TEST_MODEL;
   if (liveTestModel && isProductionEnv({ rawNodeEnv: env.NODE_ENV, rawAppEnv: env.APP_ENV })) {
     throw new Error(

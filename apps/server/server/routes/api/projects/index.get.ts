@@ -1,4 +1,3 @@
-/** GET /api/projects: lists the authenticated user's projects. Depends on the auth gate and project repository. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
 

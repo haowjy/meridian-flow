@@ -1,4 +1,3 @@
-/** GET /api/projects/:projectId/drafts?draft=<id>: a draft's reviewable items. */
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

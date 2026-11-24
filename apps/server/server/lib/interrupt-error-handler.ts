@@ -1,10 +1,3 @@
-/**
- * Purpose: Nitro global error handler that unwraps interrupt-tagged HTTP errors into the
- * canonical `{ kind: "error", error }` body (same arm WS error frames embed).
- * Key decisions: registered first in `nitro.config.ts` `errorHandler` so every mapped route
- * that calls `throwHttpInterrupt*` gets envelope-shaped JSON without per-handler discipline;
- * non-interrupt errors fall through to Nitro's built-in handler.
- */
 import { HTTPError } from "nitro/h3";
 import {
   HTTP_INTERRUPT_ENVELOPE_KEY,

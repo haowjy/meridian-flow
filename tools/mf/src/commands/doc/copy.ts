@@ -1,4 +1,3 @@
-/** `doc copy`: one Copy command through the project's own route, its sources named by the tree list. */
 import { randomUUID } from "node:crypto";
 import {
   apiProjectContextCopyPath,
@@ -110,7 +109,6 @@ export const docCopyCommand: CommandSpec = {
   },
 };
 
-/** The identity a source root presents, as the copy's expected source: the node the list holds there. */
 async function sourceIdentity(
   trees: Trees,
   target: ResolvedUri,

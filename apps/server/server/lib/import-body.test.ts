@@ -1,4 +1,3 @@
-/** Import bodies are refused while streaming, before the server buffers past the bound. */
 import { describe, expect, it } from "vitest";
 import { ImportError } from "../domains/import/index.js";
 import { readBoundedBody, readImportParts } from "./import-body.js";
@@ -42,7 +41,6 @@ describe("bounded import bodies", () => {
     expect(await refusal(readBoundedBody(event, 4096, "import_request_too_large"))).toMatchObject({
       code: "import_request_too_large",
     });
-    // Request construction may prefetch one chunk; nothing more is read.
     expect(pulled()).toBeLessThanOrEqual(1);
   });
   it("reads numbered file parts and refuses unnamed ones", async () => {

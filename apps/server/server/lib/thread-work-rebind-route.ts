@@ -1,5 +1,3 @@
-/** Authenticated writer adapter for the canonical thread Work-rebind command. */
-
 import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import {

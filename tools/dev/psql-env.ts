@@ -1,9 +1,5 @@
 #!/usr/bin/env bun
-/**
- * Prints `export PG*=…` lines for this checkout's database, for `tools/dev/psql`
- * to eval. Connection details travel in psql's environment, never its argv, so
- * `ps` and psql's own error messages cannot show the password.
- */
+// keep: connection details go in psql's environment, never its argv, so `ps` and psql's own errors cannot show the password
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 applyDevEnvToProcess();

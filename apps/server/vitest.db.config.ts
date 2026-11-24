@@ -6,7 +6,6 @@ import { defineProject } from "vitest/config";
 
 import { databaseWorkers } from "../../tools/ci/vitest-shared";
 
-/** Canonical, destructive PostgreSQL suite spanning the server and database package. */
 const DATABASE_URL = process.env.DATABASE_URL;
 if (process.env.RUN_DB_TESTS !== "1" || !DATABASE_URL) {
   throw new Error("DB tests require RUN_DB_TESTS=1 and a dedicated throwaway DATABASE_URL.");
@@ -141,7 +140,6 @@ export default defineProject({
     dir: root,
     environment: "node",
     pool: "forks",
-    // Worker clones and rollback/FK resets own isolation; DB suites have no module/global mocks.
     isolate: false,
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
@@ -151,15 +149,9 @@ export default defineProject({
     ],
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: databaseWorkers,
-    // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
-    // timed-out test or fixture hook's async DB work is NOT cancelled — it
-    // overlaps the next test's destructive reset and corrupts it. Give setup
-    // and cleanup the same 30s budget as test bodies. (#314) Under shared
-    // Postgres load a hook can still outlast this; the harness fix is #616.
+    // keep: a timed-out hook's async DB work is not cancelled and overlaps the next test's destructive reset, so setup and cleanup get the same 30 s budget
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    // Reverse teardown order lets file-local afterEach hooks finish before the
-    // shared drain, which then settles before nested pool-closing afterAll hooks.
     sequence: { shuffle: true, hooks: "stack" },
     reporters: [
       "default",

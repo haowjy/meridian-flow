@@ -8,7 +8,6 @@ import {
 } from "nitro/h3";
 import { getApp } from "../../../../lib/app.js";
 
-/** A browser's PUT to a URL from `signPut`: the token carries the key, length and type. */
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, "token") ?? "";
   const { localObjectStore } = await getApp();

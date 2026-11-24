@@ -1,20 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Report how much memory each dev stack is holding, and optionally stop the
- * ones that have been idle longest.
- *
- * Dev stacks are the largest single consumer on the shared host — measured at
- * 14.3 GB across six worktrees, against ~9 GB for every test process running at
- * the time — but nothing reported them, so an abandoned stack could sit for
- * hours. The merge-train rule is "one stack per session, stopped right after";
- * this is the report that rule never had.
- *
- * A stack stops itself after DEV_IDLE_STOP_MINUTES unused (`dev-idle-watch.ts`);
- * --reap-idle applies the same idle rule with a shorter limit, or to stacks that
- * started without a watcher (shown as `unwatched`). Nothing is stopped unless --reap-idle is given with
- * --yes, because a stack belongs to whichever session started it. Databases and worktrees are never
- * touched: stopping a stack leaves both alone.
- */
 import { execFileSync } from "node:child_process";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
 import { readIdleStopRecord } from "./lib/dev-idle.ts";

@@ -1,9 +1,3 @@
-/**
- * One writer-chosen context end as a route resolves it: the address a move, copy or create
- * names, the owner it resolves to, and the container its files live in. Each route parses its
- * own locators and words its own refusals; these are the meanings they share, so they cannot
- * disagree about who owns an address, whether the writer can edit it, or which URI spells it.
- */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
@@ -57,14 +51,12 @@ export type ResolvedLineageLocator = LineageLocator & {
 };
 export type ResolvedContextLocator = ProjectLocator | ResolvedWorkLocator | ResolvedLineageLocator;
 
-/** The URI that spells a locator's address. */
 export function locatorUri(locator: ResolvedContextLocator, path = locator.path): string {
   return locator.scope !== "project"
     ? projectBrowseContextUri(locator.scheme, path, locator.authority)
     : projectBrowseContextUri(locator.scheme, path);
 }
 
-/** The container a locator's files live in: the file-policy target an edit is granted on. */
 export function containerOf(
   locator: ResolvedContextLocator | ChatLocator,
   projectId: string,
@@ -104,7 +96,6 @@ export function containerOf(
 
 export type ChatLocator = { scope: "chat"; scheme: "uploads"; chatId: string; path: string };
 
-/** Why a URI named no owner this project can reach. */
 export type LocatorRefusal =
   | { reason: "invalid_uri"; error: ContextError }
   | { reason: "work_missing" }
@@ -115,10 +106,6 @@ export type LocatorDeps = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 };
 
-/**
- * The owner a canonical URI names, resolved against this project: its Work, lineage or chat.
- * Uploads answer as a `chat` locator, which a move or copy refuses and a read serves.
- */
 export async function resolveLocatorUri(
   deps: LocatorDeps,
   projectId: string,
@@ -153,15 +140,10 @@ export async function resolveLocatorUri(
     if (!chat) return Err({ reason: "chat_missing" });
     return Ok({ scope: "chat", scheme: "uploads", chatId: chat.chatId, path });
   }
-  // A Work-scoped or uploads address that names no owner belongs to no one this project can reach.
   if (!isProjectScopedScheme(scheme)) return Err({ reason: "work_missing" });
   return Ok({ scope: "project", scheme: scheme as ProjectContextFsScheme, path });
 }
 
-/**
- * The owner an unresolved locator names, resolved against this project: its Work or lineage. A
- * Work or chat that is gone refuses.
- */
 export async function resolveLocator(
   deps: LocatorDeps,
   projectId: string,
@@ -178,7 +160,6 @@ export async function resolveLocator(
   return Ok({ scope: "work", scheme: locator.scheme, path: locator.path, authority });
 }
 
-/** The container a canonical address lives in, or null when it names no owner this project can reach. */
 export async function containerOfUri(
   deps: LocatorDeps,
   projectId: string,
@@ -188,11 +169,6 @@ export async function containerOfUri(
   return resolved.ok ? containerOf(resolved.value, projectId) : null;
 }
 
-/**
- * Whether the writer may run a command against the address `uri` names (`command`: who may act,
- * whatever state the Work is in): the recheck a Copy runs on a destination it resolved again
- * inside its locks. A closed Work answers yes here; the lock decides.
- */
 export function canCommandContextUri(
   deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize"> },
   input: { projectId: string; userId: string },
@@ -209,20 +185,13 @@ export function canCommandContextUri(
   };
 }
 
-/** The HTTP answer a route gives a refused locator. */
 export function throwLocatorRefusal(refusal: LocatorRefusal): never {
   if (refusal.reason === "invalid_uri") contextErrorToHttp(refusal.error);
   if (refusal.reason === "work_missing") throwContextWorkUnavailableHttpError("work_missing");
   throw createError({ statusCode: 404, message: "Chat not found" });
 }
 
-/**
- * Where this project holds a node, found by its id: the address the row stands at (following a
- * join's forward) and the owner that address names. `held` answers null for another project's
- * row and `unreachable` for a deleted, hidden or inconsistent one, so this one call is the
- * project check, the visibility check and the locator for a by-id route. Authorize on
- * `address.id`, never on the id asked for: a forwarded id names another row.
- */
+// keep: authorize on the returned `address.id`, never on the id asked for: a join's forward makes the asked id name another row
 export async function locateNode(
   deps: LocatorDeps & { availability: ProjectContextAvailabilityPort },
   input: {

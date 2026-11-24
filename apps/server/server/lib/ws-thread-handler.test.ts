@@ -108,8 +108,6 @@ describe("thread WS handler subscribe handoff", () => {
     expect(subscribed).toMatchObject({ requestId: "r1", after: "0", catchup: [] });
     expect(subscribed).not.toHaveProperty("nextSeq");
 
-    // The separately sampled durable head may lead the live listener. The
-    // client resumes from delivered event frames, not the durable head.
     deliverLive(UNDELIVERED_HEAD);
     expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
   });
@@ -137,7 +135,6 @@ it("preserves typed errors in catchup and live envelopes", async () => {
   expect(frames.at(-1)).toMatchObject({ type: "event", seq: "2000", error });
 });
 
-// HTTP availability proofs never become attested WebSocket disappearance proofs.
 it.each(["thread_not_found", "thread_deleted"])(
   "keeps a %s subscribe refusal as an unattested not_found frame",
   async (code) => {

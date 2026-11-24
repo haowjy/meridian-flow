@@ -1,12 +1,3 @@
-/**
- * Commit-bound eligibility policy for destructive worktree cleanup.
- *
- * Branch names are selectors, not proof: names can be reused and can have
- * historical pull requests. Cleanup is authorized only for the exact local ref
- * OID captured in the plan: one surviving ref that still contains the commit,
- * one exact merged PR, or a manual verification note.
- */
-
 const LOCAL_BRANCH_PREFIX = "refs/heads/";
 const REMOTE_BRANCH_PREFIX = "refs/remotes/";
 
@@ -27,14 +18,12 @@ export type CleanupEligibility =
       readonly kind: "ancestry";
       readonly branch: string;
       readonly plannedOid: string;
-      /** Fully-qualified ref that contains the planned commit, e.g. `refs/heads/main`. */
       readonly containedBy: string;
     }
   | {
       readonly kind: "pull-request";
       readonly branch: string;
       readonly plannedOid: string;
-      /** The merged PR's own base branch, not necessarily the repository trunk. */
       readonly pullRequestBase: string;
       readonly repositoryOwner: string;
       readonly pullRequestNumber: number;
@@ -51,24 +40,16 @@ export type EligibilityDecision =
   | { readonly eligible: true; readonly evidence: CleanupEligibility }
   | { readonly eligible: false; readonly reason: string };
 
-/** Strips `refs/heads/` or `refs/remotes/` for messages. */
 export function shortRefName(ref: string): string {
   if (ref.startsWith(LOCAL_BRANCH_PREFIX)) return ref.slice(LOCAL_BRANCH_PREFIX.length);
   if (ref.startsWith(REMOTE_BRANCH_PREFIX)) return ref.slice(REMOTE_BRANCH_PREFIX.length);
   return ref;
 }
 
-/** Locale-independent name order, so evidence selection is stable. */
 function compareRefNames(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/**
- * Parses `%(refname)%00%(symref)` rows into ref names, dropping symbolic refs.
- * A symbolic ref (e.g. `refs/remotes/origin/HEAD`) is an alias, not another
- * branch, and it can even alias the very ref being deleted, which would leave
- * the planned commit reachable from nothing.
- */
 export function parseNonSymbolicRefNames(refOutput: string): string[] {
   return refOutput
     .split("\n")
@@ -79,12 +60,6 @@ export function parseNonSymbolicRefNames(refOutput: string): string[] {
     });
 }
 
-/**
- * Splits a remote-tracking ref into its configured remote and the branch it
- * tracks. Remote names may contain slashes (`team/origin`), so the longest
- * configured remote name wins; splitting at the first slash would read a
- * pushed copy of the branch itself as somebody else's branch.
- */
 export function splitRemoteTrackingRef(
   ref: string,
   remotes: readonly string[],
@@ -115,12 +90,6 @@ function containmentRank(ref: string, baseBranch: string, remotes: readonly stri
   return 3;
 }
 
-/**
- * Picks the ref reported as the branch's containment evidence. The branch's own
- * refs never count: a merely-pushed branch is not merged. The trunk is
- * preferred so the evidence names it ahead of side refs, then local branches,
- * then remote-tracking refs, each sorted for a stable choice.
- */
 export function selectContainedByRef(
   refs: readonly string[],
   branch: string,
@@ -132,8 +101,6 @@ export function selectContainedByRef(
       if (!ref.startsWith(LOCAL_BRANCH_PREFIX) && !ref.startsWith(REMOTE_BRANCH_PREFIX)) {
         return false;
       }
-      // An unresolved remote-tracking ref (no configured remote matches) cannot
-      // be verified or recognized as the branch's own copy, so it never counts.
       if (
         ref.startsWith(REMOTE_BRANCH_PREFIX) &&
         remoteTrackingBranch(ref, remotes) === undefined
@@ -157,7 +124,6 @@ export function decideCleanupEligibility(input: {
   readonly repositoryOwner: string;
   readonly containedBy: string | undefined;
   readonly allowAncestry: boolean;
-  /** `any` for targeted cleanup, `base-branch` for batch cleanup. */
   readonly pullRequestBaseScope: "base-branch" | "any";
   readonly pullRequestDiscovery: PullRequestDiscovery;
 }): EligibilityDecision {
@@ -199,12 +165,6 @@ export function decideCleanupEligibility(input: {
     };
   }
 
-  // Batch cleanup has no per-target confirmation, so it keeps refusing
-  // duplicate exact records. Targeted cleanup picks one deterministically
-  // instead: a branch merged into an integration branch and later into the
-  // trunk legitimately matches twice, and every exact match independently
-  // proves the merge. The trunk's record is preferred, then the lowest base
-  // name and PR number.
   if (input.pullRequestBaseScope === "base-branch" && exactMatches.length > 1) {
     return {
       eligible: false,

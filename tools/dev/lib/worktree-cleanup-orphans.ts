@@ -1,4 +1,3 @@
-/** Reclaim managed dev sessions whose checkout directory has disappeared. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +15,6 @@ interface PaneIdentity {
 
 type Pane =
   | (PaneIdentity & {
-      /** tmux keeps an exited pane without PID or cwd until the session is killed. */
       readonly dead: true;
     })
   | (PaneIdentity & {
@@ -49,13 +47,10 @@ function runTmux(args: string[], cwd: string): string {
 
 function missingDirectory(directory: string): boolean {
   try {
-    // A dangling symlink or an inaccessible path is not deletion evidence.
     fs.lstatSync(directory);
     return false;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    // The sibling worktree container may itself have been deleted. Walk to an
-    // inspectable existing ancestor, refusing dangling symlinks along the way.
     let ancestor = path.dirname(directory);
     while (true) {
       try {
@@ -97,7 +92,6 @@ function listPanes(cwd: string): Pane[] {
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { stderr?: string | Buffer };
     if (failure.code === "ENOENT") return [];
-    // No server is normal; any other inspection failure must remain visible.
     if (
       /^(no server running on|error connecting to .* \(No such file or directory\))/m.test(
         String(failure.stderr),
@@ -153,7 +147,6 @@ function orphanSession(
   const root = path.resolve(first.worktreePath);
   const hash = resolveSessionIdentity({ branchName: "", repoRootRealpath: root }).worktreeHash;
   if (!new RegExp(`^meridian-[a-z0-9-]+-${hash}$`).test(first.sessionName)) return;
-  // A dead pane has no cwd to check; its session path still must match.
   if (panes.some((pane) => pane.worktreePath !== root || (!pane.dead && !within(pane.cwd, root))))
     return;
   if (!orphanCheckout(root, repository)) return;
@@ -165,7 +158,6 @@ function orphanSession(
   };
 }
 
-/** Missing unregistered checkouts must be in this repository's sibling worktree root. */
 export function collectOrphanDevSessions(cwd: string): OrphanDevSession[] {
   const repository = repositoryWorktrees(cwd);
   const sessions = new Map<string, Pane[]>();
@@ -175,7 +167,6 @@ export function collectOrphanDevSessions(cwd: string): OrphanDevSession[] {
     sessions.set(pane.sessionId, panes);
   }
   return [...sessions.values()].flatMap((panes) => {
-    // Dead panes prove nothing about ownership; discovery needs a live pane.
     const orphan = panes.some((pane) => !pane.dead) ? orphanSession(panes, repository) : undefined;
     return orphan ? [orphan] : [];
   });
@@ -191,8 +182,6 @@ function inspectPlannedSession(
   };
   if (!orphanCheckout(expected.worktreePath, repository)) refuse();
   const panes = listPanes(cwd).filter((pane) => pane.sessionId === expected.sessionId);
-  // TERM may remove some or all original panes. New or relocated panes are not
-  // authorized by the plan, even if the session ID and name have not changed.
   if (panes.length === 0) return;
   const current = orphanSession(panes, repository);
   if (
@@ -205,7 +194,6 @@ function inspectPlannedSession(
   return current;
 }
 
-/** Revalidate the same ownership contract before every shutdown phase. */
 export async function stopOrphanDevSessions(
   cwd: string,
   plan: readonly OrphanDevSession[],
@@ -223,7 +211,6 @@ export async function stopOrphanDevSessions(
       },
       teardown: () => {
         if (inspectPlannedSession(cwd, orphan)) {
-          // Session IDs are exact tmux targets; never use a name-prefix match.
           runTmux(["kill-session", "-t", orphan.sessionId], cwd);
         }
       },

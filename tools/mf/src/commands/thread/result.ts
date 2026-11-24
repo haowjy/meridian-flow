@@ -1,4 +1,3 @@
-/** Terminal claims and deadline reports, independent of the interim follow predicates. */
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { writerMessages } from "@meridian/thread-client";
 import { EXIT, type ExitCode } from "../../core/cli-error";
@@ -24,7 +23,6 @@ export type Reason =
   | "credits_exhausted"
   | "not_a_message"
   | "forgotten";
-/** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
   | { outcome: "accepted" | "complete" | "cancelled" | "handed_back"; reason: null }
   | { outcome: "failed"; reason: null | "credits_exhausted" | "not_a_message" | "forgotten" }
@@ -56,13 +54,11 @@ const EXITS: Record<Outcome, ExitCode> = {
   timeout: EXIT.timeout,
   unproven: EXIT.unproven,
 };
-/** One envelope/exit boundary; command fields cannot override the terminal contract. */
 export function terminalResult<T extends Record<string, unknown> & { threadId: string | null }>(
   command: string,
   claim: Claim,
   fields: T,
 ): TerminalResult<T> {
-  // Rebuild so callers that pass a whole prior result as the claim leak nothing else.
   const proof: Claim =
     claim.outcome === "failed"
       ? { outcome: "failed", reason: claim.reason }
@@ -118,7 +114,6 @@ type DeadlineReport =
       next: string[];
     });
 
-/** Describe the last deadline evidence, never infer a confirmed outcome from it. */
 export function classifyDeadline(
   snapshot: ThreadSnapshotResponse | null,
   threadId: string,
@@ -147,7 +142,6 @@ export function classifyDeadline(
   };
 }
 
-/** Obligations from the mandatory live-state projection, never durable thread.status. */
 export function snapshotActivity(snapshot: ThreadSnapshotResponse) {
   const { runState } = snapshot.liveState;
   const turnId = runState.execution?.currentTurnId ?? null;

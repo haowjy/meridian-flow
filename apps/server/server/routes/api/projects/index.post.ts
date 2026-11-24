@@ -1,4 +1,3 @@
-/** POST /api/projects: creates a project for the authenticated user. Depends on the auth gate and project repository. */
 import type { CommandId } from "@meridian/contracts";
 import type { ProjectDto } from "@meridian/contracts/projects";
 import { type CreateProjectRequest, serializeTransport } from "@meridian/contracts/protocol";

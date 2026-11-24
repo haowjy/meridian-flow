@@ -1,4 +1,3 @@
-/** PUT /api/threads/:threadId/work: idempotently rebinds an idle owned thread. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

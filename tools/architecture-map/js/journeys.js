@@ -1,10 +1,3 @@
-/*
- * The journeys view: journeys/index.md lists the journeys, each journey page is a row of
- * step cards (title, a place for the step's screenshot when it has one, Does, Sees). A card
- * opens its links in the panel: map links go to the map at that box, machine links open in the
- * doc view; a link to a flow page opens the flow. Under the journeys, "What happens underneath"
- * lists the flows (the list items of flows/index.md). The route is `#journeys[/<journey>[/<step number>]]`.
- */
 import { MAP_DIR } from "./config.js";
 import { paintInline, route } from "./markdown.js";
 import { item, JOURNEY_KEYS, linksOf } from "./pages.js";
@@ -13,12 +6,10 @@ import { el, fetchPage, fetchRepoFile } from "./shell.js";
 const JOURNEYS = `${MAP_DIR}/journeys`;
 const FLOWS_INDEX = `${MAP_DIR}/flows/index.md`;
 
-/** Mounts the journeys into `host`; `nav.replace(hash)` changes the address without a history entry. Returns { select(id, step), dispose() }. */
 export async function createJourneys(host, { nav }) {
   const content = el("div", { class: "journeys" });
   const panel = el("aside", { class: "panel", "aria-label": "Selected step" });
   host.replaceChildren(content, panel);
-  // A project may have no flows; the check holds the flows page to what exists.
   const flowLines = (await fetchRepoFile(FLOWS_INDEX).catch(() => ""))
     .split("\n")
     .filter((l) => l.startsWith("- "));
@@ -74,7 +65,6 @@ export async function createJourneys(host, { nav }) {
     return p;
   }
 
-  /** The text after "Does:" / "Sees:" in a step's paragraphs. */
   function field(section, name) {
     return (
       section.paragraphs
@@ -176,7 +166,6 @@ export async function createJourneys(host, { nav }) {
     );
   }
 
-  /** Drag the card rows sideways. */
   function enablePan() {
     let drag = null;
     content.addEventListener("pointerdown", (event) => {

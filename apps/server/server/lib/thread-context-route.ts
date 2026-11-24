@@ -43,10 +43,6 @@ export async function resolveThreadContextPort(
   return { resolution, port: contextPortForThread(deps.contextPorts, resolution, options) };
 }
 
-/**
- * What a thread-addressed URI is, for the writer's grant: the document it
- * names, or the container a write would create it in.
- */
 async function uriTarget(
   context: Awaited<ReturnType<typeof resolveThreadContextPort>>,
   uri: string,
@@ -91,7 +87,6 @@ export async function writeThreadContextDocument(
   input: { threadId: ThreadId; userId: UserId; uri: string; markdown: string },
 ) {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
-  // People write live: a writer's whole-document write never lands in a draft.
   const context = await resolveThreadContextPort(deps, threadId, input.userId, {
     destination: { kind: "live" },
   });

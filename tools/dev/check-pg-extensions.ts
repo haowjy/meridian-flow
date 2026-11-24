@@ -1,17 +1,10 @@
 #!/usr/bin/env bun
-/**
- * Proves the Postgres behind DATABASE_URL can serve writer search: pg_bigm is preloaded,
- * pg_bigm, btree_gin and pg_trgm install, and a 1-character Han LIKE is narrowed by a
- * (uuid, text gin_bigm_ops) index. Runs in a transaction that rolls back, so it leaves
- * nothing behind. Used by `pnpm db:check-extensions` and the CI db-tests job.
- */
 import postgres from "postgres";
 import { formatPgError } from "./lib/dev-db";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 class Rollback extends Error {}
 
-/** Actual Rows of the first Bitmap Index Scan node in an `explain (format json)` plan. */
 function findBitmapIndexScanRows(node: unknown): number | undefined {
   if (Array.isArray(node)) {
     for (const item of node) {
@@ -57,7 +50,6 @@ async function main(): Promise<void> {
         await tx.unsafe("insert into search_probe values (gen_random_uuid(), '他说剑来')");
         await tx.unsafe("analyze search_probe");
         await tx.unsafe("set local enable_seqscan = off");
-        // The index must narrow the search: the bitmap scan returns the one matching row, not all 201.
         const [explained] = await tx.unsafe(
           "explain (analyze, format json) select 1 from search_probe where body like '%剑%'",
         );

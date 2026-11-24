@@ -1,9 +1,3 @@
-/**
- * A write's `from`: resolving and reading a copy's source with `read`'s
- * version rule and the source's own destination, and the binary
- * copy that duplicates a stored object.
- */
-
 import type {
   DocumentVersion,
   WriteOutcome,
@@ -36,30 +30,17 @@ import {
   writeToolError,
 } from "./tool-context.js";
 
-/** `from` on `insert`, `replace` or `copy`. */
 type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVersion };
 
-/** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
 export interface CopiedSource {
   nodes: NonNullable<WriteOutcome["nodes"]>;
-  /** The source's identity, so a whole-document copy can point its own links at the copy. */
   sourceDocumentId: string;
-  /**
-   * Whether the read took the whole document (no `in`, no `#fragment`). Only then is the
-   * source part of "the copied set"; a part of it leaves a link to the whole outside it.
-   */
   wholeDocument: boolean;
-  /** Where each `ahead:` ref in the source now settles; the remap reads it like a writer's Copy. */
   aheadSettlements: ReadonlyMap<string, string>;
   copiedFrom: CopiedFrom;
-  /** A `copy` also carries the source's imported properties and aliases to the new document. */
   inherited?: Pick<DocumentCreationMetadata, "properties" | "aliases">;
 }
 
-/**
- * Reads a copy's source through `readDocument`, with `read`'s version rule
- * and the source's own destination.
- */
 export async function readCopySource(
   deps: ToolWiringDeps,
   principal: Principal,
@@ -85,7 +66,6 @@ export async function resolveCopySource(
   source: CopySource,
   ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity" | "shownNames">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
-  // A live source resolves its path against live membership, as a live read does.
   const call = await resolveToolCall(deps, ctx, source.version);
   if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
   const { context } = call;
@@ -145,7 +125,7 @@ export async function readTrackedCopySource(
       ...(source.version ? { version: source.version } : {}),
       includeNodes: true,
     },
-    // Never the write's tool call id: it keys the write's idempotency cache.
+    // keep: never the write's tool call id here: it keys the write's idempotency cache
     { threadId: ctx.threadId, turnId: ctx.turnId, responseIdentity: ctx.responseIdentity },
   );
   if (outcome.isError) {
@@ -163,13 +143,11 @@ export async function readTrackedCopySource(
     nodes: [...(outcome.nodes ?? [])],
     sourceDocumentId: address.documentId,
     wholeDocument: source.in === undefined && address.fragment === undefined,
-    // The read's own scope settled these, so they describe the cut `nodes` came from.
     aheadSettlements: outcome.aheadSettlements ?? new Map(),
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }
 
-/** A binary file has no blocks, so a copy of one takes no selection. */
 export function binaryCopySelectionMessage(
   source: CopySource,
   address: ResolvedDocumentAddress,
@@ -181,16 +159,10 @@ export function binaryCopySelectionMessage(
   return undefined;
 }
 
-/** Errors about the source say so, since `path` names the destination. */
 export function fromMessage(source: CopySource, message: string): string {
   return `from ${source.path}: ${message}`;
 }
 
-/**
- * A binary copy duplicates the stored object at once. It isn't a room
- * write, so it has no write handle and isn't part of the reply's save. In a
- * draft-mode chat it lands in the draft as its own hidden row (12b-Q2).
- */
 export async function copyBinary(
   deps: ToolWiringDeps,
   context: ResolvedModelContextPort,
@@ -200,7 +172,6 @@ export async function copyBinary(
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
   const destinationUri = splitDocumentFile(input.path).filePath;
-  // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
     objectStore: deps.objectStore,
@@ -214,7 +185,6 @@ export async function copyBinary(
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
-  // The port's placement decided where the copy landed; only the Work's handle is ours to add.
   const destination = copied.value.placement;
   return {
     output: modelResult({

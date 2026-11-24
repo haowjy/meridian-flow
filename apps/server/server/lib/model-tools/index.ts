@@ -1,7 +1,3 @@
-/**
- * The model tools: runtime's tool registrations bound to Meridian's context,
- * collab, file-policy and thread services.
- */
 import {
   createCoreToolRegistrations,
   createSkillToolRegistrations,

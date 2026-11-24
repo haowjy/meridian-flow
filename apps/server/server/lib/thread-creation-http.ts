@@ -1,5 +1,3 @@
-/** Shared root-creation request validation and definite-refusal transport mapping. */
-
 import { type DraftId, isDraftId } from "@meridian/contracts";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import {
@@ -24,24 +22,18 @@ export function parseCreationTitle(value: unknown): string | null {
   return value || null;
 }
 
-/** The client mints a new chat's draft beside its id, so its first screen already names it. */
 export function parseCreationDraftId(value: unknown): DraftId | undefined {
   if (value === undefined) return undefined;
   if (isDraftId(value)) return value;
   throw createError({ statusCode: 400, message: "draftId must be a draft id" });
 }
 
-/** Omitted means the chat copies its Work's default. */
 export function parseCreationAiWriteMode(value: unknown): AiWriteMode | undefined {
   if (value === undefined) return undefined;
   if (value === "direct" || value === "draft") return value;
   throw createError({ statusCode: 400, message: "aiWriteMode must be 'direct' or 'draft'" });
 }
 
-/**
- * Stored as given: an id the gateway doesn't list falls back at turn time, and the gateway settles
- * the reasoning. Omitted means none, as a tab from before overrides sends it.
- */
 export function parseCreationOverrides(value: unknown): ThreadOverrides {
   const parsed = threadOverridesSchema.default(NO_OVERRIDES).safeParse(value);
   if (!parsed.success)

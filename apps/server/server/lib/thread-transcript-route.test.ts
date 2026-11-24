@@ -1,7 +1,5 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** Writer authorization and inherited-transcript contract for the HTTP adapter. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { handleReadThreadTranscript } from "./thread-transcript-route.js";

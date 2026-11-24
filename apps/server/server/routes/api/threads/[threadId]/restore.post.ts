@@ -1,4 +1,3 @@
-/** POST /api/threads/[threadId]/restore: restores an owned thread from trash idempotently. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { restoreOwnedThreadFromTrash } from "../../../../domains/threads/index.js";

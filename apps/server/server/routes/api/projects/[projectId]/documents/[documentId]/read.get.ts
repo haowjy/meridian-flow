@@ -1,4 +1,3 @@
-/** GET /api/projects/:projectId/documents/:documentId/read: a document's markdown, or a signed URL to its bytes. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

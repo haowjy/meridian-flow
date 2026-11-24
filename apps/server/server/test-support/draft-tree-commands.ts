@@ -24,7 +24,6 @@ import { treeSeeder } from "./tree-seed.js";
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
 
-/** One model reply on a Work's thread: its tool calls, each committed as it runs. */
 export interface ScenarioReply {
   responseId: string;
   call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
@@ -32,53 +31,35 @@ export interface ScenarioReply {
 
 export interface ScenarioModel {
   reply(): Promise<ScenarioReply>;
-  /** One tool call outside any reply: a write commits at once (the pool's `commitNow`). */
   now(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
-  /** One reply that creates `path` with `text` and saves; the created document's id. */
   create(path: string, text: string): Promise<DocumentId>;
-  /** One reply that copies `from` to `to` and saves. */
   copy(from: string, to: string): Promise<ToolExecutionResult>;
-  /** One saved reply that reads `path` and replaces `find` in it with `content`. */
   edit(path: string, find: string, content: string): Promise<void>;
 }
 
 export interface ScenarioWriter {
-  /** The create route's core, as the writer's sidebar and link Create call it. */
   create(
     path: string,
     options?: {
       content?: string;
-      /** Create in this Work's Scratch (`scratch://@w3/path`) instead of a project source. */
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
-  /** `create` with content that must succeed; the document's id. */
   createDocument(path: string, content: string): Promise<DocumentId>;
   mkdir(path: string): Promise<void>;
-  /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
   move(from: string, to: string): ReturnType<ContextPort["treeCommand"]>;
-  /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
   delete(path: string): ReturnType<ContextPort["treeCommand"]>;
-  /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
-  /**
-   * The writer types in the document's live room: a tab's copy appends `blocks` and sends the
-   * difference as a socket's batch.
-   */
   editLive(documentId: DocumentId, blocks: (schema: Schema) => readonly PMNode[]): Promise<void>;
 }
 
-/** What a reader sees through its context port: a writer's live port, or a Work thread's. */
 export interface ScenarioView {
   stat(path: string): ReturnType<ContextPort["stat"]>;
   ls(path: string): ReturnType<ContextPort["list"]>;
   read(path: string): ReturnType<ContextPort["read"]>;
   grep(query: GrepQuery): ReturnType<ContextPort["grep"]>;
-  /** Where this reader sees the document, by id: its URI, or null. */
   locate(documentId: DocumentId): Promise<string | null>;
-  /** The text at `path`, or null when this reader has no file there. */
   text(path: string): Promise<string | null>;
-  /** The document at `path`, or null. */
   idAt(path: string): Promise<DocumentId | null>;
 }
 
@@ -86,19 +67,9 @@ export interface DraftTreeCommands {
   model(work: ScenarioWork): ScenarioModel;
   writer: ScenarioWriter;
   view(of: ScenarioWork | "live"): ScenarioView;
-  /**
-   * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
-   * the purge sweep runs.
-   */
   purge(work: ScenarioWork): Promise<number>;
-  /** The Work's review list through its route core: the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleDraftListRequest>;
-  /** The review list's `items` only. */
   items(work: ScenarioWork): Promise<DraftItem[]>;
-  /**
-   * The resolve route's answer for one stored link, read in a Work's view or live, from
-   * `baseUri` (null for chat) and, when given, the holder pinned by id.
-   */
   linkAnswer(input: {
     view: ScenarioWork | "live";
     ref: string;
@@ -106,12 +77,7 @@ export interface DraftTreeCommands {
     baseUri: string | null;
     holderDocumentId?: DocumentId;
   }): Promise<{ answer: DocumentLinkAnswer; holderUri?: string }>;
-  /** The stored links in a live document: each one's ref and href. */
   storedLinks(documentId: DocumentId): Promise<{ ref: string | null; href: string }[]>;
-  /**
-   * What a stored link means live from its holder (pinned by id): the document's id with
-   * `inDraft` when they hold, else the answer's state (`missing`, `gone`, …).
-   */
   liveMeaning(input: {
     ref: string;
     href: string;
@@ -119,7 +85,6 @@ export interface DraftTreeCommands {
   }): Promise<{ id: string; inDraft?: true } | string>;
 }
 
-/** The review item of `documentId`; throws when the list has none. */
 export function itemFor(items: readonly DraftItem[], documentId: DocumentId): DraftItem {
   const item = items.find((candidate) => candidate.documentId === documentId);
   if (!item) throw new Error(`no review item for ${documentId}`);
@@ -133,7 +98,6 @@ function uri(path: string): string {
   return parsed.value.normalized;
 }
 
-/** Command verbs over `world`; `composed()` supplies the runtime (it throws when absent). */
 export function draftTreeCommands(
   world: DraftTreeWorld,
   composed: () => { runtime: ScenarioRuntime; runtimes: ComposedRuntimes },
@@ -142,7 +106,6 @@ export function draftTreeCommands(
   const human = () => ({ type: "human" as const, userId });
   const ports = () => composed().runtime.ports;
 
-  /** The resolve route's core over the composed app, as the route handler wires it. */
   async function linkAnswer(input: Parameters<DraftTreeCommands["linkAnswer"]>[0]) {
     const { app } = composed().runtime;
     const response = await handleDocumentLinkResolveRequest(
@@ -221,7 +184,6 @@ export function draftTreeCommands(
     };
   }
 
-  /** The writer's live port, resolving `@w3` for every Work the world made. */
   async function livePort(): Promise<ContextPort> {
     const authorities = new Map<WorkHandle, ResolvedWorkAuthority>();
     for (const workId of world.works()) {
@@ -287,7 +249,6 @@ export function draftTreeCommands(
       const schema = buildDocumentSchema();
       const { rooms } = ports().documentSync;
       await writerEdit(rooms, documentId, (current) => [...current, ...blocks(schema)]);
-      // A writer's edit is stored on the room's debounce; a derivation reads only stored rows.
       await rooms.flush({ kind: "live", documentId });
     },
   };
@@ -353,7 +314,6 @@ export function draftTreeCommands(
   async function purge(work: ScenarioWork) {
     const { runtime } = composed();
     await runtime.ports.workRepo.softDelete(work.id);
-    // Past the purge cutoff (30 days).
     await world.db
       .update(works)
       .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })

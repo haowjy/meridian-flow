@@ -1,9 +1,3 @@
-/**
- * `thread queue hand-back` and `thread queue send-now`: the chat queue's x / Cancel queue and Send
- * now, over the same shared operation and folds the app runs. `./mf` holds no server rules: it
- * builds the body from a fresh snapshot (or takes `--replay`), prints the frozen request and the
- * exact replay command before posting, and reads the answer into output and an exit code.
- */
 import { randomUUID } from "node:crypto";
 import {
   apiThreadSnapshotPath,

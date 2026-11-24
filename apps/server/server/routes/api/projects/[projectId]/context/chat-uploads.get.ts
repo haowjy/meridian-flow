@@ -1,8 +1,3 @@
-/**
- * GET /api/projects/[projectId]/context/chat-uploads?chatId=: when each of a chat's uploads was
- * attached and whether a sent message has used it. The chat may not exist yet: a New chat's
- * composer uploads under the id it minted.
- */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../domains/projects/index.js";

@@ -1,14 +1,3 @@
-/**
- * The viewer's server side, for any dev server: what a request path under `/architecture/` gets.
- *   /architecture/                  index.html
- *   /architecture/<engine file>     js/, styles/page.css, vendor/ of this directory
- *   /architecture/map.config.mjs    the project's config file, whatever it is called on disk
- *   /architecture/tokens.css        the project's colours, built from its token files (tokens.mjs)
- *   /architecture/repo/<path>       a repo file as text (or an image), or a directory as JSON
- * Repo paths are served only if git tracks them (or, for the pages directory, lists them as
- * new and not ignored), so `.env`, ignored files and `node_modules` are never served; a symlink
- * is followed only if its target would be served too. Read-only, GET and HEAD.
- */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -33,14 +22,9 @@ const IMAGE_TYPES = {
   ".gif": "image/gif",
   ".webp": "image/webp",
 };
-/** Engine files the browser may load; the example, check and server code stay out. */
 const ENGINE_FILES = /^\/(?:index\.html|js\/[\w.-]+\.js|styles\/page\.css|vendor\/[\w.-]+\.css)$/;
 const REFRESH_MS = 2000;
 
-/**
- * Loads the config at `configFile` and returns `handle(rawPath) → Response`, a plain
- * { status, headers, file?, body? } the caller writes. `rawPath` is the request path without its query.
- */
 export async function createArchitectureServer(configFile) {
   const config = (
     await import(
@@ -52,7 +36,6 @@ export async function createArchitectureServer(configFile) {
   const pagesDir = config.pagesDir;
 
   let listed = { at: 0, files: new Set(), dirs: new Map() };
-  /** Tracked files, plus untracked unignored ones under the pages directory so a new page opens before it is added. */
   function tracked() {
     if (Date.now() - listed.at < REFRESH_MS) return listed;
     const git = (...args) =>
@@ -113,7 +96,7 @@ export async function createArchitectureServer(configFile) {
       };
     }
     if (!files.has(repoPath)) return missing;
-    // A symlink must not lead out of the repo or to a file that isn't served.
+    // keep: a symlink must not lead out of the repo or to a file that isn't served
     let real;
     try {
       real = fs.realpathSync(path.join(root, repoPath));
@@ -128,7 +111,6 @@ export async function createArchitectureServer(configFile) {
       return reject;
     if (!fs.statSync(real).isFile()) return missing;
     const image = IMAGE_TYPES[path.extname(repoPath).toLowerCase()];
-    // Text is served as plain text (Markdown as Markdown, CSS for the viewer's stylesheet link), never as HTML or SVG, and sandboxed.
     const type = image ?? TEXT_TYPES[path.extname(repoPath)] ?? "text/plain; charset=utf-8";
     if (!image && isBinary(real))
       return {
@@ -170,7 +152,6 @@ export async function createArchitectureServer(configFile) {
     }
     if (pathname === ENTRY.slice(0, -1)) return { status: 302, headers: { location: ENTRY } };
     if (!pathname.startsWith(ENTRY)) return null;
-    // A path that climbs, or hides a separator, is refused whatever it names.
     if (/(^|\/)\.\.?(\/|$)|\\|\0/.test(pathname)) return reject;
     const rest = pathname.slice(ENTRY.length - 1);
     if (rest === "/") return engineFile("/index.html");
@@ -189,10 +170,7 @@ export async function createArchitectureServer(configFile) {
   };
 }
 
-/**
- * The page's scripts come from itself and the pinned CDN, so a script or handler inside rendered Markdown
- * (`<img onerror>`) never runs. Inline styles stay allowed: Mermaid and React Flow set them.
- */
+// keep: scripts come only from this origin and the pinned CDN, so an `<img onerror>` in rendered Markdown never runs; inline styles stay allowed for Mermaid and React Flow
 const PAGE_CSP = [
   "default-src 'none'",
   "script-src 'self' https://cdn.jsdelivr.net",
@@ -215,7 +193,6 @@ function engineFile(rest) {
   return { status: 200, headers, file: path.join(ENGINE_DIR, rest) };
 }
 
-/** A NUL byte in the first 8 KB: the file is not text. */
 function isBinary(file) {
   const fd = fs.openSync(file, "r");
   try {
@@ -226,13 +203,11 @@ function isBinary(file) {
   }
 }
 
-/** Writes a handle() response to a Node response. */
 export function send(req, res, result) {
   res.statusCode = result.status;
   for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
   if (result.file && req.method !== "HEAD") {
     const stream = fs.createReadStream(result.file);
-    // The file can vanish between the check and the read.
     stream.on("error", () => res.destroy());
     stream.pipe(res);
   } else res.end(req.method === "HEAD" ? undefined : result.body);

@@ -1,4 +1,3 @@
-/** Tail confirms snapshot outcomes without dropping queued failures or presentation state. */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import { startWire, type Wire } from "../../test-support/wire";
@@ -29,8 +28,6 @@ describe("tail --until-idle", () => {
     wire.publish(frames.started("B"));
     wire.publish(frames.finished("B"));
     const cancelledB = replyTurn("B", 2, { status: "cancelled" });
-    // The first read, taken before the evidence frames, sees A open; the join's catch-up delivers
-    // the frames above its cursor, and every later read sees the chat idle.
     wire.snapshot = (read) =>
       read === 1
         ? snapshotOf({
@@ -115,7 +112,6 @@ describe("tail --until-idle", () => {
     async ({ gap, failure, code, outcome, reason }) => {
       if (gap) wire.publish(frames.started("B"));
       if (failure) wire.publish(frames.failed("B failed"));
-      // The journal's retention starts at seq 1: a cursor below it is told what was skipped.
       if (gap)
         wire.onSubscribe = (cursor) =>
           BigInt(cursor.lastSeq) < 1n
@@ -129,7 +125,6 @@ describe("tail --until-idle", () => {
               }
             : undefined;
       const B = replyTurn("B", 2, failure ? { status: "error", error: "B failed" } : {});
-      // The first read, taken before the evidence, sees A open; every later read sees the chat idle.
       wire.snapshot = (read) =>
         read === 1
           ? snapshotOf({
@@ -154,7 +149,6 @@ describe("tail --until-idle", () => {
           { turnId: "A", status: "complete" },
           { turnId: "B", status: failure ? "error" : "complete" },
         ],
-        // A replay gap leaves nothing fair to compare.
         ...(gap ? { liveView: "not_observed" } : {}),
       });
     },

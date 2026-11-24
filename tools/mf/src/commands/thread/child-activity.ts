@@ -1,11 +1,9 @@
-/** `thread events --child`: one child's status and current tool from each activity frame. */
 import { oneLine, truncate } from "../../core/output";
 import type { CliEvent } from "./events-map";
 import { asRecord } from "./transcript";
 
 export const ACTIVITY_EVENT = "meridian.subagent.activity";
 
-/** One child's row from one activity frame. */
 export type ChildActivity = {
   type: "child.activity";
   seq: string;
@@ -20,7 +18,6 @@ export type ChildActivity = {
 
 const TARGET_KEYS = ["uri", "path", "target", "query", "handle"] as const;
 
-/** First address-like string in a tool's input, so a line says what the tool is working on. */
 function toolTarget(input: unknown): string | null {
   const fields = asRecord(input);
   for (const key of TARGET_KEYS) {
@@ -36,7 +33,6 @@ function matchesChild(node: Record<string, unknown>, child: string): boolean {
   );
 }
 
-/** The chosen child's row from an activity frame, or null when the frame lacks it. */
 export function childActivity(event: CliEvent, child: string): ChildActivity | null {
   if (event.type !== "event" || event.name !== ACTIVITY_EVENT) return null;
   const children = asRecord(event.value).children;
@@ -58,7 +54,6 @@ export function childActivity(event: CliEvent, child: string): ChildActivity | n
   };
 }
 
-/** The `followThread` presenter for --child: drops everything but that child's rows. */
 export function presentChild(
   child: string,
 ): (event: CliEvent) => { value: ChildActivity; line: string } | null {

@@ -1,9 +1,3 @@
-/**
- * The `ls` tool (file-access §6): rows the file policy lets the
- * agent see, each marked read-only when it can't edit it. A `live` listing
- * reads no draft, so its rows are decided live. `ls` returns a typed listing
- * the model reads as plain text.
- */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { segmentOf } from "@meridian/project-tree";
@@ -39,7 +33,6 @@ import {
   toolError,
 } from "./tool-context.js";
 
-/** `ls scratch://@` and `ls uploads://@` list owners, each a distinct container of its own. */
 function isOwnerListing(path: string): boolean {
   const parsed = parseUnifiedContextUri(path);
   return parsed.ok && parsed.value.authority.kind === "owners";
@@ -62,8 +55,6 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const call = await resolveToolCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
-    // The folder as the model meant it: a renamed or moved folder is found, and a path that is
-    // a document says so.
     const reached = path
       ? await reachShown(deps, call, ctx, path, { ...(version ? { version } : {}) })
       : null;
@@ -87,7 +78,6 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed), {
       ...(at ? { destination: at } : {}),
     });
-    // Ordinary folders share their container; source and lineage discovery list distinct owners.
     const folderReadonly =
       path && !isOwnerListing(path)
         ? await containerReadonly(deps, principal, context, path, at)
@@ -124,10 +114,6 @@ export function createLsHandler(deps: ToolWiringDeps) {
   };
 }
 
-/**
- * What a listing showed of the tree: the folder as listed whole, and the node each listed name
- * means, so a name a listing did not have is known to be absent.
- */
 async function listedNames(
   call: ToolCall,
   path: string,
@@ -154,7 +140,6 @@ async function listedNames(
   return read.ok ? namesEvidence(read.value) : null;
 }
 
-/** A file row's model-facing fields; IDs and schema details stay behind. */
 function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "readonly"> {
   const text = entry.editable;
   return {

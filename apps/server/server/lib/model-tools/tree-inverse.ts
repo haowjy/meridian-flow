@@ -1,13 +1,3 @@
-/**
- * `undo` and `revert` of the model's own tree changes. A node has one history in a chat:
- * its tree receipts and its text edits, ordered by the write ordinal both take from the node's
- * counter, with what was undone left out. Undo takes the newest of them (`count` of them), so a
- * move is reached after a later text edit has been undone, and a text edit made after a move is
- * taken first. The tree receipts are taken back here, in one walk of the package's `takeBackAll`
- * (which finds the record's copy when an Apply or a restored Discard replaced it); what is left
- * for the text engine goes back to the caller. A drafted change is taken back in the Work's
- * draft, and in live once an Apply has landed it.
- */
 import { modelResult, parseEditHandle } from "@meridian/agent-edit/integration";
 import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import { undoReports } from "@meridian/project-tree";
@@ -35,14 +25,12 @@ type InverseInput = {
   count?: number;
 };
 
-/** What the tree took back, and what is still the text engine's. */
 export type TreeInverse =
   | { kind: "answer"; answer: Awaited<ReturnType<typeof reverseReceipt>> }
   | {
       kind: "then_text";
       count: number;
       undone: string[];
-      /** The tree half's answer: all the call has to say when the node it took back had the text. */
       answer: Awaited<ReturnType<typeof reverseReceipt>>;
     };
 
@@ -50,9 +38,6 @@ type TreeHistory = ReturnType<ToolWiringDeps["documentSync"]["treeHistory"]>;
 
 type Chosen = { receipts: TreeReceipt[]; text: number };
 
-/**
- * The steps this call takes, newest first across both kinds, or null when none is the tree's.
- */
 function choose(
   input: InverseInput,
   history: Awaited<ReturnType<TreeHistory["historyOf"]>>,
@@ -71,10 +56,6 @@ function choose(
   return { receipts, text: taken.reduce((sum, unit) => sum + unit.text, 0) };
 }
 
-/**
- * What Undo counts, newest first: the steps of one command are one (a create with content is a
- * tree receipt and a text edit, one call), the rest one each.
- */
 function undoUnits(history: Awaited<ReturnType<TreeHistory["historyOf"]>>): Chosen[] {
   const steps = [
     ...history.undo.map((receipt) => ({
@@ -123,8 +104,6 @@ export async function runTreeInverse(
   let node: { id: string; kind: string } | undefined;
   if (read.ok && read.value.reached.kind === "node") node = read.value.reached.node;
   else if (read.ok) {
-    // A node gone since (deleted, a create that was undone, or moved away from this path),
-    // named by a path the model wrote for it, is found by that receipt.
     const left = await treeHistory.nodeLeftAt(
       threadId,
       `${parts.area}${parts.rest}`,
@@ -162,7 +141,6 @@ export async function runTreeInverse(
   };
 }
 
-/** Why an Undo left a change where it is, for the model: the owner it would have changed is closed. */
 function closedMessage(closed: ClosedSource | undefined): string {
   const who = "its owner";
   switch (closed?.why) {
@@ -175,7 +153,6 @@ function closedMessage(closed: ClosedSource | undefined): string {
   }
 }
 
-/** One receipt taken back on its own list, with the receipt that names it. */
 async function reverseReceipt(
   deps: ToolWiringDeps,
   call: ToolCall,
@@ -200,15 +177,12 @@ async function reverseReceipt(
   const kind = "undo";
   const places = { area: parts.area, roots: new Map<string, string>(), locate: () => null };
 
-  // The sources the Undo changes, read before the locks: their owners are locked with the
-  // grants', and judged under the locks. A guess, so it can miss; a miss restarts the command.
   const sources = async () => {
     const read = await port.readTree(parts.area, {
       version: drafted ? "draft" : "live",
       read: ({ writer, view }) =>
         undoReports(
           writer,
-          // The order `runTreeUndo` takes them: an estimate equals its press only on the same steps.
           receipt.records.toReversed().map((entry) => ({ id: entry.record, view })),
         ),
     });
@@ -236,7 +210,6 @@ async function reverseReceipt(
             };
           },
           afterWrite: async (result, scope) => {
-            // A receipt whose opposite already stands is taken back with no record of its own.
             if (result.made.length === 0 && result.fate !== "taken") return;
             const recorded = await history.recordAgentTreeChange({
               subject: receipt.subject,
@@ -251,7 +224,6 @@ async function reverseReceipt(
               ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
               ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
               ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-              // An applied change is taken back in live: the Work's draft no longer has it.
               ...(scope.view.draft && !result.inLive
                 ? { draftId: scope.view.draft as DraftId }
                 : {}),

@@ -1,4 +1,3 @@
-/** Helpers for pruning dead-target Tailscale serve/funnel routes. */
 export type TailscaleRouteMode = "serve" | "funnel";
 
 export interface TailscaleRouteBinding {
@@ -115,7 +114,6 @@ function routeKey(route: Pick<TailscaleRouteBinding, "mode" | "httpsPort">): str
   return `${route.mode}:${route.httpsPort}`;
 }
 
-/** Extracts localhost proxy routes from `tailscale serve status --json`-style output. */
 export function parseTailscaleServeStatusJson(json: unknown): TailscaleRouteBinding[] {
   const funnelPorts = collectFunnelPorts(json);
   const bindings = collectWebBindings(json, funnelPorts);
@@ -129,7 +127,6 @@ export function parseTailscaleServeStatusJson(json: unknown): TailscaleRouteBind
   });
 }
 
-/** Pure pruning policy: only dead localhost targets are eligible, live targets are never touched. */
 export function findStaleTailscaleRoutes(
   bindings: ReadonlyArray<TailscaleRouteBinding>,
   isPortLive: PortLivenessProbe,
@@ -156,7 +153,6 @@ export function findStaleTailscaleRoutes(
     .map(({ route }) => route);
 }
 
-/** Surgical per-port command only; never produces a global Tailscale reset. */
 export function tailscaleRouteOffArgs(route: TailscaleRouteToPrune): string[] {
   return [route.mode, `--https=${route.httpsPort}`, "off"];
 }

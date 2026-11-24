@@ -2,9 +2,6 @@ import { defineConfig } from "vitest/config";
 import { sharedTest } from "../../tools/ci/vitest-shared";
 import { asVitestGlob, mockedServerTests } from "./vitest.mocked-files";
 
-// vi.mock is file-scoped only when the file has its own module graph.
-// The list is shared with the isolate:false project so a file cannot be
-// excluded from one gate and forgotten by the other.
 export default defineConfig({
   test: {
     ...sharedTest,

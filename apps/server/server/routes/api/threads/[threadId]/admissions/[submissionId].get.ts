@@ -1,4 +1,3 @@
-/** Authenticated admission reconciliation lookup; not-seen remains ambiguous. */
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";

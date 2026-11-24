@@ -1,8 +1,3 @@
-/**
- * Test-only file grants. Tests of routing and saving mint a grant for a
- * destination without asking the policy, and `createAllowAllFileAccess` confirms every grant; tests of
- * access use the real `createFileAccess`.
- */
 import type { DraftOwner } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -16,7 +11,6 @@ import {
 } from "../domains/file-policy/index.js";
 import { runWithEditConfirmation } from "../shared/edit-confirmation.js";
 
-/** A draft destination with the owner naming the draft, which an agent's principal carries. */
 export type TestDestination =
   | { kind: "live" }
   | (Extract<FileDestination, { kind: "draft" }> & { owner: DraftOwner });
@@ -78,7 +72,6 @@ export function testFileGrant(
   } as unknown as FileGrant<"edit">;
 }
 
-/** The real policy over Postgres facts, for routes and readers whose access is under test. */
 export function drizzleFileAccess(db: Database): FileAccess {
   return createFileAccess({
     facts: createDrizzleFileFacts(db),
@@ -89,7 +82,6 @@ export function drizzleFileAccess(db: Database): FileAccess {
   });
 }
 
-/** Runs writes as an entry point holding already confirmed grants would: for adapter tests. */
 export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   return runWithEditConfirmation(
     { workIds: [], lineageRootIds: [], async confirm() {}, covers: async () => true },
@@ -97,10 +89,6 @@ export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   );
 }
 
-/**
- * The grant as if asked in `projectId` by `accountId`: the file is that project's, and so is the
- * agent's thread.
- */
 export function grantInProject<G extends FileGrant>(
   grant: G,
   projectId: string,

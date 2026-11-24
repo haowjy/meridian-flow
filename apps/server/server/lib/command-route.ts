@@ -1,4 +1,3 @@
-/** The command record's HTTP doors. */
 import type { CommandId, ProjectId, UserId } from "@meridian/contracts";
 import {
   COMMAND_CONFLICT_CODE,
@@ -20,10 +19,6 @@ import type { CommandStore } from "../shared/commands/drizzle-commands.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
 
-/**
- * GET /api/commands/:id: what a command settled as, never a guess from the list. Another
- * account's id answers `none`, revealing nothing.
- */
 export async function handleCommandLookup(
   store: CommandStore,
   input: { userId: UserId; commandId: string },
@@ -36,12 +31,6 @@ export async function handleCommandLookup(
     : { status: "none" };
 }
 
-/**
- * POST /api/commands/:id/resolve: the id's outcome, for a sender that does not know whether its
- * request landed. A request still running under the id is waited for; where there is none, a
- * `never` is stored so none can take effect later. It checks the account only: whoever holds an
- * id may settle it, and a stored row reveals nothing the sender did not send.
- */
 export async function handleCommandResolve(
   store: CommandStore,
   input: { userId: UserId; commandId: string; body: unknown },
@@ -71,10 +60,6 @@ export function throwCommandConflict(): never {
   );
 }
 
-/**
- * Splits a request body into its command id and the rest, which is what the command's digest
- * covers: a resend under the id must carry the same rest.
- */
 export function splitCommandBody(raw: unknown): {
   commandId: CommandId;
   body: Record<string, unknown>;
@@ -83,12 +68,6 @@ export function splitCommandBody(raw: unknown): {
   return { commandId: requireRequestId(commandId, "commandId") as CommandId, body };
 }
 
-/**
- * Runs a request that changes state as a command: the claim is the first write of the
- * transaction that makes the change, and a resend under the id answers the stored result
- * without running again. `refusal` names the causes inside the effect that are a final answer.
- * A cause that is not one, and a request turned away before this call, store nothing.
- */
 export async function runRouteCommand<R extends { status: "done" | "refused" }>(
   store: CommandStore,
   input: {
@@ -96,10 +75,6 @@ export async function runRouteCommand<R extends { status: "done" | "refused" }>(
     userId: UserId;
     projectId: ProjectId;
     kind: CommandKind;
-    /**
-     * The command mints `projectId` (project create), so a resend carrying none would mint
-     * another: the digest covers the body, which holds the id when the sender chose it.
-     */
     mintsProject?: boolean;
     selectors?: Record<string, string | null>;
     body: unknown;

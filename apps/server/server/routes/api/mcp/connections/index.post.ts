@@ -1,4 +1,3 @@
-/** POST /api/mcp/connections: adds a connection and lists its server's tools. A server that does not answer is saved with no pin. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, readBody } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";

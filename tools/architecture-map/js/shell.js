@@ -1,11 +1,8 @@
-/* What both viewers share: DOM helper, theme, page fetching, and the top bar. */
 import { DARK, storageKey } from "./config.js";
 import { parsePage } from "./pages.js";
 
-/** Where the dev server serves the repo's files, relative to index.html. */
 const REPO_ROOT = "repo/";
 
-/** el("a", { href, class }, child, ...): children are nodes or strings; false/null are skipped. */
 export function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs ?? {})) {
@@ -17,15 +14,10 @@ export function el(tag, attrs, ...children) {
   return node;
 }
 
-/**
- * A repo path as the dev server answers it: { kind: "dir", entries: [{ name, dir }] },
- * { kind: "image", url }, or { kind: "text", text }.
- */
 export async function fetchRepoEntry(path) {
   const root = new URL(REPO_ROOT, location.href);
   const url = new URL(REPO_ROOT + path.split("/").map(encodeURIComponent).join("/"), location.href);
-  // `path` can come from the address bar (#doc/). Check the URL the browser will request, not
-  // the string: URL parsing turns %2e%2e into .. and moves a ? tail into the query.
+  // keep: `path` comes from the address bar, so check the URL the browser will request: parsing turns %2e%2e into .. and moves a ? tail into the query
   const requested = url.pathname.startsWith(root.pathname)
     ? decodeURIComponent(url.pathname.slice(root.pathname.length))
     : null;
@@ -40,7 +32,6 @@ export async function fetchRepoEntry(path) {
   return { kind: "text", text: await response.text() };
 }
 
-/** A repo file's text. */
 export async function fetchRepoFile(path) {
   const entry = await fetchRepoEntry(path);
   if (entry.kind !== "text") throw new Error(`${path}: not a text file`);
@@ -49,15 +40,12 @@ export async function fetchRepoFile(path) {
 
 export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
 
-// ---- Theme: follows the system until the reader pins one ----
-
 const THEME_KEY = storageKey("theme");
 const themeListeners = new Set();
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 let pinned = null;
 export const currentTheme = () => pinned ?? (systemDark.matches ? "dark" : "light");
 
-/** Puts <html> in the theme: the token files' dark attribute on or off. */
 function applyTheme() {
   const html = document.documentElement;
   const dark = currentTheme() === "dark";

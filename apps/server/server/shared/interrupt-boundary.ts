@@ -1,10 +1,3 @@
-/**
- * Purpose: Throws HTTP errors tagged for the Nitro interrupt error handler so the wire body
- * is the shared interrupt envelope, not h3's default `{ status, message, data }` wrapper.
- * Key decisions: envelope lives in `createError.data[HTTP_INTERRUPT_ENVELOPE_KEY]`; the global
- * handler in `interrupt-error-handler.ts` (nitro.config `errorHandler`) unwraps it — mapped
- * routes cannot accidentally serialize the wrapper by forgetting to set response body.
- */
 import type { ErrorInterrupt } from "@meridian/contracts/errors";
 import {
   httpErrorInterruptBody,
@@ -14,7 +7,6 @@ import {
 import type { JsonValue } from "@meridian/contracts/threads";
 import { createError, HTTPError } from "nitro/h3";
 
-/** Marker key on `createError.data` — consumed only by `interrupt-error-handler.ts`. */
 export const HTTP_INTERRUPT_ENVELOPE_KEY = "__meridianInterruptEnvelope";
 
 export function isHttpInterruptEnvelope(data: unknown): data is ErrorInterrupt {
@@ -53,10 +45,6 @@ function interruptDetails(data: unknown): JsonValue | undefined {
   }
 }
 
-/**
- * Makes route-owned client refusals final. The durable client queue replays every failure that is
- * not a typed, non-retryable 4xx, so durable-intent routes must classify their own HTTP refusals.
- */
 export async function withDurableIntentInterruptBoundary<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();

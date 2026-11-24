@@ -1,8 +1,3 @@
-/**
- * Route core for GET /api/threads/:threadId/debug/turn-context-preview — owner-gated
- * read-only preview of the next turn's model context (system prompt, tools, gateway params).
- */
-
 import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../domains/observability/index.js";

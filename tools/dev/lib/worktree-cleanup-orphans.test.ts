@@ -11,7 +11,6 @@ const checkout = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = path.join(checkout, "tools/dev/prune-worktrees.ts");
 const hasTmux = spawnSync("tmux", ["-V"]).status === 0;
 
-// These cases launch real CLIs and wait for process teardown, not just in-memory work.
 describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 }, () => {
   let temp: string;
   let repo: string;
@@ -57,8 +56,6 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
         repoRootRealpath: root,
       }).sessionName;
     tmux("new-session", "-d", "-s", sessionName, "-c", root, command);
-    // tmux 3.6 (Ubuntu 26.04) asks systemd for a cgroup before the pane enters `-c`; deleting the
-    // checkout sooner leaves the pane in $HOME, which correctly proves no ownership.
     await expect
       .poll(() => tmux("display-message", "-p", "-t", `=${sessionName}:`, "#{pane_current_path}"))
       .toBe(fs.realpathSync(root));
@@ -113,12 +110,10 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
   }
 
   beforeEach(() => {
-    // Keep the socket pathname under the POSIX Unix-socket length limit.
     temp = fs.mkdtempSync(path.join(os.tmpdir(), "mf-orphan-"));
     repo = path.join(temp, "repo");
     const bin = path.join(temp, "bin");
     fs.mkdirSync(bin);
-    // Stub only route maintenance; all tmux/process lifecycle operations are real.
     fs.writeFileSync(path.join(bin, "pnpm"), '#!/bin/sh\n[ "$*" = "exec portless prune" ]\n', {
       mode: 0o755,
     });
@@ -278,7 +273,6 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     expect(result.status, result.stderr).toBe(0);
     for (const file of ["parent.pid", "child.pid", "late.pid"]) {
       const pid = fs.readFileSync(path.join(temp, file), "utf8").trim();
-      // A reparented zombie has exited, even if init hasn't reaped it yet.
       const state = run("ps", ["-p", pid, "-o", "stat="]).stdout.trim();
       expect(state === "" || state.startsWith("Z"), file).toBe(true);
     }

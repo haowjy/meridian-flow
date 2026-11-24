@@ -1,4 +1,3 @@
-/** HTTP import authorization and error translation; routes only parse transport. */
 import type { H3Event } from "nitro/h3";
 import { createError, getRouterParam } from "nitro/h3";
 import { ImportError } from "../domains/import/index.js";

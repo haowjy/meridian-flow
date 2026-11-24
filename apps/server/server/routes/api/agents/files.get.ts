@@ -1,4 +1,3 @@
-/** GET /api/agents/files: every level's Agent and skill files, with Mars's verdict on each. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
 import { requireProjectOwner } from "../../../domains/projects/index.js";

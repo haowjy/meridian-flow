@@ -1,12 +1,3 @@
-import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
-/**
- * Shared route helpers for `/api/projects/:projectId/context/:scheme/*` routes.
- *
- * Deduplicates scheme parsing, context error → HTTP translation, and the
- * project-browse context port resolution that every route in this directory
- * performs. Writer-input validation lives in the route-core validation seam.
- */
-
 import {
   type CanonicalContextAuthority,
   isWorkScopedScheme,
@@ -22,6 +13,7 @@ import type { FileTarget } from "../../../../../../domains/file-policy/index.js"
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 import {
   containerTarget,
   requireFileGrant,
@@ -41,13 +33,10 @@ export type ResolvedContextRoute = {
   workId: string | null;
   authority: CanonicalContextAuthority;
   port: ContextPort;
-  /** The folder this route's scheme names, for creates and uploads (file-access §4). */
   container: FileTarget;
-  /** Runs a write under the writer's edit grants on these targets; refusals become 404 or 403. */
   edit<T>(targets: readonly FileTarget[], operation: () => Promise<T>): Promise<T>;
 };
 
-/** Common preamble: auth → project ownership → scheme → workId → context port. */
 export async function resolveContextRoute(event: H3Event): Promise<ResolvedContextRoute> {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
@@ -82,7 +71,6 @@ export async function resolveContextRoute(event: H3Event): Promise<ResolvedConte
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
   } else if (chatId) {
-    // A New chat's composer uploads before the chat row exists: no handle yet, so no qualifier.
     const chat = await app.contextPorts.topPrimaryChats.resolveTopPrimaryChat(chatId as ThreadId);
     authority = chat ? { kind: "chat", chatRef: chat.chatRef } : { kind: "contextual" };
   } else if (scheme === "uploads") {

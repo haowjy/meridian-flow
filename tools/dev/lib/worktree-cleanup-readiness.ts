@@ -1,10 +1,3 @@
-/**
- * Liveness and ownership gates for automatic worktree cleanup.
- *
- * Commit evidence authorizes deleting a ref; these checks independently prove
- * that an auto-selected checkout is not still being used.
- */
-
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -45,7 +38,6 @@ interface TmuxPane {
   readonly sessionName: string;
   readonly paneId: string;
   readonly cwd: string;
-  /** On the `pnpm dev` socket rather than the human's own server. */
   readonly dev: boolean;
 }
 
@@ -104,10 +96,6 @@ export interface AutoCleanupReadiness {
   readonly warnings?: readonly string[];
 }
 
-/**
- * Shells and the human's tmux panes never block: they are left alive with a warning.
- * `stop-managed` additionally lets --force run its dev-stack and Nx shutdown first.
- */
 export type CleanupReadinessPolicy = "idle" | "stop-managed";
 
 export type AutoCleanupReadinessDecision =
@@ -273,7 +261,6 @@ function parsePanes(stdout: string, dev: boolean): TmuxPane[] {
     .filter((entry): entry is TmuxPane => entry !== undefined);
 }
 
-/** Panes of `pnpm dev` stacks, which live on their own socket, not the human's server. */
 function devSocketPanes(cwd: string): {
   readonly entries: readonly TmuxPane[];
   readonly failures: readonly string[];
@@ -289,7 +276,6 @@ function devSocketPanes(cwd: string): {
   }
   if (result.status !== 0) {
     const detail = `${result.stderr ?? ""}`.trim();
-    // No server is normal; any other inspection failure must remain visible.
     if (
       /^(no server running on|error connecting to .* \(No such file or directory\))/m.test(detail)
     )
@@ -302,7 +288,6 @@ function devSocketPanes(cwd: string): {
   return { entries: parsePanes(result.stdout ?? "", true), failures: [] };
 }
 
-/** The human's own server (`$TMUX` or the default socket) plus the dev socket. */
 function tmuxPanes(cwd: string): {
   readonly entries: readonly TmuxPane[];
   readonly failures: readonly string[];

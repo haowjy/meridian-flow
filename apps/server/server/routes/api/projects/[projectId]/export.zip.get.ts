@@ -1,4 +1,3 @@
-/** Authorize the current inventory and stream a ZIP without a prepared handoff. */
 import type { Readable } from "node:stream";
 import { createError, defineEventHandler, getQuery, getRouterParam, setHeader } from "nitro/h3";
 import { ExportReadError } from "../../../../domains/export/domain/project-export.js";

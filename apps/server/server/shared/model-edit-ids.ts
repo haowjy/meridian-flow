@@ -1,16 +1,13 @@
-/** The ids a model's tool call derives for its effect: the same on a retry and in a recovering process. */
 import { createHash } from "node:crypto";
 import type { CommandId, ModelEditKey } from "@meridian/contracts";
 
-// Arbitrary fixed namespaces: changing one orphans every stored command it named.
+// keep: arbitrary fixed namespaces: changing one orphans every stored command it named
 const COMMAND_NAMESPACE = "6f1c2f3e-5a0b-4c55-9d0e-3b7a1f6a2c11";
 const BLOCK_NAMESPACE = "0b8e4a77-2d1c-4f19-8a63-c5d94e7b30a2";
 
 export function modelEditIds(key: Pick<ModelEditKey, "responseId" | "toolCallId">): {
   commandId: CommandId;
-  /** The id of the result block the call stores. */
   blockId: string;
-  /** What a resend under this id must match; the key has no body to hash. */
   digest: string;
 } {
   const name = `${key.responseId}:${key.toolCallId}`;
@@ -21,7 +18,6 @@ export function modelEditIds(key: Pick<ModelEditKey, "responseId" | "toolCallId"
   };
 }
 
-/** RFC 4122 version 5: the node:crypto sha1 of the namespace bytes and the name. */
 export function uuidV5(namespace: string, name: string): string {
   const hash = createHash("sha1")
     .update(Buffer.from(namespace.replaceAll("-", ""), "hex"))

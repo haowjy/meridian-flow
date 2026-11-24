@@ -1,4 +1,3 @@
-/** Test fixture decoder that fails loudly instead of weakening WorkHandle fields. */
 import { decodeWorkHandle, type WorkHandle } from "@meridian/contracts/works";
 
 export function testWorkHandle(value: string): WorkHandle {

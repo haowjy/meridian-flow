@@ -1,4 +1,3 @@
-/** `./mf log`: recent server observability records (dev-only route), optionally followed. */
 import { usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -35,7 +34,6 @@ type EventRecord = {
 
 type EventQueryResponse = { events?: EventRecord[]; dropped?: number; droppedBytes?: number };
 
-/** `10m`/`30s` become a timestamp relative to now; ISO timestamps pass through. */
 export function sinceTimestamp(raw: string, now = Date.now()): string {
   if (/^\d+(ms|s|m|h)$/.test(raw))
     return new Date(now - parseDuration(raw, "--since")).toISOString();

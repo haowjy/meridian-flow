@@ -1,5 +1,3 @@
-/** POST /api/threads/[threadId]/fork: create a new primary thread from a fork point. */
-
 import { forkThreadRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { forkThreadAgent, type ThreadAgentSwapDeps } from "../../../../../domains/threads/index.js";

@@ -1,4 +1,3 @@
-/** GET /readyz: readiness probe verifying the app composes and the database answers, returning 503 otherwise. Depends on the app singleton and db. */
 import { sql } from "drizzle-orm";
 import { defineEventHandler, setResponseStatus } from "nitro/h3";
 

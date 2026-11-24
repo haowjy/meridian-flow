@@ -1,4 +1,3 @@
-/** Test seed: the file or folder at an address, as the mover takes it (by id). */
 import type { ContextEntryRef, ContextSiblingPosition } from "@meridian/contracts/protocol";
 import { storedFilename } from "@meridian/contracts/protocol";
 import { childrenOf, descendantsOf } from "@meridian/project-tree";
@@ -23,10 +22,6 @@ export async function entryAt(
   return { kind: "folder", nodeId: folder.folderId };
 }
 
-/**
- * A move or rename of the node `nodeId` as the records a tree command makes: into the folders
- * of `dir` (made when missing), under `leaf` when given, at `position` when given.
- */
 export function moveInScope(
   scope: TreeScope,
   nodeId: string,
@@ -80,7 +75,6 @@ type MoveToOptions = {
   position?: ContextSiblingPosition;
 };
 
-/** A move to the address a writer typed: the folder is everything before the last slash, the leaf what follows. */
 export function moveTo(
   port: Pick<ContextPort, "treeCommand">,
   _from: string,
@@ -105,7 +99,6 @@ export function moveTo(
   });
 }
 
-/** A live delete of the entry `expected` names, as the record a tree command makes. */
 export function deleteAt(
   port: Pick<ContextPort, "treeCommand">,
   uri: string,

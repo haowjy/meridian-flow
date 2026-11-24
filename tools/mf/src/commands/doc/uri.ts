@@ -1,4 +1,3 @@
-/** URI → project context route inputs and document identity, in Live or a draft. */
 import {
   formatParsedContextUri,
   type ParsedContextAuthority,
@@ -23,18 +22,13 @@ import { lookupPath, Trees } from "./tree-address";
 export type ResolvedUri = {
   scheme: ProjectContextTreeScheme;
   path: string;
-  /** Canonical spelling the admission path requires. */
   uri: string;
   workId: string | null;
-  /** The first chat whose Scratch a `scratch://@c12/` URI names; null otherwise. */
   rootThreadId: string | null;
-  /** The chat whose uploads an `uploads://` URI names; null for every other scheme. */
   chatRef: string | null;
-  /** The chat's thread id, which the server's `chatId` query takes; null unless `chatRef` is set. */
   chatId: string | null;
 };
 
-/** The owner the context route helpers send: the chat for uploads, else the Work. */
 export function ownerOf(target: ResolvedUri): ContextOwner {
   if (target.chatId) return { chatThreadId: target.chatId };
   if (target.rootThreadId) return { rootThreadId: target.rootThreadId };
@@ -101,8 +95,6 @@ export async function resolveUri(
       rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
     return { scheme, path: "", uri, workId, chatRef, chatId, rootThreadId };
   }
-  // The path goes to the server as typed: it tries the exact name before the alias, so a kept
-  // `binary.md` is reachable beside a document `binary`.
   const parsedName = parseDocumentFilename(path.slice(slash + 1));
   if (!parsedName.ok) throw usageError(parsedName.error.message);
   const uri = formatParsedContextUri(scheme, path, ownerAuthority);
@@ -111,7 +103,6 @@ export async function resolveUri(
   return { scheme, path, uri, workId, chatRef, chatId, rootThreadId };
 }
 
-/** Live documentId for a URI, or a not_found CliError. */
 export async function resolveDocument(session: Session, projectId: string, target: ResolvedUri) {
   const address = await session.request(
     "GET",
@@ -127,11 +118,6 @@ export async function resolveDocument(session: Session, projectId: string, targe
   return address.document;
 }
 
-/**
- * The room that holds the document at a URI: Live's, through the server's address route, or, given
- * a draft, the path in the draft's view of the tree, in the draft's fork, except for a document
- * only the draft holds, whose text is in its own Live room (as the server's `agentRoomFor` picks).
- */
 export async function resolveDocumentRoom(
   session: Session,
   projectId: string,
@@ -156,7 +142,6 @@ export async function resolveDocumentRoom(
   }
 }
 
-/** `--project`/`--work`/`--chat` shared by every command that takes a document URI. */
 export const PROJECT_OPTION = {
   project: { type: "string" as const, description: "Project id, or `default` (default)" },
   work: { type: "string" as const, description: "Work for scratch URIs: its handle, such as w3" },

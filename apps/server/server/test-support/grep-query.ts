@@ -1,4 +1,3 @@
-/** A grep query for tests: one literal-or-regex pattern, every document readable at `destination` (live by default). */
 import { compileGrep, type GrepQuery } from "../domains/context/index.js";
 import type { FileDestination } from "../domains/file-policy/index.js";
 

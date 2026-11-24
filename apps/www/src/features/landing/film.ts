@@ -30,7 +30,6 @@ const show = (element: HTMLElement | SVGElement, opacity: number) => {
   element.style.visibility = opacity > 0.002 ? "visible" : "hidden";
 };
 
-/** Reveals `element`'s text a character at a time, holding its layout from the start. */
 function typewriter(element: HTMLElement, caretClass: string) {
   const original = element.innerHTML;
   const characters: { char: string; italic: boolean }[] = [];
@@ -87,7 +86,6 @@ function typewriter(element: HTMLElement, caretClass: string) {
   };
 }
 
-/** Reduced motion: the stacked page over a still night sky. */
 function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
   const end = root.querySelector("#end") as HTMLElement;
   const stopListening = store.onSend(() => end.scrollIntoView());
@@ -116,15 +114,8 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
   addEventListener("resize", render, { signal });
 }
 
-/** The product's height over its width. */
 const BLOCK_ASPECT = 0.62;
-/** Just under the phone header, where the fire reveals the product. */
 const PHONE_REVEAL_TOP = 62;
-/**
- * The scroll film. The stage is pinned while the page scrolls through it, and
- * `paint` maps the scroll position to every layer. It writes the DOM directly
- * because it runs per frame. Returns the teardown.
- */
 export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot) {
   const controller = new AbortController();
   const { signal } = controller;
@@ -208,7 +199,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     measureLayers();
     sky.resize(layout.height);
     needsPaint = true;
-    // The film's length follows the window's height: keep the visitor's place in the story.
     const nextEnd = layout.documentHeight - layout.height;
     if (nextEnd !== scrollEnd) {
       scrollTo(0, share * nextEnd);
@@ -250,7 +240,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       opacity = 1;
       grade = 1 - askLift * (1 - smooth(asked, 0.89, 1)) * 0.3;
       if (isPhone) {
-        // No room beside the headline, so the product fills the screen and then slides down for it.
         blockWidth = workspace.w;
         x = workspace.x;
         y = lerp(PHONE_REVEAL_TOP, workspace.y, ease(smooth(beats.lore, 0.06, 0.24)) * returned);
@@ -295,7 +284,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     const chapterIn = smooth(open, 0, 0.7);
     const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
-    // The chapter gives way just before it breathes, so the perch has the screen.
     const chapterGone = smooth(turn, TURN.perch[0] - 0.08, TURN.perch[0]);
     show(chapter, chapterIn * chapterDim * (1 - chapterGone));
     const chapterOffset = lerp(
@@ -356,10 +344,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       line.dot.style.opacity = out > 0 && (returned < 1 || out < 1) ? "1" : "0";
     });
 
-    // The System window doesn't fade in: it opens all at once, the way a status window does.
     skill.classList.toggle("on", beats.skill > 0.04 && leave < 0.5);
 
-    // The box opens the way the System's windows do: from a bright line, all at once.
     const opened = smooth(beats.dies, ...DEATH.opens);
     show(deathBox, smooth(beats.dies, ...DEATH.appears) * (1 - smooth(burnP, ...DEATH.gone)));
     deathBox.style.transform =
@@ -410,7 +396,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (Math.abs(target - current) < 0.3) current = target;
 
     const beats = beatProgress(current, layout.spans);
-    // Before the night is kept: its still takes the trees from where they stand now.
     const party = forest.update(current, beats);
     if (!nightKept && beats.still > 0) {
       const lastNight = along(layout.spans, "burn", DEATH.reveals) - 1;
@@ -444,7 +429,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     frameRequest = requestAnimationFrame(frame);
   }
 
-  // A phone's address bar resizes the window but not the stage, which is `100lvh`.
   addEventListener(
     "resize",
     () => {

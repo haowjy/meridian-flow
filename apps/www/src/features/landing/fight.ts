@@ -6,20 +6,11 @@ import { type BeatProgress, envelope, FIGHT, lerp, progress } from "./timeline";
 
 type Point = readonly [number, number];
 
-/** A wall past the right edge of the stage: the fire draws only the breath. */
 const NO_WALL = 100;
-/** The fight's breaths: how hard, and what share of the way to the party they reach. */
 const FIGHT_BREATH = 0.85;
-/** How long a hit's flash lasts, in shares of the fight beat. */
 const HIT_LASTS = 0.035;
-/** How high the spark arcs, in stage heights. */
 const SPARK_ARC = 0.14;
 
-/**
- * The ninth night's fight, between the party and the dragon: Sigrun's ward, the four attacks and
- * where each lands, and the breaths. The party and the dragon place themselves; this reads where
- * they are.
- */
 export function createFight(root: HTMLElement) {
   const shot = (name: string) => root.querySelector(`#walkers .${name}`) as HTMLElement;
   const ward = shot("ward");
@@ -29,7 +20,6 @@ export function createFight(root: HTMLElement) {
   const hit = shot("hit");
   let layout: Layout;
 
-  /** Moves a shot from `from` to `to` across its window, arcing up by `arc` stage heights. */
   const fling = (
     element: HTMLElement,
     window: readonly [number, number],
@@ -50,7 +40,6 @@ export function createFight(root: HTMLElement) {
     element.style.transform = `translate3d(${x}px,${y}px,0) rotate(${turn}rad) scale(${grow}) translate(-50%,-50%)`;
   };
 
-  /** Sigrun's ward: it flares to full the instant the first breath lands, then shudders under it. */
   const raiseWard = (at: number, fight: number, party: Party) => {
     const flare = Math.min(1, envelope(fight, FIGHT.ward, 0.04, 0.05) * 2.5);
     const [x, y] = party.rows[0];
@@ -58,7 +47,6 @@ export function createFight(root: HTMLElement) {
     ward.style.transform = `translate3d(${x + party.size * 0.02}px,${y + party.size * 0.05}px,0) scale(${(party.size / 100) * (0.9 + flare * 0.5)}) rotate(${at / 60}rad) translate(-50%,-50%)`;
   };
 
-  /** Each of the four hits it once, and every hit flashes where it lands. */
   const attack = (fight: number, party: Party, { mouth, body }: Dragon) => {
     const chest = [
       lerp(mouth[0], body.x, 0.45),
@@ -69,7 +57,6 @@ export function createFight(root: HTMLElement) {
     const from = (row: number) => party.rows[row];
     fling(rune, FIGHT.rune.at, fight, from(FIGHT.rune.row), chest, 0.03, true);
     fling(song, FIGHT.song.at, fight, from(FIGHT.song.row), chest, 0.02);
-    // Tam's two sparks: the scales above its left foot, then its eye.
     const toEye = fight >= FIGHT.spark.foot[1];
     const [sparkAt, sparkTo] = toEye ? [FIGHT.spark.eye, mouth] : [FIGHT.spark.foot, foot];
     fling(
@@ -96,7 +83,6 @@ export function createFight(root: HTMLElement) {
     }
   };
 
-  /** The ward breath stops at the front of the party; the killing one sweeps it front to back. */
   const breathe = (fight: number, party: Party, mouth: Point) => {
     const reach = (target: Point, share: number) =>
       [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
@@ -115,7 +101,6 @@ export function createFight(root: HTMLElement) {
     measure(next: Layout) {
       layout = next;
     },
-    /** Runs every frame; returns the breath's fire while one is in the air. */
     update(
       seconds: number,
       at: number,

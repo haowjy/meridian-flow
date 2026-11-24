@@ -1,4 +1,3 @@
-/** `./mf package fetch`: fetches a GitHub URL on the server and prints the tree's shape. */
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { unknownJsonResponse } from "../../core/session";
 
@@ -12,7 +11,6 @@ type FetchResponse = {
   files: { path: string; bytes: number }[];
 };
 
-/** File and byte counts per directory, to a depth, so a thousand-file tree reads in a screen. */
 function shape(files: FetchResponse["files"], depth: number): string[] {
   const dirs = new Map<string, { files: number; bytes: number }>();
   for (const { path, bytes } of files) {

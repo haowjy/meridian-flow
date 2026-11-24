@@ -1,4 +1,3 @@
-/** POST /api/diagnostics/failures — bounded, account-fenced diagnostic metadata only. */
 import { assertBodySize, defineEventHandler, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../lib/auth-gate.js";
 import { ingestClientFailures } from "../../../lib/client-failures-route.js";

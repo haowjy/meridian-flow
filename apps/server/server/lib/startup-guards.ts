@@ -1,8 +1,3 @@
-/**
- * Startup guards: pure config validation plus the boot-time assertion wrapper.
- * The checks fail fast for missing persistence, cloud object storage without
- * credentials, and production auth placeholders.
- */
 import type { ObjectStoreProvider } from "./backend-policy.js";
 import { DEV_MCP_TOKEN_KEY } from "./mcp-token-key.js";
 
@@ -108,7 +103,7 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   }
 
   if (isProduction) {
-    // The local store's tokens now authorize writes, so a known secret would let anyone forge one.
+    // keep: the local store's tokens authorize writes, so a known secret lets anyone forge one
     if (config.OBJECT_STORE_PROVIDER === "local")
       requireRealSecret(
         errors,
@@ -116,7 +111,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
         config.OBJECT_STORE_SIGNING_SECRET,
         "must be set to a private secret in production with OBJECT_STORE_PROVIDER=local.",
       );
-    // The default directory is the temp dir, which a restart can clear.
     if (config.OBJECT_STORE_PROVIDER === "local")
       requireValue(
         errors,

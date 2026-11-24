@@ -1,4 +1,3 @@
-/** GET /api/debug/events — authenticated, dev-only filtered recent observability records. */
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import { requireAppUser } from "../../../lib/auth-gate.js";
 import { parseEventQueryFilter } from "../../../lib/event-query-route.js";

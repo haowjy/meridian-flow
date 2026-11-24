@@ -1,10 +1,3 @@
-/**
- * Every path the model writes is resolved through the names it was shown (tree-tools.md, "Which
- * tree a stale path is resolved against"): a name that was renamed or moved since reaches the node
- * the model meant, and what the call's path showed is recorded with its result. This is the one place the tools that read or write inside a
- * document do it; the tree commands resolve inside their own command.
- */
-
 import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
 import { formatParsedContextUri, joinContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
@@ -23,7 +16,6 @@ import { reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type ToolHandlerContext, TREE_NAMES_ROOM } from "../../domains/runtime/index.js";
 import type { ToolCall, ToolWiringDeps } from "./tool-context.js";
 
-/** What the model has been shown of the tree so far in this conversation. */
 export async function shownNamesOf(
   ctx: Pick<ToolHandlerContext, "shownNames">,
 ): Promise<NamesShown> {
@@ -32,18 +24,11 @@ export async function shownNamesOf(
   return shown;
 }
 
-/** The names a result showed, as the host-only evidence recorded with its block. */
 export function namesEvidence(delta: ShownDelta | undefined) {
   if (!delta || (delta.whole.length === 0 && delta.names.length === 0)) return {};
   return { names: { room: TREE_NAMES_ROOM, snapshot: encodeDelta(delta) } };
 }
 
-/**
- * What a result showed when it printed the paths of these nodes (one source, `area`): each name
- * along each path as the tree holds it now. Every tool that prints a path records it this way,
- * from the nodes that produced it, so a name means what the model was shown whatever name it
- * typed to get there.
- */
 export async function printedNames(
   call: ToolCall,
   area: string,
@@ -58,7 +43,6 @@ export async function printedNames(
   return read.ok ? read.value : undefined;
 }
 
-/** The area a path names (`manuscript://`, a Work's, a chat's) and the path below it. */
 export function areaOfPath(path: string): { area: string; rest: string } | null {
   const parsed = parseUnifiedContextUri(path);
   if (!parsed.ok) return null;
@@ -72,28 +56,17 @@ export function areaOfPath(path: string): { area: string; rest: string } | null 
 export type Reached = {
   path: string;
   delta?: ShownDelta;
-  /** The node the path reached, when the names shown or the tree hold it. */
   node?: { id: string; kind: "folder" | "document" | "file"; entries: number };
-  /**
-   * A create's folders that were in Trash and stand again around what it makes, with who deleted
-   * them (`folderOf`).
-   */
   kept?: string;
-  /**
-   * The node the path names is not available here (in Trash, purged, or of the other version):
-   * the tool answers with `goneMessage` and never looks `path` up again, which could reach
-   * another node that holds the name now.
-   */
+  // keep: a gone node is never looked up again by path, which could reach another node that holds the name now
   gone?: Gone;
 };
 
-/** Why a path's node is not available, and who deleted it: "you" when it was this chat. */
 export type Gone = {
   why: "deleted" | "purged" | "other_version";
   by?: NonNullable<DocumentRemovalRecord["actor"]> | "you";
 };
 
-/** What a tool says for a path whose node is not available (`Reached.gone`). */
 export function goneMessage(path: string, gone: Gone): string {
   if (gone.why === "deleted") {
     const by = gone.by === "you" ? "you" : removerName(gone.by ?? null);
@@ -103,13 +76,6 @@ export function goneMessage(path: string, gone: Gone): string {
   return `${path} names something in the other version of the tree, not this one.`;
 }
 
-/**
- * The path as it is now for the node the model meant (`#fragment` kept). A path neither the names
- * shown nor the tree hold a node for comes back as written: the tool reports it as it always did.
- * One whose node is not available comes back `gone`. `create` resolves the folder it goes into,
- * not the name it makes, and that folder is never `gone`: one the model was shown that someone
- * deleted since is `node`, and the create goes into it, which brings it back.
- */
 export async function reachShown(
   deps: Pick<ToolWiringDeps, "documentRemovals">,
   call: ToolCall,
@@ -118,7 +84,6 @@ export async function reachShown(
   options: {
     version?: "draft" | "live";
     folderOf?: boolean;
-    /** A write names a node in Trash by the path it was shown: that node is the one it means. */
     deleted?: boolean;
   } = {},
 ): Promise<Reached> {
@@ -126,7 +91,6 @@ export async function reachShown(
   const parts = areaOfPath(filePath);
   if (!parts) return { path };
   const shown = await shownNamesOf(ctx);
-  // A create's own name is new: only the folders above it are looked up.
   const slash = parts.rest.lastIndexOf("/");
   const looked = options.folderOf ? parts.rest.slice(0, slash + 1) : parts.rest;
   const leaf = options.folderOf ? parts.rest.slice(slash + 1) : "";
@@ -158,7 +122,6 @@ export async function reachShown(
   };
 }
 
-/** What a path is, for the result of a tool used on the wrong kind (`kindAt`, issue #1302). */
 export function wrongKindMessage(
   uri: string,
   node: NonNullable<Reached["node"]>,

@@ -1,4 +1,3 @@
-/** Private address caching at both H3 response stages, including rendered errors. */
 import { type H3Event, setHeader } from "nitro/h3";
 
 type AddressResponseHooks = {
@@ -19,8 +18,7 @@ export default function addressCachePolicy(app: unknown) {
     if (isAddressRequest(event)) setHeader(event, "Cache-Control", "private, no-store");
   });
   hooks.hook("response", (response, event) => {
-    // H3 discards ordinary event headers when a handler throws. Conversely,
-    // successful object responses take their headers from the prepared event.
+    // keep: set this header at both H3 stages: a throw discards event headers, and a successful object response takes them only from the prepared event
     if (isAddressRequest(event)) response.headers.set("Cache-Control", "private, no-store");
   });
 }

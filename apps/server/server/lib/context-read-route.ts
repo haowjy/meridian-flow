@@ -1,13 +1,3 @@
-/**
- * The read behind GET /api/projects/:projectId/documents/:documentId/read: one document's
- * bytes for a viewer, addressed by its id and answered from its row. A rename or a move
- * elsewhere changes nothing about which file this reads.
- *
- * Access, in order: the project is the user's; the project holds the row (`held` answers for
- * any owner, hidden and deleted rows count as absent, and a User-area file reads from any of the
- * user's projects); the user may read that row. The grant is on the row `held` names, which
- * follows a join's forward, never on the id the request carried.
- */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
@@ -55,7 +45,6 @@ export async function handleContextReadRequest(
   const ref = fileRefOfVisible(found.document);
   if (!ref.ok) throw createError({ statusCode: 502, message: "Document storage is inconsistent" });
   if (ref.value.kind === "tracked") {
-    // A home document has no project of its own: its links read in the project asking.
     const read = await deps.links.within(
       { projectId: input.projectId, viewer: { accountId: input.userId } },
       () => deps.documentSync.readAsMarkdown(documentId),
@@ -94,7 +83,6 @@ export async function handleContextReadRequest(
   }
   const mimeType = ref.value.mimeType;
   const drawKey = drawObjectKey({ key, mimeType, hasPreview: ref.value.hasPreview ?? false });
-  // A missing or unsignable preview leaves the file card, which the original's URL still serves.
   const drawUrl =
     drawKey === key
       ? signed.value

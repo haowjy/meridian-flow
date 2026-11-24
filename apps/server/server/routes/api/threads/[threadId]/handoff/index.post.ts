@@ -1,5 +1,3 @@
-/** POST /api/threads/[threadId]/handoff: create a new primary thread with a pending brief seed. */
-
 import { handoffThreadRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import {

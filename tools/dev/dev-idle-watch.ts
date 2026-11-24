@@ -1,12 +1,4 @@
-/**
- * Runs in window `idle-watch` of a dev stack's tmux session and stops the stack once it has
- * done no work for the idle timeout. The rule is in `lib/dev-idle.ts`.
- *
- * Started with `bun` directly, not through pnpm: it lives as long as the stack, and a bare
- * bun process holds ~20 MB where tsx and its pnpm wrapper held ~360 MB.
- *
- * Usage: bun dev-idle-watch.ts <session> <minutes>
- */
+// keep: start this with bun, not pnpm: it lives as long as the stack, and bare bun holds ~20 MB where tsx and its pnpm wrapper held ~360 MB
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -37,7 +29,6 @@ function stackRootPid(): number | null {
   return result.status === 0 ? Number(result.stdout.trim()) : null;
 }
 
-/** `--stop` kills this session, and this process with it, mid-cleanup: run it detached, output to a log. */
 function stopStack(idleMinutes: number): void {
   const logFile = path.join(repoRoot, "logs", "dev-idle-stop.log");
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
@@ -61,7 +52,7 @@ async function watch(): Promise<void> {
   for (;;) {
     await sleep(IDLE_POLL_SECONDS * 1000);
     const rootPid = stackRootPid();
-    if (rootPid === null) break; // the session is gone
+    if (rootPid === null) break;
     const current = processTreeCpuTicks(rootPid);
     if (previous !== null && ticksBetween(previous, current) >= ACTIVE_TICKS_PER_POLL) {
       lastActive = Date.now();
