@@ -164,7 +164,10 @@ export {
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
-export { releaseDocumentContent } from "./tree/release-document-content.js";
+export {
+  type DocumentContentEnd,
+  releaseDocumentContent,
+} from "./tree/release-document-content.js";
 export { ownedByRequest } from "./tree/source-owner.js";
 export * from "./tree/tree-view.js";
 export {

@@ -8,7 +8,7 @@
  * returned storage objects then too.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, UserId } from "@meridian/contracts";
 import { loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -20,12 +20,12 @@ import {
   documentPreviousLocations,
   documentSnapshots,
   documents,
-  observationFrontiers,
+  projects,
   threadDocuments,
   threadShownLinks,
   userRecentDocuments,
 } from "@meridian/database/schema";
-import { and, inArray, isNull, like, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 
@@ -33,22 +33,36 @@ const liveRoomKey = (documentId: DocumentId) => loroRoomName({ kind: "live", doc
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
+/** What collab ends with a document's content, beyond the rows this deletes. */
+export type DocumentContentEnd = {
+  /** Collab's `endDocumentRooms`, run after the commit: the loaded rooms end unsaved. */
+  endRooms(documentIds: readonly DocumentId[]): Promise<void>;
+  /** What the model was shown of the documents, in every room: deleted in the caller's transaction. */
+  evidence: {
+    forgetFrontiers(rooms: { accountId: UserId; documentIds: readonly string[] }): Promise<void>;
+  };
+};
+
 export async function releaseDocumentContent(
   db: Database,
-  /** Collab's `endDocumentRooms`, run after the commit: the loaded rooms end unsaved. */
-  endRooms: (documentIds: readonly DocumentId[]) => Promise<void>,
+  collab: DocumentContentEnd,
   documentIds: readonly DocumentId[],
 ): Promise<Released> {
   if (documentIds.length === 0) return { documentIds: [], storageUrls: [] };
   const tx = currentDrizzleDb(db);
   for (const id of [...new Set(documentIds)].sort()) await lockDocumentMutation(tx, id);
   const held = await tx
-    .select({ id: documents.id, storageUrl: documents.storageUrl })
+    .select({
+      id: documents.id,
+      accountId: sql<UserId>`coalesce(${projects.userId}, ${documents.userId})`,
+      storageUrl: documents.storageUrl,
+    })
     .from(documents)
+    .leftJoin(projects, eq(projects.id, documents.projectId))
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
-  deferUntilDrizzleCommit(() => endRooms(list));
+  deferUntilDrizzleCommit(() => collab.endRooms(list));
   // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx
@@ -56,19 +70,11 @@ export async function releaseDocumentContent(
     .where(inArray(documentSnapshots.roomKey, list.map(liveRoomKey)));
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
-  // Observation frontiers have no document foreign key; their room key is the only ownership. A
-  // fork's are matched by the document in its key, so those of a fork swept earlier go too.
-  await tx
-    .delete(observationFrontiers)
-    .where(
-      or(
-        inArray(observationFrontiers.roomKey, list.map(liveRoomKey)),
-        and(
-          like(observationFrontiers.roomKey, "fork:%"),
-          inArray(sql`split_part(${observationFrontiers.roomKey}, ':', 3)`, list),
-        ),
-      ),
-    );
+  const byAccount = new Map<UserId, DocumentId[]>();
+  for (const { id, accountId } of held)
+    byAccount.set(accountId, [...(byAccount.get(accountId) ?? []), id as DocumentId]);
+  for (const [accountId, ids] of byAccount)
+    await collab.evidence.forgetFrontiers({ accountId, documentIds: ids });
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));
