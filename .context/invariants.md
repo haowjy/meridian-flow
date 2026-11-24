@@ -61,7 +61,7 @@ sink built without it writes raw payloads. `errorMessage` is free text by design
 carries its turn in the Loro change's commit message (`commitMessage`'s `by`), which is how a later write
 reports who changed what since a read. Contracts:
 `apps/server/server/domains/collab/.context/reversal.md`; reasons: the KB's
-`wiki/architecture/collaboration/turn-receipts.md`.
+`wiki/collaboration/turn-receipts.md`.
 
 **Checked by** the collab DB tests: `inverse-attribution`, `model-inverse` and
 `turn-inverse`.
