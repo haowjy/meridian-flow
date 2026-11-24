@@ -31,13 +31,13 @@ Projects and Works: ownership gates, bootstrap and the Work lifecycle.
 - Paths: `apps/server/server/domains/projects`
 - Docs: [CONTEXT](../../apps/server/server/domains/projects/.context/CONTEXT.md)
 - Machines: [projects](../../apps/server/server/domains/projects/.context/state-machines.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also reaches into `context/adapters/context-fs/document-locations.ts`.
+- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also reaches into Context's adapters and internals: `context/adapters/tree-list-facts.ts`, `context/context-source-provisioning.ts`, plus `context/index.ts` for the content release.
 
 ## recent-documents
 
 Recently opened documents.
 
-Lists what the writer opened lately, from the catalog. It imports two Context adapters, not the Context port.
+Lists what the writer opened lately, from the catalog. It imports four Context modules (`adapters/context-file-entry.ts`, `adapters/project-context-availability.ts`, `tree/source-owner.ts` and `tree/tree-view.ts`), not the Context port.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/recent-documents`

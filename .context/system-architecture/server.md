@@ -5,7 +5,8 @@ page of its domains. Follow the numbers for one chat turn: the message arrives (
 it (2), conversation asks the model for a reply (3), the model's tool calls read and edit documents
 (4), the edit is saved in Postgres (5), and the reply (6) and the edit (7) stream back to the
 browser. Step by step: [a message becomes an edit](flows/message-becomes-edit.md). Imports that
-break the written rules, among them a cycle of six domains, are on [dependencies](dependencies.md).
+break the written rules, among them the cycle of five domains (`threads`, `projects`,
+`file-policy`, `context` and `collab`), are on [dependencies](dependencies.md).
 
 ```mermaid
 flowchart LR
@@ -33,7 +34,7 @@ flowchart LR
   workspace -->|"archives and deletes a Work's documents"| documents
   files -->|"writes an imported tree"| documents
   files -->|"stores and reads bytes"| objectstore
-  note1["The routes get every domain from lib. By the written rule domains do not import lib; the one exception is listed on the dependencies page."]:::note
+  note1["The routes get every domain from lib. By the written rule no domain imports lib, and nothing breaks it."]:::note
   note1 -.- lib
   note2["A Work is one task's editing context in a project: it groups chats and owns shared drafts. That is why conversation and documents both ask workspace."]:::note
   note2 -.- workspace
@@ -120,7 +121,7 @@ Sends HTTP requests, holds the thread socket and the Loro socket.
 
 The model providers.
 
-Called through one gateway owned by the runtime domain.
+Called through one gateway in `lib/gateway/`, over the published `@meridian-flow/runtime/gateway`.
 
 - Kind: context
 - See: [models](system.md#models)

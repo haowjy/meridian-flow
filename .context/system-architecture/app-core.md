@@ -7,6 +7,7 @@ flowchart LR
   core-editor["core-editor<br/><small>the editor schema and document sessions</small>"]:::module
   core-transport["core-transport<br/><small>the Loro socket and connectivity</small>"]:::module
   core-tree-list["core-tree-list<br/><small>the browser's copy of the project tree's list</small>"]:::module
+  core-project-tree["core-project-tree<br/><small>the tree's rows, sidebar Undo and bounced records</small>"]:::module
   core-uploads["core-uploads<br/><small>the upload store</small>"]:::module
   core-completion["core-completion<br/><small>what a suggestion menu offers</small>"]:::module
   client["client<br/><small>HTTP clients</small>"]:::context
@@ -18,6 +19,7 @@ flowchart LR
   server -->|"3. sends updates"| core-transport
   core-transport -->|"4. reports sync status"| core-editor
   core-tree-list -->|"connects the list's room on"| server
+  core-project-tree -->|"reads its replay through"| core-tree-list
   core-editor -->|"tracks uploads in"| core-uploads
   core-editor -->|"offers suggestions from"| core-completion
   note1["core-transport carries the Loro socket: it connects when a session asks, passes the server's updates on and reports sync status back (steps 2 to 4)."]:::note
@@ -34,7 +36,7 @@ The TipTap schema and the Loro document session.
 - Paths: `apps/app/src/core/editor`
 - Docs: [CONTEXT](../../apps/app/src/core/editor/.context/CONTEXT.md), [AGENTS](../../apps/app/src/core/editor/AGENTS.md)
 - Machines: [editor core](../../apps/app/src/core/editor/.context/state-machines.md)
-- Drift: `core/editor` and `core/transport` import each other (editor to transport 2 files, transport to editor 1).
+- Drift: `core/editor` and `core/transport` import each other (editor to transport 3 files, transport to editor 1, a type-only import).
 
 ## core-transport
 
@@ -51,12 +53,21 @@ A dev transport exists for local use. The thread socket is not here: it is `@mer
 
 The browser's copy of a project's tree list, beside the document sessions.
 
-A Loro document stored in IndexedDB and joined to the list's room on `/ws/loro` by each tab, with a sync status. Every name and place on screen is read from its replay, live or a Work's view (the sidebar's Live/Draft toggle), and the sidebar's Undo stack is kept per copy (`core/project-tree/tree-undo.ts`).
+A Loro document stored in IndexedDB and joined to the list's room on `/ws/loro` by each tab, with a sync status. Every name and place on screen is read from its replay, live or a Work's view (the sidebar's Live/Draft toggle), through [core-project-tree](#core-project-tree).
 
 - Kind: module
 - Paths: `apps/app/src/core/tree-list`
 - Docs: [AGENTS](../../apps/app/src/core/tree-list/AGENTS.md)
 - Machines: [tree list](../../apps/app/src/core/tree-list/.context/state-machines.md)
+
+## core-project-tree
+
+The tree the screens read: rows with paths and addresses, sidebar Undo, and the records the server bounced.
+
+Placement is read from the list's replay here, so a rename, a move or a delete shows in the tree, the tabs, the identity bar and the pickers at once. Its Undo stack is kept per list copy, and a record the server stamped `dropped` is said on its row.
+
+- Kind: module
+- Paths: `apps/app/src/core/project-tree`
 
 ## core-uploads
 
