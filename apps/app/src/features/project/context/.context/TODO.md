@@ -18,3 +18,6 @@
 - A tree delete's Undo notice ("X deleted. Undo") stays in the Chats sidebar footer after the
   writer leaves Manuscript for another source. It belongs to the Manuscript tree; show it there,
   or dismiss it when the source changes (`project/shell/sidebar/use-sidebar-undo.ts`).
+- At 390 px the review bar's ladder (`fitReviewLine`) ends with `against Live` cut to its
+  chevron: the control keeps its accessible name but shows no label. Needs a UX call on a short
+  narrow-pane label (for example the target's name alone) or moving the picker into a menu.
