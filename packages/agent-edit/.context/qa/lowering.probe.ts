@@ -47,13 +47,13 @@ const viewNode = (view: LoroDoc) =>
   );
 
 /**
- * The model's copy at the view, its write planned there (authors read from the view) and applied
+ * The model's copy at the view, its write planned there (editors read from the view) and applied
  * through the one text write; returns the update and its op count.
  */
 function aiWrite(view: LoroDoc, ai: string) {
   const editors = unitEditors(view, rules.rule, shape);
   const ops = lowerBlock(viewNode(view), schema.nodes.paragraph.create(null, schema.text(ai)), {
-    authors: () => (unit) => editors[unit],
+    editors: () => (unit) => editors[unit],
   });
   const from = view.oplogVersion();
   const copy = configured(view.fork());
@@ -394,6 +394,80 @@ function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentP
   return { landed, reviewOff, merged, ideal };
 }
 
+/**
+ * The writer types a letter inside a word the AI only grows (`cat` → `cats`) after the read; the
+ * letter should stay inside the AI's copy of the word. Null when the AI grows no word at its end.
+ */
+function grownWord(c: Case, typing: Typing) {
+  const { ta, repl } = align(c.base1, c.ai);
+  const grown = ta.findIndex((t, i) => {
+    const span = repl[i];
+    const into = span && c.ai.slice(span[0], span[1]);
+    return into && !/\s/.test(into) && into.startsWith(t.w) && t.w.length >= 2 && into !== t.w;
+  });
+  if (grown < 0) return null;
+  const t = ta[grown];
+  const span = repl[grown] as [number, number];
+  const writer = writerDoc(c);
+  writerE1(writer, c.e1, typing);
+  const view = viewOf(writer);
+  const { update } = aiWrite(view, c.ai);
+  view.free();
+  text(writer, (x) => x.insert(t.start + 1, "q"));
+  writer.commit();
+  writer.import(update);
+  const merged = plain(writer);
+  writer.free();
+  const ideal = `${c.ai.slice(0, span[0] + 1)}q${c.ai.slice(span[0] + 1)}`;
+  return { inPlace: merged === ideal, merged, ideal };
+}
+
+// ---------- repros ----------
+
+/** A paragraph with comments on [start, end) ranges, rewritten by the AI after the read. */
+function commentRepro(base: string, ai: string, marks: Array<[number, number]>) {
+  const writer = writerDoc({ id: "", base0: base, base1: base, ai, e1: { kind: "insert", at: 0, text: "" } });
+  text(writer, (t) => {
+    for (const [k, [start, end]] of marks.entries()) t.mark({ start, end }, `${COMMENT}${k}`, true);
+  });
+  writer.commit();
+  const view = viewOf(writer);
+  writer.import(aiWrite(view, ai).update);
+  view.free();
+  const merged = plain(writer);
+  const got = text(writer, (t) =>
+    marks.map((_, k) => markRanges(t, `${COMMENT}${k}`).map(([s, e]) => merged.slice(s, e))),
+  );
+  writer.free();
+  return got;
+}
+
+/** The base, the AI's text, then a letter the writer types at `at` before the write lands. */
+function typingRepro(base: string, ai: string, at: number, letter: string) {
+  const writer = writerDoc({ id: "", base0: base, base1: base, ai, e1: { kind: "insert", at: 0, text: "" } });
+  const view = viewOf(writer);
+  const { update } = aiWrite(view, ai);
+  view.free();
+  text(writer, (t) => t.insert(at, letter));
+  writer.commit();
+  writer.import(update);
+  const merged = plain(writer);
+  writer.free();
+  return merged;
+}
+
+/** Cases review found, each with what it must give. */
+const repros: Array<[string, () => unknown, unknown]> = [
+  // Joining `cat`→`cats` with `dog`→`hound` rewrote `cat` and glued the writer's `r` to `hound`.
+  ["a letter typed inside a grown word", () => typingRepro("the cat dog ran", "the cats hound ran", 6, "r"), "the carts hound ran"],
+  // A comment per old word, in one change with no space to split it.
+  ["two comments in one change", () => commentRepro("one, two", "three—four", [[0, 3], [5, 8]]), [["three"], ["four"]]],
+  ["two comments on adjacent CJK", () => commentRepro("你好", "他们", [[0, 1], [1, 2]]), [["他"], ["们"]]],
+  // A comment over a space the AI's change takes in keeps the space.
+  ["a comment over a merged space", () => commentRepro("one two three four", "one 2 3 four", [[4, 13]]), [["2 3"]]],
+  ["a comment on a word that grows", () => commentRepro("the dog ran", "the dogs ran", [[4, 7]]), [["dogs"]]],
+];
+
 // ---------- run ----------
 
 const cases: Case[] = JSON.parse(
@@ -401,8 +475,13 @@ const cases: Case[] = JSON.parse(
 );
 const say = (line: string) => process.stdout.write(`${line}\n`);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+for (const [name, run, want] of repros) {
+  const got = run();
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  say(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`);
+}
 say(
-  "typing | Ctrl+Z breaks AI words | AI words broken | as asked | no-op | kept-word comments right | changed-word comments whole/fragment/lost | concurrent in place/glued/displaced | review off | ops",
+  "typing | Ctrl+Z breaks AI words | AI words broken | as asked | no-op | kept-word comments right | changed-word comments whole/fragment/lost | concurrent in place/glued/displaced | typed in a grown word, in place | review off | ops",
 );
 for (const typing of ["lead", "trail"] as const) {
   seed = 5;
@@ -414,6 +493,7 @@ for (const typing of ["lead", "trail"] as const) {
       holes: holes(c, typing),
       comments: comments(c, typing, cplan),
       concurrent: concurrent(c, typing, wplan),
+      grown: grownWord(c, typing),
     };
   });
   const land = (k: string) => rows.filter((r) => r.concurrent.landed === k).length;
@@ -429,6 +509,7 @@ for (const typing of ["lead", "trail"] as const) {
         .map((k) => sum(rows.map((r) => r.comments[k as "whole"])))
         .join("/"),
       `${land("in place")}/${land("glued")}/${land("displaced")}`,
+      `${rows.filter((r) => r.grown?.inPlace).length}/${rows.filter((r) => r.grown).length}`,
       rows.filter((r) => r.concurrent.reviewOff > 0).length,
       (sum(rows.map((r) => r.holes.ops)) / rows.length).toFixed(1),
     ].join(" | "),
@@ -438,6 +519,8 @@ for (const typing of ["lead", "trail"] as const) {
       if (r.holes.broken > 0)
         say(`  [${r.id}] Ctrl+Z\n    ideal: ${r.holes.ideal}\n    final: ${r.holes.final}`);
       for (const line of r.comments.astray) say(`  [${r.id}] comment ${line}`);
+      if (r.grown && !r.grown.inPlace)
+        say(`  [${r.id}] typed in a grown word\n    ideal:  ${r.grown.ideal}\n    merged: ${r.grown.merged}`);
       if (r.concurrent.landed !== "in place")
         say(
           `  [${r.id}] concurrent ${r.concurrent.landed}\n    ideal:  ${r.concurrent.ideal}\n    merged: ${r.concurrent.merged}`,

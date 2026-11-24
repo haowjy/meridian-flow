@@ -700,7 +700,7 @@ function replaceScope(
         const after = newBlocks[step.next];
         const lowered = lowerBlock(before, after, {
           placed: windows && [windows.old[step.old], windows.new[step.next]],
-          authors: (path) => ctx.model.unitAuthors(oldBlocks[step.old], path),
+          editors: (path) => ctx.model.unitEditors(oldBlocks[step.old], path),
           shownBy: {
             codec: ctx.codec,
             place: () => {

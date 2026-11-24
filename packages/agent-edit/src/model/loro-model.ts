@@ -195,7 +195,7 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       return result.ok ? { ok: true } : result;
     },
 
-    unitAuthors(ref, path) {
+    unitEditors(ref, path) {
       const { document, id } = blockOf(ref);
       const shape = document.shape(id);
       const node = shape && shapeAt(shape, path);
