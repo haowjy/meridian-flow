@@ -1,3 +1,4 @@
+import { type WordPart, wordDiff } from "@meridian/agent-edit/diff";
 import {
   type BlockId,
   COMMENT_STYLE_PREFIX,
@@ -6,8 +7,6 @@ import {
   type RoomDocs,
   type ShapeBlock,
   structureValues,
-  type WordPart,
-  wordDiff,
 } from "@meridian/document-model";
 
 /**

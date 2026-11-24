@@ -19,14 +19,12 @@ import {
   editSince,
   inMap,
   inText,
-  isOrderKey,
   RoomDocs,
   replaceText,
   STRUCTURE_KEY,
   STRUCTURE_MAPS,
   StructureView,
   sameValue,
-  setCommentBody,
   structureValues,
   emptyParagraphOf,
   encodeChanges,
@@ -39,6 +37,7 @@ import {
   valuesOf,
   versionOf,
 } from "@meridian/document-model";
+import { isOrderKey, setCommentBody } from "@meridian/document-model/test-support";
 import { Fragment, Slice } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import { blockOf } from "../../src/codec.js";

@@ -15,9 +15,9 @@ import {
   readDocument,
   STRUCTURE_KEY,
   sameValue,
-  setCommentBody,
   writeDocument,
 } from "@meridian/document-model";
+import { setCommentBody } from "@meridian/document-model/test-support";
 import { createMemoryDocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, newBlockId, withBlockIds } from "@meridian/prosemirror-schema";

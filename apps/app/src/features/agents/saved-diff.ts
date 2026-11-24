@@ -1,9 +1,9 @@
 /** A file's saved text against its text now, as the rows of a two-column line diff. */
 import {
   DIFF_DELETE,
-  DIFF_EQUAL,
   DIFF_INSERT,
   diffKeys,
+  type WordPart,
   wordDiff,
 } from "@meridian/agent-edit/diff";
 
@@ -54,16 +54,16 @@ export function diffRows(saved: string | null, now: string | null): DiffRow[] {
       const left = x === undefined ? null : cellOf(a[x], x + 1);
       const right = y === undefined ? null : cellOf(b[y], y + 1);
       const words = left && right ? wordDiff(left.text, right.text) : [];
-      const runsOf = (skip: number) =>
+      const runsOf = (skip: WordPart["kind"]) =>
         paired
-          ? words.flatMap(([op, text]) =>
-              op === skip ? [] : [{ text, changed: op !== DIFF_EQUAL }],
+          ? words.flatMap(({ kind, text }) =>
+              kind === skip ? [] : [{ text, changed: kind !== "same" }],
             )
           : undefined;
       rows.push({
         kind: "changed",
-        saved: left && { ...left, runs: runsOf(DIFF_INSERT) },
-        now: right && { ...right, runs: runsOf(DIFF_DELETE) },
+        saved: left && { ...left, runs: runsOf("added") },
+        now: right && { ...right, runs: runsOf("removed") },
       });
     }
     removed = [];

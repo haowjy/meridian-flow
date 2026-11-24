@@ -7,7 +7,7 @@
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
-import { describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import { align } from "./align.js";
 import { correspond } from "./correspond.js";
 import { buildSide, segmentText } from "./tokens.js";
