@@ -8,7 +8,7 @@
  * beside this file in `content-merge/`). Hunks from one side apply. Overlapping hunks with
  * equal results apply once. Insertions at one point keep both (live first). Anything else is a
  * conflict: the draft's version stays, so the conflict shows in review as diff(new base = live, draft).
- * It works on `align`'s uncleaned hunks for word precision. No CRDT here.
+ * It works on `align`'s token-level hunks. No CRDT here.
  */
 import { hasBlockId, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";

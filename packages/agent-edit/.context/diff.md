@@ -1,20 +1,22 @@
 # agent-edit diff: block diff and correspondence
 
 `src/diff/` is the pure text model: which block of one version is which block of the other
-(`correspond`), and what changed between two block lists (`diffBlocks`). It depends on ProseMirror only, so the browser and the server import
-the same functions. The three-way merge in
+(`correspond`), and what changed between two block lists (`align`'s hunks). It depends on ProseMirror
+only, so the browser and the server import the same functions. The three-way merge in
 `src/content-merge/` ([page](content-merge.md)) builds on it.
 
 Who uses it now:
 
-- The browser: `countWords` (word count), `wordDiff`/`diffKeys` (a saved edit's diff in chat).
+- The browser: `countWords` (word count), `wordDiff` (Review changes' word marks, a saved Agent's
+  diff) and `diffKeys`.
+- The server: `wordDiff` for an edit's excerpt (`collab/domain/edit-excerpt.ts`).
 
 
 ## Hunks and changes
 
-`diffBlocks(base, draft)` returns both token sides, the cleaned hunks, the raw ones and the
-alignment. `blocksEqual` counts whitespace and marks, so `captureDelta` records an edit that only
-changed either.
+`align(buildSide(base), buildSide(draft), correspond(base, draft, { byId: true }))` returns the
+token-level hunks the merge works on. `blocksEqual` counts whitespace and
+marks, so `captureDelta` records an edit that only changed either.
 
 Words are split by a regex of our own (`segmentText` in `tokens.ts`), never `Intl.Segmenter`, whose
 word breaks follow the engine's ICU (Node keeps `a.b` one word and Chrome splits it). A token's key
@@ -71,6 +73,5 @@ block is which: `correspond(old, next, { byId: true })`.
    `same-block-added-twice`). Two similar but unequal paragraphs typed on both sides are two blocks.
 
 **Guess mode** (`correspond(old, next)`) is what the model's write (its Markdown has no ids) and a
-block with no id use; `diffBlocks` calls the id mode and guesses only for blocks
-without an id. The ends and anchors pair first, then each gap by same content, then the share of
+block with no id use; the merge calls the id mode, which guesses only for blocks without an id. The ends and anchors pair first, then each gap by same content, then the share of
 words in common; a gap too large to score is cut at its similar pairs.
