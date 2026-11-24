@@ -28,7 +28,6 @@ type TypeSurface = {
 };
 
 type SchemaSurface = {
-  /** The fragment the document was stored under, through 3.x; a Loro document has none. */
   fragmentName?: string;
   nodes: Record<string, TypeSurface>;
   marks: Record<string, TypeSurface>;
@@ -142,8 +141,6 @@ function validateBump(
   const nextMajor =
     current.major === previous.major + 1 && current.minor === 0 && current.patch === 0;
   if (bump === "addition") {
-    // A defaulted attr is additive to the surface, but a human decision may still make
-    // it a major when it changes what stored content means.
     if (!nextMinor && !nextMajor) {
       throw new Error(
         "Additive schema surface changes require an x.(y+1).0 or a human-decided (x+1).0.0 version bump.",
@@ -183,15 +180,12 @@ function historyAt(reference: string): SchemaShapeHistoryEntry[] | null {
     const recorded = JSON.parse(
       git("show", `${reference}:${HISTORY_PATH}`),
     ) as SchemaShapeHistoryEntry[];
-    // Bases older than the pre-deploy reset include discarded pre-1.0 history.
     return recorded.filter((entry) => entry.version.major >= 1);
   } catch {
     return null;
   }
 }
 
-// Shipped history is main's: an integration branch may rewrite entries it added
-// and never shipped. For a PR into main the merge base is the PR's base.
 function baseReference(): string | null {
   try {
     return git("merge-base", "HEAD", "origin/main");

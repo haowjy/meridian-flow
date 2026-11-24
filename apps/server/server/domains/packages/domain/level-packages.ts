@@ -1,4 +1,3 @@
-/** One level's files, split into the packages Mars reads: the level root and `packages/<name>/`. */
 import type { AgentsLevel } from "@meridian/contracts/agents";
 import type { LevelFiles } from "../ports/agent-level-files.js";
 import { type AgentSourceSnapshot, isPackagePath } from "./compile-package.js";
@@ -7,20 +6,11 @@ import type { SkillFiles } from "./types.js";
 
 export const PACKAGES_DIR = "packages/";
 
-/**
- * A level root with no `mars.toml` is a package named for its level, so a bare `agents/x.md`
- * is available. (Once package-wide tool rules are supported, deleting the manifest drops them.)
- */
 export const defaultManifest = (level: AgentsLevel): string =>
   `[package]\nname = "${level}"\nversion = "0.0.0"\nschema = 1\n`;
 
 export interface LevelPackages {
-  /**
-   * The level's own files, which win their names over every package beneath it, as `_self` does;
-   * null when the level has none, so there is nothing to save or compile.
-   */
   root: AgentSourceSnapshot | null;
-  /** Imported packages by directory name; each needs its own `mars.toml`. */
   imports: Array<{ name: string; source: AgentSourceSnapshot }>;
 }
 

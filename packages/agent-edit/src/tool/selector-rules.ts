@@ -26,7 +26,7 @@ interface SelectorIssue {
   message: string;
 }
 
-const ONE_SCOPE_MESSAGE = "Use one of in, around or a #fragment";
+const ONE_SCOPE_MESSAGE = "in, around and a #fragment are alternatives, not together";
 
 /** Every selector rule the given fields break, in a stable order. */
 export function selectorIssues(
@@ -66,20 +66,20 @@ export function selectorIssues(
       field: "around",
       message:
         command === "insert"
-          ? "around narrows find; add find or use after or before"
-          : "around narrows find; add find or use in",
+          ? "around narrows find, so it needs find"
+          : "around narrows find, so it needs find",
     });
   }
   if (has.all && !has.find) issues.push({ field: "all", message: "all applies to find matches" });
 
   if (command === "insert") {
     if (has.after && has.before) {
-      issues.push({ field: "before", message: "Use after or before, not both" });
+      issues.push({ field: "before", message: "after and before are alternatives, not both" });
     }
     if ((has.after || has.before) && has.find) {
       issues.push({
         field: "find",
-        message: "Use after or before to position by block, or find to position by text, not both",
+        message: "after or before positions by block and find positions by text, not both",
       });
     }
     if (!has.find && (has.in || hasFragment)) {

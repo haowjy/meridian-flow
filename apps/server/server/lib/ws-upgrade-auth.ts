@@ -1,10 +1,4 @@
-/**
- * Shared WebSocket upgrade auth and deferred-close result types.
- *
- * Nitro dev's WS proxy crashes the whole dev server when an upgrade hook returns
- * a non-101 response. Upgrade-time rejections must therefore accept the socket
- * first, then close it from open() with the deferred-close context.
- */
+// keep: Nitro dev's WS proxy crashes the dev server on a non-101 upgrade hook, so a rejection accepts the socket first and closes it from open()
 
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";

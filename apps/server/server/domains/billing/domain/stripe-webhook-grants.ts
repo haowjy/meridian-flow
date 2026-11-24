@@ -1,4 +1,3 @@
-/** Resolves Stripe webhook payloads into ledger grants; owns Meridian billing policy. */
 import type { BillingPlanPriceBinding } from "./catalog.js";
 import type { CreditGrantInput } from "./credit-ledger.js";
 

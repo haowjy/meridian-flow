@@ -1,15 +1,9 @@
-/**
- * Connection status: when a check runs, what it learns, and the writes it makes. The machine and
- * its races are in `.context/state-machines.md`.
- */
 import type { McpConnectionStatus } from "@meridian/contracts/mcp";
 import type { CallOutcome, McpClient, Server, Unreachable } from "@meridian-flow/runtime/mcp";
 import type { ConnectionRow, ConnectionStore } from "../ports/connection-store.js";
 
-/** Anything that reads a status starts a check when the last one ended longer ago than this. */
 export const CHECK_INTERVAL_MS = 60_000;
 const CHECK_TIMEOUT_MS = 10_000;
-/** A server that failed a check gets one more try this much later before it counts as down. */
 const SECOND_TRY_DELAY_MS = 3_000;
 
 export type ServerLoad = { server: Server } | { problem: "unreadable_token" };
@@ -18,9 +12,7 @@ export interface ConnectionChecksDeps {
   store: ConnectionStore;
   client: McpClient;
   loadServer(row: ConnectionRow): Promise<ServerLoad>;
-  /** The status moved: tell the account's open screens to ask again. */
   statusChanged(row: ConnectionRow): void;
-  /** A background check broke (the database, not the server): log it, never throw into the reader. */
   failed(cause: unknown, row: ConnectionRow): void;
   now?: () => Date;
   secondTryDelayMs?: number;
@@ -28,16 +20,11 @@ export interface ConnectionChecksDeps {
 
 type Learned = { status: McpConnectionStatus; reason: string | null } | "unchanged";
 
-/**
- * A request Flow refused to make, or a redirect it will not follow, shows as a failed start whose
- * message is the refusal's (it crosses the client as text). Neither mends by trying again.
- */
 const REFUSED_BY_FLOW = /connects only to|not a public address|does not follow redirects/i;
 
 const isRefusedByFlow = (outcome: Unreachable) =>
   outcome.reason === "start_failed" && REFUSED_BY_FLOW.test(outcome.message);
 
-/** A writer's words for why a check failed. */
 function reasonText(outcome: Unreachable): string {
   switch (outcome.reason) {
     case "start_failed":
@@ -64,7 +51,6 @@ function reasonText(outcome: Unreachable): string {
   }
 }
 
-/** Why a server wants sign-in, from what Flow sent it: no token, a token, or a token it could not open. */
 function signInReason(loaded: ServerLoad): string {
   if ("problem" in loaded) return "The saved token could not be read. Enter it again.";
   return "auth" in loaded.server.spec
@@ -112,7 +98,6 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
       reason: learned.reason,
       finishedAt,
     });
-    // A result that lost to a later-started one still ends this check.
     if (!written) await deps.store.markCheckFinished(row.id, row.settingsVersion, finishedAt);
     else if (
       row.statusVersion !== row.settingsVersion ||
@@ -122,7 +107,6 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
       deps.statusChanged(row);
   }
 
-  /** Runs one check, joining one already running in this process for the same connection and version. */
   function check(row: ConnectionRow): Promise<void> {
     const key = `${row.id}/${row.settingsVersion}`;
     const joined = running.get(key);
@@ -139,14 +123,12 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
   const isDue = (row: ConnectionRow) => {
     if (row.deletedAt) return false;
     if (row.statusVersion !== row.settingsVersion || row.status === null) return true;
-    // A refused token does not mend by itself: only the writer's Try again or a new token checks it.
     if (row.status === "needs_sign_in") return false;
     return (
       !row.checkFinishedAt || now().getTime() - row.checkFinishedAt.getTime() > CHECK_INTERVAL_MS
     );
   };
 
-  /** Starts a check in the background for each connection that is due, and does not wait. */
   function startDue(rows: readonly ConnectionRow[]): void {
     for (const row of rows)
       if (isDue(row)) void check(row).catch((cause) => deps.failed(cause, row));
@@ -155,11 +137,6 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
   return {
     check,
     startDue,
-    /**
-     * What a call learned: a reply from the server means it works, a 401 means the token is
-     * refused, a session that could not be reached asks for a check, and any other failure is one
-     * request's and says nothing about the connection.
-     */
     async recordCall(
       row: ConnectionRow,
       call: { startedAt: Date; loaded: ServerLoad },

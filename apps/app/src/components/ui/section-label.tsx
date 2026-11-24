@@ -1,7 +1,3 @@
-/**
- * SectionLabel — the name above a group of rows or a settings section, in the app's one
- * group-label look (`role.groupLabel`). Pass `className` only for layout.
- */
 import type * as React from "react";
 
 import { role } from "@/components/ui/roles";

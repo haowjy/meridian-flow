@@ -1,4 +1,3 @@
-/** Rollback isolation by default; catalog-derived DELETE for committed, multi-connection suites. */
 import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { promptBakes, threads } from "@meridian/database/schema";
@@ -52,7 +51,6 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
       qualifiedName: quoteTable(row.schema_name, row.table_name),
       parentOids: new Set<string>(),
     };
-    // Only deferrable NO ACTION edges can be postponed by SET CONSTRAINTS.
     if (row.parent_oid && !(row.condeferrable && row.confdeltype === "a")) {
       node.parentOids.add(row.parent_oid);
     }
@@ -101,12 +99,6 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
   return ordered;
 }
 
-/**
- * Central safety net: refuse destructive resets outside a throwaway test DB.
- * Works off the live connection (`current_database()`), so it holds even if a
- * suite is misgated and accidentally points at the dev `postgres` database —
- * this destructive reset is what wipes `public.users` and clobbers the dev user.
- */
 async function assertThrowawayDatabase(db: Database): Promise<void> {
   if (process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;
   const rows = (await db.execute(sql`SELECT current_database() AS name`)) as unknown as Array<{
@@ -122,7 +114,6 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
   }
 }
 
-/** A rollback must also wait while its transaction-backed adapters are still usable. */
 export async function drainDetachedWork(context = "reset fixtures"): Promise<void> {
   if (!(await processDetachedWork.drain(25_000)))
     throw new Error(
@@ -130,17 +121,11 @@ export async function drainDetachedWork(context = "reset fixtures"): Promise<voi
     );
 }
 
-/** Drain runtime work before giving Postgres a bounded window to close its pool. */
 export async function closeTestDatabase(db: Database): Promise<void> {
   await drainDetachedWork("close the test database");
   await db.$client.end({ timeout: 1 });
 }
 
-/**
- * Fast reset for focused suites. Supplied tables are scope anchors, not an
- * exhaustive ordering: the live Postgres FK graph recursively adds every
- * dependent table and determines the child-first delete order.
- */
 export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]): Promise<void> {
   await drainDetachedWork();
   await assertThrowawayDatabase(db);
@@ -211,21 +196,15 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
     await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     const deletes = tableOrder
       .filter(
-        // Insert-only bakes can be deleted only by their owning thread's cascade.
         (table) =>
           table.qualifiedName !== quoteDrizzleTable(promptBakes) ||
           !derivedNames.has(quoteDrizzleTable(threads)),
       )
       .map((table) => `DELETE FROM ${table.qualifiedName}`);
-    // One round trip, still ordered statements under the same transaction and locks.
     await transaction.execute(sql.raw(deletes.join(";\n")));
   });
 }
 
-/**
- * Anchors for committed suites that write documents, drafts
- * and threads. `deleteDrizzleRows` adds their dependents.
- */
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
   schema.pendingNotices,
   schema.agentEditWidCounters,
@@ -246,18 +225,11 @@ export interface RollbackTestDatabase {
   readonly current: Database;
 }
 
-/**
- * Register transaction isolation for the current suite.
- *
- * Read `current` inside `beforeEach` or the test body. It points at the active
- * transaction while the case runs and at the root connection outside a case.
- */
 export function useRollbackTestDatabase(
   databaseUrl: string,
   options?: {
     max?: number;
     postgres?: NonNullable<Parameters<typeof createDb>[1]>["postgres"];
-    /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
     prepareSuite?: (db: Database) => Promise<void>;
   },
 ): RollbackTestDatabase {

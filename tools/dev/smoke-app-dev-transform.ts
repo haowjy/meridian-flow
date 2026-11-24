@@ -27,19 +27,6 @@ import { applyDevEnvToProcess, resolveCurrentRepoRoot } from "./lib/dev-env";
 
 const HOST = "127.0.0.1";
 
-/**
- * Dev-boot placeholders applied only when unset. The dev app skips production
- * env validation (NODE_ENV != production), so these let CI boot without WorkOS
- * secrets or a database — the smoke exercises the transform/render path, not
- * auth or persistence. DATABASE_URL is set but intentionally need not resolve.
- *
- * The WORKOS_* keys satisfy `@workos/authkit-session` ConfigurationProvider.validate,
- * which `meridianAuthkitMiddleware` runs regardless of NODE_ENV whenever the
- * dev auth bypass is off (this smoke turns it off in `main`) — apiKey, clientId,
- * redirectUri, and cookiePassword are all `requiredKeys`, and cookiePassword must
- * be >= 32 chars. Values here are
- * fake and never contact WorkOS: the smoke never authenticates.
- */
 const DEV_BOOT_ENV_DEFAULTS: Record<string, string> = {
   NODE_ENV: "development",
   DATABASE_URL: `postgresql://smoke:smoke@${HOST}:1/app_boot_smoke`,
@@ -53,9 +40,6 @@ const DEV_BOOT_ENV_DEFAULTS: Record<string, string> = {
 async function main(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
   applyDevEnvToProcess(repoRoot);
-  // The boot contract asserts the signed-out routes (`/` redirects, `/login` renders),
-  // which the dev auth bypass in a developer's `.env` would change. Set rather than deleted:
-  // Vite's `loadEnv` fills any key still unset from the repo's env files.
   process.env.DEV_AUTH_BYPASS = "0";
   for (const [key, value] of Object.entries(DEV_BOOT_ENV_DEFAULTS)) {
     if (!process.env[key]) process.env[key] = value;

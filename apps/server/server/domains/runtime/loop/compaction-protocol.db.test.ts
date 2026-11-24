@@ -44,7 +44,6 @@ function promptBytes(request: GenerateRequest) {
 function expectStablePrefix(previous: GenerateRequest, next: GenerateRequest) {
   expect(next.tools).toEqual(previous.tools);
   expect(next.promptCacheKey).toBe(previous.promptCacheKey);
-  // Adjacent writer messages may merge into the previous final user message.
   expect(JSON.stringify(next.messages.slice(0, previous.messages.length - 1))).toBe(
     JSON.stringify(previous.messages.slice(0, -1)),
   );
@@ -68,12 +67,10 @@ else
     const { assertPublicationHooks, openAuditedDatabase } = await import(
       "../../../test-support/run-state-publication.js"
     );
-    // Publication pins run in a database this suite owns and drops.
     const audited = await openAuditedDatabase(url, { max: 8 });
     const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => audited.close());
-    // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
@@ -292,7 +289,6 @@ else
       const usage = { inputTokens: 100, outputTokens: 10 };
       const rig = await fixture({ gateway: scriptedGateway({ usage }) });
       rig.setThreshold(12_000);
-      // Enough old prose to cross the higher trigger while keeping every document fixture.
       const turnsBefore = await rig.repos.turns.listByThread(rig.threadId);
       const old = turnsBefore.at(-2)!;
       const [oldBlock] = await rig.repos.blocks.listByTurn(old.id);
@@ -536,8 +532,6 @@ else
     });
 
     it("sends no image block of a forgotten message and reads no asset for it (C11)", async () => {
-      // Risk: an orphan image block, kept in the request's block array after its turn left the conversation,
-      // reaching an asset read (which can fail the reply) or producing a break notice the model never earned.
       const rig = await imageFixture();
       const { userTurn, resolutionCounts } = await addImagePrompt(rig, [
         { key: "forgotten", sizeBytes: 1024, included: true },
@@ -749,7 +743,6 @@ else
         metadata: { reason: "request_too_large", phase: "summary", summarizer: { path: "branch" } },
       });
 
-      // Only the persisted C history, not an explicit overflow flag, can select rolling here.
       rig.setThreshold(2500);
       const retry = await rig.orchestrator.prepare({
         threadId: rig.threadId,
@@ -1242,8 +1235,6 @@ else
             },
       );
       const rig = await fixture({ summarizer });
-      // Two messages wait together: the planner pins the newest on its own, so only an explicit pin keeps
-      // the other out of the summary.
       await rig.delivery.enqueue({
         threadId: rig.threadId,
         intent: "message",
@@ -1276,14 +1267,11 @@ else
       const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
       expect(compactions).toHaveLength(2);
       expect(compactions[1]).toMatchObject({ status: "complete" });
-      // Risk (C5): a Retry-led compaction summarizing the messages its Retry still answers. It pins them, so
-      // forgetting the failed attempt later can never leave their words only in a summary.
       expect(failedReply.reservedForUserTurnIds).toHaveLength(2);
       expect(CompactionMetadataCodec.parse(compactions[1]?.metadata).pinnedRequestTurnIds).toEqual(
         expect.arrayContaining(failedReply.reservedForUserTurnIds),
       );
       expect(compactions[1]?.id).not.toBe(replyTurnId);
-      // The failed compaction's `turn.error` copy is the writer's: no summary input carries it.
       const failedCompaction = compactions[0];
       expect(failedCompaction?.error).toEqual(expect.any(String));
       expect(summarizer.calls.length).toBeGreaterThan(1);
@@ -1428,8 +1416,6 @@ else
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
-      // The notes assistant delivers the late writer message before C. B has
-      // no outstanding receipt; the whole continuation is still one execution.
       const rows = await db
         .select({
           id: schema.turns.id,
@@ -1467,7 +1453,6 @@ else
             throw new Error("successor context read unavailable");
           },
         });
-        // Read as soon as the landing commit returns, before the run's cleanup.
         landed = {
           open: await rig.runClaim.readOpenExecutionId(rig.threadId),
           successor: (await rig.repos.turns.findById(result.next.id as never))?.status,
@@ -1643,7 +1628,6 @@ else
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
-          // Leave room for the re-show after reserving half-headroom and estimator slack.
           if (call === 2) rig.setThreshold(5000);
           if (call === 4) {
             const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
@@ -1654,7 +1638,6 @@ else
         },
       });
       rig = await fixture({ history: "brief history", gateway, summarizer });
-      // A document the history showed: the compaction re-shows it after the summary.
       const [historyTurn] = await rig.repos.turns.listByThread(rig.threadId);
       await rig.repos.blocks.create({
         turnId: historyTurn.id,
@@ -1722,8 +1705,7 @@ else
                   type: "text",
                   text: JSON.stringify({
                     error: "permission_denied",
-                    reason:
-                      'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
+                    reason: 'This agent has no "unavailable_probe_tool" tool.',
                   }),
                 },
               ],
@@ -1747,7 +1729,6 @@ else
       expect(JSON.stringify(later.messages.slice(0, request.messages.length))).toBe(
         JSON.stringify(request.messages),
       );
-      // The re-shown document survives the successor's tool call: both requests carry it.
       expect(promptBytes(request)).toContain("RESHOWN NOTES TEXT");
       expect(promptBytes(later)).toContain("RESHOWN NOTES TEXT");
       const thread = await rig.repos.threads.findById(rig.threadId);
@@ -1850,7 +1831,6 @@ else
         rig.delivery.splitAndContinue = async () => {
           commits++;
           if (commits === 2) {
-            // Leave the failed input queued for recovery without rerunning this failed adapter.
             rig.deps.shutdown.started = true;
           }
           throw new Error("database unavailable");

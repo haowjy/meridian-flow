@@ -1,19 +1,4 @@
-/**
- * One worktree cleanup executes at a time per repository.
- *
- * Containment evidence can name another worktree branch as the ref that keeps
- * the planned commit alive. Two overlapping cleanups could then each cite the
- * other's branch as their surviving ref and delete both, so execution takes an
- * exclusive lock and a second run refuses instead of racing.
- *
- * Acquisition publishes the holder's pid atomically: the pid is written to a
- * private temp file first and `link()`ed into place, which fails when the lock
- * exists, so a contender can never observe or replace a half-written lock. A
- * lock whose holder is gone (or unreadable) is deliberately NOT taken over:
- * replacing it safely would need an atomic compare primitive the filesystem
- * does not offer here, so the run refuses and names the file instead. Release
- * removes the lock only while it still carries this run's pid.
- */
+// keep: one cleanup at a time per repository, or two overlapping runs each cite the other's branch as their surviving ref and delete both; the lock publishes its pid with `link()`, which fails when it exists
 import { existsSync, linkSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 export interface CleanupLock {
@@ -68,8 +53,6 @@ export function acquireCleanupLock(
 
   return {
     release: () => {
-      // Only remove the lock while this run still owns it; a replaced lock
-      // belongs to whoever replaced it.
       if (readHolderPid(lockPath) !== pid) return;
       rmSync(lockPath, { force: true });
     },

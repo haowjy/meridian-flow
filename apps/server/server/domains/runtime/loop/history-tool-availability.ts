@@ -1,4 +1,3 @@
-/** History guidance follows the persisted prompt epoch, not the current Agent binding. */
 import type { PromptBake, Turn } from "@meridian/contracts/threads";
 import { bakeAt, type ThreadRepositories } from "../../threads/index.js";
 import type { ToolRegistry } from "../tools/types.js";
@@ -14,7 +13,6 @@ export function bakeHasHistoryTool(bake: Pick<PromptBake, "bakedTools">): boolea
 export async function historyReadableAt(
   deps: {
     repos: Pick<ThreadRepositories, "threads" | "turns" | "promptBakes">;
-    /** Absent in runtimes that register no tools. */
     toolRegistry?: Pick<ToolRegistry, "getRegistration">;
   },
   turn: Turn,

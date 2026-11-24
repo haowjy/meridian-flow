@@ -1,10 +1,3 @@
-/**
- * Thread snapshot builder: assembles the full ThreadSnapshotResponse (thread,
- * turns, blocks, model responses, event cursor) for an initial client load.
- * Owns the snapshot projection; depends inward on the thread repositories and event hub.
- * The envelope carries the snapshot sequence while liveState carries the
- * read-model projection cursor used to replay newer journaled deltas.
- */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { threadAsk } from "./domain/ask.js";
@@ -102,8 +95,6 @@ export async function buildThreadSnapshot(
       status,
     ] = await Promise.all([
       hub.headSeq(threadId),
-      // The graph keeps every turn (the leaf, `prevTurnId`). The snapshot drops handed-back messages and keeps
-      // forgotten turns, stamped `forgottenBy`: the client hides them, and diagnostics can still read them.
       turnGraph(repos.turns).listByThread(threadId),
       repos.turns.listHandedBackIds(threadId),
       repos.turns.listMessageDeliveries(threadId),
@@ -118,9 +109,7 @@ export async function buildThreadSnapshot(
       repos.modelResponses.sumUsageByThread(threadId),
       statusReader.read(threadId),
     ]);
-    // Contract: `messageFate` (@meridian/thread-client) reads a user turn's absence from this
-    // snapshot as a hand-back. A snapshot that pages or hides turns any other way must expose
-    // `handedBackIds` instead, or `./mf thread send` would claim a hand-back that did not happen.
+    // keep: Expose handedBackIds if a snapshot hides turns any other way; absence means hand-back to messageFate
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const blocksByTurn = groupBy(blocks.map(toClientSafeBlock), (block) => block.turnId);
     const responsesByTurn = groupBy(responses, (response) => response.turnId);
@@ -154,10 +143,7 @@ export async function buildThreadSnapshot(
         status,
         activity,
         runState,
-        // During an active run,
-        // stream.delta rows can sit between that head and the last read-model
-        // projection, so resume from the projection cursor and replay only the
-        // unmaterialized delta window the snapshot could not include.
+        // keep: Active-run snapshots resume from the projection cursor and replay only the unmaterialized delta window
         resumeAfterSeq,
       },
       actionRequired: snapshotActionRequired(thread.activeLeafTurnId, graph, handedBack),
@@ -166,7 +152,6 @@ export async function buildThreadSnapshot(
   });
 }
 
-/** Walks the graph from the leaf, which may be a handed-back message, and counts only conversation turns (a forgotten turn is not one). */
 function snapshotActionRequired(
   activeLeafTurnId: TurnId | null,
   turns: Turn[],

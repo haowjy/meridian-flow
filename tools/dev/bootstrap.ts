@@ -22,8 +22,6 @@ async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    // Fail loudly instead of silently skipping migrations: continuing would run the app
-    // against a stale/shared DB (the cross-worktree blast radius tools/dev prevents).
     throw new Error(
       "bootstrap: DATABASE_URL is not set, so database preparation cannot run. " +
         "Copy .env.example to .env in the main checkout, set DATABASE_URL there, " +

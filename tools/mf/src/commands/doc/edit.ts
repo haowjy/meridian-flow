@@ -1,4 +1,3 @@
-/** `doc edit`: the writer types over text in Live or a draft, as a tab's editor sends it. */
 import { usageError } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import { resolveProjectId } from "../project/resolve";

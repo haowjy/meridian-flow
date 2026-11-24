@@ -1,4 +1,3 @@
-/** POST /api/mcp/connections/:connectionId/check: Try again. Runs a check now, whatever the last one's age, and answers with its result. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

@@ -1,4 +1,3 @@
-/** Thread-scoped latest-request ownership for passage navigation. */
 export class LatestNavigationCoordinator {
   private active: AbortController | null = null;
 

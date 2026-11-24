@@ -7,11 +7,6 @@ import {
 } from "@/client/providers/TransportProvider";
 import { Button } from "@/components/ui/button";
 
-/**
- * The chat connection's state inside the composer, where sending is what it affects. Says
- * nothing while connected. Not a live region: TransportProvider announces the change once,
- * however many composers are on screen.
- */
 export function ConnectionLine() {
   const transport = useOptionalThreadTransport();
   const [state, setState] = useState<ConnectionState | null>(null);

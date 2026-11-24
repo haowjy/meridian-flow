@@ -1,8 +1,3 @@
-/**
- * One attempt's sends: a queue of files, batched, a few requests at a time. A file already
- * queued or in flight is never sent twice. A failed batch is retried one file at a time so a
- * single bad file fails alone and the rest land. The queue ends when its attempt's signal aborts.
- */
 import type { ImportFilesResult } from "@meridian/contracts";
 import { planBatches } from "./batching";
 import { IMPORT_SCHEDULING } from "./limits";
@@ -49,22 +44,15 @@ async function sendWithBackoff(send: SendFiles, parts: readonly HeldFile[], sign
 
 export class UploadQueue {
   private pending: HeldFile[] = [];
-  /** Entry ids queued or in flight. */
   private readonly busy = new Set<number>();
   private workers = 0;
 
   constructor(
     private readonly options: {
-      /** Aborting it stops every request in flight and sends nothing more. */
       signal: AbortSignal;
       send: SendFiles;
       onOutcome: (outcomes: UploadOutcome[]) => void;
-      /**
-       * Whatever must happen before the import can complete. The batch that takes the last queued
-       * file waits for it, and stays unsent when it resolves `false`.
-       */
       gate?: Promise<boolean>;
-      /** Every queued file has an answer or a failure; not called once the signal aborts. */
       onIdle: () => void;
     },
   ) {}
@@ -73,7 +61,6 @@ export class UploadQueue {
     return this.options.signal.aborted;
   }
 
-  /** Queue files to send. Returns how many were not already queued or in flight. */
   add(files: readonly HeldFile[]): number {
     if (this.cancelled) return 0;
     let added = 0;

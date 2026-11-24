@@ -1,4 +1,3 @@
-/** GET /api/works/:workId/drafts: the Work's drafts, its default first. */
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { handleListWorkDrafts } from "../../../../../lib/work-drafts-route.js";

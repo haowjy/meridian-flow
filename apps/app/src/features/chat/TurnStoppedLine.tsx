@@ -1,4 +1,3 @@
-/** The plain line under a reply the run ended before it finished: that it stopped, and which calls never ran. */
 import { t } from "@lingui/core/macro";
 import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView, ViewItem } from "@meridian/thread-client";
@@ -6,7 +5,6 @@ import { liveToolActivityLabel } from "./command-descriptor";
 
 const MOST_NAMED = 3;
 
-/** The calls an ended reply asked for and never ran: stopped before they settled, or lost with the run. */
 export function callsThatDidNotRun(items: readonly ViewItem[]): ToolView[] {
   return items.flatMap((item) =>
     item.kind === "process"
@@ -21,7 +19,6 @@ export function callsThatDidNotRun(items: readonly ViewItem[]): ToolView[] {
   );
 }
 
-/** The call as the writer's activity rows name it ("Writing Scene C"), without the in-flight ellipsis. */
 function callLabel(tool: ToolView): string {
   return liveToolActivityLabel(tool.toolName, tool.input).replace(/…$/, "");
 }
@@ -30,7 +27,6 @@ export function TurnStoppedLine({
   stopped,
   notRun,
 }: {
-  /** The writer (or a Send now) stopped the reply, as opposed to a crash that has its own failure card. */
   stopped: boolean;
   notRun: readonly ToolView[];
 }) {

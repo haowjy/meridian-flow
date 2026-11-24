@@ -1,10 +1,3 @@
-/**
- * Fold row for a `thread_message` with no card: a queued message (the model
- * sent a subagent a message and moved on) or a call refused before any child
- * run started. A foreground re-task that ran is shown by its helper card
- * instead, and `tool-view-visibility` and `partitionTurn` hide its row.
- */
-
 import { Trans } from "@lingui/react/macro";
 import type { ToolView } from "@meridian/thread-client";
 import { stringInput, threadMessageRow, toolInputObject } from "@meridian/thread-client";
@@ -28,7 +21,6 @@ function ThreadMessageTitle({ tool }: { tool: ToolView }) {
   return <Trans>Couldn't send a message to {line}</Trans>;
 }
 
-/** The message itself, as the model wrote it to the subagent; a refused one says why first. */
 function threadMessageExpand(tool: ToolView): ToolExpand | null {
   const message = stringInput(toolInputObject(tool), "message");
   const failure = errorMessageExpand(tool);

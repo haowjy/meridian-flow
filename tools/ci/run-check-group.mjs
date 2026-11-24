@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Partition the local check gate for CI without maintaining a second check list.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
@@ -27,7 +26,6 @@ for (const required of [...isolated, "check:db"]) {
   }
 }
 
-// db-tests owns CI's real-Postgres gate. New checks automatically join static.
 const selected = checks.filter((check) =>
   group === "static" ? ![...isolated, "check:db"].includes(check) : check === group,
 );

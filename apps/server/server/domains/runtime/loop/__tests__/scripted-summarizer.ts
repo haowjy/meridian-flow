@@ -1,4 +1,3 @@
-/** Scripted adapter keeps the real compaction protocol observable without a provider call. */
 import type {
   ConversationSummarizer,
   SummaryOutcome,

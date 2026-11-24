@@ -3,16 +3,8 @@ import { Trans } from "@lingui/react/macro";
 import type { MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 
-/** A button of the cell: what it says, and whether its command is out. */
 type CellAction = { label: string; ariaLabel?: string; pending: boolean; onPress: () => void };
 
-/**
- * A turn card's one Undo cell, for the card's Undo and each draft's `Undo turn`: the action
- * while it would take something back, "Undoing…" while it is out, then "Undone" with its own
- * Undo when one can bring it back. Empty when there is nothing to do. Its width holds still
- * through every state, so nothing beside it moves. A click stays in the cell: the card's header
- * around it is a fold.
- */
 export function UndoCell({
   offer,
   undone,

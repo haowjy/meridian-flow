@@ -1,5 +1,3 @@
-/** Route contracts the boot smokes assert, and the app's public routes. */
-
 export type BootRoute = {
   readonly path: string;
   readonly status: number;

@@ -8,12 +8,6 @@ import {
   type ProtocolMessage,
 } from "loro-protocol";
 
-/**
- * A `DocUpdate` carrying one envelope, as its sender frames it: one frame, or for an envelope near
- * the protocol's frame cap (a Join's catch-up of a long-typed chapter) a `DocUpdateFragmentHeader`
- * and `DocUpdateFragment` frames, which `createFrameReader` joins back into one `DocUpdate`. Both
- * ends of `/ws/loro` frame through these two functions.
- */
 export function docUpdateFrames(
   roomId: string,
   envelope: Uint8Array,
@@ -54,14 +48,8 @@ export function docUpdateFrames(
   return frames;
 }
 
-/** Room for a frame's header under the protocol's cap. */
 const FRAGMENT_BYTES = MAX_MESSAGE_SIZE - 4096;
 
-/**
- * Decodes a socket's frames in arrival order: fragments are held until their batch is whole and
- * come out as one `DocUpdate`; every other message comes out as it is; null while a batch is
- * incomplete. Throws on bytes that are not a protocol frame.
- */
 export function createFrameReader(): (data: Uint8Array) => ProtocolMessage | null {
   const parts = new Map<
     string,
@@ -101,7 +89,6 @@ export function createFrameReader(): (data: Uint8Array) => ProtocolMessage | nul
   };
 }
 
-/** A fresh batch id for a `DocUpdate` (`0x` and 16 hex digits). */
 export function freshBatchId(crypto: Crypto = globalThis.crypto): HexString {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);

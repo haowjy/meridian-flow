@@ -1,4 +1,3 @@
-/** Durable prepare → plan → batches of first texts → one reveal orchestration. */
 import { contextRootUri, joinContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type {
@@ -31,7 +30,6 @@ import { prepareImportEntries } from "./prepare.js";
 const BUILD_NODES = 500;
 const BUILD_BYTES = 16 * 1024 * 1024;
 const MAX_FAILED_PASSES = 5;
-/** Pause after the nth consecutive failed pass: 10 s, 20 s, 40 s, 80 s. */
 const retryDelayMs = (attempts: number) => 10_000 * 2 ** (attempts - 1);
 
 type OrganizerDeps = {
@@ -45,7 +43,6 @@ type OrganizerDeps = {
     Pick<DocumentProjectionRefresher, "refreshDocumentProjection">;
   reveal: ContextImportReveal;
   diagnostic(cause: unknown, detail: Record<string, unknown>): void;
-  /** An image preview that should have been made but failed; the file shows as a card. */
   previewFailed(reason: ImagePreviewFailureReason): void;
 };
 
@@ -98,7 +95,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     });
     return result.kind === "committed" ? result.value : 0;
   }
-  /** Keeps the plan on the import, once: later passes plan from it. */
   async function storePlacement(claim: OrganizeClaim, tree: OrganizedTree): Promise<boolean> {
     const result = await deps.repository.organizeTransaction(claim, async (locked) => {
       if (locked.placement !== null) return;
@@ -110,7 +106,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return result.kind === "committed";
   }
 
-  /** Everything the batches share, loaded once: link index, entries, and the nodes still to write. */
   async function prepareBuild(
     record: ImportRecord,
     tree: OrganizedTree,
@@ -148,7 +143,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       uris,
       planned,
       entriesById,
-      // An entry still `received` has had no batch: its first text is not stored yet.
       pending: tree.nodes.filter(
         (node) => node.state === "planned" && entriesById.get(node.id)?.state === "received",
       ),
@@ -160,11 +154,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     };
   }
 
-  /**
-   * Writes the next batch of `build.pending` from `offset`: each document's first state into its
-   * Live room's rows under the id its create will have, and what else the batch worked out onto the
-   * entry. Returns how many nodes it consumed.
-   */
   async function buildBatch(
     claim: OrganizeClaim,
     record: ImportRecord,
@@ -233,8 +222,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         };
       }
       const stagedBytes = state.byteLength + Buffer.byteLength(JSON.stringify(ahead), "utf8");
-      // A seed is indivisible. If one seed exceeds the batch cap, write it alone;
-      // otherwise the import could never advance past that document.
+      // keep: Allow an oversized seed to form a batch alone; otherwise the import cannot advance
       if (batch.length && bytes + stagedBytes > BUILD_BYTES) break;
       batch.push(node);
       seeds.push({ documentId: node.id as DocumentId, state });
@@ -260,7 +248,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     return result.kind === "committed" ? result.value : 0;
   }
 
-  /** The planned tree as the nodes the reveal makes `create` records of. */
   function revealNodes(
     tree: OrganizedTree,
     entriesById: ReadonlyMap<string, ImportEntry>,
@@ -333,8 +320,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     const parsed = parseContextUri(record.destinationUri);
     if (!parsed.ok) throw new Error("Import destination is invalid");
     const read = deps.read(record);
-    // The plan is made once, against the destinations as they are, and kept: a later pass plans
-    // from it, so the paths the stored texts spell their links with stay the ones planned.
     const fixed = record.placement ?? undefined;
     const tree = await buildOrganizedTree({
       record,
@@ -390,7 +375,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       });
     });
     if (revealed.kind !== "committed") return 0;
-    // The documents are visible now: their blocks and links derive from the texts that waited.
     const documentIds = revealedNodes.flatMap((node) =>
       node.kind === "document" ? [node.id as DocumentId] : [],
     );

@@ -1,5 +1,3 @@
-/** Bounded connected-conversation listing over spawn and cutoff-owner edges. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -31,7 +29,6 @@ const Cursor = z
 
 const LAST_ASKED_LIMIT = 100;
 
-/** Compact local requester text for one model-facing list row. */
 export function formatLastAsked(text: string): string {
   const collapsed = text.replace(/\s+/gu, " ").trim();
   const characters = Array.from(collapsed);
@@ -42,7 +39,6 @@ export function formatLastAsked(text: string): string {
   return JSON.stringify(`${shortened}…`);
 }
 
-/** `thread_ls`'s typed result: the resolved conversation and its listing text. */
 export interface ThreadLsResult {
   ref: string;
   listing: string;

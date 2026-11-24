@@ -37,11 +37,6 @@ type Adding =
 
 type Removed = GoneRow<McpConnectionView> & { undoing: boolean; failure: string | null };
 
-/**
- * The Connections section of the settings dialog. Inside a project it lists the account's
- * connections ("All my projects") and the project's own ("This project"); outside one, the
- * account's alone.
- */
 export function ConnectionsSection() {
   const projectId = useRouteProjectId();
   const list = useMcpConnections(projectId, { watch: true });
@@ -81,7 +76,6 @@ export function ConnectionsSection() {
         kind: "form",
         values,
         error: {
-          // The form holds the name to the server's rule, so a refusal is about the address.
           on: httpErrorStatus(error) === 400 ? "address" : "form",
           message: error instanceof Error ? error.message : t`Couldn't add the connection.`,
         },

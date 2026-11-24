@@ -1,7 +1,3 @@
-/**
- * Purpose: Defines the orchestrator event fixture for an assistant tool-call turn.
- * Why independent: The fixture captures the shared thread/protocol contract sequence while actual tool execution stays in runtime domains.
- */
 import type { OrchestratorEvent } from "../orchestrator-events.js";
 import { GOLDEN_THREAD_ID, GOLDEN_USER_TURN_ID } from "./simple-text-turn.js";
 import { goldenAssistantTurn } from "./turn-fixture.js";
@@ -16,7 +12,6 @@ const assistantTurn = goldenAssistantTurn(
   [GOLDEN_USER_TURN_ID],
 );
 
-/** Tool call start/args → executing activity → result → complete. */
 export const SIMPLE_TOOL_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
   { type: "turn.created", turn: assistantTurn },
   {

@@ -1,10 +1,8 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
-
 import { randomUUID } from "node:crypto";
 import { ReadToolInputSchema, WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
@@ -55,7 +53,6 @@ export function defineThreadHistoryContract(
     const registry = createToolRegistry();
     const workKind = (input: JsonObject) =>
       input.command === "list" || input.command === "show" ? "routine" : "receipt";
-    // Real input schemas: history orders stored arguments by them.
     for (const [name, documentText, historySummary, historyKind, schema] of [
       ["read", readDocumentText, documentHistorySummary, "routine", ReadToolInputSchema],
       ["write", writeDocumentText, documentHistorySummary, undefined, WriteToolInputSchema],
@@ -130,7 +127,6 @@ export function defineThreadHistoryContract(
       input: JsonObject,
       output: JsonValue,
       isError = false,
-      /** The typed result `output` was rendered from; the value itself when omitted. */
       typed?: JsonValue,
     ) {
       const toolCallId = crypto.randomUUID();
@@ -200,7 +196,6 @@ export function defineThreadHistoryContract(
       expect(text).toContain('read({"path":"manuscript://second.md"})');
       expect(text).not.toContain("FIRST SECRET");
       expect(text).not.toContain("SECOND SECRET");
-      // The repository boundary has one pair read per raw page, never per item.
       expect(batches).toHaveBeenCalledTimes(2);
       expect(batches.mock.calls[0]?.[0]).toEqual([{ turnId: first.id, toolCallId: "reused" }]);
       expect(batches.mock.calls[1]?.[0]).toEqual([
@@ -209,7 +204,6 @@ export function defineThreadHistoryContract(
       ]);
       batches.mockRestore();
 
-      // A handoff starts its own lineage but may still read its direct source.
       const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
         overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
@@ -316,7 +310,6 @@ export function defineThreadHistoryContract(
         "[earlier turns summarized]\n\nsystem: compaction\ninstructions: Emphasize the broken oath.",
       );
       expect(second).toContain("[3] user\nafter");
-      // The expand handle is the same turn number in either order.
       expect(output(await f.read({ expand: 3 }))).toContain("[3] user\n3.1 after");
     });
 
@@ -505,7 +498,6 @@ export function defineThreadHistoryContract(
         expect(text).not.toContain("COPY SENTINEL");
         expect(text).not.toContain("y2:");
         expect(text).not.toContain('"revision"');
-        // The call line quotes the edit's inputs, so the page carries their evidence.
         expect(text).toContain(
           'write({"command":"replace","path":"manuscript://chapter.md","content":"EDIT SENTINEL","find":"old"})',
         );
@@ -517,7 +509,7 @@ export function defineThreadHistoryContract(
           metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
         });
         if (input.include?.includes("tool_results")) {
-          expect(text).toContain("[grep passages omitted; read a file for its current text]");
+          expect(text).toContain("[grep passages omitted]");
           expect(text).toContain("manuscript://chapter.md (1 match)");
         }
         for (const handle of ["1.1", "1.2", "1.3"])

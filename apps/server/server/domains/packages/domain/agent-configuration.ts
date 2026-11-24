@@ -1,4 +1,3 @@
-/** Resolve conversation-owned execution values from retained source, never live package records. */
 import {
   DEFAULT_AGENT_PERMISSION,
   type ResolvedAgentConfiguration,
@@ -31,10 +30,6 @@ export function skillReference(
   };
 }
 
-/**
- * The skills a file set offers now, by package revision. Read with the running reader: the
- * question is about now, so a skill with an Error is not offered.
- */
 export async function retainedPackageSkillMaps(
   packageRevisionId: string,
   store: Pick<AgentRevisionStore, "readSource">,
@@ -68,7 +63,6 @@ export interface RetainedSkillResolver {
   resolve(reference: string): RetainedSkillReference;
 }
 
-/** Resolves skill names against the skills one file set offers now. */
 export async function buildRetainedSkillResolver(input: {
   packageRevisionId: string;
   store: Pick<AgentRevisionStore, "readSource">;
@@ -87,12 +81,6 @@ export async function buildRetainedSkillResolver(input: {
   };
 }
 
-/**
- * Turns an available revision's names into references, by path alone. The reader's verdict was
- * made once, when the file set was compiled, and is not made again for a revision that is
- * already bound: so this does not read a file with Mars and cannot fail for an available one,
- * including for a chat bound before a reader bump.
- */
 export async function resolveAgentDependencies(input: {
   revision: AgentRevision;
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;

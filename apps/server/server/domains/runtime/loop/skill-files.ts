@@ -1,15 +1,3 @@
-/**
- * Skill files under `skills://`: the read-only folders of the skills an
- * agent's own binding offers it, and of the skills its user invoked in the
- * thread. `skills://` is model-facing only; it is not a context scheme,
- * so the writer's file tree, catalog and routes never see it.
- *
- * `skills://<skill>/<path>` names a file in the skill's package folder. A
- * skill name is unique within a thread: binding resolution refuses one two
- * packages share, and a bound name wins over an invoked one, so no source id
- * is written. Every lookup reads the thread's binding once and asks the pure
- * `skillLevel`; a skill the agent may not see reads as missing.
- */
 import { posix } from "node:path";
 import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
@@ -24,7 +12,6 @@ export interface SkillFilesDeps {
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }
 
-/** A parsed `skills://` address: the root, or a path inside one skill's folder. */
 type SkillUri = { skill: null } | { skill: string; path: string };
 
 type SkillFileRead =
@@ -36,28 +23,20 @@ export interface SkillListEntry {
   uri: string;
   kind: "file" | "directory";
   readonly: true;
-  /** Set on a file `read` returns no text for. */
   fileType?: "binary";
 }
 
-/** A `skills://` folder's URI and entries, shaped like an `ls` result. */
 export interface SkillListing {
   uri: string;
   entries: SkillListEntry[];
 }
 
-/**
- * The header over a skill file's text: its address, and the folder its
- * relative paths start from. Shared by `read`, `skill`, and preloaded or
- * activated bodies the model can read.
- */
 export function skillFileHeader(skill: string, path: string): string {
   const folder = `${SKILLS_URI_ROOT}${skill}/`;
   const { path: filename, suffix } = splitDocumentHrefSuffix(path);
   return `${folder}${documentPathKey(filename)}${suffix}\nPaths in this skill are relative to ${folder}.`;
 }
 
-/** A skill file's text as `read` and `skill` return it, under its header. */
 export function renderSkillFile(skill: string, path: string, text: string): string {
   return `${skillFileHeader(skill, path)}\n\n${text}`;
 }
@@ -66,10 +45,6 @@ export function isSkillsUri(path: string): boolean {
   return path.trim().startsWith(SKILLS_URI_ROOT);
 }
 
-/**
- * Normalizes `skills://…`. Null for a path that leaves its skill's folder, so
- * the caller answers not found.
- */
 function parseSkillUri(uri: string): SkillUri | null {
   const rest = uri.trim().slice(SKILLS_URI_ROOT.length);
   const segments = rest.split("/").filter((segment) => segment !== "" && segment !== ".");
@@ -81,7 +56,6 @@ function parseSkillUri(uri: string): SkillUri | null {
   return { skill, path: relative === "." ? "" : relative };
 }
 
-/** One file's text, or why there is none. A folder or missing file is not found. */
 export async function readSkillFile(
   deps: SkillFilesDeps,
   threadId: string,
@@ -92,10 +66,6 @@ export async function readSkillFile(
   return readVisibleFile(deps, threadId, parsed.skill, parsed.path);
 }
 
-/**
- * A visible skill's `SKILL.md`, by name. Names are the binding's folder
- * names, so "a/b" or ".." matches none and never reaches another file.
- */
 export async function readSkillMd(
   deps: SkillFilesDeps,
   threadId: string,
@@ -132,11 +102,6 @@ async function readVisibleFile(
   };
 }
 
-/**
- * `skills://` lists the visible skills' folders; a folder lists its files and
- * folders, binary files included. A missing or invisible folder lists nothing,
- * as a missing context folder does.
- */
 export async function listSkillDir(
   deps: SkillFilesDeps,
   threadId: string,
@@ -180,12 +145,10 @@ export async function listSkillDir(
   };
 }
 
-/** The names of the skills this agent may read, sorted. */
 export async function visibleSkillNames(deps: SkillFilesDeps, threadId: string): Promise<string[]> {
   return [...(await visibleSkills(deps, threadId)).keys()].sort();
 }
 
-/** The skills this agent may read, each with its bound reference. */
 async function visibleSkills(
   deps: SkillFilesDeps,
   threadId: string,

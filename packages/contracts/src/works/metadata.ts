@@ -1,9 +1,3 @@
-/**
- * One clearing rule for Work metadata, shared by the model's `work` tool, the
- * HTTP routes and the domain commands: text is trimmed, blank goal or status
- * text clears like null, and a name can never be blank.
- */
-
 export const WORK_STATUS_MAX_LENGTH = 32;
 export const INVALID_WORK_STATUS = Symbol("invalid_work_status");
 export const INVALID_WORK_NAME = Symbol("invalid_work_name");
@@ -21,7 +15,6 @@ export function normalizeWorkGoal(raw: string | null): string | null {
   return raw.trim() || null;
 }
 
-/** Whitespace collapses before the length and word limits apply. */
 export function normalizeWorkStatus(
   raw: string | null,
 ): string | null | typeof INVALID_WORK_STATUS {
@@ -34,7 +27,6 @@ export function normalizeWorkStatus(
   return normalized;
 }
 
-/** Omitted fields stay omitted: on update they mean unchanged. */
 type WorkMetadataInput = {
   name?: string;
   goal?: string | null;

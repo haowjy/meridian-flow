@@ -10,12 +10,12 @@ import type { Thread } from "@meridian/contracts/threads";
 import type { McpClient } from "@meridian-flow/runtime/mcp";
 import type { ScriptRunner } from "@meridian-flow/runtime/script";
 import {
+  CALLS_RAN,
   type CallStore,
   type ConnectionStore,
   createConnectionBake,
   createConnectionTools,
   createScriptRuns,
-  DO_NOT_REPEAT,
   type McpConnections,
   SCRIPT_LIMITS,
 } from "../../domains/mcp/index.js";
@@ -112,13 +112,13 @@ export function createConnections(deps: {
             ...["_", "__", "-", "."].map((join) => `${held.name}${join}${tool.name}`),
           ];
           if (own.includes(name))
-            return `${name} is not a tool of its own: it is the tool ${tool.name} of the ${held.name} connection. Call it with mcp_call, with tool "${held.name}/${tool.name}" and its arguments.`;
+            return `${name} is not a tool of its own: it is the tool ${tool.name} of the ${held.name} connection, called through mcp_call as "${held.name}/${tool.name}".`;
         }
       }
       return null;
     },
 
-    doNotRepeat: DO_NOT_REPEAT,
+    callsRan: CALLS_RAN,
 
     async recordedCalls(threadId, turnIds) {
       const bake = await bakeOf(await threadOf(threadId));

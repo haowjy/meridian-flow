@@ -1,10 +1,3 @@
-/**
- * Fixed-port release for deterministic dev restarts.
- *
- * The configured backend ports belong to the dev stack. After tmux teardown,
- * anything still listening on them is stale: ask it to terminate, then
- * force-kill any straggler before startup continues.
- */
 import { spawnSync } from "node:child_process";
 import net from "node:net";
 
@@ -66,7 +59,6 @@ export function discoverPortHolders(port: number): PortHolderDiscovery {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) return { ok: false, error: result.error.message };
-  // lsof exits 1 with no output when nothing matches the LISTEN filter.
   if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) {
     return { ok: false, error: NO_LISTENER };
   }

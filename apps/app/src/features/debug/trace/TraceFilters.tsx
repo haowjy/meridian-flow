@@ -1,4 +1,3 @@
-/** Trace filter controls and stream projection; dev-only inline English is intentional. */
 import type { EventRecord } from "@meridian/contracts/observability";
 
 import { Button } from "@/components/ui/button";

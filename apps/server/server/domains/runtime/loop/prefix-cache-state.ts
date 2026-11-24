@@ -1,5 +1,3 @@
-/** Pure cache-warmth rule and repository-backed runtime service. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ModelResponse,
@@ -31,16 +29,10 @@ type CacheHistoryThread = Pick<
   "id" | "kind" | "initialPromptBakeId" | "originType" | "originTurnId"
 >;
 
-/** Primary chats ask for the long cache; subagents are short-lived and take the cheaper short one. */
 export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCacheRetention {
   return threadKind === "subagent" ? "short" : "long";
 }
 
-/**
- * How long a request's prefix cache stays warm, in seconds: the lifetime this thread's requests
- * ask for. Null when the model names none. The one rule the cache prediction, the media link
- * window and the agent's caret (`cacheColdAt`) follow.
- */
 function cacheTtlSeconds(
   promptCache: PromptCacheDescriptor | undefined,
   threadKind: Thread["kind"],
@@ -50,16 +42,8 @@ function cacheTtlSeconds(
     : null;
 }
 
-/**
- * How long a link stays identical when there is no cache lifetime to follow (a model that documents
- * none, or no known model). A link policy, not a cache fact: no cache is waiting on the bytes.
- */
 const DEFAULT_LINK_WINDOW_SECONDS = 3600;
 
-/**
- * How long a signed media link stays identical: the cache lifetime this thread's requests ask
- * for, so a link changes (one miss) about when the cache would have expired anyway.
- */
 export function linkWindowSeconds(
   model: Pick<ModelInfo, "promptCache"> | null,
   threadKind: Thread["kind"],
@@ -68,10 +52,6 @@ export function linkWindowSeconds(
   return override ?? cacheTtlSeconds(model?.promptCache, threadKind) ?? DEFAULT_LINK_WINDOW_SECONDS;
 }
 
-/**
- * When a request's prefix cache goes cold if no request follows it: its start plus
- * `cacheTtlSeconds`. Null when the model names no lifetime.
- */
 export function cacheColdAt(
   model: Pick<ModelInfo, "promptCache"> | null,
   threadKind: Thread["kind"],
@@ -100,16 +80,9 @@ export interface PrefixCacheState {
 export interface DerivePrefixCacheStateInput {
   model: string;
   promptCache: PromptCacheDescriptor;
-  /** Current time in Unix milliseconds, supplied by the caller for purity. */
   nowMs: number;
   history: PrefixCacheHistory;
-  /**
-   * The window length the request's signed media links were pinned to, set only when the request
-   * carries one. A link changes when the window rolls over, so that request misses the cache
-   * even inside the provider's own lifetime.
-   */
   mediaLinkWindowSeconds?: number;
-  /** The owner history for a fork's originTurnId, needed only before its first local response. */
   forkOwner?: PrefixCacheHistory;
 }
 
@@ -201,12 +174,10 @@ function cold(reason: PrefixCacheStateReason): PrefixCacheState {
   return { state: "cold", reason };
 }
 
-/** Predicts prefix warmth from durable thread, turn, and response facts only. */
 function unavailable(reason: PrefixCacheStateReason) {
   return { reason, response: null } as const;
 }
 
-/** The shared reusable-prefix selection. TTL affects warmth, never the token baseline. */
 export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput) {
   let history = input.history;
   let response = lastResponse(history);
@@ -284,15 +255,12 @@ export interface PrefixCacheStateServiceDeps {
 export interface PrefixCacheStateRequest {
   threadId: ThreadId;
   throughTurnId?: TurnId;
-  /** The model resolved during context assembly, including its cache descriptor. */
   model: ModelInfo | null;
   now?: Date | number;
   knownLocalTurns?: readonly Turn[];
-  /** See `DerivePrefixCacheStateInput.mediaLinkWindowSeconds`. */
   mediaLinkWindowSeconds?: number;
 }
 
-/** Builds the repository-backed cache-state service for any runtime consumer. */
 export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps) {
   async function readFacts(
     input: PrefixCacheStateRequest,

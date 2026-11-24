@@ -1,13 +1,8 @@
-/** Hash Continue's re-picked received files a few at a time, for the report against their receipts. */
 import type { ImportPickedInput } from "@meridian/contracts";
 import { IMPORT_SCHEDULING } from "./limits";
 import { sha256File } from "./local-read";
 import type { PickedReceived } from "./match-continue";
 
-/**
- * A file that cannot be read is missing evidence: it is left out of the report and its marks stay,
- * so Continue never stalls on it. Stops between files once `signal` aborts.
- */
 export async function hashPicked(
   files: readonly PickedReceived[],
   signal: AbortSignal,

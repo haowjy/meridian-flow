@@ -1,11 +1,8 @@
-/** Shared visual recipes for menu and picker surfaces; callers retain semantics. */
 import { cva } from "class-variance-authority";
 
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
-// Hover and keyboard highlight are 5% ink; the current value is 10% and keeps it under the
-// pointer, so the row the keyboard is on and the current value stay distinguishable.
 const dropdownRow = cva(
   "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-sm font-normal outline-none select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50 h-8 py-1.5 coarse:h-11",
   {
@@ -23,7 +20,6 @@ const dropdownRow = cva(
   },
 );
 
-/** Merged, so the current value's fill wins over the hover fill whatever the CSS order. */
 export function dropdownRowVariants(props?: Parameters<typeof dropdownRow>[0]): string {
   return cn(dropdownRow(props));
 }
@@ -48,7 +44,6 @@ export const dropdownSurfaceVariants = cva(
         compact: "[--dropdown-preferred-width:14rem]",
         identity: "[--dropdown-preferred-width:18rem]",
         catalog: "[--dropdown-preferred-width:20rem]",
-        /** A list beside the detail of the row pointed at. */
         split: "[--dropdown-preferred-width:38rem]",
       },
     },

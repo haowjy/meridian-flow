@@ -1,4 +1,3 @@
-/** Compose one checkout launch plan, start or reuse it, then verify and publish once. */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,7 +103,6 @@ function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, forc
     );
 }
 
-/** Warns, never blocks: starting a stack is the writer's call, stopping an idle one is the fix. */
 function warnIfMemoryLow(): void {
   const limitGb = Number(process.env.DEV_LOW_MEMORY_GB ?? 8);
   const available = memAvailableBytes();
@@ -202,7 +200,6 @@ async function verifyAndPublish({
   const readiness = await waitForDevReadiness({ origins: routes.origins, timeoutMs });
   if (!readiness.ok) fail(`readiness checks failed: ${readiness.errors.join("; ")}`, routes.lines);
 
-  // Clear advertised external URLs before re-verifying their bindings.
   writeDevSessionMetadata(repoRoot, {
     ...plan.session,
     command: launchCommand,
@@ -231,11 +228,6 @@ async function verifyAndPublish({
   });
 }
 
-/**
- * A restart keeps the environment the stack was started with: each variable the running
- * stack has and this shell doesn't set comes back, so `MODEL_PROVIDER=mock pnpm dev`
- * followed by a bare `pnpm dev:restart` stays on the mock. What this shell sets wins.
- */
 function keepRunningStackEnv(store: TmuxSessionStore, sessionNames: string[]): void {
   const running = sessionNames.map((name) => store.sessionEnv(name)).find((env) => env !== null);
   if (!running) {
@@ -275,8 +267,6 @@ async function main(): Promise<void> {
       ? previous.mode
       : options.mode);
   applyModeEnv(mode);
-  // What the shell set, before `.env` is filled in: the stack inherits this, and
-  // with-dev-env fills the rest inside each service.
   const callerEnv = { ...process.env };
   if (!options.stop && !active) applyDevEnvToProcess(repoRoot);
   const session = active ?? {
@@ -299,7 +289,6 @@ async function main(): Promise<void> {
   if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
-  // TODO(remove): once no stack started before the private socket is running.
   for (const name of sessionNames) {
     if (store.legacyDefaultServerHasSession(name))
       throw new Error(
@@ -341,7 +330,6 @@ async function main(): Promise<void> {
       store.createSession(session.sessionName, plan.command.env),
       `failed to create tmux session '${session.sessionName}'`,
     );
-    // Record launch identity immediately: HEAD may change before readiness finishes.
     writeDevSessionMetadata(repoRoot, {
       ...session,
       command: plan.command.line,

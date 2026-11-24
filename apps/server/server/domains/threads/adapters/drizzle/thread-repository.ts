@@ -1,8 +1,3 @@
-/**
- * Drizzle ThreadRepository: SQL for the threads table (create with normalization,
- * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
- * the primary thread_works row, not stored on threads.
- */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { PromptBake, SpawnStatus, Thread, ThreadKind } from "@meridian/contracts/threads";
@@ -34,8 +29,7 @@ import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./reposi
 import { threadActionRequiredSql } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
-// RETURNING strips table qualifiers from Column chunks; preserve the outer reference
-// when the binding subquery joins another table with its own id.
+// keep: Drizzle strips table qualifiers in RETURNING; use sql.identifier for the outer table reference
 const agentDefinitionRevisionId = sql<string | null>`(
   SELECT ${schema.threadAgentBindings.definitionRevisionId}
   FROM ${schema.threadAgentBindings}
@@ -58,7 +52,6 @@ const agentName = sql<string | null>`(
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
 
-// The chat's queued mode switch, read with the row (the oldest undelivered `write_mode` control).
 const pendingWriteMode = sql<AiWriteMode | null>`(
   SELECT ${schema.threadInboxMessages.body}->>'mode'
   FROM ${schema.threadInboxMessages}
@@ -70,11 +63,6 @@ const pendingWriteMode = sql<AiWriteMode | null>`(
   LIMIT 1
 )`;
 
-// The chat's draft: its root's (`threads.draft_id`, set only on roots) while that draft is one of
-// the chat's Work's (none, for No Work) and not deleted, else its Work's default. A root keeps its
-// draft one of its Work's (`thread-works-repository.ts`), so this differs from the root's only
-// for a fork or subagent bound to another Work, and while a draft is deleted. Then the row's own
-// column: an insert's RETURNING can't see the row it inserts through a subquery.
 const self = (column: string) => sql`${schema.threads}.${sql.identifier(column)}`;
 const chatDraftId = sql<string>`COALESCE(
   (SELECT d.id FROM threads root JOIN drafts d ON d.id = root.draft_id
@@ -198,8 +186,6 @@ export function createDrizzleThreadRepository(
       const threadId = input.id ?? crypto.randomUUID();
       const row = await insertThreadRow(db, {
         id: threadId,
-        // A new chat of a named Work names one of its drafts; with No Work it mints its
-        // lineage's (`mint_named_draft`), whose id the client may have minted.
         draftId: await rootDraftFor(db, input.workId, input.draftId),
         projectId: input.projectId as ProjectId,
         createdByUserId: input.userId as string,
@@ -250,8 +236,6 @@ export function createDrizzleThreadRepository(
           initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,
           rootThreadId: thread.rootThreadId,
-          // A handoff is a new root and names its Work's draft, or with No Work its own; a fork
-          // shares its root's.
           draftId:
             thread.rootThreadId === thread.id
               ? await rootDraftFor(db, thread.workId, thread.draftId)
@@ -410,8 +394,6 @@ export function createDrizzleThreadRepository(
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
-      // Liveness comes from the lease port for the page, never a second SQL
-      // predicate: one implementation of "live" (the lease adapter).
       const leaseStates =
         statusReader && rows.length > 0
           ? await statusReader.readMany(rows.map((row) => row.id as ThreadId))

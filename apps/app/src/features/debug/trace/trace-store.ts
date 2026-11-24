@@ -1,9 +1,3 @@
-/**
- * Bounded client-side capture for dev-only observability events.
- *
- * This module intentionally has no React or transport dependency: any producer
- * can append the shared EventRecord envelope through the public API.
- */
 import type { EventRecord } from "@meridian/contracts/observability";
 
 export const TRACE_STORE_CAPACITY = 2_000;
@@ -80,7 +74,6 @@ function publishEvent(record: EventRecord): void {
   }
 }
 
-/** Coalesce typing bursts so subscribers render once per JavaScript turn. */
 function schedulePublish(): void {
   if (publishPending) return;
   publishPending = true;
@@ -90,7 +83,6 @@ function schedulePublish(): void {
   });
 }
 
-/** Append an event, evicting the oldest event once the ring is full. */
 export function appendTraceEvent(record: EventRecord): void {
   const retained = getRing();
   if (size < TRACE_STORE_CAPACITY) {
@@ -106,7 +98,6 @@ export function appendTraceEvent(record: EventRecord): void {
   schedulePublish();
 }
 
-/** Record a producer/tap failure without requiring a synthetic EventRecord. */
 export function noteTapError(): void {
   tapErrors += 1;
   snapshotDirty = true;
@@ -118,7 +109,6 @@ export function subscribeToTraceStore(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Observe each append synchronously, including records evicted before the UI publish. */
 export function subscribeToTraceEvents(listener: (record: EventRecord) => void): () => void {
   eventListeners.add(listener);
   return () => eventListeners.delete(listener);
@@ -129,7 +119,6 @@ export function getTraceSnapshot(): TraceSnapshot {
   return snapshot;
 }
 
-/** Clear captured events and session counters from the viewer. */
 export function clearTraceEvents(): void {
   ring?.fill(undefined);
   start = 0;
@@ -140,7 +129,6 @@ export function clearTraceEvents(): void {
   schedulePublish();
 }
 
-/** Shared projection used by the table and all three export paths. */
 export function filterTraceEntries(
   entries: readonly EventRecord[],
   filters: TraceFilters,

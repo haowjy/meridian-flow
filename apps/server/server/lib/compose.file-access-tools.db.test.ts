@@ -144,7 +144,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(toolContentText(missing.content)).toContain("path: manuscript://missing.md");
     });
 
-    // a switch that couldn't happen says why before action policy or mutation.
     it("resolves a switch's target, then moves the running chat", async () => {
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", handle: "w2" },
@@ -161,11 +160,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const switchTo = async (work: string) =>
         toolContentText((await call("work", { command: "switch", work })).content);
 
-      // a refusal reaches the model as its message and code.
-      expect(await switchTo("ghost")).toBe("Unknown Work ghost. Use work list. (work_not_found)");
-      expect(await switchTo("w3")).toBe(
-        "Work w3 is archived. Ask the user to unarchive it before switching. (work_archived)",
-      );
+      expect(await switchTo("ghost")).toBe("Unknown Work ghost. (work_not_found)");
+      expect(await switchTo("w3")).toBe("Work w3 is archived. (work_archived)");
       expect(await switchTo("@w1")).toBe("This chat is already in w1.");
       expect(await switchTo("w2")).toBe("This chat is now in w2 (Other).");
       const target = await script.runtime.ports.workRepo.findByHandle(PROJECT_ID, "w2");
@@ -211,14 +207,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const archive = await call("work", { command: "archive", work: "w1" });
       expect(archive.isError).toBe(true);
       expect(toolContentText(archive.content)).toBe(
-        "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
+        "This agent can read but can't change Works. (permission_denied)",
       );
       expect(archive.result).toMatchObject({ details: { reason: "action_denied" } });
 
       const switchWork = await call("work", { command: "switch", work: "w2" });
       expect(switchWork.isError).toBe(true);
       expect(toolContentText(switchWork.content)).toBe(
-        "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
+        "This agent can read but can't change Works. (permission_denied)",
       );
       const writeMode = await call("work", { command: "write_mode", mode: "draft" });
       expect(writeMode.isError).toBe(true);

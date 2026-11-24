@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isPublicAddress } from "./public-address-dispatcher.js";
 
-// A security boundary: a later edit that narrows a range or drops a form of address opens Flow's
-// network to every writer-chosen URL.
 describe("isPublicAddress", () => {
   it.each([
     "0.0.0.1",

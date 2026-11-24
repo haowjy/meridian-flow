@@ -4,7 +4,6 @@ export const ease = (t: number) => t * t * (3 - 2 * t);
 export const progress = (value: number, from: number, to: number) =>
   clamp((value - from) / (to - from));
 export const smooth = (value: number, from: number, to: number) => ease(progress(value, from, to));
-/** Up across `rise` from the window's start and back down across `fall` to its end: 0 outside. */
 export const envelope = (
   value: number,
   [from, to]: readonly [number, number],
@@ -12,10 +11,6 @@ export const envelope = (
   fall: number,
 ) => smooth(value, from, from + rise) * (1 - smooth(value, to - fall, to));
 
-/**
- * Beat name, then its scroll length in viewport heights and its autoplay seconds.
- * Lengths leave one viewport of stillness after each thing to read, about two swipes.
- */
 const BEATS = [
   ["hold", 0.5, 0.8],
   ["push", 0.9, 1.4],
@@ -41,72 +36,32 @@ const BEATS = [
   ["leave", 0.7, 2],
 ] as const;
 
-/**
- * Shares of the camp beat: they sit down round the fire, then the System shows the four of them
- * at once, a status window each, before the ninth night.
- */
 export const CAMP = { sits: [0, 0.2], sheets: [0.2, 0.72] } as const;
-/*
- * The story's moments, as shares of their beat. Every number that more than one layer has to
- * agree on is here; a layer keeps only the curves nothing else needs to match.
- */
 
-/**
- * The turn: they stand up and walk out of the woods onto the lake shore while the dragon comes
- * down, lands in front of them and perches. Perched, it raises its head and sends the Cold Fire up
- * into the sky while they back away; then the fight starts.
- */
 export const TURN = {
   walksOut: [0.02, 0.5],
-  /** From here it is low over the trees and keeps its eyes on them. */
   descends: 0.45,
   lands: 0.58,
   perch: [0.6, 0.97],
 } as const;
 
-/**
- * The death, across four beats. `dies`: the box opens over the last one standing, and the last
- * shadow goes. `still`: nothing moves but the sky, and the Cold Fire over the peak dies down.
- * `flight`: the dragon takes off, loops once small in the far sky, and goes out at the left.
- * `burn`: it comes back across the stage, burning the box away to uncover the dawn.
- */
 export const DEATH = {
-  /** Shares of `dies`: the box appears, grows from a bright line, and the party goes. */
   appears: [0.075, 0.15],
   opens: [0.11, 0.375],
   partyGone: [0.45, 0.975],
-  /** Shares of `flight`: up behind the box, the loop, and out at the left. */
   loop: [0.14, 0.41, 0.64],
-  /** Shares of `burn`: where the fire uncovers the dawn, the dragon leaves, and the box goes. */
   reveals: 0.08,
   exits: 0.82,
   gone: [0.89, 1],
 } as const;
 
-/** How much of the Cold Fire the dragon sent up is still over the peak: it dies down in the still. */
 export const coldFireLeft = (beats: BeatProgress) => 1 - ease(beats.still);
 
-/** It comes back into the dawn, and reaches the knowledge base early in the lore. */
 export const DAWN = { returns: 0.1 } as const;
 export const LORE = { arrives: 0.05 } as const;
 
-/**
- * The ask: the question lifts out of the chat two swipes in. Whenever the card is fully up it
- * shows only what the visitor chose: nothing, autoplay included, answers for them, and a pass made
- * by scrolling or jumping past comes off when they come back. Only as the card starts to leave
- * does the System pick the survivor, so its notice shows on the card on the way out.
- */
 export const ASK = { lift: [0.43, 0.55], assigns: 0.89 } as const;
 
-/**
- * The ninth night, as shares of the fight beat, after the Prologue: Sigrun's ward splits the
- * first breath, then each of the four hits it. Sigrun throws a cut rune, Maren's song breaks on
- * it, Oskar charges its flank, and Tam's spark goes into the scales above its left foot, then
- * into its eye. Then one breath kills them: who falls when, and how. The one left is a shadow,
- * because the visitor hasn't said who survives yet. Rows are the walkers: Sigrun, Tam, Oskar,
- * Maren, the order they walk in. `places` is where each stands in the fight, front first: Sigrun
- * in front with her wards, Maren behind her, Oskar on the flank, Tam behind them all.
- */
 export const FIGHT = {
   places: [0, 3, 2, 1],
   ward: [0.08, 0.22],
@@ -123,26 +78,19 @@ export const FIGHT = {
   ],
 } as const;
 
-/**
- * How far the opening view has tipped down from straight overhead to the horizon, 0 to 1. It
- * holds overhead for a while once the product has gone, then tips down before the world opens.
- */
 export const tilt = (beats: BeatProgress) => smooth(beats.sky, 0.28, 0.86);
 
-/** The dragon is on the ground from its landing until it takes off, but for the rear at the spark. */
 export const grounded = (beats: BeatProgress) =>
   beats.turn >= TURN.lands &&
   beats.flight <= 0 &&
   (beats.fight < FIGHT.spark.eye[1] || beats.fight >= FIGHT.breath[0]);
 
-/** The share of the write and world beats spent typing; the rest is the hold. */
 export const WRITE_TYPED = 0.55;
 export const WORLD_TYPED = 0.52;
 
 type Beat = (typeof BEATS)[number][0];
 export type Span = readonly [start: number, end: number];
 export type BeatSpans = Record<Beat, Span>;
-/** How far through each beat a scroll position is, 0 to 1. */
 export type BeatProgress = Record<Beat, number>;
 
 const AUTOPLAY_TAIL_SECONDS = 2.5;
@@ -150,7 +98,6 @@ const BEAT_SECONDS = BEATS.reduce((total, beat) => total + beat[2], 0);
 
 export const AUTOPLAY_SECONDS = BEAT_SECONDS + AUTOPLAY_TAIL_SECONDS;
 
-/** The scroll position `share` of the way through a beat. */
 export const along = (spans: BeatSpans, name: Beat, share: number) =>
   spans[name][0] + (spans[name][1] - spans[name][0]) * share;
 
@@ -170,13 +117,11 @@ export function spanBeats(viewportHeight: number) {
     s1: [spans.open[0], write(0.2)],
     s2: [write(0.24), write(0.7)],
     s3: spans.out,
-    // Only once the camp's sheets are down, so the two never share the stage.
     s4: [along(spans, "camp", CAMP.sheets[1]), spans.turn[0] + viewportHeight * 0.15],
   } as Record<string, Span>;
   return { spans, stops, subtitles, length: position };
 }
 
-/** How far through a run of beats, `first` to `last`, by scroll length: one curve across them all. */
 export function across(beats: BeatProgress, first: Beat, last: Beat) {
   const from = BEATS.findIndex(([name]) => name === first);
   const to = BEATS.findIndex(([name]) => name === last);
@@ -191,7 +136,6 @@ export function beatProgress(at: number, spans: BeatSpans): BeatProgress {
   return result;
 }
 
-/** The stops of the top bar, in order. */
 export const SECTIONS = [
   {
     hash: "#the-world",

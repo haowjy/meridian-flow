@@ -1,4 +1,3 @@
-/** In-memory account settings adapter for composed tests. */
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import type { AccountSettingsRepository } from "../../ports/account-settings-repository.js";

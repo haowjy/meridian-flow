@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * Keeps an architecture map from drifting silently: `node check.mjs <path to map.config.mjs>`.
- * The project's own README.md says what each check catches and what it can't; this directory's
- * README.md has the config reference. Prints one line per problem, naming the page and the entry,
- * and exits 1 when there are any.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix, resolve } from "node:path";
@@ -39,8 +33,6 @@ const problems = [];
 const fail = (where, message) => problems.push(`${where}: ${message}`);
 const read = (path) => readFileSync(join(repo, path), "utf8");
 
-// ---- The pages ----
-
 const dir = (path) =>
   existsSync(join(repo, path))
     ? readdirSync(join(repo, path))
@@ -54,7 +46,6 @@ const flowFiles = JOURNEYS_ON ? dir(`${MAP_DIR}/flows`).filter((f) => f !== "ind
 const journeyFiles = JOURNEYS_ON ? dir(`${MAP_DIR}/journeys`).filter((f) => f !== "index.md") : [];
 const hasFlows = flowFiles.length > 0;
 
-/** @type {Map<string, ReturnType<typeof parsePage>>} repo path → parsed page */
 const pages = new Map();
 const load = (path) => {
   const page = parsePage(read(path));
@@ -88,8 +79,6 @@ const nameOf = (path) => path.slice(MAP_DIR.length + 1);
 for (const [path, page] of pages)
   for (const p of page.problems) fail(`${nameOf(path)}:${p.line}`, p.message);
 
-// ---- Links: every relative link in every page resolves, and a `#id` lands on something ----
-
 function headingIds(path) {
   const page = pages.get(path) ?? parsePage(read(path));
   const ids = new Set(page.sections.map((s) => s.id));
@@ -97,7 +86,6 @@ function headingIds(path) {
   return ids;
 }
 
-/** Checks one link from the page at `from`. */
 function checkLink(from, line, href) {
   const { path, fragment, url } = resolveHref(from, href);
   if (url) return;
@@ -118,10 +106,7 @@ for (const path of pages.keys()) {
     });
 }
 
-// ---- Level pages ----
-
 const isLevelPath = (path) => levelFiles.some((f) => `${MAP_DIR}/${f}` === path);
-/** Every box on every page: { id, page, kind, paths }. */
 const boxes = [];
 
 for (const { file, path, page } of levels) {
@@ -250,8 +235,6 @@ const levelNodes = levels.map((l) => ({
   nodes: l.page.mermaid?.nodes ?? [],
 }));
 
-// ---- Journeys ----
-
 const indexLinks = JOURNEYS_ON
   ? linksOf(read(`${MAP_DIR}/journeys/index.md`)).map(
       (l) => resolveHref(`${MAP_DIR}/journeys/index.md`, l.href).path,
@@ -260,7 +243,6 @@ const indexLinks = JOURNEYS_ON
 for (const j of journeys)
   if (!indexLinks.includes(j.path)) fail("journeys/index.md", `doesn't link ${j.file}.`);
 const readme = read(`${MAP_DIR}/README.md`);
-// The viewer's own loader, so both agree on which level pages exist and what opens them.
 const reachable = (
   await loadLevelPages(async (p) => (existsSync(join(repo, p)) ? read(p) : ""), MAP_DIR)
 ).levels;
@@ -311,8 +293,6 @@ for (const { file, path, page } of journeys) {
   }
 }
 
-// ---- Flows ----
-
 const flowIndexLinks = hasFlows
   ? linksOf(read(`${MAP_DIR}/flows/index.md`)).map(
       (l) => resolveHref(`${MAP_DIR}/flows/index.md`, l.href).path,
@@ -334,8 +314,6 @@ for (const f of flows) {
   if (!/^\d+\. /m.test(withoutFences(read(f.path))))
     fail(f.file, "has no numbered steps under the diagram.");
 }
-
-// ---- State machine pages ----
 
 const indexed = new Set();
 const attached = new Set();
@@ -379,9 +357,6 @@ if (config.stateMachines) {
   }
 }
 
-// ---- Coverage ----
-// From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
-
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
 const FILE_RULES = (config.dependencies?.rules ?? []).filter((r) => r.files);
 const gitFiles = execFileSync(
@@ -391,7 +366,6 @@ const gitFiles = execFileSync(
 )
   .split("\0")
   .filter(Boolean);
-// Segment globs match one directory depth (`unitOf`); a `**` in one would match nothing and pass silently.
 const segmentGlobs = [
   ["services.glob", config.services ? [config.services.glob] : []],
   ["coverage", (config.coverage ?? []).map((c) => c.glob)],
@@ -410,7 +384,6 @@ for (const [key, globs] of segmentGlobs)
         `config ${key}`,
         `"${glob}" has a "**", which these globs don't support: use "*" for one path segment.`,
       );
-/** Directories matching a segment glob that hold tracked files (a file directly in the pattern's depth is not one). */
 const directoriesMatching = (glob) => [
   ...new Set(
     gitFiles
@@ -420,8 +393,6 @@ const directoriesMatching = (glob) => [
   ),
 ];
 
-// A service is a directory matching the services glob: the top page has a box whose Paths are inside it and whose Opens is
-// the page named after it (apps/www → www.md).
 if (config.services) {
   for (const directory of directoriesMatching(config.services.glob)) {
     const name = directory.split("/").at(-1);
@@ -451,15 +422,8 @@ for (const { glob, needs } of config.coverage ?? []) {
   }
 }
 
-// ---- Dependencies ----
-// The dependencies page lists the places the code breaks the configured rules, one row per break. The rows and
-// the breaks the check computes from value imports must match one to one; ordinary imports are listed nowhere.
-// A file rule (`files`, `to`) is a second table on the same page, one row per importing file and module, and counts
-// type-only imports too.
-
 const rules = config.dependencies?.rules ?? [];
 const rows = [];
-/** One entry per break the code has: key → { rule, from, to, files: the importing files }. For a unit rule, type-only imports are no run-time coupling and don't count. For a file rule, `from` is the importing file and `to` the module. */
 const breaks = new Map();
 let imports = [];
 if (DEPENDENCIES) {
@@ -468,7 +432,6 @@ if (DEPENDENCIES) {
     .filter((d) => existsSync(join(repo, d, "package.json")));
   const importOptions = { workspaceDirs, aliases: config.imports?.aliases ?? [] };
   imports = readImports(repo, roots, importOptions);
-  // Read apart from `imports`: a `files` directory outside every box must not feed the unit rules.
   const fileImports = readImports(
     repo,
     FILE_RULES.map((r) => r.files),
@@ -482,11 +445,6 @@ if (DEPENDENCIES) {
     breaks.get(key).files.add(file);
   };
   const nameOf = (unit) => unit.split("/").at(-1);
-  /**
-   * A file rule's `to` entries as { name, reaches }: a workspace package (also reached by a path into its directory), a
-   * package subpath (matched on the specifier as written) or a tracked repo path (matched on where the import resolves
-   * to, named by its last segment). An entry that is none of these would pin nothing.
-   */
   const fileTargets = (rule) => {
     const targets = [];
     for (const entry of rule.to) {
@@ -512,7 +470,6 @@ if (DEPENDENCIES) {
       );
     return targets;
   };
-  // Breaks name a unit by its last path segment, so two units of one glob with the same one would merge their rows.
   const unitRules = rules.filter((r) => !r.files);
   for (const glob of new Set(unitRules.flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)))) {
     const seen = new Map();
@@ -528,7 +485,6 @@ if (DEPENDENCIES) {
       seen.set(nameOf(unit), unit);
     }
   }
-  /** How a break of each rule reads in a failure. */
   const describe = (b) => {
     const rule = rules.find((r) => r.rule === b.rule);
     if (rule.files) return `${rule.files}/${b.from} importing ${b.to}`;
@@ -576,7 +532,6 @@ if (DEPENDENCIES) {
 
   const TABLES = [
     { name: "unit", header: ["from", "to", "rule", "example file"], needed: true },
-    // With several file rules the third column says which one a row is of; with one, the section heading does.
     ...(FILE_RULES.length
       ? [
           {
@@ -657,7 +612,6 @@ if (DEPENDENCIES) {
       );
 }
 
-/** Tarjan: node → component number; nodes in one cycle share one, and a lone node gets its own. */
 function stronglyConnected(adjacency) {
   const index = new Map();
   const low = new Map();
@@ -691,9 +645,6 @@ function stronglyConnected(adjacency) {
   return result;
 }
 
-// ---- Colours ----
-
-// Only the token files hold a colour; the page sheet uses their variables and roles built from them.
 const tokens = readTokens(repo, config.tokens);
 for (const block of tokens.missing) fail("tokens", `${block}: no such block.`);
 {

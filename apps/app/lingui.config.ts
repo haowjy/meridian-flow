@@ -21,8 +21,6 @@ const config: LinguiConfig = {
       include: ["src"],
     },
   ],
-  // Standard `.po` format. Line numbers are off so reordered call sites don't
-  // produce noisy diffs in code review.
   format: formatter({ lineNumbers: false }),
   compileNamespace: "ts",
 };

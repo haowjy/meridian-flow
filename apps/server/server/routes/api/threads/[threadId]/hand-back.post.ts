@@ -1,9 +1,3 @@
-/**
- * POST /api/threads/:threadId/hand-back: the queue's x and Cancel queue. Takes the named waiting
- * writer messages out of the chat and answers their content for the acting tab's composer; it never
- * cancels a reply. A replay of the same request id answers the stored decision (200); the same id
- * with another body is a 409.
- */
 import { handBackRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import type { HandBackRequest, HandBackResponse } from "@meridian/contracts/threads";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";

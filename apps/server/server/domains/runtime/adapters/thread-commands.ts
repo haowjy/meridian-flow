@@ -1,10 +1,3 @@
-/**
- * The chat's writer commands that take messages out of the queue or cancel the open reply: hand-back
- * (the queue's x and Cancel queue), Stop and Send now. Each is decided once under the thread lock, from
- * rows read inside it, by the pure rules in `loop/stop-rule.ts`; this module reads the facts, calls the
- * rule, then applies the decision. Hand-back and Stop store the decision by request id so a replay
- * answers the same; Send now keeps no decision (`seenExecutionId` makes a repeat safe).
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   HandBackRequest,
@@ -35,10 +28,8 @@ import type { ExecutionSettlement } from "./execution-settlement.js";
 
 export type ThreadCommandPorts = {
   threadLock: ThreadLock;
-  /** Absent where hand-back is not supported (the in-memory harness). */
   handBacks?: HandBackStore;
   inbox: Pick<DeliveryStore, "answerRunState">;
-  /** The one acknowledgement path (`execution-settlement`): attributes the rows and clears an idle usage block. */
   ack: ExecutionSettlement["ack"];
   leaseStore: Pick<DeliveryLeaseStore, "lockThreadReceipt" | "setAdoptedMessageIds">;
   appendEvent(
@@ -53,7 +44,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
     if (!ports.handBacks) throw new Error("Hand-back is not configured for this delivery adapter");
     return ports.handBacks;
   };
-  /** A stored decision as the answer: the content comes from the immutable turns, the record is fresh. */
   async function storedHandBack(threadId: ThreadId, stored: StoredHandBack) {
     const handedBack = await requireHandBacks().contentOf(stored.handedBack);
     return {
@@ -64,13 +54,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
       runState: await inbox.answerRunState(threadId),
     };
   }
-  /**
-   * One hand-back request, decided once under the thread lock from rows and stored by request id.
-   * A replay with the same body returns the stored decision and flags nothing; another body is a
-   * conflict. The decision is judged on the facts before any write, then applied: the stored row
-   * first (the inbox rows reference it), the acknowledgements, the compaction receipt strip, the
-   * journal event, and the execution's cancel flag.
-   */
   function handBackRequest(
     threadId: ThreadId,
     input: {
@@ -96,7 +79,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
       });
       if (decision.handBack.length > 0) {
         await ports.ack(threadId, decision.handBack, { handedBackBy: input.requestId });
-        // A cancelled compaction gives back what it had taken on; nothing would answer it.
         const taken = decision.handBack.filter((id) => facts.receipt.includes(id));
         if (taken.length > 0) {
           const receipt = await leaseStore.lockThreadReceipt(threadId);
@@ -131,7 +113,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
         requestId: request.requestId,
         fingerprint: handBackFingerprint({ kind: "hand_back", scope }),
         scope,
-        // The x and Cancel queue never cancel the execution.
         decide: (facts) => ({ ...decideHandBack(facts, scope, false), cancelExecutionId: null }),
       });
       return { handedBack, answered, gone, runState };
@@ -159,12 +140,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
       });
       return { threadId, ...result };
     },
-    /**
-     * Send now: cancels the reply the writer saw so the waiting queue runs next, unless that reply has
-     * already taken on a waiting message. Reads the `seen` scope with `mine: waiting`, never the ids-only
-     * scope: that reads only W and would miss a later message the reply adopted after an x took one back.
-     * No stored decision: `seenExecutionId` makes a repeat of the same body safe.
-     */
     async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
       return threadLock.withThreadLock(threadId, async () => {
         const store = requireHandBacks();

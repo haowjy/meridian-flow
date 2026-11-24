@@ -1,21 +1,3 @@
-/**
- * ChatView — the full conversation view for a project-owned thread.
- *
- * Composition root for the chat feature: reads canonical turns directly from
- * ThreadStore, wires snapshot sync, handoff, announcements, and renders
- * `ChatSurface` + `TurnList` + `Composer`. Scroll/follow is owned by the
- * virtualized viewport inside `TurnList`, so there is no scroll-parent
- * plumbing here.
- *
- * Pending AI changes live in the composer-attached `DraftDock` (a single,
- * work-scoped strip that shares the composer's border box), never in the
- * transcript. A host's `composerStrip` (the archived-Work notice) sits on the
- * composer's top edge above it; the composer itself always stays live.
- *
- * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
- * editor bar share one controller so preview selection cannot drift.
- */
-
 import { t } from "@lingui/core/macro";
 import { newDraftId, type ProjectId, type UserId } from "@meridian/contracts";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
@@ -130,7 +112,6 @@ export type ChatViewProps = {
   threadId: string;
   projectId: string;
   activeThread?: Thread | null;
-  /** The rendered snapshot's write mode: the ledger's base, consistent with the transcript it reads. */
   snapshotWriteMode?: AiWriteMode;
   activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
@@ -144,15 +125,8 @@ export type ChatViewProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  /**
-   * Whether the thread snapshot request has resolved. Feeds the transcript's
-   * conversation-reveal ownership: only a settled history can say a named turn
-   * is not in this conversation.
-   */
   historySettled: boolean;
-  /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
-  /** False while the chat is mounted but hidden (collapsed side, Settings). */
   active?: boolean;
 };
 
@@ -172,9 +146,6 @@ export function ChatView({
   useThreadWorkProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
   useRegisterChatComposer(threadId, composerRef);
-  // The transcript takes desktop files for the composer, so the whole chat is one drop zone.
-  // An open ask (a question or a permission request) hides the composer, so a drop would land in a
-  // draft the writer can't see.
   const askOpen = useOpenAsk(threadId) !== null;
   const fileDrop = useFileDrop({
     enabled: active && !askOpen,
@@ -202,10 +173,6 @@ export function ChatView({
   const { view: runState, history } = useRunStateSlice(threadId);
   const asks = useThreadAsks(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
-  // A handoff's brief is on its way the moment the writer lands; until the
-  // server's seed arrives the card stands in for it (it has nothing to stop
-  // yet). A Retry's new card, or a failed reply's new reply, stands after the
-  // turn it followed until the server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
   const { standIns: replyStandIns, retried: retriedReplies, requestOf } = replyRetry;
@@ -250,8 +217,6 @@ export function ChatView({
   );
   const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
   const awaitingSubagents = runningBackgroundSubagents.length > 0;
-  // The effective sequence every later step reads (`normalizeTurns`): cards, rows, the running
-  // reply and the answered controls all start from these facts and none re-derives them.
   const turnFacts = useMemo<TurnFacts>(
     () => ({
       turns: storedTurns,
@@ -264,17 +229,12 @@ export function ChatView({
   );
   const normalized = useMemo(() => normalizeTurns(turnFacts), [turnFacts]);
   const { turns } = normalized;
-  // Live announcements follow the server's replies: a Retry's stand-in speaks
-  // for itself.
   const latestAssistantTurn =
     [...turns]
       .reverse()
       .find((turn) => turn.role === "assistant" && replyRetry.requestOf(turn.id) === null) ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
-  // The record says the chat works or owes a reply; a message owed with no run, while the
-  // record says the start is blocked on usage, leaves the composer idle.
   const working = isBusy(runState) && !(isAwaitingExecution(runState) && usageBlocked);
   const run = useMemo(
     () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
@@ -283,7 +243,6 @@ export function ChatView({
   const running = run !== null || working;
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
-  // Uploads belong to the chat; a thread not in the list yet is a New chat's own.
   const listedChat = useTopChat(projectId, activeThread);
   const topChat = listedChat ?? { chatId: threadId, chatRef: null };
   const referenceCatalog = useReferenceBrowserCatalog(
@@ -310,7 +269,6 @@ export function ChatView({
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat({ replace: true });
-        // Only main's chat leaving moves main; the side resolves again on its own.
         else if (navigation.display?.kind === "thread" && navigation.display.threadId === threadId)
           void navigation.openNewChat({ replace: true });
       },
@@ -338,8 +296,6 @@ export function ChatView({
   });
   useControlTurnAnnouncements(turns);
   const { enqueue: enqueueControl } = controls;
-  // `/compact` is always the command. A chat with nothing to summarize yet is
-  // refused by the server, and that refusal shows on the command's own row.
   const chatCommands = useMemo<readonly ComposerChatCommand[]>(
     () => [
       {
@@ -417,8 +373,6 @@ export function ChatView({
       ),
     [submissions.presentation],
   );
-  // Every chat failure the writer sees comes from here; the rest of this component draws and
-  // announces what `chatCards` decided.
   const unavailable = useThreadStore(
     (state) => state.syncedByThread[threadId]?.unavailable ?? null,
   );
@@ -471,7 +425,6 @@ export function ChatView({
   const retryReplyCard = useCommittedEvent((turnId: string) => {
     const turn = turns.find((candidate) => candidate.id === turnId);
     if (!turn) return;
-    // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
     chatSurfaceRef.current
       ?.querySelector<HTMLElement>('[role="log"]')
       ?.focus({ preventScroll: true });
@@ -532,8 +485,6 @@ export function ChatView({
     ],
   );
 
-  // Every decision about which rows the writer sees runs in the view model. A turn a card is
-  // anchored on keeps its row.
   const view = useMemo(
     () =>
       viewTranscript({
@@ -555,15 +506,12 @@ export function ChatView({
     ],
   );
 
-  // Only a primary the server already has can be forked or handed off; a
-  // subagent's view offers neither (the server refuses both there).
   const canDerive = canDeriveFrom({
     kind: activeThread?.kind ?? null,
     pendingCreation,
     canOpen: openThread !== null,
   });
   const inheritedView = inherited.view;
-  // A fork or the composer shows a pick at once, before the server has it.
   const overrides = useThreadOverrides(threadId, activeThread?.overrides ?? NO_OVERRIDES);
   const forkTurn = useCommittedEvent((originTurnId: string) => {
     if (!activeThread || !openThread) return;
@@ -612,7 +560,6 @@ export function ChatView({
       {
         ...base,
         kind: "handoff",
-        // A named Work's chat writes into its default; with No Work the new lineage has its own.
         draftId:
           activeWork && !activeWork.isNoWork && activeWork.draftId
             ? activeWork.draftId
@@ -646,9 +593,6 @@ export function ChatView({
     projectId,
   ]);
 
-  // The composer's Agent control hands off from the last complete turn, a writer message
-  // included (so a running reply is cut at the message it answers); a queued message sits
-  // beyond the cutoff the server would use.
   const handoffCutoff = canDerive
     ? (storedTurns.findLast(
         (turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id),
@@ -660,8 +604,6 @@ export function ChatView({
   const setOverrides = useSetThreadOverrides(threadId);
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
-  // Busy only while the server has yet to accept the chat's first send; a chat with nothing to
-  // hand off from (no turn yet, a subagent's) shows its Agent and offers no choice.
   const composerAgent = useMemo<ComposerAgentControlProps>(
     () =>
       handoffCutoff || pendingCreation
@@ -699,10 +641,6 @@ export function ChatView({
 
   useLiveTurnAnnouncements(latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  // Generating signal: the latest assistant turn is streaming AND it started in
-  // draft mode. A reply keeps the mode it started with while the chat's mode may
-  // already be queued to change, so the running turn's own mode is the signal;
-  // auto-apply streams never light the dock.
   const generating =
     isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
   const handleSubmit = useCommittedEvent(
@@ -715,9 +653,6 @@ export function ChatView({
   );
 
   const handleStop = useCommittedEvent(() => {
-    // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
-    // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
-    // the waiting messages it hands back arrive in the composer.
     if (run?.kind === "placeholder") brief.stop(run.turn.id);
     else chatStop.stop();
   });

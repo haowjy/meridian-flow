@@ -1,4 +1,3 @@
-/** List the project's Trash entries: deleted documents and deleted folders. */
 import type { ListTrashResponse } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../domains/projects/index.js";

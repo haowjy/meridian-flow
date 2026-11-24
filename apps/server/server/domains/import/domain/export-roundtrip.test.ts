@@ -1,11 +1,9 @@
-/** Export spelling then import conversion: a link keeps its identity across the round trip. */
 import { createHolderLinkScope } from "@meridian/markup/links";
 import { describe, expect, it } from "vitest";
 import { ExportLinkScope } from "../../export/domain/export-link-scope.js";
 import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
 import { convertNote } from "./note-conversion.js";
 
-// Link refs carry document ids, which are UUIDs.
 const [HOLDER, ENCODED, SPACED, PERCENT] = [1, 2, 3, 4].map(
   (n) => `00000000-0000-4000-8000-00000000000${n}`,
 );
@@ -19,7 +17,6 @@ const note = (id: string, path: string, uri: string): ImportLinkCandidate => ({
   filetype: "markdown",
 });
 const holder = note(HOLDER, "Manuscript/Holder.md", "manuscript://Holder");
-// Literal `%20`, a literal space, and a bare `%`: three distinct names. URIs are literal.
 const targets = [
   note(ENCODED, "Knowledge/a%20b.md", "kb://a%20b"),
   note(SPACED, "Knowledge/a b.md", "kb://a b"),

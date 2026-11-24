@@ -1,4 +1,3 @@
-/** Stored properties accept exactly the shared YAML envelope, not arbitrary metadata. */
 import { expect, it } from "vitest";
 import { readStoredDocumentProperties } from "./document-properties.js";
 

@@ -1,4 +1,3 @@
-/** Bounded auxiliary account-settings read for the authenticated route loader. */
 import type { AccountSettings } from "@meridian/contracts/protocol";
 
 export async function loadAccountSettingsWithDeadline(

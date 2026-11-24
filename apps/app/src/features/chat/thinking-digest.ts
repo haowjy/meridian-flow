@@ -8,12 +8,9 @@ import { plural, t } from "@lingui/core/macro";
 import { type FoldDigest, humanizeSkillSlug } from "@meridian/thread-client";
 
 export function thinkingDigest(digest: FoldDigest): string | null {
-  // Member expressions keep the catalog's positional `{0}` ids for these messages.
   const clauses: string[] = [];
 
   if (digest.invokedSkills.length > 0) {
-    // The quotes ride inside the value: an apostrophe in an ICU message
-    // escapes the placeholder next to it.
     const skills = new Intl.ListFormat(i18n.locale || undefined, {
       style: "long",
       type: "conjunction",

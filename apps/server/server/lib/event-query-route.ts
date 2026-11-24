@@ -1,5 +1,3 @@
-/** Shared parsing and live matching for the recent-events HTTP and SSE routes. */
-
 import { createError } from "nitro/h3";
 import type { EventCorrelation, EventLevel, EventRecord } from "../domains/observability/index.js";
 import { type EventQueryFilter, eventMatchesQueryFilter } from "../domains/observability/index.js";

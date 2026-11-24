@@ -107,7 +107,6 @@ describe("useThreadControls", () => {
       control: { kind: "compact" },
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
-    // A reply is running, so the answer's record lists the command before the inbox frame does.
     const listed = {
       id,
       intent: "control",
@@ -117,20 +116,15 @@ describe("useThreadControls", () => {
       deliveryState: "waiting",
     } as PendingInboxItem;
     await act(async () => response.resolve({ id, turnId: "c", runState: recordOf([listed]) }));
-    // Answer to record: the row holds, never vanishing in between.
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     await act(async () => root.render(<Probe items={[listed]} />));
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
-    // The record drops the item as the compaction starts, before its divider reaches the
-    // transcript: the row holds (no frame with neither).
     await act(async () => root.render(<Probe version="2" />));
     expect(latest.queued.map((row) => row.id)).toEqual([id]);
-    // A snapshot older than the drop proves nothing; the divider's control id retires the row.
     await act(async () => root.render(<Probe version="2" history="1" />));
     expect(latest.queued.map((row) => row.id)).toEqual([id]);
     await act(async () => root.render(<Probe version="2" history="2" answered={new Set([id])} />));
     expect(latest.queued).toEqual([]);
-    // Another tab's Withdraw drops an item and no turn ever comes: a snapshot at the drop proves it.
     const other = {
       id: "c9",
       intent: "control",
@@ -183,7 +177,6 @@ describe("useThreadControls", () => {
   });
 
   it("withdraws on the server when the enqueue response was lost but the server has the row", async () => {
-    // The request reached the server; only its response was lost.
     api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
     api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn", runState: recordOf() });
     let id = "";
@@ -231,7 +224,6 @@ describe("useThreadControls", () => {
     await act(async () => latest.withdraw(failed));
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);
-    // A lagging inbox frame still lists it, then the server drops it.
     await act(async () => root.render(<Probe items={serverRow} />));
     expect(latest.queued).toEqual([]);
     await act(async () => root.render(<Probe />));

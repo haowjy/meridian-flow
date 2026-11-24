@@ -15,10 +15,6 @@ import {
 import { LIVE, lastOfFamily, listRecords, readRecords, type View, viewValues } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
-/**
- * What a restore brought back below its node: the nodes whose place was last set before the
- * restore. What was put in the folder after it (a create or a move into it) is not the restore's.
- */
 function liftedBy(tree: TreeStanding, record: TreeRecord) {
   const at = tree.changes.get(record.id)?.index ?? 0;
   return tree.descendants(record.node).filter((id) => {
@@ -28,45 +24,25 @@ function liftedBy(tree: TreeStanding, record: TreeRecord) {
   });
 }
 
-/** Whether the delete record, or the original an Undo's copy carries, is in `deletes`. */
 const standsIn = (deletes: ReadonlySet<string>, record: TreeRecord) =>
   deletes.has(record.id) || deletes.has(record.carries ?? record.id);
 
-/** The delete `recordId` names as `asked` has it, and the view whose Trash holds it. */
 function deleteIn(writer: TreeWriter, asked: View, recordId: string) {
   const record = lastOfFamily(writer.doc, asked, recordId);
   if (!record || record === "unknown" || record.type !== "delete") return null;
   return { record, projection: writer.view(record.draft === null ? LIVE : asked) };
 }
 
-/**
- * Whether the delete `recordId` can still be undone: it is in force in the view (not lifted by a
- * restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
- */
 export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
   const found = deleteIn(writer, asked, recordId);
   return found !== null && standsIn(found.projection.standingDeletes, found.record);
 }
 
-/**
- * Whether the delete `recordId` is in force and hides something now (`hidingDeletes`): whether
- * its Undo would bring anything back. One that hides nothing may hide again, while it stands.
- */
 export function deleteHides(writer: TreeWriter, asked: View, recordId: string): boolean {
   const found = deleteIn(writer, asked, recordId);
   return found !== null && standsIn(found.projection.hidingDeletes, found.record);
 }
 
-/**
- * The Undo of `named`, a move or rename or an Undo about one. Taking `named` out flips which
- * records about its change are in force (`flips`, as the replay will read them): the change goes
- * out or comes back, or nothing flips but `named`, when another Undo keeps the change out. Then the
- * record changes nothing shown, and is written all the same, so `named` stays out when that other
- * Undo is taken back. The record says what the node then shows, as this copy has it; the replay
- * works that out again from the records in force, so a copy that had not seen an earlier change
- * settles on the same tree. It is a move when the place turns, a rename when only the name does
- * (Trash reads that: a rename leaves what the move lifted lifted), else of the change's type.
- */
 function turn(
   writer: TreeWriter,
   view: View,
@@ -117,54 +93,26 @@ function turn(
   );
 }
 
-/** Why an Undo appended nothing, in the words of the results that report it. */
 export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
 
-/**
- * The Undo would change a source the caller's `closed` names (`closed` is that source): nothing
- * is written, and the record it would have taken back stays.
- */
 export type ClosedUndo = { closed: string };
 
-/** One record's answer as `changeUndone` reads it. */
 export type UndoAnswer = "undoes" | NotUndone | "closed";
 
-/** One record of an Undo: its opposite (written), why there is none, or the closed source that holds it. */
 export type TakenBack = TreeRecord | NotUndone | ClosedUndo;
 
-/** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
 export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
 
-/**
- * One record to take back, in the view its Undo was asked in. `withdraw`: the draft a landed
- * create goes back to (the press's Undo, which puts its record pending again); its opposite is a
- * withdrawal (rule 15), not a delete Trash lists.
- */
 export type UndoStep = { id: string; view: View; withdraw?: string };
 
-/** The view an opposite record is written to: live when the record it takes back is live (an Apply landed it). */
 const viewOfRecord = (record: TreeRecord, asked: View): View =>
   record.draft === null ? LIVE : asked;
 
-/** Why the replay would not take an opposite record, as an Undo answers it. */
 const notTaken = (reason: SkipReason): NotUndone =>
   reason === "missing-parent" || reason === "missing-node" || reason === "purged"
     ? "purged"
     : "changed_since";
 
-/**
- * Every Undo: `steps` taken back in the order given, each read from the list as the steps before
- * it left it. Per view one replay is kept open. A step's opposite record is made against that
- * replay (`opposite`), the replay says what taking it would do (`wouldTake`: skipped, or the
- * sources it changes), and only a record that lands is pushed to the replay, so the next step
- * reads the tree with it and without the held and skipped ones. The records that landed are
- * written at the end, in one transaction; with `write` false nothing is, and the answers are what
- * the press would give. So an estimate and a press are one walk, and a batch is the same walk as
- * its records taken one call at a time. An id given twice is walked once, at its first step.
- *
- * A Work's view is live and then its pending records, so a record landed in live is not at the
- * end of it: the Work's replay is started again when live has grown under it.
- */
 function takeBack(
   writer: TreeWriter,
   actor: Actor,
@@ -179,7 +127,6 @@ function takeBack(
   const landedLive: TreeRecord[] = [];
   const pendingOf = (view: View) =>
     view.draft === null ? [] : viewValues(doc, view).slice(live.length);
-  // The last record of each family in a view, as the list has it: `lastOfFamily`, read once.
   const lasts = new Map<string | null, Map<string, TreeRecord>>();
   const lastOf = (view: View) => {
     let last = lasts.get(view.draft);
@@ -251,22 +198,6 @@ function takeBack(
   return out;
 }
 
-/**
- * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
- * back, restore what was deleted, delete what was created). Every record is in force unless a
- * later record in force undoes it (`standingOf`), and Undo answers `already` for one that is not.
- * A move or rename, and any Undo about one, goes by what taking it out does to the change it is
- * about (`turn`): `changed_since` when a later change in force holds every fact that would turn,
- * or the place it would go back to is inside the node now, and nothing is written then. A create,
- * delete or restore goes by the record in force: `already` when its opposite already stands; `purged`:
- * the node, or the folder a move would return to, is gone from the view. `unknown`: no such
- * record. A move back into a folder in Trash needs no answer: the node stands in it, and rule 3
- * keeps the folder standing. A drafted change an Apply landed is taken back in live, where its
- * copy now stands: the opposite record's `draft` says which view it went to.
- *
- * `closed` says which sources take no change. A record whose replay reports one of them is not
- * written (`{ closed: source }`): the change stays, as it does in `undoApply`.
- */
 export function undoChange(
   writer: TreeWriter,
   asked: View,
@@ -279,11 +210,6 @@ export function undoChange(
   ) as TakenBack;
 }
 
-/**
- * What the Undo of each step would do now, writing nothing: `takeBack`'s walk. A record `closed`
- * holds reports `undoes` with the closed source among its sources, and the steps after it are read
- * without it.
- */
 export function undoReports(
   writer: TreeWriter,
   steps: readonly UndoStep[],
@@ -297,7 +223,6 @@ export function undoReports(
   );
 }
 
-/** Takes the steps back in the order given (`takeBack`), and writes the ones that land. */
 export function takeBackAll(
   writer: TreeWriter,
   actor: Actor,
@@ -309,13 +234,6 @@ export function takeBackAll(
   );
 }
 
-/**
- * What an Undo of one change, made of several records, does with it, from each record's answer:
- * `acts` while any record is taken back; else the change stays when any record stays
- * (`unknown` read as `purged`; `closed` last, as the only one that can pass: its owner
- * reopens); else every record's opposite already stands, and the change counts as taken back
- * (`taken`).
- */
 export function changeUndone(
   answers: readonly UndoAnswer[],
 ): "acts" | "taken" | "changed_since" | "purged" | "closed" {
@@ -326,11 +244,6 @@ export function changeUndone(
   return "taken";
 }
 
-/**
- * The opposite record of `named`, the last of its family in `view`, made against the tree an open
- * replay has (`tree`) and not written. Whether the tree can take it is the
- * replay's to say (`wouldTake`), not this function's.
- */
 function opposite(
   writer: TreeWriter,
   view: View,
@@ -347,7 +260,6 @@ function opposite(
   if (base.sets) {
     const history = node && tree.history(node.id);
     if (!node || !history) return "purged";
-    // The moves and renames about `base`'s change whose being in force undoing `named` flips.
     const chain = [...tree.changes.values()].filter((each) => each.base.root === base.root);
     const after = standingOf([
       ...chain.map((each) => ({ id: each.id, carries: each.root, undoes: each.undoes })),
@@ -371,7 +283,6 @@ function opposite(
   switch (named.type) {
     case "create":
       if (node.trashed) return "already";
-      // Only the node the create made: what others put in a folder since stands, and keeps it standing.
       if (withdraw !== undefined && view.draft === null && named.fromDraft !== undefined)
         return writer.prepare(
           view,
@@ -381,7 +292,6 @@ function opposite(
         );
       return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
-      // Lifted already, by a restore of the node or by an earlier Undo of this delete.
       if (!standsIn(tree.standingDeletes, named)) return "already";
       return author({ type: "restore", node: named.node });
     case "restore":
@@ -389,7 +299,6 @@ function opposite(
       return author({ type: "delete", node: named.node, cascade: liftedBy(tree, named) });
     case "purge":
       return "purged";
-    // A move or rename the replay skipped, or an Undo of one whose change is not in the view.
     default:
       return "changed_since";
   }

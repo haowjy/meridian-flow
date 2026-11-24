@@ -27,7 +27,6 @@ const reference = (name: string, imageCapable: boolean): RestorableReference => 
 
 describe("hand-back composer content", () => {
   it("round-trips every block shape: serializing the composer document gives the blocks handed back", () => {
-    // Risk: a handed-back message that comes back changed (a lost chip, a doubled image, a flattened newline).
     const sent = serializeMessageDoc(
       buildMessageDoc({
         text: "Rework this\nthen that",
@@ -47,12 +46,9 @@ describe("hand-back composer content", () => {
     expect(sent.some((block) => block.type === "image")).toBe(true);
     const returned = composerDocFromHandedBack([{ userTurnId: "m1", blocks: [...sent] }], resolve);
     expect(serializeMessageDoc(returned).blocks).toEqual(sent);
-    // Every chip carries the owner and file type the app's draft parser requires, so the
-    // document restores after a reload; a document the chat doesn't own comes back as its link text.
     const chips = JSON.stringify(returned).match(/"authority":\{"kind":"lineage"[^}]*\}/g);
     expect(chips).toHaveLength(2);
     expect(JSON.stringify(returned)).toContain('"fileType":"png"');
-    // A manuscript document has no extension in its name: it is the default type, owned by the project.
     expect(resolve({ documentId: "doc-m", uri: "manuscript://Chapter 1" as never })).toMatchObject({
       fileType: "markdown",
       authority: { kind: "project", projectId: "p1" },
@@ -72,7 +68,6 @@ describe("hand-back composer content", () => {
       ),
     ).toMatchObject({ text: "[x](manuscript://@other/x.md)", references: [] });
 
-    // Another lineage's document is not this chat's to own: its link text comes back, never a chip.
     const other: UserMessageBlock[] = [
       {
         type: "reference",
@@ -86,7 +81,6 @@ describe("hand-back composer content", () => {
       serializeMessageDoc(composerDocFromHandedBack([{ userTurnId: "o", blocks: other }], resolve)),
     ).toMatchObject({ text: "[x](scratch://@c9/x.md)", references: [] });
 
-    // An image with no extension in its name is still an image when the message carried one.
     const plain: UserMessageBlock[] = [
       {
         type: "reference",
@@ -101,7 +95,6 @@ describe("hand-back composer content", () => {
     expect(serializeMessageDoc(kept).blocks).toEqual(plain);
     expect(JSON.stringify(kept)).toContain('"fileType":"image"');
 
-    // An image block with no chip before it (an API client) comes back as an image-capable chip.
     const bare: UserMessageBlock[] = [
       { type: "image", documentId: "doc-x", uri: "scratch://@c1/x.png" as never },
     ];
@@ -112,7 +105,6 @@ describe("hand-back composer content", () => {
   });
 
   it("keeps send order with one blank line between messages, above what was typed", () => {
-    // Risk: messages swapped or fused, or typed words overwritten by the prepend.
     const message = (id: string, text: string) => ({
       userTurnId: id,
       blocks: [{ type: "text", text }] as UserMessageBlock[],
@@ -126,7 +118,6 @@ describe("hand-back composer content", () => {
     const merged = prependMessageDoc(returned, typed);
     expect(serializeMessageDoc(merged).text).toBe("second\n\nthird\n\ntyped words");
     expect(merged.content?.slice(-1)).toEqual(typed.content);
-    // Nothing typed: no stray blank line.
     expect(
       serializeMessageDoc(prependMessageDoc(returned, buildMessageDoc({ text: "" }))).text,
     ).toBe("second\n\nthird");

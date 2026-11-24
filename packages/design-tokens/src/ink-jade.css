@@ -1,60 +1,31 @@
-/**
- * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables for app and www.
- *
- * Surfaces: chrome (sidebar, tab band, dock) below a white page; raised surfaces (cards, menus,
- * popovers) are white too and lift by border and shadow. The review ground sits under draft
- * chrome. Every interactive state is an ink overlay
- * over whatever surface it sits on: `ink-fill` (5%) for hover and static wells,
- * `ink-fill-strong` (10%) for current, selected, open and pressed. Borders are ink
- * overlays too. Because overlays follow `foreground`, the dark theme re-points only
- * surfaces, inks and accents (`themes.css`). Design rationale:
- * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md
- *
- * Accents: jade = do/go and "changes waiting on you"; `primary` is for fills and icons,
- * `jade-text` for jade text. Cinnabar is the brand seal.
- * Destructive is its own crimson. Selected and current states are ink, never jade.
- */
-
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Surfaces. Neutrals are one warm grey, hue 60 at chroma 0.006: hues toward yellow-green
-     read olive at low chroma. The page and raised surfaces are white. */
   --color-background: oklch(1 0 0);
   --color-card: oklch(1 0 0);
   --color-chrome: oklch(0.962 0.006 60);
-  /* Draft chrome (the review strip, the reviewing tab): a step below chrome, so it never
-     reads as a hovered chrome row. */
   --color-review: oklch(0.938 0.008 60);
-  /* Every page (`page-sheet`, and the phone's page): a barely warm white and a warm ink.
-     Body ink holds 7:1 on it and `muted-foreground` 4.5:1. */
+  /* keep: Paper body ink must hold 7:1 and muted foreground 4.5:1 on the paper surface */
   --color-paper: oklch(0.978 0.005 80);
   --color-paper-ink: oklch(0.25 0.008 60);
 
-  /* Inks. Secondary text is one ink; a hint differs by size, never by a paler colour.
-     Recheck AA in a current row (10% overlay) on the review ground if either changes. */
   --color-foreground: oklch(0.21 0.006 60);
   --color-muted-foreground: oklch(0.46 0.006 60);
 
-  /* State overlays and borders. */
   --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
-  /* The subtle border resolved onto the page, hence opaque: for an outline whose strokes
-     meet or overlap (the page sheet and its folder tab), where a translucent line darkens. */
+  /* keep: page-edge stays opaque because translucent strokes darken where outlined shapes overlap */
   --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
-  /* Keyboard focus. Must hold 3:1 against every surface in a current row. */
+  /* keep: Keyboard focus must hold 3:1 against every surface in a current row */
   --color-focus: oklch(0.52 0.1 165);
 
-  /* Jade. `brand-jade` anchors the mark so a re-point of `primary` never recolours it.
-     The UI jade sits near the sRGB edge for its lightness, so it reads clean, not grey-teal. */
   --color-brand-jade: oklch(0.536 0.082 175);
   --color-primary: oklch(0.52 0.1 165);
   --color-primary-foreground: oklch(1 0 0);
   --color-jade-text: oklch(0.44 0.088 165);
 
-  /* Other accents. Notice tints stay opaque, so they read the same on chrome and on the page. */
   --color-destructive: oklch(0.475 0.18 25);
   --color-destructive-tint: oklch(0.955 0.02 22);
   --color-destructive-border: oklch(0.86 0.07 20);
@@ -63,12 +34,11 @@
   --color-warning-tint: oklch(0.965 0.025 80);
   --color-cinnabar: oklch(0.54 0.17 30);
 
-  /* The login hero: a fixed ground, the same in both themes. */
   --color-ink-deep: oklch(0.243 0.006 60);
   --color-cream: oklch(0.961 0.006 60);
   --color-cream-muted: oklch(0.82 0.012 60);
 
-  /* Syntax: Ink & Jade at low chroma, each >= 4.5:1 on a code well except the comment. */
+  /* keep: Syntax colors must hold 4.5:1 on a code well except comments */
   --color-syntax-keyword: oklch(0.42 0.1 175);
   --color-syntax-string: oklch(0.46 0.11 55);
   --color-syntax-comment: oklch(0.55 0.006 60);
@@ -78,7 +48,6 @@
   --color-syntax-builtin: oklch(0.46 0.09 195);
   --color-syntax-punctuation: oklch(0.48 0.006 60);
 
-  /* Collaboration carets: brighter than syntax ink so tiny marks stay distinguishable. */
   --color-collab-cursor-1: oklch(0.52 0.13 165);
   --color-collab-cursor-2: oklch(0.56 0.18 29);
   --color-collab-cursor-3: oklch(0.58 0.16 45);
@@ -87,19 +56,14 @@
   --color-collab-cursor-6: oklch(0.55 0.12 120);
   --color-collab-cursor-7: oklch(0.54 0.09 250);
   --color-collab-cursor-8: oklch(0.52 0.1 310);
-  /* A chat's agent: its caret and the flash on what it wrote. A hue no writer's caret takes. */
+  /* keep: Agent hue must not match any writer caret hue */
   --color-collab-agent: oklch(0.52 0.16 275);
 
-  /* Three shadows: a control lifted off its track, anything floating, and a modal. */
   --shadow-*: initial;
   --shadow-raise: 0 1px 2px rgb(26 26 23 / 0.08);
   --shadow-float: 0 1px 2px rgb(26 26 23 / 0.04), 0 8px 24px rgb(26 26 23 / 0.08);
   --shadow-modal: 0 2px 6px rgb(26 26 23 / 0.06), 0 16px 40px -8px rgb(26 26 23 / 0.2);
 
-  /* The UI uses two sizes: xs (12px) for labels, counts, chips and meta, and sm (13px) for
-     every control and row. Chat reads at 14px and prose at 16px. `compact` is sm with prose
-     leading for multi-line secondary text, and `body` is the 15px reading step. Register every
-     custom name in apps/app/src/lib/utils.ts. */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -109,23 +73,19 @@
   --text-body: 0.9375rem;
   --text-body--line-height: 1.625rem;
 
-  /* Uppercase labels. */
   --tracking-caps: 0.08em;
 
-  /* Four radii plus full. Controls read semi-rectangular, not pill-like. */
   --radius-*: initial;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
 
-  /* Hover, colour and opacity changes. Panels use --motion-duration-panel. */
   --default-transition-duration: 120ms;
 }
 
 :root {
   --motion-pulse-duration: 2.4s;
-  /* One ease for everything that moves the layout; off under prefers-reduced-motion. */
   --motion-ease-shell: cubic-bezier(0.2, 0.7, 0.2, 1);
   --motion-duration-panel: 220ms;
 }

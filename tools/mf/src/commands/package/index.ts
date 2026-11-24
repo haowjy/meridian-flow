@@ -1,4 +1,3 @@
-/** `package`: read what the server's package fetch port returns. */
 import type { CommandGroup } from "../../core/command";
 import { packageFetchCommand } from "./fetch";
 

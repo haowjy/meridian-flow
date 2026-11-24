@@ -44,7 +44,6 @@ const tail = (...args: string[]) => wire.mf(["thread", "tail", THREAD_ID, ...arg
 const send = (text: string, ...rest: string[]) =>
   wire.mf(["thread", "send", THREAD_ID, text, ...rest]);
 
-/** The message `u1` was admitted and a reply `a1` holds its execution open, with no frames. */
 function runningReply() {
   wire.snapshot = snapshotOf({
     turns: [
@@ -181,8 +180,6 @@ describe("thread send", () => {
   });
 
   it("uses the snapshot's outcome rather than an obsolete usage block in the replay", async () => {
-    // The journal carries a blocked record from before the usage returned. It sits above the join
-    // read's cursor, so the client really replays it.
     replyScenario(wire, {
       stored: "Recovered reply",
       lead: () => {
@@ -195,7 +192,6 @@ describe("thread send", () => {
       },
     });
     const result = await send("recovered before admission returns", "--timeout", "2s", "--json");
-    // The obsolete blocked record did reach the CLI, and the newer snapshot still decides.
     expect(result.stdout).toContain('"blocked":{"reason":"credits_exhausted"}');
     expect(result.code).toBe(EXIT.ok);
     expect(lastRecord(result.stdout)).toMatchObject({
@@ -233,7 +229,6 @@ describe("thread send", () => {
       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     ];
-    // Three queued messages behind a running reply; one of them was sent from a browser.
     wire.snapshot = snapshotOf({
       turns: [replyTurn("run", 1, { status: "streaming" })],
       record: {
@@ -247,14 +242,12 @@ describe("thread send", () => {
       gone: [],
       runState: recordOf(),
     });
-    // A malformed answer is a lost one: the server may have acted, so the request is kept.
     wire.fail("handBack", { body: { handedBack: [{ userTurnId: a, blocks: [null] }] } });
     const lost = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--all", "--json"]);
     expect(lost.code).toBe(EXIT.unavailable);
     const failure = JSON.parse(lost.stderr.trim().split("\n").at(-1) ?? "");
     expect(failure.hint).toContain("--replay");
     expect(failure.details.request).toEqual({ requestId: expect.any(String), ids: [a, b, c] });
-    // Printed before posting, even under --json.
     expect(JSON.parse(lost.stderr.split("\n")[0] ?? "")).toMatchObject({
       type: "request",
       request: failure.details.request,
@@ -270,7 +263,6 @@ describe("thread send", () => {
       "--full",
       "--json",
     ]);
-    // c was covered by none of the server's lists.
     expect(replayed.code).toBe(EXIT.failed);
     expect(lastRecord(replayed.stdout)).toMatchObject({
       command: "thread.queue.hand-back",
@@ -295,7 +287,6 @@ describe("thread send", () => {
     expect(accounted.stdout).toContain("first");
     expect(accounted.stderr).toContain("replay: ./mf thread queue hand-back");
 
-    // Nothing queued: no request at all, and the claim is the snapshot's.
     wire.snapshot = snapshotOf();
     const before = wire.requestsOf("handBack").length;
     const empty = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--all"]);
@@ -303,7 +294,6 @@ describe("thread send", () => {
     expect(empty.stdout).toContain("nothing waits");
     expect(wire.requestsOf("handBack")).toHaveLength(before);
 
-    // Missing or malformed run-state evidence is no proof: a failure, never "nothing waits" (QB1).
     for (const runState of [undefined, { version: "7" }]) {
       wire.snapshot = () => ({
         ...snapshotOf(),
@@ -321,7 +311,6 @@ describe("thread send", () => {
     }
     expect(wire.requestsOf("handBack")).toHaveLength(before);
 
-    // A definite refusal exits 1.
     wire.fail("handBack", { status: 409, body: { message: "other body" } });
     const refused = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--id", a]);
     expect(refused.code).toBe(EXIT.failed);
@@ -348,12 +337,10 @@ describe("thread send", () => {
     expect(sent.stdout).toContain("requested cancellation of exec-run");
     expect(sent.stdout).not.toContain("runs next");
     expect(wire.bodiesOf("sendNow")).toEqual([body]);
-    // The body and the exact replay command are printed before posting.
     expect(sent.stderr).toContain(
       `replay: ./mf thread queue send-now ${THREAD_ID} --replay '${JSON.stringify(body)}'`,
     );
 
-    // Null: this attempt requested no cancellation. It never claims the reply kept running.
     wire.sendNow = () => ({
       threadId: THREAD_ID,
       cancelledExecutionId: null,
@@ -364,7 +351,6 @@ describe("thread send", () => {
     expect(none.stdout).toContain("this attempt requested no cancellation");
     expect(none.stdout).not.toMatch(/kept running|still running/);
 
-    // Not JSON, an answer missing its record, and an oversized answer are lost: exit 4 with the replay.
     wire.fail("sendNow", { text: "not JSON" });
     wire.fail("sendNow", { body: { threadId: THREAD_ID, cancelledExecutionId: null } });
     wire.fail("sendNow", { text: " ".repeat(20 * 1024 * 1024 + 1) });
@@ -375,7 +361,6 @@ describe("thread send", () => {
       expect(failure.details.request).toEqual(body);
       expect(failure.hint).toContain(`--replay '${JSON.stringify(body)}'`);
     }
-    // The replay re-sends the identical body with no new snapshot read.
     const readsBefore = wire.reads;
     const replayed = await wire.mf([
       "thread",
@@ -411,9 +396,6 @@ describe("thread send", () => {
       cancelledExecutionId: "exec-run",
       runState: recordOf(),
     });
-    // The press lands (the snapshot and journal move on), but its first answer is unreadable.
-    // None of these confirms the press: not JSON, a nested block that is not a block, and an
-    // answer over the session's response limit. Each is a lost answer that keeps the request.
     const malformed = {
       ...wire.stop({} as never),
       handedBack: [{ userTurnId: "u1", blocks: [null] }],
@@ -438,8 +420,6 @@ describe("thread send", () => {
     for (let lostAnswer = 0; lostAnswer < 3; lostAnswer++) {
       const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full", "--json"]);
       expect(lost.code).toBe(EXIT.unavailable);
-      // Under --json the error itself carries the frozen request and the replay command.
-      // (the request is also printed to stderr before posting, as the first line)
       const failure = JSON.parse(lost.stderr.trim().split("\n").at(-1) ?? "");
       expect(lost.stderr.split("\n")[0]).toContain(failure.details.request.requestId);
       expect(failure.hint).toContain("--replay");
@@ -448,7 +428,6 @@ describe("thread send", () => {
     }
     const requestFile = join(await mkdtemp(join(tmpdir(), "mf-stop-")), "request.json");
     await writeFile(requestFile, printed ?? "");
-    // The replay posts the identical request, with no new snapshot read.
     const readsBefore = wire.reads;
     const stopped = await wire.mf([
       "thread",
@@ -461,7 +440,6 @@ describe("thread send", () => {
     expect(stopped.code).toBe(EXIT.ok);
     expect(stopped.stdout).toContain(queued);
     expect(wire.reads).toBe(readsBefore);
-    // The shared Stop body: the record's watermark and execution, and no intents of ours.
     const posted = wire.bodiesOf("stop");
     expect(posted).toHaveLength(4);
     expect(posted[0]).toEqual({
@@ -500,12 +478,9 @@ describe("thread send", () => {
       /timeout: last snapshot showed turn a1 streaming; current state is unconfirmed/,
     );
     expect(text.stderr).toContain("./mf thread stop");
-    // Running out of time never presses Stop or Cancel.
     expect(wire.requestsOf("stop")).toHaveLength(0);
     expect(wire.requestsOf("cancel")).toHaveLength(0);
 
-    // A snapshot still pending at the deadline: the timeout envelope reports it unavailable and
-    // the deadline starts no further read.
     wire.fail("snapshot", { delayMs: 600 }, Number.POSITIVE_INFINITY);
     const readsBefore = wire.requestsOf("snapshot").length;
     const abortedBefore = wire.aborted.filter((request) => request.kind === "snapshot").length;
@@ -586,9 +561,6 @@ describe("thread send", () => {
   it.each(["delayed", "empty"] as const)(
     "keeps a proven send when its diagnostic read is %s",
     async (fault) => {
-      // The first read joins with the reply running; the next shows it complete and proves the claim
-      // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
-      // which the harness holds for 5 s or answers with an empty body.
       wire.snapshot = (read) => {
         if (read === 1)
           return snapshotOf({
@@ -612,7 +584,6 @@ describe("thread send", () => {
         wire.publish(frames.started("a1"));
         publishRecord(wire);
         await wire.until(() => wire.reads >= 2);
-        // Let the proving answer leave, so the held fault is for the read after it.
         await new Promise((resolve) => setTimeout(resolve, 50));
         wire.fail("snapshot", fault === "delayed" ? { delayMs: 5000 } : { status: 204, text: "" });
         wire.publish(frames.finished("a1"));
@@ -624,7 +595,6 @@ describe("thread send", () => {
         finalText: "Hello there",
       });
       if (fault === "delayed") {
-        // The command ended with a read still open: the harness saw the client close it.
         await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
       } else {
         expect(lastRecord(result.stdout)).toMatchObject({ observationIncomplete: true });
@@ -671,7 +641,6 @@ describe("thread view, cancel, events, answer", () => {
   it("prints gaps and finishes events only after replay and live state", async () => {
     replyScenario(wire, {});
     await send("hello");
-    // The journal's retention starts at seq 1: a cursor below it is told what was skipped.
     wire.onSubscribe = (cursor) =>
       BigInt(cursor.lastSeq) < 1n
         ? {
@@ -729,7 +698,6 @@ describe("thread tail --until-idle", () => {
     wire.snapshot = openReply("a1");
     wire.play(async () => {
       await wire.until(() => wire.subscriptions >= 1);
-      // The turn is done and the record idle, but the lease is still awake.
       wire.snapshot = () =>
         snapshotOf({ seq: wire.head, awake: true, turns: [replyTurn("a1", 1, { text: "Hi" })] });
       wire.publish(frames.started("a1"));

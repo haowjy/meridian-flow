@@ -1,13 +1,3 @@
-/**
- * useLiveTurnAnnouncements — routes live assistant turn transitions to a11y.
- *
- * Watches the canonical assistant `Turn` from ThreadStore (not a separate live
- * view model), announces thinking/tool/completion states, and restores composer
- * focus after terminal transitions.
- *
- * A failure is not announced here: a failed reply is a card (`chatCards`) and the chat's one card
- * announcer (`useChatCardAnnouncer`) speaks it, once, for a failure the writer watched happen.
- */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { groupDeliverySegments, isToolViewVisible, type ToolView } from "@meridian/thread-client";
@@ -24,8 +14,6 @@ function runningTool(turn: Turn | null): ToolView | null {
   if (!block) return null;
   const segment = groupDeliverySegments([block])[0];
   if (segment?.kind !== "tool") return null;
-  // Protocol primitives render their UX elsewhere; announcing them would
-  // narrate a row the writer cannot see.
   return isToolViewVisible(segment.tool) ? segment.tool : null;
 }
 
@@ -37,7 +25,6 @@ export function useLiveTurnAnnouncements(
   const announcedThinkingRef = useRef(false);
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
-  // A reply that ended before this chat loaded is history, not a transition the writer watched.
   const watchedTurnRef = useRef<string | null>(null);
   if (liveTurn && (status === "pending" || status === "streaming" || status === "awaiting_answer"))
     watchedTurnRef.current = liveTurn.id;

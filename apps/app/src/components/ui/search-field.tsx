@@ -4,10 +4,6 @@ import { type Ref, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/**
- * The one search box: pickers' and lists' filters. Borderless, like the rows under it: it fills
- * on hover and rings while focused. Its label is also the placeholder.
- */
 export function SearchField({
   ref,
   value,
@@ -23,11 +19,8 @@ export function SearchField({
   onChange: (value: string) => void;
   label: string;
   disabled?: boolean;
-  /** Enter in the field: a picker whose first result is the obvious choice picks it. */
   onSubmit?: () => void;
-  /** Takes part in its list's arrow keys (`handleListKeys`). */
   listItem?: boolean;
-  /** Its placement in the host. */
   className?: string;
 }) {
   return (
@@ -59,7 +52,6 @@ export function SearchField({
               }
             : undefined
         }
-        // The browser's own clear button takes the platform's accent; this one takes ours.
         className={cn(
           "h-8 pr-7 pl-8 coarse:h-11 coarse:pr-11 [&::-webkit-search-cancel-button]:appearance-none",
           "border-transparent focus-visible:border-transparent",
@@ -83,10 +75,6 @@ export function SearchField({
   );
 }
 
-/**
- * A search box that keeps keystrokes to itself and reports only the settled value, so typing
- * never re-renders the list it filters; see `useSettledSearch`.
- */
 export function SettledSearchField({
   value,
   onSettle,
@@ -99,11 +87,6 @@ export function SettledSearchField({
   return <SearchField {...field} value={text} onChange={setText} />;
 }
 
-/**
- * Reports the trimmed text (null when empty) 200ms after typing stops, at
- * once when cleared. Resyncs from an outside change to `settled` (Back or
- * Forward) without clobbering text the writer is still typing.
- */
 function useSettledSearch(
   settled: string | null,
   onSettle: (value: string | null) => void,

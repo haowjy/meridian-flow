@@ -1,8 +1,3 @@
-/**
- * `save_agents`: the AI's Save, through the same `savePackages` as the writer's button. An Error in
- * a package's own files comes back as the tool result with Mars's code, key path and message
- * (never a refused write): the files stay as written, so the model fixes them and saves again.
- */
 import {
   type AgentsLevel,
   agentsLocationOf,
@@ -35,7 +30,6 @@ const SaveAgentsInputSchema = z
 
 const LEVEL_NAME: Record<AgentsLevel, string> = { project: ".agents", user: "~/.agents" };
 
-/** The package a path names: the level's own files, or the import it is inside. */
 function packageOf(path: string): { level: AgentsLevel; folder: string } | null {
   const parsed = parseUnifiedContextUri(path);
   const at = parsed.ok ? agentsLocationOf(parsed.value.scheme, parsed.value.path) : null;
@@ -49,23 +43,17 @@ const where = (item: Pick<SaveOutcome, "level" | "folder">) =>
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
-/** One finding under the file it is in: the file is named once, above its findings. */
 const line = (finding: SaveOutcome["findings"][number]) => {
   const key = finding.path.length ? ` ${finding.path.join(".")}` : "";
   return `  [${finding.code}]${key}: ${finding.message}`;
 };
 
-/** Findings grouped under their file, each file named once with what its findings did to it. */
 const byFile = (findings: SaveOutcome["findings"], verdict: (file: string) => string): string[] =>
   [...new Set(findings.map((finding) => finding.file))].flatMap((file) => [
     `${file} ${verdict(file)}:`,
     ...findings.filter((finding) => finding.file === file).map(line),
   ]);
 
-/**
- * What the model reads: the items an error keeps out of use first, each with its errors, then what
- * was saved, then warnings and renames.
- */
 export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
   if (outcomes.length === 0)
     return "Nothing to save: those packages have no files and no saved version.";
@@ -79,7 +67,6 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
               : "new chats can't use it until it is saved"
           }. Your edits are in the files.`,
           ...byFile(item.findings, () => "fails the check"),
-          "Fix these and save again.",
         ].join("\n");
       }
       const held = item.findings.filter(
@@ -96,7 +83,6 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
             ? "fails the check, so this edit isn't in use; its last good save stays in use"
             : "fails the check and has no good save, so it is left out",
         ),
-        ...(held.length ? ["Fix these and save again."] : []),
         item.outcome === "unchanged"
           ? `Already saved: ${where(item)} has no ${held.length ? "other " : ""}changes since its saved version.`
           : `Saved ${where(item)}: ${count(item.changes.length, "file")} changed. New chats use it; this chat keeps the version it started with.`,
@@ -152,7 +138,6 @@ export function createSaveAgentsRegistration(
           projectId: thread.projectId,
           packages: targets.flatMap((item) => item.target ?? []),
         });
-        // The chat card reads `agentsSaved` from the result's metadata, the model reads the text.
         return { output: { outcomes }, metadata: { agentsSaved: outcomes } };
       },
     },

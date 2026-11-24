@@ -1,9 +1,3 @@
-/**
- * Thread repository ports: the persistence contracts for threads, turns, blocks,
- * model responses, and usage rollups, plus their input/result types and the
- * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
- */
-
 import type { DraftId } from "@meridian/contracts";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
@@ -76,38 +70,27 @@ export interface UpsertBlockInput extends CreateBlockInput {
   id: string;
 }
 
-/**
- * Every read returns the conversation: the blocks of a writer message a hand-back took out of the chat
- * are not in it. They stay stored for diagnostics and are reachable by no port method.
- */
 export interface BlockRepository {
   create(input: CreateBlockInput): Promise<Block>;
   upsert(input: UpsertBlockInput): Promise<Block>;
-  /** Replace an existing block without minting a missing card or changing its placement. */
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
-  /** The blocks of the named turns in one bounded read, ordered by turn then sequence; a turn with none is absent. */
   listByTurnIds(turnIds: readonly TurnId[]): Promise<Block[]>;
-  /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
   listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
-  /** All conversation blocks of a thread, ordered by turn position then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }
 
 export interface ThreadMediaInclusion {
   threadId: ThreadId;
   blockId: string;
-  /** Which media part of the block; 0 for a picture. */
   partIndex: number;
   decisionTurnId: TurnId;
   included: boolean;
 }
 
 export interface ThreadMediaInclusionRepository {
-  /** Latest decision per media part, ordered by the deciding turn's transcript position. */
   findByThread(threadId: ThreadId): Promise<ThreadMediaInclusion[]>;
-  /** Append-only decision history, used to reconstruct forks at their cutoff. */
   listByThread(threadId: ThreadId): Promise<ThreadMediaInclusion[]>;
   set(input: ThreadMediaInclusion): Promise<void>;
 }
@@ -150,16 +133,9 @@ export interface CreateModelResponseResult {
 }
 
 export interface ModelResponseRepository {
-  /** Inserts a response row, or returns the existing row plus `inserted:false` on response-id replay. */
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
-  /**
-   * Most recent response the provider metered (input or output tokens), by turn position and
-   * sequence; cache and estimate facts. A row from a call stopped before output is a record that
-   * the call was made, not a response, and is skipped.
-   */
   findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
-  /** Same as `findLatestByThread`, limited to the supplied active ancestor chain. */
   findLatestForTurns(turnIds: readonly TurnId[]): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
@@ -197,7 +173,6 @@ export interface FinalizeExecutionReportInput {
   costMillicredits?: number | null;
 }
 export interface ExecutionReportRepository {
-  /** Nearest admitted execution on this assistant's ancestor chain. */
   findByTurn(childThreadId: ThreadId, turnId: TurnId): Promise<SavedExecutionReport | null>;
   admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
   captureOnce(
@@ -211,17 +186,13 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
-  /** Fences these children's unpublished runs: their publication enqueues no parent notice. */
   withdrawNotices(childThreadIds: readonly ThreadId[]): Promise<void>;
-  /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
-  /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
     limit: number,
     afterExecutionId?: TurnId,
   ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "executionTurnId">>>;
-  /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
   listPendingPublication(
     limit: number,
     afterExecutionId?: TurnId,
@@ -249,20 +220,12 @@ export type LatestChildExecution = Pick<
 >;
 
 export interface CreateThreadInput {
-  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: ThreadId;
-  /**
-   * The root chat's draft: with No Work, its lineage's, minted by the client beside `id` (the
-   * insert mints one if omitted); in a Work, one of the Work's drafts, else the Work's default.
-   */
   draftId?: DraftId;
   userId: UserId;
   projectId: ProjectId;
-  /** The Work the chat is being made in, so its root names one of the Work's drafts. */
   workId?: WorkId | null;
-  /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
-  /** Every route passes one; omitted (test fixtures) runs the Agent's own. */
   overrides?: ThreadOverrides;
   kind?: ThreadKind;
   title?: string | null;
@@ -275,7 +238,6 @@ export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
 }
 
-/** Immutable system and tool bytes stored in a prompt bake. */
 export interface PromptBakeContent {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
@@ -297,63 +259,40 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
-  /** Reads the thread and parent ownership/deletion state without live filters. */
   findByIdIncludingDeleted(
     id: ThreadId,
   ): Promise<(Thread & { project: Pick<Project, "userId" | "deletedAt"> | null }) | null>;
-  /** Exact live handle lookup by server-assigned `cN`/`pN` ref; caller must authorize the project. */
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
-  /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
-  /** Locks the thread; optional Work targets lock with its primary in canonical order (restore). */
   lockByIdIncludingDeleted(
     id: ThreadId,
     additionalWorkIds?: readonly WorkId[],
   ): Promise<(Thread & { deletedByWorkId: WorkId | null }) | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
-  /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
   listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
-  /**
-   * Subagent ids below `threadId`, parents before children, trashed ones included
-   * (a trashed child can still be running). With `spawnedByTurnId`, only the
-   * subtrees whose root the execution that reserved that turn spawned.
-   */
   listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
-  /**
-   * A lineage cancellation's one write of `spawn_status`: every spawn among these threads whose
-   * run has not finished becomes `cancelled`.
-   */
   cancelRunningSpawns(threadIds: readonly ThreadId[]): Promise<void>;
-  /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
   listLineageChildren(input: {
     rootThreadId: ThreadId;
     parentIds: ThreadId[];
     limit: number;
     after?: { createdAt: string; id: string };
   }): Promise<Array<Thread & { upThreadId: ThreadId; siblingCount: number }>>;
-  /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
     workId: WorkId,
     limit: number,
   ): Promise<WorkThreadSummary[]>;
-  /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
-  /** Sets or clears the model and reasoning setting this chat runs on instead of its Agent's. Not activity: `updatedAt` stays. */
   setOverrides(id: ThreadId, overrides: ThreadOverrides): Promise<Thread>;
-  /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
   setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
-  /** Locks, inserts, and points at the first bake; contenders receive the winner. */
   bakeInitialPrompt(
     id: ThreadId,
     input: PromptBakeContent,
   ): Promise<{ thread: Thread; bake: PromptBake }>;
-  /** Recomputes total cost from all model responses belonging to this thread's turns. */
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;
-  /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
 }
 
@@ -362,33 +301,17 @@ export interface WorkThreadSummary {
   updatedAt: string;
 }
 
-/** One direct child row, as the activity read needs it. */
 export type ThreadChild = Pick<
   Thread,
   "id" | "parentThreadId" | "ref" | "title" | "agentName" | "spawnStatus" | "originTurnId"
 >;
 
-/**
- * Read seam for the derived run status. The runtime's lease authority
- * (`RunClaim`) satisfies it; the threads domain depends on this narrow
- * port rather than the runtime domain, so status stays a pure lease function.
- */
 export interface ThreadStatusReader {
   read(threadId: ThreadId): Promise<ThreadStatus>;
-  /** Assistant turn bound to the thread's live lease; null when asleep or unbound. */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
-  /**
-   * Batch lease read for a page of threads, so list reads do not re-derive
-   * liveness in SQL. Only live leases appear in the map.
-   */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
 }
 
-/**
- * Read seam for the chat's run-state record at the journal head. Inside the snapshot's
- * repeatable-read transaction it is coherent with the snapshot's turns; the runtime composition
- * supplies it so the threads domain never imports the runtime's adapters.
- */
 export interface ThreadRunStateReader {
   readRunState(threadId: ThreadId): Promise<RunState>;
 }
@@ -406,7 +329,6 @@ export interface ProjectChatFeedRepository {
     limit: number;
     favorite: boolean;
     workId: WorkId | null;
-    /** Case-insensitive title substring; null lists every chat. */
     search: string | null;
   }): Promise<ProjectChatItem[]>;
 }
@@ -419,38 +341,28 @@ export interface ThreadUserStateRepository {
   }): Promise<UpdateThreadUserStateResponse>;
 }
 
-/**
- * Internal spawn gate bypass. Kept off ThreadRepository so route-facing
- * services cannot create subagent threads through the normal thread repo port.
- */
 export interface SubagentThreadFactory {
   createSubagent(input: CreateSubagentThreadInput): Promise<Thread>;
 }
 
 export interface DerivedPrimaryThreadFactory {
-  /** Inserts by the caller-minted ID, returning the existing row on ID conflict. */
   createDerivedPrimary(
     input: CreateDerivedPrimaryThreadInput,
   ): Promise<{ thread: Thread; created: boolean }>;
 }
 
 export interface CreateTurnInput {
-  /** Event/projector callers may pre-mint the row identity before insert. */
   id?: TurnId;
   threadId: ThreadId;
-  /** Event/projector callers may preserve the event-authored creation time. */
   createdAt?: string;
   prevTurnId?: TurnId | null;
   promptBakeId?: PromptBakeId | null;
   compactionModel?: string | null;
   role: TurnRole;
-  /** No default: every creation path must state who authored the turn. */
   origin: TurnOrigin;
   writeMode?: AiWriteMode | null;
   status?: TurnStatus;
-  /** The execution reserving this turn; write-once, null for turns no execution reserves. */
   executionId?: string | null;
-  /** The messages the reservation is for; write-once. */
   reservedForUserTurnIds?: readonly string[] | null;
   requestParams?: JsonValue | null;
   metadata?: JsonValue | null;
@@ -466,7 +378,6 @@ export interface UpdateTurnStatusInput {
   metadata?: JsonValue | null;
 }
 
-/** One owner-local slice of an effective transcript. Bounds are exclusive/inclusive. */
 export interface TranscriptSpan {
   threadId: ThreadId;
   afterPosition: number;
@@ -493,81 +404,41 @@ export interface ReadTranscriptItemsInput {
   through?: TranscriptKey;
 }
 
-/**
- * Reads return the conversation: a writer message a hand-back took out of the chat is not returned by
- * `findById` or `listByThread`, and its blocks are not in `BlockRepository`. A forgotten turn (a failed
- * attempt the writer retried or the chat moved past) is not in `listByThread` or the transcript spans, but
- * `findById` still returns it with its `forgottenBy`: it is an identity read. Positions, `prevTurnId`,
- * the leaf and fork cutoffs read the graph, `turnGraph(turns)` from `./turn-graph.js`, which only the
- * modules that own that logic may import.
- */
 export interface TurnRepository {
   readonly [TURN_GRAPH]: TurnGraph;
-  /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
-  /** A conversation turn by id; null for a handed-back writer message. */
   findById(id: TurnId): Promise<Turn | null>;
-  /** Latest execution or automatic satisfaction of one inbox control. */
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
-  /** The conversation turns in position order. */
   listByThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Latest local requester text per thread, without walking inherited transcript spans. */
   listLatestLocalRequesterText(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, string>>;
-  /** Keyset page of pending placeholders eligible for orphan repair. */
   listPendingPlaceholders(
     limit: number,
     afterTurnId?: TurnId,
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
-  /** Reads bounded transcript items by `(position, sequence)` across owner spans. */
   readTranscriptItems(input: ReadTranscriptItemsInput): Promise<TranscriptItemRow[]>;
-  /** Counts the conversation turns (`isConversationTurn`) across owner spans before `beforePosition`. */
   countConversationTurns(spans: readonly TranscriptSpan[], beforePosition: number): Promise<number>;
-  /** The Nth conversation turn (from 1) across owner spans in transcript order, or null. */
   findConversationTurnByOrdinal(
     spans: readonly TranscriptSpan[],
     ordinal: number,
   ): Promise<Turn | null>;
-  /** Finds the first unsettled turn across owner spans using the partial index. */
   findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
-  /** Unsettled turns in one claimed thread, ordered by transcript position. */
   listUnsettledForThread(threadId: ThreadId): Promise<Turn[]>;
-  /**
-   * Every turn an execution reserved, ordered by position. Empty for an
-   * execution that reserved nothing, and for ids that are not UUIDs.
-   */
   listByExecution(threadId: ThreadId, executionId: string): Promise<Turn[]>;
-  /** The first turn the Retry request `replyTurnId` reserved (`metadata.retryReplyId`), or null. */
   findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
-  /** User turns of writer messages a hand-back took out of the chat. Their rows and blocks stay for diagnostics. */
   listHandedBackIds(threadId: ThreadId): Promise<ReadonlySet<string>>;
-  /**
-   * Stamps `forgotten_by_turn_id` on the named turns of the forgetting turn's thread (write-once: a turn
-   * already forgotten keeps its stamp). Returns the ids it stamped.
-   */
   forgetTurns(turnIds: readonly TurnId[], byTurnId: TurnId): Promise<TurnId[]>;
-  /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
   listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
-  /** Complete epoch boundaries in the supplied transcript spans. */
   listTranscriptBoundaries(spans: readonly TranscriptSpan[]): Promise<Turn[]>;
-  /** Bounded global discovery for startup orphan repair, ordered by owner and position. */
   listUnsettledPrimaryTurns(
     limit: number,
     after?: { threadId: ThreadId; position: number },
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "position" | "role" | "status">>>;
-  /**
-   * The assistant container of a run that the caller has already proven live
-   * (via the runner map), or null. Durable status is not a liveness authority:
-   * this is the setup-window fallback for when the runner owns the thread but
-   * has not published the assistant id yet, so `createdAfter` excludes older
-   * crash-orphaned non-terminal turns.
-   */
   findRunningAssistantId(
     threadId: ThreadId,
     options?: { createdAfter?: Date },
   ): Promise<TurnId | null>;
   updateStatus(id: TurnId, input: UpdateTurnStatusInput): Promise<Turn>;
-  /** Recomputes usage rollups from this turn's model_responses rows. */
   recomputeRollups(id: TurnId): Promise<Turn>;
 }
 
@@ -590,20 +461,16 @@ export interface ThreadDocumentRepository {
 }
 
 export interface ThreadWorksRepository {
-  /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
-  /** Demotes the previous membership and promotes/upserts the target under the thread row lock. */
   rebindPrimary(
     threadId: ThreadId,
     workId: WorkId,
   ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
-  /** Upserts a primary onto an already-locked Work while restore holds the thread row lock. */
   rebindPrimaryForRestore(threadId: ThreadId, workId: WorkId): Promise<void>;
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }
 
-/** A membership target belongs to a different project than its thread. */
 export class ThreadWorkProjectMismatchError extends Error {
   constructor(readonly workId: WorkId) {
     super("Work is not available in this project");
@@ -611,7 +478,6 @@ export class ThreadWorkProjectMismatchError extends Error {
   }
 }
 
-/** Membership mutation lost the thread lifecycle race under its row lock. */
 export class ThreadMembershipUnavailableError extends Error {
   constructor(readonly threadId: ThreadId) {
     super("Thread is unavailable for membership mutation");
@@ -630,15 +496,10 @@ export type ThreadRepositories = {
   mediaInclusions: ThreadMediaInclusionRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ExecutionReportRepository;
-  /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
   promptBakes: PromptBakeRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  /**
-   * Serializes a complete turn-start transition on the thread and rejects
-   * when another transition advanced the expected active leaf first.
-   */
   runTurnStartTransition<T>(
     threadId: ThreadId,
     expectedActiveLeafTurnId: TurnId | null,
@@ -646,7 +507,6 @@ export type ThreadRepositories = {
   ): Promise<T>;
 };
 
-/** Adapter-level aggregate used only at composition time for internal spawn wiring. */
 export type InternalThreadRepositories = ThreadRepositories & {
   threads: ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory;
 };

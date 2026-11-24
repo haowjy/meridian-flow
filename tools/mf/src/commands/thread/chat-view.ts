@@ -1,12 +1,3 @@
-/**
- * `thread view`: the chat transcript as the app's view model decides it. Hydrate the snapshot,
- * run `chatCards` and `viewTranscript` over its facts, and print rows and cards structurally
- * (text) or as the versioned `chatView: 3` envelope (its delivery groups carry their stable id)
- * (JSON). Nothing here decides a row or a card;
- * it only prints what the shared projections returned, and states `inputs`: what they were
- * computed from. `./mf` holds no local command state, so a card from one (a lost Retry, a failed
- * Stop, an unsent message) cannot appear here: only the cards durable facts give.
- */
 import type { JsonValue, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
   type ProviderErrorResponse,
@@ -55,24 +46,17 @@ export const CHAT_VIEW_VERSION = 3;
 const TEXT_LIMIT = 1_500;
 
 export type ChatViewInputs = {
-  /** Where the turns came from. */
   turns: "snapshot";
-  /** The fork's inherited history is not read here; a fork's own rows start at its fork point. */
   inherited: "omitted";
   localRecords: "none";
-  /** Cards come from the snapshot's facts alone: no unresolved commands, Retry outcomes or unsent messages. */
   cards: "snapshot facts";
   standIns: "none";
-  /** No optimistic opening seed: a handoff's seed appears when the server has it. */
   opening: "none";
-  /** No live children are known, so a reply is never held open for background subagents. */
   liveActivity: "none";
   queued: "snapshot run state";
-  /** The browser fetches each child's report for its card; the snapshot has none, so no card here carries one. */
   backgroundReports: "not fetched";
 };
 
-/** A tool call the writer sees in a fold. `--full` adds what the app's tool row is drawn from. */
 export type ChatTool = {
   name: string;
   status: string;
@@ -82,9 +66,7 @@ export type ChatTool = {
   result?: JsonValue | null;
   message?: string | null;
   streamedOutput?: string | null;
-  /** `--full`: the tool's metadata as stored; `workReceipt` there sets a Work tool's visible title. */
   metadata?: JsonValue | null;
-  /** `--full`: the Work receipt the view model parsed from `metadata`. */
   workReceipt?: WorkReceipt | null;
 };
 
@@ -95,7 +77,6 @@ export type ChatDelivery = {
   title: string | null;
   sender: DeliveryEvent["sender"] | null;
   outcome: string | null;
-  /** The notification's text; empty for an attachment-only message. */
   message: string;
 };
 
@@ -113,22 +94,17 @@ export type ChatItem =
       partial: boolean;
       artifacts: number;
       reason: string | null;
-      /** `--full`: the report's payload and artifact references. */
       payload?: JsonValue;
       artifactRefs?: unknown[];
     }
   | {
       kind: "artifact";
       blockType: string;
-      /** The custom card's kind; the card words its own title and outcome from `content`. */
       card: string | null;
-      /** A plain row's body, when the block is neither a card nor an image. */
       body: string | null;
-      /** `--full`: the card's content and a direct launch's saved result. */
       content?: JsonValue;
       direct?: unknown;
     }
-  /** The reply's delivery groups, last as the app draws them. A group of several is one merged row. */
   | { kind: "delivery"; groups: { id: string; events: ChatDelivery[] }[] };
 
 export type ChatRow = {
@@ -137,33 +113,24 @@ export type ChatRow = {
   kind: ViewRow["kind"];
   role: Turn["role"];
   status: Turn["status"];
-  /** The source thread an inherited row came from; null for this chat's own rows. */
   inheritedFrom: string | null;
   queued: boolean;
   continuing: boolean;
-  /** A writer message's text. */
   text?: string;
-  /** Where the writer's references and skills sit in `text`. */
   occurrences?: { references: WriterReferenceOccurrence[]; skills: unknown[] };
   error?: string;
-  /** Why a failed reply failed, and the provider's own answer when it gave one. */
   failureReason?: string;
   providerError?: ProviderErrorResponse;
   model?: string;
   usage?: { inputTokens: number; outputTokens: number; costUsd: string };
   items?: ChatItem[];
-  /** Index in `items` where the writer-facing answer starts. */
   finalFrom?: number;
-  /** Tool calls the writer sees elsewhere, so they have no row. */
   hiddenToolCalls?: string[];
-  /** `--full`: the turn's parsed Work receipts, as the app's receipt rows read them. */
   workReceipts?: WorkReceipt[];
   response?: { parts: string[]; stats: TurnStats };
   compaction?: ReturnType<typeof readCompactionFacts>;
-  /** The mode a write-mode divider switched to. */
   writeMode?: string;
   handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean; brief: string | null };
-  /** The asking turn's receipt, as the app draws it under the reply. */
   ask?: AskReceipt;
   references?: Array<{ threadId: string; title: string | null }>;
 };
@@ -184,17 +151,13 @@ export type ChatViewEnvelope = {
     status: string;
     runningTurnId: string | null;
     pending: number;
-    /** The chat's applied write mode, and the mode of a switch still queued behind the reply. */
     mode: string;
     switchQueued: string | null;
     actionRequired: boolean;
   };
   inputs: ChatViewInputs;
-  /** The failure cards `chatCards` projects for these facts, as the app draws them (usage first). */
   cards: ChatCard[];
-  /** The durable asks in the snapshot, including resolved asks outside the selected rows. */
   asks: ThreadAsk[];
-  /** The ask that takes over the composer, if one is open. */
   openAsk: OpenAsk["ask"] | null;
   rows: ChatRow[];
   showing: number;
@@ -203,10 +166,6 @@ export type ChatViewEnvelope = {
 
 export type RowSelection = { full: boolean; turnId?: string; last?: number };
 
-/**
- * The shared projections over a snapshot's facts: no local records, stand-ins or live activity.
- * The cards are decided first, and the view keeps the rows they are anchored on, as in the app.
- */
 export function chatSnapshot(
   snapshot: Pick<ThreadSnapshotResponse, "asks" | "liveState" | "thread">,
   turns: Turn[],
@@ -234,7 +193,6 @@ export function chatSnapshot(
   return { view, cards };
 }
 
-/** `--turn` (id or prefix) or the last N rows (all with --full); `total` counts the matches. */
 export function selectRows(
   rows: readonly ViewRow[],
   options: RowSelection,
@@ -246,7 +204,6 @@ export function selectRows(
   return { rows: matched.slice(-last), total: matched.length };
 }
 
-/** The mode line: the chat's applied mode, and the mode of a switch queued behind the reply (the shared switch fold). */
 function switchLine(live: ThreadSnapshotResponse["liveState"]) {
   const queued = switchState(viewOfLive(live))?.rows.find((row) => row.status === "queued");
   return { mode: live.runState.mode, switchQueued: queued?.mode ?? null };
@@ -457,7 +414,6 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** The fold counts in plain words: `read 2 docs, 3 steps`. */
 export function plainDigest(digest: FoldDigest): string {
   const parts: string[] = [];
   if (digest.invokedSkills.length) parts.push(`invoked ${digest.invokedSkills.join(", ")}`);
@@ -478,7 +434,6 @@ function sumDigests(items: readonly ChatItem[]): FoldDigest {
   return total;
 }
 
-/** Text mode only: a space before a reference that touches the word before it (the app draws a chip there). */
 function setApartReferences(
   text: string,
   references: readonly WriterReferenceOccurrence[],
@@ -549,7 +504,6 @@ function rowLines(row: ChatRow): string[] {
         `provider error (${row.providerError.status ?? "in-stream"}): ${row.providerError.message}`,
       ),
     );
-  // Deliveries under an asking reply arrived after its question, so they follow its receipt.
   const deliveryLines: string[] = [];
   row.items?.forEach((item, index) => {
     const marker = index === row.finalFrom ? "answer: " : "";
@@ -628,7 +582,6 @@ function answerLine(answer: ResolvedQuestionAnswer): string {
   }
 }
 
-/** The request's facts: `work.update @w2 {"name":"Beta"}`. The app words them. */
 function permissionLine(payload: Extract<OpenAsk["ask"], { kind: "permission" }>["payload"]) {
   const target = payload.work
     ? ` ${payload.work.handle ? `@${payload.work.handle}` : "No Work"}`
@@ -666,7 +619,6 @@ function deliveryLine(event: ChatDelivery): string {
   return `${senderName ? `from ${senderName}:` : (event.agentName ?? "message")}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`;
 }
 
-/** One card as a line: its copy key, where it sits, its action and its occurrence key. */
 function cardLine(card: ChatCard): string {
   const anchor =
     typeof card.anchor === "string"

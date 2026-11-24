@@ -1,10 +1,3 @@
-/**
- * Spawn primitive tools: spawn (create a child), thread_message (put a message
- * into a thread), and return_result (child-side). Handlers are thin —
- * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
- * the executor before its handler runs.
- */
-
 import {
   type InvocationPatch,
   invocationPatchSchema,
@@ -31,7 +24,6 @@ import type {
   ToolRegistration,
 } from "./types.js";
 
-// Subagents get a short prompt cache, so a finished child's context goes cold fast.
 const SPAWN_REUSE_GUIDANCE =
   "Prefer a fresh subagent over messaging one that has finished, except for a quick follow-up.";
 const SPAWN_DESCRIPTION = `Run a subagent in its own thread. Prefer a named subagent from your roster; omitting \`agent\` runs a general subagent with your model, tools and permissions but not your instructions, so use that sparingly and brief it fully. ${SPAWN_REUSE_GUIDANCE} Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait. A child that stops says what it was missing: carry on yourself, send it what it needs, or ask the writer.`;
@@ -43,10 +35,6 @@ const { "disallowed-tools": _authoringToolList, ...invocationPatchShape } =
 const catalog = new Set<string>(TOOL_CATALOG);
 const UNKNOWN_TOOL = `isn't a tool; the tools are ${TOOL_CATALOG.join(", ")}`;
 
-/**
- * The model names real tools, so no alias fold: an unknown name is refused
- * rather than silently denying nothing.
- */
 const DisallowedToolsSchema = z
   .array(z.string())
   .superRefine((names, context) => {
@@ -62,11 +50,6 @@ const DisallowedToolsSchema = z
   })
   .transform((names) => [...new Set(names)]);
 
-/**
- * The invocation patch, published with its full typed shape (audit F2). Its one
- * spelling change: the model writes `disallowed_tools`, the configuration keeps
- * `disallowed-tools`.
- */
 const SpawnOverridesSchema = z
   .object({
     ...invocationPatchShape,
@@ -130,16 +113,10 @@ export const SpawnInputSchema = z
   .strict();
 export type SpawnToolArgs = z.output<typeof SpawnInputSchema>;
 
-/** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
-/**
- * The canonical capture schema with model-facing copy. Tool arguments arrive
- * as parsed JSON, so `payload` is published as any value: the canonical
- * recursive JSON-value schema would add a self-referencing `$defs` entry.
- */
 const ReturnResultInputSchema = returnResultCaptureSchema.extend({
   summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
   payload: z.unknown().describe("Optional JSON result.").optional(),
@@ -256,7 +233,6 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
-      // The child's saved report renders in its place; history withholds its arguments.
       historyKind: "routine",
       advertise: false,
     },

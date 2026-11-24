@@ -1,4 +1,3 @@
-/** GET /api/threads/[threadId]/debug/model-requests — dev-only model-request capture for thread owners. */
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import {

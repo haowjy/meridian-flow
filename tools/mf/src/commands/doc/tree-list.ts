@@ -1,8 +1,3 @@
-/**
- * `./mf` as a tree-list client: the project's list opened through the same package the browser
- * uses, records made with the package's writer, and the server's admission read back from a second
- * copy of the list. There is no route for a tree change: the list is the write path.
- */
 import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
 import {
   type DocVersion,
@@ -35,12 +30,10 @@ import type { Session } from "../../core/session";
 
 const SYNC_TIMEOUT_MS = 15_000;
 
-/** The list's one doc in its room's envelope. */
 const LIST_DOC = "s";
 
 type Connection = { doc: LoroDoc; socket: LoroSocket; room: string; sent: DocVersion };
 
-/** A fresh copy of the list, joined to its room and holding everything the server stores. */
 async function connect(session: Session, list: TreeListRef): Promise<Connection> {
   const socket = await LoroSocket.open(session);
   const doc = new LoroDoc();
@@ -84,7 +77,6 @@ export class TreeList {
     private readonly session: Session,
     private readonly list: TreeListRef,
     private readonly main: Connection,
-    /** `user:<id>`: the only actor an admission accepts from this account. */
     readonly actor: string,
   ) {}
 
@@ -92,15 +84,10 @@ export class TreeList {
     return new TreeList(session, list, await connect(session, list), actor);
   }
 
-  /** The list as the copy stands, records appended a moment ago included: Live's, or a draft's. */
   replay(view: View = LIVE): TreeProjection {
     return replayView(this.main.doc, view);
   }
 
-  /**
-   * Whether only `draft` holds `node`, by the rule the server stores as `exists_only_in_draft`:
-   * such a document keeps its text in its Live room, where the editor and the model write it.
-   */
   onlyInDraft(node: string, draft: string): boolean {
     const rows = draftRows(
       projectedRows(this.replay()),
@@ -110,12 +97,6 @@ export class TreeList {
     return rows.get(node)?.existsOnlyInDraft === true;
   }
 
-  /**
-   * Makes records with the package's writer on the copy, sends them, and once the room has
-   * acknowledged them reads the list again from a second copy: the server stores a client's
-   * records and its stamps on them in one transaction, so that copy has each record, and a
-   * `dropped` stamp is the server's whole answer for a record, with its reason.
-   */
   async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
     const { main } = this;
     const records = [...make(new TreeWriter(main.doc))];

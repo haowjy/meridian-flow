@@ -11,18 +11,8 @@ import type {
 } from "./model-result.js";
 
 /**
- * The `read` call that targets one path, in the form results print for the
- * model. A live read's follow-ups stay live; the default needs no `version`.
- */
-export function readCall(path: string, version?: "draft" | "live"): string {
-  const versionArg = version === "live" ? `, "version": "live"` : "";
-  return `read({"path": ${JSON.stringify(path)}${versionArg}})`;
-}
-
-/**
  * Renders one status line, any notes and the message, then the blocks as
- * `hash|text` lines and the concurrent-edit account. An outline says once how
- * to read a section, and each heading carries its `#slug`.
+ * `hash|text` lines and the concurrent-edit account. Each outline heading carries its `#slug`.
  */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
@@ -36,9 +26,6 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   ];
   if (result.message) sections.push(result.message);
   const outline = outlineFile(result);
-  if (outline) {
-    sections.push(`Read a section with ${readCall(`${outline}#<slug>`, result.read?.version)}.`);
-  }
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
   if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
@@ -98,7 +85,7 @@ function statusLine(result: AgentEditResultV1): string {
 function pendingLine(result: AgentEditResultV1): string[] {
   if (!result.tree?.firstDrafted || result.destination !== "draft") return [];
   return [
-    "not applied yet: tree changes in this chat's draft stay out of live until the user applies them in Review changes. Tell the user they are waiting for review.",
+    "not applied yet: tree changes in this chat's draft stay out of live until the user applies them.",
   ];
 }
 
@@ -174,33 +161,27 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
 }
 
 const UNCHANGED_NOTE =
-  "unchanged: nothing was written; the document as you last read it already holds this content.";
+  "unchanged: nothing was written; the document as you last read it already held this content.";
 
 function notes(result: AgentEditResultV1): string[] {
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
   if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
   if (result.status === "reconciled") {
-    lines.push("later edits were kept, so the text may not match how it was before the write.");
+    lines.push("later edits were kept.");
   }
-  if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
+  if (result.documentEmpty) lines.push("document is now empty.");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.awarenessDegraded) {
-    lines.push("the write landed, but concurrent changes could not be reported.");
+    lines.push("concurrent changes not reported.");
   }
   return lines;
 }
 
-/**
- * Who changed which blocks after the model last read them, by hash. The one line of repair
- * guidance appears only when a changed block is in the echo, where a merge can have garbled it.
- */
+/** Who changed which blocks after the model last read them, by hash. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
-  const lines = listing.groups.flatMap((group) => {
-    const changed = [
-      ...(group.shown?.map((hash) => `${hash} (in the echo)`) ?? []),
-      ...(group.other ?? []),
-    ];
+  return listing.groups.flatMap((group) => {
+    const changed = group.changed ?? [];
     const did = [
       ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
       ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
@@ -212,15 +193,6 @@ function concurrentLines(listing: AgentEditConcurrentListing): string[] {
         : []),
     ];
   });
-  const merged = listing.groups.some((group) => group.shown?.length);
-  return [
-    ...lines,
-    ...(merged
-      ? [
-          "The echo is the text after both edits merged. If the merge left text broken, fix it; leave what reads right.",
-        ]
-      : []),
-  ];
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */

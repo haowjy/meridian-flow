@@ -1,9 +1,5 @@
 import { getRequestHeader, getRequestHost, getRequestProtocol } from "@tanstack/react-start/server";
 
-/**
- * Build a synthetic Request from TanStack Start server headers when the global
- * Start context does not expose the incoming request (common in route loaders).
- */
 export function requestFromServerHeaders(): Request | undefined {
   const host = getRequestHost({ xForwardedHost: true }) ?? getRequestHeader("host");
   if (!host) return undefined;

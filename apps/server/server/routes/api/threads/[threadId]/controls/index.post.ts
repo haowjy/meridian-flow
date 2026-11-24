@@ -1,4 +1,3 @@
-/** Enqueues a writer control; execution policy is evaluated at its boundary. */
 import {
   createError,
   defineEventHandler,

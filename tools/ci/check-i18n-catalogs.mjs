@@ -40,7 +40,6 @@ try {
     }
   }
 
-  // Keep source roots and origins unchanged; only catalog output moves to scratch.
   const configPath = join(scratch, "lingui.config.mjs");
   writeFileSync(
     configPath,
@@ -61,7 +60,6 @@ export default { ...config, rootDir: ${JSON.stringify(appDir)}, catalogs: ${JSON
       const path = join(appDir, relative(scratchApp, generatedPath));
       let contents = readFileSync(generatedPath, "utf8");
       if (path.endsWith(".ts")) {
-        // Match the commit hook's formatting without writing a watched file.
         contents = execFileSync(
           "pnpm",
           ["exec", "biome", "check", "--write", "--stdin-file-path", path],

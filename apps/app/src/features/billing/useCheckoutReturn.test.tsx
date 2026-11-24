@@ -69,7 +69,6 @@ const withPurchase: BillingTransactionsResponse = {
   usage: { totalConsumedUsd: "0.00", transactionCount: 1 },
 };
 
-/** Mimic the router navigation the page uses to drop the marker. */
 function clearReturnParam() {
   window.history.replaceState({}, "", "/billing");
 }
@@ -159,11 +158,9 @@ describe("useCheckoutReturn", () => {
     await act(async () => root.render(<Probe />));
     expect(status()).toBe("reconciling");
 
-    // A reload keeps the marker and baseline: unmount the first page.
     await act(async () => root.unmount());
     root = createRoot(host);
 
-    // The ledger is still behind; the reloaded page keeps reconciling.
     let call = 0;
     refetches.transactions.mockImplementation(async () => {
       call += 1;

@@ -1,10 +1,3 @@
-/**
- * Input — text input primitive (shadcn-derived; focus treatment is
- * project-owned). Fields are always `:focus-visible` in browsers, so a ring
- * would flare on every click — instead focus is a calm border shift to the
- * soft jade `border-focus` hairline. No halo, no shadow. Keyboard-only focus
- * rings belong to click targets (`focus-ring`), not editable fields.
- */
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

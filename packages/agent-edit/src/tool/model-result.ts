@@ -69,10 +69,7 @@ export type AgentEditBlockGroup =
 export interface AgentEditConcurrentGroup {
   /** `the user` for any person, `agent (<chat ref>)` for a traced chat. */
   author: string;
-  /** Changed blocks the result's echo renders, after the merge. */
-  shown?: string[];
-  /** Changed blocks the result does not render. */
-  other?: string[];
+  changed?: string[];
   removed?: string[];
   /** Blocks this author changed that the write then removed (deleted or joined). */
   overwritten?: string[];

@@ -1,4 +1,3 @@
-/** Domain operations for explicit agent handoff/fork into a new primary thread. */
 import type { DraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
@@ -42,7 +41,6 @@ export interface ThreadAgentSwapDeps {
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
-  /** The mode the writer sees on the source chat: a derived chat starts in it. */
   effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
 }
 
@@ -107,13 +105,11 @@ export async function handoffThreadAgent(
   deps: ThreadAgentSwapDeps & { handoffBriefs: HandoffBriefLauncher },
   input: {
     id: string;
-    /** The new lineage's draft, minted by the client beside `id`. */
     draftId?: DraftId;
     threadId: string;
     userId: string;
     originTurnId: string;
     agentSelection: AgentSelection;
-    /** The writer's model and reasoning picks for the new chat; a null part runs the Agent's own. */
     overrides: ThreadOverrides;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
@@ -226,7 +222,6 @@ export async function forkThreadAgent(
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "fork");
   return deps.transaction(async () => {
-    // The source journal is mutated after the new thread acquires its Work membership.
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
 
@@ -257,7 +252,6 @@ export async function forkThreadAgent(
       };
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
-    // The fork copies the turns that invoked these skills, `skills://` headers included.
     for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
       await deps.agentRevisions.recordInvokedSkill(target.id, slug, reference);
     }
@@ -286,8 +280,6 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    // The files of the inherited turns sit with the chat that owns the cutoff turn, which is
-    // the source's ancestor when the fork was cut inside inherited history.
     const owner =
       (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
     await seedSystemTurn(
@@ -306,7 +298,6 @@ export async function forkThreadAgent(
   });
 }
 
-/** Same-revision derivations retain configuration even if the catalog has moved on. */
 async function resolveDerivedBinding(
   deps: ThreadAgentSwapDeps,
   source: Thread,
@@ -435,7 +426,6 @@ async function bindDerivedPrimary(
       return membershipWorkId;
     },
   });
-  // The inherited bake may predate the current Work or the chosen fork point.
   if (target.initialPromptBakeId != null) await deps.workContextNotices.threadChanged(target.id);
   return target;
 }
@@ -481,7 +471,6 @@ async function inheritEditingDocuments(
   );
 }
 
-/** Tells a derived chat which chat it continues and where that chat's files are. */
 export function continuesFromLine(sourceRef: string): string {
   const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
   return `Continues from ${sourceRef}. Source uploads: ${uploads}.`;

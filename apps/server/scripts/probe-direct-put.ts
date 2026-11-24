@@ -1,14 +1,3 @@
-/**
- * Canary for direct upload against a real S3-compatible store (MinIO now, R2 when its bucket
- * exists). It drives the S3 adapter's signed PUT, copy and ranged read the way the intake does,
- * and checks what the intake relies on. Recipe: server/domains/storage/.context/qa/direct-put.md
- *
- *   S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=probe S3_ACCESS_KEY=... S3_SECRET_KEY=... \
- *     pnpm --filter @meridian/server exec tsx scripts/probe-direct-put.ts [--serve [port]]
- *
- * `--serve` also hosts a page on that port; open it in a browser and it PUTs cross-origin
- * through a signed URL, which is the CORS check no Node call can make.
- */
 import { createServer } from "node:http";
 import {
   CreateBucketCommand,
@@ -98,7 +87,6 @@ async function main() {
   const readAsWrite = await put(read, bytes(10, 0x41), signed.headers);
   check("a read URL cannot write", readAsWrite.status === 403, `status ${readAsWrite.status}`);
 
-  // Why the intake copies before it reads: the same URL replaces the object.
   const replay = await put(signed.url, bytes(10, 0x42), signed.headers);
   check("a repeated PUT replaces the object", replay.status === 200, `status ${replay.status}`);
   unwrap(await main.copy(incoming, final));
@@ -172,7 +160,6 @@ async function main() {
   process.exit(failed ? 1 : 0);
 }
 
-/** Hosts a page that PUTs cross-origin to a signed URL, and waits for its report. */
 async function browserCheck(main: ReturnType<typeof store>, port: number) {
   const size = 5 * 1024 * 1024;
   const signed = unwrap(

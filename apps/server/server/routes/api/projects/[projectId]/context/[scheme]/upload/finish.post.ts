@@ -1,8 +1,3 @@
-/**
- * Transport adapter for finishing an upload: the browser has PUT the bytes, and this reads them
- * back from the store, names the file and makes it visible. Calling it again is safe.
- */
-
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery, readBody } from "nitro/h3";
 import { resolveContextRoute } from "../_helpers.js";

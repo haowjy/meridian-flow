@@ -1,9 +1,3 @@
-/**
- * Mints the next handle number for a project and kind. `thread` numbers chats and subagents
- * (`c12`, `p3`) from one counter; `work` numbers Works (`w3`). The upsert holds the counter row's
- * lock until the caller's transaction ends, so two creators never read the same number, and a
- * number is never given back: a deleted or purged owner's handle stays retired.
- */
 import type { ProjectId } from "@meridian/contracts";
 import { projectHandleCounters } from "@meridian/database/schema";
 import { sql } from "drizzle-orm";

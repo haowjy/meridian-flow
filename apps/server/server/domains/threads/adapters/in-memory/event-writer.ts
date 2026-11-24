@@ -1,5 +1,3 @@
-/** In-memory event journal: append-only array of orchestrator events implementing both writer and reader ports, with per-thread sequencing. For tests/local dev; depends inward on the event-journal port. */
-
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { recordFailureAfterCommit } from "../../../../shared/failure-records.js";
@@ -30,16 +28,11 @@ export interface RecordedEvent {
 }
 
 export interface InMemoryEventJournalWriter extends LiveEventWriter, EventJournalReader {
-  /** Failure records emitted so far, after the outermost in-memory commit. */
   getFailureRecords(): ReadonlyArray<FailureRecord>;
   getEvents(threadId: ThreadId): ReadonlyArray<RecordedEvent>;
   getAllEvents(): ReadonlyArray<RecordedEvent>;
 }
 
-/**
- * `owner` is the transaction owner of the repositories the journal serves; records follow its commit.
- * It is required: a fixture with no transactions passes `noTransactionOwner`.
- */
 export function createInMemoryEventJournalWriter(
   owner: InMemoryTransactionOwner | typeof noTransactionOwner,
 ): InMemoryEventJournalWriter {

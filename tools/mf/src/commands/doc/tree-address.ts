@@ -1,4 +1,3 @@
-/** A URI read against the project's tree list: its source, and the node at its path. */
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import {
   API_ACCOUNT_CONTEXT_SOURCES_PATH,
@@ -56,10 +55,6 @@ function ownedBy(source: ContextSource, target: ResolvedUri): boolean {
 
 export type OpenedTree = { list: TreeList; source: ContextSource; actor: string };
 
-/**
- * The lists a command's URIs live in: the project's, and the account's for `user://`, each opened
- * once and synced. The command closes them when it is done.
- */
 export class Trees {
   private readonly lists = new Map<"project" | "account", Promise<OpenedList>>();
 
@@ -94,7 +89,6 @@ export class Trees {
     return opened;
   }
 
-  /** The synced list `target` lives in, and the source it names. */
   async at(target: ResolvedUri): Promise<OpenedTree> {
     const { list, sources, actor } = await this.open(
       target.scheme === "user" ? "account" : "project",
@@ -120,10 +114,6 @@ export class Trees {
 
 type OpenedList = { list: TreeList; sources: ContextSource[]; actor: string };
 
-/**
- * The shown child a path segment reaches: as written (a twin's `~id` included), else, for the
- * leaf, the document the codec's spelling of it names (`ch1.md` is `ch1`).
- */
 function childAt(kids: readonly TreeNode[], segment: string, last: boolean): TreeNode | undefined {
   if (!last) return childAtSegment(kids, segment, "folder");
   const exact = childAtSegment(kids, segment);
@@ -133,11 +123,8 @@ function childAt(kids: readonly TreeNode[], segment: string, last: boolean): Tre
 }
 
 export type PathLookup = {
-  /** The node at the whole path, if there is one. */
   node: TreeNode | undefined;
-  /** The deepest folder of the path that exists (the source's root when none does). */
   parent: string;
-  /** The folder names of the path below `parent` that do not exist yet. */
   missing: string[];
 };
 
@@ -159,7 +146,6 @@ export function lookupPath(
   return { node: undefined, parent, missing: [] };
 }
 
-/** The canonical URI of `path` in `source`, as the server spells it. */
 export function uriIn(source: ContextSource, path: string): string {
   return canonicalContextUri(source.scheme, path, source.authority);
 }

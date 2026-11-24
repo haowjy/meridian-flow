@@ -1,4 +1,3 @@
-/** Thread runtime reads used by HTTP and WebSocket transport boundaries. */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RunState } from "@meridian/contracts/threads";
@@ -22,13 +21,9 @@ type OwnedThread = {
 };
 
 export function createThreadRuntimeService(deps: {
-  /** Supplies the lease-derived run status; the runtime authority satisfies it. */
   statusReader: ThreadStatusReader;
-  /** Supplies direct children for the per-thread activity read. */
   threads: Pick<ThreadRepository, "listChildren" | "findByIdIncludingDeleted">;
-  /** Supplies the latest admitted execution per child. */
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
-  /** Reads the chat's run-state record with the journal head in one read transaction. */
   readRunState: (threadId: ThreadId) => Promise<RunState>;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
@@ -67,13 +62,9 @@ export function createThreadRuntimeService(deps: {
   return {
     requireOwnedThread,
     liveState,
-    /** The lease-derived status seam, exposed so snapshot reads share it. */
     read: (threadId: ThreadId) => deps.statusReader.read(threadId),
-    /** Batch status seam for list pages; same lease read as `read`. */
     readMany: (threadIds: readonly ThreadId[]) => deps.statusReader.readMany(threadIds),
-    /** The lease's bound running turn, exposed so snapshot reads share one truth. */
     readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
-    /** The run-state record at the journal head, so snapshot reads share one record. */
     readRunState: (threadId: ThreadId) => deps.readRunState(threadId),
   };
 }

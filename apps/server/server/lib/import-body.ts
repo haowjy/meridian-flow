@@ -1,4 +1,3 @@
-/** Bounded import request bodies: refused while reading, never after buffering. */
 import { IMPORT_ADMISSION } from "@meridian/contracts";
 import Busboy from "busboy";
 import type { H3Event } from "nitro/h3";
@@ -55,7 +54,6 @@ export async function readImportManifest(event: Pick<H3Event, "req">): Promise<u
   }
 }
 
-/** Streaming multipart admission preserves an oversized file's identity without buffering its body. */
 export async function readImportParts(
   event: Pick<H3Event, "req">,
   signal?: AbortSignal,
@@ -165,8 +163,7 @@ export async function readImportParts(
         });
     }
     if (signal?.aborted) throw new ImportError(408, "import_busy");
-    // Drain truncated files without retaining bytes. Cancelling an incoming body resets
-    // Nitro's keep-alive socket and can turn the next request into a proxy 500.
+    // keep: drain truncated files instead of cancelling the body, which resets Nitro's keep-alive socket and turns the next request into a proxy 500
     parser.end();
     await closed;
     if (failure) throw failure;

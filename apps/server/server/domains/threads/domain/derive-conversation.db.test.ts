@@ -115,7 +115,6 @@ else
         invocationOverlay,
       );
 
-      // The real reader: a pending switch's mode, else the applied mode.
       const runtime = createRuntimeHarness({ repos, eventWriter });
       const deps = {
         threads: repos.threads,
@@ -204,7 +203,6 @@ else
       });
       const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
       await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
-      // A pending switch is the writer's mode: the fork starts in it, the source stays applied.
       await fixture.runtime.delivery.enqueueControl({
         threadId: fixture.source.id as never,
         provenance: { kind: "writer", actorId: ids.userId },

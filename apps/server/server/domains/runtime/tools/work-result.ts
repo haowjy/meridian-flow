@@ -1,16 +1,8 @@
-/**
- * The `work` result: the typed values the handler returns, and the short
- * text the model reads of them. One line per Work with only what the model
- * decides from; `verbose` adds dates. Ids never reach the text, and
- * `historySummary` reads the typed value.
- */
-
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
-/** A Work as the handler returns it. Pending changes use the writer's words. */
 export interface ModelWork {
   handle: string | null;
   name: string;
@@ -24,7 +16,6 @@ export interface ModelWork {
   pendingFolderCount: number;
 }
 
-/** `work show`: the Work, its recent chats and its drafts. */
 export interface WorkShowResult {
   work: ModelWork;
   recentThreads: { title: string | null; updatedAt: string | Date }[];
@@ -35,7 +26,6 @@ export interface WorkShowResult {
   }[];
 }
 
-/** How far a listed goal runs before it is cut. `show` prints it in full. */
 const LIST_GOAL_LENGTH = 60;
 
 const DONE: Record<string, (ref: string) => string> = {
@@ -80,7 +70,6 @@ export function renderWorkResult(value: JsonValue, input: JsonObject): string {
       return `Nothing changed: ${workRef(work)} is ${value.closed}, so the ${command} wasn't made.\n${workLines(work, verbose, LIST_GOAL_LENGTH)}`;
     return `${DONE[command]?.(workRef(work))}\n${workLines(work, verbose, LIST_GOAL_LENGTH)}`;
   }
-  // `switch` says why it made no move; anything else stays as the handler gave it.
   if (isObject(value) && typeof value.message === "string") return value.message;
   return JSON.stringify(value);
 }
@@ -123,10 +112,6 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
   return sections.join("\n\n");
 }
 
-/**
- * One Work: handle, name, status, then the goal cut to `goalLength` (0 omits it),
- * what waits for review (documents and folders) only when something does, and archived. `verbose` adds a line of dates.
- */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
   const facts = [
@@ -147,12 +132,10 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
   return `${line}\n  ${dates.join(", ")}`;
 }
 
-/** The handle the model copies into addresses and `work` arguments. No Work has none and is never listed. */
 function workRef(work: Pick<ModelWork, "handle">): string {
   return work.handle ?? "none";
 }
 
-/** "3 documents and 1 folder to review": each count keeps its noun, nothing says "changes". */
 function pending(documents: number, folders: number): string | undefined {
   const parts = [
     documents > 0 ? (documents === 1 ? "1 document" : `${documents} documents`) : null,
@@ -161,7 +144,6 @@ function pending(documents: number, folders: number): string | undefined {
   return parts.length > 0 ? `${parts.join(" and ")} to review` : undefined;
 }
 
-/** The text cut to `length` at a word boundary, marked with `…`. */
 function clip(text: string, length: number): string {
   const flat = text.replace(/\s+/gu, " ").trim();
   if (flat.length <= length) return flat;

@@ -24,9 +24,8 @@ import {
 } from "../loro-frontier.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "../model/block-hash.js";
 import type { LoroDocument, LoroDocumentModel } from "../model/loro-model.js";
-import type { ProjectedBlock } from "../ports/model.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import type { AgentEditConcurrentGroup, AgentEditModelPayload } from "./model-result.js";
+import type { AgentEditConcurrentGroup } from "./model-result.js";
 
 export interface LoroListingSource {
   /** The room copy the result rendered from, the call's own write merged in. */
@@ -39,7 +38,6 @@ export interface LoroListingSource {
   ownTurn: string | null;
   /** Blocks the result's own write removed. */
   ownRemoved: ReadonlySet<string>;
-  projected: readonly ProjectedBlock[];
   authorOfTurn?(turnId: string): Promise<string | null>;
   onFailed(cause: unknown): void;
 }
@@ -62,7 +60,7 @@ export async function recordLoroObservation(
       room: loroRoomName(source.room),
       snapshot: encodeFrontierMap(source.copy.docs.frontiers()),
     };
-    const groups = recorded ? await listing(source, recorded, result.model) : [];
+    const groups = recorded ? await listing(source, recorded) : [];
     return groups.length
       ? { ...result, frontier, model: { ...result.model, concurrent: { groups } } }
       : { ...result, frontier };
@@ -77,7 +75,6 @@ type Changes = { changed: Set<BlockId>; removed: Set<BlockId>; overwritten: Set<
 async function listing(
   source: LoroListingSource,
   recorded: FrontierMap,
-  payload: AgentEditModelPayload | undefined,
 ): Promise<AgentEditConcurrentGroup[]> {
   const { copy } = source;
   const docs = copy.docs;
@@ -152,21 +149,19 @@ async function listing(
   }
   if (byAuthor.size === 0) return [];
 
-  const shown = shownInFull(source.projected, payload);
   const hashes = hashesFor([...top.map((block) => block.id), ...removedIds]);
   const groups: AgentEditConcurrentGroup[] = [];
   for (const [author, changes] of byAuthor) {
     const group: AgentEditConcurrentGroup = { author };
     for (const id of changes.changed) {
       const hash = hashes.get(id) as string;
-      if (shown.has(id)) group.shown = [...(group.shown ?? []), hash];
-      else group.other = [...(group.other ?? []), hash];
+      group.changed = [...(group.changed ?? []), hash];
     }
     for (const id of changes.removed)
       group.removed = [...(group.removed ?? []), hashes.get(id) as string];
     for (const id of changes.overwritten)
       group.overwritten = [...(group.overwritten ?? []), fullHashForBlockId(id).slice(0, 4)];
-    if (group.shown || group.other || group.removed || group.overwritten) groups.push(group);
+    if (group.changed || group.removed || group.overwritten) groups.push(group);
   }
   return groups;
 }
@@ -224,19 +219,6 @@ function structurallyChanged(
         (common.has(block.id) && prevThen.get(block.id) !== prevNow.get(block.id)),
     )
     .map((block) => block.id);
-}
-
-function shownInFull(
-  projected: readonly ProjectedBlock[],
-  payload: AgentEditModelPayload | undefined,
-): Set<BlockId> {
-  if (payload?.read?.format === "outline" || payload?.awarenessDegraded) return new Set();
-  const hashes = new Set(
-    (payload?.blocks ?? []).flatMap((group) =>
-      group.extent === "full" ? group.items.map((item) => item.hash) : [],
-    ),
-  );
-  return new Set(projected.filter((block) => hashes.has(block.hash)).map((block) => block.key));
 }
 
 function hashesFor(ids: readonly BlockId[]): Map<BlockId, string> {

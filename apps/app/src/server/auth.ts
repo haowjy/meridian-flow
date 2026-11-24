@@ -1,4 +1,3 @@
-/** App-side current-user resolution from the sealed WorkOS AuthKit session cookie. */
 import { getAuth } from "@workos/authkit-tanstack-react-start";
 
 export interface CurrentUser {

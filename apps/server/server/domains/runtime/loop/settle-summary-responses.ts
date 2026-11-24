@@ -1,4 +1,3 @@
-/** Settle every attempted summary response inside the transaction that ends its placeholder. */
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
 import type { SummaryResponse } from "../ports/conversation-summarizer.js";

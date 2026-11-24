@@ -11,11 +11,11 @@ export function textPlanRefusal(
   return failure === "draft_archived"
     ? {
         status: "work_archived",
-        message: `This draft is archived. Write to an active draft or live version of ${uri}.`,
+        message: `This draft is archived.`,
       }
     : {
         status: "document_not_found",
-        message: "File not found. Read the project to find the right path.",
+        message: "File not found.",
       };
 }
 

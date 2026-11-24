@@ -1,4 +1,3 @@
-/** POST /api/threads/[threadId]/handoff/brief: append and launch a retry seed. */
 import { handoffBriefRetryRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import {
   createError,

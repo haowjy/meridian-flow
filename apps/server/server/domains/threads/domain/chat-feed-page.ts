@@ -1,10 +1,3 @@
-/**
- * Shared keyset page policy for Project chat pages, including Work-filtered
- * pages: decode the opaque cursor, fetch one row past the page size, slice,
- * and re-encode the next cursor. All pages use the stored `lastActivityAt` sort key
- * (see `project-chat-cursor.ts`), so they share one cursor meaning and one
- * invalid-cursor error.
- */
 import type { ProjectChatFeedPage, ProjectChatItem } from "@meridian/contracts/threads";
 import { decodeProjectChatCursor, encodeProjectChatCursor } from "./project-chat-cursor.js";
 

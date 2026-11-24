@@ -1,5 +1,3 @@
-/** A diagnostic observer cannot interrupt send, receive, deadlines, or reconnect. */
-
 import { afterEach, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 import { SocketLifecycleController } from "./socket-lifecycle";

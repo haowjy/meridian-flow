@@ -1,4 +1,3 @@
-/** GET /api/projects/[projectId]: returns a single owned project. Depends on the auth gate, project ownership, and project repository. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";

@@ -13,32 +13,13 @@ import {
 } from "./checkout";
 
 export interface UseCheckoutReturnOptions {
-  /** Override the refetch cadence (tests). */
   intervalMs?: number;
-  /** Override the reconciling budget before the honest timeout (tests). */
   timeoutMs?: number;
-  /**
-   * Drop the `?checkout=` marker once the notice has settled. Callers pass a
-   * router navigation so router state and the browser URL stay in sync; the
-   * default is a no-op. The hook calls this only at a terminal status.
-   */
   clearReturnParam?: () => void;
 }
 
 const noop = () => {};
 
-/**
- * Reconciles a Stripe redirect back to billing.
- *
- * Reads the `?checkout=` marker after mount (SSR renders idle). A success with
- * a same-tab baseline polls the existing balance/transactions queries until the
- * ledger shows an attributable delta or the deadline fires. A success with no
- * baseline fails closed to `unverified` without polling: nothing can attribute
- * the return to this checkout. A portal handoff is distinguished from a
- * checkout cancellation by the recorded handoff kind. The marker and baseline
- * are cleared together, and only at a terminal status, so a reload mid-poll
- * resumes reconciliation.
- */
 export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): CheckoutReturnStatus {
   const [status, setStatus] = useState<CheckoutReturnStatus>("idle");
   const { refetch: refetchBalance } = useBillingBalance();
@@ -65,9 +46,6 @@ export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): Check
       return;
     }
 
-    // A success with no checkout baseline cannot be attributed to this
-    // checkout. A portal handoff also cannot prove a purchase merely because
-    // someone later opened a success URL. Fail closed without polling.
     const baseline = readCheckoutBaseline(storage);
     if (baseline?.handoffKind !== "checkout") {
       clearCheckoutBaseline(storage);
@@ -105,8 +83,6 @@ export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): Check
       clearRef.current();
     };
 
-    // Armed independently of the refetch loop so a hung balance/transactions
-    // read cannot hold "Confirming…" up forever.
     deadlineTimer = setTimeout(() => settle("timeout"), timeoutMs);
 
     const tick = async () => {

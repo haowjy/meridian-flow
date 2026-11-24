@@ -1,4 +1,3 @@
-/** Transactional in-memory execution reports with the same admission and CAS contract as PostgreSQL. */
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";

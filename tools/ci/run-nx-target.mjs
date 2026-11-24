@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 
-// Run configured Nx targets, optionally selecting projects from staged Git paths.
 const [target, ...options] = process.argv.slice(2);
 if (!target || options.some((option) => option !== "--staged")) {
   throw new Error("Usage: node tools/ci/run-nx-target.mjs <target> [--staged]");
@@ -10,7 +9,6 @@ if (!target || options.some((option) => option !== "--staged")) {
 const query = ["nx", "show", "projects", `--withTarget=${target}`, "--json"];
 let input;
 if (options.includes("--staged")) {
-  // No rename detection: both old and new paths must participate in selection.
   const files = execFileSync("git", ["diff", "--cached", "--name-only", "--no-renames", "-z"], {
     encoding: "utf8",
   })
@@ -20,8 +18,7 @@ if (options.includes("--staged")) {
     console.log(`No staged non-documentation paths. Skipping Nx target "${target}".`);
     process.exit(0);
   }
-  // Nx's stdin protocol is newline-delimited. Such filenames cannot be sent
-  // losslessly, so check all projects rather than silently selecting the wrong ones.
+  // keep: Nx's stdin protocol is newline-delimited, so a filename with a newline cannot be sent losslessly: check all projects rather than select the wrong ones
   if (files.some((file) => file.includes("\n"))) {
     console.log("Staged path contains a newline; selecting all projects.");
   } else {
@@ -50,12 +47,7 @@ if (filtered.length === 0) {
   process.exit(0);
 }
 
-// Nx 23 can exit non-zero after green targets when its task-history SQLite
-// commit fails with SqliteFailure code 787. Forgive only that exact
-// post-success metadata failure. Match on the output TAIL, not the whole run:
-// the terminal summary and the DB error land last, so a nested Nx invocation
-// or task logging earlier in a huge run can't fake the signature — and the
-// bounded buffer means arbitrarily large runs can't exhaust memory.
+// keep: Nx 23 exits non-zero after green targets when its task-history SQLite commit fails with code 787; forgive only that exact failure, matched on the output tail, and never when a failed-task summary is there
 const TAIL_LIMIT = 64 * 1024;
 
 function isIgnorableDbFailure(tailText) {
@@ -64,13 +56,10 @@ function isIgnorableDbFailure(tailText) {
     tailText.includes(
       'DB transaction error: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))',
     ) &&
-    // Any failed-task summary in the tail means a REAL failure — never forgive.
     !/Failed tasks|failed for \d+ projects?/.test(tailText)
   );
 }
 
-// Async spawn + tee: output streams live to the terminal (hooks stay honest
-// about progress) while only a bounded tail is retained for the check above.
 let tail = "";
 const child = spawn(
   "pnpm",
@@ -93,7 +82,6 @@ child.on("error", (error) => {
   process.exit(1);
 });
 child.on("close", (code, signal) => {
-  // Interruption is never a success — a killed run has no trustworthy output.
   if (signal !== null) {
     console.error(`Nx run terminated by ${signal}.`);
     process.exit(1);

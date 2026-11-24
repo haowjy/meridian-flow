@@ -14,7 +14,7 @@ import type {
   WriteToolInput,
 } from "@meridian/agent-edit/integration";
 import {
-  documentNotFoundMessage,
+  DOCUMENT_NOT_FOUND_MESSAGE,
   EDIT_FAILED_MESSAGE,
   formatDocumentFile,
   isDocumentNotFoundError,
@@ -152,7 +152,7 @@ export async function resolveDocumentAddress(
   const ref = await port.stat(basePath);
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
-      return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
+      return writeToolError(command, DOCUMENT_NOT_FOUND_MESSAGE, "document_not_found", {
         path: path,
       });
     }

@@ -1,8 +1,3 @@
-/**
- * EventSink call-site helpers: timestamp stamping and JSON-natural error payloads
- * for observability records. Keeps emit shape consistent across domain migrations.
- */
-
 import { isMeridianError } from "@meridian/contracts/errors";
 import { DrizzleQueryError } from "drizzle-orm";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
@@ -30,21 +25,15 @@ const SAFE_ERROR_CODES = new Set([
   "ETIMEDOUT",
 ]);
 
-/** Comma-joins at most three ids so the list fits one bounded correlation value. */
 export function joinIds(ids: readonly string[]): string {
   return ids.slice(0, 3).join(",");
 }
 
-/**
- * A Drizzle query failure wraps the driver's error and carries the SQL and its params as
- * its own message. The cause says what Postgres rejected (message, SQLSTATE); the wrapper
- * can hold a writer's text in its params, so diagnostics read only the cause.
- */
 function unwrapQueryError(error: unknown): unknown {
   try {
     return error instanceof DrizzleQueryError && error.cause ? error.cause : error;
   } catch {
-    return error; // a hostile prototype trap
+    return error;
   }
 }
 
@@ -118,12 +107,6 @@ export function unknownToEventPayload(failure: unknown): Record<string, unknown>
 
 const ERROR_MESSAGE_MAX = 200;
 
-/**
- * A failure's message for diagnostics that must say what broke (the class and category
- * alone hid a lock re-entry for a release). Messages are server-authored, but one may
- * interpolate a writer's text, so quoted spans and secret-shaped tokens are dropped and
- * the rest is collapsed to one bounded line. Not a MeridianError's: those carry a code.
- */
 export function errorMessageOf(failure: unknown): { errorMessage: string } | undefined {
   const error = unwrapQueryError(failure);
   try {

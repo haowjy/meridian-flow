@@ -1,5 +1,3 @@
-/** Switch — shared Radix boolean control using Meridian's token and focus language. */
-
 import { Switch as SwitchPrimitive } from "radix-ui";
 import type * as React from "react";
 

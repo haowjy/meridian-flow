@@ -1,10 +1,3 @@
-/**
- * Drizzle ThreadRepositories aggregate + transaction context. Composes the
- * thread/turn/block/model-response repositories and provides the AsyncLocalStorage
- * Drizzle db so all repositories run inside one transaction. Owns the drizzle DI
- * wiring and the ambient transaction propagation for this domain.
- */
-
 import {
   currentDrizzleDb,
   type DrizzleDatabase,
@@ -81,7 +74,6 @@ export function createDrizzleRepositories(
   return composeDrizzleRepositories(db, workActivity, lineageScratch, statusReader);
 }
 
-/** Isolated adapter tests that do not compose cross-domain projection owners. */
 export function createDrizzleRepositoriesForTest(db: DrizzleDatabase): InternalThreadRepositories {
   return composeDrizzleRepositories(db, null, createDrizzleLineageScratchLifecycle(db));
 }

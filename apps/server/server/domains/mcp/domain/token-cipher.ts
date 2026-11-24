@@ -1,15 +1,12 @@
-/** AES-256-GCM for a connection's token. The sealed text is bound to its connection and account, so a copied value opens nowhere else. */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 export interface TokenCipher {
   seal(token: string, owner: { connectionId: string; accountId: string }): string;
-  /** Throws on a wrong key, a changed value or another owner's value. */
   open(sealed: string, owner: { connectionId: string; accountId: string }): string;
 }
 
 const VERSION = "v1";
 
-/** A key is 32 bytes, base64. */
 export function parseTokenKey(raw: string): Buffer {
   const key = Buffer.from(raw.trim(), "base64");
   if (key.length !== 32) throw new Error("MCP_TOKEN_KEY must be 32 bytes, base64 encoded");

@@ -1,4 +1,3 @@
-/** Ambient Drizzle transaction context shared by adapters that must participate in one app-level DB transaction. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "@meridian/database";
 import { processDetachedWork } from "./detached-work.js";
@@ -15,7 +14,6 @@ type DrizzleTransactionContext = {
   locals: Map<object, unknown>;
   participants: Map<object, ParticipantFrame<unknown>>;
   flushingParticipants: boolean;
-  /** Set before COMMIT or ROLLBACK goes out; work that outlives its scope must not reach it. */
   closed: boolean;
 };
 
@@ -34,14 +32,7 @@ type ParticipantFrame<State> = {
 
 const transactionStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
-/**
- * The ambient transaction, or undefined outside one. Async work inherits the context, so a
- * branch still running after its scope ended (a fan-out sibling of a rejected branch, work
- * left un-awaited) would otherwise reach a finished transaction: postgres-js runs its
- * statements on the released connection, inside whichever transaction takes it next, and
- * its commit callbacks would queue where nothing runs them. It throws instead. Work meant to
- * outlive a transaction leaves it with `runAfterDrizzleCommit` or `runOutsideWrite`.
- */
+// keep: async work inherits the ambient transaction, so a branch still running after its scope ends reaches a finished transaction; it throws instead of using the released connection
 function activeTransaction(): DrizzleTransactionContext | undefined {
   const active = transactionStorage.getStore();
   if (active?.closed) {
@@ -50,7 +41,6 @@ function activeTransaction(): DrizzleTransactionContext | undefined {
   return active;
 }
 
-/** Runs `operation` as the body of `context`, closing it before the transaction ends. */
 function runAsTransactionBody<T>(
   context: DrizzleTransactionContext,
   operation: () => Promise<T>,
@@ -110,20 +100,10 @@ export async function runInDrizzleTransaction<T>(
 
 const joinsRoots = { name: "joins-roots" };
 
-/**
- * The command transaction work runs under, kept apart from `transactionStorage` so stepping out
- * of the transaction (`runOutsideDrizzleTransaction`) still knows a command is open.
- */
 const commandStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
 const COMMAND_CHECKS = process.env.NODE_ENV !== "production";
 
-/**
- * Runs a document command's transaction: the only connection its work may hold. A root
- * transaction or read snapshot opened under it runs inside it. In dev and test, a process mutex
- * or a second connection taken while it is open throws: the command holds row and advisory
- * locks, so a wait on either would never be seen by Postgres and could wait forever.
- */
 export async function runInCommandTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
@@ -137,7 +117,6 @@ export async function runInCommandTransaction<T>(
   });
 }
 
-/** In dev and test, throws when `what` would run while a command transaction is open. */
 export function assertOutsideCommandTransaction(what: string): void {
   if (!COMMAND_CHECKS) return;
   const command = commandStorage.getStore();
@@ -172,7 +151,6 @@ export async function runInRootDrizzleTransaction<T>(
   });
 }
 
-/** One root, read-only repeatable-read snapshot while preserving ambient adapter joins. */
 export async function runInRootDrizzleReadSnapshot<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
@@ -183,11 +161,6 @@ export async function runInRootDrizzleReadSnapshot<T>(
   });
 }
 
-/**
- * Run an adapter-atomic unit. Inside an ambient command transaction this is a
- * real nested Drizzle transaction/savepoint; its commit callbacks remain
- * subordinate to the outer commit.
- */
 export async function runInDrizzleSavepoint<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
@@ -234,11 +207,6 @@ export async function runInDrizzleSavepoint<T>(
   }
 }
 
-/**
- * A statement whose failure the caller tolerates: inside an ambient transaction
- * it runs in a savepoint, so a failure rolls back to it and leaves the
- * transaction usable. Outside one it runs as is, opening no transaction.
- */
 export function runIsolatedFromAmbientTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
@@ -288,7 +256,6 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = activeTransaction();
   if (!active) {
-    // `dispatchAfterCommit` settles a callback's failure without throwing; so does this.
     void processDetachedWork
       .track(Promise.resolve(runOutsideWrite(callback)), "after-commit callback")
       .catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
@@ -298,7 +265,6 @@ export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boo
   return true;
 }
 
-/** Queue only when already inside an ambient transaction; callers run inline otherwise. */
 export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = activeTransaction();
   if (!active) return false;
@@ -306,7 +272,6 @@ export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): b
   return true;
 }
 
-/** Queue only when already inside an ambient transaction; callers handle inline errors otherwise. */
 export function deferUntilDrizzleRollback(callback: () => void | Promise<void>): boolean {
   const active = activeTransaction();
   if (!active) return false;
@@ -314,10 +279,6 @@ export function deferUntilDrizzleRollback(callback: () => void | Promise<void>):
   return true;
 }
 
-/**
- * A deadlock or serialization failure: Postgres aborted the statement for its ordering, not
- * its content, so the same work may succeed when run again. Drizzle wraps the driver's error.
- */
 export function isRetryableTransactionError(error: unknown): boolean {
   for (let cause = error; cause instanceof Error; cause = cause.cause) {
     const code = (cause as { code?: unknown }).code;
@@ -326,7 +287,6 @@ export function isRetryableTransactionError(error: unknown): boolean {
   return false;
 }
 
-/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
 export function sqlState(cause: unknown): string | null {
   let current: unknown = cause;
   while (current) {
@@ -345,10 +305,6 @@ export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
 }
 
-/**
- * Runs work a write triggers but isn't part of it (after-commit work, a
- * scheduled pull) outside the transaction and outside the write's edit grants.
- */
 export function runOutsideWrite<T>(operation: () => T): T {
   return runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation));
 }

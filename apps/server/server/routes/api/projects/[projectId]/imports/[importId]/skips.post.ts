@@ -1,4 +1,3 @@
-/** Skips during the upload phase. */
 import { defineEventHandler } from "nitro/h3";
 import { z } from "zod";
 import { ImportError } from "../../../../../../domains/import/index.js";

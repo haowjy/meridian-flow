@@ -1,8 +1,3 @@
-/**
- * The text of an EPUB or PDF, converted by the first `read` that needs it and kept beside the
- * original (`textObjectKey`), so a later read finds it. Derived files live and die with their
- * original (`derivedObjectKeys`).
- */
 import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
@@ -19,7 +14,7 @@ export type ExtractedText =
   | { ok: false; reason: ConversionRefused["reason"] | "missing"; message: string };
 
 const TEXT_MIME_TYPE = "text/markdown; charset=utf-8";
-/** The stored text is at most the output cap in characters; four bytes each is the worst case. */
+// keep: Output cap is characters; size the byte buffer for four UTF-8 bytes per character
 const STORED_TEXT_MAX_BYTES = CONVERSION_LIMITS.outputChars * 4 + 1024;
 
 export async function extractedText(
@@ -49,8 +44,6 @@ export async function extractedText(
     };
   try {
     const markdown = await convertToMarkdown(file.source, original.value.bytes);
-    // Atomic, and the same bytes from a concurrent first read, so a lost race changes nothing.
-    // A failed put costs only a conversion on the next read.
     await putDerivedObject(objectStore, {
       originalKey,
       key: textKey,
@@ -59,7 +52,6 @@ export async function extractedText(
     });
     return { ok: true, markdown };
   } catch (error) {
-    // Messages are ours, never the file's text.
     if (error instanceof ConversionRefused)
       return { ok: false, reason: error.reason, message: error.message };
     throw error;

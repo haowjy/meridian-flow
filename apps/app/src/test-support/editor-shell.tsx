@@ -1,5 +1,3 @@
-/** Explicit neutral shell seams for real EditorView tests; room and paint policy stay with the caller. */
-
 import { vi } from "vitest";
 import * as threads from "@/client/query/useProjectThreads";
 import * as trees from "@/client/query/useProjectTrees";

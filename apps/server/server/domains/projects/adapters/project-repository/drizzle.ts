@@ -36,7 +36,6 @@ function mapProject(row: ProjectRow): Project {
 }
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
-  /** A deleted project closes the live connections to its tree list. */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
   ensureNoWork: (projectId: ProjectId) => Promise<unknown>;
 }
@@ -50,7 +49,6 @@ export function createDrizzleProjectRepository(
         const id = input.id ?? crypto.randomUUID();
         const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
         const tx = currentDrizzleDb(db);
-        // Bootstrap and ordinary creation share the owner namespace lock.
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0::bigint))`,
         );
@@ -78,8 +76,6 @@ export function createDrizzleProjectRepository(
       });
     },
     async findById(id: ProjectId): Promise<Project | null> {
-      // A non-UUID id (e.g. a slug in a `:projectId` route) would reach the
-      // `uuid` column and raise a Postgres parse error; treat it as not-found.
       if (!isUuid(id)) return null;
       const [row] = await currentDrizzleDb(db)
         .select()

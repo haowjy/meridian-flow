@@ -1,10 +1,3 @@
-/**
- * Reads Mars files with `@meridian-flow/mars-schema`. A package is read
- * whole with `prepare` (`readPackage`), which adds the package's `[package.tools]` to each Agent
- * as `mars sync` does; a lone file (a skill, a manifest) is read with `read`. `prepare` never
- * runs with `migrate`, and a package it classes as anything but schema 1 is refused by the
- * caller, because for those `prepare` upgrades or translates in memory.
- */
 import {
   type AgentFields,
   type Check,
@@ -24,12 +17,6 @@ import {
 
 export { rewriteBlock };
 
-/**
- * The reader that produced a stored definition row. Whoever changes the availability table or
- * the tool projection in `compile-package.ts` bumps `flow-N` in the same commit: the version is
- * part of a revision's key, and without a bump the same bytes are never read twice, so the
- * change never reaches a stored Agent.
- */
 export const GRAMMAR_VERSION = `mars-${version()}+flow-11`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
@@ -49,15 +36,6 @@ const treeOf = (files: Record<string, string>) =>
   new Map(Object.entries(files).map(([path, text]) => [path, encoder.encode(text)]));
 export const readPackage = (files: Record<string, string>): Prepared =>
   prepare({ files: treeOf(files), context: "package" });
-/**
- * Mars's verdict on a package's files. No dependency is passed because Flow vendors none yet: a
- * package that declares one comes back with it in `missing_dependencies`. Flow couldn't read the
- * `unreadable` paths, so each goes to Mars as an empty file, which keeps Mars's rules about what
- * the package holds true (a skill ref to it resolves, its folder has a `SKILL.md`), and Mars's
- * findings on those stand-ins are dropped: Flow alone speaks of a file it couldn't read. A stand-in
- * is not right about its name (Mars names it after its path), so a duplicate name against one is
- * dropped too.
- */
 export const checkFiles = (files: Record<string, string>, unreadable: string[]): Check => {
   const verdict = check({
     files: treeOf({ ...files, ...Object.fromEntries(unreadable.map((path) => [path, ""])) }),
@@ -82,6 +60,5 @@ export const readAgent = (slug: string, text: string): DefinitionRead<AgentField
 export const readSkill = (slug: string, text: string): DefinitionRead<SkillFields> =>
   read(skillPath(slug), text);
 
-/** Mars keeps the blank line after the closing fence; a prompt starts at the line after it. */
 export const bodyOf = (reading: { body: string | null }): string =>
   (reading.body ?? "").replace(/^\r?\n/, "");

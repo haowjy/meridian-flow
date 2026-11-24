@@ -1,4 +1,3 @@
-/** Drizzle EventJournalReader: SQL replay of persisted orchestrator events for a thread (range/cursor reads). Depends inward on the event-journal port; owns the journal read queries. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray, lt, notInArray } from "drizzle-orm";

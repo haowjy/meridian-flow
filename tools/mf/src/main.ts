@@ -1,7 +1,3 @@
-/**
- * `./mf` entry: local dev CLI that wraps this worktree's app API for agents and humans.
- * Commands are noun-verb, output is compact text or --json, and exit codes are the contract.
- */
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiGroup } from "./commands/api";
@@ -23,7 +19,6 @@ import { sendFailure } from "./core/failure-log";
 import { type Io, Output } from "./core/output";
 import { openSession, type Session } from "./core/session";
 
-/** Adding a group: a `commands/<group>/` folder whose `index.ts` exports a CommandGroup, listed here. */
 export const GROUPS: readonly CommandGroup[] = [
   threadGroup,
   docGroup,
@@ -189,13 +184,11 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 async function main(): Promise<void> {
-  // The reader left (`./mf ... | head`): nothing more can be delivered, so stop
-  // quietly instead of crashing on the unhandled EPIPE mid-stream.
   process.stdout.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code !== "EPIPE") throw error;
     process.exit(process.exitCode ?? 0);
   });
-  // exitCode, never process.exit(): exiting early truncates piped stdout.
+  // keep: set `exitCode`, never `process.exit()`: exiting early truncates piped stdout
   process.exitCode = await runCli(process.argv.slice(2), {
     io: { stdout: process.stdout, stderr: process.stderr },
     env: process.env,

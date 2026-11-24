@@ -4,21 +4,13 @@ import { replay, type TreeNode, type TreeProjection } from "./replay.js";
 import { droppedRecords, listRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
-/** What only the server knows about the connection that sent an update. */
 export type Connection = {
-  /** Drafts that are open: a Work's that is neither archived nor deleted, and chats'. */
   drafts: ReadonlySet<string>;
-  /** Sources of archived or deleted Works: nothing may be created in them. */
   closed: (source: string) => boolean;
 };
 
-/** A record the update added. */
 type Added = TreeRecord;
 
-/**
- * A Loro copy takes the update as sent, with no check of what it says: the records it adds are
- * those whose ids the copy did not hold, in list order.
- */
 function integrate(doc: LoroDoc, update: Uint8Array): Added[] {
   const held = new Set(listRecords(doc).map((record) => record.id));
   doc.import(update);
@@ -26,16 +18,10 @@ function integrate(doc: LoroDoc, update: Uint8Array): Added[] {
 }
 
 export type Admission = {
-  /** The records the update adds (not those the server already held), in list order. */
   records: TreeRecord[];
-  /**
-   * The records stamped `dropped`: each changes a closed Work (its draft, or a node in the closed
-   * Work's source). They are in no view, and a dropped create gets no row and no claim.
-   */
   dropped: string[];
 };
 
-/** Sources whose nodes change in the tree, including both ends of a move. */
 export function changedSources(before: TreeProjection, after: TreeProjection): Set<string> {
   const sources = new Set<string>();
   const shown = (node: TreeNode | undefined) =>
@@ -65,7 +51,6 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
   return sources;
 }
 
-/** Judge segments against the records kept so far. */
 function stamp(doc: LoroDoc, added: readonly Added[], connection: Connection): string[] {
   const out: string[] = [];
   const excluded = new Set(added.map((record) => record.id));
@@ -105,7 +90,6 @@ function stamp(doc: LoroDoc, added: readonly Added[], connection: Connection): s
   };
   let start = 0;
   while (start < added.length) {
-    // Try the whole remainder first, preserving the one-gate common case.
     if (gate(start, added.length)) break;
     let low = start;
     let high = Math.min(start + 1, added.length);
@@ -120,7 +104,6 @@ function stamp(doc: LoroDoc, added: readonly Added[], connection: Connection): s
     }
     for (const record of added.slice(start, high - 1)) excluded.delete(record.id);
     const record = added[high - 1] as Added;
-    // A reported source can belong to a no-op; only the projection diff drops one record.
     if (gate(high - 1, high, true)) excluded.delete(record.id);
     else {
       out.push(record.id);
@@ -131,11 +114,6 @@ function stamp(doc: LoroDoc, added: readonly Added[], connection: Connection): s
   return out;
 }
 
-/**
- * Admits an update to the server's copy: the update is applied, and each record that changes a
- * closed Work is stamped `dropped`, in one transaction. The copy is changed in place, which is safe
- * under the list's lock: if anything throws, the caller reloads the copy from storage.
- */
 export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
   const records = integrate(server.doc, update);
   const dropped = stamp(server.doc, records, connection);

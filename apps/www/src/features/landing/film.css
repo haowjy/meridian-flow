@@ -1,13 +1,7 @@
-/**
- * The film: the pinned stage and every layer on it. Geometry is in container units
- * of the stage, and `measureLayout` reads it back, so the first paint and the film
- * can't disagree.
- */
 .cine .film {
   height: var(--filmh);
 }
 
-/* The stage's layers, back to front. dragon-actor.ts moves the dragon between them as it flies. */
 .cine .stage {
   --z-far: 1;
   --z-ground: 2;
@@ -21,7 +15,6 @@
   --z-flame: 10;
   --z-pass: 11;
   --z-pass-words: 12;
-  /* The small viewport's frame, with the strip a collapsed address bar uncovers below it. */
   --below: calc(100lvh - 100svh);
   position: sticky;
   top: 0;
@@ -72,7 +65,6 @@
   pointer-events: none;
 }
 
-/* The workspace beat. The spacers centre the caption and stop it sinking past 71% of the screen. */
 .cine .dawn {
   position: absolute;
   inset: 0 0 var(--below);
@@ -105,7 +97,6 @@
   pointer-events: auto;
 }
 
-/* Where the product block lands at dawn. Empty: the film reads its box. */
 .workspot {
   display: none;
 }
@@ -144,7 +135,6 @@
   );
 }
 
-/* The product block's home on the first screen. A container, so the block scales to it. */
 .cine .slotwrap {
   position: absolute;
   right: 36px;
@@ -294,7 +284,6 @@
   top: 8%;
 }
 
-/* Leaves the subtitle's space under the lower cards. */
 .cine .ag:where(:nth-child(n + 5)) {
   top: min(52%, 100% - 270px);
 }
@@ -474,7 +463,6 @@
     display: none;
   }
 
-  /* The hero stays in flow, and the product block takes what's left of the screen. */
   .cine .stage {
     display: flex;
     flex-direction: column;
@@ -493,7 +481,6 @@
     margin: calc(var(--bar) + 18px) 20px 0;
   }
 
-  /* The drawing needs the height more than the hero needs its third line. */
   .cine .hero .plain {
     display: none;
   }
@@ -592,7 +579,6 @@
   }
 }
 
-/* A phone on its side, or any short window: side by side, and the card loses its extras. */
 @media (max-height: 499px) {
   .cine .stage {
     --cw: 46cqw;
@@ -672,7 +658,6 @@
   animation: sys-open 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
-/* A status window opens from a bright line, then settles. */
 @keyframes sys-open {
   0% {
     opacity: 0;

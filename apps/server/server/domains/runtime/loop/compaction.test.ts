@@ -488,7 +488,6 @@ describe("projectActiveHistoryWithBakes", () => {
   });
 
   it("projects a compaction whose pin and cut were handed back", async () => {
-    // The compaction cut at, and pinned, a writer message that a hand-back took out of the chat.
     const earlier = turn("earlier", 1, "user");
     const answer = turn("answer", 2, "assistant");
     const compaction = compactionTurn("c", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
@@ -504,8 +503,6 @@ describe("projectActiveHistoryWithBakes", () => {
       "after",
     ]);
 
-    // Risk (C4): a Retry-led compaction whose whole prefix was an attempt the chat later abandoned (every
-    // turn it covered is forgotten) found no cut and made every later request throw. It keeps its summary.
     const alone = compactionTurn("c2", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
     const emptied = await projectActiveHistoryWithBakes(
       [alone, turn("after2", 5, "user")],
@@ -567,7 +564,6 @@ describe("compaction-owned elisions", () => {
     );
     expect(projected.blocks.find((b) => b.id === "read")?.content).toEqual(replacement);
     expect(projected.blocks.find((b) => b.id === "late-read")?.content).toEqual(raw);
-    // C10: only what follows C and the documents it re-shows credit the model; the retained tail credits nothing.
     expect([...projected.creditedBlockIds].sort()).toEqual(["late-read", "reshown"]);
     expect(projected.blocks.find((b) => b.id === "reshown")?.turnId).toBe("c:summary");
     expect(JSON.stringify(buildContext({ thread: thread("c1"), ...projected }).messages)).toContain(

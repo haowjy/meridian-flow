@@ -1,16 +1,8 @@
 import { z } from "zod";
 
-/**
- * Provider-specific billable usage stored on model_responses.usage_breakdown (flat JSONB).
- * Provider identity lives on model_responses.provider — not inside this object.
- * @see database-schema-v3.md §9
- */
-
-/** Extensible map for future providers; values are token counts or USD amounts. */
 export const UsageBreakdown = z.record(z.string(), z.number().finite());
 export type UsageBreakdown = z.infer<typeof UsageBreakdown>;
 
-/** Anthropic billable dimensions */
 export const AnthropicUsageBreakdown = z.object({
   cache_read: z.number().finite().optional(),
   cache_write: z.number().finite().optional(),
@@ -19,7 +11,6 @@ export const AnthropicUsageBreakdown = z.object({
 });
 export type AnthropicUsageBreakdown = z.infer<typeof AnthropicUsageBreakdown>;
 
-/** OpenAI billable dimensions */
 export const OpenAIUsageBreakdown = z.object({
   cached: z.number().finite().optional(),
   reasoning: z.number().finite().optional(),

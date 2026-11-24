@@ -1,4 +1,3 @@
-/** Durable writer-turn admission wire contracts. */
 import { z } from "zod";
 import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, FolderId, UserId } from "../ids.js";
@@ -30,27 +29,17 @@ export type SkillOccurrence = {
   description: string;
 };
 
-/** What the writer submits and what hand-back returns: a picture is its identity only. */
 export type UserMessageBlock =
   | { type: "text"; text: string }
   | ReferenceOccurrence
   | SkillOccurrence
   | { type: "image"; documentId: DocumentId; uri: CanonicalContextUri };
 
-/**
- * A message block after admission: the picture also carries the file's name, type and size as the
- * server read them, so the stored block is the media part a tool result carries too.
- */
 export type AdmittedMessageBlock =
   | Exclude<UserMessageBlock, { type: "image" }>
   | (Extract<UserMessageBlock, { type: "image" }> &
       Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name" | "chatCopy">);
 
-/**
- * The durable turn block a submitted message block becomes. Server persistence
- * and the client's optimistic writer row both use it, so the row the writer
- * sees before admission carries the same occurrences the snapshot will.
- */
 export function userMessageTurnBlock(block: AdmittedMessageBlock): {
   blockType: "text" | "media";
   content: JsonValue;
@@ -75,12 +64,6 @@ export function userMessageTurnBlock(block: AdmittedMessageBlock): {
   }
 }
 
-/**
- * The inverse of `userMessageTurnBlock`: a writer's stored turn blocks back to the message blocks
- * they were built from, in block order. Hand-back and Edit after Stop both read a sent message
- * this way. A reference's adoption-time `read` snapshot is dropped, and a block that is none of
- * text, reference, skill or image is skipped.
- */
 export function userMessageBlocksFromTurn(
   blocks: readonly { blockType: string; content: unknown; sequence?: number }[],
 ): UserMessageBlock[] {
@@ -130,11 +113,9 @@ export type UserTurnAdmissionInput = {
   text: string;
   blocks: unknown;
   references: readonly SubmittedReference[];
-  /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: readonly string[];
 };
 
-/** Fields proving the admission and the read/replay floors that belong to it. */
 export const admissionReceiptShape = {
   threadId: z.string().min(1),
   userTurnId: z.string().min(1),
@@ -164,7 +145,6 @@ export type AcceptedAdmission = {
   threadId: ThreadId;
   submissionId: string;
   userTurnId: TurnId;
-  /** The stream version of the record the admission's own transaction published; null for older rows. */
   runStateVersion: string | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
@@ -192,14 +172,12 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
-/** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
 export type ReadReferenceOccurrence =
   | (Extract<ReferenceOccurrence, { kind: "document" }> & {
       read?: {
         result: JsonValue;
         revision: string | null;
         input?: JsonObject;
-        /** Request-time only, never stored: the media part or text that stands for a file shown as media. */
         media?: JsonValue;
       };
     })

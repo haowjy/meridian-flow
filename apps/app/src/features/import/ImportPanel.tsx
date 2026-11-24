@@ -1,4 +1,3 @@
-/** What an import shows the writer, in the popup on desktop and the sheet on a phone. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { entryNeedsLook, type ImportEntryStatus } from "@meridian/contracts";
@@ -24,7 +23,6 @@ import { readPicked } from "./read-picked";
 import { problemSentences } from "./reason-copy";
 import { canPickFolders, PickInputs } from "./SelectionPicker";
 
-/** The accessible name of an Import button that stands for imports. */
 export function importLabel(status: ImportStatus | null): string {
   if (status === "running") return t`Import, in progress`;
   if (status === "needs-writer") return t`Import, needs your attention`;
@@ -64,7 +62,6 @@ function ImportCard({
   );
   const retry = () => void coordinator.retry(importId);
   const show = () => {
-    // An import shows one of its files, one that needs a look first; otherwise the Editor's recents.
     const file = [...problems, ...(detail?.entries ?? [])]
       .map((entry) => tree?.findDocument(entry.documentId))
       .find(Boolean);
@@ -183,7 +180,6 @@ function ImportCard({
   );
 }
 
-/** The imports an entry point stands for, then the way to start another. */
 export function ImportPanelBody({
   items,
   touch = false,
@@ -229,7 +225,6 @@ export function ImportPanelBody({
   );
 }
 
-/** The phone's popup: the same content in a bottom sheet. */
 export function ImportSheet({
   items,
   open,

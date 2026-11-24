@@ -1,14 +1,3 @@
-/**
- * UI themes: a `[data-ui-theme="<name>"]` block re-points the `--color-*` names that
- * `ink-jade.css` defines. The default light palette is the absence of the attribute.
- * The app sets the attribute on the root pre-paint (`apps/app/src/lib/ui-theme.ts`);
- * apps/www sets it on the night regions of the landing page.
- *
- * Dark orders its surfaces chrome < page < raised in the same warm grey, with light grey
- * ink: on a dark ground a raised surface needs its own step, where light lifts it by
- * border and shadow. A theme re-points surfaces, inks and accents only: state fills and
- * borders are overlays of `foreground`, so they lighten here on their own.
- */
 :root[data-ui-theme="dark"],
 [data-ui-theme="dark"] {
   --color-background: oklch(0.235 0.006 60);
@@ -20,8 +9,7 @@
 
   --color-foreground: oklch(0.93 0.006 60);
   --color-muted-foreground: oklch(0.75 0.006 60);
-  /* Derived tokens resolve where they are declared: a nested night region must restate
-     them, or it inherits the light root's values. */
+  /* keep: Restate derived CSS tokens in each nested dark region or they inherit the light root's values */
   --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
@@ -29,7 +17,6 @@
   --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
   --color-focus: oklch(0.74 0.12 165);
 
-  /* Jade brightens on dark ground; text on a jade fill stays dark ink. */
   --color-brand-jade: oklch(0.68 0.09 175);
   --color-primary: oklch(0.72 0.12 165);
   --color-primary-foreground: oklch(0.18 0.02 165);
@@ -42,7 +29,6 @@
   --color-warning-tint: oklch(0.3 0.04 75);
   --color-cinnabar: oklch(0.68 0.16 30);
 
-  /* The light syntax inks are illegible here: same hues, lifted for >= 4.5:1. */
   --color-syntax-keyword: oklch(0.72 0.1 175);
   --color-syntax-string: oklch(0.76 0.1 55);
   --color-syntax-comment: oklch(0.6 0.006 60);

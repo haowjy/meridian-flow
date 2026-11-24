@@ -1,4 +1,3 @@
-/** Best-effort shared route maintenance; never turn completed teardown into failure. */
 import { spawnSync } from "node:child_process";
 
 export function prunePortlessRoutes(cwd: string): void {

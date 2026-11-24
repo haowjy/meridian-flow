@@ -1,5 +1,3 @@
-/** Creates a named Work in an owned project. */
-
 import { type CommandId, type DraftId, isDraftId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest } from "@meridian/contracts/works";

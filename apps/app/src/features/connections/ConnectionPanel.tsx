@@ -24,10 +24,8 @@ import {
 } from "./connection-status";
 import { ToolChooser } from "./ToolChooser";
 
-/** What the panel opens on: the token field after Add a token or Update the token, the tools after Choose tools. */
 export type PanelFocus = "token" | "tools" | null;
 
-/** An open connection: how it stands in full, its address, its token, its tools, and Remove. */
 export function ConnectionPanel({
   connection,
   standing,
@@ -121,7 +119,6 @@ function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNod
   );
 }
 
-/** A new address is a new connection to the server: the status starts over at "Checking…". */
 function AddressField({ connection }: { connection: McpConnectionView }) {
   const id = useId();
   const [url, setUrl] = useState(connection.url);
@@ -167,14 +164,12 @@ function AddressField({ connection }: { connection: McpConnectionView }) {
   );
 }
 
-/** The token is never shown back: the field says whether one is set, and replaces or clears it. */
 function TokenField({ connection, focus }: { connection: McpConnectionView; focus: boolean }) {
   const id = useId();
   const [editing, setEditing] = useState(focus);
   const [token, setToken] = useState("");
   const field = useRef<HTMLInputElement>(null);
   const change = useRef<HTMLButtonElement>(null);
-  // The field Save or Cancel stood in leaves; focus goes to the control that opens it again.
   const close = () => {
     setEditing(false);
     setToken("");
@@ -246,7 +241,6 @@ function TokenField({ connection, focus }: { connection: McpConnectionView; focu
   );
 }
 
-/** Shows the edit at once (a new version has no result yet), then the server's answer. */
 function useEditConnection(connection: McpConnectionView, onSaved?: () => void) {
   const cache = useMcpConnectionCache();
   return useMutation({
@@ -374,7 +368,6 @@ function ToolsPart({
   );
 }
 
-/** The time, a step at a time, for "checked 3 minutes ago". */
 function useNow(stepMs: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

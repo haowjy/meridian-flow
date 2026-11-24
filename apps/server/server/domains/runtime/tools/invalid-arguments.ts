@@ -1,14 +1,6 @@
-/**
- * The one `invalid_arguments` refusal: the executor's input parse and spawn's
- * override checks both refuse a call this way, so the model sees the same text
- * and the app the same typed result whichever layer caught the mistake. The
- * text is rendered from the result.
- */
 import type { ZodError, z } from "zod";
 
-// Type aliases, not interfaces, so both stay assignable to JsonObject.
 export type InvalidArgumentIssue = {
-  /** Dotted argument path such as `overrides.effort`; `arguments` for the root. */
   path: string;
   message: string;
 };
@@ -33,7 +25,6 @@ export function isInvalidArgumentsResult(value: unknown): value is InvalidArgume
   );
 }
 
-/** The model's text for an `invalid_arguments` refusal. */
 export function renderInvalidArguments(
   toolName: string,
   issues: readonly InvalidArgumentIssue[],
@@ -44,7 +35,6 @@ export function renderInvalidArguments(
   ].join("\n");
 }
 
-/** Parse a tool's input, reporting the received value so issues can quote it. */
 export function parseToolInput<T extends z.ZodType>(
   schema: T,
   input: unknown,
@@ -93,8 +83,7 @@ function issueMessage(issue: Issue): string {
             ? (input as Record<string, unknown>)[discriminator]
             : undefined;
         if (value === undefined) return `required; expected ${oneOf(options)}`;
-        // A transcript from before `redo` was removed can still send it.
-        const gone = value === "redo" ? "; there is no redo, write the edit again" : "";
+        const gone = value === "redo" ? "; there is no redo" : "";
         return `expected ${oneOf(options)}, got ${quote(value)}${gone}`;
       }
       return issue.message;

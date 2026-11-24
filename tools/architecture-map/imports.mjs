@@ -1,10 +1,3 @@
-/**
- * The real import graph of the source under the paths the map names, for check.mjs. Reads
- * source text, not types: it sees `import`/`export ... from`/dynamic `import()`/`require()` and a stylesheet's `@import`,
- * resolves relative paths, the configured aliases and workspace package names (`name[/sub]` is
- * the package's directory). Test files are
- * left out (with `test-support` directories and files): the map describes what the code does, not what its tests reach into.
- */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
@@ -27,17 +20,12 @@ const EXTENSIONS = [
 ];
 
 const STATEMENTS = [
-  // import a, { b } from "x" / import type ... from "x" / export ... from "x"
   /\b(?:import|export)\s+(type\s+)?([\w$*{},\s]*?)\s*\bfrom\s*["']([^"']+)["']/g,
-  // import "x"
   /\bimport\s*["']([^"']+)["']/g,
-  // import("x"), require("x")
   /\b(?:import|require)\s*\(\s*["'`]([^"'`]+)["'`]\s*\)/g,
 ];
-// @import "x" in a stylesheet
 const CSS_IMPORT = /@import\s+["']([^"']+)["']/g;
 
-/** The module specifiers a file imports: [{ spec, typeOnly }]. Comments are blanked first, so a commented-out import doesn't count. */
 function specifiersIn(source, isCss) {
   const found = [];
   const noBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -64,7 +52,6 @@ function specifiersIn(source, isCss) {
   return found;
 }
 
-/** Source files under a repo-relative directory or file, tests excluded. */
 function sourceFiles(repo, path, out) {
   const full = join(repo, path);
   if (!existsSync(full)) return;
@@ -80,7 +67,6 @@ function sourceFiles(repo, path, out) {
   }
 }
 
-/** Package name → directory, for the workspace directories that hold a package.json. */
 export function workspacePackages(repo, workspaceDirs) {
   return new Map(
     workspaceDirs.map((dir) => [
@@ -90,14 +76,6 @@ export function workspacePackages(repo, workspaceDirs) {
   );
 }
 
-/**
- * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly, spec }],
- * `spec` the module specifier as written,
- * `to` a repo-relative file when the import resolves to one, else the path it points at; a
- * workspace package import has `to` the package directory. External packages are left out.
- * `workspaceDirs` are the directories of the workspace packages; `aliases` are
- * [{ prefix, within, to }]: a `prefix` import from a file under `within` reads from `to`.
- */
 export function readImports(repo, roots, { workspaceDirs, aliases }) {
   const files = new Set();
   for (const root of roots) sourceFiles(repo, root, files);
@@ -110,7 +88,6 @@ export function readImports(repo, roots, { workspaceDirs, aliases }) {
     }
   };
   const settle = (path) => {
-    // TypeScript sources import each other as "./x.js".
     const stem = path.replace(/\.[cm]?js$/, "");
     for (const candidate of stem === path ? [path] : [path, stem]) {
       for (const extension of EXTENSIONS)
@@ -138,5 +115,4 @@ export function readImports(repo, roots, { workspaceDirs, aliases }) {
   return imports;
 }
 
-/** Whether `path` is `root` or lies under it. */
 export const under = (path, root) => path === root || path.startsWith(`${root}/`);

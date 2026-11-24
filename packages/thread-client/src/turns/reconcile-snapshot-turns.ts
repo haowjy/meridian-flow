@@ -1,11 +1,3 @@
-/**
- * reconcile-snapshot-turns — identity-based turn snapshot reconciliation.
- *
- * This is the replacement reconcile for the unified block-with-status model,
- * added ahead of wiring. It never compares timestamps: shared turn IDs take
- * server turn fields, and shared block sequences take server block fields,
- * while explicitly optimistic turns and live non-terminal tail blocks survive.
- */
 import type { Block, Turn, TurnStatus } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 
@@ -13,10 +5,6 @@ import { isOptimisticTurnId } from "../view/optimistic-turn-id";
 import { sameBlock, sameTurn } from "./same-turn";
 
 export type ReconcileSnapshotTurnsOptions = {
-  /**
-   * Server lifecycle hint for the assistant turn that is still running even if
-   * the snapshot's `turns[]` projection has not caught up to include it yet.
-   */
   runningTurnId?: string | null;
 };
 
@@ -43,12 +31,6 @@ function reconcileBlocks(
     const serverSequences = new Set(server.map((block) => block.sequence));
     const maxServerSequence = server.reduce((max, block) => Math.max(max, block.sequence), -1);
 
-    /**
-     * `sequence` is the block identity inside one turn. Server blocks replace
-     * the same sequence, but local blocks beyond a non-terminal snapshot's max
-     * sequence are the live tail that may have arrived before the snapshot head.
-     * Terminal server turns are fully authoritative and skip this path.
-     */
     const localTail = local.filter(
       (block) => !serverSequences.has(block.sequence) && block.sequence > maxServerSequence,
     );
@@ -69,15 +51,6 @@ function reconcileBlocks(
     : shared;
 }
 
-/**
- * Reconcile local store turns with an authoritative server snapshot.
- *
- * Server turn order is authoritative: the server has already imposed causal
- * `prevTurnId` ordering, including same-millisecond createdAt ties. Local-only
- * optimistic/running turns are threaded around that ordered server spine using
- * their nearest local neighbors so optimistic rows do not jump unnecessarily.
- * Within a shared turn, blocks are ordered by `sequence`.
- */
 export function reconcileSnapshotTurns(
   local: Turn[],
   server: Turn[],
@@ -91,7 +64,7 @@ export function reconcileSnapshotTurns(
     if (!localTurn) return serverTurn;
     const nextTurn = {
       ...serverTurn,
-      // Forgetting is write-once: an older snapshot never clears a stamp the store already holds.
+      // keep: Forgetting is write-once; an older snapshot must not clear a stamp the store already holds
       forgottenBy: localTurn.forgottenBy ?? serverTurn.forgottenBy,
       blocks: reconcileBlocks(localTurn.blocks, serverTurn.blocks, serverTurn.status),
     };

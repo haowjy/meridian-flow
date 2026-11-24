@@ -1,4 +1,3 @@
-/** Point each Vitest worker at its own clone of the migrated DB template. */
 const encodedUrls = process.env.DB_TEST_DATABASE_URLS;
 if (encodedUrls) {
   const databaseUrls = JSON.parse(encodedUrls) as string[];

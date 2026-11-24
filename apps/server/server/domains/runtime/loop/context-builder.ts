@@ -1,5 +1,3 @@
-/** Projects persisted turns and blocks into the canonical gateway message context. */
-
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type {
@@ -36,28 +34,16 @@ export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
-  /**
-   * The thread's system prompt: its frozen bake, or the would-be first bake
-   * while unfrozen. Required once frozen; an unfrozen thread without one gets
-   * the bare runtime instructions.
-   */
   systemPrompt?: string;
   tools?: Tool[];
-  /**
-   * The recorded connection calls of a call that did not finish, by `connectionCallKey`: what the
-   * stub tells the model beside "did not finish", so it can see what was sent.
-   */
   recordedCalls?: ReadonlyMap<string, readonly string[]>;
-  /** Dev observability for invalid persisted chat contracts. */
   eventSink?: EventSink;
 }
 
-/** The tools whose calls are recorded in `mcp_calls`: an unfinished one's stub lists its record. */
 const CONNECTION_CALL_TOOLS: ReadonlySet<string> = new Set(["mcp_call", "mcp_run"]);
 
 export const connectionCallKey = (turnId: string, toolCallId: string) => `${turnId}\n${toolCallId}`;
 
-/** The assistant turns that have a connection tool call with no stored result: whose records the stub lists. */
 export function turnsWithUnfinishedConnectionCalls(
   turns: readonly Turn[],
   blocks: readonly Block[],
@@ -124,7 +110,6 @@ export function buildContext(input: BuildContextInput): {
   };
 }
 
-/** One model-visible turn, shared by live requests and cold summary transcripts. */
 export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
   const messages: Message[] = [];
   const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
@@ -234,7 +219,6 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
   }
 }
 
-/** Inbox turns retain durable graph identity but travel to the model as one delivery. */
 function mergeAdjacentUserMessages(messages: readonly Message[]): Message[] {
   const merged: Message[] = [];
   for (const message of messages) {
@@ -283,8 +267,8 @@ function completeToolResultGroups(
     const unfinished =
       sourceTurn?.status === "cancelled"
         ? "Tool call cancelled; no result recorded."
-        : "Tool call did not finish: the turn ended before it returned (for example, Flow's server restarted); no result recorded. This is not a time limit.";
-    const missingResultMessage = `${unfinished} Side effects unknown — re-read state before retrying.`;
+        : "Tool call did not finish: the turn ended before it returned (for example, Flow's server restarted); no result recorded.";
+    const missingResultMessage = `${unfinished} Side effects unknown.`;
     for (const toolCallId of missingResultIds) {
       const recorded = sourceTurn
         ? recordedCalls.get(connectionCallKey(sourceTurn.id, toolCallId))
@@ -299,11 +283,6 @@ function completeToolResultGroups(
   return completed;
 }
 
-/**
- * A tool result's parts as the gateway's. Request preparation has already turned each stored media
- * part into the gateway's part or into text; one it never saw (an estimate before projection)
- * is described as text.
- */
 function storedContentParts(
   parts: readonly (ToolContentPart | MediaPart)[],
 ): (TextPart | MediaPart)[] {
@@ -318,7 +297,6 @@ function storedContentParts(
   );
 }
 
-/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
 function userTurnContentParts(blocks: readonly Block[]): (TextPart | MediaPart)[] {
   const parts: (TextPart | MediaPart)[] = [];
   for (const block of blocks) {
@@ -351,13 +329,11 @@ function userTurnContentParts(blocks: readonly Block[]): (TextPart | MediaPart)[
   return parts;
 }
 
-/** A user turn's text and projected media. Reference blocks are added separately by `userTurnContentParts`; other blocks map to no part. */
 function blockToUserPart(block: Block): TextPart | MediaPart | null {
   switch (block.blockType) {
     case "text":
       return block.textContent ? text(block.textContent) : null;
     case "media": {
-      // Only a projected picture carries a source; the stored part holds identity alone.
       const image = block.content as Partial<MediaPart> | null;
       return image?.type === "media" && image.source ? (image as MediaPart) : null;
     }
@@ -366,7 +342,6 @@ function blockToUserPart(block: Block): TextPart | MediaPart | null {
   }
 }
 
-/** An assistant turn's text, reasoning and tool use; no provider takes media from the model. */
 function blockToAssistantPart(block: Block): AssistantContentPart | null {
   switch (block.blockType) {
     case "text":
@@ -407,7 +382,6 @@ function blockToAssistantPart(block: Block): AssistantContentPart | null {
         input: content?.input ?? {},
       } satisfies ToolUsePart;
     }
-    // Interrupt content stays in its tool input/result to preserve provider ordering.
     default:
       return null;
   }
@@ -444,7 +418,6 @@ function formatNotice(notice: Notice): string {
 }
 
 function formatUndoNotices(notices: readonly Notice[]): string {
-  // URI, not basename, identifies a document; distinct documents can share a name.
   const grouped = new Map<string, string>();
   for (const { data } of notices) {
     if (typeof data.turnId !== "string") continue;

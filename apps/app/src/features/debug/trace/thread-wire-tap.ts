@@ -1,5 +1,3 @@
-/** Maps content-free thread WebSocket metadata into the shared observability schema. */
-
 import type { EventCorrelation, EventRecord } from "@meridian/contracts/observability";
 import { EventType } from "@meridian/contracts/protocol";
 
@@ -30,11 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Allowlist every copied classification so arbitrary payload strings can never
- * become searchable records. Nested data is ignored except the event type
- * discriminant on a single sequenced `event` frame.
- */
+// keep: Allowlist every copied classification; arbitrary payload strings must never become searchable trace records, and nested data is ignored except a sequenced event's type.
 function inspectThreadFrame(direction: WireDirection, data: string): ThreadFrameMetadata {
   let parsed: unknown;
   try {

@@ -1,4 +1,3 @@
-/** GET /api/mcp/connections/:connectionId/tools: the server's tools as it lists them now, for choosing or choosing again. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

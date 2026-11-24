@@ -1,22 +1,3 @@
-/**
- * The chat's run-state slice and the one reducer every fact about the chat's run state goes
- * through: the accepted snapshot, the `subscribed` state, `meridian.run_state` frames, answers,
- * the journal's switches (stamped once answered), and this device's intents (admitted messages,
- * switches, Withdraws, hand-backs). The thread store holds one slice per chat; the mounted
- * subscriber, the composer, the queued tray, Stop, the transcript and the switch hook all read
- * it, and the display table test drives this reducer, so the table exercises the production
- * ingestion path.
- *
- * Every server fact is a whole `RunState`, so a frame before the snapshot is simply the first
- * record: nothing is buffered, and `run-state-view.ts` alone decides what is newer. A
- * `write_mode.switched` frame is not a record but the server's answer for its control's intent.
- *
- * It also classifies announcement eligibility where a record is taken, because only the carrier
- * says whether a queued switch is news: a live record frame or a journal stamp, taken after the
- * first record, announces each queued switch once. The first record, a snapshot (however much
- * newer) and the frames replayed after the first record stay silent. The same holds for an
- * applied switch: a `switched` frame at or below the first record's version is not news.
- */
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -33,24 +14,18 @@ import {
   receiveRecord,
 } from "./run-state-view";
 
-/** A write-mode switch the journal still holds: unanswered, or answered with the stamp. */
 export type JournalSwitch = {
   id: string;
   mode: AiWriteMode;
-  /** The record's place in the chat's order. */
   seq: number;
-  /** Marked posted before its first request left. */
   posted: boolean;
-  /** The server refused it: nothing is held there, so Withdraw is local. */
   refused: boolean;
-  /** The server's answer, stamped by whichever tab drove the record: the whole record, and when (ms). */
   answer: { runState: RunState; at: number } | null;
 } & FailedCommand;
 
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";
 
-/** The ids of the record's write-mode switches, as one comparable key; "" when none is pending. */
 export function queuedSwitchKey(record: Pick<RunState, "items">): string {
   return record.items
     .filter(isWriteModeControl)
@@ -58,11 +33,6 @@ export function queuedSwitchKey(record: Pick<RunState, "items">): string {
     .join(",");
 }
 
-/**
- * What the toolbar and rows show. Before the first record the chat's own mode (`base`, the
- * thread row's) stands in as the applied one, so a choice made before the snapshot still
- * shows at once.
- */
 export function switchDisplay(view: RunStateView, base: AiWriteMode) {
   return (
     switchState(view) ??
@@ -80,38 +50,23 @@ export function switchDisplay(view: RunStateView, base: AiWriteMode) {
   );
 }
 
-/** A queued write-mode switch the writer should hear about; `n` counts them, from 1. */
 export type QueuedNews = {
   n: number;
   id: string;
   control: Extract<ControlBody, { kind: "write_mode" }>;
-  /** The server's `deliveryState`: a reply that already held the chat has to finish first. */
   waiting: boolean;
 };
 
-/** A switch applied since the first record, which the writer should hear about; `n` counts them, from 1. */
 export type AppliedNews = { n: number; turnId: string; controlId: string; mode: AiWriteMode };
 
 export type RunStateSlice = {
   view: RunStateView;
-  /** The queued switches already seen, from any carrier. */
   heard: ReadonlySet<string>;
   news: readonly QueuedNews[];
-  /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   seed: string | null;
-  /** The applied switches already seen, by their divider's turn. */
   appliedHeard: ReadonlySet<string>;
   applied: readonly AppliedNews[];
-  /**
-   * How much of `news` and `applied` the writer has been told, by `n`. It lives with the lists,
-   * so a remounted view speaks only what no mounted view has.
-   */
   spoken: { queued: number; applied: number };
-  /**
-   * The version of the newest accepted snapshot, whose turns reached the transcript with it:
-   * proof that a control absent from those turns, and from a record at or below this version,
-   * did not run.
-   */
   history: string | null;
 };
 export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
@@ -126,22 +81,15 @@ export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
 };
 
 export type RunStateAction =
-  /** A record that is not news: an accepted snapshot, a `subscribed` state, or an answer's. */
   | { type: "snapshot"; runState: RunState }
-  /** The accepted snapshot's record, dispatched with its turns: a `snapshot` that also marks `history`. */
   | { type: "history"; runState: RunState }
-  /** A `meridian.run_state` frame. */
   | { type: "record"; runState: RunState }
-  /** A `meridian.write_mode.switched` frame: the server's answer for its control. */
   | { type: "switched"; seq: string; controlId: string; turnId: string; mode: AiWriteMode }
-  /** This device's intent: an admitted message, or a hand-back request. */
   | { type: "intent"; intent: RunStateIntent }
   | { type: "answer"; kind: RunStateIntent["kind"]; id: string; version: string }
   | { type: "drop"; kind: RunStateIntent["kind"]; id: string }
-  /** The last attempt at a hand-back request did not succeed: its rows show again. */
   | { type: "failHandBack"; id: string }
   | { type: "journal"; switches: readonly JournalSwitch[] }
-  /** The view told the writer of the news through these counts. */
   | { type: "spoken"; queued: number; applied: number }
   | { type: "withdraw"; id: string; requestId: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
@@ -190,7 +138,6 @@ function reduceSlice(state: RunStateSlice, action: RunStateAction): RunStateSlic
   return { ...withApplied, view, heard, news };
 }
 
-/** A switched frame past the first record, whose divider the writer has not been told about. */
 function appliedBy(
   state: RunStateSlice,
   action: Extract<RunStateAction, { type: "switched" }>,
@@ -233,9 +180,6 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
       const held = new Set(action.switches.map((entry) => entry.id));
       for (const entry of action.switches) {
         if (entry.answer) {
-          // A stamp is the server's answer, read as a fact by every tab. Without a snapshot
-          // it is evidence for its intent, never a record, and a stamp left over from before
-          // a reload makes no row.
           if (next.record) next = receiveRecord(next, entry.answer.runState);
           else if (
             !next.intents.some((known) => known.kind === "switch" && known.id === entry.id)
@@ -256,8 +200,6 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
             : { failed: false as const }),
         });
       }
-      // An entry that left the journal was withdrawn or refused here, or pruned while this
-      // tab was blind: its intent and evidence go, and frames bring the server state.
       for (const intent of next.intents)
         if (intent.kind === "switch" && !held.has(intent.id))
           next = dropIntent(next, "switch", intent.id);
@@ -279,7 +221,6 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
       });
     }
     case "withdrawn":
-      // The answer's record, then the intent's answer at its version.
       return answerIntent(
         receiveRecord(view, action.runState),
         "withdraw",

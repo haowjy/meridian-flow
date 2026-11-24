@@ -1,4 +1,3 @@
-/** `thread view --blocks`: every reduced block with its timing, so "when did this land" needs no psql. */
 import { blockContentRecord, type Turn } from "@meridian/contracts/threads";
 
 export type BlockRow = {
@@ -7,14 +6,10 @@ export type BlockRow = {
   sequence: number;
   type: string;
   status: string | null;
-  /** Tool name on tool_use blocks and on the tool_result that answers one. */
   tool: string | null;
   createdAt: string;
-  /** Milliseconds since the turn was created. */
   offsetMs: number;
-  /** Milliseconds since the previous block in the same turn (the turn start for the first). */
   gapMs: number;
-  /** Serialized content size in bytes. */
   bytes: number;
 };
 
@@ -55,7 +50,6 @@ export function blockTimings(threadId: string, selected: Turn[]): BlockTable {
   return { threadId, blocks, turns: selected.length };
 }
 
-/** Signed seconds: a block can be stamped a few ms before its turn's own createdAt. */
 function seconds(ms: number): string {
   return `${ms < 0 ? "-" : "+"}${(Math.abs(ms) / 1000).toFixed(2)}s`;
 }

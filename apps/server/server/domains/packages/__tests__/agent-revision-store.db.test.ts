@@ -229,7 +229,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         expect(seen).toEqual([[b, a]]);
         expect(undone?.undone?.id).toBe(second.id);
         expect((await store.readSaved(owner)).map((row) => row.packageRevisionId)).toEqual([a]);
-        // A Save with a later one on top is no longer the one to undo.
         expect((await store.undoSave(owner, second.id, async () => {}))?.undone).toBeNull();
       });
 
@@ -261,7 +260,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           });
           await reached;
           const save = rival.savePackage(owner, "", c);
-          // The rival is waiting on the package lock the Undo holds.
           await vi.waitFor(async () => {
             const waiting =
               await db.$client`select 1 from pg_locks where locktype = 'advisory' and not granted`;

@@ -1,14 +1,3 @@
-/**
- * Core tool catalogue: declares the builtin runnable tool names, model-visible
- * schemas, and per-tool execution constraints. This module is the publication
- * boundary for core runtime tools: callers must provide concrete handlers before
- * a tool registration can be constructed, so definitions cannot be advertised
- * without executable server behavior.
- *
- * The composition root supplies the handlers through
- * `createWiredCoreToolRegistrations`, keeping this runtime-domain catalogue free
- * of ContextPort or other app-layer adapter imports.
- */
 import {
   type AgentEditResultCommand,
   type AgentEditResultV1,
@@ -45,7 +34,6 @@ import { renderAsText, textContent } from "./tool-content.js";
 import type { RequestToolHandlerContext, ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
-/** A Work handle as the model writes it: trimmed, and `@w3` means Work `w3`. A name is answered by the handler. */
 const WorkRefSchema = z
   .string()
   .min(1)
@@ -222,17 +210,11 @@ const GrepToolInputSchema = z
   .strict();
 export type GrepToolInput = z.output<typeof GrepToolInputSchema>;
 
-/** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "grep", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
 
-/**
- * Concrete handlers for every core tool the composition root binds. The mapped type
- * makes adding a new core tool an exhaustive wiring change instead of silently
- * publishing a stub. `ask_user` needs nothing from the root: it only makes a request.
- */
 export type CoreToolHandlers = {
   [Name in Exclude<CoreToolName, "ask_user">]: ServerToolHandler;
 };
@@ -242,11 +224,6 @@ async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
   return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
 }
 
-/**
- * The document tools' handlers and error formatter return agent-edit results,
- * except a `skills://` read, whose text is already the model's.
- */
-/** A handler's own `invalid_arguments` refusal (a `skills://` read) reads like the executor's. */
 function renderDocumentResult(tool: "read" | "write") {
   return (result: unknown): string => {
     if (typeof result === "string") return result;
@@ -255,10 +232,6 @@ function renderDocumentResult(tool: "read" | "write") {
   };
 }
 
-/**
- * What the model reads of a `read`: the result's text, and a file it was given to look at
- * after it, as the stored media part the request builder resolves.
- */
 function renderReadResult(result: unknown): ToolContentPart[] {
   const content = textContent(renderDocumentResult("read")(result));
   const file = (result as Partial<AgentEditResultV1> | null)?.file;
@@ -276,7 +249,6 @@ function renderReadResult(result: unknown): ToolContentPart[] {
   ];
 }
 
-/** Executor-owned failures in the document tools' own result protocol. */
 function documentExecutionError(command: (error: ToolExecutionError) => AgentEditResultCommand) {
   return (error: ToolExecutionError) =>
     modelResult({
@@ -304,7 +276,6 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: readDocumentText,
       historySummary: documentHistorySummary,
       historyKind: "routine",
-      // Reads run in call order with writes, so a read after a write sees it.
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
@@ -343,7 +314,6 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
-      // A command the policy asks about becomes a permission request.
       capability: "request",
       historySummary: workHistorySummary,
       historyKind: (input) =>

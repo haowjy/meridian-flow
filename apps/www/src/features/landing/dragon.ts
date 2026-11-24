@@ -2,22 +2,16 @@ type Point = readonly [x: number, y: number];
 type Bone = readonly [x: number, y: number, radius: number];
 
 const SIZE = 512;
-/** Wing poses in the sheet, from raised to the bottom of the downstroke. */
 export const DRAGON_POSES = 6;
 const DOWNSTROKE = 1.35;
 const FOLD = 0.3;
 const UNITS = 1000;
 
-/** The mouth in a flying pose, as an offset from the cell's centre in shares of the cell. */
 export const dragonMouth = (stroke: number) => [0.433, -0.122 - (stroke - 0.5) * 0.044] as const;
-/** Which way the flying head points, in radians below level. */
 export const DRAGON_HEAD_ANGLE = 0.11;
 
-/** How far below the cell's centre a grounded pose's feet are, in shares of the cell. */
 export const GROUND_FEET = 0.185;
-/** Grounded poses in their own sheet, from head low at the party to raised straight up. */
 export const GROUND_POSES = 4;
-/** The neck's end and which way the head turns there, head low (0) to raised (1). */
 const groundNeck = (raise: number) => {
   const mix = (a: number, b: number) => a + (b - a) * raise;
   return {
@@ -30,7 +24,6 @@ const groundNeck = (raise: number) => {
     turn: mix(0.8, -1.02),
   };
 };
-// The skull is drawn about its base; MOUTH is between the open jaws.
 const SKULL_BASE: Point = [695, 335];
 const MOUTH: Point = [795, 275];
 const headAt = ([x, y]: Point, turn: number, [px, py]: Point): Point => {
@@ -40,7 +33,6 @@ const headAt = ([x, y]: Point, turn: number, [px, py]: Point): Point => {
   const dy = py - SKULL_BASE[1];
   return [x + dx * cos - dy * sin, y + dx * sin + dy * cos];
 };
-/** The mouth of a grounded pose, as an offset from the cell's centre in shares of the cell. */
 export const groundMouth = (raise: number) => {
   const { bones, turn } = groundNeck(raise);
   const end = bones[bones.length - 1];
@@ -90,11 +82,9 @@ function drawSheet(poses: number, draw: (pen: CanvasRenderingContext2D, t: numbe
   return canvas;
 }
 
-/** The flying dragon's silhouettes in the alpha channel, wing poses left to right. */
 let sheet: HTMLCanvasElement | null = null;
 export const dragonSheet = () => (sheet ??= drawSheet(DRAGON_POSES, drawPose));
 
-/** The dragon on the ground, wings folded, its head rising left to right. */
 let groundSheet: HTMLCanvasElement | null = null;
 export const dragonGroundSheet = () => (groundSheet ??= drawSheet(GROUND_POSES, drawGrounded));
 
@@ -267,7 +257,6 @@ function drawPose(pen: CanvasRenderingContext2D, stroke: number) {
 function drawGrounded(pen: CanvasRenderingContext2D, raise: number) {
   const { limb, shape, spines, head, tailTip } = kit(pen);
   const neck = groundNeck(raise);
-  // The far wing shows above the back, the near one folds over it down to the hips.
   shape([520, 500], [478, 392], [420, 372], [300, 470]);
   limb([
     [552, 498, 18],

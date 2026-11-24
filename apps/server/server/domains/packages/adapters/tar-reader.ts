@@ -1,11 +1,9 @@
 import { PackageFetchError } from "../ports/package-fetcher.js";
 
 export type TarEntry = {
-  /** Raw archive path, after pax and GNU long-name headers. */
   name: string;
   type: "file" | "directory" | "link" | "other";
   size: number;
-  /** Consumes the entry's bytes. Exactly one of `body` and `skip` must be called. */
   body(): Promise<Buffer>;
   skip(): Promise<void>;
 };
@@ -31,7 +29,6 @@ class ByteReader {
     return true;
   }
 
-  /** `null` only at a clean end before the first byte. */
   async read(length: number): Promise<Buffer | null> {
     const parts: Buffer[] = [];
     let need = length;
@@ -94,7 +91,6 @@ function checksumMatches(header: Buffer): boolean {
   return sum === octalOrBinary(header.subarray(148, 156));
 }
 
-/** pax records are `<len> <key>=<value>\n`; only `path` and `size` change how an entry reads. */
 function parsePax(data: Buffer): Map<string, string> {
   const records = new Map<string, string>();
   let at = 0;
@@ -119,10 +115,6 @@ function entryType(flag: string): TarEntry["type"] {
   return "other";
 }
 
-/**
- * Walks an uncompressed tar stream one entry at a time. Nothing is held beyond the entry whose
- * `body()` the caller asked for, and the caller's counters see every byte as it arrives.
- */
 export async function readTar(
   source: AsyncIterable<Buffer>,
   onEntry: (entry: TarEntry) => Promise<void>,
@@ -164,7 +156,7 @@ export async function readTar(
     if (!Number.isSafeInteger(size) || size < 0) throw corrupt("a size is invalid");
 
     const type = entryType(flag);
-    // A link or directory carries no body; its size field is not a byte count to read.
+    // keep: Tar links and directories carry no body; do not advance the reader by their size field
     const bodyBytes = type === "file" || type === "other" ? size : 0;
     const bodyPadded = Math.ceil(bodyBytes / BLOCK) * BLOCK;
     let consumed = false;
@@ -179,7 +171,6 @@ export async function readTar(
       async body() {
         consume();
         const data = bodyBytes === 0 ? EMPTY : await mustRead(reader, bodyPadded);
-        // A copy, so a kept file does not pin the whole gunzip chunk it arrived in.
         return Buffer.from(data.subarray(0, bodyBytes));
       },
       async skip() {

@@ -1,4 +1,3 @@
-/** Thread targets: `<thread>` resolution (ref via the by-ref route, id, URL, or unique prefix). */
 import {
   API_THREADS_PATH,
   apiProjectThreadByRefPath,
@@ -13,7 +12,6 @@ import { resolveProjectId } from "../project/resolve";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** `--project` for commands taking `<thread>`: the project a `cN`/`pN` ref lives in. */
 export const THREAD_TARGET_OPTIONS: Record<string, OptionSpec> = {
   project: {
     type: "string",
@@ -21,10 +19,6 @@ export const THREAD_TARGET_OPTIONS: Record<string, OptionSpec> = {
   },
 };
 
-/**
- * Accepts a full id, an app URL containing one, a `cN`/`pN` ref (resolved by the
- * server in `project`, else the default project), or a unique id prefix (like git).
- */
 export async function resolveThreadId(
   session: Session,
   raw: string,

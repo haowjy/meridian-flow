@@ -20,8 +20,7 @@ function discoverPortlessUrl(route: PortlessRoute): string {
   const output = execFileSync("pnpm", ["portless:list"], {
     cwd: REPO_ROOT,
     encoding: "utf8",
-    // Playwright sets FORCE_COLOR while loading a config; ANSI codes in the
-    // list break the route parser.
+    // keep: Playwright's FORCE_COLOR puts ANSI codes in portless:list; keep FORCE_COLOR=0 when parsing routes
     env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
   });
   return resolveCheckoutRouteUrls(REPO_ROOT, output)[route];

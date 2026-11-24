@@ -42,7 +42,6 @@ if (!RUN_DB_TESTS || !url) {
     afterAll(() => db.close());
     const compactionFixture = createCompactionFixture(db);
 
-    /** A PostgreSQL project with one document. */
     async function seedDocument(projectId: string) {
       const sourceId = crypto.randomUUID();
       const documentId = crypto.randomUUID();
@@ -57,7 +56,6 @@ if (!RUN_DB_TESTS || !url) {
       return documentId;
     }
 
-    /** A thread with an answer turn and a spawned child, on `adapter`'s repositories. */
     async function storeScene() {
       const userId = crypto.randomUUID() as UserId;
       const projectId = crypto.randomUUID() as ProjectId;
@@ -86,7 +84,6 @@ if (!RUN_DB_TESTS || !url) {
       return { repos, threadId: thread.id, childId: child.id, documentId, compaction: undefined };
     }
 
-    /** The real runtime composition, only for the row that compacts. */
     async function compactionScene() {
       const compaction = await compactionFixture();
       return {
@@ -157,18 +154,12 @@ if (!RUN_DB_TESTS || !url) {
     type Rig = Awaited<ReturnType<typeof rig>>;
     type Check = ShownLinksCheck;
 
-    /**
-     * Holds `turnId`'s next insert of `address` after it drew its sequence
-     * value and before conflict arbitration, as a suspended backend would,
-     * while `meanwhile` records the same key with a larger value.
-     */
     async function invertSequence(
       r: Rig,
       input: { turnId: string; fact: SpelledLinkFact; meanwhile: () => Promise<void> },
     ) {
       const lockKey = 7_291_730;
       const fn = `e1_delay_${crypto.randomUUID().replaceAll("-", "")}`;
-      // Only the next value drawn waits, so the competing writer passes.
       const [{ last }] = (await db.execute(
         sql.raw(`SELECT last_value AS last FROM thread_shown_links_seq_seq`),
       )) as unknown as Array<{ last: string }>;
@@ -201,7 +192,6 @@ if (!RUN_DB_TESTS || !url) {
       try {
         const holderPid = await holding;
         delayed = r.show(r.source.id, { id: input.turnId } as Turn, [input.fact]);
-        // The delayed insert is the backend this holder blocks on this key, not any advisory waiter.
         const deadline = Date.now() + 5_000;
         for (;;) {
           const waiting = await db.execute(

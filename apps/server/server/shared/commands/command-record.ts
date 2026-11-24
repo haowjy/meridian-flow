@@ -1,26 +1,16 @@
-/**
- * The command record: one request, one effect, one row in `commands`. The effect transaction
- * claims the id as its first write and stores its outcome before it commits, so a committed row
- * always holds the final answer and a resend reads it. Every kind (document, Work, project, the
- * runtime's) goes through this one claim; the kinds own only their effect and their statuses.
- */
 import { createHash } from "node:crypto";
 import type { CommandId, ProjectId, ThreadId, UserId } from "@meridian/contracts";
 import type { CommandKind, CommandOutcome } from "@meridian/contracts/commands";
 
-/** Who sent which command and what it said: the identity a resend must match exactly. */
 export type CommandEnvelope = {
   commandId: CommandId;
   accountId: UserId;
   projectId: ProjectId;
-  /** Set for a `model_edit`: its chat. */
   threadId?: ThreadId;
   kind: CommandKind;
-  /** `commandDigest` of the canonical envelope. */
   digest: string;
 };
 
-/** Canonical hash of the whole envelope: account, project, kind, selectors and body. */
 export function commandDigest(envelope: {
   accountId: string;
   projectId: string;
@@ -45,20 +35,13 @@ function canonicalJson(value: unknown): string {
 
 export type CommandLookup =
   | { kind: "none" }
-  /** Another account or digest under this id: reveals nothing. */
   | { kind: "conflict" }
   | { kind: "stored"; commandKind: CommandKind; outcome: CommandOutcome };
 
-/** What a lookup needs; the observation route has no body to digest, so it names none. */
 export type CommandLookupKey = Pick<CommandEnvelope, "commandId" | "accountId"> & {
   digest?: string;
 };
 
-/**
- * The answer a resend gets from a lookup: what was stored, or `conflict`; null when nothing is.
- * A `never` row answers `conflict` here: an old-shape route has no `never` to say, and the id
- * was never going to take effect for this sender either way.
- */
 export function replay<R>(
   found: CommandLookup,
   commandId: CommandId,
@@ -69,7 +52,6 @@ export function replay<R>(
   return found.outcome.result as R;
 }
 
-/** The id is already taken by a committed command: the caller answers that one. */
 export class CommandExistsError extends Error {
   constructor(readonly commandId: CommandId) {
     super(`Command ${commandId} already has an effect`);
@@ -77,7 +59,6 @@ export class CommandExistsError extends Error {
   }
 }
 
-/** The id was used by another account or for a different request: a bug in the client. */
 export class CommandConflictError extends Error {
   constructor(readonly commandId: CommandId) {
     super(`Command ${commandId} was used for a different command`);

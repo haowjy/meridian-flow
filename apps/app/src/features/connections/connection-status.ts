@@ -2,13 +2,8 @@ import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { type McpConnectionView, mcpAddressProblem } from "@meridian/contracts/mcp";
 
-/** What fixes a connection that isn't working, or makes one that is usable. */
 export type ConnectionAction = "try_again" | "add_token" | "update_token" | "choose_tools";
 
-/**
- * How a connection stands for the writer: a problem with its fix, or a fact for the row's end.
- * `checking` is the app's own word for "no result yet" and for a Try again under way.
- */
 export type ConnectionStanding =
   | { kind: "checking" }
   | { kind: "working"; tools: number }
@@ -35,7 +30,6 @@ export function connectionStanding(
     : { kind: "no_tools" };
 }
 
-/** A problem's category, all the writer is told: the server's reason stays in its logs. */
 export function problemWord(status: "unreachable" | "needs_sign_in"): string {
   return status === "unreachable" ? t`Unreachable` : t`Needs sign-in`;
 }
@@ -64,7 +58,6 @@ export function toolCount(count: number): string {
   return plural(count, { one: "# tool", other: "# tools" });
 }
 
-/** "just now", "3 minutes ago": when a check finished. */
 export function timeAgo(iso: string, nowMs: number): string {
   const seconds = Math.round((Date.parse(iso) - nowMs) / 1000);
   const format = new Intl.RelativeTimeFormat(i18n.locale, { numeric: "auto" });
@@ -76,7 +69,6 @@ export function timeAgo(iso: string, nowMs: number): string {
   return format.format(Math.round(hours / 24), "day");
 }
 
-/** A name the writer can keep: the address's host without `www.`, `api.` or `mcp.`, in the name's letters. */
 export function suggestedName(address: string): string {
   let host: string;
   try {
@@ -91,7 +83,6 @@ export function suggestedName(address: string): string {
     .slice(0, 40);
 }
 
-/** Why Flow won't connect to this address, said before it is sent; null for anything the server must judge. */
 export function addressRefusal(address: string): string | null {
   let url: URL;
   try {

@@ -1,10 +1,3 @@
-/**
- * Which of its Work's drafts a chat writes into, in the composer's toolbar: offered in Draft mode
- * while the Work has several. Picking one points the chat's lineage there
- * (`PUT /api/threads/:id/draft`); its next writes go into that draft, and its dock lists it. The
- * panel lists the drafts as a version chip's menu does (`WorkDraftRows`), `+ New draft` included,
- * which makes one and points the chat at it.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";

@@ -1,4 +1,3 @@
-/** Owner-gated Work catalog projection; each Work carries its stored pending-document count. */
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type {
   NamedWorkCatalogEntry,

@@ -1,7 +1,3 @@
-/**
- * The properties read authorizes by the document's read grant, as document reads do:
- * the writer's own files open from any project they own, a stranger's never do.
- */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documents, projects, users } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";

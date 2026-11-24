@@ -1,4 +1,3 @@
-/** Child-run coordination: admit, drive, and read saved terminal truth; the run session publishes every report. */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
@@ -17,11 +16,9 @@ import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 export interface ChildDriveInput {
   parentThread: Thread;
   parentTurnId: TurnId;
-  /** The parent's sending execution: a machine wake the fence checks. */
   parentExecutionId: string;
   prompt: string;
   budget: TreeBudget;
-  /** Original parent invocation, including the retained running card. */
   reportCorrelation?: ExecutionReportCorrelation;
 }
 

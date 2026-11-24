@@ -1,15 +1,3 @@
-/**
- * The one place Save asks what a package's files publish: Mars's `check()` verdict, which
- * `compilePackage` reads once per package and carries on each item's findings, ordered and graded
- * for Save. Flow's own findings join them (`flow.*`).
- *
- * An error in one Agent's or skill's file leaves that item out of what runs and never fails the
- * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable, and a
- * dependency Mars can't find or read is one (Save has none to fetch yet). Errors come first, then
- * warnings that say an Agent may run wider than its file reads, then other warnings, then Info.
- * Info stays in the package's findings; `shownFindings` (contracts) is what drops it for a list.
- */
-
 import {
   type CompiledPackage,
   isError,
@@ -19,11 +7,8 @@ import {
 import { agentPath, MANIFEST_PATH, skillPath } from "./mars.js";
 
 export interface PackageCheck {
-  /** Errors, warnings, then Info, in the package's own files. */
   findings: PackageDiagnostic[];
-  /** Errors that leave nothing readable (`mars.toml`): the Save fails and the saved version stays. */
   blocking: PackageDiagnostic[];
-  /** Agents and skills with an error, left out of what runs: package-relative paths. */
   leftOut: string[];
 }
 

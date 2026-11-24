@@ -1,9 +1,3 @@
-/**
- * The properties read behind GET /api/projects/:projectId/documents/:documentId/properties.
- * Access is the document's own read grant, the rule document reads use, so a
- * writer's User file opens from any project they own although it is stored in
- * their personal one. The project in the URL must still be theirs.
- */
 import type { DocumentProperties } from "@meridian/contracts";
 import { createError } from "nitro/h3";
 import {

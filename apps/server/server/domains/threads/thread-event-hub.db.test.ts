@@ -1,4 +1,3 @@
-/** Real-Postgres transaction boundary for local journal publication and pg_notify. */
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -113,8 +112,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await hub.appendEvent(THREAD_ID, event);
           expect(local).toEqual([]);
         });
-        // NOTIFY is commit-ordered on one listener. This committed marker drains
-        // all prior notifications without a wall-clock absence window.
         const { sql } = await import("drizzle-orm");
         await db.execute(sql`select pg_notify('thread_events', 'rollback-barrier')`);
         await Promise.all([barrier, localDelivered]);

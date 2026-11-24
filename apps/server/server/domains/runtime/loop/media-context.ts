@@ -1,10 +1,3 @@
-/**
- * Stable request-time projection of durable media occurrences: a writer's pictures and the media
- * in tool results. Each occurrence is a unit, `(blockId, partIndex)`, because one tool result can
- * hold several. Decisions persist per unit; the gateway's parts are made last, so a unit that is
- * not sent costs no link and no read.
- */
-
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { Block, StoredMediaPart, Thread, ToolContentPart } from "@meridian/contracts/threads";
@@ -19,10 +12,6 @@ import {
 
 export const MAX_MODEL_MEDIA_BYTES = 10 * 1024 * 1024;
 export const MAX_MODEL_MEDIA_CONTEXT_BYTES = 20 * 1024 * 1024;
-/**
- * When the budget forces eviction, the oldest media go until this much is left, so the next
- * several arrivals fit without moving the cached prefix again.
- */
 export const MEDIA_EVICTION_TARGET_BYTES = MAX_MODEL_MEDIA_CONTEXT_BYTES / 2;
 
 export interface MediaInclusionDecision {
@@ -34,7 +23,6 @@ export interface MediaInclusionDecision {
 
 export interface CompactionMediaProjectionMode {
   kind: "compaction";
-  /** `mediaUnitKey` of every unit the compaction may re-admit. */
   candidates: ReadonlySet<string>;
   decidingTurnId: TurnId;
 }
@@ -75,10 +63,8 @@ function toolResultParts(block: Block): ToolContentPart[] | null {
   return Array.isArray(content?.content) ? (content.content as ToolContentPart[]) : null;
 }
 
-/** The gateway's part, held in a block's JSON content for the one request it is built for. */
 const asBlockContent = (value: unknown) => value as Block["content"];
 
-/** The file a mention's read decided to show the model as media: the read result names it. */
 function referencedMedia(block: Block): StoredMediaPart | null {
   const reference = referenceOccurrenceContent(block);
   if (reference?.kind !== "document" || !reference.read) return null;
@@ -100,10 +86,6 @@ function isChatCopy(value: unknown): value is { key: string } {
   return !!value && typeof (value as { key?: unknown }).key === "string";
 }
 
-/**
- * The media a block holds: a writer's picture, or a file they mentioned that was shown as media,
- * is its one unit; a tool result's media are its parts.
- */
 export function mediaUnits(block: Block): MediaUnit[] {
   if (block.blockType === "media") {
     return isStoredMedia(block.content)
@@ -119,7 +101,6 @@ export function mediaUnits(block: Block): MediaUnit[] {
 
 type Chosen = { variant: "original" | "preview"; transport: "link" | "bytes"; sizeBytes: number };
 
-/** What to send for this file to this model, or null when the model can't take it at all. */
 function choose(
   model: MediaModel | null,
   file: ResolvedMedia,
@@ -148,22 +129,13 @@ function choose(
     : null;
 }
 
-/**
- * A media part as text. It starts on its own line because the text part before it is joined to
- * it without a separator when the request is mapped.
- */
 export function describeMedia(part: StoredMediaPart, why?: string): string {
   return `\n[${part.name}: ${part.mediaType}, ${part.sizeBytes} bytes${why ? `. ${why}` : ""}]`;
 }
 
-/**
- * Project stable media decisions and named breaks; a compaction can fill free budget by
- * re-admitting excluded media without changing any existing inclusion.
- */
 export async function projectMediaBlocksForModel(input: {
   thread: Pick<Thread, "id" | "projectId" | "userId">;
   blocks: readonly Block[];
-  /** Saved decisions by `mediaUnitKey`. */
   inclusions?: ReadonlyMap<string, boolean>;
   model: MediaModel | null;
   media: MediaResolverPort;
@@ -179,7 +151,6 @@ export async function projectMediaBlocksForModel(input: {
   };
   const reads = new Map<string, ResolvedMedia | null>();
   interface Entry {
-    /** Chronological position among all media: block order, then part order within a block. */
     order: number;
     block: Block;
     unit: MediaUnit;
@@ -191,9 +162,7 @@ export async function projectMediaBlocksForModel(input: {
   const entries: Entry[] = [];
   const decisionByKey = new Map<string, MediaInclusionDecision>();
   const reAdmissionByKey = new Map<string, MediaInclusionDecision>();
-  /** Text that stands in for a unit that is not sent, by unit key. */
   const descriptions = new Map<string, string>();
-  /** Units whose model can't take them: a picture the writer attached is then described, not dropped. */
   const cantView = new Set<string>();
   const breaks: MediaContextBreak[] = [];
   let diagnosedOmission = false;
@@ -252,8 +221,6 @@ export async function projectMediaBlocksForModel(input: {
 
       const chosen = choose(input.model, file, unit.inToolResult, unit.part.pageCount);
       if (!chosen) {
-        // The model can't take this file: say so, and keep it out of the saved decisions, since
-        // switching models changes the answer.
         descriptions.set(key, describeMedia(unit.part, "This model can't view it."));
         cantView.add(key);
         continue;
@@ -272,7 +239,6 @@ export async function projectMediaBlocksForModel(input: {
 
   const entryOf = (entry: Entry) => mediaUnitKey(entry.block.id, entry.unit.partIndex);
 
-  // Previously included media own the current prefix. Only newly carried media may evict them.
   let usedBytes = entries.reduce((sum, e) => sum + (e.included ? e.chosen.sizeBytes : 0), 0);
   const evict = (entry: Entry) => {
     entry.included = false;
@@ -293,8 +259,6 @@ export async function projectMediaBlocksForModel(input: {
     if (entry.included && entry.chosen.sizeBytes > MAX_MODEL_MEDIA_BYTES) evict(entry);
   }
 
-  // New arrivals keep the chronological eviction rule. A re-admission candidate that did not fit
-  // never evicts anything.
   for (const entry of entries) {
     if (entry.reAdmissionCandidate) continue;
     if (input.inclusions?.get(entryOf(entry)) === true) continue;
@@ -311,7 +275,6 @@ export async function projectMediaBlocksForModel(input: {
       continue;
     }
     if (usedBytes + entry.chosen.sizeBytes > MAX_MODEL_MEDIA_CONTEXT_BYTES) {
-      // Evict a chunk, not one: every eviction moves the cached prefix.
       while (usedBytes + entry.chosen.sizeBytes > MEDIA_EVICTION_TARGET_BYTES) {
         const oldest = entries.find(
           (candidate) =>
@@ -330,7 +293,6 @@ export async function projectMediaBlocksForModel(input: {
     decide(entry.block.id, entry.unit.partIndex, true);
   }
 
-  // Compaction candidates only claim budget left after normal late-arrival handling.
   for (const entry of entries
     .filter((candidate) => candidate.reAdmissionCandidate)
     .sort((left, right) => right.order - left.order)) {
@@ -356,8 +318,6 @@ export async function projectMediaBlocksForModel(input: {
     }
   }
 
-  // Only now is any link signed or any byte read, and only for what is sent. A file whose object
-  // is gone is that file's outcome: it is described and saved as excluded, and the turn goes on.
   const sent = new Map<string, MediaPart>();
   await Promise.all(
     entries
@@ -368,7 +328,6 @@ export async function projectMediaBlocksForModel(input: {
         if (!source) {
           entry.included = false;
           if (entry.reAdmissionCandidate) {
-            // Still excluded as before; the compaction just doesn't re-admit it.
             reAdmissionByKey.delete(entryOf(entry));
             return;
           }
@@ -414,7 +373,6 @@ export async function projectMediaBlocksForModel(input: {
       const key = mediaUnitKey(block.id, 0);
       const part = sent.get(key);
       if (part) return [{ ...block, content: asBlockContent(part) }];
-      // A picture the budget removed has its removal notice already; one the model can't take is described.
       const description = cantView.has(key) ? descriptions.get(key) : undefined;
       return description
         ? [{ ...block, blockType: "text", textContent: description, content: description }]

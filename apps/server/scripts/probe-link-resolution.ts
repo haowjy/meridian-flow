@@ -1,11 +1,3 @@
-/**
- * Import link resolution and frontmatter parsing cost at vault scale. Pure, no
- * database. Not a correctness gate; records timings.
- *
- *   pnpm --filter @meridian/server exec tsx scripts/probe-link-resolution.ts
- *
- * Prints one JSON line per measurement.
- */
 import { readFrontmatter } from "../server/domains/context/frontmatter.js";
 import {
   createLinkIndex,
@@ -28,7 +20,6 @@ const timed = <T>(run: () => T): [T, number] => {
   return [value, performance.now() - started];
 };
 
-// 2,000 links against 10,000 selected and 10,000 existing candidates.
 const pool = Array.from({ length: 10_000 }, (_, index) =>
   candidate(
     `Folder ${index % 97}/Note ${index}.md`,
@@ -67,7 +58,6 @@ console.info(
   }),
 );
 
-// Frontmatter at the size cap, and over it (not parsed).
 const keys = Array.from({ length: 2_000 }, (_, index) => `key${index}: value`).join("\n");
 const [, atCapMs] = timed(() =>
   readFrontmatter(`${keys}\n#${" ".repeat(32_768 - keys.length - 2)}`),

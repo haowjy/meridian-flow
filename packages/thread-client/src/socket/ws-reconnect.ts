@@ -1,10 +1,3 @@
-/**
- * ws-reconnect — reconnect backoff policy for the WebSocket transports.
- *
- * Defines the default backoff config and pure delay computations (jittered
- * exponential for normal attempts, fixed for persistent retries). No socket
- * state; consumed by `SocketLifecycleController`.
- */
 export const DEFAULT_WS_RECONNECT = {
   maxReconnectAttempts: 5,
   baseDelayMs: 250,

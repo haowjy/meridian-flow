@@ -1,15 +1,3 @@
-/**
- * DB-suite hooks that pin run-state publication. `openAuditedDatabase` clones a disposable database
- * from the run's migrated template and installs a test-only trigger audit in it (never a migration,
- * never in the worker's shared database); `close` releases it for inline or managed cleanup. After
- * each scenario `assertPublicationHooks` checks that
- *
- * - every transaction that changed an input of a chat's record also appended a `run_state.changed`
- *   row for that chat (a write a later publish masks can't pass parity alone), and
- * - the chat's last journaled record equals a fresh `readRunState` (a record that disagrees with its
- *   rows, or a chat with input rows and no record, fails).
- */
-
 import { isDeepStrictEqual } from "node:util";
 import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
@@ -18,15 +6,9 @@ import postgres from "postgres";
 import { disposableTestDatabaseTarget } from "../../../../tools/dev/lib/test-db-lifecycle.js";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
-// A suite that drains detached work (up to 8 s) and then closes must fit the 30 s hook timeout:
-// 8 + 12 + 3 + 3 = 26 s.
 const DROP_TIMEOUT_MS = 12_000;
 const POOL_CLOSE_TIMEOUT_MS = 3_000;
 
-/**
- * Waits for `work` at most `ms`. Cleanup must not hang or fail a suite, but it must not hide a
- * failure either: a step that errors or runs out of time is warned about, by name.
- */
 async function within(ms: number, step: string, work: Promise<unknown> | undefined) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -50,12 +32,6 @@ async function within(ms: number, step: string, work: Promise<unknown> | undefin
 
 export type AuditedDatabase = { db: Database; close: () => Promise<void> };
 
-/**
- * A disposable database owned by one suite: cloned from the managed run's template (which no session
- * connects to, so the clone cannot be blocked), audited, and released by `close`. The name keeps the
- * managed `<template>-worker-<n>` shape (`n` far above any worker index), so the run's collector finds
- * it by the `<template>-worker-` prefix.
- */
 export async function openAuditedDatabase(
   workerUrl: string,
   options: { max: number },
@@ -74,10 +50,6 @@ export async function openAuditedDatabase(
   };
   const admin = postgres(urlFor("postgres"), { max: 1 });
   let db: Database | undefined;
-  // Cleanup must never hang a suite. Managed local runs collect every clone after Vitest exits;
-  // dropping several audited clones from parallel workers here makes PostgreSQL serialize checkpoints
-  // and charges that wait to the test files. CI has no managed collector, so it drops its serial
-  // clone after closing the pool. FORCE still ends a query whose bounded pool close timed out.
   const close = async () => {
     await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
     if (!target.managedTemplate)
@@ -176,7 +148,6 @@ export async function assertPublicationHooks(db: Database) {
       mode: "direct",
       blocked: null,
     };
-    // jsonb reorders keys, so compare structurally.
     if (!isDeepStrictEqual(last?.run_state ?? quiet, JSON.parse(JSON.stringify(fresh))))
       throw new Error(
         `Run state of ${id} disagrees with its rows: record ${JSON.stringify(last?.run_state ?? null)}, rows ${JSON.stringify(fresh)}`,

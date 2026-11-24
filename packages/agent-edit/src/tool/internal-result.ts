@@ -31,17 +31,13 @@ export function documentNotFound(
   commandName: DocumentCommandName,
   cause?: { removal?: DocumentRemovalRecord },
 ): InternalWriteResult {
-  if (!cause?.removal) return status("document_not_found", documentNotFoundMessage(commandName));
+  if (!cause?.removal) return status("document_not_found", DOCUMENT_NOT_FOUND_MESSAGE);
   const removed = removedFile(cause.removal);
   return status(removed.status, removed.message);
 }
 
 /** The one sentence every missing-document result gives the model; a removed file has its own. */
-export function documentNotFoundMessage(commandName: DocumentCommandName): string {
-  return commandName === "read"
-    ? "File not found. Check the path with `ls`."
-    : "File not found. Read the project to find the right path.";
-}
+export const DOCUMENT_NOT_FOUND_MESSAGE = "File not found.";
 
 /** An internal failure that must abort the caller, carrying the model-facing message. */
 export function internalResultError(result: InternalWriteResult): Error {

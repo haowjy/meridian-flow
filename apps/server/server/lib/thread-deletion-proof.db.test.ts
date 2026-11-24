@@ -1,5 +1,4 @@
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** Real persistence contract for the two HTTP owner gates and shared root creation policy. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -42,7 +41,6 @@ async function failure(operation: () => Promise<unknown>) {
     expect(refusal.statusCode).toBe(404);
     const envelope = refusal.data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
     if (envelope) return envelope;
-    // Main's generic project refusal has no attestation or deletion details anywhere.
     expect(refusal.data).toBeUndefined();
     return { message: refusal.message };
   }
@@ -307,7 +305,6 @@ describe("project owner gate", () => {
         details: { authenticatedUserId: OWNER },
       },
     });
-    // Flat Work mutations must not erase the parent-project proof in their mapper.
     expect(
       await failure(async () => {
         try {
@@ -337,7 +334,6 @@ describe("project owner gate", () => {
     expect(JSON.stringify(await ask(PROJECT))).toBe(baseline);
     await deleteFixture("project");
     expect(JSON.stringify(await ask(PROJECT))).toBe(baseline);
-    // Even tombstone access must not disclose another account's deletion.
     expect(
       JSON.stringify(
         await failure(() =>

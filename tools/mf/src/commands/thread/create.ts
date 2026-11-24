@@ -1,4 +1,3 @@
-/** `thread create`: create a thread with a resolved agent selection; `createThread` is reused by seed. */
 import { randomUUID } from "node:crypto";
 import { agentCatalogSchema } from "@meridian/contracts/agents";
 import { API_THREADS_PATH, type CreateThreadRequest } from "@meridian/contracts/protocol";

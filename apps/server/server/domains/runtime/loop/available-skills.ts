@@ -1,9 +1,3 @@
-/**
- * User slash catalog (built-in, user and project levels), model-available catalog
- * (Agent available), preloaded skill bodies (Agent load), and the thread's
- * bound and user-invoked skills with the facts `skillLevel` reads
- * `skills://` by.
- */
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { SkillFacts } from "../../file-policy/index.js";
@@ -15,10 +9,8 @@ import {
   skillListingFromMarkdown,
 } from "../../packages/index.js";
 
-// Retained package paths are the on-disk Mars format, not Context document names.
 const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
 
-/** A skill body to inject, and whether the model can read its files under `skills://`. */
 interface LoadedSkill extends SkillListing {
   readable: boolean;
 }
@@ -37,11 +29,6 @@ class SkillUnavailableError extends Error {
   }
 }
 
-/**
- * The skills a writer can invoke in the thread: the current catalog's, and every skill the thread
- * already invoked, as it was pinned (a pinned skill stays invocable after its file is gone, and
- * its pinned version wins over the current one).
- */
 export async function resolveThreadUserInvocableSkills(input: {
   thread: Thread;
   agentCatalog: Pick<BoundAgentCatalog, "userSkills">;
@@ -85,18 +72,11 @@ export async function resolveThreadModelAvailableSkills(input: {
   return listings;
 }
 
-/** The skills a thread can name, with the reference each is read from, and the facts `skillLevel` decides on. */
 interface ThreadSkills {
   facts: SkillFacts;
   bound: ReadonlyMap<string, RetainedSkillReference>;
 }
 
-/**
- * Every skill the thread's binding names (`load` and `available`) and every
- * packaged skill its user invoked, from one binding read. A slug
- * both bound and invoked keeps the binding's reference. Empty when the thread
- * has no binding.
- */
 export async function readThreadSkills(
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">,
   threadId: string,
@@ -127,7 +107,6 @@ export async function readThreadSkills(
   };
 }
 
-/** Whether a thread can see a skill at all, so it is offered the `skill` tool. */
 export function bindingNamesSkills(
   binding: Pick<AgentRevisionBinding, "configuration" | "invokedSkills">,
 ): boolean {
@@ -135,11 +114,6 @@ export function bindingNamesSkills(
   return load.length > 0 || available.length > 0 || Object.keys(binding.invokedSkills).length > 0;
 }
 
-/**
- * Bodies of the thread's preloaded skills (`skills.load`), read from its own
- * binding. Preloading is the Agent author's choice, so `model-invocable` does
- * not gate it, and a preloaded skill's files are readable under `skills://`.
- */
 export async function resolveThreadPreloadedSkills(input: {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
@@ -164,11 +138,6 @@ export function unavailableActivatedSkillSlugs(
   return requested.filter((slug) => !allowed.has(slug));
 }
 
-/**
- * A writer `/skill` body. Invoking a skill pins the files it was read from on the thread, so
- * they are readable for the rest of the thread and its header names `skills://`; invoking it
- * again reads the pinned files.
- */
 export async function loadUserSkillBody(input: {
   thread: Thread;
   slug: string;
@@ -179,7 +148,6 @@ export async function loadUserSkillBody(input: {
   agentCatalog: Pick<BoundAgentCatalog, "resolveSkill">;
 }): Promise<LoadedSkill> {
   if (input.thread.kind === "primary") {
-    // A skill invoked before keeps the files it was first read from; refreshing is a separate act.
     const pinned = (await input.agentRevisions.readThreadBinding(input.thread.id))?.invokedSkills[
       input.slug
     ];
@@ -208,7 +176,6 @@ export async function loadUserSkillBody(input: {
 async function listingFromBoundReference(
   store: Pick<AgentRevisionStore, "readSource">,
   reference: RetainedSkillReference,
-  /** The name the skill was invoked by, which a package clash makes differ from its file's. */
   slug = skillSlugFromPath(reference.path),
 ): Promise<SkillListing> {
   const source = await store.readSource(reference.packageRevisionId);

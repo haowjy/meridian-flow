@@ -1,4 +1,3 @@
-/** GET /api/mcp/connections: the writer's connections, account level and (with `projectId`) that project's, with shadows and status. */
 import type { McpConnectionsList } from "@meridian/contracts/mcp";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";

@@ -11,7 +11,6 @@ const held = (entryId: number, file = new File(["x"], `f${entryId}.md`)): HeldFi
 });
 const answer = (entryId: number) => ({ entryId, state: "received" }) as ImportEntryStatus;
 
-/** Resolves when the queue says every queued file has settled. */
 function drained(build: (onIdle: () => void) => UploadQueue): Promise<void> {
   return new Promise((resolve) => build(resolve));
 }

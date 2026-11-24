@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-/** Drop local project-prefixed databases that no live git worktree owns. */
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 import {
@@ -71,8 +70,6 @@ async function main(): Promise<void> {
   }
 
   const found = await listWorktreeDatabasesForUrl(databaseUrl, mainDbNames);
-  // A worktree's name follows its branch, so a stack started before a branch switch holds a
-  // database no worktree name claims: a connection is what says it's in use.
   const connected = await listConnectedDatabasesForUrl(databaseUrl);
   const live = new Set([
     ...resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames),
@@ -100,7 +97,6 @@ async function main(): Promise<void> {
   }
 
   const { adminConnString } = parseTargetDatabase(databaseUrl);
-  // The drop forces connections closed: one opened while the prompt waited keeps its database.
   const connectedNow = await listConnectedDatabasesForUrl(databaseUrl);
   for (const dbName of droppable) {
     if (connectedNow.has(dbName)) {

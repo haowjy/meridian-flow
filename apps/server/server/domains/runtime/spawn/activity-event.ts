@@ -1,10 +1,3 @@
-/**
- * The one producer of the `subagent.activity` journal fact: reads the direct
- * parent's activity and appends it to that parent's journal. Both
- * child-run producers (create and terminal) call this so the event shape and the
- * read-then-append ordering have a single owner. The best-effort variant owns
- * the rule that a failed emission never gates a run.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -24,11 +17,6 @@ export async function appendSubagentActivity(input: {
   });
 }
 
-/**
- * The read-model event is a side effect, not part of the run result: a failed
- * read or append is reported to the `EventSink` and swallowed so it can never
- * fail a run or write a second, contradictory terminal fact.
- */
 export async function appendSubagentActivityBestEffort(input: {
   eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
@@ -52,7 +40,6 @@ export async function appendSubagentActivityBestEffort(input: {
   }
 }
 
-/** A tool boundary refreshes activity only when it changes the child's live call. */
 export async function appendSubagentActivityForToolChangeBestEffort(input: {
   recordCurrentTool: () => Promise<boolean>;
   currentTool: CurrentToolCall;
@@ -88,15 +75,6 @@ export async function appendSubagentActivityForToolChangeBestEffort(input: {
   });
 }
 
-/**
- * Emit the direct parent's activity for a subagent's drain-woken run. Spawn and
- * foreground-message runs are emitted by the child-run driver; a run woken by a
- * child report or `thread_message` is driven by the turn runner, so it must emit
- * both when the lease goes live (otherwise the strip reads `asleep` until the
- * run terminates) and after it releases (otherwise the last frame stays
- * `awake`). Non-subagent threads are a no-op. Best-effort throughout: a failed
- * lookup or emission never gates the run.
- */
 export async function emitRunActivityBestEffort(input: {
   findThread: (
     threadId: ThreadId,
@@ -127,7 +105,6 @@ export async function emitRunActivityBestEffort(input: {
   }
 }
 
-/** Bind the run-lifecycle refresh to its activity ports once at composition. */
 export function createSubagentActivityRefresher(
   deps: Omit<Parameters<typeof emitRunActivityBestEffort>[0], "threadId">,
 ) {

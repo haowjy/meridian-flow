@@ -1,5 +1,3 @@
-/** Where an import lands: an area root or a folder inside Manuscript, Knowledge or Unfiled. */
-
 import { IMPORT_SCHEMES, type ImportScheme } from "@meridian/contracts";
 import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -11,17 +9,12 @@ export function isImportScheme(scheme: ProjectContextTreeScheme): scheme is Impo
 
 export type ImportDestination = {
   scheme: ImportScheme;
-  /** The folder's path ("/Lore/Sects"); "/" at the area root. */
   path: string;
-  /** The folder's canonical URI, as the manifest names it ("kb://Lore/Sects", no trailing slash). */
   uri: string;
-  /** The folder's name, or the area's name at the root. */
   name: string;
-  /** The folder's node id; null at the area root. */
   folderId: string | null;
 };
 
-/** Where an import lands when started on, or dropped onto, a folder (null: the area's root). */
 export function destinationOf(
   scheme: ProjectContextTreeScheme,
   folder: { entryId: string; path: string; uri: string; name: string } | null,

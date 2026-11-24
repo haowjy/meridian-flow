@@ -14,22 +14,12 @@ import { emitEvent, unknownToEventPayload } from "../domains/observability/index
 import { createDetachedWorkTracker } from "../shared/detached-work.js";
 import type { AppServices } from "./app.js";
 
-/**
- * A tree list's room on `/ws/loro` (`tree:project:<id>`, `tree:account:<id>`): one Loro doc, the
- * list, under doc key `s`, framed in the same envelope and room version as a document's rooms.
- * The stored list is the truth and the store the only writer: a client's update goes to
- * `TreeListStore.admit`, as sent; what reaches the room's sockets is the stored list past what the
- * room last sent (the client's records with the stamps the server appended after them), read
- * after each commit on any process (`onListAdvanced`).
- */
 const LIST_DOC = "s";
 
 type Room = {
   listeners: Set<(batch: Uint8Array) => void>;
-  /** The stored version the room's sockets were sent through, encoded; null before the first read. */
   sent: Uint8Array | null;
   catching: Promise<void> | null;
-  /** A commit arrived while a catch-up was reading: read again. */
   stale: boolean;
 };
 
@@ -41,8 +31,6 @@ export type TreeRoomServices = {
 export function createTreeRooms(services: TreeRoomServices) {
   const { treeLists: store } = services;
   const rooms = new Map<string, Room>();
-  // Every catch-up a commit notification fires on its own: `dispose` waits for them, so a closed
-  // gateway leaves no read open.
   const work = createDetachedWorkTracker();
 
   function catchUp(listId: string, room: Room): Promise<void> {
@@ -78,15 +66,10 @@ export function createTreeRooms(services: TreeRoomServices) {
   });
 
   return {
-    /** The list's id when the account may open it; null when the list is not the account's. */
     async open(list: TreeList, accountId: string): Promise<string | null> {
       return (await store.open({ list, accountId }))?.listId ?? null;
     },
 
-    /**
-     * The stored list past the client's room version, as an envelope (null when the client has
-     * it all), and the stored version as a room version.
-     */
     async sync(
       listId: string,
       clientVersion: Uint8Array,
@@ -106,10 +89,6 @@ export function createTreeRooms(services: TreeRoomServices) {
       };
     },
 
-    /**
-     * Admits the list's entry of a client's envelope, as sent. Throws `CorruptDocBytesError` for
-     * bytes that are not a Loro update. An entry under any other key is no part of a list.
-     */
     async write(list: TreeList, accountId: string, batch: Uint8Array): Promise<void> {
       const update = decodeEnvelope(batch).get(LIST_DOC);
       if (!update) return;
@@ -123,7 +102,6 @@ export function createTreeRooms(services: TreeRoomServices) {
       await store.admit({ list, accountId, update });
     },
 
-    /** Hears the list's stored changes as envelopes, until the returned function is called. */
     subscribe(listId: string, listener: (batch: Uint8Array) => void): () => void {
       let room = rooms.get(listId);
       if (!room) {
@@ -138,7 +116,6 @@ export function createTreeRooms(services: TreeRoomServices) {
       };
     },
 
-    /** Stops listening and resolves once the catch-ups the rooms started have settled. */
     async dispose() {
       stopAdvanced();
       rooms.clear();

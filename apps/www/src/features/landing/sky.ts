@@ -13,22 +13,16 @@ import {
   tilt,
 } from "./timeline";
 
-/** A sky colour as a GLSL literal, and as a CSS colour for the layers drawn over the sky. */
 export const vec3 = ([r, g, b]: LinearRgb) =>
   `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
-// Written as they are. That matches the fire shader, which uses fireBody and fireCore unencoded;
-// sun and auroraMid are linear in the sky shader, so their CSS copies read a little darker.
+// keep: written as they are: the fire shader uses fireBody and fireCore unencoded, while sun and auroraMid are linear in the sky shader, so their CSS copies read darker
 export const rgb = ([r, g, b]: LinearRgb) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
-/** The dragon's peak: its compass angle from the opening view. */
 const SUMMIT_AZIMUTH = 0.6;
-/** Where the level view looks: its compass angle from the opening view. */
 const HORIZON_YAW = 0.34;
 
-/** How fast the aurora waves on its own, in flow per second, scrolled or not. */
 const WAVE = 1.1;
 
-/** How much smaller the aurora pass is than the canvas, per side. It is soft, so this barely shows. */
 const LIGHT_DIVISOR = 3;
 
 export const NOISE = `
@@ -57,8 +51,6 @@ float ripple(vec3 rd){
   return (N(vec2(rd.x*z*5.,z*1.6+FLOW*.25))-.5)*2.+(N(vec2(rd.x*z*14.,z*4.-FLOW*.4))-.5);
 }`;
 
-// A horizontal sheet sliced at rising heights: seen overhead it curls, seen far away its rays hang
-// as curtains, and both come from the same field.
 const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
@@ -202,20 +194,14 @@ export type SkyFrame = {
   dawn: number;
   veil: number;
   aurora: number;
-  /** The band of Cold Fire behind the far range, 0 (none) and up. */
   plume: number;
-  /** How strongly the aurora breathes while the page is still, 0 to 1. */
   pulse: number;
-  /** How hard each gulp of Cold Fire the perched dragon sends up swells the aurora, 0 and up. */
   surge: number;
 };
 
 const GULP_SECONDS = 1.1;
-/** The share of a gulp spent rising from the mouth; then it reaches the sky. */
 export const GULP_RISE = 0.45;
-/** 0 to 1 through each gulp: it leaves the mouth at 0 and reaches the sky at `GULP_RISE`. */
 export const gulpPhase = (seconds: number) => (seconds / GULP_SECONDS) % 1;
-/** The aurora's swell from the last gulp to reach it, 1 on arrival and decaying. */
 const gulpSwell = (seconds: number) => {
   const since = (gulpPhase(seconds) - GULP_RISE + 1) % 1;
   return Math.exp(-since * 3);
@@ -224,28 +210,18 @@ const gulpSwell = (seconds: number) => {
 const OVERHEAD_PITCH = 0.8;
 const HORIZON_PITCH = 0.1;
 
-/**
- * The sky at a scroll position, `scrolled` in stage heights. It is a function of the scroll
- * position, so it holds still when the page does.
- */
 export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
   const tipped = tilt(beats);
-  // The fire uncovers a finished dawn, so the sky is already there behind it.
   const revealed = beats.burn >= DEATH.reveals;
-  // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
   const hurt = envelope(beats.fight, [FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.09], 0.02, 0.06);
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
-  // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
   const stirred = smooth(beats.turn, TURN.perch[0], TURN.perch[0] + 0.06) * coldFireLeft(beats);
-  // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
     stirred * 0.5 +
     smooth(beats.fight, 0, 0.08) * 0.2 +
     envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
     envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
   let veil = lerp(0, 0.36, smooth(beats.sky, 0.88, 1));
-  // The veil keeps the chapter readable; once its text fades the perch and the fight are the
-  // picture, so it lifts.
   const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
   veil = lerp(veil, 0.06, lifted);
   veil = lerp(veil, 0.2, smooth(across(beats, "dies", "burn"), 0, 0.625));
@@ -269,8 +245,6 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
         (1 - smooth(beats.burn, 0.55, 1)) *
         0.5 +
       breathing * coldFireLeft(beats),
-    // Low in the north over the dragon's peak every night; what it sends up from the perch stays
-    // there, brighter, until the box burns.
     plume: (0.9 + stirred * 1.4) * coldFireLeft(beats),
     surge: stirred,
     pulse: Math.max(
@@ -281,7 +255,6 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
   };
 }
 
-/** Reduced motion: one still night over the stacked page. */
 export const STILL_SKY: SkyFrame = {
   pitch: HORIZON_PITCH,
   yaw: HORIZON_YAW,
@@ -298,7 +271,6 @@ export const STILL_SKY: SkyFrame = {
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;
 const SCENE_UNIFORMS = { DAWN: "dawn", VEIL: "veil" } as const;
 
-/** Draws into `canvas`. Without WebGL every call is a no-op and the canvas's CSS gradient shows. */
 export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   const gl = canvas.getContext("webgl", {
     antialias: false,
@@ -329,7 +301,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     );
   };
 
-  // A phone can discard a background tab's context. Without preventDefault it never returns.
+  // keep: without preventDefault on `webglcontextlost` the context never returns
   canvas.addEventListener(
     "webglcontextlost",
     (event) => {
@@ -349,7 +321,6 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     { signal },
   );
 
-  // The canvas is as tall as the large viewport; the sky is framed on `frame`, the film's height.
   let framed = 1;
   const resize = (frame = canvas.clientHeight) => {
     if (!gl || !scene) return;
@@ -368,7 +339,6 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     lastBreath = seconds;
     if (!gl || !scene) return;
     const waving = { ...frame, flow: frame.flow + seconds * WAVE };
-    // In full day the scene multiplies the aurora by zero: skip its pass, the heaviest one.
     if (frame.dawn < 1) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, scene.lightTarget);
       camera(gl, scene.lightPass, waving, scene.lightWidth, scene.lightHeight, framed);
@@ -387,7 +357,6 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     for (const [location, key] of scene.floats) gl.uniform1f(location, frame[key]);
     const wave = Math.sin(seconds * 0.9) * 0.65 + Math.sin(seconds * 2.3 + 1) * 0.35;
     gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave) + swell * 2.2);
-    // The aurora zooms in as it drifts, or the drift would pull its clamped edge into view.
     gl.uniform3f(
       scene.drift,
       Math.sin(seconds * 0.31) * 0.012 * frame.pulse,
@@ -400,12 +369,10 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   return {
     resize,
     draw,
-    /** A frame while the page is still: the aurora keeps waving, at up to 30 frames a second. */
     breathe(seconds: number) {
       if (!lastFrame || seconds - lastBreath < 1 / 30) return;
       draw(lastFrame, seconds);
     },
-    /** Called when frames run slow: the sky stays smooth by drawing fewer pixels. */
     lowerResolution() {
       if (resolution <= 0.45) return false;
       resolution = Math.max(0.45, resolution - 0.1);
@@ -456,7 +423,6 @@ function texture(gl: WebGLRenderingContext) {
   return handle;
 }
 
-/** One triangle that covers the canvas, at attribute 0: every pass draws the whole frame. */
 export function coverCanvas(gl: WebGLRenderingContext) {
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);

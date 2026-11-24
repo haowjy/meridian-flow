@@ -1,8 +1,3 @@
-/**
- * The production app composed over a test database, and a script that drives model replies
- * through the real tool executor.
- */
-
 import { randomUUID } from "node:crypto";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
@@ -21,7 +16,6 @@ export type ToolCall = (
   name: string,
   args: Record<string, unknown>,
 ) => Promise<ToolExecutionResult>;
-/** Calls a tool and returns its text, throwing when the tool reports an error. */
 type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
 
 async function composeRuntime(db: Database, eventSink: EventSink) {
@@ -34,7 +28,6 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   return { ports, app };
 }
 
-/** Tool calls read the thread's Agent binding for its permission (file-access §8). */
 export async function bindEditAgent(runtime: ComposedRuntime, threadId: string): Promise<void> {
   if (await runtime.ports.agentRevisions.readThreadBinding(threadId)) return;
   await runtime.ports.agentRevisions.bindThread(
@@ -50,15 +43,8 @@ export async function bindEditAgent(runtime: ComposedRuntime, threadId: string):
   );
 }
 
-/**
- * Registers per-case cleanup for composed runtimes: the app shuts down (cancelling scheduled live
- * pulls), saving and freeing its rooms, before the next case can reset tables. `db` is read
- * at call time, so a rollback suite passes its current transaction.
- */
 export function useComposedRuntimes(db: () => Database) {
   const runtimes: ComposedRuntime[] = [];
-  // model_responses is unique per (turn, sequence); a counter per turn keeps
-  // replies distinct across scripts on one thread.
   const sequences = new Map<string, number>();
   afterEach(async () => {
     for (const runtime of runtimes.splice(0)) {
@@ -72,7 +58,6 @@ export function useComposedRuntimes(db: () => Database) {
     return runtime;
   }
 
-  /** Records a model response for the thread's turn, as the runtime does before tool calls. */
   async function insertModelResponse(thread: RuntimeThread): Promise<string> {
     const sequence = (sequences.get(thread.turnId) ?? 0) + 1;
     sequences.set(thread.turnId, sequence);
@@ -90,13 +75,7 @@ export function useComposedRuntimes(db: () => Database) {
     return responseId;
   }
 
-  /**
-   * Model replies on one thread. Each `reply` records a response and runs its
-   * tool calls through the executor.
-   */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
-    // What the conversation was shown of the tree, in call order: the names a stored result
-    // recorded, then those a result that stores none carried back (a read, a listing, a refusal).
     const names: Uint8Array[] = [];
     let recorded = 0;
     const takeRecorded = async () => {
@@ -136,7 +115,6 @@ export function useComposedRuntimes(db: () => Database) {
             responseIdentity: { modelResponseId: responseId },
             commandOwner: owner as never,
             agentSlug: null,
-            // No one answers here: a `work` call the policy asks about gets the refusal.
             request: async () => ({
               kind: "refused",
               refusal: { code: "request_refused", message: "No one answers requests here." },

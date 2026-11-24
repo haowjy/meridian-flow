@@ -1,4 +1,3 @@
-/** Build inline composer content without editor or platform dependencies. */
 import type { BuiltMessageDoc, MessageInlineNode, MessageReference, MessageSkill } from "./types";
 
 export function buildMessageDoc(input: {

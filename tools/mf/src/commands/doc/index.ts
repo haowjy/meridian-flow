@@ -1,4 +1,3 @@
-/** `doc`: read, seed, edit, copy, and delete project documents. */
 import type { CommandGroup } from "../../core/command";
 import { docCopyCommand } from "./copy";
 import { docEditCommand } from "./edit";

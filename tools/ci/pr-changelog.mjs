@@ -1,7 +1,3 @@
-/**
- * Shared parser for the structured Changelog section in pull request bodies.
- */
-
 export const CHANGELOG_HEADING = "## Changelog";
 export const CHANGELOG_CATEGORIES = ["Added", "Changed", "Fixed", "Removed"];
 
@@ -14,7 +10,6 @@ function withoutComments(markdown) {
   return markdown.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "");
 }
 
-/** Level-two sections outside fenced code blocks, with duplicate headings preserved. */
 function scanSections(markdown) {
   const lines = withoutComments(markdown).split("\n");
   const headings = [];
@@ -44,12 +39,10 @@ function scanSections(markdown) {
   });
 }
 
-/** Text under the first matching heading; fenced examples never count as sections. */
 export function extractSection(markdown, heading) {
   return scanSections(markdown).find((section) => section.heading === heading)?.content ?? null;
 }
 
-/** Parse already-extracted Changelog content without consulting the template. */
 export function parseChangelogSection(content) {
   if (content === null) return { kind: "missing" };
 

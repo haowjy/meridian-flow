@@ -1,4 +1,3 @@
-/** Pure selection-first wikilink resolution and the shared project fallback ranking. */
 import {
   type Located,
   locate,
@@ -18,10 +17,6 @@ export interface ImportLinkCandidate {
   kind: "note" | "docx" | "code" | "binary";
   filetype: string;
 }
-/**
- * A Markdown link destination is a URL: percent-encoding is its syntax, so it is
- * decoded once here. Wikilink targets and file paths are literal and never pass through.
- */
 export function decodedDestination(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -29,7 +24,6 @@ export function decodedDestination(value: string): string {
     return value;
   }
 }
-/** A literal selection path with `.`/`..` folded and the stored name of its file. */
 export function normalizedPath(value: string): string {
   const parts: string[] = [];
   for (const segment of value.replace(/^\//, "").split("/")) {
@@ -40,7 +34,6 @@ export function normalizedPath(value: string): string {
   if (parts.length) parts[parts.length - 1] = storedName(parts.at(-1) ?? "");
   return parts.join("/");
 }
-/** A folder root's `.obsidian/app.json` settings that steer where converted links point. */
 export interface ImportRootSettings {
   attachmentFolderPath: string;
   newFileLocation: string;
@@ -51,7 +44,6 @@ export const DEFAULT_ROOT_SETTINGS: ImportRootSettings = {
   newFileLocation: "root",
   newFileFolderPath: "",
 };
-/** Parses the settings once, at admission; absent or not a JSON object gives the defaults. */
 export function rootSettings(appJson: string | undefined): ImportRootSettings {
   if (appJson === undefined) return DEFAULT_ROOT_SETTINGS;
   let value: unknown;
@@ -84,10 +76,6 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
   else map.set(key, [value]);
 }
 const lastSegment = (path: string) => path.slice(path.lastIndexOf("/") + 1);
-/**
- * Resolution over buckets built once: lookups touch only same-named, same-path or
- * same-alias candidates, so a link-dense note never rescans the whole selection.
- */
 export function createLinkIndex(
   selected: readonly ImportLinkCandidate[],
   existing: readonly ImportLinkCandidate[],
@@ -173,13 +161,11 @@ export function createLinkIndex(
     const name = segments.pop() ?? "";
     const target = { name, folders: segments };
     const holder = locate(source.rankingUri ?? source.uri, source.id);
-    // Candidates outside the stored-name bucket cannot end with the wanted path.
     const bucket = located.get(wantedPath(target).at(-1) ?? "") ?? [];
     const hit = rankWikilinkMatches(bucket, target, holder);
     const projectTarget = hit?.documentId ? existingById.get(hit.documentId) : undefined;
     if (projectTarget) return projectTarget;
     const projectAliases = existingAliases.get(spelled) ?? [];
-    // Rank alias matches at their own locations, with the alias replacing only the filename.
     const aliasHit = rankWikilinkMatches(
       projectAliases.flatMap((candidate) => {
         const item = locate(candidate.rankingUri ?? candidate.uri, candidate.id);
@@ -193,7 +179,6 @@ export function createLinkIndex(
     const aliasTarget = projectAliases.find((candidate) => candidate.id === aliasHit?.documentId);
     return aliasTarget ?? null;
   }
-  /** `path` is an already decoded Markdown destination. */
   function resolveMarkdown(path: string, source: ImportLinkCandidate) {
     const first = (normalized: string) =>
       (exact.get(normalized) ?? []).find((item) => inPool(source, item.candidate))?.candidate;

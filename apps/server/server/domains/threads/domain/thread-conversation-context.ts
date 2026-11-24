@@ -1,4 +1,3 @@
-/** Load a thread's transcript, resolving fork prefixes through their owning thread rows. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { orderTurnsByPosition } from "../order-turns.js";
@@ -11,24 +10,13 @@ export interface ThreadConversationContextDeps {
   blocks: BlockRepository;
 }
 
-/**
- * The conversation: every turn and block the model, a page, a fork, a summary or a snapshot may see.
- * A handed-back writer message and a forgotten turn are not in it; they stay in the graph
- * (`turnGraph(turns)`), which this loader reads to resolve fork cutoffs and then filters. A forgotten
- * turn's stamp applies only when its forgetting turn is inside the span read: a fork keeps what its
- * source forgot after the cutoff. Blocks are intersected with the turns kept, so no consumer sees an
- * orphan block.
- */
 export interface ThreadConversationContext {
   turns: Turn[];
   blocks: Block[];
-  /** The fork prefix this thread inherits, already in `turns` and `blocks`. Empty outside a fork. */
   inherited: { turns: Turn[]; blocks: Block[] };
-  /** This thread's own turns and blocks, already in `turns` and `blocks`. */
   local: { turns: Turn[]; blocks: Block[] };
 }
 
-/** Graph turns and conversation blocks, before the turn filter. */
 interface Part {
   turns: Turn[];
   blocks: Block[];
@@ -36,7 +24,6 @@ interface Part {
 interface Loaded {
   inherited: Part;
   local: Part;
-  /** Turns that left the conversation anywhere in the lineage: handed back, or forgotten inside their span. */
   hidden: ReadonlySet<string>;
 }
 
@@ -46,7 +33,6 @@ export type ThreadConversationContextErrorCode =
   | "cutoff_not_in_transcript"
   | "fork_cycle";
 
-/** A fork's inherited transcript cannot be reconstructed from its stored lineage. */
 export class ThreadConversationContextError extends Error {
   constructor(
     readonly code: ThreadConversationContextErrorCode,
@@ -66,7 +52,6 @@ export class ThreadConversationContextError extends Error {
   }
 }
 
-/** Load thread turns/blocks, hydrating a fork's inherited prefix from its cutoff owner. */
 export async function loadThreadConversationContext(
   deps: ThreadConversationContextDeps,
   thread: Thread,
@@ -93,7 +78,6 @@ async function loadGraph(
   thread: Thread,
   throughTurnId: TurnId | undefined,
   visiting: ReadonlySet<ThreadId>,
-  /** The last position a forgetting turn may hold for its stamp to apply: the span's cutoff. */
   stampsThrough = Number.POSITIVE_INFINITY,
 ): Promise<Loaded> {
   const threadId = thread.id as ThreadId;
@@ -108,7 +92,6 @@ async function loadGraph(
     blocks: await deps.blocks.listByThread(threadId),
   };
   const hidden = new Set(await deps.turns.listHandedBackIds(threadId));
-  // This thread's own cutoff is the read's (a local turn at `throughTurnId`) or the span's (a fork's cutoff).
   const cutoff = throughTurnId ? local.turns.find((turn) => turn.id === throughTurnId) : undefined;
   const throughPosition = Math.min(stampsThrough, cutoff?.position ?? Number.POSITIVE_INFINITY);
   const positionById = new Map(local.turns.map((turn) => [turn.id as string, turn.position]));
@@ -136,7 +119,6 @@ async function loadGraph(
     throw new ThreadConversationContextError("missing_cutoff_owner", thread.id, originTurnId);
   }
 
-  // The cutoff is a graph position: a fork cut at a turn handed back later still resolves.
   const source = throughCutoff(
     await loadGraph(deps, sourceThread, undefined, nextVisiting, originTurn.position),
     thread,
@@ -171,7 +153,6 @@ function throughCutoff(loaded: Loaded, thread: Thread, throughTurnId?: TurnId): 
   return { inherited: part(loaded.inherited), local: part(loaded.local), hidden: loaded.hidden };
 }
 
-/** Whether a reply completed in this chat's own history or, for a fork, before its cut point. */
 export async function hasCompletedReplyInLineage(
   repos: { threads: ThreadRepository; turns: TurnRepository },
   threadId: ThreadId,

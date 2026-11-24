@@ -1,5 +1,3 @@
-/** Renders and resolves the frozen model-facing Work context block. */
-
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
@@ -56,7 +54,6 @@ function boundedGoal(value: string | null): string | null {
     : null;
 }
 
-/** The handle beside the name, so the model copies the handle into an address instead of composing one. */
 function workIdentity(work: Pick<Work, "handle" | "name">): string {
   return `${promptText(work.handle ?? "none")} ${JSON.stringify(promptText(work.name))}`;
 }
@@ -76,18 +73,10 @@ function currentWorkLines(
   return lines;
 }
 
-/**
- * Where this chat's AI writes land: the chat's mode over its Work.
- * An archived Work freezes its own scratch and draft; only an agent
- * the action policy lets unarchive is offered that, and only a draft-mode chat
- * has auto-apply as a way out. One description, two presentations: the
- * Work context's `writes:` line and the switch notice.
- */
 export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
-  /** The chat is bound to No Work, so its draft is its conversation's own. */
   noWork: boolean;
 }): { label: string; instructions: string[] } {
   if (input.archived) {
@@ -147,12 +136,9 @@ function currentLines(work: ContextWork, writes: string[]): string[] {
 
 export function renderWorkContext(input: {
   current: ContextWork;
-  /** The chat's write mode. */
   aiWriteMode: AiWriteMode;
-  /** Whether the thread's agent chain may unarchive. */
   mayUnarchive: boolean;
   rootThreadRef?: string;
-  /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */
   chatRef?: string;
 }): string {
   const lineage = input.rootThreadRef

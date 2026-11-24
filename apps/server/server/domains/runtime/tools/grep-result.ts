@@ -1,10 +1,3 @@
-/**
- * The `grep` result: the typed files the handler returns, and the text the model reads of
- * them. In `content` mode each file is its URI, then one `hash|excerpt` line per passage, as
- * `read` prints blocks, so the hash targets `read` and `write`; the excerpt is a window around
- * the match, and `verbose` gives the whole block. `files_with_matches` lists URIs and `count`
- * adds the number of matches. The app's previews and compaction read the typed files.
- */
 import { toHashline } from "@meridian/agent-edit";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { GrepPassage } from "../../context/index.js";
@@ -12,29 +5,21 @@ import type { GrepPassage } from "../../context/index.js";
 export interface GrepHit {
   uri: string;
   matches: GrepPassage[];
-  /** Absent in `files_with_matches`. */
   matchCount?: number;
-  /** True when the agent can't edit the file. */
   readonly?: boolean;
 }
 
-/** What the tool returns: the files, and how many matched in all. */
 export interface GrepToolResult {
   files: GrepHit[];
   totalFiles: number;
-  /** False when `totalFiles` is a lower bound, or the scan stopped before the last document. */
   exact: boolean;
-  /** True when the time budget or the caller ended the scan early. */
   stopped?: true;
 }
 
-/** Characters kept either side of the match. */
 const WINDOW = 120;
-/** A cut that would drop fewer characters than this keeps them instead. */
 const SLACK = 24;
 
-const CLEARED_GREP_PASSAGES =
-  "[Cleared at compaction: changed since this grep; read it for current text]";
+const CLEARED_GREP_PASSAGES = "[Cleared at compaction: changed since this grep]";
 
 export function isGrepResult(value: JsonValue | undefined): value is JsonObject {
   return (
@@ -59,19 +44,13 @@ export function renderGrepResult(value: JsonValue, input: JsonObject): string {
   return renderGrepFiles(value as unknown as GrepToolResult, input);
 }
 
-/**
- * The result as text. `cleared` files keep their URI and lose their passages,
- * for compaction (the planner decides which changed).
- */
 export function renderGrepFiles(
   { files, totalFiles, exact, stopped }: GrepToolResult,
   input: JsonObject,
   cleared: (hit: GrepHit) => boolean = () => false,
 ): string {
   if (files.length === 0)
-    return exact
-      ? "No matches."
-      : "No matches found before the search stopped. Narrow with path or glob.";
+    return exact ? "No matches." : "No matches found before the search stopped.";
   const verbose = input.verbose === true;
   const mode = input.output_mode;
   const lines = files.map((hit) => {
@@ -94,17 +73,15 @@ export function renderGrepFiles(
     return [head, ...passages].join("\n");
   });
   const body = lines.join(mode === "files_with_matches" || mode === "count" ? "\n" : "\n\n");
-  if (stopped)
-    return `${body}\n\nThe search stopped before it finished, so these may not be all the matches. Narrow with path or glob.`;
+  if (stopped) return `${body}\n\nThe search stopped before it finished.`;
   return totalFiles > files.length || !exact
-    ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files. Narrow with path or glob, or raise head_limit.`
+    ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files.`
     : body;
 }
 
-/** Each file and how often it matched, with no passages: compaction's history form. */
 export function renderGrepFileList({ files }: GrepToolResult): string {
   return [
-    "[grep passages omitted; read a file for its current text]",
+    "[grep passages omitted]",
     ...files.map((hit) =>
       hit.matchCount === undefined ? hit.uri : `${hit.uri} (${matches(hit.matchCount)})`,
     ),
@@ -115,11 +92,6 @@ function matches(count: number): string {
   return count === 1 ? "1 match" : `${count} matches`;
 }
 
-/**
- * One passage as the model receives it, and whether that text shows its whole
- * block. Shown-link evidence keys on `whole` from this same call, so a link the
- * window cut through or left out is never claimed as shown.
- */
 export function grepPassage(
   passage: GrepPassage,
   verbose: boolean,
@@ -127,15 +99,8 @@ export function grepPassage(
   return verbose ? { text: passage.excerpt, whole: true } : around(passage);
 }
 
-/**
- * About {@link WINDOW} characters either side of the match, on one line, cut at
- * word boundaries and marked with `…`. A passage with no anchor (a result from
- * before grep) starts at the top. Flattening whitespace keeps every link whole,
- * so an uncut window shows them all.
- */
 function around({ excerpt, anchor }: GrepPassage): { text: string; whole: boolean } {
   const flat = excerpt.replace(/\s+/gu, " ").trim();
-  // The anchor is an offset into the unflattened excerpt; flatten its prefix to find it in `flat`.
   const flatOffset = (offset: number) =>
     excerpt.slice(0, offset).replace(/\s+/gu, " ").trimStart().length;
   const at = anchor ? Math.min(flatOffset(anchor.start), flat.length) : 0;

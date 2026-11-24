@@ -1,4 +1,3 @@
-/** Postgres account JSONB patches and retirement preserve independent preferences. */
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { UserId } from "@meridian/contracts/runtime";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";

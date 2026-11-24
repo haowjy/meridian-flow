@@ -1,5 +1,3 @@
-/** One owner for Markdown parse execution, identity reconciliation and settled snapshots. */
-
 import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Node as PMNode } from "@tiptap/pm/model";
@@ -38,7 +36,6 @@ let worker: Worker | null | undefined;
 let synchronous = typeof Worker === "undefined" || import.meta.env.SSR;
 let reportedWorkerFailure = false;
 
-/** Start the module worker while the chat shell is mounting, before its first reply. */
 export function prewarmMarkdownStreaming(): void {
   if (!synchronous) workerForBrowser();
 }

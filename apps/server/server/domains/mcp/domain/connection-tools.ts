@@ -1,11 +1,3 @@
-/**
- * What the two connection tools do. `callConnectionTool` is the one function that calls a
- * connection's tool: it finds the pinned tool through the bake, writes the call's record before
- * the client is called and completes it after, and keeps the full reply. It never runs inside
- * another transaction (the record has to be there the moment the call leaves), so a caller
- * holds none. `mcp_call` shapes its outcome for the model; `mcp_run` will shape the same
- * outcome for a script.
- */
 import type { UserId } from "@meridian/contracts";
 import type {
   McpBakedConnection,
@@ -29,15 +21,10 @@ import { answeredStatus, callLine, capLines, cut, textOf } from "./call-list.js"
 import { connectionCatalogue, toolId } from "./connection-bake.js";
 import type { McpConnections } from "./connection-service.js";
 
-/** Characters of a reply the model reads; the full reply stays in the call's record. */
 export const REPLY_CHARACTER_LIMIT = 24_000;
-/** What the model reads wherever calls that ran are listed: a failed script's list and a restart's stub. */
-export const DO_NOT_REPEAT =
-  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
-/** One call's limit, passed to the client: a slow server is `call_timeout`, never also the executor's timeout. */
+export const CALLS_RAN = "These calls ran and are not undone.";
 const CALL_TIMEOUT_MS = 60_000;
 
-/** Where a call's full reply and its media are kept: the chat's own storage, which goes with the chat. */
 export interface ReplyStore {
   put(
     threadId: string,
@@ -45,7 +32,6 @@ export interface ReplyStore {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<{ key: string }>;
-  /** The bytes `put` stored under this key. */
   get(key: string): Promise<Uint8Array>;
 }
 
@@ -55,7 +41,6 @@ export interface ConnectionToolsDeps {
   client: McpClient;
   service: Pick<McpConnections, "serverFor" | "checks">;
   replies: ReplyStore;
-  /** Something after the call's answer failed and was passed over: the model still gets the outcome. */
   warn(what: string, cause: unknown): void;
   now?: () => Date;
 }
@@ -63,18 +48,14 @@ export interface ConnectionToolsDeps {
 export interface CallRequest {
   thread: { id: string; userId: UserId };
   bake: { bakedConnections: readonly McpBakedConnection[] };
-  /** What the model sent: `<connection>/<tool>`. */
   id: string;
   arguments: JsonObject;
   signal: AbortSignal;
-  /** Called once the call's record is written, as the call leaves. */
   opened?: (recordId: string) => void;
-  /** Which tool call made this one: `mcp_call` is sequence 0, a script's calls count up from 0. */
   origin: { turnId: string; modelResponseId: string; toolCallId: string; sequence: number };
 }
 
 export type ConnectionCall =
-  /** Made without calling the server: the chat holds no such tool, or its connection is gone. */
   | {
       kind: "refused";
       code: "unknown_tool" | "connection_removed";
@@ -89,7 +70,6 @@ export type ConnectionCall =
       outcome: CallOutcome;
     };
 
-/** The first `/` splits a tool id: connection names hold no `/`. */
 const splitId = (id: string): { connection: string; tool: string } | null => {
   const at = id.indexOf("/");
   return at > 0 && at < id.length - 1
@@ -97,7 +77,6 @@ const splitId = (id: string): { connection: string; tool: string } | null => {
     : null;
 };
 
-/** The one word for how a call ended, stored in the record and carried on the typed result. */
 export function outcomeOf(outcome: CallOutcome): McpCallOutcome {
   switch (outcome.kind) {
     case "answered":
@@ -145,7 +124,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       arguments: request.arguments,
     });
     request.opened?.(recordId);
-    // A token that no longer opens is a sign-in problem the check reports; no call leaves.
     const outcome: CallOutcome =
       "problem" in loaded
         ? {
@@ -160,8 +138,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
             { tool, arguments: request.arguments },
             { signal: request.signal, timeoutMs: CALL_TIMEOUT_MS },
           );
-    // From here the server has answered (or the call is known not to have run): nothing below may
-    // throw before the outcome reaches the model, or it would repeat a call that ran.
+    // keep: After a call answers, no later step may throw before the model receives its outcome
     const replyRef =
       outcome.kind === "answered" || outcome.kind === "rejected"
         ? await keepReply(request.thread.id, recordId, outcome.reply)
@@ -187,7 +164,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     }
   }
 
-  /** The reply's copy in the chat's storage, as the row holds it; a failed store is noted on the row instead. */
   async function keepReply(
     threadId: string,
     recordId: string,
@@ -208,7 +184,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     }
   }
 
-  /** `mcp_call`: the call, shaped for the model and for the app's row. */
   async function mcpCall(
     request: CallRequest,
   ): Promise<{ result: McpCallResult; isError: boolean }> {
@@ -219,12 +194,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     });
   }
 
-  /**
-   * One call's outcome as the typed result both tools carry. `reply` shapes an answered call's
-   * reply (`mcp_call` stores its pictures, a script leaves them out); `schema` sets the tool's
-   * schema on a failed call, which `mcp_call` follows its words with and a script's failure text
-   * gives once per tool.
-   */
   async function shapeCall(
     request: Pick<CallRequest, "id" | "arguments" | "bake">,
     call: ConnectionCall,
@@ -246,7 +215,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
           code: `mcp_${call.code}`,
           message:
             call.code === "connection_removed"
-              ? `The connection ${call.connection} was removed, so ${request.id} cannot be called. Tell the writer.`
+              ? `The connection ${call.connection} was removed, so ${request.id} cannot be called.`
               : `This chat holds no tool ${JSON.stringify(request.id)}. ${await heldIds(request)}`,
         },
       };
@@ -261,7 +230,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       ms: outcome.ms,
       ...(reply ? { reply } : {}),
     });
-    // The tool's schema follows a failed call's words for the model; the row shows the server's reply alone.
     const schema = how.schema ? { schema: describeTool(request.id, tool) } : {};
     switch (outcome.kind) {
       case "answered": {
@@ -292,7 +260,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
         return {
           isError: true,
           result: failure(
-            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept. Ask for less: a narrower query or fewer results.`,
+            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept.`,
           ),
         };
       case "aborted":
@@ -309,7 +277,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     }
   }
 
-  /** What the model reads of a reply: its text, cut to the limit, and its pictures as stored media. */
   async function shapeReply(
     threadId: string,
     recordId: string,
@@ -342,7 +309,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       });
     }
     const shown = cut
-      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown. Ask for less: a narrower query or fewer results.]`
+      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown.]`
       : text;
     return {
       text: lost
@@ -367,7 +334,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     );
   }
 
-  /** `mcp_describe`: each name is a tool id (its description and schema) or a connection (its tools), from the pins the chat holds. Never calls a server. */
   async function describe(request: {
     bake: { bakedConnections: readonly McpBakedConnection[] };
     names: readonly string[];
@@ -406,12 +372,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     };
   }
 
-  /**
-   * One line for each recorded call of these turns, for the stub of a call that did not finish:
-   * the call as `mcp_call` takes it (the connection's name from the bake), what was sent, and how
-   * far it got, with the kept reply as a failed script's list shows it. The stub opens with
-   * `DO_NOT_REPEAT`. Each stub's lines are capped as that list is.
-   */
   async function recordedCalls(
     threadId: string,
     turnIds: readonly string[],
@@ -470,11 +430,11 @@ function unreachableMessage(
     case "start_failed":
     case "connect_timeout":
     case "disconnected":
-      return `${connection} could not be reached (${outcome.message}). Calling it again now will not help: tell the writer.${may}`;
+      return `${connection} could not be reached (${outcome.message}). Calling it again now will not help.${may}`;
     case "call_timeout":
       return `${connection} did not answer in time.${may}`;
     case "unauthorized":
-      return `${connection} refused its token (HTTP 401). The writer has to sign in to it again in Settings, under Connections.`;
+      return `${connection} refused its token (HTTP 401). The connection needs the writer to sign in again.`;
     case "forbidden":
       return `${connection} refused the request (HTTP 403).${may}`;
     case "rate_limited":

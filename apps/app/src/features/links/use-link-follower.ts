@@ -1,37 +1,3 @@
-/**
- * A surface's link follower: the resolution scope registered on the surface's
- * cache, and the follow procedure bound to the surface's destination and host.
- *
- * **An answer belongs to a scope, not to a href.** `{ projectId, workId,
- * baseUri }` and the index's revision are the whole semantic input to a
- * resolution, so the resolver is registered once per scope and registered
- * again whenever any of them changes. Registering is the cache's only
- * invalidation: it forgets every answer and every failure the previous scope
- * produced. The holder's own text is not an input: an answer is keyed by the
- * link's ref and href, and the same key names the same document whatever else
- * the text says. Nothing else in the app pokes this cache. A click in flight
- * across a registration is asked again in the new one, so a rename or a
- * catalog refetch never turns into "could not be checked".
- *
- * **One owner per shown outcome.** Follows share the surface's reporter, so
- * the follower records which follow owns what is shown. A follow may only
- * clear its own outcome; `dismiss()` stops only the owner; `retry()` makes the
- * new follow the owner before it says anything, so a fast answer can clear
- * the failure it replaces.
- *
- * **One owner per surface, one policy per follow.** A follow may carry its own
- * destination and its own answer to "nothing there" (`FollowPolicy`), so a door
- * with placement rules of its own shares this owner's cancellation, checking
- * and failure states instead of running a second follower beside it.
- *
- * **What aborts a follow.** A newer `current` follow aborts the previous one:
- * the pane can only go one place. Dismissing a
- * follow's checking dialog aborts that follow. Unmounting, a different cache,
- * a project or Work change, and the surface hiding abort everything in flight;
- * hiding also dismisses what is shown. An abort only stops a follow before it
- * opens; once it opens, the navigation completes.
- */
-
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -52,16 +18,9 @@ import { createProjectLinkResolver, type LinkResolutionScope } from "./project-l
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
-  /** `ref` is the stored link's ref; a link written as syntax (chat) has none. */
   follow(target: LinkTarget, ref?: string | null, policy?: FollowPolicy): void;
-  /** Close what is shown; if its follow is still asking, stop that follow. */
   dismiss(): void;
-  /** Follow the shown outcome's link again, as the new owner of the dialog. */
   retry(): void;
-  /**
-   * Internal, and relative only with a base URI. Independent of loading: a
-   * link that can be followed once the scope arrives is followable now.
-   */
   canFollow(target: LinkTarget): boolean;
 };
 
@@ -80,21 +39,9 @@ export function useLinkFollower({
   open,
   reporter,
 }: {
-  /**
-   * `"pending"`: the surface has a project but does not know its Work yet. A
-   * follow waits for the scope (showing checking after the usual delay) and is
-   * never answered from a guessed one. Null: no project, or the surface is not
-   * showing; nothing is followable.
-   */
   scope: LinkResolutionScope | "pending" | null;
   index: LinkableDocumentIndex;
-  /**
-   * The cache this surface draws its links from. Omitted, the follower owns
-   * one: created once and never destroyed, because `destroy()` drops listeners
-   * and a StrictMode remount would keep using it. Unregistering is the cleanup.
-   */
   resolution?: LinkAnswerCache | null;
-  /** False while the surface is mounted but hidden: follows abort, and what is shown is dismissed. */
   active?: boolean;
   open: LinkDestination;
   reporter: FollowReporter;
@@ -103,8 +50,6 @@ export function useLinkFollower({
     providedResolution === undefined ? createLinkAnswerCache() : null,
   );
   const resolution = providedResolution === undefined ? ownedResolution : providedResolution;
-  // The account's memo outlives every surface; outside the authenticated
-  // shell (tests, SSR) the follower keeps its own.
   const accountSettlements = useOptionalLinkSettlements();
   const [ownedSettlements] = useState(createLinkSettlements);
   const settlements = accountSettlements ?? ownedSettlements;
@@ -117,22 +62,13 @@ export function useLinkFollower({
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
-  // The latest host callbacks, read when a follow needs them. A host passing a
-  // fresh `open` or reporter object each render must not restart or abort
-  // anything.
   const latest = useRef({ open, reporter });
   useLayoutEffect(() => {
     latest.current = { open, reporter };
   });
 
-  /** Follows clicked while the scope was pending, released once it registers. */
   const scopeWaiters = useRef(new Set<() => void>());
 
-  // The catalog finishing its load changes what a question needs from the
-  // server, not what is true, so it must not start a new generation: that
-  // threw away every answer in flight and asked all of them again. The
-  // resolver reads `complete` live; only a different catalog (`revision`)
-  // registers anew.
   const catalog = useRef(index);
   useLayoutEffect(() => {
     catalog.current = index;
@@ -159,14 +95,8 @@ export function useLinkFollower({
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
-    // React runs this cleanup and the next registration in one commit.
-    // Unregistering right away would leave no live generation for a pending
-    // click to be carried into, so it would settle null and report "could not
-    // be checked". Deferred, the unregister finds a newer registration and is a
-    // no-op (it only takes its own generation); on unmount it still runs.
+    // keep: Defer unregister to a microtask; React runs cleanup and the next registration in one commit, so a synchronous unregister strands a pending click.
     return () => queueMicrotask(unregister);
-    // A different revision is a different catalog: registering against it is
-    // how an answer about the old one becomes unreachable.
   }, [
     baseUri,
     holderDocumentId,
@@ -188,7 +118,6 @@ export function useLinkFollower({
     latest.current.reporter.clear();
   }, []);
 
-  /** Abort one follow, taking down the outcome it is showing; nobody else will. */
   const abortFollow = useCallback(
     (controller: AbortController) => {
       controller.abort();
@@ -203,23 +132,14 @@ export function useLinkFollower({
     for (const controller of [...inFlight.current]) abortFollow(controller);
   }, [abortFollow]);
 
-  // Unmounting leaves nobody to answer, and a different cache is a different
-  // surface.
   useEffect(() => abortAll, [abortAll, resolution]);
 
-  // A hidden surface has nobody to answer to, and a dialog it left up would
-  // float over whatever replaced it.
   useEffect(() => {
     if (active) return;
     abortAll();
     if (shown.current) clearShown();
   }, [abortAll, active, clearShown]);
 
-  // The answer a follow is waiting on is about the project and Work it was
-  // clicked in. A catalog or base URI change re-asks it; moving to another
-  // project or Work, or the scope going away, is a different question and
-  // aborts. A pending scope becoming known is not a move: that is the answer
-  // the follow waited for.
   const answeredScope = useRef<string | null>(null);
   const scopeKey = ready
     ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatThreadId ?? ""}`
@@ -236,11 +156,7 @@ export function useLinkFollower({
   }, [abortAll, clearShown, scopeKey]);
 
   const start = useCallback(
-    // `retrying`: Try again. It owns the shown outcome from the start, so a
-    // fast answer can clear the failure it replaces.
     (target: LinkTarget, ref: string | null, retrying: boolean, policy?: FollowPolicy) => {
-      // Without a scope no resolver is registered, and asking anyway would
-      // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
       const controller = new AbortController();
       if (currentFollow.current) abortFollow(currentFollow.current);
@@ -250,7 +166,6 @@ export function useLinkFollower({
       const owned: FollowReporter = {
         report(outcome) {
           if (policy?.missing && outcome.state === "missing") {
-            // The follow's own policy says where nothing-at-the-address goes.
             if (shown.current?.owner === controller) clearShown();
             policy.missing();
             return;
@@ -298,11 +213,8 @@ export function useLinkFollower({
   );
 
   const dismiss = useCallback(() => {
-    // Abort before clearing: the procedure clears the outcome itself right
-    // before it opens, so clearing first would leave a window where the answer
-    // lands, opens, and the writer's Cancel meant nothing.
+    // keep: Abort the in-flight follow before clearing the outcome; clearing first leaves a window where the answer lands and opens, making Cancel ineffective.
     const owner = shown.current?.owner;
-    // Aborting the owner takes its outcome down with it.
     if (owner && inFlight.current.has(owner)) abortFollow(owner);
     else clearShown();
   }, [abortFollow, clearShown]);

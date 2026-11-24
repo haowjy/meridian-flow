@@ -1,4 +1,3 @@
-/** Tool-owned document-text substitutions; the compaction planner decides staleness. */
 import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -9,20 +8,10 @@ import {
   renderGrepFiles,
 } from "./grep-result.js";
 
-/**
- * `stale`: the document changed since this copy. `reshown`: compaction shows its
- * current text after the summary, so this copy is a duplicate. `history`: a
- * `thread_history` stub.
- */
 export type DocumentTextTreatment = "stale" | "reshown" | "history";
 export type DocumentRef = Pick<DocumentRevisionEvidence, "documentId" | "uri">;
 export interface DocumentTextPolicy {
-  /** Whether the tool's results hold document text it read or text it wrote. */
   kind: "read" | "write";
-  /**
-   * `result` is the typed value the stored `content` was rendered from. The returned `text`
-   * replaces the whole `content`, so a media part in it goes with the text it came with.
-   */
   elide(
     block: { input?: JsonObject; result?: JsonValue },
     changed: readonly DocumentRef[],
@@ -35,7 +24,7 @@ export function reshownReadStub(documents: string): string {
 }
 
 export function staleReadStub(documents: string): string {
-  return `[Cleared at compaction: ${documents} has changed since this read. Read it again before relying on its text.]`;
+  return `[Cleared at compaction: ${documents} has changed since this read.]`;
 }
 
 function documentsLabel(changed: readonly DocumentRef[], input: JsonObject): string {
@@ -61,10 +50,6 @@ export const readDocumentText: DocumentTextPolicy = {
   },
 };
 
-/**
- * A write result that shows the document and changed nothing: a `returned` edit, or a `not_found`
- * that carries the document. Its text is a read, whatever the call that asked for it.
- */
 export function showsDocumentText(result: JsonValue | undefined): boolean {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return false;
   return result.status === "returned" || (result.status === "not_found" && "blocks" in result);
@@ -74,8 +59,6 @@ export const writeDocumentText: DocumentTextPolicy = {
   kind: "write",
   elide({ input = {}, result }, changed, treatment) {
     const documents = documentsLabel(changed, input);
-    // The edit did not land, so the stub says so and asks for no re-read: the text it showed was
-    // a read, and what the call carried is not worth keeping.
     if (showsDocumentText(result)) {
       const { content: _content, find: _find, around: _around, ...kept } = input;
       return {
@@ -92,12 +75,11 @@ export const writeDocumentText: DocumentTextPolicy = {
       text:
         treatment === "reshown"
           ? `[Cleared at compaction: you edited ${documents} here (${input.command}); its current text is shown after the summary.]`
-          : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
+          : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since.]`,
     };
   },
 };
 
-/** A grep's passages from changed files are cleared; its history form keeps files and counts. */
 export const grepDocumentText: DocumentTextPolicy = {
   kind: "read",
   elide({ input = {}, result }, changed, treatment) {
@@ -113,7 +95,7 @@ export const grepDocumentText: DocumentTextPolicy = {
 };
 
 export function historyReadStub(documents: string): string {
-  return `[omitted: ${documents}; read it for current text]`;
+  return `[omitted: ${documents}]`;
 }
 
 export const historyDocumentText: DocumentTextPolicy = {
@@ -123,7 +105,7 @@ export const historyDocumentText: DocumentTextPolicy = {
       text:
         treatment === "history"
           ? "[thread_history output omitted]"
-          : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}. Call thread_history again.]`,
+          : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}.]`,
     };
   },
 };

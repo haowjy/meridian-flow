@@ -1,5 +1,3 @@
-/** Neutral public boundary for Work controls shared by composer surfaces. */
-
 export {
   deriveWorkPickerViewModel,
   type WorkCatalogView,

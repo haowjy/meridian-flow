@@ -1,4 +1,3 @@
-/** Project and Work resolution shared by thread, doc, and seed commands. */
 import { decodeWorkHandle, type WorkHandle } from "@meridian/contracts/handles";
 import {
   API_PROJECTS_PATH,
@@ -10,10 +9,6 @@ import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { jsonResponse, unknownJsonResponse } from "../../core/session";
 
-/**
- * `--project <id>`; omitted or `default` reads the writer's oldest live project. Authentication
- * already made one when the account had none, so this never writes.
- */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
   const { projects } = (await session.request("GET", API_PROJECTS_PATH, undefined, {
@@ -26,7 +21,6 @@ export async function resolveProjectId(session: Session, raw: string | undefined
   return oldest.id;
 }
 
-/** A Work as its handle names it (`w3` or `@w3`); a bare id passes through. */
 export async function resolveWork(
   session: Session,
   projectId: string,
@@ -51,7 +45,6 @@ export async function resolveWork(
   return { id: work.id, handle: workHandle, draftId: work.draftId };
 }
 
-/** `--work w3` → that Work's id; omitted → No Work (null). */
 export async function resolveWorkId(
   session: Session,
   projectId: string,

@@ -1,4 +1,3 @@
-/** PATCH /api/projects/[projectId]: updates an owned project's mutable fields. Depends on the auth gate, project ownership, and project repository. */
 import { serializeTransport, type UpdateProjectRequest } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";

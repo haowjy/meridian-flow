@@ -1,4 +1,3 @@
-/** PATCH /api/account/settings: strictly updates account-level preferences for the authenticated writer. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, readBody } from "nitro/h3";
 import {

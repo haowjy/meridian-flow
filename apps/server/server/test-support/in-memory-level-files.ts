@@ -1,4 +1,3 @@
-/** Writer-owned Agent files for a test, by level: what the documents would hold. */
 import type { AgentsLevel } from "@meridian/contracts/agents";
 import { mergeCodeText } from "../domains/collab/domain/code-merge.js";
 import type { AgentLevelFiles } from "../domains/packages/index.js";

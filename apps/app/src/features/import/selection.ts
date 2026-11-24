@@ -1,30 +1,22 @@
-/** What the writer chose, as the browser could read it: roots, files, folders and what was left out. */
 import { IMPORT_ADMISSION, type ImportUnreadableReason } from "@meridian/contracts";
 
 export type SelectedFile = { path: string; file: File };
 
 export type UnreadableItem = { path: string; reason: ImportUnreadableReason };
 
-/** One top-level item. Two folders both called `Book` are two roots. */
 export type SelectedRoot = {
   rootId: number;
   kind: "folder" | "file";
   name: string;
-  /** Path relative to the root; "" for a file root. */
   files: SelectedFile[];
-  /** Directories the reader saw. A folder pick cannot see empty ones. */
   folders: string[];
-  /** Files and folders inside the root that could not be opened. */
   unreadable: UnreadableItem[];
-  /** Text of `.obsidian/app.json`, when the browser shared it. */
   appJson?: string;
-  /** Text of `meridian-export.json` at the folder's top. */
   meridianExport?: string;
 };
 
 export type Selection = {
   roots: SelectedRoot[];
-  /** Top-level items that could not be opened at all; nothing of them is sent. */
   leftOut: { name: string; kind: "folder" | "file" }[];
 };
 
@@ -37,7 +29,6 @@ export function unreadableReason(error: unknown): ImportUnreadableReason {
   return "unreadable";
 }
 
-/** A small JSON side file's text, or nothing when it is too large or could not be read. */
 export async function readSideFile(file: File): Promise<string | undefined> {
   if (file.size > IMPORT_ADMISSION.sideFileBytes) return undefined;
   try {
@@ -52,7 +43,6 @@ export type SelectionTotals = {
   files: number;
   folders: number;
   bytes: number;
-  /** Files over the per-file limit, which are listed but not imported. */
   oversize: number;
   unreadableFiles: number;
 };

@@ -1,5 +1,3 @@
-/** Complete one reserved turn as an immutable prompt-epoch boundary. */
-
 import type { PromptBakeId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   BlockUpsertedRow,
@@ -26,9 +24,7 @@ export interface BoundaryCompletion {
   compactionModel?: string;
   metadata?: JsonValue | null;
   modelResponses?: ModelResponseReceivedRow[];
-  /** Caller-owned visible history event, such as `context.compacted`. */
   events?: (bakeId: PromptBakeId) => OrchestratorEvent[];
-  /** Runs in the same transaction, after the events are projected. */
   afterEvents?: () => Promise<void>;
 }
 
@@ -43,7 +39,6 @@ type BeginPromptEpochDeps = Omit<PersistenceDeps, "repos"> & {
   repos: PersistenceDeps["repos"] & Pick<ThreadRepositories, "promptBakes">;
 };
 
-/** Hashes a bake and completes the pending boundary in one journaled transaction. */
 export async function beginPromptEpoch(
   deps: BeginPromptEpochDeps,
   input: BeginPromptEpochInput,

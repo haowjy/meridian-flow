@@ -1,4 +1,3 @@
-/** Tab-local note above the New chat box that received a deleted chat's words. */
 import { Trans } from "@lingui/react/macro";
 import type { DeletedChatCard as Notice } from "@/client/composer-drafts";
 import { FailureCard } from "@/components/app/FailureCard";

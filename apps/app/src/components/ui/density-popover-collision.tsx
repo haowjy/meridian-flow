@@ -1,4 +1,3 @@
-/** Document-scoped safe-area geometry for compact Radix surfaces. */
 import { createContext, type ReactNode, useContext, useState } from "react";
 
 const DensityCollisionBoundaryContext = createContext<Element | null>(null);
@@ -19,7 +18,6 @@ export function DensityPopoverCollisionProvider({ children }: { children: ReactN
   );
 }
 
-/** Radix collision policy for compact density surfaces, not generic popovers. */
 export function useDensityPopoverCollisionProps() {
   const collisionBoundary = useContext(DensityCollisionBoundaryContext);
   return collisionBoundary

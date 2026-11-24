@@ -1,4 +1,3 @@
-/** Portable, case-insensitive ZIP paths with one reservation space for files and folders. */
 import {
   CONTEXT_URI_SCHEME_NAMES,
   DEFAULT_EXPORT_AREA_NAMES,
@@ -41,7 +40,6 @@ export function buildExportLayout(
     }
     return path;
   }
-  // Reserve No Work even when empty so a named Work cannot steal its directory.
   folder("works", "", "Works");
   folder("no-work", "Works", "No Work");
   function rootFor(source: ExportSourceRoot): string | null {
@@ -65,17 +63,12 @@ export function buildExportLayout(
     const root = rootFor(source);
     if (root) roots.set(source.uri, root);
   }
-  // Folders are reserved before documents, so a document is the one renamed when a folder
-  // `Lore.md` and a document `Lore` meet. `documents` arrive in tree order (sibling order, depth
-  // first): the first sibling to claim a name keeps it, and `paths` iterates in the order the
-  // archive streams.
   const placed: { doc: ExportDocument; parent: string }[] = [];
   for (const doc of documents) {
     let parent = rootFor(doc);
     if (!parent) continue;
     roots.set(doc.uri.slice(0, -doc.path.length), parent);
     let key = `${doc.scheme}:${doc.workId}:${doc.rootThreadId}`;
-    // Twin folders stay apart by segment; on disk each is its name, numbered where it repeats.
     for (const segment of doc.path.split("/").slice(0, -1)) {
       key += `/${segment}`;
       parent = folder(key, parent, readSegment(segment).name);

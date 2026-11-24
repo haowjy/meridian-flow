@@ -1,4 +1,3 @@
-/** Read one restorable deleted document with its last settled text. */
 import type { DocumentId } from "@meridian/contracts";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";

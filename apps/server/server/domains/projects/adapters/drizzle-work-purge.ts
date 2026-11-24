@@ -1,13 +1,3 @@
-/**
- * Permanently removes expired Works, then best-effort removes their object-store blobs.
- * A purged Work's drafts end first through collab's Discard (contract §2.6, F10): their drafts
- * leased before the transaction, then, after the deleted/cutoff proof, one settlement discards
- * every pending record of the Work. The documents it drafted are then in no view, and retention
- * releases them on its own window. The Work's sources go with it: first a `purge` record in the
- * project's list for every node in them (the browsers read "gone for good" from that record), and
- * the content release Trash retention uses; then their source rows, which take any node rows left.
- */
-
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -44,11 +34,6 @@ import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
 
-/**
- * Ends every node in the sources for good, in one submission (a folder purged while a child's row
- * stands fails the deferred foreign key). What stands is deleted first, since a `purge` names a
- * delete in force. Returns the documents to release.
- */
 function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): DocumentId[] {
   const inSources = () =>
     [...writer.view(LIVE).nodes.values()].filter((node) => sources.has(node.source));
@@ -59,8 +44,6 @@ function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): Documen
     "system",
     standing.filter((node) => !standingIds.has(node.parent)).map((node) => node.id),
   );
-  // A node can hold several deletes in force (a folder deleted again after a restore left a child
-  // standing): one purge per node names one of them and every node they took.
   const view = writer.view(LIVE);
   const takenBy = new Map<string, { entry: TrashEntry; nodes: Set<string> }>();
   for (const entry of view.trash) {
@@ -80,11 +63,8 @@ export function createDrizzleWorkPurger(deps: {
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
   drafts: WorkDraftDisposal;
-  /** The project's list, where the Work's sources' nodes end. */
   tree: Pick<TreeListStore, "submit">;
-  /** A purged Work leaves the project's Works list, which is woken for it. */
   works: Pick<WorkProjectionMutation, "lifecycleChanged">;
-  /** What collab ends with the Work's documents and chats: their rooms, and what the model was shown. */
   collab: {
     endRooms: DocumentContentEnd["endRooms"];
     evidence: DocumentContentEnd["evidence"] & {
@@ -106,7 +86,6 @@ export function createDrizzleWorkPurger(deps: {
     },
   });
 
-  /** The pictures the writers of these threads sent: the chats' own copies, found by prefix. */
   async function chatMediaKeys(threadIds: readonly string[]): Promise<string[]> {
     const keys: string[] = [];
     for (const threadId of threadIds) {
@@ -165,8 +144,6 @@ export function createDrizzleWorkPurger(deps: {
       }
 
       if (lockedTree.threadIds.length > 0) {
-        // A rebound fork/handoff still owns its source identity and may share its bake.
-        // Never let the root FK cascade delete another Work's conversation.
         const [dependent] = await activeDb
           .select({ id: threads.id })
           .from(threads)
@@ -205,7 +182,6 @@ export function createDrizzleWorkPurger(deps: {
       }
 
       const [uploads, results, sourceRows] = await Promise.all([
-        // The Work owns no uploads; its threads' chats do.
         lockedTree.threadIds.length
           ? activeDb
               .select({
@@ -235,8 +211,6 @@ export function createDrizzleWorkPurger(deps: {
             ),
           ),
       ]);
-      // F10: the Work's drafts end through the Discard kernel, after this proof and before
-      // their rows go, so nothing they created stays live and their storage is released.
       const purgedRoots = lockedTree.threadIds.length
         ? (
             await activeDb
@@ -251,8 +225,6 @@ export function createDrizzleWorkPurger(deps: {
           ).map((row) => row.id)
         : [];
       const disposed = await disposeDrafts(purgedRoots);
-      // The Work's nodes end in the project's list, after their drafts and before their source
-      // rows go: the browsers read "gone for good" from the `purge` record.
       const sources = new Set<string>(sourceRows.map(({ id }) => id));
       const released =
         sources.size === 0
@@ -264,7 +236,6 @@ export function createDrizzleWorkPurger(deps: {
               })
               .then(({ result }) => releaseDocumentContent(deps.db, deps.collab, result));
       const objectKeys = [
-        // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [
           upload.objectKey,
           incomingObjectKey(upload.projectId, upload.documentId),
@@ -281,7 +252,6 @@ export function createDrizzleWorkPurger(deps: {
         }),
       ];
 
-      // Results and journal history restrict conversation deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {
         await activeDb
@@ -295,16 +265,11 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb
           .delete(eventJournal)
           .where(inArray(eventJournal.threadId, lockedTree.threadIds));
-        // Turns restrict thread deletion; derived threads retain non-nulling source-turn refs.
-        // Defer that one cycle until both sides are gone, without weakening provenance elsewhere.
         await activeDb.execute(sql`SET CONSTRAINTS threads_origin_turn_id_turns_id_fk DEFERRED`);
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
         await deps.collab.evidence.forgetThreads(lockedTree.threadIds);
       }
-      // A chat that moved to another Work keeps this Work's membership as non-primary history.
-      // Its readers (the Work's chat list, the Work switcher's recent summary) filter by this Work,
-      // which is gone after this. A primary membership still blocks the delete: those chats went above.
       await activeDb
         .delete(threadWorks)
         .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, false)));
@@ -313,9 +278,7 @@ export function createDrizzleWorkPurger(deps: {
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
         .returning({ id: works.id, entityRevision: works.entityRevision });
       if (deleted[0]) {
-        // A snapshot's revision is the sum of the project's Work revisions, and clients keep the
-        // highest they have seen. Deleting a row would lower the sum, so a client would keep
-        // showing the purged Work: its revision, and one more, move to the project's No Work.
+        // keep: Move a purged Work's revision to No Work so the project snapshot sum never falls
         await activeDb
           .update(works)
           .set({
@@ -328,7 +291,6 @@ export function createDrizzleWorkPurger(deps: {
           draftId: work.draftId,
         });
       }
-      // The disposed drafts go after the Work and chats naming them; their tree records cascade.
       if (disposed.draftIds.length > 0)
         await activeDb.delete(drafts).where(inArray(drafts.id, [...disposed.draftIds]));
       return { purged: deleted.length > 0, objectKeys, threadIds: lockedTree.threadIds };
@@ -341,7 +303,6 @@ export function createDrizzleWorkPurger(deps: {
       const cutoff = deletionPurgeCutoff(currentTime);
       let count = 0;
       let after: { id: WorkId; deletedAt: Date } | undefined;
-      // Retained sources must not pin the oldest page and starve later eligible Works.
       while (count < WORK_PURGE_BATCH_LIMIT) {
         const candidates = await currentDrizzleDb(deps.db)
           .select({
@@ -366,8 +327,6 @@ export function createDrizzleWorkPurger(deps: {
         after = candidates.at(-1);
         if (!after) break;
         for (const candidate of candidates) {
-          // One Work's purge is its own unit: a Work that fails every pass stays, logged each pass,
-          // and does not stop the Works deleted after it.
           let result: Awaited<ReturnType<typeof purge>>;
           try {
             result = await purge(candidate.id, cutoff);

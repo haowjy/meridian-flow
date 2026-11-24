@@ -5,10 +5,6 @@ import { and, eq } from "drizzle-orm";
 
 type WorkRow = typeof works.$inferInsert & { id: string; draftId?: DraftId | null };
 
-/**
- * Inserts Works, each named one with its default draft under `draftId` when given (one is
- * minted otherwise, `mint_work_default_draft`), as `WorkRepository.create` does.
- */
 export async function insertWorks(
   db: Database,
   rows: WorkRow | readonly WorkRow[],
@@ -34,7 +30,6 @@ export async function insertWorks(
   });
 }
 
-/** The Work's default draft. */
 export async function defaultDraftOf(db: Database, workId: string): Promise<DraftId> {
   const [row] = await db
     .select({ id: drafts.id })

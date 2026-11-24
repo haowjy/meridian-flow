@@ -1,4 +1,3 @@
-/** Canonical PostgreSQL projection machinery for visible Project-chat rows. */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectChatItem } from "@meridian/contracts/threads";
 import { type SQL, type SQLWrapper, sql } from "drizzle-orm";
@@ -15,7 +14,6 @@ export type ProjectChatSqlRow = {
   is_favorite: boolean;
 };
 
-// Bound malformed/cyclic lineages when no assistant is encountered.
 const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
 
 export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
@@ -33,7 +31,6 @@ export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
 
 type ActionRequiredColumns = { activeLeafTurnId: SQLWrapper };
 
-/** The nearest assistant in the active lineage is waiting for the writer. */
 export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boolean> {
   return sql<boolean>`COALESCE((
     WITH RECURSIVE active_lineage AS (
@@ -53,7 +50,6 @@ export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boo
   ), false)`;
 }
 
-/** One correlated, whitespace-normalized 240-character visible-head preview. */
 export function projectChatPreviewLateral(headTurnId: SQL): SQL {
   return sql`LATERAL (
     SELECT NULLIF(left(btrim(regexp_replace(COALESCE(
@@ -65,19 +61,11 @@ export function projectChatPreviewLateral(headTurnId: SQL): SQL {
   ) AS conversation_preview`;
 }
 
-/** Exact PostgreSQL microsecond timestamp encoded for the JSON contract. */
 export function exactUtcTimestampSql(value: SQL): SQL<string> {
   return sql<string>`to_char(${value} AT TIME ZONE 'UTC',
     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 }
 
-/**
- * Full chat-row projection for a candidate set of thread ids. Callers supply
- * only the candidate scope and order (a `SELECT ... AS thread_id` body, most
- * recent first); this owns the primary-Work join, the agent_name CASE, the
- * favorite join, the head-turn lookup, the preview lateral, and timestamp
- * formatting for the Project chat feed, including Work-filtered pages.
- */
 export function chatFeedRowsSql(input: { candidates: SQL; userId: string }): SQL {
   return sql`
     WITH candidates AS (${input.candidates})

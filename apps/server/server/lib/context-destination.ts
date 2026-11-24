@@ -1,7 +1,3 @@
-/**
- * The destination a request names, as a move, a copy and a create all carry it: a parent by
- * identity (a folder id, or a scheme root and its owner) and a sibling position.
- */
 import type {
   ContextDestinationParent,
   ContextSiblingPosition,
@@ -20,7 +16,6 @@ function parseWorkId(raw: unknown) {
   return requireRequestId(raw.trim(), field);
 }
 
-/** A parent folder, or a scheme root and its owner, each with the missing-folder suffix (`createFolders`). */
 export function parseDestinationParent(raw: unknown): ContextDestinationParent {
   const parent = raw as Record<string, unknown> | null;
   let destinationParent: ContextDestinationParent;
@@ -65,7 +60,6 @@ export function parseDestinationParent(raw: unknown): ContextDestinationParent {
   return destinationParent;
 }
 
-/** A sibling position as a move or a create carries it. */
 export function parseSiblingPosition(raw: unknown): ContextSiblingPosition {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Position is invalid" });

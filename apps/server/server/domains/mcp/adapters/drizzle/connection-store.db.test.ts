@@ -43,7 +43,6 @@ else
       });
       const saved = await store.savePin(added.row.id, pin, "hash");
 
-      // Each refusal runs in its own savepoint so the test's transaction survives it.
       await expect(
         db.transaction((tx) =>
           tx.update(mcpPins).set({ pinHash: "other" }).where(eq(mcpPins.id, saved.id)),

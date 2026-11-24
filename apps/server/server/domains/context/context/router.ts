@@ -95,7 +95,7 @@ interface Dispatch {
 }
 
 const ENTRY_CREATION_DENIED_MESSAGE =
-  "This context scheme does not allow creating files or folders. Use scratch:// as the authoring space. uploads:// accepts files through upload intake.";
+  "This context scheme does not allow creating files or folders. scratch:// is the authoring space. uploads:// accepts files through upload intake.";
 const UPLOAD_FOLDER_CREATION_DENIED_MESSAGE =
   "This context scheme accepts flat files through upload intake; folders are not available here.";
 
@@ -261,7 +261,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           reason:
             chat?.kind === "unavailable"
               ? `The uploads of chat ${authority.chatRef} are unavailable because that chat is in the trash.`
-              : `This project has no chat ${authority.chatRef}. Use uploads://x for this chat's files.`,
+              : `This project has no chat ${authority.chatRef}. This chat's files are at uploads://x.`,
         });
       }
       adapter = chat.binding.adapter;
@@ -276,7 +276,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           uri,
           reason: files
             ? `Chat ${authority.rootThreadRef}'s notes: ${files.scratch}.`
-            : `No first chat ${authority.rootThreadRef}. List owners with ls scratch://@.`,
+            : `No first chat ${authority.rootThreadRef}. ls scratch://@ lists the owners.`,
         });
       }
       adapter = lineageSource.adapter;
@@ -320,13 +320,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "No uploads owner here. Use ls uploads://@.",
+        reason: "No uploads owner here. ls uploads://@ lists the owners.",
       });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "No scratch owner here. Use ls scratch://@.",
+        reason: "No scratch owner here. ls scratch://@ lists the owners.",
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 

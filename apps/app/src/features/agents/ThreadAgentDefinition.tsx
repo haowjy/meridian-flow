@@ -5,10 +5,6 @@ import { useThreadAgent } from "@/client/query/useAgentFiles";
 import { Chip } from "@/components/ui/chip";
 import { AgentFileDialog } from "./AgentFileDialog";
 
-/**
- * Where a chat shows the Agent definition it is bound to, read-only. It offers nothing: a newer
- * save takes over when the chat compacts, so the mark only says why the chat still runs the old text.
- */
 export function ThreadAgentDefinition({ threadId }: { threadId: string }) {
   const [open, setOpen] = useState(false);
   const agent = useThreadAgent(open ? threadId : null);

@@ -1,5 +1,3 @@
-/** Tracks detached runtime promises so shutdown and test resets can drain them. */
-
 export interface DetachedWorkTracker {
   track<T>(work: PromiseLike<T>, name?: string): Promise<T>;
   drain(timeoutMs?: number): Promise<boolean>;
@@ -56,5 +54,4 @@ export function createDetachedWorkTracker(): DetachedWorkTracker {
   };
 }
 
-/** The process's tracker: the app singleton, DB test harnesses and resets all drain this one. */
 export const processDetachedWork = createDetachedWorkTracker();

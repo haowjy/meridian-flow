@@ -1,4 +1,3 @@
-/** Upload selections, durable import progress, and upload command contracts. */
 export interface ImportSelection {
   importId: string;
   destination: { folderUri: string };
@@ -37,7 +36,6 @@ export type ImportEntryReason =
   | "changed_after_pick"
   | "upload_lost"
   | "server_error";
-/** Writer attention is shared by the detail list and the server's aggregate count. */
 export const IMPORT_REASON_NEEDS_LOOK = {
   obsidian_canvas: false,
   trash: false,
@@ -54,7 +52,6 @@ export const IMPORT_REASON_NEEDS_LOOK = {
 export const IMPORT_NEEDS_LOOK_REASONS = (
   Object.keys(IMPORT_REASON_NEEDS_LOOK) as ImportEntryReason[]
 ).filter((reason) => IMPORT_REASON_NEEDS_LOOK[reason]);
-/** A failed entry, one with a needs-look reason, or one whose file changed after it uploaded. */
 export function entryNeedsLook(
   entry: Pick<ImportEntryStatus, "state" | "reason" | "changedAfterUpload">,
 ): boolean {
@@ -102,11 +99,6 @@ export interface ImportEntryStatus {
   modifiedAt: number;
   state: ImportEntryState;
   reason: ImportEntryReason | null;
-  /**
-   * The file on disk differs from the bytes this entry received: a Continue re-picked it and
-   * its hash disagreed with the receipt. Only `POST .../picked` sets or clears it, and it is
-   * independent of `reason`, which keeps what happened at receive time.
-   */
   changedAfterUpload: boolean;
   reasonParams?: { readReason: ImportUnreadableReason };
   documentId: string;
@@ -115,14 +107,6 @@ export interface ImportDetail extends ImportSummary {
   roots: ImportSelection["roots"];
   entries: ImportEntryStatus[];
 }
-/**
- * POST /imports/:id/files uses multipart file parts named by entryId.
- * Optional X-Import-Changed-Entries is request-level metadata (FormData cannot set
- * part headers): a comma-separated list of at most IMPORT_ADMISSION.partsPerRequest
- * nonnegative safe-integer decimal ids, without whitespace or leading zeros.
- * Every id must name a part in this request; duplicates have set semantics.
- * The transport decodes this into changedAfterPick on each part, not stored metadata.
- */
 export interface ImportFilesResult {
   entries: Pick<ImportEntryStatus, "entryId" | "state" | "reason">[];
   summary: ImportSummary;
@@ -130,18 +114,9 @@ export interface ImportFilesResult {
 export interface ImportSkipsInput {
   entries: { entryId: number; reason: "unreadable" | "not_found" }[];
 }
-/**
- * POST /imports/:id/picked reports files Continue matched to entries that are
- * already received. The browser hashes only files whose size or modified time
- * differs from the entry's recorded pick, and entries already marked changed.
- * Each item carries the re-picked file's size and modified time so the server
- * can tell the original pick from an edited or copied one. Received bytes are
- * never sent again.
- */
 export interface ImportPickedInput {
   entries: { entryId: number; sha256: string; size: number; modifiedAt: number }[];
 }
-/** Stable refusal codes, with bounded numeric parameters carried separately. */
 export type ImportRefusalCode =
   | "import_not_found"
   | "entry_not_found"

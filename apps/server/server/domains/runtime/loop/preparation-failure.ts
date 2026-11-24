@@ -1,4 +1,3 @@
-/** Diagnostic errors shared by preparation and its atomic failed-reply landing. */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { ThreadConversationContextError } from "../../threads/index.js";
 import { MediaResolutionError } from "../ports/media-resolver.js";

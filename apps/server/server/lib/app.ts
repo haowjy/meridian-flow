@@ -1,9 +1,3 @@
-/**
- * App singleton: lazily builds and caches the composed AppServices on a global
- * symbol. App startup supplies process resources; compose owns adapter selection
- * and pure service wiring.
- */
-
 import { createImportObjectSweeper } from "../domains/import/index.js";
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
@@ -20,7 +14,6 @@ type AppGlobal = typeof globalThis & {
 };
 
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
-/** A draft badge a crash left stale converges within this, without another key (design §3.5). */
 const RETENTION_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 const ASK_EXPIRY_SWEEP_MS = 15_000;
@@ -99,8 +92,7 @@ async function createAppServices(): Promise<AppServices> {
   );
   app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
-    // postgres.js drops the listener before unlisten's first await, so the drain below cannot be
-    // joined by a notification even when the DB stalls and these promises never settle.
+    // keep: postgres.js drops the listener before unlisten's first await, so the drain cannot be joined by a notification and must not wait on one
     await Promise.all([
       ...listeners.map((listener) => listener.unlisten()),
       scheduler.stop(),

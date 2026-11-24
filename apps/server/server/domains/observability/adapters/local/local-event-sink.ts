@@ -1,10 +1,3 @@
-/**
- * Local EventSink: always writes structured JSON events to stdout for platform
- * log capture and optionally mirrors them to `LOG_DIR/YYYY-MM-DD.jsonl` when a
- * log directory is configured. Daily files can be retained for a bounded number
- * of days. Writes are serialized in process and mirrored under a cross-process
- * directory lock.
- */
 import { appendFile as appendFileToDisk, mkdir, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { lock } from "proper-lockfile";
@@ -17,23 +10,14 @@ type EventOutput = {
 };
 
 export type LocalEventSinkOptions = {
-  /** Optional directory for daily JSONL files; omitted means stdout-only. */
   dir?: string;
-  /** Optional number of UTC daily JSONL files to retain, including today's file. */
   retentionDays?: number;
-  /** Injectable clock for tests and deterministic filenames. */
   now?: () => Date;
-  /** Injectable output stream for tests; defaults to process stdout. */
   stdout?: EventOutput;
-  /** Injectable JSONL writer for deterministic backpressure tests. */
   appendFile?: typeof appendFileToDisk;
-  /** Maximum number of events waiting behind the active write. */
   pendingEventCapacity?: number;
-  /** Maximum serialized bytes waiting behind the active write. */
   pendingByteCapacity?: number;
-  /** Maximum bytes in one JSONL segment. */
   segmentBytes?: number;
-  /** Maximum total bytes retained across JSONL segments. */
   maxBytes?: number;
 };
 
@@ -200,7 +184,6 @@ export class LocalEventSink implements EventSink {
     }
   }
 
-  /** Resolved path for the active daily file — test hook for reading back lines. */
   currentFilePath(): string | null {
     return this.activePath;
   }
@@ -305,7 +288,6 @@ export class LocalEventSink implements EventSink {
         maxTimeout: 10,
         randomize: false,
       },
-      // A lost best-effort mirror lock must not crash the server asynchronously.
       onCompromised: () => undefined,
     });
     try {

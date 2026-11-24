@@ -1,4 +1,3 @@
-/** A stable event callback that reads the latest committed render. */
 import { useCallback, useLayoutEffect, useRef } from "react";
 
 export function useCommittedEvent<Args extends unknown[], Result>(

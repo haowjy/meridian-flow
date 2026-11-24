@@ -1,18 +1,3 @@
-/**
- * useReplyRetry — Retry on a failed reply.
- *
- * A failed reply consumes the messages it answered, and nothing retries it in
- * the background. Retry on the latest failed reply shows a new reply working
- * below it at once, under a client-minted id, then asks the server to answer
- * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
- * failed reply is not drawn: the Retry takes its place (`viewTranscript`, from the
- * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
- * the refusal and lost-request facts (`chatCards` draws them as cards), and the re-send of a lost request.
- *
- * The request is known by its execution and the record version of its answer. When it ends is
- * the package's decision (`reconcileRetries`). A lost response has no version: its stand-in
- * stays failed until the writer's Retry replays the request.
- */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
@@ -24,11 +9,9 @@ export type ReplyRetry = Pick<
   RetryStandIns,
   "standIns" | "requestOf" | "outcomes" | "retried" | "clearRefused"
 > & {
-  /** A new reply after `failed`, or the same request again when `failed` is a lost Retry. */
   retry: (failed: Turn) => void;
 };
 
-/** The new reply as the writer sees it before the server has it: working, empty. */
 export function optimisticRetryReply(input: { id: string; failed: Turn; createdAt: string }): Turn {
   const { id, failed, createdAt } = input;
   return {
@@ -48,7 +31,6 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
     responseCount: 0,
     usage: null,
     error: null,
-    // The Retry's target, carried explicitly: the transcript draws this in the failed reply's place.
     metadata: { retryOf: failed.id },
     createdAt,
     completedAt: null,

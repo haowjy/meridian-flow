@@ -14,8 +14,7 @@ const getAppOrigin = createServerFn({ method: "GET" }).handler(
 
 export const Route = createFileRoute("/")({
   loader: () => getAppOrigin(),
-  // Before first paint, so the hero never flashes the stacked layout that no-script
-  // and reduced-motion visitors get. If the bundle never starts the film, stack after all.
+  // keep: this runs before first paint, so the hero never flashes the stacked layout no-script and reduced-motion visitors get
   head: () => ({
     meta: [{ property: "og:url", content: SITE }],
     links: [{ rel: "canonical", href: SITE }],

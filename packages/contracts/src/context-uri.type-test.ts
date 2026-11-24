@@ -1,5 +1,3 @@
-/** Compile-time boundary: syntax and DTO values cannot serialize stable Work identity. */
-
 import { canonicalContextUri, type ParsedContextAuthority } from "./context-uri.js";
 import type { ResolvedWorkAuthority, WorkAuthorityDto, WorkHandle } from "./works/index.js";
 

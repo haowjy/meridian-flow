@@ -2,7 +2,6 @@ import { useSyncExternalStore } from "react";
 import type { CardStore } from "./card-store";
 import { CHARACTERS, QUESTION, SYSTEM } from "./story";
 
-/** Same parts as the app's question card. It stays HTML because the visitor really presses it. */
 export function QuestionCard({ store }: { store: CardStore }) {
   const choice = useSyncExternalStore(store.subscribe, store.getChoice, store.getChoice);
 

@@ -1,5 +1,3 @@
-/** Indexed keyset reads for effective transcript spans. */
-
 import type { Turn } from "@meridian/contracts/threads";
 import { SYSTEM_TURN_KINDS } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
@@ -16,16 +14,12 @@ import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 type ItemKey = { turn_id: string; position: number; sequence: number; block_id: string | null };
 
-/** Exposed for plan verification; every branch is independently index-bounded. */
 export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
   const direction = input.order === "newest_first" ? sql`DESC` : sql`ASC`;
   const branches = input.spans.map((span) => {
     const positionConditions = [
       sql`t.thread_id = ${span.threadId}::uuid`,
       sql`t.position > ${span.afterPosition}`,
-      // Both page units, their counts and the bounds below read the conversation, not the graph.
-      // A stamp counts only when its forgetting turn is inside this span, so a fork keeps what its source
-      // forgot after the cutoff.
       inConversationSql("t", span.throughPosition),
     ];
     if (span.throughPosition !== null)
@@ -103,7 +97,6 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
   `;
 }
 
-/** `isConversationTurn` in SQL; the two must stay the same rule. */
 const conversationTurnSql = sql`(
   COALESCE(t.metadata->>'kind', '') NOT IN (${sql.join(
     SYSTEM_TURN_KINDS.map((kind) => sql`${kind}`),
@@ -130,7 +123,6 @@ function conversationTurnBranches(spans: readonly TranscriptSpan[], beforePositi
   );
 }
 
-/** SQL shape used by the first-unsettled lookup and its partial index plan. */
 export function transcriptUnsettledTurnsSql(spans: readonly TranscriptSpan[]) {
   const branches = spans.map(
     (span) => sql`(
@@ -150,7 +142,6 @@ export function transcriptUnsettledTurnsSql(spans: readonly TranscriptSpan[]) {
   `;
 }
 
-/** SQL shape used by prompt-epoch boundary reads and their partial index. */
 export function transcriptBoundariesSql(spans: readonly TranscriptSpan[]) {
   const branches = spans.map(
     (span) => sql`(
@@ -178,7 +169,6 @@ export function createDrizzleTranscriptReader(
   | "listTranscriptBoundaries"
   | "listUnsettledPrimaryTurns"
 > {
-  // Resolve at call time so snapshot and thread-lock transactions stay ambient.
   const turns = () => currentDrizzleDb(db);
   return {
     async readTranscriptItems(input): Promise<TranscriptItemRow[]> {

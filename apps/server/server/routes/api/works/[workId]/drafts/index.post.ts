@@ -1,4 +1,3 @@
-/** POST /api/works/:workId/drafts: `+ New draft`, as a command. */
 import { isDraftId } from "@meridian/contracts";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

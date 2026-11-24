@@ -1,12 +1,5 @@
 import type { KeyboardEvent } from "react";
 
-/**
- * The keyboard of a tablist (ARIA tabs pattern), for the element with `role="tablist"`:
- * Tab enters on the selected tab, or the first when none is; Left and Right move and select,
- * wrapping at the ends; Home and End jump to the first and last. Each tab carries
- * `data-tab-value` and the `tabIndex` given here. `values` are the tabs that can be picked,
- * in strip order.
- */
 export function tabListKeys<T extends string>(
   values: readonly T[],
   value: T,

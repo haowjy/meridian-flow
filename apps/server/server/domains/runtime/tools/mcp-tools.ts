@@ -1,4 +1,3 @@
-/** `mcp_describe`, `mcp_call` and `mcp_run`: the three fixed tools through which a chat reaches its connections' tools. */
 import type { McpCallResult, McpDescribeResult, McpRunResult } from "@meridian/contracts/mcp";
 import type { JsonObject, ToolContentPart } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -34,10 +33,6 @@ const RunInputSchema = z
   })
   .strict();
 
-/**
- * Teaches the call shape, what a script can use and the limits. The example's field is the PubMed
- * server's own (`abstractText`): a wrong field name filters to an empty list and no error.
- */
 const runDescription = (limits: ScriptLimitsPort) =>
   `Run JavaScript that calls connection tools. The code is the body of an async function: use await, and return the value you want back, as JSON.
 
@@ -54,10 +49,8 @@ const found = await call("pubmed/pubmed_search_articles", { query: "CRISPR base 
 const full = await call("pubmed/pubmed_fetch_articles", { pmids: found.pmids });
 return full.articles.filter(a => a.abstractText?.includes("off-target")).map(a => ({ pmid: a.pmid, title: a.title }));`;
 
-/** Providers refuse an empty tool result. */
 const text = (value: string): ToolContentPart => ({ type: "text", text: value || '""' });
 
-/** Both tools are caught by `ctx.responseIdentity`: a call without it was not made by a model response. */
 function callerOf(ctx: ToolHandlerContext) {
   if (!ctx.responseIdentity || !ctx.toolCallId)
     throw new Error("A connection tool needs the model response that called it");
@@ -104,7 +97,6 @@ export function createMcpToolRegistrations(connections: ConnectionsPort): ToolRe
         inputSchema: modelToolSchema(RunInputSchema),
       },
       input: RunInputSchema,
-      // Two scripts in one response run one after the other, and no timeout: the runner's wall limit is the limit.
       sequential: true,
       historySummary: (_input, result) => (result as unknown as McpRunResult).ended,
       renderResult: (result) => [text((result as unknown as McpRunResult).text)],

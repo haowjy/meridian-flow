@@ -1,4 +1,3 @@
-/** GET /api/projects/[projectId]/threads/by-ref/[ref]: resolves a live cN/pN thread handle in an owned project. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

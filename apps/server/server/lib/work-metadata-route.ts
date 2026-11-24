@@ -1,4 +1,3 @@
-/** Route core for writer-owned Work metadata changes and their coded refusal envelopes. */
 import type { CommandId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";

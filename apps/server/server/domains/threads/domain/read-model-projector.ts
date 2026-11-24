@@ -1,11 +1,3 @@
-/**
- * Read-model projector: applies durable orchestrator events to thread read-model
- * tables. This is the in-transaction projection seam that makes event journal
- * facts the authority for model responses, blocks, and their rollups. Each
- * turn row carries exactly the lifecycle its own events recorded: a later turn
- * never rewrites an earlier turn's terminal status.
- */
-
 import type { TurnId } from "@meridian/contracts/runtime";
 import {
   type BlockUpsertedRow,
@@ -83,7 +75,6 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     writeMode: turn.writeMode,
     status: turn.status,
     executionId: turn.executionId,
-    // Only a reserved turn records the list; every other turn keeps null.
     reservedForUserTurnIds: turn.executionId ? turn.reservedForUserTurnIds : null,
     requestParams: turn.requestParams ?? null,
     metadata: turn.metadata ?? null,
@@ -143,7 +134,6 @@ export async function projectReadModelEvent(
   }
 }
 
-/** Shared repository write used by both journal projection and fork inheritance. */
 export async function projectMediaInclusionDecision(
   repos: Pick<ThreadRepositories, "mediaInclusions">,
   event: Extract<OrchestratorEvent, { type: "media.inclusion_decided" }>,

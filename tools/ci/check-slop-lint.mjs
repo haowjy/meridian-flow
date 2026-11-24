@@ -1,12 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Finds agent-generated error swallowing, suppressions, decision IDs, and small
- * words hand-sized inside a menu row in TypeScript source, and real-time waits and clock assertions in test files.
- * The baseline lets old findings remain visible while making new findings fail
- * and requiring deliberate baseline reductions.
- */
-
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
@@ -186,11 +179,9 @@ function collectSwallowedErrors(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
-// The raw scanner loses its place after a template with a substitution, so comments come
-// from the parse tree. JsxText is skipped: its words are text, not trivia.
+// keep: the raw scanner loses its place after a template with a substitution, so comments come from the parse tree, and JsxText is skipped because its words are text
 function comments(sourceFile, text) {
   const byStart = new Map();
-  // A truthy return would stop forEach*CommentRange after the first comment.
   const add = (pos, end) => {
     byStart.set(pos, { text: text.slice(pos, end), start: pos });
   };
@@ -293,8 +284,6 @@ function collectMiddleDotFindings(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
-// Rows that centre their items around a text-sm label: the shared menu items, any element styled
-// with dropdownRowVariants, and a SuggestionMenu row's `content`.
 const ROW_COMPONENTS = new Set([
   "DropdownMenuItem",
   "DropdownMenuCheckboxItem",
@@ -309,7 +298,6 @@ const ROW_COMPONENTS = new Set([
   "EditorMenuSubTrigger",
 ]);
 const SMALL_TEXT = /\btext-xs\b|\brole\.rowSecondary\b|\btext-\[(?:length:)?[\d.]+(?:px|r?em)\]/;
-// A column or a baseline-aligned line inside a row sets out its own lines.
 const OWN_LINES = /\bflex-col\b|\bitems-baseline\b/;
 
 function jsxClassName(element) {
@@ -361,7 +349,6 @@ function suggestionRowContents(element) {
 }
 
 function collectRowNoteFindings(sourceFile, lines, findings) {
-  // Inside a row, only what lands on its line: children, not the attributes of what is in it.
   function inRow(node) {
     if (isJsx(node)) {
       const className = jsxClassName(node);
@@ -423,7 +410,6 @@ function clockAssertionValue(call) {
   return expectation.arguments[0];
 }
 
-// Under fake timers a sleep costs no real time, so the whole file is out of scope.
 function collectTestTimingFindings(sourceFile, text, lines, findings) {
   if (text.includes("useFakeTimers")) return;
 
@@ -587,8 +573,6 @@ function main() {
     }
     throw error;
   }
-  // A new category has no history to protect, so its first refresh records today's findings.
-  // Its key then exists, and from there it can only shrink like the others.
   if (updateBaseline) {
     for (const category of CATEGORIES) {
       baseline.categories[category] ??= sortedEntries(findings.get(category));

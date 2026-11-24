@@ -1,4 +1,3 @@
-/** Strict opaque keyset cursor shared by Project-chat page policies. */
 import { isUuid } from "../../../shared/uuid.js";
 import type { ProjectChatCursorKey } from "../ports/repositories.js";
 

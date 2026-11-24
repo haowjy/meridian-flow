@@ -1,4 +1,3 @@
-/** A writer's token is sealed under MCP_TOKEN_KEY and opens only with the same key, connection and account. */
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createTokenCipher, parseTokenKey } from "./token-cipher.js";

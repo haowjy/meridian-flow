@@ -1,4 +1,3 @@
-/** Serialize a report payload for both display and clipboard output. */
 import type { JsonValue } from "@meridian/contracts/protocol";
 
 export function payloadText(payload: JsonValue | undefined): string {

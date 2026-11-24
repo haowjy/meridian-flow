@@ -45,7 +45,6 @@ export type BillingIncludedUsage =
   | { mode: "subscription" | "free"; remainingPercent: number; overBudget: boolean };
 
 export interface BillingBalanceResponse {
-  /** Extra-usage balance in USD; user paid real dollars. e.g. "7.35" */
   purchasedBalanceUsd: string;
   canStartTurn: boolean;
   includedUsage: BillingIncludedUsage;

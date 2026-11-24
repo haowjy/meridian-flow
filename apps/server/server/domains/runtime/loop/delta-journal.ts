@@ -1,8 +1,3 @@
-/**
- * Per-scope journal for high-volume live deltas. It writes immediately when
- * idle, batches only behind an in-flight write, and bounds admitted bytes so
- * database backpressure reaches the gateway consumer.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent } from "../../observability/index.js";

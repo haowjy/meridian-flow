@@ -1,4 +1,3 @@
-/** Serialize the authored JSON document into the message the model reads. */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import { referenceOccurrence, skillOccurrence } from "./occurrences";
 import type { MessageDoc, MessageReference, SerializedMessage } from "./types";

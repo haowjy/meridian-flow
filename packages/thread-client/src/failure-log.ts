@@ -1,4 +1,3 @@
-/** Best-effort diagnostics delivery. Owners supply transitions; this owns only bounded delivery. */
 import {
   type ClientDiagnosticRecord,
   clientFailureEvent,
@@ -28,7 +27,6 @@ export function createBatchedFailureLog(ports: {
         try {
           await ports.send(batch);
         } catch {
-          // Ingest failure never enters the failure pipeline, and never changes a command outcome.
           ports.local({
             timestamp: new Date().toISOString(),
             level: "warn",

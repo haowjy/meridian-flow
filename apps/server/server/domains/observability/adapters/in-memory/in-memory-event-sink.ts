@@ -1,7 +1,3 @@
-/**
- * In-memory EventSink for tests: records every emitted event in insertion order
- * so behavioral tests can assert on sink output without touching the filesystem.
- */
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { sanitizeEventRecord } from "../../safe-event.js";
 

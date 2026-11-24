@@ -1,4 +1,3 @@
-/** Model-visible transcript with preflight sizing, document excerpts and block-boundary splits. */
 import type { Block } from "@meridian/contracts/threads";
 import {
   type ContentPart,
@@ -22,14 +21,12 @@ function renderPart(part: ContentPart): string {
 function resultExcerpt(part: ContentPart, call: ToolUsePart | undefined, rendered: string): string {
   if (part.type !== "tool_result" || rendered.length <= EXCERPT_CHARACTERS) return rendered;
   const uri = call?.toolName === "read" ? call.input.path : undefined;
-  // Only document reads can be re-read. Writes and other bulky results must split or fail.
   return typeof uri === "string"
     ? `Tool result for ${uri}${part.isError ? " (error)" : ""} (excerpt; re-read this URI for the full document):
 ${rendered.slice(0, EXCERPT_CHARACTERS)}`
     : rendered;
 }
 
-/** All blocks are measured before the caller can start paying for any cold segment. */
 export function transcriptSegments(
   projection: ProjectedActiveHistory,
   budget: number,
@@ -57,8 +54,6 @@ export function transcriptSegments(
       .filter((part) => part.type !== "reasoning");
     let parts = content.map(renderPart);
     if (!parts.some(Boolean)) continue;
-    // Live system updates join their text into one part; recover the original
-    // block boundaries only when that joined part is too large for a segment.
     if (turn.role === "system" && !fits(wrap(parts))) {
       content = [...blocks]
         .sort((a, b) => a.sequence - b.sequence)

@@ -1,7 +1,3 @@
-/**
- * GET /api/agents/saved-file?level=&path=&projectId=: a file's text as its package's latest Save
- * holds it, or a built-in's as shipped, which no document holds.
- */
 import { savedAgentFileQuerySchema } from "@meridian/contracts/agents";
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import { requireProjectOwner } from "../../../domains/projects/index.js";

@@ -1,8 +1,3 @@
-/**
- * Deferred EventSink: process-scoped bootstrap sink that accepts startup and
- * crash diagnostics before the concrete backend is ready, then drains them into
- * the bound local or future durable adapter once app composition finishes.
- */
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { sanitizeEventRecord, serializedEventBytes } from "../../safe-event.js";
 

@@ -29,10 +29,9 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
       const result = await mammoth.convertToHtml(
         { buffer: Buffer.from(bytes) },
         {
-          // Embedded images become files the Markdown links to, never data: URLs.
           convertImage: mammoth.images.imgElement(async (image) => {
             const data = await image.readAsBuffer();
-            // No await past here: the name counter must not interleave.
+            // keep: No await after reading an image; the name counter must stay non-interleaved
             const hash = createHash("sha256").update(data).digest("hex");
             let name = nameByHash.get(hash);
             if (!name) {
@@ -40,8 +39,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
               nameByHash.set(hash, name);
               images.push({ name, bytes: data });
             }
-            // Word alt text can hold blank lines, which end a Markdown image early.
-            // Mammoth passes `altText` at runtime but does not type it.
+            // keep: Collapse Word alt-text whitespace; blank lines terminate a Markdown image
             return {
               src: `${encodeURIComponent(imageFolder)}/${name}`,
               alt: (image as { altText?: string }).altText?.replace(/\s+/g, " ").trim() ?? "",

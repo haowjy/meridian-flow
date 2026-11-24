@@ -1,4 +1,3 @@
-/** Restores a soft-deleted Work. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";

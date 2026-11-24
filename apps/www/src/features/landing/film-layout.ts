@@ -23,12 +23,9 @@ export type FilmParts = {
 export type Layout = {
   windowWidth: number;
   width: number;
-  /** The frame the film is laid out in: the small viewport on a phone. */
   height: number;
-  /** The whole stage, the frame and the strip below it. */
   stageHeight: number;
   isPhone: boolean;
-  /** The product block at rest on the first screen, where CSS put it. */
   home: Rect;
   workspace: Rect;
   blockLayoutWidth: number;
@@ -56,7 +53,6 @@ function makeLine(svg: SVGSVGElement, d: string): Line {
   return { path, dot, length };
 }
 
-/** Draws a curve from the chapter to each team card. */
 function layoutTeam(parts: FilmParts, width: number) {
   const startX = width / 2;
   const startY = parts.hub.offsetTop;
@@ -73,7 +69,6 @@ function layoutTeam(parts: FilmParts, width: number) {
   });
 }
 
-/** Joins each world note to the last, along the sides that face each other. */
 function layoutWorld(parts: FilmParts) {
   const [first, second, third, fourth] = parts.worldNotes.map((note) => ({
     left: note.offsetLeft - 18,
@@ -97,18 +92,11 @@ function layoutWorld(parts: FilmParts) {
   });
 }
 
-/**
- * Reads the geometry CSS laid out, and works out what only script can: where the
- * film's layers go and how far each beat scrolls.
- */
 export function measureLayout(parts: FilmParts): Layout {
   const html = document.documentElement;
   const { stage, blockHome, workspaceSpot, block, chapterOpening, lastTypedParagraph } = parts;
-  // The hub and its curves exist only where the team spreads around the chapter.
   const isPhone = parts.hub.offsetParent === null;
   const width = stage.clientWidth;
-  // The stage reaches the bottom of the large viewport, so the scenery fills the screen once a
-  // phone's address bar collapses; the film is laid out in its content box, the small viewport.
   const below = Number.parseFloat(getComputedStyle(stage).paddingBottom) || 0;
   const height = stage.clientHeight - below;
 

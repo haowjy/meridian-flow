@@ -1,10 +1,3 @@
-/**
- * Worker thread that converts one image to a WebP preview, so the synchronous HEIC (libheif
- * WASM) and BMP decoders and libvips never run on the server's event loop. `image-preview.ts`
- * starts it with `new URL("./image-preview-worker.ts", import.meta.url)`, which `nitro.config.ts`
- * bundles into its own chunk; it imports only packages and types. `image-preview.ts` owns the
- * pool and the `PreviewJob` / `PreviewReply` protocol.
- */
 import { parentPort } from "node:worker_threads";
 import { decode as decodeBmp } from "bmp-ts";
 // slop-lint: allow suppression heic-decode has no types to declare
@@ -15,12 +8,10 @@ import type { PreviewJob, PreviewReply } from "./image-preview.js";
 
 const PREVIEW_MAX_DIMENSION = 2048;
 const PREVIEW_QUALITY = 85;
-/** Refuses decompression bombs before any decoder allocates for them. */
 const MAX_INPUT_PIXELS = 50_000_000;
 
 class TooLarge extends Error {}
 
-/** BMP dimensions from the header alone: a 15 MB 1-bit file can claim hundreds of megapixels. */
 function bmpPixelCount(bytes: Uint8Array): number {
   if (bytes.length < 26) return 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -28,7 +19,6 @@ function bmpPixelCount(bytes: Uint8Array): number {
   return Math.abs(view.getInt32(18, true)) * Math.abs(view.getInt32(22, true));
 }
 
-/** Pixels (or the sharp pipeline input) for `bytes`; throws `TooLarge` over the cap. */
 async function toPipeline(mime: string, bytes: Uint8Array): Promise<ReturnType<typeof sharp>> {
   if (mime.startsWith("image/heic") || mime.startsWith("image/heif")) {
     const images = await decodeHeic.all({ buffer: bytes });
@@ -44,7 +34,7 @@ async function toPipeline(mime: string, bytes: Uint8Array): Promise<ReturnType<t
   if (mime === "image/bmp") {
     if (bmpPixelCount(bytes) > MAX_INPUT_PIXELS) throw new TooLarge();
     const { data, width, height } = decodeBmp(Buffer.from(bytes), { toRGBA: true });
-    // BMP writes alpha 0 for 24-bit pixels, so the channel means nothing.
+    // keep: Remove BMP alpha; 24-bit pixels report alpha 0
     return sharp(data, { raw: { width, height, channels: 4 } }).removeAlpha();
   }
   return sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
@@ -64,7 +54,6 @@ async function convert({ mime, bytes }: PreviewJob): Promise<PreviewReply> {
       .toBuffer();
     return { preview };
   } catch (error) {
-    // sharp's own cap error for TIFF and other formats it decodes.
     const tooLarge =
       error instanceof TooLarge ||
       /pixel limit/i.test(String((error as Error | undefined)?.message));

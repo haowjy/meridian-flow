@@ -1,8 +1,3 @@
-/**
- * Model-only history projection of one turn and its blocks: labels, the
- * visibility classifier and display items. Copies are elided before any size
- * trimming.
- */
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import {
   type DocumentRevisionEvidence,
@@ -42,7 +37,6 @@ const toolKey = (turnId: string, toolCallId: string, type: string) =>
   JSON.stringify([turnId, toolCallId, type]);
 export const historyTime = (turn: Turn) => turn.createdAt.slice(0, 16).replace("T", " ");
 
-/** Fetch pairs even when the other side lies outside the selected page. */
 export async function loadHistoryToolPairs(
   blocks: BlockRepository,
   entries: readonly { block: Block | null }[],
@@ -68,16 +62,12 @@ export function toolPairMap(blocks: readonly Block[]): ReadonlyMap<string, Block
   );
 }
 
-/** The turn's heading, whether Stop cancelled it, and whether the whole turn is a system message. */
 export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "cancelled"> & {
   system: boolean;
 } {
   const kind = classifyHistoryItem(turn);
   const metadata = turn.metadata as JsonObject | null;
-  // Stop is the writer's decision and a fact about the conversation. A failure is not: the model can't
-  // act on it, so it never reads one (only the text and tool calls the turn kept).
   const base = turn.status === "cancelled" ? { cancelled: true as const } : {};
-  // One rule decides numbering here and in the repository count: isConversationTurn.
   if (isConversationTurn(turn)) {
     if (turn.role === "assistant")
       return { ...base, system: false, role: "assistant", label: "assistant" };
@@ -108,9 +98,7 @@ export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "
   };
 }
 
-/** One block as a display item, before the view decides how much of it to show. */
 export type DescribedBlock =
-  /** A tool result shown on its call's line. */
   | { kind: "merged" }
   | { kind: "message"; text: string }
   | { kind: "thinking"; text: string }
@@ -118,20 +106,14 @@ export type DescribedBlock =
   | {
       kind: "tool";
       tool: string;
-      /** History withholds the arguments: `return_result`, or the call is missing. */
       withheld: boolean;
-      /** After the arrow: a finished call's result in brief, a failed call's status or code. */
       summary?: string;
       routine: boolean;
-      /** True when the call has no result yet. */
       open: boolean;
       isError: boolean;
       args: JsonObject;
-      /** The result as history may quote it: document copies elided, errors verbatim. */
       result?: string;
-      /** Size of the result the model saw. */
       rawResult?: string;
-      /** The call wrote a document; quoting its arguments is an edit record. */
       write: boolean;
       documents: DocumentRevisionEvidence[];
     };
@@ -159,7 +141,6 @@ export function describeBlock(input: {
       | undefined;
     const name = String(content.toolName ?? result?.toolName ?? "unknown");
     const registration = registry.getRegistration(name);
-    // Storage may reorder keys; history quotes them in the tool's schema order.
     const args = orderLikeSchema(
       (call?.input ?? {}) as JsonObject,
       registration?.definition.inputSchema,
@@ -239,7 +220,6 @@ export function describeBlock(input: {
 const jsonObject = (value: JsonValue | undefined) =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
 
-/** A failed call's status (agent-edit, spawn) or error code (a refusal), from its typed result. */
 function failureCode(value: JsonValue | undefined): string | undefined {
   const typed = jsonObject(value);
   if (!typed) return undefined;
@@ -249,12 +229,10 @@ function failureCode(value: JsonValue | undefined): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** Quoting a write's arguments is a record of an edit, never the document's current text. */
 export function editRecord(turn: Turn, args: JsonObject) {
   return `edit record from ${historyTime(turn)}; the document may have changed since\n${JSON.stringify(args)}`;
 }
 
-/** Evidence for a quoted edit; revisions are dropped because the text may be stale. */
 export function editEvidence(described: Extract<DescribedBlock, { kind: "tool" }>) {
   const evidence = described.documents.length
     ? described.documents
@@ -268,7 +246,6 @@ export function editEvidence(described: Extract<DescribedBlock, { kind: "tool" }
   return evidence.map((ref) => ({ ...ref, revision: null }));
 }
 
-/** Display numbers for a whole turn: every block except a tool result shown on its call. */
 export function displayIndexes(blocks: readonly Block[]): ReadonlyMap<number, number> {
   const calls = new Set(
     blocks

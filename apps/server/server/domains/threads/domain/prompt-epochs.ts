@@ -1,5 +1,3 @@
-/** Resolve immutable prompt bakes through a thread's local epoch boundaries. */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type {
@@ -31,7 +29,6 @@ export class PromptBakeTurnNotFoundError extends Error {
   }
 }
 
-/** Returns the bake in effect through this local transcript turn. */
 export function bakeIdAt(
   localTurns: readonly Turn[],
   turnId: string,
@@ -49,7 +46,6 @@ export function bakeIdAt(
   return boundary?.promptBakeId ?? initialBakeId;
 }
 
-/** Bake in effect at a local or inherited turn, using the cutoff turn's owner. */
 export async function bakeAt(
   deps: PromptEpochReader,
   turn: Pick<Turn, "id" | "threadId">,
@@ -62,7 +58,6 @@ export async function bakeAt(
   return bakeById(deps, bakeId);
 }
 
-/** Bake currently governing this thread's latest local turn, or its first bake. */
 export async function bakeInEffect(
   deps: PromptEpochReader,
   thread: Pick<Thread, "id" | "initialPromptBakeId">,

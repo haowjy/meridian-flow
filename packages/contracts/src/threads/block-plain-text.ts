@@ -1,17 +1,5 @@
-/**
- * Purpose: Derives display plain text from block content across durable and live projections.
- * Key decision: this dependency-light leaf is shared by protocol and both clients.
- */
 import type { BlockType, JsonValue } from "./index.js";
 
-/**
- * Canonical plain-text derivation for a block, independent of how each block type
- * shapes its `content`. Text blocks store prose directly as a string `content`;
- * reasoning/thinking blocks wrap it as `{ text, providerOptions? }` to preserve
- * provider round-trip data. Single source of truth so durable projection, live
- * in-memory projection, and the renderer can't drift per block type. Returns null
- * for non-prose blocks or when no usable text is present.
- */
 export function blockPlainText(blockType: BlockType, content: JsonValue): string | null {
   if (blockType !== "text" && blockType !== "reasoning" && blockType !== "thinking") {
     return null;

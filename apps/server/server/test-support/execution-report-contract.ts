@@ -1,4 +1,3 @@
-/** Bounded adapter parity; physical locks, ownership SQL and deletion stay in the DB suites. */
 import { describe, expect, it } from "vitest";
 import type { ExecutionScenario } from "./execution-scenario.js";
 

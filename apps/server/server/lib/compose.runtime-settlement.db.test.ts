@@ -114,7 +114,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
       );
-      // The refusal keeps its typed shape beside the rendered text.
       expect(result).toMatchObject({
         isError: true,
         result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
@@ -194,7 +193,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
-      // A chat with no Work drafts into its lineage's draft; the shared No Work names none.
       const [chat] = await db
         .select({ draftId: schema.threads.draftId })
         .from(schema.threads)

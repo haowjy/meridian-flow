@@ -1,29 +1,3 @@
-/**
- * Test budget guard: the expanded case count per test file may not grow, and a
- * run may not exceed its wall-clock or memory ceiling.
- *
- * The suite is held by a ratchet rather than a target count. A count is
- * collection-based (`allTests()` sees every collected case, including skipped
- * ones and every `it.each` row). Comparison is per file, not per run, because
- * CI shards the unit suite across jobs and no job sees the whole suite.
- *
- * Growth is not forbidden, it is made deliberate: refresh the baseline with
- * `TEST_BUDGET_UPDATE=1 pnpm test:all` so the increase is a reviewable line in the
- * diff rather than silent drift.
- *
- * Wall time is reported on every run and NEVER blocks. It is a property of the
- * machine and of the worker count as much as of the suite: the identical 2,414
- * cases measured 53s to 85s on one shared host, and the DB suite runs 89s at
- * four local workers against 266-322s when CI still ran it serially. A hard gate on that number
- * fails on configuration and runner load rather than on a regression, so it
- * warns. The comparison value comes from TEST_DURATION_REFERENCE_SECONDS.
- *
- * Memory is sampled across the whole run and DOES block on every run, CI or
- * not: unlike wall time it is a property of the suite rather than of the load
- * on the machine. The sample covers this process and, on Linux, every
- * descendant, so a `forks` pool's child processes count as well. Override with
- * TEST_MEMORY_CEILING_MB.
- */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative as relativePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +29,6 @@ function childPids(pid: number): number[] {
   }
 }
 
-/** This process plus every descendant, so a forks pool's children are counted. */
 function treeRss(): number {
   if (process.platform !== "linux") return process.memoryUsage.rss();
   let total = 0;
@@ -69,7 +42,6 @@ function treeRss(): number {
 }
 
 type Baseline = {
-  /** Expanded case count per test file, repo-relative. */
   files: Record<string, number>;
 };
 
@@ -121,9 +93,6 @@ export default class TestBudgetReporter implements Reporter {
     }
 
     if (updating) {
-      // Merge rather than replace: a unit-only refresh must not drop the DB
-      // entries, and a file that no longer exists should fall out of the
-      // baseline instead of lingering as a stale allowance.
       const merged = new Map(Object.entries(baseline.files));
       for (const file of merged.keys()) {
         if (!existsSync(join(REPO_ROOT, file))) merged.delete(file);
@@ -156,8 +125,6 @@ export default class TestBudgetReporter implements Reporter {
       process.stderr.write(`${duration}\n`);
     }
 
-    // Memory blocks, unlike duration: it is a property of the suite, not of how
-    // busy the machine is.
     const peakMb = Math.round(this.peakRssBytes / (1024 * 1024));
     const memoryCeilingMb = Number(process.env.TEST_MEMORY_CEILING_MB ?? DEFAULT_MEMORY_CEILING_MB);
     const memory = `Peak memory: ${peakMb} MB / ${memoryCeilingMb} MB ceiling`;
@@ -175,7 +142,6 @@ export default class TestBudgetReporter implements Reporter {
     }
   }
 
-  /** Files that shrank, so a baseline refresh stays visible rather than forgotten. */
   private summary(baseline: Baseline): string | undefined {
     const shrank: string[] = [];
     for (const [file, count] of this.observed) {

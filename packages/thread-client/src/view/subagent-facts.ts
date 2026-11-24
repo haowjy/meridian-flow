@@ -1,10 +1,8 @@
-/** Cached durable subagent facts shared by transcript and activity projections. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import { sameJson } from "../turns/same-turn";
 
-/** A persisted record that missed its contract. The caller decides where this is reported. */
 export type PersistedContractFailure = {
   contract: "invocation_card" | "subagent_update";
   threadId?: string;

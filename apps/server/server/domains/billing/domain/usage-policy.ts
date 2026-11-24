@@ -1,4 +1,3 @@
-/** Billing usage policy: free-tier entitlement plus turn-start/continuation gates. */
 import type { CreditDebitInput, CreditLedger } from "./credit-ledger.js";
 import { ensureFreeTier } from "./free-grants.js";
 

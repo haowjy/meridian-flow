@@ -1,5 +1,3 @@
-/** Tabs — Radix tab group using Meridian's token and focus language. */
-
 import { Tabs as TabsPrimitive } from "radix-ui";
 import type * as React from "react";
 

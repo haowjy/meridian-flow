@@ -1,4 +1,3 @@
-/** Map-backed recents stub. No catalog, so record does not owner-gate and list returns []. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
   type RecentDocumentsRepository,
@@ -17,8 +16,6 @@ export function createInMemoryRecentDocumentsRepository(): RecentDocumentsReposi
       const key = rowKey(userId, documentId);
       const now = Date.now();
       const existing = rows.get(key);
-      // Same interval rule as the Drizzle adapter: a repeat open inside it is the
-      // same open, and the stored row does not move.
       if (existing && now - existing.openedAt.getTime() < USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS) {
         return false;
       }

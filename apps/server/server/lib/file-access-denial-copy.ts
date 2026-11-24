@@ -1,8 +1,3 @@
-/**
- * Model-facing copy for file-policy refusals (file-access §9).
- * A refusal that suggests a call writes it exactly, and only when the agent
- * may make it; otherwise it says to ask the user.
- */
 import {
   type DocumentCommandName,
   modelResult,
@@ -10,10 +5,8 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord, FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
-import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 import type { WriteToolErrorOutput } from "./model-tools/tool-context.js";
 
-/** A file-policy refusal the model sees as `permission_denied`; a deleted Work's file reads as gone. */
 export type PermissionDenial = FileAccessDenied & {
   reason: Exclude<FileAccessDenial, "not_found" | "work_deleted">;
 };
@@ -24,24 +17,17 @@ export function isPermissionDenial(denial: FileAccessDenied): denial is Permissi
 
 const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
 
-/** A place whose AI access is deny: it reads, and a write is not retried. */
 const AI_ACCESS_DENIED_MESSAGE =
   "This place is set to deny AI changes, so this change wasn't made. You can read it.";
 
 const CHAT_FROZEN_MESSAGE =
-  "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made. Ask the user to restore the chat.";
+  "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made.";
 
-/** Matches the read agent's permission line. */
 const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only scratch://.";
 
-/** A read agent's own scratch is always writable, so a refused scratch file is another Work's. */
 const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
-/**
- * A call on a file that was removed, saying who removed it and how. Status and words are
- * agent-edit's (`removedFile`), which its own receipts and refusals share.
- */
 export function removedFileResult(
   command: DocumentCommandName,
   removal: DocumentRemovalRecord,
@@ -54,7 +40,6 @@ export function removedFileResult(
   };
 }
 
-/** What the model reads when the policy refused a write. */
 export function permissionDeniedMessage(denial: PermissionDenial): string {
   switch (denial.reason) {
     case "work_archived":
@@ -72,28 +57,10 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
   }
 }
 
-/**
- * An archived Work's own files are read-only; a draft-mode chat's write
- * that would land in this Work's drafts meets frozen drafts, and switching
- * the chat to auto-apply is the writer's way out. Only an agent the
- * action policy lets unarchive is offered the call.
- */
 function workArchivedMessage(denial: FileAccessDenied): string {
   const handle = denial.archivedWork?.handle ?? null;
   const work = handle === null ? "This chat's Work" : `Work ${handle}`;
-  const named = handle === null ? "it" : handle;
-  const unarchive = handle === null ? null : `\`work({"command":"unarchive","work":"${handle}"})\``;
-  const mayUnarchive =
-    unarchive !== null &&
-    denial.agentChain !== null &&
-    mayChangeWorks(chainPermission(denial.agentChain));
-  if (denial.destination?.kind === "draft") {
-    const frozen = `${work} is archived, so its drafts are frozen and this change wasn't made.`;
-    return mayUnarchive
-      ? `${frozen} Unarchive it with ${unarchive}, or ask the user to switch this chat to auto-apply.`
-      : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;
-  }
-  return mayUnarchive
-    ? `${work} is archived. To change its files, use ${unarchive}.`
-    : `${work} is archived and read-only. Ask the user to unarchive ${named}.`;
+  return denial.destination?.kind === "draft"
+    ? `${work} is archived, so its drafts are frozen and this change wasn't made.`
+    : `${work} is archived and read-only.`;
 }

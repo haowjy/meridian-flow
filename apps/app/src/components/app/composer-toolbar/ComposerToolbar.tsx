@@ -116,10 +116,6 @@ export function ComposerToolbar({
         get contextElement() {
           return resolveAnchorHost();
         },
-        // Lined up with the trigger, standing on the composer box's top edge: a compact panel
-        // opening from the trigger itself would half-cover the box and read as under it. A
-        // `split` panel is too tall for the room above, so it opens from the trigger and covers
-        // the box whole.
         getBoundingClientRect: () => {
           const host = resolveAnchorHost();
           if (!host) return new DOMRect();
@@ -131,7 +127,6 @@ export function ComposerToolbar({
         },
       },
     }),
-    // A new virtual element makes Radix re-register its reference after the new host commits.
     [anchorHost],
   );
   const commands = (session: PanelSession): ComposerToolbarPanelContext => ({
@@ -341,9 +336,6 @@ export function ComposerToolbar({
               });
             else dispatch({ type: "root.dismissRequested", cause: "outside" });
           }}
-          // A menu that opens on pointerdown (Radix's dropdown trigger) stacks a modal layer
-          // before the outside pointerdown reaches this one, so only the focus it takes says
-          // the writer moved on. That focus stays where it went.
           onFocusOutside={(event) => {
             event.preventDefault();
             if (root.current?.contains(event.target as Node)) return;

@@ -1,10 +1,3 @@
-/**
- * Purpose: JSON-natural spawn primitive contracts — child terminal reports,
- * spawn tool results, and the per-run tree budget object threaded by reference.
- * Key decisions: SpawnResult union reserves a future interrupt arm; TreeBudget
- * spent counters are updated in-process until P4 wires the ledger.
- */
-
 import { z } from "zod";
 import { type ArtifactRef, artifactRefSchema } from "../artifacts/index.js";
 import { parseContextUri } from "../context-uri.js";
@@ -33,21 +26,18 @@ const artifactUriSchema = z.string().transform((uri, context): ArtifactRef => {
   return z.NEVER;
 });
 
-/** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
   summary: string;
   payload?: JsonValue;
   artifacts?: AgentReport["artifacts"];
 };
 
-/** Canonical return_result input; artifact URI strings resolve to object refs. */
 export const returnResultCaptureSchema = z.strictObject({
   summary: z.string(),
   payload: jsonValueSchema.optional(),
   artifacts: z.array(artifactUriSchema).optional(),
 });
 
-/** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
 export type SavedOutcome = "succeeded" | "failed" | "cancelled";
@@ -55,7 +45,6 @@ export type ExecutionReportSource = "return_result" | "final_assistant" | "empty
 type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
 
-/** Durable user-facing identity carried by a child-completion turn. */
 export type SubagentUpdateMetadata = {
   kind: "subagent_update";
   handle: string;
@@ -79,7 +68,6 @@ export function parseSubagentUpdateMetadata(value: unknown): SubagentUpdateMetad
   return parsed.success ? (parsed.data as SubagentUpdateMetadata) : null;
 }
 
-/** Parent-side identity passed at child admission; the child turn ID is added only after admission commits. */
 export type ExecutionReportCorrelation = {
   callerThreadId: ThreadId | null;
   callerTurnId: TurnId | null;
@@ -93,7 +81,6 @@ export type SavedExecutionReport = {
   terminalTurnId: TurnId | null;
   childThreadId: ThreadId;
   executionTurnId: TurnId;
-  /** Durable report-row creation time, which commits with run admission. */
   admittedAt: string;
   handle: string;
   origin: ExecutionReportOrigin;
@@ -103,7 +90,6 @@ export type SavedExecutionReport = {
   toolCallId: string | null;
   cardBlockId: TurnBlockId | null;
   agentSlug: string | null;
-  /** The spawn's task label (`spawn.name`). */
   name: string | null;
   capture: ReturnResultCapture | null;
   captureToolCallId: string | null;
@@ -113,7 +99,6 @@ export type SavedExecutionReport = {
   costMillicredits: number | null;
   publication: "none" | "pending" | "published";
   publishedAt: string | null;
-  /** A lineage cancellation ended this run: its card still settles, but no notice goes out. */
   noticeWithdrawn: boolean;
 } & (
   | { outcome: null; source: null; summary: null; terminalAt: null }
@@ -137,11 +122,6 @@ export type ThreadReportResult =
     }
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
-/**
- * The model's `thread_report` result: the child's latest finished report. It
- * has no run number; `running` marks a newer run still in progress,
- * and `message` carries the line the model reads about it.
- */
 export type ModelThreadReportResult =
   | Extract<ThreadReportResult, { ok: false }>
   | {
@@ -197,7 +177,6 @@ const threadReportResultSchema = z.union([
   }),
 ]);
 
-/** Client-facing saved report details shared by the tool output and API reader. */
 export type SavedReportContentValue = {
   summary: string;
   payload?: JsonValue;
@@ -214,7 +193,6 @@ export function parseThreadReportResult(
   return parsed.success ? (parsed.data as ThreadReportResult | ModelThreadReportResult) : null;
 }
 
-/** Project a ready saved report into the common report-content presentation shape. */
 export function toReportContentValue(
   report: ThreadReportResult | ModelThreadReportResult | null,
 ): SavedReportContentValue | null {
@@ -236,13 +214,9 @@ export function isReturnResultOutcome(value: unknown): value is ReturnResultOutc
   return value.ok === false && "message" in value && typeof value.message === "string";
 }
 
-/** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
-  /** Short model-facing handle (`pN`); the model's currency for thread_message. */
   handle: string;
-  /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
-  /** Where the report came from: `return_result`, the final reply, or nothing. */
   source: ExecutionReportSource;
   summary: string;
   payload?: JsonValue;
@@ -257,13 +231,7 @@ export type SpawnResult =
       threadId: string;
       agentSlug: string;
       name?: string;
-      /** Present for a spawned execution; absent for queue-only thread_message. */
       execution?: TurnId;
-      /**
-       * Queue-only thread_message: true when the caller re-tasked its own child,
-       * so the caller gets the completion notice when that run finishes. A
-       * queued message gets no helper card either way.
-       */
       notifiesCaller?: boolean;
     }
   | {
@@ -275,13 +243,10 @@ export type SpawnResult =
       partial?: boolean;
       reason?: string | null;
     };
-// DEFERRED(interrupt-bubbling): add { status: "interrupt" } arm when a deep worker must reach the human without parent mediation — no pilot case
 
 type AssertJsonValue<T extends JsonValue> = T;
-// Guards SpawnResult against future non-JSON fields before it reaches thread persistence.
 type _SpawnResultIsJsonValue = AssertJsonValue<SpawnResult>;
 
-/** Per-run budget threaded by reference across the agent tree (§7.2). */
 export interface TreeBudget {
   maxDepth: number;
   maxTotalTurns: number;

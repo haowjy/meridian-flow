@@ -1,4 +1,3 @@
-/** Applies a presence-sensitive per-invocation patch to a fully-resolved baseline configuration. */
 import type {
   InvocationPatch,
   ResolvedAgentConfiguration,
@@ -11,7 +10,6 @@ import {
   type RetainedSkillResolver,
 } from "../../packages/index.js";
 
-/** Unresolvable or malformed patch reference (skill name, roster name, or value shape). */
 export class InvocationPatchError extends Error {}
 
 export interface ApplyInvocationPatchInput {
@@ -19,11 +17,6 @@ export interface ApplyInvocationPatchInput {
   patch: InvocationPatch;
   caller: ResolvedAgentConfiguration;
   store: Pick<AgentRevisionStore, "readSource">;
-  /**
-   * Retained graph root used to resolve newly-added skill names. Null for an
-   * agent-less child whose caller has no retained package; skill patching then
-   * fails with {@link InvocationPatchError} only when new names are requested.
-   */
   packageRevisionId: string | null;
 }
 
@@ -32,16 +25,10 @@ type PatchMerge<K extends keyof InvocationPatch> = (
   input: ApplyInvocationPatchInput,
 ) => Partial<ResolvedAgentConfiguration> | Promise<Partial<ResolvedAgentConfiguration>>;
 
-/**
- * One merge per patch key. The mapped type makes a knob added to
- * `invocationPatchSchema` without a merge a compile error.
- */
 const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
   model: (value) => ({ model: value }),
   effort: (value) => ({ effort: value }),
-  // Lowering only; resolve-child-invocation refuses a raise before the merge.
   permission: (value) => ({ permission: value }),
-  // Adds to the child's denials; a spawn can never lift one.
   "disallowed-tools": (value, input) => ({
     "disallowed-tools": [...new Set([...(input.baseline["disallowed-tools"] ?? []), ...value])],
   }),

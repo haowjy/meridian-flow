@@ -1,4 +1,3 @@
-/** Export contract: a portable, frozen vault whose Markdown links resolve to ZIP entries. */
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import { Readable } from "node:stream";
@@ -43,7 +42,6 @@ function document(id: string, uri: string, extra: Partial<ExportDocument> = {}):
   };
 }
 function fixture() {
-  // Tree order, as the snapshot adapter delivers it: sources by address, then sibling order.
   const docs = [
     document("lore", "kb://Lore/Sects"),
     document("X", "kb://X"),
@@ -213,7 +211,6 @@ function fixture() {
   };
   return {
     service: createProjectExport(ports),
-    /** A separate instance over the same backing ports, as on another server replica. */
     replica: () => createProjectExport(ports),
     onRead(callback: () => void) {
       afterRead = callback;
@@ -233,7 +230,6 @@ async function entries(stream: AsyncIterable<unknown>) {
   for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
   return unzipSync(Buffer.concat(chunks));
 }
-/** Scripted acceptance check: every relative Markdown link names an actual archive entry. */
 function checkRelativeLinks(files: Record<string, Uint8Array>) {
   for (const [path, bytes] of Object.entries(files)) {
     if (!path.endsWith(".md")) continue;
@@ -257,7 +253,6 @@ describe("project exports", () => {
       Object.keys(files).filter(
         (path) => !path.endsWith(".png") && !path.endsWith("meridian-export.json"),
       ).length;
-    // The preview runs on one instance; downloads arrive at another that never saw it.
     await service.preview("project", "account", options);
     const other = replica();
     reads.length = 0;
@@ -268,7 +263,6 @@ describe("project exports", () => {
     expect(reads).toHaveLength(proseEntries(first));
     checkRelativeLinks(first);
 
-    // Grants and content change between GETs; the repeat download reflects both.
     denied.add(uuid("image"));
     for (const doc of docs.filter((doc) => doc.workId === "one")) denied.add(doc.id);
     blocks.push(
@@ -290,7 +284,6 @@ describe("project exports", () => {
     expect(reads).toHaveLength(proseEntries(second));
     checkRelativeLinks(second);
 
-    // The original instance downloads the same current state; nothing differs per instance.
     const again = await entries(await service.download("project", "account", "Serial", options));
     expect(Object.keys(again).sort()).toEqual(Object.keys(second).sort());
   });
@@ -368,7 +361,6 @@ describe("project exports", () => {
         .map((link) => link.label);
     expect(labels(parsed)).toEqual(labels(blocks));
     expect(labels(parsed)).toHaveLength(5);
-    // Callouts and footnotes come back as the same literal prose, not as syntax.
     expect(parsed.slice(-3).map((node) => node.toJSON())).toEqual(
       blocks.slice(-3).map((node) => node.toJSON()),
     );

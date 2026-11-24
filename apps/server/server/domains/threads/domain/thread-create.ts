@@ -1,8 +1,3 @@
-/**
- * Thread-creation normalization: validates and defaults CreateThreadInput into a
- * NormalizedThreadCreate (kind, title, spawn metadata, ...). Domain logic shared
- * by every repository adapter so creation semantics stay identical across them.
- */
 import type { SpawnStatus, ThreadKind } from "@meridian/contracts/threads";
 import type { CreateThreadInput } from "../ports/repositories.js";
 
@@ -14,7 +9,6 @@ export interface NormalizedThreadCreate {
   spawnDepth: number;
 }
 
-/** Public thread creation accepts roots only; the spawn coordinator owns child creation. */
 export class ThreadLifecycleNotSupportedError extends Error {
   constructor(detail: string) {
     super(`Thread spawn/fork lifecycle is not supported yet: ${detail}`);
@@ -26,7 +20,6 @@ function rejectNonRootLifecycle(detail: string): never {
   throw new ThreadLifecycleNotSupportedError(detail);
 }
 
-/** Validates and normalizes public thread creation input. */
 export function normalizeThreadCreate(input: CreateThreadInput): NormalizedThreadCreate {
   if (input.kind !== undefined && input.kind !== "primary") {
     rejectNonRootLifecycle(`kind "${input.kind}" is not supported`);

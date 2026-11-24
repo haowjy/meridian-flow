@@ -1,9 +1,3 @@
-/**
- * App global stylesheet — imports the shared Ink & Jade Tailwind theme,
- * declares project-only theme variables, and defines the app's reusable
- * utility primitives. Shared palette/type values live in design-tokens; layout
- * utilities stay here because only the project uses them.
- */
 @import "tailwindcss";
 @import "@meridian/design-tokens/ink-jade.css";
 @import "@meridian/design-tokens/themes.css";
@@ -11,16 +5,8 @@
 @import "../components/app/link-chip/link-chip.css";
 @import "./document.css";
 
-/* Components' `dark:` utilities key off the UI-theme attribute the boot
-   script stamps on <html> — one switch for tokens and variants alike. */
 @custom-variant dark (&:is([data-ui-theme="dark"] *));
-/* A focus ring paints only after the writer moves focus with the keyboard
-   (lib/focus-follow.ts sets data-focus-keys); a click, Shift or Escape never rings. */
 @custom-variant focus-visible (:root[data-focus-keys] &:focus-visible);
-/* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
-   a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
-   (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
-/* Under a finger: the phone shell's 44px touch targets key off this. */
 @custom-variant coarse (@media (pointer: coarse));
 @custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
@@ -38,21 +24,12 @@
   }
 }
 
-/* Project-only tokens (not shared with marketing surfaces). */
 :root {
   --text-scale: 1;
-  /* Chat reads one tier below the manuscript scale (md→sm, sm→xs, lg→md):
-     conversation is working material, the manuscript is the artifact. The
-     `text-tier-chat` utility remaps --text-scale to this value for a subtree. */
   --text-scale-chat: 0.875;
-  /* Visual fade on the chat scrollport (masks message text, not an overlay). */
   --chat-scroll-fade-size: 4rem;
-  /* Dual-mask gutter: classic scrollbar width + gap before fade. Overlay scrollbars
-     may still float over content; `scrollbar-gutter: stable` on the scrollport helps. */
   --chat-scroll-scrollbar-width: 6px;
   --chat-scroll-scrollbar-gap: 0.5rem;
-  /* Chat layout tokens are global because some chat chrome and portaled menus
-     intentionally render outside the text-tier-chat subtree. */
   --chat-space-inline: 4px;
   --chat-space-block: 8px;
   --chat-space-turn: 12px;
@@ -62,9 +39,6 @@
   --chat-row-status-center-offset: 7px;
   --chat-tool-list-indent: 13px;
   --chat-geometry-receipt-indent: 36px;
-  /* Chat rhythm is intentionally an app-only scale: each boundary has one
-     owner, and virtual-row spacing stays inside the measured row. */
-  /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
   --prose-space-inline: 4px;
   --prose-space-row: 4px;
   --prose-space-block: 8px;
@@ -78,14 +52,7 @@
   --prose-space-rule: 20px;
   --prose-space-quote: 12px;
   --prose-space-table: 12px;
-  /* Shell geometry. A pane band's height: every band (main's, the side's, the sidebar's
-     header) reads it, so the pages under them start level whatever the bands hold. A
-     finger's band is the 44px touch target its corner toggle grows to. */
   --band-height: 2.5rem;
-  /* A dense control's box (`Button` xs, the meta chip's line), and the rows built on it:
-     the strip row (the draft dock's summary, the edits receipt's header, the review line)
-     and the write-mode notice, so each family is one height whether or not its control
-     shows. */
   --control-dense: 1.5rem;
   --strip-row: calc(var(--control-dense) + 0.625rem);
   --write-mode-row: calc(var(--control-dense) + var(--chat-space-block) * 2);
@@ -96,38 +63,22 @@
   }
 }
 
-/* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
 [data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
 [data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
-/* A delivered message's Hand off row sits under it and spaces like a reply's action row. */
 [data-chat-turn-row][data-chat-turn-role="user"]:has([data-user-turn-actions]) { padding-bottom: var(--chat-space-exchange); }
-/* A brief card is a turn of its own: the writer's next message sits a turn away. */
 [data-chat-turn-row][data-chat-turn-kind="handoff-seed"] { padding-bottom: var(--chat-space-turn); }
-/* A response woken by a subagent notification continues without a turn break. */
 [data-chat-turn-row][data-chat-turn-continues] { padding-bottom: var(--chat-space-block); }
 
 :root[data-text-size="sm"] {
-  /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */
   --text-scale: 0.875;
-  /* xs stop — exists only as the chat tier below small. */
   --text-scale-chat: 0.75;
 }
 
 :root[data-text-size="lg"] {
-  /* Large is one step past the old manuscript body: 1.125rem ≈ 18px at browser default. */
   --text-scale: 1.125;
   --text-scale-chat: 1;
 }
 
-/* Remaps the reading scale for a subtree to the chat tier (one stop below the
-   global preference). Mounted on `ChatSurface` so every chat view — centered,
-   docked, independent — reads lower than the manuscript, while `prose-tokens`
-   and its em ladders keep working unchanged inside.
-
-   The tier is DOM inheritance: PORTALED subtrees (dialogs, popovers) do NOT
-   inherit it and render at the manuscript scale. That is the intended default
-   (portaled overlays preview manuscript content); a chat-voiced overlay must
-   opt back in with this class. */
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
   --prose-space-inline: var(--chat-space-inline);
@@ -145,37 +96,17 @@
   --prose-space-table: 8px;
 }
 
-/* Compact tier — markdown in the dense meta voice (tool output, reasoning).
-   Parameterizes `prose-tokens` (scale/leading/color vars) instead of stacking
-   `text-compact` onto it, so no two utilities fight over the same properties
-   by source order. Fixed size, matching the `text-compact` stop: the meta
-   voice deliberately does not ride the reading preference (switch
-   --text-scale here to a var ladder if that ever changes). */
 @utility text-tier-compact {
   --text-scale: 0.8125;
   --prose-leading: 1.6;
   --prose-color: var(--color-foreground);
 }
 
-/* Quoted tier — payload a tool row shows the writer: the passage the model
-   read, or the content it submitted. Recedes below the transcript's own voice,
-   because rendered document prose at reading scale competes with the assistant
-   for "this is the content".
-
-   Sits on a WRAPPER around `prose-tokens`, not on it: the heading overrides
-   need to beat `prose-tokens`' own `& h1` rules, and descendant specificity
-   wins that regardless of which utility Tailwind emits first. Stacking a
-   sibling utility would leave the two fighting over source order, which is
-   exactly what `text-tier-compact` exists to avoid. The scale/leading/colour
-   vars are inherited by `prose-tokens` because a variant-less `Markdown`
-   leaves them unset on the element itself. */
 @utility text-tier-quoted {
   --text-scale: 0.8125;
   --prose-leading: 1.55;
   --prose-color: var(--color-muted-foreground);
 
-  /* A chapter title inside a preview must not outrank the prose quoting it,
-     and the editor's block rhythm has no business in a two-line excerpt. */
   & .prose-tokens :is(h1, h2, h3, h4, h5, h6) {
     font-size: 1em;
     margin-top: 0;
@@ -188,10 +119,6 @@
 @layer base {
   * {
     @apply border-border outline-focus;
-    /* Thin scrollbars everywhere, and only while the pointer is over the scroll area: a resting
-       thumb is a mark on the paper. Firefox and Chromium read scrollbar-width/color; Safari reads
-       the webkit pseudos below. The thumb is the shared foreground ink, so it tracks light/dark
-       without a token. */
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
   }
@@ -221,8 +148,6 @@
     max-height: 100svh;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    /* iOS Safari paints a translucent gray overlay on every tap by default.
-       Pressed feedback comes from our own `active:` states instead. */
     -webkit-tap-highlight-color: transparent;
   }
   body {
@@ -237,17 +162,6 @@
   button, a, [role="button"], [role="link"] {
     touch-action: manipulation;
   }
-  /* Anything you can act on says so under the pointer. This is a deliberate
-     divergence from the shadcn / Tailwind v4 default, which leaves buttons on
-     the arrow: this app is dense with quiet controls — row toggles, document
-     names that are doors, matched passages — and a writer should not have to
-     click something to find out whether it was clickable.
-
-     One rule, so no component has to remember. Disabled controls are excluded
-     and keep whatever they already declare (`disabled:cursor-not-allowed` on
-     the form primitives); `aria-disabled` counts too, because a `[role]`
-     element can never match `:disabled` and some controls stay focusable on
-     purpose so their tooltip still answers. */
   button:not(:disabled):not([aria-disabled="true"]),
   [role="button"]:not([aria-disabled="true"]),
   [role="link"]:not([aria-disabled="true"]),
@@ -255,8 +169,6 @@
   summary {
     cursor: pointer;
   }
-  /* Composer references are link chips (`link-chip.css`); a skill is not a
-     document link and keeps its quiet underline. */
   [data-composer-skill] {
     text-decoration: underline;
     text-decoration-color: var(--color-border-subtle);
@@ -266,28 +178,16 @@
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
-  /* Focus the app moves for continuity paints no ring. A screen heading
-     (tabIndex -1) takes focus on navigation so screen readers announce the
-     screen; it is read, not operated. `data-focus-quiet` marks a control
-     focused after a pointer action (lib/focus-follow.ts). */
   :is(h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus,
   [data-focus-quiet]:focus-visible {
     outline: none;
   }
-  /* Headings inherit the single app font (Inter, set on `body`) and are
-     distinguished by size + weight only — matching stock ProseMirror/TipTap,
-     which ship no heading font. */
 }
 
 @utility surface-card {
   @apply border border-border bg-card;
 }
 
-/* The state layer for controls that paint their own fill (a primary button, a chip): hover
-   lays `ink-fill` over the fill, and pressed, current, selected and open lay
-   `ink-fill-strong`. A transparent row uses `bg-ink-fill` directly; this is the same rule
-   for elements whose background colour is taken. Not inherited, so a nested control
-   starts clear. */
 @property --state-layer {
   syntax: "<color>";
   inherits: false;
@@ -307,7 +207,6 @@
   }
 }
 
-/* Calm "this thread is live" pulse. */
 @utility streaming-dot {
   @apply size-1.5 shrink-0 rounded-full bg-primary;
   --streaming-halo: color-mix(in oklab, var(--color-primary) 12%, transparent);
@@ -319,8 +218,6 @@
   }
 }
 
-/* A panel's content slides in from its edge when the panel opens. The grid
-   column changes in one step; only transform and opacity animate. */
 @media (prefers-reduced-motion: no-preference) {
   [data-project-slot="rail-l"][data-project-surface-state="active"] {
     animation: panel-in-left var(--motion-duration-panel) var(--motion-ease-shell);
@@ -355,8 +252,6 @@
   }
 }
 
-/* Turn-level liveness sits at the growing edge as a single classical-ink
-   breath. Tool rows keep their own operation-level running indicators. */
 @utility ink-drop {
   display: inline-block;
   width: 13px;
@@ -390,23 +285,11 @@
   }
 }
 
-/* Undo-pill countdown bar — drains from full to empty over the undo window.
-   The duration is set inline at the call site (per-instance), but the
-   visual treatment (track color, easing) lives here. */
 @keyframes countdown-drain {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
 }
 
-/* Flex/grid shrink contract: apply on pane boundaries (shell inset, chat surface,
-   scroll region, column utilities). Do not sprinkle on turn leaves — prose-tokens
-   and user-turn handle content overflow. Exception: flex rows that truncate
-   (FoldToggle, activity summary) keep min-w-0 on the truncating child.
-
-   Viewport shell: `app-frame` locks the outer shell to one screen; `app-scroll`
-   is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). Clip, not
-   hidden: a hidden box still scrolls when focus reaches content past its edge, and the
-   whole app slides sideways. */
 @utility app-frame {
   @apply h-svh max-h-svh w-full min-h-0 overflow-clip;
 }
@@ -425,13 +308,6 @@
   pointer-events: none;
 }
 
-/* Radix supplies the collision-aware bound after positioning. The fallback keeps
-   the selector bounded before that custom property exists and in short mobile
-   viewports, including safe-area insets. The floor lets a tall list overflow a cramped
-   side: capped to that side's room it would always fit, and Radix would never flip it to
-   the side with space. The roomier side holds at least half the viewport less the
-   trigger, offset and padding (3rem allows a 44px trigger), so the floor never pushes a
-   list off a short screen; there it shrinks and scrolls. */
 @utility dropdown-surface {
   width: min(
     var(--dropdown-preferred-width, 14rem),
@@ -452,8 +328,6 @@
   @apply main-pane mx-auto box-border w-full max-w-chat-column px-8;
 }
 
-/* Shared content measure for project Chat and Work screens. The screen,
-   rather than the viewport, is the responsive authority for its collections. */
 @utility project-screen-column {
   container-name: project-screen;
   container-type: inline-size;
@@ -465,10 +339,6 @@
   }
 }
 
-/* A resume-list row's rule, drawn over its bottom edge so it adds no height.
-   Put it on a positioned row that is followed by another row in its group; a
-   list that bleeds past its column for a wider hover pill sets
-   --row-rule-inset to the bleed, so the rule spans only the text column. */
 @utility row-rule {
   &::after {
     content: "";
@@ -482,9 +352,7 @@
 }
 
 @utility chat-scroll-fade-bottom {
-  /* Reserve gutter so dual-mask scrollbar width matches layout (see PQINA pattern). */
   scrollbar-gutter: stable;
-  /* Content fade stops before the scrollbar strip. */
   --chat-scroll-mask-content: linear-gradient(
     to bottom,
     #000 0%,
@@ -507,9 +375,6 @@
   mask-repeat: no-repeat, no-repeat;
 }
 
-/* Composer contenteditable typography. 16px on mobile keeps iOS Safari from
-   auto-zooming the viewport on focus; tightens to 15px on desktop where
-   zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
   @apply text-base leading-relaxed md:text-body;
 }
@@ -518,8 +383,6 @@
   @apply ml-auto w-fit max-w-[95%];
 }
 
-/* Keep settled history actions available to keyboard users while keeping the
-   reading surface quiet for pointer users. Touch devices have no hover affordance. */
 @media (hover: hover) {
   [data-assistant-turn]:not([data-latest-assistant="true"]) .assistant-turn-actions {
     opacity: 0;
@@ -533,8 +396,6 @@
 @media (hover: none), (pointer: coarse) {
   [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
 }
-/* A finished compaction divider's Fork and Info follow the same rule, revealed
-   from anywhere on the divider; an open Info popover keeps them shown. */
 @media (hover: hover) {
   [data-compaction-divider] .compaction-divider-actions {
     opacity: 0;
@@ -549,9 +410,6 @@
 @media (hover: none), (pointer: coarse) {
   [data-compaction-divider] .compaction-divider-actions { opacity: 1; }
 }
-/* A writer message's Hand off follows the same rule, revealed from anywhere on
-   its transcript row since the bubble hugs the right edge. Like a reply's row
-   it always sits under the bubble, on the bubble's right edge. */
 @media (hover: hover) {
   [data-turn-role="user"] .user-turn-actions {
     opacity: 0;
@@ -575,8 +433,6 @@
   @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-transparent bg-ink-fill px-4 py-3 text-foreground;
 }
 
-/* A queued message is not live yet: the draft link chip's outline (`link-chip.css`), dotted, with
-   no fill and muted ink. `data-queued` is set by `UserTurn` from the view model's `queued`. */
 [data-queued] .user-message-bubble {
   border-style: dotted;
   border-color: var(--color-muted-foreground);
@@ -585,15 +441,7 @@
   --prose-color: var(--color-muted-foreground);
 }
 
-/* The one keyboard focus ring. Every interactive element opts in with `focus-ring`.
-   It draws INSIDE the control's own box, as an outline: a ring outside the box is cut by
-   any clipping ancestor (a scroller, a rounded card, a fold) and covered by any filled
-   neighbour, and each site would have to leave it room. An outline also leaves the
-   control's own shadow alone. A filled control, where the focus colour would not show,
-   wears `focus-ring-on-fill`. */
 @utility focus-ring {
-  /* Width, colour and offset at rest, so focus changes only the style: a control's own
-     colour transition would otherwise fade the ring in from its text colour. */
   outline: 2px none var(--focus-ring-color, var(--color-focus));
   outline-offset: var(--focus-ring-offset, -2px);
   :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
@@ -601,22 +449,15 @@
   }
 }
 
-/* On an opaque fill the ring takes the fill's text colour, set in from the edge so it
-   reads as a line on the fill and not as the control shrinking. */
 @utility focus-ring-on-fill {
   --focus-ring-color: currentColor;
   --focus-ring-offset: -4px;
 }
 
-/* The exception: a control that is only its text (an inline link, a text button) or is
-   filled edge to edge in the focus colour (a checked switch) has no room inside, and
-   always has room around it. Its ring stands off the box. */
 @utility focus-ring-outside {
   --focus-ring-offset: 2px;
 }
 
-/* A control that fades its own edge with a mask would fade its ring too. Its positioned
-   frame draws the ring over it; the control carries `data-ring-on-frame`. */
 @utility focus-ring-frame {
   &::after {
     content: "";
@@ -631,7 +472,6 @@
   }
 }
 
-/* Menu rows: the same ring, also worn by a row frame whose main control has focus. */
 @utility dropdown-focus-ring {
   outline: 2px none var(--color-focus);
   outline-offset: -2px;
@@ -641,11 +481,6 @@
   }
 }
 
-/* Forced colours drop every fill and shadow, which is all that marks a selected tab, the
-   current row or a pressed toggle here. The system colours come through only with
-   `forced-color-adjust: none`, so the marked control paints SelectedItem itself and its
-   descendants take its text and border colour (their own tokens would be unforced). A tab that is
-   an empty button laid over its label marks the chip it covers instead. */
 @media (forced-colors: active) {
   :is(
       [role="tab"][aria-selected="true"]:not(:empty),
@@ -665,20 +500,15 @@
       border-color: currentColor;
     }
   }
-  /* A filled button loses its fill: a frame keeps it apart from the quiet one beside it
-     (Apply from Discard). */
   button:is([data-variant="default"], [data-variant="destructive"]) {
     border: 2px solid ButtonText;
   }
-  /* A menu's group rule is a 1px fill. */
   [role="separator"]:not([tabindex]) {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
 }
 
-/* Login hero — soft jade+cinnabar radial behind the needle, and a matching
-   glow on the needle itself. Colors stay token-derived (no literals in TSX). */
 @utility login-hero-glow {
   background: radial-gradient(
     circle,
@@ -693,17 +523,10 @@
     drop-shadow(0 0 8px color-mix(in srgb, var(--color-cinnabar) 22%, transparent));
 }
 
-/** Brand-mark disc — cream warmed with a hint of jade (disc-cream-ring frame). */
 @utility mark-disc-fill {
-  /* brand-jade, not primary: canon disc under scoped re-themes. */
   fill: color-mix(in oklab, var(--color-cream) 88%, var(--color-brand-jade) 12%);
 }
 
-/** Project pane header title — Home, Chat, Settings, thread switcher label. */
-/* Inline edit: a field that takes the exact place, font and size of the text
-   it edits. Its surface and focus hairline are painted with box-shadow bleed,
-   which never affects layout, so no text moves or resizes when editing starts.
-   `inline-edit-trigger` gives the resting text the same bleed as a hover hint. */
 @utility inline-edit-field {
   border-radius: var(--radius-sm);
   background-color: var(--inline-edit-surface, var(--color-card));
@@ -730,25 +553,10 @@
   @apply text-sm font-medium text-foreground;
 }
 
-/*
- * Page sheet — the lit paper rising out of the chrome. Every pane wears
- * this below its chrome band (`PaneHeader`), the side's inset from main's
- * (`pageSheetClass`). It is a sheet set into the chrome: a hairline on its top and sides,
- * both top corners rounded, running to the foot of the window. The center
- * slot paints the chrome; the sheet is the ONE sanctioned surface paint on
- * top of it.
- */
 @utility page-sheet {
-  /* `page-edge`, not `border-subtle`: a `tab-chip-active` outline ends on this top edge. */
   @apply paper flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-page-edge;
 }
 
-/*
- * Paper — every page's surface, a document's or a chat's (`page-sheet` applies it; the phone's
- * page uses it directly). It re-points the page and its ink inside it, so everything drawn on the
- * page sits on the paper in the paper's ink with no surface of its own. An active tab chip takes
- * the same surface by default, so tab and page stay one piece.
- */
 @utility paper {
   --color-background: var(--color-paper);
   --color-foreground: var(--color-paper-ink);
@@ -756,59 +564,12 @@
   color: var(--color-paper-ink);
 }
 
-/*
- * Chrome field — the center cell's material: the whisper chrome with its
- * rounded top-left curving against the project header (the grid backdrop).
- * Two elements can occupy that cell — the center slot (Editor/Chat surfaces)
- * and the route-pane wrapper (Home/Library) — and both MUST paint identically,
- * so the concept has one name. Bands (PaneHeader, the tab strip) paint
- * nothing; they sit transparent on this field.
- */
 @utility chrome-field {
-  /* Shares --radius-md with the page sheet (the tab chips draw the same 6px) — ONE corner
-     voice across the shell (user call 2026-07-16, superseding the earlier
-     3px "architecture" tune). The curve exists only against the project header:
-     ProjectShell zeroes --chrome-corner when the left rail is collapsed,
-     otherwise the matched backdrop shows through the notch at the screen edge. */
   overflow: hidden;
   border-top-left-radius: var(--chrome-corner, var(--radius-md));
   background-color: var(--color-chrome);
 }
 
-/*
- * Tab-chip grammar — geometry for the places a surface RISES out of the
- * chrome: the document tab strip (`ContextTabBar`) and the pane band's index
- * and title chips (`PaneHeader`). A chip sits in a `tab-band`; the ACTIVE chip
- * is a folder tab: rounded top, open at the base, which flares outward into
- * the sheet's top edge. An INACTIVE chip carries an inset rounded hover pill
- * covering its full hit target. (The dock's Chat|Changes switcher is
- * deliberately NOT this grammar — the dock is one uniform surface; its view
- * switch is a contained segmented track that presses into the chrome.)
- *
- * One owner per outline, after Chromium's tab path. The `page-sheet` owns its
- * own edge, as one border. The active chip owns its whole outline (both top
- * corners, both sides, both flares) as ONE mask image painted in one colour,
- * and covers the sheet's top edge beneath it with its fill: the band overlaps
- * the sheet, and the chip's last row lies inside it. Nothing is assembled
- * from a neighbour's border, so there is no joint to misalign and no overlap
- * to darken. Both strokes are `page-edge`, the hairline resolved onto the
- * page and so opaque: the flares end on the sheet's edge, and a translucent
- * stroke would darken there.
- *
- * Sites take a chip's classes from `tabChipClass` (features/project/shell/
- * tab-chip.ts), never from these utilities directly: it makes the chip
- * `relative` (outline, flares and hover pill are absolutely-positioned
- * pseudos) and band-tall, so an active chip's base sits on the band's bottom
- * edge. The one variation point is the surface: a chip under review sets
- * `--tab-chip-surface`; the default is the page.
- *
- * No transition on the active chip: activation swaps geometry instantly, so
- * a background fade would flash the outgoing chip as a full-height rectangle
- * mid-fade — tab switches must snap. Only the hover pill transitions.
- */
-/* A strip wider than its box scrolls sideways with no scrollbar, so an edge with content behind
-   it fades: the suggestion menu's mask (`suggestion-menu.css`), turned on its side.
-   `useScrollEdges` sets `data-more-start` / `data-more-end`. */
 @utility scroll-fade-x {
   --scroll-fade: 3rem;
   --scroll-fade-start: 0px;
@@ -830,30 +591,18 @@
 @utility tab-band {
   position: relative;
   z-index: 1;
-  /* The band's own height, never its content's, so both pages start level. */
   height: var(--band-height);
-  /* The gutter: no chip starts closer to the pane's edge than the sheet's corner radius
-     plus a flare (6 + 6px), with 2px to spare, so a flare lands on the sheet's straight
-     edge. The quiet title chip's -ml-2 (`titleChipClass`) is measured from it. */
   padding-inline-start: --spacing(3.5);
-  /* Over the sheet's top edge and one row inside it, so an active chip's fill hides the
-     edge beneath it with no gap at fractional display scales. */
   margin-bottom: -2px;
 }
 @utility tab-chip-active {
-  /* In px, not --radius-md's rem: the mask's paths below draw this radius in px, and the
-     two must agree at any root font size. */
+  /* keep: --tab-radius is px, not rem; the mask paths below are drawn in px and must agree at any root font size */
   --tab-radius: 6px;
-  /* The padding gives back the margin, so the tab's content sits on the band's centre line with
-     the inactive chips and every other control in the row. */
   margin-top: --spacing(1);
   padding-bottom: --spacing(1);
   border-top-left-radius: var(--tab-radius);
   border-top-right-radius: var(--tab-radius);
   background-color: var(--tab-chip-surface, var(--color-paper));
-  /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
-     radius, which is --tab-radius: change them together. Their nested viewports anchor each
-     corner to its own corner of the chip, so the outline fits any chip size undistorted. */
   &::before,
   &::after {
     content: "";
@@ -863,7 +612,6 @@
     mask-repeat: no-repeat;
     mask-size: 100% 100%;
   }
-  /* The flares' fill, under the outline. */
   &::before {
     background-color: var(--tab-chip-surface, var(--color-paper));
     mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
@@ -874,8 +622,6 @@
   }
 }
 @utility tab-chip-inactive {
-  /* isolate + z-index:-1 keeps the pill behind the chip's content without
-     escaping under the strip's own background. */
   isolation: isolate;
   &::before {
     content: "";
@@ -886,26 +632,20 @@
     transition: background-color var(--default-transition-duration)
       var(--default-transition-timing-function);
   }
-  /* Same hover gate Tailwind applies to `hover:` utilities — no sticky
-     hover pills on touch. Hover darkens like every chrome row. */
   @media (hover: hover) {
     &:hover::before {
       background-color: var(--color-ink-fill);
     }
   }
-  /* A chip that opens a switcher wears the open fill while the switcher is open. */
   &[aria-haspopup][aria-expanded="true"]::before {
     background-color: var(--color-ink-fill-strong);
   }
 }
 
-/** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
   @apply focus-ring focus-ring-outside text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
-/* Standard screen-reader-only pattern: visually hidden but exposed to
-   assistive technology. Replaces ad-hoc sr-only patterns. */
 @utility visually-hidden {
   position: absolute !important;
   width: 1px !important;
@@ -918,7 +658,6 @@
   border-width: 0 !important;
 }
 
-/* Calm typing caret used by the streaming-text zone of the live assistant turn. */
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
@@ -941,8 +680,6 @@
   }
 }
 
-/* The phone's compact activity bar: 8px margins, directly under MobileTopBar
-   (its h-14 row plus the standalone status-bar inset) and over the content. */
 @keyframes block-reveal {
   0%, 100% { outline-color: transparent; background-color: transparent; }
   20%, 70% { outline-color: color-mix(in oklab, var(--color-primary) 40%, transparent); background-color: color-mix(in oklab, var(--color-primary) 12%, transparent); }
@@ -962,8 +699,6 @@
   }
 }
 
-/* A change that arrived while the writer was reviewing: its row in the dock's
-   Changes list lights up once and settles. Its marks pulse in inline-review.css. */
 @keyframes review-row-arrive {
   from {
     background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);

@@ -7,18 +7,10 @@ export const asContextSourceId = (s: string) => s as ContextSourceId;
 export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
-/**
- * A `drafts` row: one draft, everything pending in it (its fork rooms of documents and its tree
- * records). A Work and a root conversation each name theirs; the draft names no owner.
- */
 export type DraftId = string;
 
 const ID_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
 
-/**
- * A fresh draft id: 12 base-36 characters (62 random bits), as a change id. It sits on every
- * changed word in Live history for good, so it is short.
- */
 export function newDraftId(): DraftId {
   let id = "";
   for (const byte of globalThis.crypto.getRandomValues(new Uint8Array(12)))
@@ -28,19 +20,15 @@ export function newDraftId(): DraftId {
 
 const DRAFT_ID = /^[0-9a-z]{12}$/;
 
-/** Whether a string has a draft id's shape. */
 export function isDraftId(value: unknown): value is DraftId {
   return typeof value === "string" && DRAFT_ID.test(value);
 }
-/** `${draftId}:${documentId}`: the client's one review identity for a document of a draft. */
 export type DraftItemKey = string;
 
-/** The one builder of a draft item key, for text and binary items alike. */
 export function draftItemKey(draftId: DraftId, documentId: DocumentId): DraftItemKey {
   return `${draftId}:${documentId}`;
 }
 
-/** The draft and document a draft item key names; null when the string is not one. */
 export function parseDraftItemKey(
   itemKey: string,
 ): { draftId: DraftId; documentId: DocumentId } | null {
@@ -52,7 +40,6 @@ export function parseDraftItemKey(
     ? { draftId, documentId }
     : null;
 }
-/** A client-generated UUID naming one document command; resends reuse it. */
 export type CommandId = string;
 export type ThreadId = string;
 export type TurnId = string;

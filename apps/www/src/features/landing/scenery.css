@@ -1,10 +1,3 @@
-/*
- * The scenery's elements: the dragon, the fire canvas, the updraft, the campfire's status sheets,
- * the trees, the party and the fight's shots. Their scripts (`dragon-actor.ts`, `forest.ts`,
- * `fight.ts`) place them every frame; this file only draws them. Stacking is the `--z-*` table in
- * `film.css`.
- */
-
 .flyer,
 .flame {
   display: none;
@@ -50,8 +43,6 @@
   display: none;
 }
 
-/* The perched dragon's Cold Fire going straight up: a thin bright core in a soft glow, and a
-   knot rising through it on each gulp. */
 .cine .updraft {
   display: block;
   position: absolute;
@@ -108,7 +99,6 @@
   display: none;
 }
 
-/* The System's status windows over the camp, all four at once. */
 .cine .sheets {
   display: flex;
   position: absolute;
@@ -184,14 +174,12 @@
   pointer-events: none;
 }
 
-/* Its size comes from GROUND in ground.ts. */
 .cine .forest {
   z-index: var(--z-ground);
   bottom: var(--below);
   left: 0;
 }
 
-/* The ground goes on under the frame, into the strip a collapsed address bar uncovers. */
 .cine .forest::after {
   content: "";
   position: absolute;
@@ -225,8 +213,6 @@
   mask: var(--walk-sheet) 0 0 / 900% 500% no-repeat;
 }
 
-/* The campfire, in a 120px box scaled to the party's height, with the ground at 86px: a warm
-   glow, two crossed logs, and three tongues of flame that flicker out of step. */
 .cine .walkers .camp {
   position: absolute;
   top: 0;
@@ -313,7 +299,6 @@
   transform-origin: 0 0;
 }
 
-/* Sigrun's rune going off: a hard white core, a ring and spinning rays. */
 .cine .walkers .ward {
   background:
     radial-gradient(circle, var(--walk-ward) 0 10%, transparent 12%),
@@ -355,7 +340,6 @@
   transform-origin: 0 0;
 }
 
-/* Sigrun's cut rune, thrown as a crescent of white. */
 .cine .walkers .rune {
   width: 34px;
   height: 64px;
@@ -364,7 +348,6 @@
   filter: drop-shadow(0 0 6px var(--walk-ward));
 }
 
-/* Maren's song: rings rolling out toward it. */
 .cine .walkers .song {
   width: 130px;
   height: 130px;

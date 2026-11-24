@@ -1,4 +1,3 @@
-/** Mount binding: cancellation and external wakes. A failed send is a card (`chatCards`), never announced here. */
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -166,7 +165,6 @@ export function useChatSubmissions(
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
       driver.current?.submit(envelope) ?? Promise.resolve(false),
-    /** Write-mode switches ride the same journal, so they are posted in order with the messages. */
     switches: {
       pending: driver.current?.switches ?? NO_SWITCHES,
       submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,

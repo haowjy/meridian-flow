@@ -1,4 +1,3 @@
-/** Canonical snapshot turn, block, usage and model-response wire schemas. */
 import { z } from "zod";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 import {
@@ -62,7 +61,6 @@ export const modelResponseSchema = z.object({
   reasoningTokens: z.number().nullable().optional(),
   cacheReadTokens: z.number().nullable().optional(),
   cacheWriteTokens: z.number().nullable().optional(),
-  /** True when this call's reported cache read dropped below half the previous prompt after prior cache activity. */
   cacheReset: z.boolean(),
   usageBreakdown: z.json().nullable().optional(),
   costUsd: z.string().nullable(),
@@ -73,14 +71,10 @@ export const modelResponseSchema = z.object({
   stopReason: z.string().nullable().optional(),
   requestParams: z.json().nullable().optional(),
   responseMetadata: z.json().nullable().optional(),
-  /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: z.number().nullable(),
-  /** Wall-clock start of the successful provider attempt; null means unknown. */
   requestMessageCount: z.number(),
   requestStartedAt: z.string().nullable(),
-  /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
   timeToFirstTokenMs: z.number().nullable(),
-  /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
   generationMs: z.number().nullable(),
   rawUsage: z.json().nullable().optional(),
   predictedCacheState: prefixCachePredictionStateSchema,
@@ -91,7 +85,6 @@ export const modelResponseSchema = z.object({
 export type ModelResponse = z.infer<typeof modelResponseSchema>;
 
 export const turnUsageSchema = z.object({
-  /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */
   inputTokens: z.number(),
   outputTokens: z.number(),
   reasoningTokens: z.number().nullable().optional(),
@@ -106,40 +99,17 @@ export type TurnUsage = z.infer<typeof turnUsageSchema>;
 export const turnSchema = z.object({
   id: z.string(),
   threadId: z.string(),
-  /** Write-once insertion order within its thread, assigned by persistence. */
   position: z.number(),
   prevTurnId: z.string().nullable().optional(),
   parentTurnId: z.string().nullable().optional(),
   role: turnRoleSchema,
-  /** Who authored this turn; see {@link TurnOrigin}. */
   origin: turnOriginSchema,
-  /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: aiWriteModeSchema.nullable(),
   status: turnStatusSchema,
-  /**
-   * The execution (one run-lease hold) that reserved this turn. Null on turns no
-   * execution reserves (user, switch, notice, handoff seed) and on turns
-   * reserved before run identity.
-   */
   executionId: z.string().nullable(),
-  /**
-   * The messages (= user turn ids) this turn was reserved to handle; a Retry
-   * carries its failed reply's. A binding and Stop hint, never proof of delivery.
-   */
   reservedForUserTurnIds: z.array(z.string()),
-  /**
-   * On a user turn whose inbox message was delivered: the delivering turn, or
-   * null when unknown (delivered before run identity, or by no reserved turn).
-   * Null while undelivered and on every other turn.
-   */
   delivery: turnDeliverySchema.nullable(),
-  /**
-   * The turn that retried this failed attempt or moved the chat past it; write-once. A forgotten turn
-   * stays in the graph but has left the conversation. Null on every turn the chat still holds, and on
-   * local and optimistic turns. A reader applies it only when the forgetting turn is inside the span it reads.
-   */
   forgottenBy: z.string().nullable(),
-  /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: z.string().nullable(),
   compactionModel: z.string().nullable().optional(),
   finishReason: finishReasonSchema.nullable(),

@@ -1,11 +1,3 @@
-/**
- * ArtifactGrid — the shared renderer for a list of `ArtifactRef`s.
- *
- * Purpose: object arms render as compact document links through the chat's
- * context navigation, image arms as thumbnails in a responsive grid, and the
- * reserved `liveView` arm gets a full-width isolated iframe slot.
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
@@ -21,8 +13,6 @@ import { role } from "@/components/ui/roles";
 import { DocumentName } from "./DocumentName";
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
-  // Documents read as compact links, images as thumbnails, and live views get
-  // their own full-width slot.
   const documents = artifacts.filter(
     (artifact): artifact is Extract<ArtifactRef, { type: "object" }> => artifact.type === "object",
   );
@@ -112,11 +102,6 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
 }
 
 function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "liveView" }> }) {
-  // Isolated iframe per execution-model §8.4: the URL is a live-preview
-  // link to a viewer. `allow-scripts`
-  // is required for the viewer JS; `allow-same-origin` keeps the preview
-  // proxy's auth cookie usable. Nothing produces liveView arms today —
-  // this slot is the contract landing zone.
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle bg-ink-fill">
       <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">

@@ -1,10 +1,3 @@
-/**
- * `write`'s tree commands: `create` of a folder, `move`, `delete` and `restore`. Each tool call is
- * its own command with its records admitted at the call (nothing waits for the reply's save): the
- * paths resolve through the names the model was shown, the records are made on the project's list
- * under its lock, and the receipt that `undo`, `redo` and `revert` name commits with them. A failed
- * reply leaves what its calls did.
- */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
@@ -61,7 +54,6 @@ function commandOf(input: TreeToolInput): TreeCommand | WriteToolErrorOutput {
   }
 }
 
-/** The path as the model wrote it, with its source: what a later `undo` of a deleted node is found by. */
 function uriOfWritten(path: string): string {
   const at = areaOfPath(path);
   return at ? `${at.area}${at.rest}` : path;
@@ -78,16 +70,11 @@ function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false
   };
 }
 
-/**
- * A tree command: the grant on the area it changes, then one command on its list. A move between
- * a project's files and the account's is the server's move between two lists.
- */
 export async function runTreeToolCommand(
   deps: ToolWiringDeps,
   call: ToolCall,
   input: TreeToolInput,
   ctx: ToolHandlerContext,
-  /** Runs the part that changes things as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
 ): Promise<unknown> {
   const command = commandOf(input);
@@ -104,7 +91,6 @@ export async function runTreeToolCommand(
     roots.set(area, top.value);
   }
   const primary = areaOfPath(command.path)?.area as string;
-  // The file policy decides per source whether the change is the chat's draft or live.
   const grants: FileGrant<"edit">[] = [];
   let draftArea: string | undefined;
   let primaryDestination: FileGrant<"edit">["destination"] | undefined;
@@ -122,14 +108,11 @@ export async function runTreeToolCommand(
     command.command === "move"
       ? command.from.filter((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary))
       : [];
-  // A source in the destination's list moves; one in the other list is copied and stays. The
-  // call has one answer.
   const across = command.command === "move" && leaving.length > 0 ? command : undefined;
   const staying = across ? across.from.filter((from) => !leaving.includes(from)) : [];
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;
-  // A drafted change runs in the source that has the chat's draft; a live one in the path's own.
   const area = draftArea ?? primary;
   const places = { area, roots, locate: (path: string) => areaOfPath(path) };
   const local: TreeCommand = across ? { ...across, from: staying } : command;
@@ -218,7 +201,6 @@ export async function runTreeToolCommand(
     return { payload, delta: result.delta };
   };
 
-  // Copy reads its sources outside any transaction, so it runs before the call's command.
   const copies = across
     ? await copyAcross(deps, call, ctx, grants, { ...across, from: leaving }, destination)
     : undefined;
@@ -250,8 +232,6 @@ export async function runTreeToolCommand(
     const moved = kept?.payload.tree?.moved?.made ?? (kept ? 1 : 0);
     if (moved + copied.copied === 0)
       return writeToolError("move", `Nothing moved or copied: ${notMoved.join("; ")}`);
-    // One handle for a call with two receipts: a mixed call's is the copy's, so `revert` of it
-    // takes back only the copy. `undo` and the card's Undo take back the whole call.
     const handle = copied.handle ?? kept?.payload.write?.id;
     return answerOf(
       "move",
@@ -275,13 +255,11 @@ export async function runTreeToolCommand(
   });
 }
 
-/** Whether a move from `from` to `to` leaves its list: `user://` is the account's, the rest the project's. */
 const crossesLists = (from: string, to: string) =>
   (addressScheme(from) === "user") !== (addressScheme(to) === "user");
 
 type Payload = NonNullable<Parameters<typeof modelResult>[0]["payload"]>;
 
-/** What the part of a call that stays in its list did: its answer, or why it moved nothing. */
 type InList =
   | { refused: unknown; notMoved: string[] }
   | { payload: Payload; delta: ShownDelta | undefined };
