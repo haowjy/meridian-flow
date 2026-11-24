@@ -75,7 +75,8 @@ that changed something and has no done `unpress`), so every tab and a reload rea
 - **The writes** are the turn's stored edits (`document_edit_parts.edit`) in those rooms, newest
   first, taken back by design §2's Undo rule (`undoInRooms`, `takeBack`): each goes back whatever
   was written since, except one older than the room's history cutoff (§4), which can't (`holdsEdit`).
-  A part already taken back (by the model's undo or the writer's revert) is not taken again. A fork
+  A part already taken back (by an earlier restore, the model's undo or the writer's revert) is
+  not taken again: taking it again would put the text it deleted back a second time. A fork
   copy is carried forward to today's Live first. Live's manuscript is never written: text an
   Apply already put there stays in Live, and taking it out of the draft is a pending change.
 - **The tree changes** are the turn's drafted tree receipts' records (`tree_edit_receipts`, the
@@ -87,10 +88,19 @@ that changed something and has no done `unpress`), so every tab and a reload rea
 - The answer names only the documents and nodes the press changed, so a press that changed
   nothing names none and makes no Undo step.
 
-Each room's restore is one `PressedChange`, on the side of its room: `fork` for a fork, `live`
-for a draft-only document's Live room, so the Undo reads the room it was written in. The Undo is
-the press's `unpress` (`undoPress` in a fork, `undoEdits` in a Live room), and the tree changes
-come back by `restoreDiscard`; pressing again is the Redo. While a restore is in force, the turn
+What a restore took back is recorded in the one ledger every Undo reads, `document_edits`, not
+in `press_changes`: one `undo` receipt per document (`actionId` and `commandId` the press), a part
+per room naming the parts it took (`targets`) and carrying the room's edit, its `origin` the room.
+So a second restore from a stale tab, the card and the model's `undo` and `revert` all find those
+parts taken, by the same `notTakenBack` / `effectiveActionIndex` rule. The plan is read inside the
+press, under the draft's key and its Work's, which a model's Undo of the same writes also holds.
+The Undo is the press's `unpress`: it takes the restore's own parts back (`restoredParts`, those no
+Undo has taken since) in their rooms and records an `undo` receipt with the turn's `turn_id` and
+its edit, so the text it brings back is the turn's again, and pressing the restore again (the
+Redo) takes that receipt's parts back, never the turn's first writes, whose text now lives
+elsewhere. The model's `undo` of a write a restore took reads it taken even after the restore's
+Undo: the writer brought it back, and it stays the writer's to take again. The tree changes
+come back by `restoreDiscard`. While a restore is in force, the turn
 card reads each tree change it took as `undone` (`TurnDraftState`), by the command that settled
 it.
 
@@ -132,7 +142,8 @@ closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree
 ## Undo and Redo
 
 `unpress` takes a press back once, in the press's own project, draft by draft, newest first. Per
-document, `undoPress` reads the press's `press_changes` rows: every change goes back, whatever
+document, `undoPress` reads the press's `press_changes` rows (a restore's Undo reads its receipts
+instead, above): every change goes back, whatever
 was written since (design §2, "An Undo always runs"), each room its own, committed by the Undo's
 press (`commit-message.ts`). A change older than the room's history cutoff can't go back and is
 left as it is, silently.

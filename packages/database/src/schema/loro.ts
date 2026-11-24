@@ -88,11 +88,12 @@ export const documentForks = pgTable(
 );
 
 /**
- * What a press of one draft on one document did, for its Undo: `changes` is the document model's
- * `PressedChange[]` (JSON), each change's members and, per room, the edit it made there. A press
- * of several drafts (a Work's `Apply all`) presses them one after another in draft id order, so a
- * command can have a row per draft. Its Undo runs `undoPress` once per draft, in the reverse
- * order; an Undo stores no rows (pressing again is the Redo).
+ * What an Apply or Discard of one draft on one document did, for its Undo: `changes` is the
+ * document model's `PressedChange[]` (JSON), each change's members and, per room, the edit it made
+ * there. A press of several drafts (a Work's `Apply all`) presses them one after another in draft
+ * id order, so a command can have a row per draft. Its Undo runs `undoPress` on each row's fork,
+ * draft by draft in the reverse order; an Undo stores no rows (pressing again is the Redo). A
+ * turn's restore stores none: what it took back is in `document_edits`, the ledger every Undo reads.
  */
 export const pressChanges = pgTable(
   "press_changes",

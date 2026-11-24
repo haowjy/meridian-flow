@@ -95,8 +95,9 @@ card uses the same admission boundary.
 An invertible active part offers Undo. One eligibility rule, in the captured planner
 (`model-reversal-planner.ts`, `taken`/`takenBy`), decides what every reversal may still take: a
 part an Undo took (the card's, a writer's revert, or the model's own undo in the same chat) is not
-available, whatever the text says. Nothing reverses an Undo, so its action is the
-permanent record of what it took. Without the rule, an older edit's Undo that removed the text a
+available, whatever the text says. Nothing erases an Undo's receipt, so its action is the
+permanent record of what it took. The turn's restore records in this same ledger, and its press
+Undo is a new receipt taking the restore's own parts ([press](press.md)). Without the rule, an older edit's Undo that removed the text a
 newer edit's Undo restored leaves that newer edit "restorable" again: a card would take it out on
 every press, and a model `revert` of it would bring back an intermediate word. The card's Undo and
 its chip choose from one selection (`prepare`): a taken part is neither a step nor a skip. The
