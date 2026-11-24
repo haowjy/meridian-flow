@@ -65,7 +65,7 @@ have it:
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
 | Review changes | Whether a draft page reviews its changes, against what, and the change in focus | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
-| A press's Undo | One Apply, Discard or turn card's Restore before: sent, in force, its Undo in flight, or ended; the sidebar, a notice, a turn card and the editor's Ctrl+Z each undo it once, and a Restore before's card reads it by turn and draft | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| A press's Undo | One Apply, Discard or turn's restore (its card's Undo turn): sent, in force, its Undo in flight, or ended; the sidebar, a notice, a turn card and the editor's Ctrl+Z each undo it once, and a restore's card reads it by turn and draft | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Package Save word | What the last Save or Undo of one Agent package says where its state shows | [features/agents](../../apps/app/src/features/agents/.context/state-machines.md) |
 | Sidebar version | Whether the sidebar and its actions show live or the picked Work's tree, and sidebar Undo | [features/project](../../apps/app/src/features/project/.context/tree-version-state-machine.md) |
 | Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |

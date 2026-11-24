@@ -1938,8 +1938,8 @@ function racedRemovals(): string[] {
   // Ctrl+Z of text runs: the draft takes its text back, a pending change against Live; Ctrl+Z of
   // structure finds no override to put back (the draft reads Live's value), so the draft shows
   // what it applied. With the press undone first (`then`), Ctrl+Z of structure takes it back;
-  // text the press's Undo returned to the draft is new text, which neither Ctrl+Z nor `Restore
-  // before` deletes (they take back the edit's own characters, design §2): it stays, no word lost.
+  // text the press's Undo returned to the draft is new text, which neither Ctrl+Z nor `Undo
+  // turn` deletes (they take back the edit's own characters, design §2): it stays, no word lost.
   /** Whether `text` holds every character of `want`, in order. */
   const holds = (text: string, want: string) => {
     let at = 0;
@@ -1950,7 +1950,7 @@ function racedRemovals(): string[] {
     name: string,
     edit: (de: Editor) => void,
     writesText: boolean,
-    then: "nothing" | "Ctrl+Z" | "Restore before",
+    then: "nothing" | "Ctrl+Z" | "restore press",
   ): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
@@ -1990,9 +1990,9 @@ function racedRemovals(): string[] {
           return holds(shown(de), before) ? null : `applied ${name}, undone, then Ctrl+Z lost text: "${shown(de)}" from "${pending}"`;
       } else {
         const back = command((cmd) => undoEdits(cmd, [stored]));
-        if (back.compacted.size) return `applied ${name}, then undone: Restore before found no history`;
+        if (back.compacted.size) return `applied ${name}, then undone: the restore press found no history`;
         if (writesText)
-          return holds(shown(de), before) ? null : `applied ${name}, undone, then Restore before gave "${shown(de)}"`;
+          return holds(shown(de), before) ? null : `applied ${name}, undone, then the restore press gave "${shown(de)}"`;
       }
       return shown(de) === before
         ? null
@@ -2036,7 +2036,7 @@ function racedRemovals(): string[] {
     ],
   ];
   for (const [name, edit, writesText] of edits)
-    for (const then of ["nothing", "Ctrl+Z", "Restore before"] as const) {
+    for (const then of ["nothing", "Ctrl+Z", "restore press"] as const) {
       const applied = draftUndoAfterApply(name, edit, writesText, then);
       if (applied) failures.push(applied);
     }

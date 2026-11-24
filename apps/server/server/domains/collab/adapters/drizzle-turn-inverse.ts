@@ -59,9 +59,9 @@ import {
 } from "../domain/turn-inverse-service.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
-import { restoreStates } from "./drizzle-restore-before.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
+import { restoreStates } from "./drizzle-turn-restore.js";
 import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-inverse.js";
 
 type Dependencies = {
@@ -256,11 +256,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async ownersOf(query, userId) {
       const ids = await selectedDocuments(query);
       const tree = await treePlanOf(query);
-      let owners = mergeOwnerLocks(
-        await input.workProjection.ownersOf({ drafts: tree.drafts }),
-        // The Works and chats whose notes the tree steps change.
-        { workIds: tree.owners.works, lineageRootIds: tree.owners.lineages },
-      );
+      // The Works and chats whose notes the tree steps change.
+      let owners: OwnerLocks = {
+        workIds: tree.owners.works,
+        lineageRootIds: tree.owners.lineages,
+      };
       // Each document's own Work, which its write grant locks with the draft's.
       const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
       if (principal)
@@ -278,12 +278,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     },
     restoreStates: (query) =>
       query.turnId
-        ? restoreStates(db(), input.rooms, query.turnId)
+        ? restoreStates(db(), input.rooms, input.treeLists, query.turnId)
         : Promise.resolve({ offered: [], restored: [] }),
-    treeDraftStates: (query) =>
+    treeDraftStates: (query, restored) =>
       query.model || !query.turnId
         ? Promise.resolve({})
-        : treeInverse.draftStates(query.threadId, query.turnId),
+        : treeInverse.draftStates(query.threadId, query.turnId, restored),
     async treeSteps(query) {
       const tree = await treePlanOf(query);
       return {
@@ -322,7 +322,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const admission = await admitInverse(sequence, query, userId, tree.documents);
       const { grants } = admission;
       const works = {
-        drafts: tree.drafts,
         works: tree.owners.works,
         lineages: tree.owners.lineages,
       };
@@ -408,7 +407,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     sequence: readonly { plan: PreparedDocumentInverse; step: InverseStep }[],
     query: TurnInverseQuery,
     userId: UserId | undefined,
-    treeDocuments: readonly { documentId: string; draftId: DraftId | null; restore: boolean }[],
+    treeDocuments: readonly { documentId: string; restore: boolean }[],
   ): Promise<{ grants: FileGrant<"edit">[] | null }> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Every inverse supplies its principal explicitly; an absent one here means a composition
@@ -427,12 +426,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           restore: false,
         });
       }
-    // A tree change is taken back where it was made, by the one who may edit that document; a
-    // live document in Trash may only be restored.
-    for (const { documentId, draftId, restore } of treeDocuments)
-      requirements.set(`${documentId}:${draftId ?? "live"}:${restore ? "restore" : "content"}`, {
+    // A tree change is taken back by the one who may edit that document; a document in Trash
+    // may only be restored.
+    for (const { documentId, restore } of treeDocuments)
+      requirements.set(`${documentId}:live:${restore ? "restore" : "content"}`, {
         documentId: documentId as DocumentId,
-        draftId,
+        draftId: null,
         restore,
       });
     const admittedRequirements = [...requirements.values()];

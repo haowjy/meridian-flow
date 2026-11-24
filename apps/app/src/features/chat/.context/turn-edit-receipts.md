@@ -35,18 +35,25 @@ name the edited files.
 A row's `scope` is where the turn wrote it: `draft` (with the draft) for a Draft chat's write, in
 its fork or in a document only the draft holds, read from the write's own receipt. Its `block` is
 the first block the turn's first write there changed, where the row opens the document (Review
-changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Restore
-before` the card offers, one press each in that draft's lane; a draft whose history was cut below
+changes at the turn's edit, for a draft). The receipt's `restore` lists the drafts whose `Undo turn`
+the card offers, one press each in that draft's lane; a draft whose history was cut below
 the turn's start is left out (server [press](../../../../../server/server/domains/collab/.context/press.md)).
-Its `restored` names the Restore before in force in each draft (its press id), so every tab and a
-reload offer the same Undo.
+Its `restored` names the restore in force in each draft (its press id), so every tab and a
+reload show the same `Undone` and its Undo.
 
-**A draft's writes have one action, `Restore before`.** The card's Undo takes back only what it
-doesn't cover: the turn's Live writes and its tree changes (the server's card plan skips every part
-written in a draft). So a Draft chat's card that wrote only text in its draft shows `Restore before`
-and no Undo slot.
+**One reply, one action.** What the turn did in a draft, its text and its tree changes (renames,
+moves, deletes, creates), is the turn's restore, labelled `Undo turn`. The card's Undo
+(`reverse_turn`) takes back only the rest: the turn's Live writes and Live tree changes, and its
+Work receipts. So a Draft chat's card shows `Undo turn` alone and a Live chat's card its Undo; a
+reply that wrote in both shows both. While a restore is in force, each tree row it took
+reads `Undone` (`TurnDraftState`). "restore" is the name in the code and on the wire
+(`verdict: "restore"`); `Undo turn` is only the label.
 
-`Restore before` (`RestoreBeforeSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
+Every Undo on the card is one cell (`UndoCell`): its action, `Undoing…` while the command is out,
+then `Undone`, with its own Undo where one brings it back (a restore's). Its width holds through
+every state.
+
+The restore (`TurnRestoreSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
 each editor open on the turn's documents in that draft gets its Ctrl+Z step and the sidebar its
 step. The card is its notice. Its
 state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in

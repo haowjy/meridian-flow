@@ -20,7 +20,7 @@ export type PressPort = {
 export type Seat = { push(): void; drop(): void };
 
 /**
- * One press (an Apply, a Discard or a Restore before) on the sidebar's stack, until it is taken back. It holds the
+ * One press (an Apply, a Discard or a turn's restore) on the sidebar's stack, until it is taken back. It holds the
  * press's command id and nothing else of it: an Undo asks the server to take it back, and one
  * that lands ends it. A failed Undo leaves it to try again.
  */

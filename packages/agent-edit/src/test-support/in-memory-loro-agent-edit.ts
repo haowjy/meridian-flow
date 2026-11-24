@@ -1,6 +1,6 @@
 // An in-memory host for the Loro core: the rooms adapter for a Live or a Draft chat, write records,
 // the model's edit list, undo and revert on the one Undo rule in the room each write landed in, and the
-// writer's turn Undo, Apply, Discard and `Restore before`, for hand-run probes. The server's host
+// writer's turn Undo, Apply, Discard and a turn's restore press, for hand-run probes. The server's host
 // does the same on Postgres.
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
@@ -78,7 +78,7 @@ export interface InMemoryLoroHost {
     selection: ChangeSelection,
   ): Promise<number>;
   /**
-   * A Draft-mode turn card's `Restore before`: the turn's writes into the fork taken back by the
+   * A Draft-mode turn's restore press: the turn's writes into the fork taken back by the
    * Undo rule, newest first (design §2). Returns how many went back.
    */
   restoreBefore(documentId: string, draftId: string, turnId: string): Promise<number>;

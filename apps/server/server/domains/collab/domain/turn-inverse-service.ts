@@ -131,14 +131,17 @@ export interface TurnInverseStore {
    */
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
   /**
-   * For the card's `Restore before`: the drafts where pressing it would change something, and the
+   * For the turn's restore (its card's `Undo turn`): the drafts where pressing it would change something, and the
    * restore press in force for each draft the turn wrote in.
    */
   restoreStates(
     query: TurnInverseQuery,
   ): Promise<{ offered: DraftId[]; restored: { draft: DraftId; press: CommandId }[] }>;
   /** What became of each node's tree change the reply drafted, by node id. */
-  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnDraftState>>;
+  treeDraftStates(
+    query: TurnInverseQuery,
+    restored: readonly { draft: DraftId; press: CommandId }[],
+  ): Promise<Record<string, TurnDraftState>>;
   /** A document's stored edit parts a chat's inverse reads, in order: its Undo stack is chosen from them. */
   readHistory(documentId: DocumentId, threadId: string): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -166,8 +169,8 @@ export interface TurnInverseStore {
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId" | "origin">;
 /**
- * The card's Undo takes back the turn's Live writes; a write made in a draft is `Restore
- * before`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
+ * The card's Undo takes back the turn's Live writes; a write made in a draft is `Undo
+ * turn`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
  */
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (part.kind === "write" || part.kind === "revert") &&
@@ -265,11 +268,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
       return store.withCapturedDocuments(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
         const tree = await store.treeSteps(query);
-        const treeStates = await store.treeDraftStates(query);
+        const { offered, restored } = await store.restoreStates(query);
+        const treeStates = await store.treeDraftStates(query, restored);
         if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
         const drafts = Object.keys(treeStates).length ? treeStates : undefined;
-        const { offered, restored } = await store.restoreStates(query);
         const restore = {
           ...(offered.length ? { restore: offered } : {}),
           ...(restored.length ? { restored } : {}),

@@ -47,21 +47,21 @@ bash apps/server/server/domains/collab/.context/qa/press-on-the-stack.sh
 
 Not covered here: a tab's typing over a pressed change needs a socket client.
 
-### Restore before and the turn Undo
+### The turn's restore and the turn Undo
 
-[`restore-before-on-the-stack.sh`](restore-before-on-the-stack.sh) runs on the same kind of stack,
+[`turn-restore-on-the-stack.sh`](turn-restore-on-the-stack.sh) runs on the same kind of stack,
 in a new Work each run. Writer typing is `./mf doc edit`, which types into one block's text as a tab
 does.
 
 ```sh
 MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev
-bash apps/server/server/domains/collab/.context/qa/restore-before-on-the-stack.sh
+bash apps/server/server/domains/collab/.context/qa/turn-restore-on-the-stack.sh
 ```
 
 | Check | What it shows |
 |---|---|
-| A: Restore before returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
-| B: after one of the turn's changes was applied, Restore before leaves it in Live and takes it out of the draft, which waits for review | The restore carries the fork forward to today's Live first, never writes Live, and takes back every write of the turn |
+| A: the restore returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
+| B: after one of the turn's changes was applied, the restore leaves it in Live and takes it out of the draft, which waits for review | The restore carries the fork forward to today's Live first, never writes Live, and takes back every write of the turn |
 | C: the card's Undo of a Live turn whose first paragraph the writer retyped answers `reversed`, keeps the writer's words and brings back the text the turn replaced | The turn Undo on design §2's rule: every write goes back |
 | D: the model's `undo` of an edit the writer retyped takes it out; the writer's words stay beside the text it replaced | The same rule |
 | E: a chat that read in Draft, switched to Live, writes over the writer's Live typing without losing it | The write plans on the chat's latest read in any of the document's rooms (`frontierLookup` per document) |

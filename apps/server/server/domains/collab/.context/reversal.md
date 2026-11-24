@@ -24,10 +24,11 @@ capture (`capture` in `adapters/drizzle-turn-inverse.ts`) reads each room the ch
 written in, and the one it writes in now; the planner (`createCapturedReversalPlanner`) and the
 commit both take parts back through `undoInRooms` (`@meridian/agent-edit/integration`), which groups
 them by room and runs `undoEdits` in each. The in-memory host's turn Undo and the model's undo run
-the same function. The card's Undo takes only the turn's parts written outside a draft (`origin`
-with no `draftId`): a draft's writes are its card's `Restore before`, a press with its own Undo
-(design §5), so one action takes them back and the card offers Undo only when the turn wrote in
-Live or changed the tree. The model's `undo` and `revert` still take a draft's parts. The card's
+the same function. The card's Undo takes only what the turn did outside a draft: its parts whose `origin` has no
+`draftId`, and its live tree receipts. What it did in a draft, text and tree, is the turn's
+restore (the card's `Undo turn`, [press](press.md)), a press with its own Undo (design §5), so one
+action takes a reply back and the card offers Undo only when the turn wrote in Live or changed
+the Live tree. The model's `undo` and `revert` still take a draft's parts. The card's
 Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps before it leave (the planner takes planned
 steps back on private copies of the captured rooms). A step's receipt has one part per room, with
 the targeted parts' own `origin`. Only the batches the chat's current room holds (its own, and
@@ -59,9 +60,7 @@ its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every st
 `done`. The turn's Work receipts (`reverseTurnCard`'s `alongside`,
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
-is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's draft no longer places the node (a Discard took it out) is
-dropped from the grants and never run: it is left alone, and the rest of the reply still
-reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A target in a closed owner's draft (an archived or deleted Work, a chat
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
 closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a draft that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
@@ -141,8 +140,7 @@ A part goes back whatever was written over it since (design §2, "An Undo always
 
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
-stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's draft
-places the node. A step that can't act is a skip and never runs, so one purged document never
+stand (the fates are below, under tree receipts). A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
 card never targets the text of a document created by the turn, even after the create was undone;
 the tree Undo takes the document back whole (`createdDocuments`).
@@ -166,7 +164,7 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 A tree change (create, move, rename, delete, restore, folders included) is its own command
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
-A chat card's Undo of a turn takes the reply's tree receipts back too, in the same
+A chat card's Undo of a turn takes the reply's live tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
 steps, newest receipt first; a receipt the model's own `undo` reversed in the reply is part of
 what the reply did, and the card leaves it). The receipts one list holds go back in one update of that list, so a browser showing
@@ -190,10 +188,8 @@ words after the card's Undo (a change leaves the card only when the newest rever
 is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
 parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
 records (it follows a restored Discard's copies, and a record a later change landed over reads
-`replaced`); per node, pending, else applied, else replaced, else discarded. A restored Discard may
-put its copies in a new draft of the Work, so the card's tree plan judges and takes back each
-drafted receipt in the draft of its newest copy (`newestDrafted`), not the draft it was written in. The card's label and
-row word read both. Its lists' keys are taken before the documents' (in
+`replaced`); per node, pending, else applied, else undone (the turn's restore in force took it),
+else discarded. The card's label and row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a live restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call

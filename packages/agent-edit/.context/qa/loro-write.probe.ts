@@ -408,7 +408,7 @@ check(
   listed9,
 );
 
-// 10. `Restore before` the Draft turn takes every write of it back in the draft (design §2: an
+// 10. The Draft turn's restore press takes every write of it back in the draft (design §2: an
 // Undo always runs), the applied one too: Live keeps the applied paragraph, and the draft shows
 // taking it out as a change of its own.
 await host.restoreBefore("ch6", "d1", "t9");
@@ -417,7 +417,7 @@ check(
   (await draftText("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept." &&
     texts(await host.live("ch6"))[0] === "The iron gate was shut." &&
     text(changes10).includes("The {--iron --}gate was shut."),
-  "Restore before reverts the fork, the applied write too, and leaves Live",
+  "the restore press reverts the fork, the applied write too, and leaves Live",
   { draft: await draftText("ch6"), live: texts(await host.live("ch6")), changes: text(changes10) },
 );
 const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());

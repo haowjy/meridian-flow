@@ -9,6 +9,12 @@ import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 
+/**
+ * A draft's part of a command in its tree lists, which take each command name once; a record
+ * names it as a tree id (64 of `[0-9a-zA-Z_-]`).
+ */
+export const treeCommand = (commandId: string, draft: DraftId) => `${commandId}_${draft}`;
+
 /** The lists a Work's draft can hold records in: its project's, and its owner's account list. */
 export async function treeListsOfDraft(db: DrizzleDb, draftId: DraftId): Promise<TreeList[]> {
   const [row] = await currentDrizzleDb(db).execute<{ project_id: string; user_id: string }>(sql`

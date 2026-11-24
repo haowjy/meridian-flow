@@ -284,7 +284,7 @@ export class RoomDocs {
    * The doc a write into block `id` goes to: its own, else (in a draft) a fork of Live's taken now,
    * else a new doc. A draft never writes into Live's text docs. `before` is the frontier the write
    * starts from: the doc's own, or for a doc forked by this call the frontier it forked at, which
-   * is what the write's Undo record and a turn's `Restore before` need (design §2).
+   * is what the write's Undo record and a turn's restore press need (design §2).
    */
   writableText(id: BlockId): { doc: LoroDoc; before: Frontiers } {
     const own = this.texts.get(id);

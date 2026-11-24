@@ -232,8 +232,6 @@
 /* A paragraph deleted under the caret, kept while it stays (KeptExtension, design §1). */
 .meridian-editor .ProseMirror .meridian-kept {
   color: var(--color-muted-foreground);
-  background-image: linear-gradient(var(--color-ink-fill), var(--color-ink-fill));
-  border-radius: var(--radius-sm);
 }
 
 @media (forced-colors: active) {

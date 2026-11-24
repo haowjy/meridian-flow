@@ -34,13 +34,13 @@ stateDiagram-v2
 
 ## A press's Undo
 
-The browser keeps no state machine for a press, Apply, Discard or Restore before alike.
+The browser keeps no state machine for a press, Apply, Discard or a turn's restore alike.
 `PressEntries` (`press-history.ts`) holds the press's command id and one step on the sidebar's Undo
 stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`). Every Undo of it is
-`undo()`: its notice's or row's Undo, a turn card's `Undo restore`, the sidebar's Ctrl+Z, or the
+`undo()`: its notice's or row's Undo, the Undo beside a turn card's `Undone`, the sidebar's Ctrl+Z, or the
 editor's. A press while one is out hears the same answer, and `undoing` says one is out. A chat
-card's Undo is not one of them: it is the server's `reverse_turn`, for the turn's Live writes and
-tree changes only.
+card's Undo is not one of them: it is the server's `reverse_turn`, for what the turn did outside
+a draft only.
 
 The editor's Ctrl+Z gets its step (`EditorPressStep`) when the press is made, on every editor open
 on a pressed document, so typing after the press is undone first. Its Undo waits for the press's
@@ -63,9 +63,9 @@ stateDiagram-v2
   step leaves too; one Ctrl+Z took back stays for Redo.
 - `owner.presses` holds every entry; the owner ends them when the account closes.
 
-### Restore before on a turn card
+### A turn's restore on its card
 
-A turn's Restore before in one draft is this press, keyed in the owner by turn and draft
+A turn's restore in one draft (the card's `Undo turn`) is this press, keyed in the owner by turn and draft
 (`DraftCommandOwner.restore`), which the card reads: the slot keeps no state of its own. The
 card's read of the turn (`TurnReceiptChip.restored`) says which press is in force, so a reload or
 another tab converges on it.
@@ -73,9 +73,9 @@ another tab converges on it.
 ```mermaid
 stateDiagram-v2
   [*] --> offered: the card's read offers it
-  offered --> sending: Restore before
+  offered --> sending: Undo turn
   sending --> offered: it changed nothing, or never landed
-  sending --> in_force: it restored something (its Ctrl+Z and sidebar steps)
+  sending --> in_force: it took something back, and the card reads Undone with its Undo (its Ctrl+Z and sidebar steps)
   offered --> in_force: a newer read names a press (another tab's, or before a reload: the card's Undo only)
   in_force --> offered: an Undo landed (card, Ctrl+Z, sidebar), or a newer read names none
 ```

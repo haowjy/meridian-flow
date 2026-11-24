@@ -104,8 +104,7 @@ stateDiagram-v2
   and an editor's Redo of an Apply puts it back where the new press landed. One taken back in
   another tab stays, and its Ctrl+Z takes nothing.
 - **A step that waits for a closed owner keeps its place.** A tree step whose every record would
-  change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
-  move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every
+  change such an owner's notes goes back where it was, with nothing said on its rows. A press passes over it while every
   owner it waits for is closed (`waitsForClosed`) and takes the step before it; once one reopens,
   the next press takes it. Closed is read in the tab at each press (`useClosedOwners`).
 - **A delete that hides nothing rests.** A delete's step whose records are in force but hide

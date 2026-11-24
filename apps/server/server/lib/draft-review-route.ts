@@ -285,7 +285,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 
 /**
  * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, or a
- * Draft chat turn's `Restore before` in one draft, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
+ * Draft chat turn's restore in one draft, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
  * the drafts, and the press writes only those drafts' changes.
  */
 export async function handlePressRequest(

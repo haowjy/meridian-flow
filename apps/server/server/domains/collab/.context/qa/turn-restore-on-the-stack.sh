@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# A Draft chat turn's Restore before, the AI's turn Undo on the one Undo rule, and a chat switched
+# A Draft chat turn's restore (its card's Undo turn), the AI's turn Undo on the one Undo rule, and a chat switched
 # from Draft to Live, through the HTTP routes and room sockets of a running stack on the mock model.
 # Recipe: work-drafts.md beside this file.
 #
 #   MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev
-#   bash apps/server/server/domains/collab/.context/qa/restore-before-on-the-stack.sh
+#   bash apps/server/server/domains/collab/.context/qa/turn-restore-on-the-stack.sh
 set -euo pipefail
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -55,7 +55,7 @@ D=$(echo "$work" | field "d['draftId']")
 chat=$(./mf thread create --work "$handle" --write-mode draft --title "Draft chat" --json | field "d['threadId']")
 direct=$(./mf thread create --work "$handle" --write-mode direct --title "Live chat" --json | field "d['threadId']")
 
-# A. A Draft chat turn rewrites two paragraphs; Restore before returns the draft to Live's text,
+# A. A Draft chat turn rewrites two paragraphs; the restore returns the draft to Live's text,
 # and its Undo brings the turn's text back.
 one="Restore $run one"
 CH1=$(put "$one" $'# One\n\nThe bell rang at noon.\n\nThe square was empty.')
@@ -65,14 +65,14 @@ check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanter
 check "$(live "$one")" "The bell rang at noon.||The square was empty.|" "A: Live is untouched"
 restore=$(uuid)
 answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH1")\",\"draft\":\"$D\"}")
-check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: Restore before names the document"
+check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: the restore names the document"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the draft reads as before the turn"
 check "$(pending "$CH1")" false "A: nothing waits for review"
 check "$(undo "$restore" | field "d['status']")" unpressed "A: its Undo runs"
 check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the Undo brings the turn's text back"
 check "$(pending "$CH1")" true "A: the draft is pending again"
 
-# B. One change of the turn applied first: Restore before takes every write of the turn back in
+# B. One change of the turn applied first: the restore takes every write of the turn back in
 # the draft (design §2: an Undo always runs), so Live keeps the applied text and the draft shows
 # taking it out as a change of its own.
 two="Restore $run two"
@@ -83,7 +83,7 @@ road=$(blockOf "$CH2" "The road climbed into the hills.")
 press "$(uuid)" apply "{\"kind\":\"change\",\"item\":\"$D:$CH2\",\"change\":\"$road\"}" >/dev/null
 check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Apply put one change in Live"
 press "$(uuid)" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH2")\",\"draft\":\"$D\"}" >/dev/null
-check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: Restore before leaves the applied text in Live"
+check "$(live "$two")" "The road climbed into the hills.||The river ran south.|" "B: the restore leaves the applied text in Live"
 check "$(draft "$two")" "The road ran north.||The river ran south.|" "B: the draft reads as before the turn"
 check "$(pending "$CH2")" true "B: taking the applied change out waits for review"
 
