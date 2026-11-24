@@ -61,6 +61,7 @@ bash apps/server/server/domains/collab/.context/qa/turn-restore-on-the-stack.sh
 | Check | What it shows |
 |---|---|
 | A: the restore returns the draft to Live's text; nothing waits for review; its Undo brings the turn's text back and the draft is pending again | `restore` on a `turn` scope in one draft, and its `unpress` |
+| A: a second restore (a stale tab) and the model's `undo` after the restore take nothing back again; pressing the restore again after its Undo is the Redo, and the Redo's Undo brings the text back once | One ledger of what was taken back (`document_edits`), read inside the press |
 | B: after one of the turn's changes was applied, the restore leaves it in Live and takes it out of the draft, which waits for review | The restore carries the fork forward to today's Live first, never writes Live, and takes back every write of the turn |
 | C: the card's Undo of a Live turn whose first paragraph the writer retyped answers `reversed`, keeps the writer's words and brings back the text the turn replaced | The turn Undo on design §2's rule: every write goes back |
 | D: the model's `undo` of an edit the writer retyped takes it out; the writer's words stay beside the text it replaced | The same rule |

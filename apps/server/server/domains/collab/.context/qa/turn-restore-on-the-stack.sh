@@ -68,9 +68,22 @@ answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" 
 check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: the restore names the document"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the draft reads as before the turn"
 check "$(pending "$CH1")" false "A: nothing waits for review"
+# A second tab still offers Undo turn, and the model's undo runs in the same chat: neither takes
+# the turn's writes back a second time.
+scope="{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH1")\",\"draft\":\"$D\"}"
+check "$(press "$(uuid)" restore "$scope" | field "d['documents']")" "[]" "A: a second restore changes nothing"
+check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: and the old words show once"
+tool "$tmp/a-undo.json" "{\"command\":\"undo\",\"path\":\"manuscript://$one\"}"
+send "$chat" "$tmp/a-undo.json"
+check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the model's undo after the restore takes nothing back again"
 check "$(undo "$restore" | field "d['status']")" unpressed "A: its Undo runs"
 check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the Undo brings the turn's text back"
 check "$(pending "$CH1")" true "A: the draft is pending again"
+redo=$(uuid)
+check "$(press "$redo" restore "$scope" | field "d['documents']")" "['$CH1']" "A: pressing again is the Redo"
+check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the Redo reads as before the turn, the old words once"
+undo "$redo" >/dev/null
+check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the Redo's Undo brings the turn's text back once"
 
 # B. One change of the turn applied first: the restore takes every write of the turn back in
 # the draft (design §2: an Undo always runs), so Live keeps the applied text and the draft shows

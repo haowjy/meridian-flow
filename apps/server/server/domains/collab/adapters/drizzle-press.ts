@@ -41,12 +41,9 @@ import {
   discardBlocks,
   editSince,
   encodeChanges,
-  membersOf,
   type PressedChange,
   type RoomDocs,
   type RoomVersion,
-  type StoredEdit,
-  undoEdits,
   undoPress,
 } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -73,8 +70,9 @@ import type { TreeCut } from "../domain/press.js";
 import { markFork } from "../rooms/postgres-document-rooms.js";
 import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
+import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { treeCommand } from "./drizzle-draft-tree-lists.js";
-import { type RestorePlan, readRooms, restorePlan } from "./drizzle-turn-restore.js";
+import { type RestorePart, readRooms, restoredParts, restorePlan } from "./drizzle-turn-restore.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 import type { UsageEvents } from "./usage-events.js";
 
@@ -276,75 +274,70 @@ export function createDrizzlePress(
   }
 
   /**
-   * The text half of a Draft chat turn's restore in one draft (design §2), from its plan
-   * (`drizzle-turn-restore.ts`): the turn's writes into the draft's text go back by the one Undo
-   * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
-   * first (`undoInRooms`); Live's manuscript is untouched. A write whose history the room cut
-   * stays as it is. Each room's restore is one
-   * edit, stored in `press_changes` on the side of the room it was written in (`fork`, or `live`
-   * for a document only the draft holds), so the press's Undo takes it back by the same rule.
+   * The text half of a Draft chat turn's restore, and of its Undo (design §2): `parts` go back by the
+   * one Undo rule, newest first, each in the room it landed in, a fork carried forward to today's
+   * Live first (`undoInRooms`); Live's manuscript is untouched. A part whose history the room cut
+   * stays as it is. Each document's take-back is one `undo` receipt in `document_edits`, naming the
+   * parts it took and carrying each room's edit, the ledger every Undo reads
+   * (`drizzle-turn-restore.ts`). The Undo's receipt names `turn`: its text is the turn's again.
    * Returns the documents whose text it changed.
    */
-  async function restoreDraft(
+  async function takeBack(
     envelope: CommandEnvelope,
-    draft: DraftId,
-    plan: RestorePlan,
+    parts: readonly RestorePart[],
+    turn: TurnId | null,
   ): Promise<DocumentId[]> {
-    const copies = await readRooms(deps.rooms, plan);
+    const copies = await readRooms(deps.rooms, parts);
     try {
-      const rooms = new Map<
-        string,
-        { room: DocumentRoom; forward: DocChange[]; since: RoomVersion }
-      >();
-      for (const { room } of plan.parts) {
+      const rooms = new Map<string, { forward: DocChange[]; since: RoomVersion }>();
+      for (const { room } of parts) {
         const name = loroRoomName(room);
         if (rooms.has(name)) continue;
         const copy = copies.get(name) as RoomDocs;
-        const forward = copy.live ? copy.forward().restore : [];
-        rooms.set(name, { room, forward, since: copy.shownVersion() });
+        rooms.set(name, {
+          forward: copy.live ? copy.forward().restore : [],
+          since: copy.shownVersion(),
+        });
       }
-      const undone = undoInRooms(plan.parts, (room) => copies.get(loroRoomName(room)) as RoomDocs, {
+      const undone = undoInRooms(parts, (room) => copies.get(loroRoomName(room)) as RoomDocs, {
         press: envelope.commandId,
       });
       const taken = new Map(undone.rooms.map(({ room, changes }) => [loroRoomName(room), changes]));
-      const documents: DocumentId[] = [];
-      for (const [name, { room, forward, since }] of rooms) {
+      const receipts = new Map<DocumentId, ReceiptWrite["receipts"]>();
+      for (const [name, { forward, since }] of rooms) {
         const copy = copies.get(name) as RoomDocs;
+        const here = parts.filter((part) => loroRoomName(part.room) === name);
+        const { room, documentId, origin } = here[0] as RestorePart;
         const changes = taken.get(name) ?? [];
         const written = [...forward, ...changes];
-        const documentId = room.documentId as DocumentId;
         if (room.kind === "fork") {
           await commitCopy(room, { live: [], fork: written });
           await markFork(tx(), room, copy);
         } else if (written.length)
           await deps.rooms.commit(tx(), room, encodeChanges(written), ORIGIN);
         if (!changes.length) continue;
-        documents.push(documentId);
-        const edit = editSince(copy, since, new Set(changes.map((change) => change.key)));
-        const members = [
-          ...new Set([
-            ...edit.texts.map(([key]) => key),
-            ...edit.values.flatMap(([name, keys]) => keys.flatMap(([key]) => membersOf(name, key))),
-          ]),
-        ];
-        const [first, ...rest] = members;
-        if (first)
-          await tx()
-            .insert(pressChanges)
-            .values({
-              commandId: envelope.commandId as CommandId,
-              draftId: draft,
-              documentId,
-              changes: [
-                {
-                  members: [first, ...rest],
-                  live: room.kind === "live" ? edit : null,
-                  fork: room.kind === "fork" ? edit : null,
-                },
-              ] satisfies PressedChange[],
-            });
+        const went = here.filter((part) => !undone.compacted.has(part));
+        receipts.set(documentId, [
+          ...(receipts.get(documentId) ?? []),
+          {
+            origin,
+            targets: went.map(({ editId, ordinal }) => ({ editId, ordinal })),
+            write: { edit: editSince(copy, since, new Set(changes.map((change) => change.key))) },
+          },
+        ]);
       }
-      return documents;
+      for (const [documentId, parts] of receipts)
+        await recordDocumentEdit(tx(), {
+          documentId,
+          actor: "human",
+          actorUserId: envelope.accountId as UserId,
+          turnId: turn,
+          kind: "undo",
+          actionId: envelope.commandId,
+          commandId: envelope.commandId,
+          receipts: parts,
+        });
+      return [...receipts.keys()].sort();
     } finally {
       for (const copy of copies.values()) copy.free();
     }
@@ -398,6 +391,8 @@ export function createDrizzlePress(
             const judge = await owners.judge(locked);
             await deps.treeLists.lock(lists);
             const plan = [];
+            // A restore reads the ledger here, under the drafts' and their Works' keys, which an
+            // Undo of the same writes also holds: a second tab's restore finds them taken.
             for (const part of living) {
               const restore = part.turn
                 ? await restorePlan(tx(), deps.treeLists, part.turn, part.draft)
@@ -416,12 +411,12 @@ export function createDrizzlePress(
             const tree = new Set<string>();
             const trashed: string[] = [];
             for (const { part, restore, nodes, texts } of plan) {
-              if (restore)
-                for (const documentId of await restoreDraft(envelope, part.draft, restore))
-                  documents.add(documentId);
               // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
-              if (!restore)
+              if (restore)
+                for (const documentId of await takeBack(envelope, restore.parts, null))
+                  documents.add(documentId);
+              else
                 for (const documentId of texts)
                   if (await pressText(envelope, request, part.draft, documentId, selection))
                     documents.add(documentId);
@@ -550,40 +545,32 @@ export function createDrizzlePress(
             for (const draft of [...draftIds].sort())
               if (await deps.drafts.lock(draft)) living.add(draft);
             await deps.treeLists.lock(lists);
+            // A restore's text is in the ledger, read under the draft's key: a second Undo of it
+            // finds its parts brought back already.
+            const { scope } = pressed;
+            const restored =
+              scope.kind === "turn" && living.has(scope.draft)
+                ? await restoredParts(tx(), pressId)
+                : [];
             await lockDocuments([
               ...pressed.items.filter((item) => item.tree).map((item) => item.node),
               ...texts.map((row) => row.documentId),
+              ...restored.map((part) => part.documentId),
             ]);
             const documents = new Set<string>();
             const tree = new Set<string>();
+            if (scope.kind === "turn")
+              for (const documentId of await takeBack(envelope, restored, scope.turn))
+                documents.add(documentId);
             for (const draft of draftIds) {
               // A purged draft's forks went with it: its text has nothing to come back to.
               if (living.has(draft))
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
-                  const changes = row.changes as PressedChange[];
-                  // A restore of a document only the draft holds wrote its Live room. An
-                  // Apply's change has no fork side either when the fork kept nothing to delete.
-                  const liveRoom =
-                    pressed.verdict === "restore" &&
-                    changes.every((change) => change.fork === null);
-                  const room: DocumentRoom = liveRoom
-                    ? { kind: "live", documentId }
-                    : { kind: "fork", draftId: draft, documentId };
+                  const room = { kind: "fork" as const, draftId: draft, documentId };
                   const copy = await deps.rooms.read(room);
                   try {
-                    if (room.kind === "live") {
-                      const undone = undoEdits(
-                        copy,
-                        changes.map((change) => change.live as StoredEdit),
-                        author,
-                      );
-                      if (undone.changes.length) {
-                        await deps.rooms.commit(tx(), room, encodeChanges(undone.changes), ORIGIN);
-                        documents.add(documentId);
-                      }
-                      continue;
-                    }
+                    const changes = row.changes as PressedChange[];
                     if (await commitCopy(room, undoPress(copy, changes, { by: author })))
                       documents.add(documentId);
                     await markFork(tx(), room, copy);

@@ -9,11 +9,19 @@
  * so does a tree change of the turn the writer applied.
  *
  * The writes go back by the one Undo rule (`undoInRooms`), whatever was written since; a write an
- * Undo or the writer's revert already took back is no part of the plan, and one whose history the
- * room cut (design §4's cutoff) stays as it is.
+ * Undo from outside the turn or the writer's revert already took back is no part of the plan, and
+ * one whose history the room cut (design §4's cutoff) stays as it is. The turn's own undos are its
+ * writes too: they go back with the writes they took, newest first.
+ *
+ * What a restore took back is in the one ledger every Undo reads, `document_edits`: the restore
+ * records an `undo` receipt naming the parts it took, as the card's Undo does, so a second restore,
+ * the card and the model's undo find them taken. Its Undo takes the restore's own parts back and
+ * records an `undo` receipt of the turn, carrying its edit: the text that is the turn's again, which
+ * pressing the restore again (the Redo) takes back. A restore never takes back a part whose text an
+ * Undo already put elsewhere, so the old words never show twice.
  */
 import type { RoomPart } from "@meridian/agent-edit/integration";
-import type { CommandId, DocumentId, DraftId, TurnId } from "@meridian/contracts";
+import type { CommandId, DocumentId, DraftId, EditOrigin, TurnId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { loroRoomName } from "@meridian/contracts/protocol";
 import {
@@ -26,13 +34,18 @@ import {
 import { holdsEdit, type RoomDocs, type StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { newestDrafted, pendingRecords } from "@meridian/project-tree";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
-/** One write of the turn into the draft's text, as its Undo takes it back. */
-export type RestorePart = RoomPart & { documentId: DocumentId };
+/** A part a restore or its Undo takes back, in the room it landed in, as its receipt names it. */
+export type RestorePart = RoomPart & {
+  documentId: DocumentId;
+  editId: string;
+  ordinal: number;
+  origin: EditOrigin;
+};
 
 export type RestorePlan = {
   /** The turn's writes into the draft's text, newest first. */
@@ -49,10 +62,15 @@ const onlyInDraft = (draft: DraftId, node: unknown) => sql`EXISTS (
   SELECT 1 FROM ${draftTreeNodes} n
   WHERE n.draft_id = ${draft} AND n.id = ${node} AND n.exists_only_in_draft)`;
 
-/** A part no Undo, nor the writer's revert, has taken back: taking it back again would put its deleted text back twice. */
-const notTakenBack = sql`NOT EXISTS (
+/**
+ * A part no Undo, nor the writer's revert, has taken back: taking it back again would put its
+ * deleted text back twice. An Undo of `ownTurn` doesn't count: the turn's own undo is in its plan
+ * too, and taking back both, newest first, leaves the text as it was before the turn.
+ */
+const notTakenBack = (ownTurn?: TurnId) => sql`NOT EXISTS (
   SELECT 1 FROM ${documentEditParts} u JOIN ${documentEdits} e ON e.id = u.edit_id
   WHERE (e.kind = 'undo' OR (e.kind = 'revert' AND e.actor = 'human'))
+    ${ownTurn ? sql`AND e.turn_id IS DISTINCT FROM ${ownTurn}` : sql``}
     AND u.targets @> jsonb_build_array(jsonb_build_object(
       'editId', ${documentEditParts.editId}::text, 'ordinal', ${documentEditParts.ordinal})))`;
 
@@ -65,34 +83,59 @@ export async function restorePlan(
   const tree = await pendingOfTurn(tx, treeLists, turn, draft);
   // A node the turn created goes to Trash with its text: no write into it goes back.
   const gone = new Set<string>(tree.created);
+  const parts = (
+    await standingParts(
+      tx,
+      and(
+        eq(documentEdits.turnId, turn),
+        sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
+        sql`(${documentEditParts.origin}->>'kind' = 'fork' OR ${onlyInDraft(draft, documentEdits.documentId)})`,
+      ),
+      notTakenBack(turn),
+    )
+  ).filter((part) => !gone.has(part.documentId));
+  return { parts, records: tree.records, nodes: tree.nodes };
+}
+
+/** What a restore press took back that no Undo has brought back since: what its Undo takes back. */
+export function restoredParts(tx: DrizzleDb, press: CommandId): Promise<RestorePart[]> {
+  return standingParts(
+    tx,
+    and(
+      eq(documentEdits.commandId, press),
+      eq(documentEdits.kind, "undo"),
+      eq(documentEdits.actor, "human"),
+    ),
+    notTakenBack(),
+  );
+}
+
+/** The parts `where` names that carry an edit and stand (`notTakenBack`), newest first, each in its room. */
+async function standingParts(
+  tx: DrizzleDb,
+  where: SQL | undefined,
+  stands: SQL,
+): Promise<RestorePart[]> {
   const rows = await tx
     .select({
       documentId: documentEdits.documentId,
-      kind: sql<"live" | "fork">`${documentEditParts.origin}->>'kind'`,
+      editId: documentEditParts.editId,
+      ordinal: documentEditParts.ordinal,
+      origin: documentEditParts.origin,
       edit: documentEditParts.edit,
     })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(
-      and(
-        eq(documentEdits.turnId, turn),
-        sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
-        isNotNull(documentEditParts.edit),
-        sql`(${documentEditParts.origin}->>'kind' = 'fork' OR ${onlyInDraft(draft, documentEdits.documentId)})`,
-        notTakenBack,
-      ),
-    )
+    .where(and(where, isNotNull(documentEditParts.edit), stands))
     .orderBy(desc(documentEditParts.id));
-  const parts = rows.flatMap((row): RestorePart[] => {
+  return rows.map((row) => {
     const documentId = row.documentId as DocumentId;
-    if (gone.has(documentId)) return [];
     const room: DocumentRoom =
-      row.kind === "fork"
-        ? { kind: "fork", draftId: draft, documentId }
+      row.origin.kind === "fork"
+        ? { kind: "fork", draftId: row.origin.draftId, documentId }
         : { kind: "live", documentId };
-    return [{ documentId, room, edit: row.edit as StoredEdit }];
+    return { ...row, documentId, room, edit: row.edit as StoredEdit };
   });
-  return { parts, records: tree.records, nodes: tree.nodes };
 }
 
 /**
@@ -138,16 +181,16 @@ async function pendingOfTurn(
 }
 
 /**
- * Each room of the plan read once, by room name, forwarded: the caller judges or takes the parts
- * back on them, and frees them.
+ * Each room of `parts` read once, by room name: the caller judges or takes the parts back on them,
+ * and frees them.
  */
 export async function readRooms(
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
-  plan: RestorePlan,
+  parts: readonly RoomPart[],
 ): Promise<Map<string, RoomDocs>> {
   const copies = new Map<string, RoomDocs>();
   try {
-    for (const { room } of plan.parts) {
+    for (const { room } of parts) {
       const name = loroRoomName(room);
       if (!copies.has(name)) copies.set(name, await rooms.read(room));
     }
@@ -200,7 +243,7 @@ async function someStands(
   plan: RestorePlan,
 ): Promise<boolean> {
   if (!plan.parts.length) return false;
-  const copies = await readRooms(rooms, plan);
+  const copies = await readRooms(rooms, plan.parts);
   try {
     return plan.parts.some(({ room, edit }) =>
       holdsEdit(copies.get(loroRoomName(room)) as RoomDocs, edit),

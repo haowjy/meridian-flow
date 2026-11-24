@@ -67,7 +67,7 @@ check "$(sql "select pending_document_count from works where id = '$W'")" 2 "the
 
 # Apply all at work scope lands both drafts; its Undo takes both back.
 all=$(uuid)
-press "$all" "{\"kind\":\"work\",\"work\":\"$W\"}" >/dev/null
+press "$all" "{\"kind\":\"work\",\"work\":\"$W\",\"drafts\":[\"$D1\",\"$D2\"]}" >/dev/null
 check "$(./mf doc read "manuscript://$two" | tail -3 | tr '\n' '|')" "The first paragraph, by draft one.||The second paragraph, by draft two.|" \
   "Apply all lands both drafts"
 check "$(sql "select count(*) from document_forks where draft_id in ('$D1','$D2') and pending")" 0 "Apply all leaves no fork pending"
