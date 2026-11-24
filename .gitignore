@@ -37,6 +37,8 @@ __pycache__/
 .codex
 .codex-local/
 .opencode
+.agents
+.agy
 
 # Meridian / Mars
 mars.local.toml
