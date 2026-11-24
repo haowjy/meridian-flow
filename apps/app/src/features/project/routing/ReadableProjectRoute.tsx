@@ -297,8 +297,8 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     if (addressKind !== "draft") return undefined;
     if (!closingDocumentId) return { kind: "absent" };
     const place = trashedPlace ?? draftPlace;
-    const tree = trashedPlace ? trees : placeTrees;
-    if (!place) return tree.isComplete && draftItem ? { kind: "absent" } : undefined;
+    const tree = endUndecided ? trees : placeTrees;
+    if (!place) return tree.isComplete && draftItem !== undefined ? { kind: "absent" } : undefined;
     const owner = ownerOfSource(place.source);
     return resolveReplayAddress({
       projectId,
@@ -318,6 +318,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     closingDocumentId,
     draftItem,
     draftPlace,
+    endUndecided,
     placeTrees,
     trashedPlace,
     trees,
