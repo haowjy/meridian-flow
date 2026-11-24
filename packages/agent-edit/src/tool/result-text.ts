@@ -191,18 +191,11 @@ function notes(result: AgentEditResultV1): string[] {
   return lines;
 }
 
-/**
- * Who changed which blocks after the model last read them, by hash. The one line of repair
- * guidance appears only when a changed block is in the echo, where a merge can have garbled it.
- */
+/** Who changed which blocks after the model last read them, by hash. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
-  const lines = listing.groups.flatMap((group) => {
-    const changed = [
-      ...(group.shown?.map((hash) => `${hash} (in the echo)`) ?? []),
-      ...(group.other ?? []),
-    ];
+  return listing.groups.flatMap((group) => {
     const did = [
-      ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
+      ...(group.changed?.length ? [`changed ${group.changed.join(", ")}`] : []),
       ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
     ];
     return [
@@ -212,15 +205,6 @@ function concurrentLines(listing: AgentEditConcurrentListing): string[] {
         : []),
     ];
   });
-  const merged = listing.groups.some((group) => group.shown?.length);
-  return [
-    ...lines,
-    ...(merged
-      ? [
-          "The echo is the text after both edits merged. If the merge left text broken, fix it; leave what reads right.",
-        ]
-      : []),
-  ];
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */

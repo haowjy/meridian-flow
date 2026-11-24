@@ -39,7 +39,6 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditRooms, AgentRoomRead, LoroDocumentEdits } from "../ports/document-rooms.js";
 import { isDocumentNotFoundError } from "../ports/document-rooms.js";
-import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle, type WriteOrdinals } from "../ports/write-ordinals.js";
 import { landCopies } from "../resolver/land-copies.js";
 import { planWrite, type ResolveWriteParams } from "../resolver/resolve.js";
@@ -775,7 +774,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     );
     return withEvidence(edit.links, read, copy, docId, context, result, {
       ownRemoved: new Set(deletedKeys),
-      projected: echoProjected,
     });
   }
 
@@ -786,7 +784,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
-    own: { ownRemoved?: ReadonlySet<string>; projected?: readonly ProjectedBlock[] } = {},
+    own: { ownRemoved?: ReadonlySet<string> } = {},
   ): Promise<InternalWriteResult> {
     return recordLoroObservation(result, {
       copy,
@@ -796,7 +794,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       recording: context.frontiers?.recording,
       ownTurn: context.turnId ?? null,
       ownRemoved: own.ownRemoved ?? new Set(),
-      projected: own.projected ?? model.projectBlocks(toLoroHandle(copy)),
       authorOfTurn: options.authorOfTurn,
       onFailed: (cause) => options.onObservationFailed?.({ documentId, cause }),
     }).then((observed) => ({

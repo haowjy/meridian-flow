@@ -147,7 +147,7 @@ check(
 );
 const concurrent = write1.result.concurrent?.groups ?? [];
 check(
-  concurrent.some((group) => group.author === "the user" && [...(group.shown ?? []), ...(group.other ?? [])].includes(hashes[0])),
+  concurrent.some((group) => group.author === "the user" && (group.changed ?? []).includes(hashes[0])),
   "the result names the writer's change",
   { concurrent, text: text(write1) },
 );

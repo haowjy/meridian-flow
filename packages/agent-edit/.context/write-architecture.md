@@ -66,8 +66,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   Every operation is made and Loro merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it. The owner chose that the writer's edit to a word the model kept wins, even where that
-  leaves a fragment, and to trust the model to notice an odd merge in the write's echo and its
-  listing of concurrent edits (`sighed softly` over a deleted `sighed` lands `He softly,`;
+  leaves a fragment. The model is one more collaborator: nothing tells it to repair a merge, and the
+  result only lists what the writer changed (`sighed softly` over a deleted `sighed` lands `He softly,`;
   `DRAFT-B3 line.` over a deleted `DRAFT-B line.` lands `3`). A word the model
   replaces lands as the model's whole replacement: `Gamma` over a deleted `Beta` lands whole, because a trim of the
   shared edges loses model letters (`Gamm`) and was removed. The apply step never reads the room either: the update deletes what the model's
