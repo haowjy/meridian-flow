@@ -15,13 +15,14 @@ import {
 } from "@meridian/contracts";
 import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-import { matchQuery, type QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
 import type { PressRooms } from "@/core/editor/document-session-registry";
 import { projectQueryKeys } from "./project-query-keys";
 import { refreshDraftReads } from "./useOwnerDrafts";
+import { whenRead } from "./when-read";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export const PRESS_KIND = "press";
@@ -105,36 +106,6 @@ function pressBodyFromV2(body: PressBody): PressBody {
   return body;
 }
 
-/**
- * Settles once every draft list of the project on screen has been read from the server since now:
- * the journal's press holds its rows until then (`DraftCommandOwner.followPresses`), so a read that
- * failed keeps them held until one succeeds. `loaded`: a list read already held counts, since all
- * of them began after the press settled.
- */
-function whenDraftListsRead(client: QueryClient, projectId: string, loaded: boolean) {
-  const cache = client.getQueryCache();
-  const queryKey = projectQueryKeys.draftsOf(projectId);
-  const lists = () => cache.findAll({ queryKey, type: "active" });
-  const waiting = new Set(lists().filter((query) => !loaded || query.state.status !== "success"));
-  return new Promise<void>((resolve) => {
-    const done = () => {
-      const shown = new Set(lists());
-      for (const query of waiting) if (!shown.has(query)) waiting.delete(query);
-      if (waiting.size > 0) return false;
-      resolve();
-      return true;
-    };
-    if (done()) return;
-    const stop = cache.subscribe((event) => {
-      if (!matchQuery({ queryKey }, event.query)) return;
-      // `manual`: a write of this browser's own (`patchOwnerDrafts`), not a read.
-      if (event.type === "updated" && event.action.type === "success" && !event.action.manual)
-        waiting.delete(event.query);
-      if (done()) stop();
-    });
-  });
-}
-
 export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
   // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
   // own reads of drafts all begin after it opened, so a press settled before then is in them;
@@ -147,8 +118,9 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
     const { projectId } = record.body as PressBody | PressUndoBody;
     const since = record.settledAt ?? Date.now();
     const before = since <= opened;
-    // Watched before the reads start, so their answers are seen.
-    const read = whenDraftListsRead(client, projectId, before);
+    // The journal's press holds its rows until every draft list on screen has it
+    // (`DraftCommandOwner.followPresses`); a list read before it opened already does.
+    const read = whenRead(client, { queryKey: projectQueryKeys.draftsOf(projectId) }, before);
     // A press can change any draft's list: two Works on one passage, the first applied wins.
     void Promise.all([
       before

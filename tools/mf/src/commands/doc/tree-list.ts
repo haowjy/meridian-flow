@@ -23,6 +23,7 @@ import {
   type TreeProjection,
   type TreeRecord,
   TreeWriter,
+  type View,
 } from "@meridian/project-tree";
 import { LoroDoc } from "loro-crdt";
 import { CliError } from "../../core/cli-error";
@@ -88,9 +89,9 @@ export class TreeList {
     return new TreeList(session, list, await connect(session, list), actor);
   }
 
-  /** The list as the copy stands, records appended a moment ago included. */
-  replay(): TreeProjection {
-    return replayView(this.main.doc, LIVE);
+  /** The list as the copy stands, records appended a moment ago included: Live's, or a draft's. */
+  replay(view: View = LIVE): TreeProjection {
+    return replayView(this.main.doc, view);
   }
 
   /**

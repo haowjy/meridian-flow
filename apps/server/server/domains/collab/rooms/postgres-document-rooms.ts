@@ -25,6 +25,7 @@ import {
   type PeerId,
   pendingRemovalVersion,
   RoomDocs,
+  type RoomVersion,
   type ShapeSchema,
 } from "@meridian/document-model";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
@@ -128,6 +129,9 @@ interface Loaded {
 }
 
 type Row = { docKey: string; snapshot: Uint8Array; frontiers: StoredFrontiers };
+/** What a write of a room's rows stored: each doc's version as its row now holds it. */
+type Written = { bytes: number; docs: number; stored: RoomVersion };
+const NOTHING_WRITTEN: Written = { bytes: 0, docs: 0, stored: new Map() };
 type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
 
 /**
@@ -391,19 +395,27 @@ export function createPostgresDocumentRooms(input: {
    * What a loaded room does with every import: save, tell subscribers, forward forks. A restore
    * the room's copy wrote on the import (design §1, "Removed blocks", rule 1) follows the batch as
    * the room's own. A fork forwarded hears nothing of Live's batch, only its own restore.
+   * `stored`: the rows a commit or seed just wrote. A doc they hold whole is saved already.
    */
   function imported(
     loaded: Loaded,
     { changed, pending, restore }: Imported,
     batch: Uint8Array | null,
     origin: RoomOrigin,
+    stored?: RoomVersion,
   ) {
+    const saved = (key: DocKey) => {
+      const version = stored?.get(key);
+      const doc = version && loaded.docs.doc(key);
+      return Boolean(doc && docCovers(version, docVersion(doc)));
+    };
+    if (stored) for (const key of loaded.dirty) if (saved(key)) loaded.dirty.delete(key);
     if (changed.length === 0) {
       // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
       if (pending && batch) emitTo(loaded.room, batch, origin);
       return;
     }
-    markDirty(loaded, changed);
+    markDirty(loaded, stored ? changed.filter((key) => !saved(key)) : changed);
     if (batch) emitTo(loaded.room, batch, origin);
     if (restore.length) emitTo(loaded.room, encodeChanges(restore), "server:restore");
     if (loaded.room.kind === "live")
@@ -411,9 +423,9 @@ export function createPostgresDocumentRooms(input: {
         imported(fork, fork.docs.forward(), null, origin);
   }
 
-  function importInto(loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) {
+  function importInto(loaded: Loaded, batch: Uint8Array, origin: RoomOrigin, stored?: RoomVersion) {
     const result = loaded.docs.importBatch(decodeEnvelope(batch));
-    imported(loaded, result, batch, origin);
+    imported(loaded, result, batch, origin, stored);
     return result;
   }
 
@@ -487,7 +499,7 @@ export function createPostgresDocumentRooms(input: {
       .select({ purgedAt: documents.contentPurgedAt })
       .from(documents)
       .where(eq(documents.id, room.documentId));
-    if (row?.purgedAt) return { bytes: 0, docs: 0 };
+    if (row?.purgedAt) return NOTHING_WRITTEN;
     // A purged draft's fork has no rows to write. The purge deletes the draft under this
     // document's lock, so the read needs no row lock: one would follow the document key, against
     // the lock order every press takes.
@@ -496,13 +508,13 @@ export function createPostgresDocumentRooms(input: {
         .select({ id: drafts.id })
         .from(drafts)
         .where(eq(drafts.id, room.draftId));
-      if (!draft) return { bytes: 0, docs: 0 };
+      if (!draft) return NOTHING_WRITTEN;
     }
     const rows = [...keys].flatMap((docKey) => {
       const doc = docs.doc(docKey);
       return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
     });
-    if (rows.length === 0) return { bytes: 0, docs: 0 };
+    if (rows.length === 0) return NOTHING_WRITTEN;
     const bytes = await writeSnapshots(tx, rows);
     // The fork's row comes with its first rows, whichever door wrote them (design §2), and every
     // save sets whether it is pending from the docs in hand, forwarded.
@@ -517,7 +529,8 @@ export function createPostgresDocumentRooms(input: {
       })
       .where(eq(documents.id, room.documentId));
     if (room.kind === "live") deferUntilDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
-    return { bytes, docs: rows.length };
+    const stored: RoomVersion = new Map(rows.map((row) => [row.docKey, docVersion(row.doc)]));
+    return { bytes, docs: rows.length, stored };
   }
 
   /** One save of a loaded room's unsaved docs, queued behind the room's other saves. */
@@ -548,7 +561,7 @@ export function createPostgresDocumentRooms(input: {
     const started = performance.now();
     let keys = new Set<DocKey>();
     let merged = false;
-    let written = { bytes: 0, docs: 0 };
+    let written: Written = NOTHING_WRITTEN;
     try {
       await runOutsideDrizzleTransaction(() =>
         runInDrizzleTransaction(db, async () => {
@@ -866,17 +879,19 @@ export function createPostgresDocumentRooms(input: {
         await lockRoom(tx, room);
         const copy = await copyInTransaction(tx, room, freshServerPeerId());
         let restore: Uint8Array | null = null;
+        let written: Written;
         try {
           const result = copy.importBatch(entries);
           if (result.restore.length) restore = encodeChanges(result.restore);
-          await writeRows(tx, room, copy, result.changed);
+          written = await writeRows(tx, room, copy, result.changed);
         } finally {
           copy.free();
         }
         const land = () => {
           const loaded = rooms.get(loroRoomName(room));
           // A loaded room answers the batch on its own copy, as `importBatch` does everywhere.
-          if (loaded && !loaded.unloading) return void importInto(loaded, batch, origin);
+          if (loaded && !loaded.unloading)
+            return void importInto(loaded, batch, origin, written.stored);
           emitTo(room, batch, origin);
           if (restore) emitTo(room, restore, "server:restore");
         };
@@ -889,15 +904,16 @@ export function createPostgresDocumentRooms(input: {
         const name = loroRoomName(room);
         await lockRoom(tx, room);
         const docs = RoomDocs.load(shape, freshServerPeerId(), entries);
+        let written: Written;
         try {
-          await writeRows(tx, room, docs, entries.keys());
+          written = await writeRows(tx, room, docs, entries.keys());
         } finally {
           docs.free();
         }
         const land = () => {
           const loaded = rooms.get(name);
           if (!loaded || loaded.unloading) return emitTo(room, snapshots, "server:seed");
-          importInto(loaded, snapshots, "server:seed");
+          importInto(loaded, snapshots, "server:seed", written.stored);
         };
         deferUntilDrizzleCommit(land);
       }),
