@@ -22,7 +22,7 @@ import { draftCommandsDomain } from "@/client/query/draft-commands";
 import { PRESS_KIND, pressDomain } from "@/client/query/press-commands";
 import { projectDomain } from "@/client/query/project-commands";
 import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
-import { useMcpConnectionsAtOpen } from "@/client/query/useMcpConnections";
+import { useMcpConnectionsAtOpen, useRouteProjectId } from "@/client/query/useMcpConnections";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
@@ -190,7 +190,8 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
 function FollowPresses() {
   const owner = useDraftCommandOwner();
   const presses = useCommands({ kind: PRESS_KIND });
-  useEffect(() => owner.followPresses(presses), [owner, presses]);
+  const shownProject = useRouteProjectId();
+  useEffect(() => owner.followPresses(presses, shownProject), [owner, presses, shownProject]);
   return null;
 }
 

@@ -31,7 +31,7 @@ import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { changeSummary, DraftFileRow } from "@/features/draft-review/DraftFileRow";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
-import type { DraftNotice } from "@/features/draft-review/draft-notices";
+import { type DraftNotice, workNoticeKey } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -265,7 +265,7 @@ export function ChangesSource({
   const speaksIn = (section: DraftSection) =>
     !notice ||
     notice.draftId === section.draftId ||
-    !scope.drafts.some((draft) => draft.id === notice.draftId);
+    (scope.work !== null && notice.draftId === workNoticeKey(scope.work.id));
   const wordsOf = (section: DraftSection) => (key: string) =>
     (speaksIn(section) ? words.word(key) : null) ?? treeWords.word(key);
   const shownOf = (section: DraftSection) =>

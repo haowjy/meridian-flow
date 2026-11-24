@@ -58,7 +58,11 @@ export type DiscardPart = {
   handle: DiscardUndo;
 };
 
+/** `draftId`: the draft whose press it tells of, or `workNoticeKey` for a press of a Work's drafts. */
 type Base = { id: number; projectId: string; draftId: string; surface: NoticeSurface };
+
+/** The notice key of a press of every draft of a Work (its `Apply all`). */
+export const workNoticeKey = (workId: string) => `work:${workId}`;
 
 export type DraftNotice =
   | (Base & {

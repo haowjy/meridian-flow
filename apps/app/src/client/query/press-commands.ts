@@ -13,13 +13,14 @@ import {
   draftItemKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type { PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
+import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import { matchQuery, type QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
 import type { PressRooms } from "@/core/editor/document-session-registry";
+import { projectQueryKeys } from "./project-query-keys";
 import { refreshDraftReads } from "./useOwnerDrafts";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
@@ -43,10 +44,17 @@ export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
  */
 const PRESS_LANE = "press:";
 
+/** The drafts a press takes: a Work's are the ones the pressing tab listed, which its body names. */
+export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {
+  if (scope.kind === "work") return scope.drafts;
+  if (scope.kind === "draft" || scope.kind === "turn") return [scope.draft];
+  const parsed = parseDraftItemKey(scope.item);
+  return parsed ? [parsed.draftId] : [];
+}
+
 /**
  * What a journaled press or Undo presses, read from its record: the drafts its lanes name, and the
- * document of a press of one document or change. A Work's drafts are the ones it listed when
- * pressed, so its wait needs no read of the server.
+ * document of a press of one document or change.
  */
 export function pressRooms(record: CommandRecord): PressRooms {
   const scope = (record.body as Partial<PressBody>).scope;
@@ -86,6 +94,47 @@ function pressBodyFromV1({ projectId, draft, verdict, items, saw }: PressBodyV1)
   return { projectId, verdict, scope, ...(saw ? { saw } : {}) };
 }
 
+/**
+ * An unsent version 2 press: a Work's named no drafts, and the drafts its tab listed then are not
+ * known offline, so it throws and the driver settles it as never sent: "Couldn't apply", and its
+ * rows come back to press again.
+ */
+function pressBodyFromV2(body: PressBody): PressBody {
+  if (body.scope.kind === "work" && !Array.isArray(body.scope.drafts))
+    throw new Error("A Work's press named no drafts");
+  return body;
+}
+
+/**
+ * Settles once every draft list of the project on screen has been read from the server since now:
+ * the journal's press holds its rows until then (`DraftCommandOwner.followPresses`), so a read that
+ * failed keeps them held until one succeeds. `loaded`: a list read already held counts, since all
+ * of them began after the press settled.
+ */
+function whenDraftListsRead(client: QueryClient, projectId: string, loaded: boolean) {
+  const cache = client.getQueryCache();
+  const queryKey = projectQueryKeys.draftsOf(projectId);
+  const lists = () => cache.findAll({ queryKey, type: "active" });
+  const waiting = new Set(lists().filter((query) => !loaded || query.state.status !== "success"));
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      const shown = new Set(lists());
+      for (const query of waiting) if (!shown.has(query)) waiting.delete(query);
+      if (waiting.size > 0) return false;
+      resolve();
+      return true;
+    };
+    if (done()) return;
+    const stop = cache.subscribe((event) => {
+      if (!matchQuery({ queryKey }, event.query)) return;
+      // `manual`: a write of this browser's own (`patchOwnerDrafts`), not a read.
+      if (event.type === "updated" && event.action.type === "success" && !event.action.manual)
+        waiting.delete(event.query);
+      if (done()) stop();
+    });
+  });
+}
+
 export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
   // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
   // own reads of drafts all begin after it opened, so a press settled before then is in them;
@@ -97,18 +146,22 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
     const observed = () => void bound?.observe((each) => each.id === record.id);
     const { projectId } = record.body as PressBody | PressUndoBody;
     const since = record.settledAt ?? Date.now();
+    const before = since <= opened;
+    // Watched before the reads start, so their answers are seen.
+    const read = whenDraftListsRead(client, projectId, before);
     // A press can change any draft's list: two Works on one passage, the first applied wins.
-    void (
-      since <= opened
+    void Promise.all([
+      before
         ? refreshWorksSnapshotSince(client, projectId, since)
-        : refreshDraftReads(client, projectId, new Set([undefined]), since)
-    ).then(observed);
+        : refreshDraftReads(client, projectId, new Set([undefined]), since),
+      read,
+    ]).then(observed);
   };
   const kinds: Record<string, CommandKind> = {
     [PRESS_KIND]: {
-      version: 2,
+      version: 3,
       migrate: (body, from) =>
-        from < 2 ? pressBodyFromV1(body as PressBodyV1) : (body as PressBody),
+        from < 2 ? pressBodyFromV1(body as PressBodyV1) : pressBodyFromV2(body as PressBody),
       request: ({ body }) => {
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };
@@ -142,11 +195,10 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
   };
 }
 
-/** `drafts`: the drafts it presses, a Work's every draft (`pressRooms`). */
-export function submitPress(driver: CommandDriver, drafts: readonly string[], body: PressBody) {
+export function submitPress(driver: CommandDriver, body: PressBody) {
   return submitCommand(driver, {
     kind: PRESS_KIND,
-    lanes: drafts.map((draft) => `${PRESS_LANE}${draft}`),
+    lanes: pressDrafts(body.scope).map((draft) => `${PRESS_LANE}${draft}`),
     body,
   });
 }

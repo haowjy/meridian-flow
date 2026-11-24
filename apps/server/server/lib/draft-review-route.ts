@@ -132,7 +132,11 @@ const PressBody = z.union([
       }),
       z.strictObject({ kind: z.literal("document"), item: z.string().min(1).max(256) }),
       z.strictObject({ kind: z.literal("draft"), draft: z.string().min(1).max(128) }),
-      z.strictObject({ kind: z.literal("work"), work: z.string().uuid() }),
+      z.strictObject({
+        kind: z.literal("work"),
+        work: z.string().uuid(),
+        drafts: z.array(z.string().min(1).max(128)).min(1).max(200),
+      }),
     ]),
   }),
   z.strictObject({

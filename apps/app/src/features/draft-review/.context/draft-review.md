@@ -81,25 +81,37 @@ one change, one document, the draft, or the Work. It is sent through the command
 resends it under the same id until the server answers. Before each send the driver waits on
 `ready`: the server holds what this browser's copies of the press's rooms had
 (`registry.whenSentAcknowledged`), so the server presses what the writer saw. A press holds one
-lane per draft it presses (`press:<draft>`): a Work's press holds every draft the Changes list
-showed, so it goes after an Apply or Discard pressed earlier on any of them, and its Undo holds
-the same lanes. The rooms come from those lanes, with no read of the server: each draft's forks
-(only the named document's for a change or document) and their Live rooms. A copy with unsent
-words that the tab has no session for (after a reload) is opened so its Join sends them. A stuck
-room of another draft does not hold the press.
+lane per draft it presses (`press:<draft>`, from `pressDrafts`): a Work's press names in its body
+the drafts the Changes list showed, the server presses exactly those, and it holds their lanes, so
+it goes after an Apply or Discard pressed earlier on any of them; its Undo holds the same lanes.
+A press of another draft that never lands (the driver retrying a 5xx) therefore holds back a
+Work's press that names that draft too. The rooms come from those lanes, with no read of the
+server: each draft's forks (only the named document's for a change or document) and their Live
+rooms. A copy with unsent words that the tab has no session for (after a reload) is opened so its
+Join sends them. A stuck room of another draft does not hold the press.
+
+A press body is version 3. An unsent version 1 press migrates to a scope where one says the same.
+An unsent version 2 Work press named no drafts and held a `press:work:<id>` lane; the drafts its
+tab listed are not known offline, so it settles `never`: "Couldn't apply", and its rows come back.
 
 The Changes list, the chat strip and a page read the owner's draft list (`useOwnerDrafts`). It is
 re-read when the server wakes the owner (`useProjectWake`) and in each of the account's tabs when a
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
-and comes back with a pill if the press fails. In flight is the tab's own `DraftCommandOwner.hold`
-or, in every tab and through a reload, a journaled press not yet answered or not yet in a list
-read (`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). That follower also
-shows the "Couldn't apply" pill, once, for a press settled `never` since the tab opened, so a press
-that fails after a reload still says so.
+and comes back with a pill if the press fails. The journal is the one holder of what is in flight,
+in every tab and through a reload: a press not yet answered, or answered and not yet `observed`
+(`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). A press is observed once
+every draft list on screen in that tab has been read from the server since it settled
+(`whenDraftListsRead`): a read that failed keeps the rows held until one succeeds. The pressing
+tab also takes whole rows out of its cached list in the frame it presses, before the journal
+commits, so neither that gap nor a read already out shows them. The Work's review count leaves
+out what the journal holds (`changeCount`, `pressedDrafts` in `tree-version.tsx`), so its badges
+agree with the list. The follower also shows the "Couldn't apply" pill, once, for a press settled
+`never` since the tab opened, in a tab showing that press's project, so a press that fails after a
+reload still says so.
 
 In the Changes tab a draft's notice speaks only on its own section's rows: two drafts can hold one
 chapter, and applying one draft's leaves the other's row pending, without the first one's Undo. A
-Work's notice speaks on every section.
+Work's notice (`workNoticeKey`) speaks on every section.
 
 A press's Undo always runs, whatever was written since (design §2): every row it pressed comes
 back pending.
@@ -130,7 +142,7 @@ the draft first. A chat started while one of the Work's drafts is showing writes
 `AccountFeatureLifetime.draftCommands` (`DraftCommandOwner`) is shared by editor, chat and Work
 surfaces, and outlives them:
 
-- `hold(itemKeys, applying)` marks items in flight, which hides their rows.
+- `followPresses` holds the items of the journal's presses in flight, which hides their rows.
 - `presses` holds every press this tab can still take back (`PressEntries`,
   [state-machines.md](state-machines.md)). Its Ctrl+Z step goes into each editor showing one of
   its documents in Live or in a draft of the press's scope that lists it (`editorsOf`), so two

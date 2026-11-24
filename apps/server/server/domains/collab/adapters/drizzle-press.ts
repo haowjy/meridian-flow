@@ -158,7 +158,13 @@ export function createDrizzlePress(
             await tx()
               .select({ id: drafts.id })
               .from(drafts)
-              .where(and(eq(drafts.workId, scope.work as WorkId), isNull(drafts.deletedAt)))
+              .where(
+                and(
+                  eq(drafts.workId, scope.work as WorkId),
+                  inArray(drafts.id, scope.drafts),
+                  isNull(drafts.deletedAt),
+                ),
+              )
               .orderBy(asc(drafts.id))
           ).map((row) => row.id as DraftId);
     return ids.map((draft) => ({ draft, documents: "all", change: null, tree: "all" }));

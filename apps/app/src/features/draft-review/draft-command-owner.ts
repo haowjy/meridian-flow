@@ -1,15 +1,15 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`, and every press the journal holds unanswered, `followPresses`), the presses this tab
- * can still take back (`presses`), each turn's restore in a draft (`restore`) and one notice per
- * draft owner. The press itself is `usePressCommands`.
+ * (every press the journal holds unanswered, `followPresses`), the presses this tab can still take
+ * back (`presses`), each turn's restore in a draft (`restore`) and one notice per draft owner. The
+ * press itself is `usePressCommands`.
  */
 import { t } from "@lingui/core/macro";
 import type { CommandRecord } from "@meridian/command-driver";
 import { type DraftId, draftItemKey, parseDraftItemKey, type TurnId } from "@meridian/contracts";
 import { type PressBody, pressRooms } from "@/client/query/press-commands";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { type DiscardTook, DraftNotices } from "./draft-notices";
+import { type DiscardTook, DraftNotices, workNoticeKey } from "./draft-notices";
 import type { PressEntries } from "./press-history";
 
 type DraftCommandState = {
@@ -49,7 +49,6 @@ export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: Pres
 const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
 
 export class DraftCommandOwner {
-  private readonly records = new Map<string, DraftCommandState>();
   private journal: readonly JournalHold[] = [];
   private readonly opened = Date.now();
   private readonly reported = new Set<string>();
@@ -70,8 +69,6 @@ export class DraftCommandOwner {
   snapshot = () => this.revision;
 
   state(itemKey: string): DraftCommandState {
-    const held = this.records.get(itemKey);
-    if (held) return held;
     const draft = parseDraftItemKey(itemKey)?.draftId;
     const hold = this.journal.find((each) =>
       "item" in each ? each.item === itemKey : draft !== undefined && each.drafts.has(draft),
@@ -79,14 +76,20 @@ export class DraftCommandOwner {
     return hold?.state ?? EMPTY;
   }
 
+  /** Whether a press in flight takes all of the draft. */
+  holdsDraft(draft: string): boolean {
+    return this.journal.some((hold) => "drafts" in hold && hold.drafts.has(draft));
+  }
+
   /**
    * The account's journaled presses: one not answered yet, or answered and not yet in a list
-   * read, holds its items as `hold` does, so a reload or another tab shows them in flight too. A
-   * press of a change or a turn takes part of a document and holds nothing. One the server never
-   * took, since this tab opened, says so once, wherever it was pressed.
+   * read, holds its items in flight (hidden, so their rows and review leave), in every tab and
+   * through a reload. A press of a change or a turn takes part of a document and holds nothing.
+   * One the server never took, since this tab opened, says so once, in a tab showing its project
+   * (`shownProject`).
    */
-  followPresses(records: readonly CommandRecord[]) {
-    for (const record of records) this.reportFailure(record);
+  followPresses(records: readonly CommandRecord[], shownProject: string | null) {
+    for (const record of records) this.reportFailure(record, shownProject);
     const holds = records.flatMap((record): JournalHold[] => {
       if (record.state === "never" || (record.state === "done" && record.observed)) return [];
       const { scope, verdict } = record.body as Partial<PressBody>;
@@ -101,22 +104,15 @@ export class DraftCommandOwner {
     this.changed();
   }
 
-  /** Items a press has in flight: hidden, so their rows and review leave, until the release. */
-  hold(itemKeys: readonly string[], applying: boolean): () => void {
-    for (const itemKey of itemKeys) this.setState(itemKey, { hidden: true, applying });
-    return () => {
-      for (const itemKey of itemKeys) this.setState(itemKey, EMPTY);
-    };
-  }
-
-  private reportFailure(record: CommandRecord) {
+  private reportFailure(record: CommandRecord, shownProject: string | null) {
     if (record.state !== "never" || (record.settledAt ?? 0) < this.opened) return;
     if (this.reported.has(record.id)) return;
     this.reported.add(record.id);
-    const { scope, verdict } = record.body as Partial<PressBody>;
+    const { scope, verdict, projectId } = record.body as Partial<PressBody>;
+    if (projectId !== shownProject) return;
     const owner =
       scope?.kind === "work"
-        ? `work:${scope.work}`
+        ? workNoticeKey(scope.work)
         : scope?.kind === "draft" || scope?.kind === "turn"
           ? scope.draft
           : scope && parseDraftItemKey(scope.item)?.draftId;
@@ -160,14 +156,6 @@ export class DraftCommandOwner {
     this.revision++;
     for (const listener of this.listeners) listener();
   };
-
-  private setState(itemKey: string, state: DraftCommandState) {
-    const previous = this.state(itemKey);
-    if (previous.hidden === state.hidden && previous.applying === state.applying) return;
-    if (state.hidden || state.applying) this.records.set(itemKey, state);
-    else this.records.delete(itemKey);
-    this.changed();
-  }
 
   close() {
     this.notices.close();

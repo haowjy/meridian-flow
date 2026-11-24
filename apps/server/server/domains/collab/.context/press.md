@@ -13,8 +13,10 @@ Draft chat turn's restore, its card's `Undo turn`. There is no folder scope.
 scopes below, and `restore` takes only `{ kind: "turn", turn, draft }`. The route's schema is the same
 union, so a mismatched pair does not parse. A
 `change` or `document` scope names its document by `DraftItemKey`; `draft` names one draft;
-`work` takes every living draft of the Work, one after another in draft id order, each on Live as
-the one before left it. Every Work and root chat has its draft from its creation, so a press
+`work` takes the drafts it names that are still the Work's and living, one after another in draft
+id order, each on Live as the one before left it. It names them because the browser orders it after
+earlier presses of exactly those drafts: a draft added since the tab listed the Work waits for its
+own press. Every Work and root chat has its draft from its creation, so a press
 never makes one.
 
 - **The text half** runs first, per document of the draft in scope that has a fork row (a

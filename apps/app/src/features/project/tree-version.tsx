@@ -20,6 +20,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
 } from "react";
 import { enterScope } from "@/client/project-shell/document-views";
 import {
@@ -38,8 +39,9 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
+import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
-import { useAccountId } from "./context/account-feature-context";
+import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
 
 export type ShellTreeVersion = {
@@ -63,8 +65,13 @@ export type ShellTreeVersion = {
   name: string | null;
   /** The documents and folders the Work changes: marked in the tree on Live. Never a count. */
   changed: ReadonlySet<string>;
-  /** What the Work's review count says: its changed documents and folders, the Changes list's items. */
+  /**
+   * What the Work's review count says: its changed documents and folders, the Changes list's
+   * items, less those a press has in flight.
+   */
   changeCount: number;
+  /** The Work's drafts a press takes whole while it is in flight: they count none. */
+  pressedDrafts: ReadonlySet<string>;
   /** The Work's tree changes, when its list is open; null with no draft. */
   tree: WorkTreeChanges | null;
   /** The Work's draft of a document, which a click on Draft opens. */
@@ -92,7 +99,9 @@ export function reviewCount(shell: ShellTreeVersion | null, work: Work): number 
         sum +
         (draft.id === shell.draftId
           ? shell.changeCount
-          : draft.pendingDocumentCount + draft.pendingFolderCount),
+          : shell.pressedDrafts.has(draft.id)
+            ? 0
+            : draft.pendingDocumentCount + draft.pendingFolderCount),
       0,
     );
   return shell && shell.draftId === work.draftId
@@ -197,8 +206,24 @@ export function TreeVersionProvider({
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
   const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
   const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
-  // Documents from the server's pending drafts, folders from the replay.
-  const changeCount = (rows?.length ?? 0) + (tree?.folders.size ?? 0);
+  // Documents from the server's pending drafts, folders from the replay; a press in flight takes
+  // its rows out of the list, so the count agrees with it.
+  const commands = useDraftCommandOwner();
+  const waiting = (itemKey: string) => !commands.state(itemKey).hidden;
+  const count = () =>
+    (rows ?? []).filter((row) => waiting(row.itemKey)).length +
+    [...(tree?.folders ?? [])].filter((id) => listedDraft && waiting(folderKey(listedDraft, id)))
+      .length;
+  const changeCount = useSyncExternalStore(commands.subscribe, count, count);
+  const pressed = () =>
+    (workDrafts.drafts ?? [])
+      .flatMap((draft) => (commands.holdsDraft(draft.id) ? [draft.id] : []))
+      .join(",");
+  const pressedKey = useSyncExternalStore(commands.subscribe, pressed, pressed);
+  const pressedDrafts = useMemo(
+    () => new Set(pressedKey ? pressedKey.split(",") : []),
+    [pressedKey],
+  );
   // The nodes the tree marks on Live.
   const changed = useMemo(
     () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
@@ -246,6 +271,7 @@ export function TreeVersionProvider({
       name,
       changed,
       changeCount,
+      pressedDrafts,
       tree,
       draftOf: fileForDocument,
       show,
@@ -263,6 +289,7 @@ export function TreeVersionProvider({
       name,
       changed,
       changeCount,
+      pressedDrafts,
       tree,
       fileForDocument,
       show,
