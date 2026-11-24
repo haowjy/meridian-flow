@@ -516,6 +516,10 @@ msgstr "{name}（@{handle}）"
 msgid "{name} (in the trash)"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name} applied to Live."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} can't be changed."
 msgstr ""
@@ -538,6 +542,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "{name} is unavailable"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{name} matches Live. What you or the AI change in it shows here."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
@@ -1316,6 +1324,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Change"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Change applied to Live."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Change discarded."
 msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
@@ -4181,14 +4197,6 @@ msgstr ""
 msgid "Nothing to redo yet."
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Nothing to review in {name}."
-msgstr ""
-
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Nothing to review in this chat."
-msgstr ""
-
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."
 msgstr ""
@@ -5797,6 +5805,10 @@ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat's Agent"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This chat's draft matches Live. What you or the AI change in it shows here."
 msgstr ""
 
 #. placeholder {0}: naming.current(outcome.currentWork)

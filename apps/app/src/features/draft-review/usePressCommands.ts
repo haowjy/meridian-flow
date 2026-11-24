@@ -493,6 +493,7 @@ export function usePressCommands({
             projectId,
             draftId: noticeKey,
             surface: where,
+            change: scope.kind === "change",
             facts: changed.map((documentId) => ({
               documentId,
               kind: "applied" as const,
@@ -512,7 +513,7 @@ export function usePressCommands({
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
             name: input.name ?? named(input.documentId ?? first ?? ""),
-            scope: "draft",
+            scope: scope.kind === "change" ? "change" : "draft",
             ...(changed.length > 1 ? { count: changed.length } : {}),
             covers: changed,
             handle: {
