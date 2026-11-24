@@ -1,7 +1,3 @@
-/**
- * Thread list projection helpers: derive UI-facing lifecycle fields from the
- * canonical thread row plus logical-head/work joins. Shared by repository adapters.
- */
 import type { Thread, ThreadListItem } from "@meridian/contracts/threads";
 
 export interface ThreadListProjectionInput {

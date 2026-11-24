@@ -1,4 +1,3 @@
-/** Postgres: work that outlives its ambient transaction cannot reach the released connection. */
 import { createDb } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -12,7 +11,6 @@ if (!RUN || !DATABASE_URL) describe.skip("ambient transaction scope (postgres)",
 else
   describe("ambient transaction scope (postgres)", () => {
     it("refuses a rejected fan-out's late query instead of running it in the next transaction", async () => {
-      // One connection, so the next transaction is the one that takes the released connection.
       const db = createDb(DATABASE_URL, { max: 1 });
       try {
         let late: Promise<unknown> = Promise.resolve();

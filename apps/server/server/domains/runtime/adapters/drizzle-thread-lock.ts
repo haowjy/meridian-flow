@@ -1,13 +1,3 @@
-/**
- * PostgreSQL adapter for the per-thread inbox lock. The transaction-scoped
- * advisory lock is held only for the short critical section (a claim or an
- * enqueue), never across a model call or a tool. The thread's own held ask rows
- * lock first, so no ask transition under the lock waits on an ask row. A
- * transaction that already holds a thread lock skips ask rows someone else holds
- * instead of waiting: that holder may be waiting on the lock it holds.
- * Outside production it asserts that only lineage cancellation takes a second
- * thread's lock.
- */
 import type { Database } from "@meridian/database";
 import {
   getDrizzleTransactionLocal,
@@ -37,11 +27,6 @@ export function createDrizzleThreadLock(
 const lockedThreads = {};
 const assertLockOrder = process.env.NODE_ENV !== "production";
 
-/**
- * Records this transaction's thread lock; true when it already holds one. A reentrant lock of the
- * same thread counts: a row someone asked for since the first lock is held by a transaction that
- * may be waiting on that lock.
- */
 function noteThreadLock(threadId: string): boolean {
   let locked = getDrizzleTransactionLocal<Set<string>>(lockedThreads);
   if (!locked) {

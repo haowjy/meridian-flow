@@ -1,10 +1,3 @@
-/**
- * Route core for authenticated review of a draft: the list, the per-document hints, and
- * the press (Apply or Discard) with its Undo. A command carries a client `commandId`: the route
- * looks it up first (a resend gets its stored answer), builds the digest envelope, and maps the
- * service's errors to HTTP. Nothing here decides an effect.
- */
-
 import type { CommandId, DraftId } from "@meridian/contracts";
 import { draftItemKey, isDraftId, parseDraftItemKey } from "@meridian/contracts";
 import { CommandIdSchema } from "@meridian/contracts/commands";
@@ -63,15 +56,6 @@ async function requireProjectOwned(
   }
 }
 
-/**
- * The draft a request names, of this project. A deleted Work's draft still reads until the Work
- * is purged, which deletes the draft: it stays picked, with Restore.
- */
-/**
- * The draft, if it is this project's. A browser mints a draft id with the Work or chat it creates
- * and reads its list before the create lands, so a list answers an id not stored yet as empty
- * (`stored: false`); a press needs the stored draft.
- */
 async function draftOfProject(
   deps: Pick<DraftRouteServices, "projects" | "documentSync">,
   input: { projectId: ProjectId; draft: string; userId: UserId },
@@ -84,9 +68,6 @@ async function draftOfProject(
   return { draft: input.draft, stored: found !== null };
 }
 
-// --- Request bodies ----------------------------------------------------------------------------
-
-/** A tree list's Loro version vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
 const VectorBody = z.base64().transform((value, context) => {
   const bytes = new Uint8Array(Buffer.from(value, "base64"));
   try {
@@ -102,7 +83,6 @@ const SawBody = z.strictObject({
   project: ScopeCutBody.optional(),
   account: ScopeCutBody.optional(),
 });
-/** A shown Live version, decoded here once: one that isn't a `RoomVersion` is a 400. */
 const RoomVersionBody = z.base64().transform((value, context) => {
   try {
     return decodeRoomVersion(new Uint8Array(Buffer.from(value, "base64")));
@@ -119,7 +99,6 @@ const pressFields = {
     .max(2000)
     .optional(),
 };
-/** `PressRequest`: a verdict and the scopes it takes, so no other pair parses. */
 const PressBody = z.union([
   z.strictObject({
     ...pressFields,
@@ -159,8 +138,6 @@ function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: strin
   return parsed.data;
 }
 
-// --- Reads -------------------------------------------------------------------------------------
-
 export async function handleDraftListRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; draft: string; userId: UserId },
@@ -168,13 +145,10 @@ export async function handleDraftListRequest(
   const { draft, stored } = await draftOfProject(deps, input);
   if (!stored) return { items: [], folders: [], saw: {} };
   const listed = await deps.documentSync.draftReview.listItems({ draft });
-  // Readable in the draft's view, where its created documents are (file-access §6); a
-  // document deleted live is no longer readable anywhere, but stays the draft's item.
   const readable = await deps.fileAccess.listAccess(
     { accountId: input.userId },
     listed.items.map((item) => item.documentId),
     {
-      // A document the draft deletes is gone from its view; it is read where it still is.
       draftViews: new Map(
         listed.items
           .filter((item) => !item.tree?.deleted)
@@ -182,8 +156,6 @@ export async function handleDraftListRequest(
       ),
     },
   );
-  // A broken proposed placement must not erase a pending fact. Existing documents retain
-  // their stable live-source authority even when the draft view cannot resolve an ancestor.
   const liveReadable = await deps.fileAccess.listAccess(
     { accountId: input.userId },
     listed.items.filter((item) => !item.isNew).map((item) => item.documentId),
@@ -198,11 +170,6 @@ export async function handleDraftListRequest(
   };
 }
 
-/**
- * Which active drafts in the project have changes to one live document, from any view. It
- * authorizes like the review routes: the project owner, and a read grant on the document
- * (a document the writer cannot read gets an empty answer, not a hint of its drafts).
- */
 export async function handleDocumentDraftHintsRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; documentId: DocumentId; userId: UserId },
@@ -228,7 +195,6 @@ export async function handleDocumentDraftHintsRequest(
   };
 }
 
-/** What the draft's row does to the document's placement, for the draft notice on live. */
 async function pendingTreeChange(
   deps: DraftRouteServices,
   draft: DocumentDraftOrigin,
@@ -287,11 +253,6 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-/**
- * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, or a
- * Draft chat turn's restore in one draft, one command (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and
- * the drafts, and the press writes only those drafts' changes.
- */
 export async function handlePressRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
@@ -324,7 +285,6 @@ export async function handlePressRequest(
   );
 }
 
-/** A draft the scope names, which says whose project it is: a Work's is its default. */
 async function draftNamed(deps: DraftRouteServices, scope: PressAction["scope"]): Promise<string> {
   if (scope.kind === "turn") return scope.draft;
   if (scope.kind === "change" || scope.kind === "document") {
@@ -338,7 +298,6 @@ async function draftNamed(deps: DraftRouteServices, scope: PressAction["scope"])
   return first.id;
 }
 
-/** Take back one press, both halves: the press's own records say what it did. */
 export async function handlePressUndoRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
@@ -374,11 +333,6 @@ function pressEnvelope(
   };
 }
 
-/**
- * A resend's answer from what the first request left: its stored result, or null to run it.
- * The command driver reads any 2xx as the command's result, so a first request still running is
- * a 503 it sends again after, and an id stored for something else is the routes' 409.
- */
 function storedAnswer<R extends { status: string }>(
   first: CommandLookup | { kind: "running" },
   commandId: string,

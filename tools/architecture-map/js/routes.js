@@ -1,12 +1,3 @@
-/*
- * How a level's arrows run between the boxes where they are now, a drag included, and where their
- * labels go. layout.js says how an arrow was meant to run (along the row, arcing over or under it,
- * or wrapping to the next row); while its two boxes still sit that way it runs so, and otherwise it
- * curves from the sides that face each other. Labels never cover a box or another label: a
- * numbered one tries places along its arrow, a side one that finds no room is left out (the panel
- * lists every arrow). No DOM.
- */
-
 const ALONG = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82];
 const ROUND = 10;
 const WRAP_CLEAR = 24;
@@ -24,7 +15,6 @@ function facing(S, T) {
   return cx(T) > cx(S) ? ["right", "left"] : ["left", "right"];
 }
 
-/** How an arrow from box S to box T runs now: { kind, sides }, kind "line" | "arc" | "wrap" | "curve". */
 function shapeOf(S, T, hint) {
   const sameRow = Math.abs(cy(S) - cy(T)) < Math.max(S.h, T.h) / 2;
   if (hint?.kind === "row" && sameRow)
@@ -41,7 +31,6 @@ function shapeOf(S, T, hint) {
   return { kind: "curve", sides: facing(S, T) };
 }
 
-/** Spreads the arrows that leave one side of a box along it, in the order of where they go. */
 function assignPorts(lines, rects) {
   const groups = new Map();
   lines.forEach((line, i) => {
@@ -103,7 +92,6 @@ function roundedPath(points) {
   return `${d} L ${last.x} ${last.y}`;
 }
 
-/** The SVG path of one arrow and the points along it that its label may sit on. */
 function draw(line, rects) {
   const [p0, p3] = line.ports;
   const { shape } = line;
@@ -128,7 +116,6 @@ function draw(line, rects) {
   let c2;
   if (shape.kind === "arc") {
     const base = shape.up ? Math.min(p0.y, p3.y) : Math.max(p0.y, p3.y);
-    // A cubic's middle sits three quarters of the way to its control points.
     const y = base + ((shape.up ? -1 : 1) * shape.depth) / 0.75;
     [c1, c2] = [
       { x: p0.x, y },
@@ -151,7 +138,6 @@ function draw(line, rects) {
   };
 }
 
-/** Whether segment a–b passes through `rect` (Liang–Barsky clipping). */
 function segmentHits(a, b, rect) {
   let [t0, t1] = [0, 1];
   const [dx, dy] = [b.x - a.x, b.y - a.y];
@@ -204,12 +190,6 @@ function pointAlong(points, fraction) {
   };
 }
 
-/**
- * Draws a level as its boxes stand. `rects` maps id → { x, y, w, h }; `edges` are the parsed
- * arrows and `hints` how layout.js meant each to run (by index); `noteLinks` join notes to boxes;
- * `labelSize(edge)` → { width, height }; `labelled(i)` says whether arrow i shows its label.
- * Returns { arrows: [{ d, label: { x, y, w, h } | null }], links: [{ d }], bounds }.
- */
 export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled }) {
   const lines = [
     ...edges.map((e, i) => ({
@@ -235,8 +215,6 @@ export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled
     .map((_, i) => i)
     .filter((i) => edges[i].label && labelled(i))
     .sort((a, b) => (edges[a].step ?? Infinity) - (edges[b].step ?? Infinity) || a - b);
-  // A label goes where it covers no box, no other label and, if it can, no other arrow (its twin
-  // between the same two boxes aside).
   const pair = (k) => [...lines[k].ids].sort().join(">");
   const crosses = (rect, j) =>
     drawn.some(
@@ -246,8 +224,6 @@ export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled
     );
   for (const i of order) {
     const { width: w, height: h } = labelSize(edges[i]);
-    // Of two arrows side by side, each label leans to its own side, leaving the middle free; a
-    // vertical pair stacks its labels on the side facing the drawing, so neither juts out of it.
     const { off, nx } = drawn[i].start;
     const pairX = (cx(rects.get(edges[i].from)) + cx(rects.get(edges[i].to))) / 2;
     const lean = Math.sign(off);

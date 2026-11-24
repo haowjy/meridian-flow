@@ -1,4 +1,3 @@
-/** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import {
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
@@ -31,23 +30,18 @@ export interface AgentThreadTurnContext {
 export interface ResolveAgentThreadTurnContextInput {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
-  /** The one place a turn reads the binding also moves a chat off a model that left. */
   agentCatalog: Pick<BoundAgentCatalog, "followRemovedModel">;
-  /** Walks the spawn lineage for the chain's permission. */
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   toolRegistry: ToolRegistry;
   baseTools: Tool[] | undefined;
 }
 
-/** Mandatory closing instruction for subagent threads; owns the prompt's last layer. */
 export const SUBAGENT_GUIDANCE =
   "You are a subagent. Do the task, making reasonable calls where it leaves choices open, and finish by calling return_result with a report for your parent that says what you assumed. If you can't do it, stop and report what is missing.";
 
-/** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
 const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only scratch://.";
 
-/** An Agent's model and level as the gateway's request carries them. */
 export function agentGatewayMetaToGenerateParams(
   meta: Pick<ResolvedAgentConfiguration, "model" | "effort">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
@@ -77,7 +71,6 @@ export async function resolveAgentThreadTurnContext(
     projectToolPolicy(binding.configuration, input.thread.kind),
     binding,
   );
-  // return_result is unadvertised in the registry; the policy adds it for subagents.
   const report = input.toolRegistry.getRegistration("return_result")?.definition;
   const tools = advertiseTools(
     [...(input.baseTools ?? []), ...(report ? [report] : [])],
@@ -108,11 +101,6 @@ export async function resolveAgentThreadTurnContext(
   };
 }
 
-/**
- * A thread that can see no skill isn't offered `skill`. It reads only
- * the binding already in hand, so an agent whose listed skills are all hidden
- * from the model keeps the tool and gets a refusal instead.
- */
 function withoutSkillToolWhenNoSkills(
   policy: ToolPolicy,
   binding: Parameters<typeof bindingNamesSkills>[0],
@@ -121,7 +109,6 @@ function withoutSkillToolWhenNoSkills(
   return new Set([...policy].filter((tool) => tool !== "skill"));
 }
 
-/** A root thread needs no lineage walk; a child is `read` when any spawner is. */
 async function chainIsReadOnly(
   input: ResolveAgentThreadTurnContextInput,
   own: ResolvedAgentConfiguration["permission"],

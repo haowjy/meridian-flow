@@ -1,5 +1,3 @@
-/** The Meridian Markdown card baked into every model system prompt: only what the model can't already know. */
-
 export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "# Meridian Markdown",
   "",

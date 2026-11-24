@@ -1,4 +1,3 @@
-/** Withdrawal and reservation serialize at the domain's thread boundary. */
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
 import { ThreadControlError } from "../../../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

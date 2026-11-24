@@ -1,4 +1,3 @@
-/** Linear RGB colours of the landing page's WebGL sky, which CSS tokens can't reach. */
 export type LinearRgb = readonly [number, number, number];
 
 export const MARKETING_SKY = {
@@ -23,5 +22,4 @@ export const MARKETING_SKY = {
   fireChar: [0.012, 0.012, 0.014],
 } as const satisfies Record<string, LinearRgb>;
 
-/** `--mkt-night` as hex, for the browser's own chrome. Mirrored in www's `site.webmanifest`. */
 export const MARKETING_THEME_COLOR = "#010a0b";

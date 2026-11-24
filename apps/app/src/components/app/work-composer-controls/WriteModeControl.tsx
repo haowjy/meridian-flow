@@ -1,12 +1,3 @@
-/**
- * The AI write-mode control for composers: a chat's mode in an existing chat,
- * the selected Work's default in a new one.
- *
- * Choosing a mode is the writer's whole action: no dialog. The caller owns what
- * the choice does (queue a switch, or remember it for the first send), so the
- * control shows a value and reports a choice. The chip says the mode and nothing
- * else; the strip above the composer counts what waits in drafts.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -32,7 +23,6 @@ export function useWriteModeToolbarControl({
   return {
     kind: "panel",
     id: "write-mode",
-    // How the AI will write is what the writer must see before sending, so it folds last.
     priority: 400,
     interaction: "enabled",
     item: {

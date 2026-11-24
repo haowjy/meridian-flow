@@ -1,8 +1,3 @@
-/**
- * Session against a running stack: origin discovery, the optional `MF_COOKIE`, and
- * bounded requests to the app's own API. A local stack with `DEV_AUTH_BYPASS=1` needs
- * no cookie.
- */
 import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
 import https from "node:https";
@@ -18,12 +13,10 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type RequestOptions = {
   timeoutMs?: number;
   maxResponseBytes?: number;
-  /** Closes the request when aborted, so a read left running cannot hold the process open. */
   signal?: AbortSignal;
   rawBody?: { bytes: Uint8Array; contentType: string };
 };
 
-/** A decoder owns the entire response body and returns only the evidence it checked. */
 export type ResponseDecoder<T> = (body: string, request: string) => T;
 
 export const textResponse: ResponseDecoder<string> = (body) => body;
@@ -41,7 +34,6 @@ export const unknownJsonResponse: ResponseDecoder<unknown> = (body, request) => 
       malformedResponse: true,
     });
   }
-  // Many routes answer through serializeTransport; callers see the bare value.
   return deserializeTransport(parsed);
 };
 
@@ -77,7 +69,6 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 const STACK_HINT = "Start this worktree's stack with `pnpm dev`, then retry.";
 
-/** Says why the stack is gone when it stopped itself for being idle. */
 function stackHint(repoRoot: string): string {
   const stopped = readIdleStopRecord(repoRoot);
   return stopped ? `${stopped} Then retry.` : STACK_HINT;
@@ -172,7 +163,6 @@ function connectionError(url: URL, error: Error): CliError {
   });
 }
 
-/** Maps a non-2xx API response onto the exit-code contract. */
 export function httpError(method: string, requestPath: string, response: RawResponse): CliError {
   let message = response.body.slice(0, 400);
   let details: unknown;
@@ -255,10 +245,6 @@ function resolvePortlessServerOrigin(repoRoot: string): string {
   }
 }
 
-/**
- * MF_SERVER_URL targets an explicit stack; otherwise the current worktree's Portless
- * server route is discovered. MF_COOKIE is sent when set.
- */
 export async function openSession(input: {
   repoRoot: string;
   env: NodeJS.ProcessEnv;

@@ -131,7 +131,6 @@ async function setup(
   options: {
     onStream?: (call: number) => Promise<void>;
     results?: GenerateResult[];
-    /** Seeds a skill the catalog resolves so `/skill` activation can resolve a body. */
     skill?: { slug: string; name: string; description: string; body: string };
     referenceReader?: ReferenceReader;
     child?: boolean;
@@ -352,12 +351,6 @@ describe("inbox drain", () => {
       expect(renderedHistory).toContain("Show, do not tell.");
     }
 
-    // The model still sees the body merged into the steer's own message, but
-    // the body is never a block on the writer's own turn: it lives on a
-    // separate, hidden `system`-role turn chained right after it. Anything
-    // that projects a user turn's text (`UserTurn.tsx`'s `projectUserTurn`,
-    // chat previews, fork/handoff copies) reads only the writer's own turns,
-    // so a body block placed there would leak into the writer's own bubble.
     const turns = await repos.turns.listByThread(thread.id);
     const userTurns = turns.filter((turn) => turn.role === "user");
     expect(userTurns.length).toBeGreaterThan(0);
@@ -667,14 +660,11 @@ describe("inbox drain", () => {
 
     expect(requests).toHaveLength(2);
     expect(messageTexts(requests[0].messages)).toContain("carry me");
-    // The message was acked at the end of iteration 1; iteration 2 only sees it
-    // because it persisted as a user-role turn, not as a request-only render.
     expect(messageTexts(requests[1].messages)).toContain("carry me");
 
     const turns = await repos.turns.listByThread(thread.id);
     const messageTurn = turns.find((turn) => turn.id === carried.id);
     expect(messageTurn?.role).toBe("user");
-    // A writer message is the writer's own turn, not a hidden inbox delivery.
     expect(messageTurn?.metadata).toBeNull();
     const blocks = await repos.blocks.listByTurn(messageTurn?.id as string);
     expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);

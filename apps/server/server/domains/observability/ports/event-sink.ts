@@ -1,9 +1,3 @@
-/**
- * EventSink port: structured, JSON-natural observability records for logs, errors,
- * traces, and domain signals. Adapters (local stdout/JSONL, in-memory, future
- * Postgres) implement this boundary; callers depend on the port, not a backend.
- */
-
 import type { EventRecord } from "@meridian/contracts/observability";
 
 export type {
@@ -14,12 +8,7 @@ export type {
   TraceStreamRef,
 } from "@meridian/contracts/observability";
 
-/**
- * Unified emission port. Every observable signal funnels through one sink
- * so dev (local stdout/JSONL) and prod swaps stay at the composition root.
- */
 export interface EventSink {
-  /** Implementations are best-effort and must never throw into the caller. */
   emit(event: EventRecord): void;
   emitBatch(events: EventRecord[]): void;
   flush(): Promise<void>;

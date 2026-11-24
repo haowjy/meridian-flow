@@ -12,13 +12,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
-/**
- * The line a command leaves where it happened: what was done, the way to take it back, and
- * Dismiss ("Chapter 3 deleted. Undo ×"), with no separator glyph between them. A sentence with a name keeps to one line, the name
- * shortening; one without wraps. An Undo that failed takes the line's place as
- * `InlineErrorRow`, so its message names what failed. The caller owns when it shows, what Undo
- * does and where focus first goes; the caller places the line in its host (`className`).
- */
 export function ActionNotice({
   sentence,
   name,
@@ -28,7 +21,6 @@ export function ActionNotice({
   className,
   ...rest
 }: {
-  /** With `name`, a template for it, so the name's part can shorten and the verb stays whole. */
   sentence: string | ((name: string) => string);
   name?: string | null;
   action?: {
@@ -44,17 +36,12 @@ export function ActionNotice({
   const line = useRef<HTMLDivElement>(null);
   const holdsFocus = useRef(false);
   const failed = Boolean(failure);
-  // A control that unmounts drops focus to the page or a container around the line: switching
-  // between the notice and its failure, or a row that stood in while Undo ran. Focus that was on
-  // the line, and focus a failure finds dropped, goes to the line's first control (Undo, else
-  // Retry, else Dismiss).
   useEffect(() => {
     const element = line.current;
     if (!element) return;
     const enter = () => {
       holdsFocus.current = true;
     };
-    // A removed control blurs with no next target: the line still holds focus.
     const leave = (event: FocusEvent) => {
       if (event.relatedTarget instanceof Node && !element.contains(event.relatedTarget))
         holdsFocus.current = false;
@@ -110,8 +97,7 @@ export function ActionNotice({
   );
 }
 
-// Stands in for the name while splitting the template, so a name that also occurs in the
-// sentence's own words ("Del" in "Deleted Del") can't be cut in the wrong place.
+// keep: NAME_SLOT is a sentinel; splitting on the name itself would cut a name that occurs in the sentence
 const NAME_SLOT = "\u0000";
 
 function Sentence({
@@ -123,7 +109,6 @@ function Sentence({
 }) {
   const text = typeof sentence === "string" ? sentence : sentence(name ?? "");
   const parts = typeof sentence === "string" || !name ? null : sentence(NAME_SLOT).split(NAME_SLOT);
-  // With no name to shorten, the sentence wraps: what it says is never only in a hover title.
   if (parts?.length !== 2) return <span className="min-w-0 flex-1 text-pretty">{text}</span>;
   return (
     <span className="flex min-w-0 flex-1 whitespace-pre" title={text}>

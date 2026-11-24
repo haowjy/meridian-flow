@@ -1,5 +1,3 @@
-/** Resolves the owner thread of a fork's cutoff turn. */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
 

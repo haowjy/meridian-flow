@@ -1,4 +1,3 @@
-/** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import { newDraftId } from "@meridian/contracts";
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -19,7 +18,6 @@ import type {
 import { WorkLockedError } from "../../ports/work-repository.js";
 import { NO_WORK_NAME } from "./shared.js";
 
-/** In-memory {@link WorkRepository} for tests. */
 export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
   const rows = new Map<string, Work>();
   const projects = new Map<string, { revision: bigint }>();

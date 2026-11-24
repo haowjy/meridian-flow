@@ -1,4 +1,3 @@
-/** PostgreSQL chat-feed contracts for literal search and composed filter pagination. */
 import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { expect } from "vitest";
 import type { ThreadRepositories } from "../../ports/repositories.js";
@@ -7,7 +6,6 @@ export type ChatFeedConformanceHarness = {
   repos: Pick<ThreadRepositories, "threads" | "threadUserState" | "threadWorks" | "chatFeed">;
   projectId: string;
   userId: string;
-  /** Returns a Work id valid as a primary-membership target in this project. */
   createWork(): Promise<string>;
 };
 
@@ -41,10 +39,6 @@ async function pageIds(
   return page.map((item) => item.id);
 }
 
-/**
- * ILIKE metacharacters (`%`, `_`, `\`) in the writer's query match literally,
- * CJK titles are found by substring, and matching case-folds.
- */
 export async function expectChatFeedSearchSemanticsContract(
   h: ChatFeedConformanceHarness,
 ): Promise<void> {
@@ -68,7 +62,6 @@ export async function expectChatFeedSearchSemanticsContract(
   expect(await pageIds(h, { search: "SECT" })).toEqual([caseFold]);
 }
 
-/** A cursor minted while a filter was active pages correctly under that same filter. */
 export async function expectChatFeedCursorAcrossFilterContract(
   h: ChatFeedConformanceHarness,
 ): Promise<void> {
@@ -112,7 +105,6 @@ export async function expectChatFeedCursorAcrossFilterContract(
   expect(secondPage.map((item) => item.id)).toEqual(expectedOrder.slice(2));
 }
 
-/** Work membership composes with the Project feed's search, favorite, and cursor filters. */
 export async function expectChatFeedWorkFilterContract(
   h: ChatFeedConformanceHarness,
 ): Promise<void> {

@@ -1,18 +1,9 @@
 #!/usr/bin/env bun
-/**
- * Runs every self-contained database probe, `tools/qa/probes/<name>/run.mts`, one after another and
- * exits nonzero if any fails or hangs. Each creates, migrates and drops what it needs, so a file
- * named `run.mts` must need no browser, model or running stack. CI runs this after the DB suite;
- * locally it needs `pnpm dev:infra`.
- *
- *   pnpm test:probes [probe-dir ...]
- */
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Slowest probe is about 35 s; a probe past this is hung on a lock or an open handle. */
 const PROBE_TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 300_000);
 
 const probesDir = join(dirname(fileURLToPath(import.meta.url)), "probes");
@@ -28,17 +19,11 @@ if (unknown.length)
   throw new Error(`Unknown probe ${unknown.join(", ")}; one of ${available.join(", ")}`);
 const probes = requested.length ? available.filter((name) => requested.includes(name)) : available;
 
-/**
- * Exit status, or "timeout" after killing the probe. The probe is one node process (no pnpm or
- * tsx wrapper to leave behind), so killing the child kills everything it started. It runs on Node
- * though the runner is Bun: the probes import server code.
- */
 function runProbe(name: string): Promise<number | "timeout"> {
   return new Promise((resolve) => {
     const child = spawn("node", ["--import", "tsx", join(probesDir, name, "run.mts")], {
       stdio: "inherit",
     });
-    // An interrupt of the runner alone (a CI cancel, a command timeout) would orphan the probe.
     const forward = (signal: NodeJS.Signals) => {
       child.kill(signal);
       child.once("exit", () => process.exit(1));

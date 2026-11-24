@@ -18,7 +18,6 @@ import { actionPolicy } from "./permissions/action-policy.js";
 import { type AgentChain, chainPermission, readAgentChain } from "./permissions/agent-chain.js";
 
 __mergedSuite("action-policy.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/permissions/action-policy.test.ts.
   function chain(...permissions: AgentPermission[]): AgentChain {
     return permissions.map((permission, index) => ({
       threadId: `thread-${index}` as ThreadId,
@@ -41,7 +40,6 @@ __mergedSuite("action-policy.test.ts", () => {
 });
 
 __mergedSuite("agent-chain.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/permissions/agent-chain.test.ts.
   function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
     return {
       model: "m",
@@ -118,7 +116,6 @@ __mergedSuite("agent-chain.test.ts", () => {
 });
 
 __mergedSuite("tool-policy.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/permissions/tool-policy.test.ts.
   const PRIMARY_DEFAULT = [
     "ask_user",
     "ls",

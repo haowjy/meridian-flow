@@ -1,11 +1,3 @@
-/**
- * The stable target a stored internal link (or `image`/`figure` source) carries.
- *
- * A ref lives only on the stored ProseMirror attrs: it never appears in
- * Markdown, HTML, MDX, export, URIs or anything the model reads. A document
- * ref names the document itself; an ahead ref is minted for an address where
- * no document is yet and settles on the first one to arrive there.
- */
 import { parseContextUri } from "./context-uri.js";
 import type { FolderId } from "./ids.js";
 import {
@@ -27,12 +19,7 @@ export type ParsedLinkRef =
 
 const REF = /^(doc|folder|ahead):(.*)$/s;
 
-/**
- * Null for null, the empty string, and anything malformed (never throws).
- * Document and ahead ids are Postgres UUIDs, so the id must be a canonical
- * UUID (normalized to lowercase); this is the one boundary that keeps
- * untrusted clipboard or wire refs from reaching a lookup.
- */
+// keep: parseLinkRef is the untrusted-ref boundary; ids must be canonical UUIDs normalized to lowercase
 export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   if (typeof value !== "string") return null;
   const match = REF.exec(value);
@@ -43,13 +30,6 @@ export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   return { kind: "ahead", aheadId: id };
 }
 
-/**
- * A stored `ref` attr as every reader takes it (codec, occurrence walks, room
- * extraction, the editor): null only when absent or empty, else the attr as
- * stored. A present malformed ref stays a ref, so `resolveStoredLink` answers
- * it gone instead of whatever sits at its address; `parseLinkRef` still
- * guards every lookup.
- */
 export function storedLinkRef(value: unknown): string | null {
   return value === null || value === undefined || value === "" ? null : String(value);
 }
@@ -66,12 +46,10 @@ export function folderRef(folderId: FolderId): FolderRef {
   return `folder:${parsed.folderId}`;
 }
 
-/** `ahead:` + crypto.randomUUID(). The only minting function, server and client. */
 export function mintAheadRef(): AheadRef {
   return `ahead:${crypto.randomUUID()}`;
 }
 
-/** A canonical codec name with a non-dot stem, admissible in the ahead registry. */
 export function isAheadFilename(filename: string): boolean {
   return (
     !filename.includes("/") &&
@@ -81,10 +59,6 @@ export function isAheadFilename(filename: string): boolean {
   );
 }
 
-/**
- * Mint at the codec's canonical name. Dots-only names stay literal. Sources
- * still need a written extension: extensionless uploads cannot settle them.
- */
 export function aheadAddress(uri: string, kind: "link" | "source"): string | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok || !parsed.value.path) return null;

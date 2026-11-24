@@ -1,5 +1,3 @@
-/** Test doubles for browser file objects. */
-
 export function pickedFile(relativePath: string, content: string | Uint8Array): File {
   const file = new File([content as BlobPart], relativePath.split("/").at(-1) ?? relativePath);
   Object.defineProperty(file, "webkitRelativePath", { value: relativePath });
@@ -10,7 +8,6 @@ type FakeNode =
   | { name: string; content: string | Uint8Array; broken?: boolean }
   | { name: string; children: FakeNode[]; broken?: boolean };
 
-/** A directory entry that hands out its children `batch` at a time, as browsers do. */
 export function fakeDirectory(
   node: FakeNode & { children: FakeNode[] },
   batch = 2,

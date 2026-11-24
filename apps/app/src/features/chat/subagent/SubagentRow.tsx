@@ -1,4 +1,3 @@
-/** Shared anatomy for subagent identity, state, detail, disclosure, and navigation. */
 import type { ReactNode } from "react";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
@@ -7,7 +6,6 @@ import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentMark } from "./SubagentMark";
 
-/** Lines under a subagent row start at its name: past the fold's chevron slot, the mark and the gap. */
 export const subagentBodyIndent = "pl-[calc(2.5rem+var(--chat-space-inline))]";
 
 export function SubagentIdentity({
@@ -19,9 +17,7 @@ export function SubagentIdentity({
 }: {
   run: SubagentRun;
   size?: "row" | "card";
-  /** Replaces the agent name, e.g. an aggregate count. */
   agentLabel?: ReactNode;
-  /** Whether the run's task name follows the agent name. */
   showName?: boolean;
   afterName?: ReactNode;
 }) {
@@ -64,8 +60,6 @@ export function SubagentIdentity({
 
 export function SubagentIdentityName({ run }: { run: SubagentRun }) {
   return (
-    // The agent name is the identity: the task name gives way first, and the agent name
-    // truncates only past half the row.
     <span className="max-w-[50%] shrink-0 truncate text-sm font-medium text-foreground">
       {resolveSubagentName({ agentName: run.agentName })}
     </span>
@@ -95,11 +89,6 @@ export function SubagentToolLine({
   );
 }
 
-/**
- * Row owns the identity/control layout; detail content is indented to the name.
- * Bare rows pack controls against the text. A card's border binds its controls
- * to the row, so a card row spans its width and ends in them.
- */
 export function SubagentRow({
   run,
   identity: identityOverride,
@@ -115,7 +104,6 @@ export function SubagentRow({
   className,
 }: {
   run: SubagentRun;
-  /** Specialized writer-facing copy can replace the standard name/detail identity. */
   identity?: ReactNode;
   size?: "row" | "card";
   expanded?: boolean;
@@ -123,7 +111,6 @@ export function SubagentRow({
   expandable?: boolean;
   door?: boolean;
   threadIds?: string;
-  /** Row controls before the door, e.g. a running child's Stop. */
   trailing?: ReactNode;
   detail?: ReactNode;
   children?: ReactNode;
@@ -133,8 +120,6 @@ export function SubagentRow({
   const fill = size === "card" && "flex-1";
   const identity = identityOverride ?? <SubagentIdentity run={run} size={size} />;
   const line = <span className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</span>;
-  // Every row keeps the fold's chevron slot, so the mark holds its x whether the row folds or
-  // not, and a card that finishes and becomes foldable doesn't shift.
   const lead = <span aria-hidden className="w-3 shrink-0" />;
   return (
     <div className={cn("min-w-0", className)}>

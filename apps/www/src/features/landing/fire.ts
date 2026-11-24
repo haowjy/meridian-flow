@@ -2,12 +2,9 @@ import { MARKETING_SKY as C } from "@meridian/design-tokens/marketing-sky";
 import { coverCanvas, linkProgram, NOISE, vec3 } from "./sky";
 
 export type FireFrame = {
-  /** Where the jet starts and where it points, in stage pixels from the top left. */
   mouth: readonly [number, number];
   aim: readonly [number, number];
-  /** 0 is no jet, 1 is full breath. */
   breath: number;
-  /** How far right the fire has burnt, in stage heights. */
   char: number;
   time: number;
 };
@@ -91,7 +88,6 @@ void main(){
   gl_FragColor=out_c;
 }`;
 
-/** The dragon's breath and the burn, over the stage: the night it burns away is a still of the sky. */
 export function createFire(canvas: HTMLCanvasElement) {
   const gl = canvas.getContext("webgl", {
     alpha: true,
@@ -131,7 +127,7 @@ export function createFire(canvas: HTMLCanvasElement) {
       gl.viewport(0, 0, width, height);
       gl.uniform2f(u.R, width, height);
     },
-    /** Call in the same task as the sky's draw: a WebGL canvas clears once the frame is shown. */
+    // keep: call in the same task as the sky's draw: a WebGL canvas clears once the frame is shown
     keepNight(sky: HTMLCanvasElement) {
       gl.activeTexture(gl.TEXTURE0);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sky);
@@ -140,7 +136,6 @@ export function createFire(canvas: HTMLCanvasElement) {
       gl.activeTexture(gl.TEXTURE1);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, words);
     },
-    /** A pass with nothing to show leaves the canvas cleared, and costs nothing after that. */
     draw(frame: FireFrame | null) {
       if (!frame) {
         if (inked) gl.clear(gl.COLOR_BUFFER_BIT);

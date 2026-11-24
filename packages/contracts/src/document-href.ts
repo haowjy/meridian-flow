@@ -1,5 +1,3 @@
-/** Resolve and spell standard Markdown link hrefs against Context URIs. */
-
 import {
   formatParsedContextUri,
   type ParsedContextUri,
@@ -26,8 +24,6 @@ export function resolveDocumentHref(
   const kind = rawPath.endsWith("/") ? "folder" : "document";
   const path = decodePath(kind === "folder" ? rawPath.slice(0, -1) : rawPath);
   if (path === null || !path) return null;
-  // Only an address written with its scheme is a full one; another scheme's is no document's;
-  // anything else is a path relative to the base.
   const form = writtenForm(path);
   if (form === "foreign") return null;
   if (form === "address") {
@@ -69,7 +65,6 @@ export function spellDocumentHref(holderUri: string | null, target: LinkAddress)
       const from = holder.value.path.split("/");
       from.pop();
       const to = parsedTarget.value.path.split("/");
-      // The target's last segment is its filename, never a shared folder.
       while (from.length && to.length > 1 && from[0] === to[0]) {
         from.shift();
         to.shift();
@@ -88,22 +83,16 @@ export function spellDocumentHref(holderUri: string | null, target: LinkAddress)
   return href + (target.kind === "folder" ? "/" : "");
 }
 
-/** Canonicalize only the filename: folder segments are literal names. */
 export function documentPathKey(path: string): string {
   const slash = path.lastIndexOf("/");
   return path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
 }
 
-/**
- * Stored names a link's path can match: every split of its canonical leaf, because a file kept
- * as `page.html` is stored as name `page` and extension `html`.
- */
 export function documentPathCandidateNames(path: string): string[] {
   const { name } = readSegment(path.slice(path.lastIndexOf("/") + 1));
   return filenameSplits(canonicalLeaf(name)).map((split) => split.name);
 }
 
-/** `path` without its registered extension (`a/again.md` is `a/again`); null when it has none. */
 export function omittedExtensionPath(path: string): string | null {
   const slash = path.lastIndexOf("/");
   const { name } = readSegment(path.slice(slash + 1));
@@ -114,7 +103,6 @@ export function omittedExtensionPath(path: string): string | null {
   );
 }
 
-/** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
 function matchDocumentAddress<T>(
   candidates: readonly T[],
   path: string,
@@ -129,10 +117,6 @@ function matchDocumentAddress<T>(
   return null;
 }
 
-/**
- * The one candidate a link names: `matchDocumentAddress`, else the unique candidate whose path
- * differs only by a registered extension the link left off. Only links may omit it.
- */
 export function matchDocumentPath<T>(
   candidates: readonly T[],
   path: string,
@@ -148,10 +132,6 @@ export function matchDocumentPath<T>(
   );
 }
 
-/**
- * The one candidate whose segment differs from the link's `leaf` only by a registered extension
- * the link left off, among candidates in one folder; null when none or several.
- */
 export function matchOmittedExtension<T>(
   candidates: readonly T[],
   leaf: string,

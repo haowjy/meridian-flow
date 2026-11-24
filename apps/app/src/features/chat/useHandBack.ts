@@ -1,14 +1,3 @@
-/**
- * useHandBack — the chat's hand-back operation (`@meridian/thread-client`) wired to this tab:
- * the composer draft as its store, the run-state slice as its record and intents, the
- * transcript store for removed turns, and `fetch` for the post. Stop, the queue's x and Cancel
- * queue all press the one operation this hook creates, so its unresolved commands (the cards)
- * are shared too.
- *
- * The package decides everything (identity, order, answers, which failures owe a card); this file
- * is adapters. A reload re-posts every command the draft still holds (`resume`), and a change
- * to the draft's store (any write to it) re-checks what still owes a card (`reconcile`).
- */
 import {
   type ChatReferenceScope,
   chatReferenceResolver,
@@ -28,16 +17,13 @@ import { useRunState, useThreadActions } from "@/client/stores";
 
 export type ChatHandBack = {
   operation: HandBackOperation;
-  /** Commands that still owe the writer a card, newest state. */
   unresolved: readonly UnresolvedHandBack[];
-  /** What the Stop control reads from the operation, the same on every route into it. */
   stopFacts: StopFacts;
 };
 
 export function useHandBack(input: {
   threadId: string;
   accountId: string;
-  /** Where the chat's handed-back references live; null until the chat has loaded. */
   scope: ChatReferenceScope | null;
 }): ChatHandBack {
   const { threadId, accountId, scope } = input;
@@ -81,7 +67,6 @@ export function useHandBack(input: {
       record: (command) => draft.recordHandBack(command),
       accept: (requestId, handedBack) => {
         const where = latest.current.scope;
-        // Without the chat's facts a reference comes back as its link text.
         const resolve = where ? chatReferenceResolver(where) : () => null;
         return draft.receiveHandBack(requestId, composerDocFromHandedBack(handedBack, resolve));
       },

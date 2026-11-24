@@ -1,4 +1,3 @@
-/** Atomic account preference patches, preserving independent JSONB fields. */
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -27,7 +26,6 @@ export function createDrizzleAccountSettingsRepository({
     read,
     async update(userId, patch) {
       return db.transaction(async (tx) => {
-        // The account lock orders concurrent patches and their returned snapshot.
         await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
         if (Object.keys(patch).length) {
           await tx

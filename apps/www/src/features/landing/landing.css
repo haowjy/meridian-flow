@@ -1,8 +1,3 @@
-/**
- * The landing page, as a stacked document: what shows with no script or reduced
- * motion. `film.css` turns it into the pinned film under `.cine`. A plain stylesheet
- * rather than utilities, because the film needs named elements.
- */
 :root {
   --bar: 56px;
   --lw: 1240px;
@@ -45,7 +40,6 @@
   );
 }
 
-/* The trees left behind the page once the film's stage scrolls away; forest.ts draws them. */
 #treeline {
   display: none;
   position: fixed;
@@ -74,7 +68,6 @@ main {
   scroll-margin-top: var(--bar);
 }
 
-/* Top bar */
 .bar {
   position: fixed;
   z-index: 30;
@@ -228,7 +221,6 @@ main {
   transform: rotate(180deg);
 }
 
-/* Stacked: reduced motion and no script */
 .stage {
   position: relative;
 }
@@ -274,7 +266,6 @@ h1 span {
   }
 }
 
-/* Story layers */
 .ms {
   font: 400 var(--bigf) / 1.46 var(--mkt-font-story);
   width: min(var(--bigw), 100%);
@@ -502,7 +493,6 @@ h1 span {
   text-align: center;
 }
 
-/* The System's window. Its frame and field are also drawn by `wordsStill` for the burn. */
 .sys {
   border: 1.5px solid var(--mkt-system);
   border-radius: 3px;
@@ -529,7 +519,6 @@ h1 span {
   max-width: 640px;
 }
 
-/* The film's caption shows the knowledge heading as a title; the stacked page uses its SectionHead. */
 .cap-title {
   display: none;
 }
@@ -566,8 +555,6 @@ header.sect-head {
   text-wrap: pretty;
 }
 
-/* The film tells each section as story; its plain heading stays for screen readers and crawlers,
-   visible to them even while the film hides the section around it. */
 .cine .sect-head {
   visibility: visible;
   position: absolute;
@@ -588,7 +575,6 @@ header.sect-head {
   justify-content: center;
   padding: 80px 20px 96px;
   text-align: center;
-  /* The question's glow runs past a phone's edges; body's clip doesn't stop iOS zooming out to it. */
   overflow-x: clip;
 }
 
@@ -637,7 +623,6 @@ header.sect-head {
   width: min(40em, 100%);
 }
 
-/* The dawn's horizon glows right behind the question: the same night scrim as the death box. */
 .book::before {
   content: "";
   position: absolute;
@@ -657,7 +642,6 @@ header.sect-head {
   text-wrap: balance;
 }
 
-/* The app's chat composer: what a writer types into on their first screen. */
 .book-comp {
   width: 100%;
   padding: 12px 12px 10px;
@@ -792,7 +776,6 @@ header.sect-head {
   }
 }
 
-/* The smallest phones: Sign in and Start writing still have to fit beside the name. */
 @media (max-width: 374px) {
   .row {
     padding: 0 10px;

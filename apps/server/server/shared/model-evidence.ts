@@ -1,15 +1,3 @@
-/**
- * What the model was shown of documents (contract §7): the shapes the runtime hands the document
- * side after a result, and the rules for reading shown links back through a fork's lineage.
- *
- * Shown links: every link the model was shown in a holder document, per thread, with the address,
- * holder URI and view it was shown in. Ref assignment reads them through `WriteContext.shownLinks`;
- * the model never sees them. Rows outlive compaction and restart, rolled-back responses keep
- * theirs, and a fork reads its source's rows up to its cutoff turn through lineage. Handoffs and
- * spawned subagents inherit nothing. Storage keeps one row per key per turn, so a source's later
- * repeat never rewrites what a fork saw before its cutoff; readers dedupe only the rows their
- * lineage makes eligible.
- */
 import type {
   ShownLink as CorrespondenceShownLink,
   FrontierLookup,
@@ -23,39 +11,27 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 
 export type { FrontierLookup, ObservationFrontier, ReplyMutations, ShownBlock };
 
-/** One recorded showing; `at` is its global sequence, larger is more recent. */
 export interface ShownLink extends CorrespondenceShownLink {
-  /** `live` or `draft:<draftId>`. */
   view: string;
 }
 
-/** What one result showed the model in one holder document. */
 export interface ShownLinkShowing {
   documentId: string;
   holderUri: string;
-  /** The view the links were actually spelled in. */
   view: LinkView;
   links: readonly SpelledLinkFact[];
 }
 
-/** The room of the names a result showed of the tree; its rows are not document snapshots. */
 export const TREE_NAMES_ROOM = "tree";
 
-/**
- * Which rows a frontier lookup reads: one room's (the tree's names), or every room of a document,
- * Live's and each draft's fork (design §5: a chat's latest read is in whichever room it read).
- */
 export type FrontierRooms = { room: string } | { documentId: string };
 
-/** Host-only: what one result showed the model; its frontiers are recorded under the result's block. */
 export interface ResultEvidence {
   shown: readonly ShownLinkShowing[];
   frontier?: ObservationFrontier;
-  /** What the result showed of the tree, in the room `tree`: the names it added to the map. */
   names?: ObservationFrontier;
 }
 
-/** The frontier rows a result's block holds: its document's, and the names it showed. */
 export function evidenceFrontiers(
   blockId: string,
   evidence: Pick<ResultEvidence, "frontier" | "names">,
@@ -65,7 +41,6 @@ export function evidenceFrontiers(
   );
 }
 
-/** What stored blocks showed the model: shown links under the turn, a frontier per block. */
 export interface StoredEvidence {
   projectId: ProjectId;
   threadId: string;
@@ -78,7 +53,6 @@ export function linkViewKey(view: LinkView): string {
   return view.kind === "draft" ? `draft:${view.draftId}` : "live";
 }
 
-/** One thread whose rows a reader sees; `maxPosition` caps an inherited source by turn position. */
 export interface LineageSegment {
   threadId: ThreadId;
   maxPosition: number | null;
@@ -91,11 +65,6 @@ export interface ThreadLineageLookup {
   turn(turnId: string): Promise<{ threadId: string; position: number } | null>;
 }
 
-/**
- * The threads whose showings `threadId` reads: itself uncapped, then each fork
- * source capped at the tightest cutoff position on the way. Fork turns number
- * on from their cutoff, so one position cap holds across the whole chain.
- */
 export async function shownLinkLineage(
   threadId: ThreadId,
   lookup: ThreadLineageLookup,
@@ -116,7 +85,6 @@ export async function shownLinkLineage(
   }
 }
 
-/** Keeps the latest showing per key across the lineage's eligible rows. */
 export function latestShowings(rows: readonly ShownLink[]): ShownLink[] {
   const latest = new Map<string, ShownLink>();
   for (const row of rows) {

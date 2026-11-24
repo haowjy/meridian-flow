@@ -15,16 +15,10 @@ function devPostgresIsHealthy(): boolean {
     );
     return out.trim() === "running healthy";
   } catch {
-    return false; // no such container
+    return false;
   }
 }
 
-/**
- * Start the shared dev Postgres (postgres:16 + pg_bigm) if it is not already running and
- * healthy. A running server is never reconciled: every worktree shares it, and a branch with
- * an older compose file would otherwise flip it back to the image that branch knows.
- * Moving onto a new image tag is the explicit `pnpm dev:infra:upgrade`.
- */
 export function ensureDevInfraUp(repoRoot: string): void {
   if (devPostgresIsHealthy()) return;
   const composeFile = path.join(repoRoot, "tools/dev/docker-compose.yml");
@@ -34,7 +28,6 @@ export function ensureDevInfraUp(repoRoot: string): void {
   });
 }
 
-/** Thrown when the dev infra preflight fails; carries an actionable message. */
 export class DevInfraNotReadyError extends Error {
   constructor(message: string) {
     super(message);
@@ -42,18 +35,6 @@ export class DevInfraNotReadyError extends Error {
   }
 }
 
-/**
- * Fail-fast infra preflight shared by `pnpm dev` (and reusable by CI/bootstrap):
- * confirm every registered dev database URL is set and reachable before any app
- * server starts, so a stopped Postgres surfaces as a clear up-front error
- * instead of a runtime `HTTPError` on the first DB-touching request.
- *
- * Read-only — it never starts the container or creates databases (that stays an
- * explicit `pnpm dev:infra` / `pnpm bootstrap` step). On failure it throws a
- * `DevInfraNotReadyError` carrying the actionable `formatPgError` hint (matching
- * the throw-style of every `dev-db.ts` function, so this stays reusable by CI);
- * the `dev-tmux.ts` entry point catches it and exits.
- */
 export async function assertDevInfraReady(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
   applyDevEnvToProcess(repoRoot);

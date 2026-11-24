@@ -1,10 +1,3 @@
-/*
- * The map view of a level page: its flowchart drawn with React Flow under the page's intro, and a
- * side panel with the selected box's section. A box's own arrows stay lit and the rest fade; a
- * group opens its child page. Boxes drag and the arrows follow; where they were put is remembered
- * for this page on this computer.
- */
-
 import { storageKey } from "./config.js";
 import { fitZoom, layoutLevel, READABLE_ZOOM } from "./layout.js";
 import { paintInline, pathLink, route } from "./markdown.js";
@@ -17,9 +10,7 @@ const h = React.createElement;
 const RF = globalThis.ReactFlow;
 const { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } = React;
 
-/** A small level is drawn no larger than this at Fit. */
 const MAX_FIT_ZOOM = 1.1;
-/** Text width at which an arrow's label wraps. */
 const LABEL_WRAP = 124;
 const LAYOUT_KEY = `${storageKey("layout-v2")}:`;
 
@@ -30,7 +21,6 @@ const parts = (label) => {
 };
 const plain = (label) => parts(label).name;
 
-/** Where the reader dragged this page's boxes: { id: { x, y } }, or {} (no storage, or nothing saved). */
 function savedLayout(path) {
   try {
     const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY + path));
@@ -49,10 +39,6 @@ function saveLayout(path, positions) {
   }
 }
 
-/**
- * The drawn size of an arrow's label, { width, height }, before it is drawn: layout and routing
- * need it to keep labels clear. The font and padding come from the label's own CSS.
- */
 function labelMeasurer() {
   const context = document.createElement("canvas").getContext("2d");
   const styleOf = (className) => {
@@ -88,7 +74,7 @@ function labelMeasurer() {
       else lines.push(word);
     }
     const text = Math.max(...lines.map((l) => context.measureText(l).width));
-    // Two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole.
+    // keep: two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole
     const size = {
       width: Math.ceil(text) + 2 + style.padX,
       height: Math.ceil(lines.length * style.line + style.padY),
@@ -98,11 +84,9 @@ function labelMeasurer() {
   };
 }
 
-/** What a box needs to draw itself that isn't in its node: the selection. */
 const Selection = createContext({ selectedId: null, linked: new Set() });
 
-// Arrows draw their own paths (routes.js); a box keeps one handle each way only because React Flow
-// draws no edge without them.
+// keep: arrows draw their own paths, so a box keeps one handle each way only because React Flow draws no edge without them
 const handles = () => [
   h(RF.Handle, { key: "in", type: "target", position: RF.Position.Top, isConnectable: false }),
   h(RF.Handle, { key: "out", type: "source", position: RF.Position.Bottom, isConnectable: false }),
@@ -173,7 +157,6 @@ function Arrow({ data, markerEnd, markerStart }) {
 
 const edgeTypes = { arrow: Arrow };
 
-/** The arrowheads every edge refers to by id, coloured from tokens by CSS. */
 function Markers() {
   const arrow = (id) =>
     h(
@@ -198,7 +181,6 @@ function Markers() {
   );
 }
 
-/** Fit the whole level when its text stays readable; otherwise show its start at a readable size, to pan. */
 function fitLevel(flow, bounds, area) {
   if (!bounds || !area.width) return;
   const fit = Math.min(fitZoom(bounds, area), MAX_FIT_ZOOM);
@@ -234,7 +216,6 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
     (a, b) => a.width === b.width && a.height === b.height,
   );
   const measured = RF.useNodesInitialized();
-  // Laid out once per drawing area and per Reset; a drag only changes positions, never this key.
   const [placement, setPlacement] = useState({ key: null, reset: 0, hints: new Map() });
   const areaKey = `${area.width}x${area.height}:${placement.reset}`;
   const areaNow = useRef(area);
@@ -303,12 +284,10 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
       labelSize,
       labelled,
     });
-  // Fit frames the level with every label, whichever box is chosen.
   const whole = useMemo(
     () => rects && route(() => true),
     [rects, placement.hints, sourceEdges, noteLinks, labelSize],
   );
-  // With a box chosen, its own arrows' labels are the ones shown.
   const routes = useMemo(
     () => (selectedId === null ? whole : rects && route((i) => touches(sourceEdges[i]))),
     [whole, rects, selectedId],
@@ -420,10 +399,6 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
   );
 }
 
-/**
- * Mounts the map of `page` (parsed, at repo `path`) into `host`. `nav.go(hash)` opens another
- * route; `nav.replace(hash)` changes the address without a history entry. Returns { select(id), dispose() }.
- */
 export function createMap(host, { page, path, nav }) {
   let selected = null;
   const canvas = el("div", { class: "canvas" });
@@ -489,7 +464,6 @@ export function createMap(host, { page, path, nav }) {
     );
   }
 
-  /** A click on a box: a box with Opens goes to that page, any other box is selected (and put in the address). */
   function choose(id) {
     const opens = id && opensOf(id);
     if (opens) return nav.go(opens);
@@ -505,8 +479,6 @@ export function createMap(host, { page, path, nav }) {
     return link && route(path, link.href)?.href;
   }
 
-  // ---- The panel ----
-
   function select(id) {
     selected = id;
     drawn();
@@ -520,7 +492,6 @@ export function createMap(host, { page, path, nav }) {
     return p;
   }
 
-  /** Nothing selected: the boxes of this page, each with its one-line role, as a way in. */
   function overview() {
     return el(
       "div",

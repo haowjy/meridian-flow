@@ -1,4 +1,3 @@
-/** `thread context`: the model requests the LLM actually received (dev capture). */
 import {
   apiThreadModelRequestsDebugPath,
   type ModelRequestDebugListResponse,

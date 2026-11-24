@@ -1,4 +1,3 @@
-/** Create or replay a durable upload selection. */
 import { defineEventHandler } from "nitro/h3";
 import { readImportManifest } from "../../../../../lib/import-body.js";
 import { resolveImportRoute } from "../../../../../lib/import-route.js";

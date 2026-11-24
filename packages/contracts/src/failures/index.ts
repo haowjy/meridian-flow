@@ -1,8 +1,3 @@
-/**
- * The failure vocabulary: what a failure is (category, source, end), the record the server logs at each
- * transition, and the one classifier for a failed reply. Pure: the server, thread-client, the app and
- * `./mf` import it; nothing here logs.
- */
 import type { GatewayErrorCode } from "../errors/index.js";
 import type { SummaryRejectionReason } from "../runtime/summary-outcome.js";
 
@@ -13,15 +8,11 @@ export type FailureEnd = "resolved" | "retried" | "moved_on" | "forgotten" | "di
 export type Failure = {
   category: FailureCategory;
   source: FailureSource;
-  /** Whether the writer can act on it now: an action exists and its target is still there. */
   actionable: boolean;
-  /** Diagnostics only, never writer copy or model text. */
   cause: { code: string; reason?: string; status?: number };
 };
 
-/** One transition of a failure, as the server logs it: when it was classified, and when it ended. */
 export type FailureRecord = {
-  /** A turn id for a failed turn; `usage:${threadId}:${episode}` for a usage block. */
   occurrenceId: string;
   failure: Failure;
   threadId: string;
@@ -29,7 +20,6 @@ export type FailureRecord = {
   executionId?: string;
 } & ({ phase: "recorded" } | { phase: "ended"; end: FailureEnd; byTurnId?: string });
 
-/** Reasons the server writes with a type. Any other reason a reply carries is an untyped provider code. */
 export type TypedFailureReason =
   | GatewayErrorCode
   | SummaryRejectionReason
@@ -42,10 +32,6 @@ export type TypedFailureReason =
   | "shutdown"
   | "credits_exhausted";
 
-/**
- * A `Record` over the union rather than a `switch`: a new typed reason fails typecheck here instead of
- * falling through to `bug`.
- */
 const SOURCE_OF: Record<TypedFailureReason, FailureSource> = {
   network_error: "transport",
   server_error: "provider",
@@ -70,14 +56,12 @@ const SOURCE_OF: Record<TypedFailureReason, FailureSource> = {
   credits_exhausted: "usage",
 };
 
-/** What a settled failed turn says about itself: its typed reason, else the error code it carried. */
 export type ReplyFailureInput = {
   reason?: string | null;
   code?: string | null;
   status?: number | null;
 };
 
-/** The only place a reply failure's source is chosen. Untyped codes are bugs, visible in the logs. */
 export function classifyReplyFailure(input: ReplyFailureInput): Failure {
   const code = input.reason ?? input.code ?? "unknown";
   const source = Object.hasOwn(SOURCE_OF, code) ? SOURCE_OF[code as TypedFailureReason] : "bug";
@@ -93,20 +77,12 @@ export function classifyReplyFailure(input: ReplyFailureInput): Failure {
   };
 }
 
-/**
- * What a command's failed attempt says about itself, the way `classifyAnswer` reads an answer:
- * `lost` is no usable answer (transport, a 5xx or a body that does not validate), `refused` is a
- * definite 4xx the server will give again, and `unsaved` is a command the browser could not keep.
- */
 export type CommandFailureInput = {
   kind: "lost" | "refused" | "unsaved";
-  /** The HTTP status when there was one. */
   status?: number | null;
-  /** The server's error code when it named one. */
   code?: string | null;
 };
 
-/** The only place a command failure's source is chosen. A refused command is the writer's to dismiss or redo. */
 export function classifyCommandFailure(input: CommandFailureInput): Failure {
   const source: FailureSource =
     input.code === "malformed_response"
@@ -123,12 +99,10 @@ export function classifyCommandFailure(input: CommandFailureInput): Failure {
   };
 }
 
-/** Usage is a category of its own: `RunState.blocked` needs no classifier. */
 export function usageFailure(reason: string): Failure {
   return { category: "usage", source: "usage", actionable: true, cause: { code: reason } };
 }
 
-/** One client-owned failure; the same id keys its visible card and diagnostics. */
 export type FailureOccurrence = { occurrenceId: string; failure: Failure };
 
 export function classifyUnavailable(code: string, status?: number): Failure {
@@ -140,7 +114,6 @@ export function classifyUnavailable(code: string, status?: number): Failure {
   };
 }
 
-/** Client diagnostics contain metadata only, never request or response bodies. */
 export type ClientFailureRecord = FailureOccurrence & {
   threadId?: string;
   turnId?: string;
@@ -148,18 +121,12 @@ export type ClientFailureRecord = FailureOccurrence & {
   submissionId?: string;
 } & ({ phase: "recorded" } | { phase: "ended"; end: FailureEnd });
 
-/**
- * Text handed back to its typist after something else made it unreachable: the words a schema
- * repair removed, or typing a room ended with before the server acknowledged it. Counts only; the
- * text stays in the typist's browser.
- */
 export type ClientRescueRecord = {
   occurrenceId: string;
   phase: "rescued";
   rescue: { kind: "schema-removed-text"; chars: number; passages: number };
 };
 
-/** What the client diagnostics channel carries: failure transitions and rescues. */
 export type ClientDiagnosticRecord = ClientFailureRecord | ClientRescueRecord;
 
 export interface FailureLog {

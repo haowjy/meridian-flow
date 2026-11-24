@@ -47,7 +47,6 @@ async function waitForAdvisoryLockWaiters(
 }
 
 describe.skipIf(!enabled)("migration runner (postgres)", () => {
-  // The runner's contracts change schemas, so they run on a database of their own, never the worker's.
   const scratchTarget = disposableTestDatabaseTarget(
     databaseUrl ?? "",
     `migration_runner_test_${process.pid}_${Date.now()}`,

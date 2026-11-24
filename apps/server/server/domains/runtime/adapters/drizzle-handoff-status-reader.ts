@@ -1,4 +1,3 @@
-/** Project lease-derived liveness with pending handoff seeds as non-lease work. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";

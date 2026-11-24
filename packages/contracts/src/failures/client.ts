@@ -1,4 +1,3 @@
-/** Bounded metadata accepted by client failure diagnostics, never arbitrary error text. */
 import { z } from "zod";
 import type { EventRecord } from "../observability/index.js";
 import type { ClientDiagnosticRecord, ClientFailureRecord } from "./index.js";

@@ -1,4 +1,4 @@
-/** SQL predicate shared by pending-placeholder queries and the partial index. */
+// keep: This SQL predicate must match the pending-placeholder partial index exactly
 import { PENDING_PLACEHOLDER_ROLES } from "@meridian/contracts/threads";
 import { type SQL, type SQLWrapper, sql } from "drizzle-orm";
 

@@ -1,4 +1,3 @@
-/** Upload receipt races and lifecycle retention against real Postgres, with isolated storage. */
 import { createHash, randomUUID } from "node:crypto";
 import { IMPORT_ADMISSION, type ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -119,12 +118,10 @@ describe.runIf(enabled)("durable upload", () => {
       state: "failed",
       reason: "too_large",
     });
-    // A preceding receipt already consumed all but one file's bytes.
     const row = (await repository.read(input.importId))!;
     await repository.update(input.importId, {
       counts: { ...row.counts, receivedBytes: IMPORT_ADMISSION.totalBytes - 5 },
     });
-    // Refresh aggregates actual persisted receipt sizes, not the test's synthetic header.
     const entries = await repository.entries(input.importId);
     await repository.updateEntries(input.importId, [
       {

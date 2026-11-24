@@ -22,10 +22,7 @@ export function linguiMacroBabelPlugin(): Plugin {
         babelrc: false,
         configFile: false,
         sourceMaps: true,
-        // Babel 8 removed preset-typescript's allExtensions/isTSX. The macro runs
-        // on TSX components, so force TS-with-JSX explicitly: ignoreExtensions
-        // skips extension-based detection and parserOpts `jsx` enables JSX (the
-        // zero-dep equivalent of @babel/plugin-syntax-jsx, which has no v8 yet).
+        // keep: Babel 8 dropped allExtensions/isTSX, so TSX macros need ignoreExtensions plus parserOpts jsx
         presets: [["@babel/preset-typescript", { ignoreExtensions: true }]],
         plugins: ["@lingui/babel-plugin-lingui-macro"],
         parserOpts: { plugins: ["jsx"] },

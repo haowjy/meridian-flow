@@ -1,18 +1,14 @@
-/** Shared writer-facing identity, outcome, and elapsed-time display for subagent runs. */
-
 import { createElement, useSyncExternalStore } from "react";
 import { i18n } from "@/lib/i18n";
 import { liveToolActivityLabel } from "../command-descriptor";
 import type { SubagentRunStatus } from "./run-model";
 
-/** The agent's name leads every subagent surface; the run's task name follows it. */
 type SubagentIdentity = { agentName?: string | null; title?: string | null };
 
 export function resolveSubagentName(node: SubagentIdentity | null | undefined): string {
   return subagentMarkName(node?.agentName);
 }
 
-/** Marks identify the agent, while the adjacent display name may be a task title. */
 export function subagentMarkName(agentName?: string | null): string {
   const name = agentName?.trim();
   return name && name !== "Subagent" ? name : i18n._("Subagent");
@@ -40,12 +36,10 @@ export function formatSubagentElapsed(
     : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** One shared clock cadence keeps every visible running duration in sync. */
 export function useSubagentClock(): number {
   return useSyncExternalStore(subscribeClock, readClock, readClock);
 }
 
-/** A clock subscriber exists only while the represented run is still active. */
 export function Elapsed({ startedAt }: { startedAt?: string | null }) {
   const now = useSubagentClock();
   return createElement("span", null, formatSubagentElapsed(startedAt, null, now));
@@ -83,7 +77,6 @@ export function subagentCurrentToolLabel(toolName: string, input: unknown): stri
     const agent = typeof values?.agent === "string" ? values.agent.trim() : "";
     return i18n._("Waiting on {0}", { 0: agent || i18n._("Subagent") });
   }
-  // The final report never renders as a tool row, so it has no row phrase.
   if (toolName === "return_result") return i18n._("Reporting back…");
   return liveToolActivityLabel(toolName, input);
 }

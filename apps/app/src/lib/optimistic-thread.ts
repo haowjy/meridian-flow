@@ -1,4 +1,3 @@
-/** Build a navigate-first destination before the server creates it. */
 import type { Thread } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -7,7 +6,6 @@ import type { CreationAgent } from "@/features/agents/creation-agent";
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 export function makeOptimisticThread(input: {
   id: string;
-  /** The new lineage's draft; a fork shares its source's. */
   draftId: string;
   projectId: string;
   title: string;

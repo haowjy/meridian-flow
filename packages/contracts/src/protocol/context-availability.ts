@@ -1,11 +1,9 @@
-/** The document address answer: where a document is held now, and the authority that holds it. */
 import { z } from "zod";
 import { decodeWorkHandle, type WorkHandle } from "../handles.js";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
 import { filetypeSchema } from "./filetype.js";
 
-/** The authenticated user is the account boundary for browser session authority. */
 export type AccountId = UserId;
 
 export type ProjectContextAuthority =
@@ -13,10 +11,8 @@ export type ProjectContextAuthority =
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId; workHandle: WorkHandle | null }
   | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
-  /** `chatRef` is null while the chat's row does not exist yet (a New chat's first uploads). */
   | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };
 
-/** A document the project holds in the tree now, with the authority its source gives it. */
 export type AvailableDocument = {
   kind: "available";
   documentId: DocumentId;
@@ -108,7 +104,6 @@ const fileEntry = z
   })
   .and(fileClassification);
 
-/** Full address result: reference admission and browser navigation validate the same evidence. */
 export const documentAddressSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.enum(["current", "alias"]),

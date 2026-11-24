@@ -1,16 +1,3 @@
-/** An import with a DOCX that holds an image survives interrupted reveals, against real Postgres.
- *
- * Protects:
- * - A pass interrupted after its batches wrote their texts resumes without writing a text twice,
- *   including the image folder no import entry stands for, and without a document existing
- *   before the reveal: the texts wait in their Live rooms' rows under the ids the creates will name.
- * - Retry revives an import that used up its tries.
- * - A failed pass is not reclaimed at once.
- * - After reveal, the Markdown document and the image are live and the document has block rows.
- * - Every node the reveal makes has a rank, so a drag relative to one places.
- * - A stopped import's waiting texts are deleted by the sweep, with its objects.
- */
-
 import { randomUUID } from "node:crypto";
 import type { ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -53,7 +40,6 @@ const PNG = Buffer.from(
 
 describe.runIf(enabled)("import resume", () => {
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
-  /** The Live rooms that hold a stored text. */
   const waitingTexts = () =>
     db
       .selectDistinct({ room: documentSnapshots.roomKey })
@@ -95,8 +81,6 @@ describe.runIf(enabled)("import resume", () => {
     });
     composeAppServices(ports);
 
-    // The first `interruptions` reveals fail after every text is written: the pass stops between
-    // its last batch and the reveal, as a restart or a lost lease would.
     let interruptions = 5;
     const failures: unknown[] = [];
     const organizer = createImportOrganizer({
@@ -148,9 +132,7 @@ describe.runIf(enabled)("import resume", () => {
     ]);
 
     const signal = new AbortController().signal;
-    // The first pass plans, writes the texts, and is interrupted at the reveal.
     await organizer.runPass(signal);
-    // A failed pass keeps its lease: nothing to reclaim until it runs out.
     expect(await organizer.runPass(signal)).toBe(0);
     expect(failures).toHaveLength(1);
     for (let attempt = 2; attempt <= 5; attempt++) {
@@ -162,7 +144,6 @@ describe.runIf(enabled)("import resume", () => {
       state: "failed",
       reason: "organize_failed",
     });
-    // The text waits in its room's rows; no document or node exists yet.
     expect(await db.select().from(documents)).toEqual([]);
     expect(await db.select().from(treeNodes)).toEqual([]);
     expect(await waitingTexts()).toHaveLength(1);
@@ -189,7 +170,6 @@ describe.runIf(enabled)("import resume", () => {
     const markdown = nodes.find((node) => node.fileType === "markdown");
     expect(markdown).toBeTruthy();
     expect((await db.select().from(documents)).map((row) => row.id)).toContain(markdown?.id);
-    // Block derivation is scheduled at reveal and runs detached.
     await processDetachedWork.drain(10_000);
     const blocks = await db
       .select({ id: documentBlocks.blockId })

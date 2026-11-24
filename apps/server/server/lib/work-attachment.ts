@@ -1,4 +1,3 @@
-/** Work membership resolution for newly created root and child threads. */
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import type { WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
@@ -18,13 +17,10 @@ export interface ResolveWorkMembershipDeps {
 export interface ResolveWorkMembershipArgs {
   threadId: string;
   projectId: string;
-  /** Explicit root assignment. Null and omission both bind to No Work. */
   workId?: string | null;
-  /** Child threads inherit the parent's primary membership. */
   parentThreadId?: string | null;
 }
 
-/** The Work a new root chat binds to: the requested active Work, otherwise the project's No Work. */
 export async function resolveRootWork(
   deps: Pick<ResolveWorkMembershipDeps, "workRepo">,
   args: { projectId: string; workId?: string | null },
@@ -48,7 +44,6 @@ export async function resolveWorkMembership(
   const inherited = args.parentThreadId
     ? ((await deps.threadWorks.findPrimary(args.parentThreadId))?.workId ?? null)
     : null;
-  // A child whose parent has no primary falls back to No Work, never to an explicit Work.
   const workId = args.parentThreadId ? null : args.workId;
   const primaryWorkId =
     inherited ?? (await resolveRootWork(deps, { projectId: args.projectId, workId })).id;

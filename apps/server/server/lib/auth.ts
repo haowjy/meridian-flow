@@ -1,8 +1,3 @@
-/**
- * WorkOS authentication seam: wraps @workos/authkit-session (cookie session
- * storage and user resolution) and resolves an authenticated identity. Owns the auth
- * provider integration; depends inward on the user repository port.
- */
 import { devAuthAppliesToRequest, resolveDevAuthUser } from "@meridian/contracts/dev-auth";
 import type { UserId } from "@meridian/contracts/runtime";
 import { CookieSessionStorage, createAuthService, validateConfig } from "@workos/authkit-session";
@@ -13,15 +8,7 @@ import {
   type UserRepository,
 } from "../domains/projects/index.js";
 
-/**
- * Custom cookie session storage that manually parses the cookie header.
- *
- * WorkOS's default CookieSessionStorage uses a cookie-parsing library that
- * depends on Node.js HTTP request objects. Our Nitro routes receive Web API
- * `Request` objects, so we bypass the library and parse the cookie header
- * directly. Splitting and rejoining `=` preserves cookie values that contain
- * `=` signs (e.g., base64-encoded payloads).
- */
+// keep: WorkOS's default session storage needs a Node request, which Nitro does not give us; split and rejoin on "=" so base64 values survive
 class ApiCookieSessionStorage extends CookieSessionStorage<Request, Response> {
   async getCookie(request: Request, name: string): Promise<string | null> {
     const cookieHeader = request.headers.get("cookie");
@@ -61,16 +48,6 @@ const authkit = createAuthService({
   sessionStorageFactory: (config) => new ApiCookieSessionStorage(config),
 });
 
-/**
- * Deferred config validation flag.
- *
- * `createAuthService()` is called at module top-level (import time), but
- * WorkOS config must be validated lazily because env vars may not be
- * available until after Nitro's env loading phase. `ensureAuthConfig()`
- * gates `validateConfig()` behind a once flag so it's only called the
- * first time a request triggers auth. No promise or mutex — concurrent
- * callers may double-validate, which is harmless (idempotent check).
- */
 let configValidated = false;
 
 async function ensureAuthConfig(): Promise<void> {
@@ -88,8 +65,7 @@ function composeName(firstName: string | null, lastName: string | null): string 
 }
 
 export async function validateAuthConfiguration(): Promise<void> {
-  // Raw process.env on purpose: see `@meridian/contracts/dev-auth`. Throws when
-  // the bypass is set outside a local dev process.
+  // keep: raw process.env on purpose (see `@meridian/contracts/dev-auth`), and it throws when the dev bypass is set outside a local dev process
   if (resolveDevAuthUser(process.env)) return;
   await ensureAuthConfig();
 }

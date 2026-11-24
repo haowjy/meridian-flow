@@ -1,10 +1,3 @@
-/**
- * dispatch-ws-server-message — routes a parsed `WsServerMessage` to the right
- * transport callback (sequenced event, gap, connected, error).
- *
- * Pure dispatcher injected with the transport's dependencies, so `ThreadSocketClient`
- * stays focused on socket lifecycle. Owns only the message→callback mapping.
- */
 import type { AGUIEvent, MeridianError, WsServerMessage } from "@meridian/contracts/protocol";
 
 export type WsServerMessageDispatchDeps = {
@@ -16,7 +9,6 @@ export type WsServerMessageDispatchDeps = {
     error?: MeridianError,
     sourceThreadId?: string,
   ) => void;
-  /** `subscribed` answers a request; the client decides whether that request is still its own. */
   onSubscribed: (message: Extract<WsServerMessage, { type: "subscribed" }>) => void;
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void;
   send: (payload: unknown) => void;
@@ -24,11 +16,8 @@ export type WsServerMessageDispatchDeps = {
   onAskAnswerReply: (
     message: Extract<WsServerMessage, { type: "ask.answer.ok" | "ask.answer.error" }>,
   ) => void;
-  /** An error that names a request. The client ends the request it matches and drops the rest. */
   onRequestError: (requestId: string, error: Error, retryable: boolean) => void;
-  /** An error that names a thread but no request. Ends nothing. */
   onThreadError: (threadId: string, error: Error) => void;
-  /** An error that names neither. Ends nothing. */
   onGlobalError: (error: Error) => void;
 };
 

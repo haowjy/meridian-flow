@@ -1,11 +1,3 @@
-/**
- * StreamingText renders assistant prose through one stable Markdown tree;
- * only the trailing caret disappears at settlement.
- *
- * In DEV with the playback knob set, wraps the view in a throttled replay
- * (`streaming-text-dev`). Owns only the streaming-text presentation. Reasoning
- * renders via `TurnBlockStep` inside the process fold, not here.
- */
 import { Markdown } from "@/rich-content/Markdown";
 import { readDebugStreamPlaybackCps, useDebugStreamPlayback } from "./streaming-text-dev";
 

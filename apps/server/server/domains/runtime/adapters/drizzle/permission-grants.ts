@@ -1,4 +1,3 @@
-/** Drizzle adapter for project-scoped action grants. */
 import { projectActionGrants } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import {

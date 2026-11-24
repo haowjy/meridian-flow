@@ -1,4 +1,3 @@
-/** How a script's row reads, worded from its typed result: how many calls it made and why it stopped. */
 import { plural, t } from "@lingui/core/macro";
 import type { McpRunResult } from "@meridian/contracts/mcp";
 import { mcpRun, type ToolView } from "@meridian/thread-client";
@@ -13,7 +12,6 @@ const stoppedAfter = (count: number): string =>
     other: "Script stopped after # calls:",
   });
 
-/** Why a script that did not return stopped, in the writer's terms. */
 function stopReason(result: McpRunResult): string {
   switch (result.ended) {
     case "timed_out": {
@@ -35,7 +33,6 @@ function stopReason(result: McpRunResult): string {
 
 export function scriptPhrase(tool: ToolView): ToolActivityPhrase {
   const { result, calls: live } = mcpRun(tool);
-  // No result yet: the arguments finish streaming before the script runs, so `status` cannot say it is running.
   if (!result) {
     return live.length
       ? { verb: t`Running a script:`, parameter: `${calls(live.length)}…` }

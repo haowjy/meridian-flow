@@ -1,12 +1,6 @@
-/*
- * What the doc view shows for a repo path the dev server answered (shell.js `fetchRepoEntry`):
- * Markdown rendered, a directory as a list of its tracked entries, an image, any other text as
- * numbered lines. No highlighting: plain text reads fine and costs no dependency.
- */
 import { docHash, paintMarkdown } from "./markdown.js";
 import { el } from "./shell.js";
 
-/** Fills `article` with the entry at `path`; returns the title for the header. `fragment` is a heading id (Markdown) or `L<n>` (a line). */
 export async function paintEntry(article, entry, path, fragment) {
   const scrollTo = (id) =>
     id && article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" });

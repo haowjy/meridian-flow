@@ -1,13 +1,3 @@
-/**
- * Wraps the run claim so a short claim (`hold`, `withExclusiveThread`) that
- * turned another claim attempt away wakes its chat on release. The turned-away
- * attempt (a wake) found the chat busy and gave up;
- * a reply's lease already wakes on release, but a short claim did not, so the
- * work it blocked waited for the sweep.
- *
- * Contention is process-local: an attempt turned away by another process's
- * claim still falls to the sweep.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { RunClaim } from "./ports.js";
 
@@ -20,7 +10,6 @@ export function wakeOnContendedRelease(
     const entry = held.get(threadId);
     if (entry) entry.contended = true;
   };
-  // Runs after the underlying release, so a wake never meets this claim.
   const released = (threadId: ThreadId, entry: { contended: boolean }) => {
     if (held.get(threadId) === entry) held.delete(threadId);
     if (entry.contended) wake(threadId);

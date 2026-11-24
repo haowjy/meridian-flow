@@ -1,4 +1,3 @@
-/** The visible versioned export marker routes only a whole selected project folder. */
 import { type ExportArea, type ImportSelection, parseExportMarker } from "@meridian/contracts";
 import { ImportError } from "./manifest.js";
 export type ImportArea = ExportArea;

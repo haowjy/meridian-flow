@@ -1,4 +1,3 @@
-/** Transcript rows, response boundaries, delivery placement and reveal targets for `viewTranscript`. */
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import {
   isHandoffSeed,
@@ -22,7 +21,6 @@ export type TurnClass = "bubble" | "delivery" | "context" | "write-mode" | "plum
 const emptyEvents: DeliveryEvent[] = [];
 export type DeliveryEvent = {
   turn: Turn;
-  /** The notification's text as drawn; empty when it only carries an attachment. */
   message: string;
   childThreadId?: string;
   agentName?: string;
@@ -56,43 +54,23 @@ function internDeliveryEvent(event: DeliveryEvent): DeliveryEvent {
   return event;
 }
 
-/**
- * A fork's frozen prefix: the source's turns through the cutoff, read from the
- * inherited transcript range. Each turn names its owner, which is the fork's
- * source or, for a fork of a fork, a thread further up.
- */
 export type InheritedTranscript = {
   turns: readonly Turn[];
   ownerByTurnId: ReadonlyMap<string, string>;
 };
 
-/** Marks a row the fork inherited. Local rows carry null. */
 export type InheritedMark = {
   ownerThreadId: string;
-  /** First row of a run from this owner: where "From <source>" goes. */
   startsOwner: boolean;
-  /** Last inherited row: the fork point, below which the fork's own turns begin. */
   endsInherited: boolean;
 };
 
-/**
- * One rendered transcript row. Every row carries its turn, so `visibleTurns`
- * stays index-aligned with `rows` (reveal landing and the virtual list read
- * both); response grouping walks rows and switches on `kind`, never on role.
- * The conversational head keeps its own policy (`classifyTurn`).
- */
 export type TranscriptRow =
   | { kind: "turn"; turn: Turn; inherited: InheritedMark | null }
   | { kind: "delivery"; turn: Turn; event: DeliveryEvent; inherited: InheritedMark | null }
   | { kind: "compaction"; turn: Turn; inherited: InheritedMark | null }
-  /** A write-mode switch: the line where the chat's mode changed. It ends a reply. */
   | { kind: "write-mode"; turn: Turn; inherited: InheritedMark | null }
-  /** A handoff seed S: the brief card. Only the newest local seed can be retried, and only while no closing row follows it. */
   | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null }
-  /**
-   * The `from` sources a spawned child's seed message names. The seed itself
-   * is a delivery, never a bubble, so its references get a row of their own.
-   */
   | {
       kind: "thread-reference";
       turn: Turn;
@@ -133,19 +111,12 @@ function inboxMessageSender(
     : null;
 }
 
-/**
- * The base row shape for a turn. Delivery placement builds on this boundary rule, so the transcript and
- * server forgetting walk agree about whether a machine delivery belongs under an assistant. It reads
- * `turn.blocks` (an overflow shell is empty, a child seed can carry thread references) and the successor,
- * so callers provide hydrated turns. This is visual membership only; `isClosingRow` decides chat closure.
- */
 export type RowShape =
   | { kind: "compaction" | "write-mode" | "turn" | "handoff-seed" }
   | { kind: "thread-reference"; references: readonly ThreadReference[] };
 
 export function rowOf(turn: Turn, successor: Turn | undefined): RowShape | null {
   if (turn.role === "compaction") return { kind: "compaction" };
-  // A fork of a handoff inherits its brief, read-only.
   if (isHandoffSeed(turn)) return { kind: "handoff-seed" };
   if (isOverflowShell(turn, successor)) return null;
   const kind = classifyTurn(turn);
@@ -168,11 +139,6 @@ function isChildSeed(turn: Turn): boolean {
   );
 }
 
-/**
- * Assigns every visible machine delivery exactly one place. A delivery stays under the preceding
- * assistant while no row intervenes; otherwise it receives its own row. The initial child seed is
- * context, not a message row. Sender provenance decorates the event and never decides membership.
- */
 export function placeDeliveries(
   turns: readonly Turn[],
   nextByPrev: ReadonlyMap<string, Turn>,
@@ -202,7 +168,6 @@ export function placeDeliveries(
   return placements;
 }
 
-/** The deliveries assigned to one assistant by the shared placement rule. */
 export function deliveriesUnder(
   reply: Turn,
   nextByPrev: ReadonlyMap<string, Turn>,
@@ -227,10 +192,6 @@ export function deliveriesUnder(
   });
 }
 
-/**
- * Whether a closing turn (`isClosingRow`) follows a turn in this sequence: the chat has moved past it. A
- * failure and its Retry end there. It reads closing turns rather than inferring closure from row kind.
- */
 export function chatMovedPast(turns: readonly Turn[]): (turn: Turn) => boolean {
   const at = new Map(turns.map((turn, index) => [turn.id, index]));
   const lastClosing = latestRow(turns)?.index ?? -1;
@@ -305,13 +266,10 @@ export function buildTranscriptModel(
       rows.push({ kind: shape.kind, turn, inherited: mark });
     }
   });
-  // A seed is `latest` while it is the newest local seed and the chat has not moved past it: once it has,
-  // its failure and Retry end.
   const latestSeed = rows[latestSeedIndex];
   if (latestSeed?.kind === "handoff-seed" && !movedPast(latestSeed.turn))
     rows[latestSeedIndex] = { ...latestSeed, latest: true };
   markInheritedRuns(rows);
-  // Index-aligned with `rows`: response grouping and reveal landing read turns.
   const visibleTurns = rows.map((row) => row.turn);
 
   const deliveryEventsByAssistantTurnId = new Map<string, DeliveryEvent[]>();
@@ -344,7 +302,6 @@ export function buildTranscriptModel(
   };
 }
 
-/** Marks where each owner's run of inherited rows starts, and where the fork's own rows begin. */
 function markInheritedRuns(rows: TranscriptRow[]) {
   let lastInherited = -1;
   rows.forEach((row, index) => {
@@ -376,18 +333,15 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
     if (!row) continue;
-    // A reply never spans the fork point or two owners.
+    // keep: A reply never spans a fork point or two owners
     if (index > 0 && ownerOf(rows[index - 1]) !== ownerOf(row)) finish();
     switch (row.kind) {
-      // A divider inside a reply (autocompaction mid-task) does not end it.
       case "compaction":
         continue;
-      // A divider or standalone directed message ends the reply before it.
       case "handoff-seed":
       case "delivery":
       case "thread-reference":
       case "write-mode":
-        // The divider ends continuation too: the reply before it is finished.
         if (lastPart >= 0 && parts.length) continuing[lastPart] = false;
         finish();
         continue;
@@ -404,12 +358,6 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
   return { partsByFinalTurnId: groups, continuing };
 }
 
-/**
- * Whether the reply this row ends continues in a later row. Only a finished
- * turn ends a reply: a notification-woken continuation, a server-stamped
- * steer, a running autocompaction, or background subagents still running keep
- * it open. Inherited rows never continue into the fork's own rows.
- */
 export function continuesResponse(
   rows: readonly TranscriptRow[],
   index: number,
@@ -418,11 +366,9 @@ export function continuesResponse(
   const row = rows[index];
   if (row?.kind !== "turn" || row.turn.role !== "assistant" || row.turn.status !== "complete")
     return false;
-  // Look past dividers: a compaction between two parts of one reply is part of the work.
   let nextIndex = index + 1;
   let autocompacting = false;
   for (let next = rows[nextIndex]; next?.kind === "compaction"; next = rows[++nextIndex]) {
-    // A running autocompaction is the same run: the reply resumes after it.
     if (
       !isTerminalTurnStatus(next.turn.status) &&
       readCompactionFacts(next.turn).trigger === "auto"
@@ -430,7 +376,6 @@ export function continuesResponse(
       autocompacting = true;
   }
   const next = rows[nextIndex];
-  // The fork's subagents are its own: they never wake an inherited reply.
   if (!next) return row.inherited ? false : autocompacting || awaitingSubagents;
   if (ownerOf(next) !== ownerOf(row) || next.kind !== "turn") return false;
   if (next.turn.role === "assistant") return true;

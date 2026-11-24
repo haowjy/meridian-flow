@@ -1,9 +1,4 @@
-/** Browser-only fake organize probe. Run with agent-browser eval --stdin on a project route.
- * Reload first; this adapter replaces only import requests. It creates no durable content.
- * importStory exposes adding, revealed, failed, done, failNextDetail and reset controls.
- */
 (async () => {
-  // Explicit fake-server presentation harness. No durable project content is created.
   const { fakeImportServer } = await import("/src/features/import/fake-import-server.ts");
   const fake = fakeImportServer();
   const projectId = location.pathname.split("/")[2];

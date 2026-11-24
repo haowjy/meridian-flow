@@ -1,9 +1,3 @@
-/**
- * GET /api/projects/[projectId]/context/lineages/[rootThreadId]: the first chat's handle and title.
- *
- * A lineage keeps its notes while any member is live, so its first chat may be
- * trashed. The live chat list then cannot name it; this does, trashed or not.
- */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";

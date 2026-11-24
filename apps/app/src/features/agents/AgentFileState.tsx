@@ -13,7 +13,6 @@ import { type FileTrouble, fileTrouble } from "./findings";
 import { PackageSave } from "./PackageSave";
 import { packageFolderOf, statusOf } from "./package-save";
 
-/** The verdict on the file at a tree path, when it is an Agent or skill file of a level. */
 export function agentFileAt(
   files: readonly AgentFileStatus[] | null,
   scheme: ProjectContextTreeScheme,
@@ -25,7 +24,6 @@ export function agentFileAt(
   return files.find((file) => file.level === at.level && file.path === at.path) ?? null;
 }
 
-/** A level as the picker and the Agents tab name it. */
 export function levelLabel(level: AgentLevel): string {
   switch (level) {
     case "project":
@@ -37,7 +35,6 @@ export function levelLabel(level: AgentLevel): string {
   }
 }
 
-/** Whose file of this name it is, inside a sentence: "the built-in critic". */
 function whose(level: AgentLevel, slug: string): string {
   switch (level) {
     case "project":
@@ -56,7 +53,6 @@ function listOf(items: string[]): string {
   return t`${head} and ${last}`;
 }
 
-/** For the picker's tooltip: whose this Agent is and whose it hides. */
 export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[]): string {
   const below = listOf(
     shadows.map((item) =>
@@ -68,12 +64,6 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
     : t`Your own; it hides ${below}.`;
 }
 
-/**
- * An open file of an Agents level, at the end of its toolbar row: what keeps it from use (its
- * problems, or a level above that hides it), its notes, and its package's Save state with Save.
- * The verdicts are read again each time a level's text changes (`useProjectWake`), so it follows
- * the typing. A file with nothing to say shows nothing.
- */
 export function AgentFileState({
   projectId,
   document,
@@ -128,7 +118,6 @@ function LevelFileState({
   );
 }
 
-/** What keeps a file from use, as a chip that opens its problems; also the built-in dialog's. */
 export function TroubleChip({
   file,
   trouble,

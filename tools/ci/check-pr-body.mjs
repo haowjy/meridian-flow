@@ -1,20 +1,3 @@
-/**
- * PR-body gate: every PR body must carry the sections of
- * .github/PULL_REQUEST_TEMPLATE.md, and a PR that changes product source must
- * carry browser screenshots or say why it has none. The template is the single source — headings and scaffold lines
- * are read from it, so editing the template updates this gate without
- * touching this script.
- *
- * Structure is enforced here; truth is the reviewer's job. Most sections pass
- * when they contain at least one line the template didn't ship. Changelog is
- * also parsed as structured input for the changelog generator.
- *
- * Usage: node tools/ci/check-pr-body.mjs [--strict] [body.md]
- *   Reads this branch's open PR body with `gh`, or body.md when given, and
- *   checks it against `git diff origin/main...HEAD`. `pnpm check:pr-body` and
- *   the last step of `pnpm check` call it without a body file; it skips before
- *   a PR exists. --strict fails instead of skipping, for the manual workflow.
- */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
@@ -26,14 +9,9 @@ import {
 
 const TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
 
-// Product source: what a writer's experience runs through, server included.
-// Verification is a browser run with screenshots for every such change
-// (AGENTS.md, Dev environment). Tests and test support change no behavior.
 const PRODUCT_FILE = /^(apps|packages)\/.+\.(ts|tsx|css|mjs|js)$/;
 const TEST_FILE = /\.test\.|\/test-support\/|\/__tests__\/|\/__test-support__\//;
 
-// The escape hatch for a product change no writer can reach. Writing it is a
-// reviewable claim, not a free pass.
 const NO_BROWSER_CLAIM = /browser:\s*none\b/i;
 const IMAGE = /!\[[^\]]*\](?:\([^)]+\)|\[[^\]]+\])|<img\s/;
 
@@ -43,8 +21,6 @@ const headings = template
   .filter((line) => line.startsWith("## "))
   .map((line) => line.trim());
 
-// Every non-empty template line, comments stripped: the scaffold an author
-// starts from. A body line only counts as authored if it isn't one of these.
 const scaffoldLines = new Set(
   template
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -65,7 +41,6 @@ const args = process.argv.slice(2);
 const strict = args.includes("--strict");
 const bodyPath = args.find((arg) => arg !== "--strict");
 
-/** The branch's open PR body, or null when `gh` is missing or the branch has no PR. */
 function currentPrBody() {
   try {
     return execFileSync("gh", ["pr", "view", "--json", "body", "--jq", ".body"], {
@@ -91,8 +66,6 @@ if (body === null) {
 const changedFileText = execFileSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
   encoding: "utf8",
 });
-// Trimmed like the body lines: a CRLF or copy-pasted entry must not slip past
-// the anchored PRODUCT_FILE match and silently skip the browser-evidence rule.
 const changedFiles = changedFileText
   .split("\n")
   .map((line) => line.trim())

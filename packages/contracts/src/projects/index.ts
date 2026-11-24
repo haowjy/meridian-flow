@@ -14,13 +14,11 @@ export interface Project {
   deletedAt: string | null;
 }
 
-/** Route spelling for the domain's canonical name/systemPrompt fields. */
 export type ProjectDto = Omit<Project, "name" | "systemPrompt"> & {
   title: string;
   description: string | null;
 };
 
-/** Attested HTTP 404 for an owned soft-deleted project. */
 export type ProjectAvailabilityCode = "project_deleted";
 
 export interface ProjectAvailabilityDetails {

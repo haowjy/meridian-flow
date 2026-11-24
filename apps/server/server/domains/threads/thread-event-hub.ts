@@ -1,10 +1,3 @@
-/**
- * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
- * events. Maintains a bounded hot cache, replays from the journal on
- * `catchupAndSubscribe` or cursor reads, and projects orchestrator events into AG-UI events for
- * subscribers. Owns the realtime delivery layer over the event journal.
- */
-
 import type { MeridianError } from "@meridian/contracts/errors";
 import type { FailureRecord } from "@meridian/contracts/failures";
 import {
@@ -33,7 +26,7 @@ import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 const HOT_CACHE_LIMIT = 500;
 const JOURNAL_PAGE_SIZE = 1_000;
 const DEFAULT_EVICTION_GRACE_MS = 60_000;
-/** One journal row may project to multiple AG-UI events; sub-index is encoded in seq. */
+// keep: Socket seq is journal seq times 1000 plus the frame sub-index
 const EVENT_SEQ_FACTOR = 1_000n;
 const EVENT_SEQ_CURSOR_OFFSET = EVENT_SEQ_FACTOR - 1n;
 
@@ -55,13 +48,10 @@ type ThreadEventHubDeps = {
   journalReader: EventJournalReader;
   eventSink: EventSink;
   scheduleAfterCommit?: (callback: () => void | Promise<void>) => void;
-  /** In-memory composition: failure records follow this owner's commit instead of a Drizzle transaction's. */
   inMemoryTransactionOwner?: InMemoryTransactionOwner;
-  /** After a reply starts or ends, or an ask opens or closes, has committed: other clients' chat lists go stale. */
   onLifecycleCommitted?: (threadId: ThreadId) => void;
 };
 
-/** The events that move a chat's Working or Waiting state in a chat list. */
 const LIFECYCLE_EVENT_TYPES: ReadonlySet<OrchestratorEvent["type"]> = new Set([
   "turn.created",
   "run_state.changed",
@@ -73,7 +63,6 @@ const LIFECYCLE_EVENT_TYPES: ReadonlySet<OrchestratorEvent["type"]> = new Set([
 ]);
 
 export type ThreadEventHubOptions = {
-  /** Grace period before evicting hub state after the last listener unsubscribes. */
   evictionGraceMs?: number;
 };
 
@@ -89,12 +78,10 @@ export class ThreadEventReplayGapError extends Error {
   }
 }
 
-/** The socket seq of a journal row's `projectedIndex`-th frame. */
 export function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
   return journalSeq * EVENT_SEQ_FACTOR + BigInt(projectedIndex);
 }
 
-/** The socket seq of the last frame a journal row can carry; the snapshot's `nextSeq - 1`. */
 export function cursorSeqForJournalHead(journalSeq: bigint): bigint {
   if (journalSeq === 0n) return 0n;
   return journalSeq * EVENT_SEQ_FACTOR + EVENT_SEQ_CURSOR_OFFSET;
@@ -114,7 +101,6 @@ function errorEnvelopeForProjectedEvent(
   return orchestratorEvent.error;
 }
 
-/** A run-state frame is a whole `RunState` at its own stream seq; live and replayed frames stamp the same value. */
 function stampRunStateVersion(event: AGUIEvent, seq: bigint): AGUIEvent {
   if (event.type !== EventType.CUSTOM || event.name !== RUN_STATE_EVENT) return event;
   return { ...event, value: { ...(event.value as object), version: seq.toString() } };
@@ -251,8 +237,7 @@ export function createThreadEventHub(
     const projector = createOrchestratorEventProjector();
     const replayed: SequencedEventInternal[] = [];
     const afterJournalSeq = journalSeqForEventSeq(afterEventSeq);
-    // A cursor can split a multi-frame row. Reconstruct that row from the last reset
-    // strictly before it, so both the remaining frames and their sub-indexes stay identical.
+    // keep: A client cursor can split a multi-frame journal row; replay from the last reset before it
     const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
       afterJournalSeq,
@@ -271,8 +256,7 @@ export function createThreadEventHub(
     state: ThreadHubState,
     head: bigint,
   ): Promise<void> {
-    // Build privately: a failed page must not publish a partial projector. The head and
-    // reset belong to the live owner, never to whichever subscriber arrived first.
+    // keep: Build cold replay state privately; never publish a partial projector, head or reset
     const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
       head + 1n,
@@ -307,9 +291,7 @@ export function createThreadEventHub(
         return;
       }
       for await (const entry of readThrough(threadId, state.journalCursor, head)) {
-        // A hole below the floor is retention deleting rows this hub never sent. Its projector
-        // can't continue, and only a fresh subscribe can tell the client. Above the floor a hole
-        // is a rolled-back allocation.
+        // keep: A hole below the retained floor is retention loss; above it is a rolled-back allocation
         if (
           entry.seq !== state.journalCursor + 1n &&
           state.journalCursor + 1n < (await retainedTransportFloor(threadId, head))
@@ -363,8 +345,6 @@ export function createThreadEventHub(
     }
     const throughJournalSeq = state?.journalCursor ?? 0n;
     const floor = state ? await retainedTransportFloor(threadId, throughJournalSeq) : 0n;
-    // The floor row's own frames close messages opened by rows pruned before it, so a cursor
-    // inside that row can't be rebuilt either.
     if (floor > 0n && journalSeqForEventSeq(afterSeq) <= floor) {
       throw new ThreadEventReplayGapError(afterSeq, cursorSeqForJournalHead(throughJournalSeq));
     }
@@ -410,11 +390,6 @@ export function createThreadEventHub(
       return catchup;
     },
 
-    /**
-     * Replay backlog while a guard listener buffers any live appendEvent fan-out,
-     * then attach the real listener. Buffered events are merged into catchup so
-     * nothing is lost between replay completion and subscription.
-     */
     async catchupAndSubscribe(
       threadId: ThreadId,
       afterSeq: bigint,

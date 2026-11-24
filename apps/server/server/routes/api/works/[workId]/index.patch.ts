@@ -1,5 +1,3 @@
-/** Updates mutable Work metadata; archive state remains an explicit lifecycle action. */
-
 import type { CommandId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { UpdateWorkRequest } from "@meridian/contracts/works";

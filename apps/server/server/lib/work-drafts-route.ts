@@ -1,7 +1,3 @@
-/**
- * Route core for a Work's drafts (`WorkDrafts`): the list, and each change as a command whose
- * resend answers what it stored. Nothing here decides an effect.
- */
 import type { CommandId, DraftId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { isDraftId } from "@meridian/contracts";
 import type { CommandKind } from "@meridian/contracts/commands";
@@ -39,7 +35,6 @@ export async function handleListWorkDrafts(
   return { drafts: await app.documentSync.workDrafts.list(work.id as WorkId) };
 }
 
-/** Runs one draft change as the command `kind` on the Work the route names. */
 export async function runDraftCommand(
   app: Services,
   input: {
@@ -74,7 +69,6 @@ export async function runDraftCommand(
   );
 }
 
-/** A draft's name from a body: a string, or null for the default name. */
 export function draftName(raw: unknown): string | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.length > 200)

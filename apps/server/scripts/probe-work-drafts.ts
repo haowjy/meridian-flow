@@ -1,8 +1,3 @@
-// Hand-run probe: a Work's drafts on a scratch database, through the production adapters:
-// `Delete draft` and its Undo, `setChatDraft` racing a delete, the purge racing a fork room's save,
-// and a chat move recounting both Works. Recipe: `domains/collab/.context/qa/work-drafts.md`.
-//   pnpm dev:infra
-//   node --import tsx apps/server/scripts/probe-work-drafts.ts
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { encodeEnvelope, freshPeerId, readDocument, writeDocument } from "@meridian/document-model";
@@ -37,8 +32,6 @@ const schema = buildDocumentSchema();
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
 const { db, raw } = h;
-// A loaded room set, as the server holds one: the purge ends its rooms, and a tab's typing
-// waits in it for the debounced save.
 const rooms = createPostgresDocumentRooms({
   db,
   shape: shapeSchemaOf(schema),
@@ -54,7 +47,6 @@ const drafts = createDrizzleWorkDrafts(db, {
 });
 const threadWorks = createDrizzleThreadWorksRepository(db, workProjection);
 
-/** A tab types a closing paragraph into the draft's fork of the document; unsaved until `flush`. */
 async function typeInFork(draftId: DraftId, documentId: DocumentId, text: string) {
   const fork = { kind: "fork", draftId, documentId } as const;
   const tab = await rooms.read(fork, { peer: freshPeerId() });
@@ -93,7 +85,6 @@ try {
   const a = await h.seedWork("Rewrite");
   const { documentId } = await h.seedDocument("chapter", "Opening.");
 
-  // Delete draft and its Undo.
   const second = await drafts.create({ workId: a.workId, name: "Second", userId: h.ids.user });
   if (!second) throw new Error("the Work takes a second draft");
   check(
@@ -116,7 +107,6 @@ try {
   check(back?.id === second.id, "its Undo lists the draft again");
   check((await chatDraft(a.threadId)) === a.draftId, "the Undo leaves the chat where it is");
 
-  // setChatDraft against a delete of the same draft: the chat never names a deleted draft.
   let named = 0;
   for (let round = 0; round < 25; round++) {
     await drafts.restore({ workId: a.workId, draftId: second.id });
@@ -134,7 +124,6 @@ try {
     named,
   });
 
-  // The purge against a fork room's save of a tab's typing.
   const fork = await typeInFork(second.id, documentId, "Typed before the purge.");
   await rooms.flush(fork);
   check((await forkRow(second.id, documentId))?.pending === true, "the draft's fork is pending");
@@ -166,7 +155,6 @@ try {
     "a save for a purged draft writes nothing",
   );
 
-  // A chat move carries its draft and recounts both Works.
   const b = await h.seedWork("Elsewhere");
   await typeInFork(a.draftId, documentId, "Pending in the moving draft.");
   await rooms.flush({ kind: "fork", draftId: a.draftId, documentId });

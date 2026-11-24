@@ -1,8 +1,3 @@
-/**
- * PostgreSQL adapter for the durable per-thread message queue (`DeliveryStore`). The
- * `provenance`/`body` jsonb reads trust the stored shape via `as unknown as`;
- * this adapter performs no runtime validation at the storage boundary.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
@@ -35,7 +30,6 @@ export function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSele
   };
 }
 
-/** Work-context notices are not in the run-state record, so writing one marks nothing. */
 function isWorkContextNotice(body: unknown): boolean {
   return (body as { kind?: string } | null)?.kind === "work_context_refresh";
 }
@@ -93,7 +87,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       return rows.map(({ threadId }) => threadId as ThreadId);
     },
     async canMaterializeWork(threadId) {
-      // Stronger thread/project locks invert Work mutation + marker FK insertion against turn writes.
+      // keep: Keep canMaterializeWork's thread lock weak; stronger locks invert Work-mutation order
       const rows = await db_()
         .select({ id: schema.threads.id })
         .from(schema.threads)
@@ -216,8 +210,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
     async ack(threadId, ids, byTurnId = null, options) {
       if (ids.length === 0) return [];
       const handedBackBy = options?.handedBackBy;
-      // Only a message row records its deliverer; controls and notices keep null. A hand-back has no
-      // deliverer at all, and only a message row can be handed back.
       const rows = await db_()
         .update(schema.threadInboxMessages)
         .set({
@@ -255,7 +247,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .where(
           and(
             inArray(schema.threadInboxMessages.intent, ["message", "control"]),
-            // A lone pending switch waits for a run, so it never wakes the chat.
             sql`${schema.threadInboxMessages.body}->>'kind' is distinct from 'write_mode'`,
             sql`NOT EXISTS (
               SELECT 1 FROM ${schema.asks}

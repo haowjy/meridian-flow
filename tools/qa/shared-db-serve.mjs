@@ -1,5 +1,3 @@
-// A child of shared-db-server.ts, run on Node: it hosts Nitro dev or Vite in-process, and Nitro
-// fails on Bun (crossws). Usage: node shared-db-serve.mjs server|app
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -24,7 +22,6 @@ if (!PORT) fail("a child runs under Portless, which assigns PORT");
 const port = Number(PORT);
 const prefix = SHARED_DB_SERVER_PREFIX;
 
-/** `nitro dev` without the CLI, so its build directory is its own. */
 async function serveServer() {
   const serverDir = resolve(repoRoot, "apps/server");
   const nitro = await moduleFrom(serverDir, "nitro/builder");
@@ -38,7 +35,6 @@ async function serveServer() {
   await nitro.build(app);
 }
 
-/** The app's own Vite config, with caches and Nitro build of its own. */
 async function serveApp() {
   const appDir = resolve(repoRoot, "apps/app");
   process.chdir(appDir);

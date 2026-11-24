@@ -1,9 +1,3 @@
-/**
- * PhoneSettings — full-screen phone chrome for the routed settings overlay.
- *
- * Settings routing and section bodies stay in `SettingsDialog`; this module owns
- * the phone's horizontal section chips and body padding inside `PhoneTakeover`.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { LucideIcon } from "lucide-react";
@@ -82,7 +76,6 @@ function SectionChip({
   const ref = useRef<HTMLButtonElement>(null);
   const Icon = item.icon;
 
-  // Keep the active chip visible in the scrollable row.
   useEffect(() => {
     if (isActive) ref.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [isActive]);
@@ -94,8 +87,6 @@ function SectionChip({
       onClick={() => onSelect(item.section)}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // scroll-mx matches the row's 0.75rem padding so scrollIntoView
-        // doesn't pin the chip flush against the viewport edge.
         "focus-ring flex h-11 shrink-0 scroll-mx-3 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
         isActive
           ? "border-transparent bg-ink-fill-strong font-medium text-foreground"

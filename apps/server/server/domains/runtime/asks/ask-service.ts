@@ -1,11 +1,3 @@
-/**
- * Durable ask creation and resolution, split into claim, tool-result, and continuation owners.
- * A resolution that continues sets the ask's continuation `pending` and writes one
- * `ask_resolved` inbox row, the wake hint that admission follows. A permission ask's tool
- * result is the approved action's result, or `{allowed: false}` on Deny; the executor owns its
- * savepoint and refusal translation. Every path locks its ask row before the thread lock.
- */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
@@ -43,16 +35,13 @@ export type AskAnswerResult =
       ok: false;
       code: "ask_not_open" | "invalid_answer";
       ask?: ThreadAsk;
-      /** The first question whose answer didn't fit, when one entry is at fault. */
       questionIndex?: number;
     };
 
-/** What a tool call asks the writer for: an answer to a question, or permission to run an action. */
 export type AskRequest =
   | { kind: "question"; payload: QuestionAskPayload }
   | { kind: "permission"; payload: PermissionAskPayload; command: PermissionWorkCommand };
 
-/** `deferred`: the call's execution settles on the ask, and its answer writes the result. */
 export type AskRequestOutcome =
   | { kind: "deferred"; askId: string }
   | { kind: "refused"; refusal: JsonValue };
@@ -64,25 +53,21 @@ export type AskToolResult = {
   metadata?: JsonObject;
 };
 
-/** `resume` continues the asking run with the answer's tool result; `cancel` ends its turn. */
 export type AskResolutionPlan = { kind: "resume" } | { kind: "cancel" };
 
 export type PresenceRefusal = "not_owner" | "not_open_question" | "draft_misfit";
 
-/** A presence moves the published deadline only when it moves this far; smaller moves stay in the row. */
 const PRESENCE_PUBLISH_MS = 30_000;
 
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
-  /** The one way a tool call opens an ask. */
   request(input: {
     threadId: ThreadId;
     askingTurnId: TurnId;
     executionId: string;
     toolCallId: string;
     request: AskRequest;
-    /** The cache of the model asking, which sets how long a question may wait. Null when unknown. */
     promptCache: PromptCacheDescriptor | null;
   }): Promise<AskRequestOutcome>;
   answer(input: {
@@ -92,13 +77,6 @@ export interface AskService {
     submissionId: string;
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
-  /**
-   * The writer is interacting with an open question ask: moves its deadline out and, when
-   * `answers` come with it, stores them as the draft (without them the stored draft stays).
-   * Publishes the ask only when the stored answers changed or the deadline moved by
-   * `PRESENCE_PUBLISH_MS`. Refused (nothing changes, the reason returned) for a thread the
-   * user doesn't own, a closed or permission ask, or draft answers that don't fit the questions.
-   */
   presence(input: {
     userId: string;
     threadId: ThreadId;
@@ -106,15 +84,7 @@ export interface AskService {
     answers?: DraftAnswers;
     now?: Date;
   }): Promise<PresenceRefusal | null>;
-  /**
-   * Resolves every open question ask past its deadline: a held option or skip stands, held typed
-   * words become `unsent`, and each other question takes its Recommended option.
-   */
   expireDue(now?: Date, limit?: number): Promise<number>;
-  /**
-   * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
-   * an `ask.updated` for an owed continuation it withdrew. Call under the ask's thread lock.
-   */
   recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
 
@@ -126,7 +96,6 @@ function fitsQuestion(question: AskQuestion, answer: QuestionAnswer): boolean {
   return true;
 }
 
-/** The index of the first answer that doesn't fit its question, or -1. Null entries are unanswered. */
 function firstMisfit(questions: readonly AskQuestion[], answers: DraftAnswers): number {
   return answers.findIndex((answer, i) => {
     const question = questions[i];
@@ -134,7 +103,6 @@ function firstMisfit(questions: readonly AskQuestion[], answers: DraftAnswers): 
   });
 }
 
-/** Why a writer's answer doesn't fit this ask (the question it misses, when one), or null when it fits. */
 function answerMisfit(ask: StoredAsk, answer: AskAnswer): { questionIndex?: number } | null {
   if (ask.kind === "permission") return answer.kind === "answers" ? {} : null;
   if (answer.kind !== "answers") return {};
@@ -144,10 +112,6 @@ function answerMisfit(ask: StoredAsk, answer: AskAnswer): { questionIndex?: numb
   return misfit >= 0 ? { questionIndex: misfit } : null;
 }
 
-/**
- * The timeout's resolution: held options and skips stand as the writer's click, held words were
- * never sent and stay `unsent`, and every other question takes its Recommended option.
- */
 function timeoutResolution(ask: StoredAsk): AskResolution {
   const { questions } = ask.payload as QuestionAskPayload;
   const answers = questions.map((question, i): ResolvedQuestionAnswer => {
@@ -163,13 +127,7 @@ function resolutionPlan(resolution: AskResolution | null): AskResolutionPlan {
   return { kind: resolution.kind === "cancelled" ? "cancel" : "resume" };
 }
 
-/** Runs what the writer allowed. */
 export interface PermissionExecutor {
-  /**
-   * Runs the stored command inside the answer's transaction; a domain refusal rolls back the
-   * command's own writes and becomes an error result. `always` also stores the project's
-   * grant for the action, even when the action was refused: the writer's standing choice.
-   */
   execute(input: {
     threadId: ThreadId;
     command: PermissionWorkCommand;
@@ -177,7 +135,6 @@ export interface PermissionExecutor {
   }): Promise<AskToolResult>;
 }
 
-/** For compositions that run no model tools, so no permission request can open. */
 export const refusingPermissionExecutor: PermissionExecutor = {
   async execute() {
     throw new Error("This composition runs no permission requests");
@@ -203,7 +160,6 @@ interface ResolveInput {
   askId: string;
   threadId: ThreadId;
   status: "answered" | "expired";
-  /** Built from the row as the thread lock holds it, so a draft stored since a listing counts. */
   resolution: (current: StoredAsk) => AskResolution;
   submissionId?: string;
   dueBy?: Date;
@@ -237,7 +193,6 @@ export function createAskService(deps: {
       });
       if (claimed) return { kind: "claimed", ask: claimed };
     } else {
-      // The chat's delete skipped this row because this answer held it: finish that cancellation.
       const cancelled = await deps.repos.asks.resolveLive({
         id: input.askId,
         status: "cancelled",
@@ -317,7 +272,6 @@ export function createAskService(deps: {
     }));
   }
 
-  /** A question's answer, or a cancelled ask, as the tool result; an answered permission ask runs. */
   async function resolveToolResult(ask: StoredAsk): Promise<AskToolResult> {
     const decision = ask.resolution?.kind;
     if (ask.kind === "question" || decision === "cancelled") {
@@ -328,8 +282,6 @@ export function createAskService(deps: {
     if (decision !== "allow" && decision !== "allow_always")
       throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
     if (!ask.permissionCommand) throw new Error(`Permission ask ${ask.id} has no command`);
-    // Tolerant on read, strict here: a command stored by another release may not parse, and that
-    // ask resolves as a recorded refusal instead of breaking the thread's reads.
     const parsed = permissionWorkCommandSchema.safeParse(ask.permissionCommand);
     if (!parsed.success) return UNREADABLE_COMMAND;
     return deps.permission.execute({
@@ -351,7 +303,6 @@ export function createAskService(deps: {
 
   async function resolve(input: ResolveInput): Promise<AskAnswerResult> {
     return deps.repos.transaction(() =>
-      // The thread lock takes its held ask rows, this one included, before its own lock.
       deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;
@@ -411,8 +362,6 @@ export function createAskService(deps: {
       const thread = await deps.repos.threads.findById(input.threadId);
       if (!thread || thread.userId !== input.userId) return "not_owner";
       const now = input.now ?? new Date();
-      // The thread lock serializes this with a resolution; a timeout whose deadline this moves
-      // then loses on its `dueBy` check.
       return deps.repos.transaction(() =>
         deps.delivery.withThreadLock(input.threadId, async (): Promise<PresenceRefusal | null> => {
           const stored = await deps.repos.asks.findById(input.askId);
@@ -436,13 +385,9 @@ export function createAskService(deps: {
             draftAnswers: input.answers,
           });
           if (!updated) return "not_open_question";
-          // Publish when the deadline crosses a 30 s bucket, not when it moves by 30 s from the
-          // last stored value: every presence writes the deadline, so alternating tabs would
-          // otherwise never accumulate a step.
+          // keep: Publish deadline changes by 30-second bucket, not by a delta from the last stored deadline
           const bucket = (at: Date | null) =>
             Math.floor((at?.getTime() ?? 0) / PRESENCE_PUBLISH_MS);
-          // A presence carrying answers always publishes: the echo is the sender's ack, even
-          // when the answers equal the stored ones.
           if (!input.answers && bucket(updated.deadlineAt) === bucket(stored.deadlineAt))
             return null;
           await persistAndAppendEvents(deps, input.threadId, async () => ({

@@ -5,11 +5,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-/**
- * A state chip that opens what it counts: an Agent file's problems or notes, a package's, what
- * a Save left out, or the files changed since the last save. Destructive when it means something
- * isn't in use, neutral for a note.
- */
 export function FindingsChip({
   tone,
   word,
@@ -21,10 +16,8 @@ export function FindingsChip({
   tone: "destructive" | "warning" | "neutral";
   word: ReactNode;
   heading: string;
-  /** The list; given the popover's close, for an item that leaves it. */
   children: (close: () => void) => ReactNode;
   touch?: boolean;
-  /** For a word too short to say what it counts: the chip's name, and its tooltip. */
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -62,7 +55,7 @@ export function FindingsChip({
       <PopoverContent
         align="end"
         className="w-80 max-w-[calc(100vw-1rem)] p-2"
-        // Portaled, but React carries its clicks up to the row the chip sits in, which would open.
+        // keep: React portal clicks bubble up the component tree; stopPropagation here keeps popover clicks from opening the chip's row.
         onClick={(event) => event.stopPropagation()}
       >
         <p className="px-2 pt-1 font-medium text-foreground text-sm">{heading}</p>
@@ -72,7 +65,6 @@ export function FindingsChip({
   );
 }
 
-/** Sentences under a chip's heading, one per problem or note. */
 export function SentenceList({
   items,
   className,

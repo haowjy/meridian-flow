@@ -25,12 +25,6 @@ import { threads } from "./agent-threads";
 import { projects } from "./content";
 import { users } from "./users";
 
-/**
- * A writer's connection to a remote MCP server, at one level: the account (no project) or one
- * project. The token lives in `mcp_connection_tokens`, always on the account. `settings_version`
- * goes up when the address or the token changes; a status counts only under the version it was
- * learned under, so a check that started before the change never overwrites a newer result.
- */
 export const mcpConnections = pgTable(
   "mcp_connections",
   {
@@ -44,19 +38,14 @@ export const mcpConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     spec: jsonb("spec").$type<McpConnectionSpec>().notNull(),
-    /** Null until the server has answered a listing and the writer has chosen tools. */
     currentPinId: uuid("current_pin_id")
       .$type<McpPinId>()
       .references((): AnyPgColumn => mcpPins.id),
     settingsVersion: integer("settings_version").notNull().default(1),
-    /** Null: no result yet. */
     status: text("status").$type<McpConnectionStatus>(),
     statusReason: text("status_reason"),
-    /** The settings version `status` was learned under. */
     statusVersion: integer("status_version"),
-    /** When the check or call that set `status` started: a later-started result wins. */
     statusStartedAt: timestamp("status_started_at", { withTimezone: true }),
-    /** When the last check of any outcome ended: it paces the next check. */
     checkFinishedAt: timestamp("check_finished_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -78,7 +67,6 @@ export const mcpConnections = pgTable(
   ],
 );
 
-/** A connection's chosen tools as the server listed them. Insert-only: a re-pin is a new row. */
 export const mcpPins = pgTable(
   "mcp_pins",
   {
@@ -94,7 +82,7 @@ export const mcpPins = pgTable(
   (table) => [index("mcp_pins_connection_created").on(table.connectionId, table.createdAt)],
 );
 
-/** One writer's token for one connection, AES-256-GCM under `MCP_TOKEN_KEY`. The app never reads it back. */
+// keep: MCP tokens are AES-256-GCM ciphertext under MCP_TOKEN_KEY and are never returned to the app
 export const mcpConnectionTokens = pgTable(
   "mcp_connection_tokens",
   {
@@ -112,11 +100,6 @@ export const mcpConnectionTokens = pgTable(
   (table) => [primaryKey({ columns: [table.connectionId, table.accountId] })],
 );
 
-/**
- * One row per connection call, inserted in its own transaction before the call leaves and
- * completed after it. The connection and pin ids are plain so a row outlives a removal; the chat's
- * delete takes the rows. The reply is a reference into the chat's own storage prefix.
- */
 export const mcpCalls = pgTable(
   "mcp_calls",
   {
@@ -133,7 +116,6 @@ export const mcpCalls = pgTable(
     pinId: uuid("pin_id").$type<McpPinId>().notNull(),
     toolName: text("tool_name").notNull(),
     arguments: jsonb("arguments").notNull(),
-    /** Null while the call is open. */
     outcomeKind: text("outcome_kind"),
     replyRef: jsonb("reply_ref"),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),

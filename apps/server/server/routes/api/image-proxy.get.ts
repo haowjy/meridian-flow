@@ -1,11 +1,3 @@
-/**
- * GET /api/image-proxy?url=…: a remote image drawn from Flow's own origin.
- *
- * The page's content security policy lets images load only from Flow, so a remote image the
- * writer chose to load comes through here. The fetch goes through the public-address dispatcher
- * and carries nothing of the writer's. The answer is served from Flow's origin, so it is inert
- * if opened directly: an SVG or HTML body never runs. A refusal says why in a typed header.
- */
 import {
   IMAGE_PROXY_MAX_BYTES,
   IMAGE_PROXY_REASON_HEADER,
@@ -38,7 +30,7 @@ class Refusal extends Error {
   }
 }
 
-/** Default ports only: a writer-chosen address is not a way to probe other ports. */
+// keep: default ports only: a writer-chosen address is not a way to probe other ports
 function remoteImageUrl(raw: string): URL {
   const url = URL.canParse(raw) ? new URL(raw) : null;
   if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
@@ -58,7 +50,7 @@ function refusalOf(error: unknown): Refusal {
   return new Refusal(timedOut ? "timeout" : "unreachable");
 }
 
-/** The whole body, read only up to the cap: a Content-Length is the remote's claim, not a limit. */
+// keep: read the body only up to the cap: a Content-Length is the remote's claim, not a limit
 async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array<ArrayBuffer>> {
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -70,7 +62,6 @@ async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array<
   return Buffer.concat(chunks);
 }
 
-/** At most this many loads run at once per account; the rest wait their turn. */
 const MAX_CONCURRENT_PER_ACCOUNT = 4;
 const running = new Map<string, { active: number; waiting: Array<() => void> }>();
 
@@ -78,7 +69,6 @@ async function withAccountSlot<T>(accountId: string, run: () => Promise<T>): Pro
   const slots = running.get(accountId) ?? { active: 0, waiting: [] };
   running.set(accountId, slots);
   if (slots.active >= MAX_CONCURRENT_PER_ACCOUNT) {
-    // The finishing load hands its slot straight to the next one, so `active` stays put.
     await new Promise<void>((resolve) => slots.waiting.push(resolve));
   } else {
     slots.active++;

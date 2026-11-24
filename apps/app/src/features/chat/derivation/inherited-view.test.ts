@@ -107,7 +107,6 @@ describe("useInheritedView", () => {
 
 describe("optimisticForkPrefix", () => {
   it("leaves the source's forgotten turns out of a pending fork but keeps the source's own inherited stamps", () => {
-    // Risk (F1): a fork shown before its pages land restored words the source had forgotten.
     const forgotten = { ...turn("lost", "source"), forgottenBy: "kept" } as Turn;
     const view = optimisticForkPrefix({
       source: { id: "source", title: "Plan" },

@@ -1,4 +1,3 @@
-/** PassageDoor — a matched passage rendered as the way into it. */
 import { t } from "@lingui/core/macro";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 
@@ -12,10 +11,8 @@ import { documentDisplayName } from "./document-display-name";
 import type { ExcerptSpan } from "./tool-result-preview";
 
 export type PassageDoorProps = {
-  /** The document this passage lives in. */
   path: string;
   excerpt: ExcerptSpan;
-  /** Absent when the passage cannot be resolved; the row then renders as prose. */
   passage?: ContextPassageAnchor;
 };
 
@@ -58,11 +55,8 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
   return (
     <button
       type="button"
-      // The destination first, then the passage itself: a label that named only
-      // the document would leave a screen reader with four identical doors.
       aria-label={t`Open ${documentDisplayName(path)} at this passage. ${excerptText(excerpt)}`}
       onClick={(event) => {
-        // The row behind this expand is the toggle; opening must not fold it.
         event.stopPropagation();
         openContextUri(uri, passage);
       }}
@@ -78,7 +72,6 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
   );
 }
 
-/** The excerpt as one string, for the label a screen reader reads. */
 function excerptText({ lead, match, trail, clipped }: ExcerptSpan): string {
   return `${clipped ? "…" : ""}${lead}${match}${trail}`;
 }

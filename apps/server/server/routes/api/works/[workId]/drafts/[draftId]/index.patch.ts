@@ -1,4 +1,3 @@
-/** PATCH /api/works/:workId/drafts/:draftId: rename a draft, as a command. */
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import {

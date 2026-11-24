@@ -1,5 +1,3 @@
-/** Risk: tabs disagree about ownership, or a historical created root is resurrected after deletion. */
-
 import type { ImportSummary } from "@meridian/contracts";
 import { expect, it } from "vitest";
 import type { LocalUpload } from "./import-coordinator";

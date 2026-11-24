@@ -1,5 +1,3 @@
-/** Platform-neutral client behavior shared by the app and ./mf. */
-
 export * from "./asks";
 export * from "./cards";
 export * from "./commands";

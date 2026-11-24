@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * Serves the map without a dev server of your own: `node tools/architecture-map/serve.mjs <config> [port]`,
- * then open http://localhost:<port>/architecture/. Same server code as the Vite plugin.
- */
 import { createServer } from "node:http";
 import { createArchitectureServer, ENTRY, send } from "./server.mjs";
 
@@ -12,7 +8,7 @@ if (!configFile) {
   process.exit(1);
 }
 const handle = await createArchitectureServer(configFile);
-// A page on another origin can point its own name at 127.0.0.1 and read what this serves, so only our own host names get an answer.
+// keep: answer only our own host names, or another origin's page can point its name at 127.0.0.1 and read this
 const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
 createServer((req, res) => {
   if (!hosts.has(req.headers.host)) {

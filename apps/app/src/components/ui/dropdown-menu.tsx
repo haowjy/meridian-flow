@@ -15,7 +15,6 @@ import {
 } from "./dropdown-presentation";
 import { withRowNote } from "./marks";
 
-/** Small words at the row's end (a shortcut, a hint), on the label's baseline. Not with `asChild`. */
 type Noted = { note?: React.ReactNode };
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
@@ -47,7 +46,6 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         onPointerUpCapture={(event) => {
           onPointerUpCapture?.(event);
-          // Radix selects the row under a release even when its press opened the context menu.
           if (event.button !== 0) event.preventDefault();
         }}
         className={cn(
@@ -78,7 +76,6 @@ function DropdownMenuItem({
   Noted & {
     inset?: boolean;
     variant?: "default" | "destructive";
-    /** The picker's current value: it wears the hover fill, with no check. */
     selected?: boolean;
   }) {
   return (
@@ -95,7 +92,6 @@ function DropdownMenuItem({
   );
 }
 
-/** Only for toggles where several rows can be on at once; a single value uses `selected`. */
 function DropdownMenuCheckboxItem({
   className,
   children,
@@ -126,7 +122,6 @@ function DropdownMenuRadioGroup({
   return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />;
 }
 
-/** A single-value pick: the checked row wears the hover fill, with no dot. */
 function DropdownMenuRadioItem({
   className,
   note,
@@ -226,11 +221,6 @@ function DropdownMenuSubContent({
   );
 }
 
-/**
- * Runs a menu item's action after the menu has closed and put focus back on its
- * trigger. A dialog the action opens then returns focus to that trigger when it
- * closes; run from the item itself, it would return to an item that is gone.
- */
 function useMenuActionDispatch() {
   const pending = useRef<(() => void) | null>(null);
   const dispatch = useCallback((action: () => void) => {
@@ -240,7 +230,7 @@ function useMenuActionDispatch() {
     const action = pending.current;
     if (!action) return;
     pending.current = null;
-    // Radix focuses the trigger after this handler, in the same dispatch.
+    // keep: Radix focuses the trigger after onCloseAutoFocus in the same dispatch; defer the action to a microtask
     queueMicrotask(action);
   }, []);
   return { dispatch, onCloseAutoFocus };

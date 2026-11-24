@@ -1,4 +1,3 @@
-/** TeeEventSink: synchronous event fan-out to composed observability adapters. */
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 
 export class TeeEventSink implements EventSink {

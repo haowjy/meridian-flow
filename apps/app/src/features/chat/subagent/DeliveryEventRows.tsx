@@ -1,4 +1,3 @@
-/** Quiet inline rows for child completion and delivery events. */
 import { i18n } from "@lingui/core";
 import { Trans } from "@lingui/react/macro";
 import type { DeliveryEvent, DeliveryGroup } from "@meridian/thread-client";
@@ -9,7 +8,6 @@ import { subagentStatus } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentIdentity, SubagentRow } from "./SubagentRow";
 
-/** Draws the view model's delivery groups: a group of several is one merged row. */
 export function DeliveryEventRows({ groups }: { groups: readonly DeliveryGroup[] }) {
   return (
     <>

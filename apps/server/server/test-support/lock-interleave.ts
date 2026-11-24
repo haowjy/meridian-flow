@@ -1,9 +1,3 @@
-/**
- * Controlled interleaving for DB tests (contract §16.1): run `a` until it reaches a test
- * hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
- * Depends only on the hook registry and the database's lock view.
- */
-
 import { setTimeout as delay } from "node:timers/promises";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
@@ -12,7 +6,6 @@ import { setTestHook, type TestHookPoint } from "../shared/test-hooks.js";
 
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-/** Wait for a query to observe a PostgreSQL lock, with one load-tolerant deadline. */
 export async function waitForPostgresLock<T>(
   description: string,
   observe: () => Promise<T | undefined>,
@@ -34,7 +27,6 @@ function settle<T>(run: () => Promise<T>): Promise<Settled<T>> {
   );
 }
 
-/** Sessions waiting on a lock the session `holder` holds. */
 async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
   const rows = await db.execute<{ pid: number }>(sql`
     SELECT pid FROM pg_stat_activity
@@ -42,12 +34,6 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
   return new Set(rows.map((row) => Number(row.pid)));
 }
 
-/**
- * `b` runs to completion or to its first wait on `a` (at most `waitMs`, five seconds by
- * default) before `a` is released. `bWaited` is true when a session that wasn't already
- * waiting on `a` started waiting on a lock `a`'s transaction holds, the database's view
- * of a real lock.
- */
 export async function interleave<A, B>(
   db: Database,
   a: () => Promise<A>,
@@ -64,7 +50,6 @@ export async function interleave<A, B>(
     release = resolve;
   });
   const pause = async () => {
-    // Only `a`'s first arrival waits; `b` passes the same point freely.
     remove();
     const [row] = isInDrizzleTransaction()
       ? await currentDrizzleDb(db).execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
@@ -86,7 +71,6 @@ export async function interleave<A, B>(
       bDone = true;
     });
     let bWaited = false;
-    // `b` runs to completion, or to its first wait on `a`, before `a` goes on.
     while (!bDone && Date.now() < deadline) {
       if (holder !== null && [...(await blockedBy(db, holder))].some((pid) => !before.has(pid))) {
         bWaited = true;
@@ -102,10 +86,6 @@ export async function interleave<A, B>(
   }
 }
 
-/**
- * Two named runs: `runs[first]` to the hook point `at`, then the other. Each run's
- * outcome by its name, so a table of orders reads the same outcome whichever ran first.
- */
 export async function race<K extends string>(
   db: Database,
   runs: Record<K, () => Promise<unknown>>,

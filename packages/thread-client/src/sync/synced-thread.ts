@@ -1,15 +1,3 @@
-/**
- * `SyncedThread`: the one plain value a host holds per chat (turns, the fences that keep old
- * reads and removed turns out, the snapshot floor, the durable-block cursor, the reducer's event
- * counter and the run-state slice), and the pure transitions that change it. The app keeps the
- * value in its Zustand store; `syncedTurnStore` is the one `TurnStore` the reducer writes through,
- * over a host-provided cell for that value. Nothing here fetches, subscribes or schedules.
- *
- * The four positions of the sync KB decision stay apart: the floor (a read applies only at or
- * above it), `resumeAfterSeq` (read from each read, never stored), the durable cursor and the
- * delivery cursor (the highest frame the stream wrote here).
- */
-
 import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type { Block } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq, type Turn, type TurnStatus } from "@meridian/contracts/protocol";
@@ -45,25 +33,14 @@ import { isOptimisticTurnId } from "../view/optimistic-turn-id";
 export type SyncedThread = {
   unavailable: FailureOccurrence | null;
   turns: Turn[];
-  /** Turns removed from the conversation, until a read covering the removal arrives. */
   tombstones: Tombstones;
-  /** Dividers a `switched` frame added that no applied read covers yet. */
   dividers: HeldDividers;
-  /** Every id a `turns.forgotten` frame named, held or not. Never pruned. */
   forgotten: ForgottenStamps;
-  /** Snapshot freshness: a read applies only at or above it. Rises only, except by an applied read. */
   floor: string | null;
-  /** The last durable block applied. */
   durableCursor: string | null;
-  /**
-   * The highest frame seq the stream has written into the value. A sync joins above it, so a kept
-   * value's stream-built blocks are never delivered twice. It only rises; a read leaves it alone.
-   */
   deliveryCursor: string | null;
-  /** The reducer's event counter; it names fallback block ids, so it never resets. */
   eventsApplied: number;
   runState: RunStateSlice;
-  /** The chat's asks and this device's answers to them (`asks/`). */
   asks: ChatAsks;
 };
 
@@ -81,35 +58,25 @@ export const EMPTY_SYNCED_THREAD: SyncedThread = {
   asks: EMPTY_CHAT_ASKS,
 };
 
-/** The facts of one applied read: its turns, and its record, which reaches the slice as `history`. */
 export type ReadFacts = {
   turns: Turn[];
   asks: readonly ThreadAsk[];
   nextSeq: string;
-  /** The assistant turn the server says is still running, even before the read's turns hold it. */
   runningTurnId: string | null;
-  /** The read's record: it agrees with the turns, so both change in one transition. */
   runState: RunState;
 };
 
-/** Whether a read at `nextSeq` may apply: it is not older than what the chat already took. */
 export function acceptsSnapshot(synced: SyncedThread, nextSeq: string): boolean {
   if (parseSeq(nextSeq) === null) return false;
   return synced.floor === null || compareSeq(nextSeq, synced.floor) >= 0;
 }
 
-/** Raise the delivery cursor to `seq`. The value itself when `seq` is malformed or not above it. */
 export function raiseDeliveryCursor(synced: SyncedThread, seq: string): SyncedThread {
   if (parseSeq(seq) === null) return synced;
   if (synced.deliveryCursor !== null && compareSeq(seq, synced.deliveryCursor) <= 0) return synced;
   return { ...synced, deliveryCursor: seq };
 }
 
-/**
- * Apply a read: server turns are the spine (`applySnapshotTo`, then `reconcileSnapshotTurns`), the
- * durable cursor moves to what the read covers, and the floor to its `nextSeq`. Null when the
- * read is stale; the value is then unchanged.
- */
 export function applyRead(synced: SyncedThread, read: ReadFacts): SyncedThread | null {
   const { nextSeq } = read;
   if (!acceptsSnapshot(synced, nextSeq)) return null;
@@ -117,8 +84,6 @@ export function applyRead(synced: SyncedThread, read: ReadFacts): SyncedThread |
   const turns = reconcileSnapshotTurns(synced.turns, applied.turns, {
     runningTurnId: read.runningTurnId,
   });
-  // A row still waiting on its admission answer is an identity bridge: the answer may name a
-  // turn another tab handed back. Covered tombstones stay until it settles.
   const awaitingAdmission = synced.turns.some((turn) => isOptimisticTurnId(turn.id));
   const coveredSeq = (BigInt(nextSeq) - 1n).toString();
   const durableCursor =
@@ -138,11 +103,6 @@ export function applyRead(synced: SyncedThread, read: ReadFacts): SyncedThread |
   };
 }
 
-/**
- * Whether the stream named a fact only a read can bring: a held divider waits for its anchor
- * turn, or the record names a waiting writer message the transcript lacks. Asked when a
- * refresh timer fires, so this device's own message, acknowledged meanwhile, is no gap.
- */
 export function missing(synced: SyncedThread): boolean {
   if (dividersAwaitingAnchorIn(synced).length > 0) return true;
   const { record } = synced.runState.view;
@@ -151,7 +111,6 @@ export function missing(synced: SyncedThread): boolean {
   return unheldWriterMessages(record, (id) => held.has(id)).length > 0;
 }
 
-/** Admit a durable block's wire sequence: the cursor and the floor rise past it. Null when it is old or malformed. */
 export function acceptDurableBlockSeq(synced: SyncedThread, seq: string): SyncedThread | null {
   if (parseSeq(seq) === null) return null;
   if (synced.durableCursor !== null && compareSeq(seq, synced.durableCursor) <= 0) return null;
@@ -163,7 +122,6 @@ export function acceptDurableBlockSeq(synced: SyncedThread, seq: string): Synced
   };
 }
 
-/** Apply a change to the chat's asks (a frame, an answer and its reply). */
 export function updateAsks(
   synced: SyncedThread,
   change: (asks: ChatAsks) => ChatAsks,
@@ -181,12 +139,6 @@ export function appendLocalUserTurn(synced: SyncedThread, turn: Turn): SyncedThr
   return { ...synced, turns: [...synced.turns, turn] };
 }
 
-/**
- * The admission answer is the explicit bridge from a local `turn_local_*` row to the persisted
- * user turn: the row takes the server id and settles. The floor rises either way, since the
- * server stated it. When another tab handed the message back first, the row goes instead of
- * becoming the turn that left the conversation.
- */
 export function acknowledgeAdmission(
   synced: SyncedThread,
   optimisticTurnId: string,
@@ -238,7 +190,6 @@ export function patchTurnStatus(
   return turns ? { ...synced, turns } : synced;
 }
 
-/** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
 export function removeTurns(
   synced: SyncedThread,
   ids: readonly string[],
@@ -248,7 +199,6 @@ export function removeTurns(
   return { ...synced, turns: next.turns, tombstones: next.tombstones };
 }
 
-/** Stamp failed turns that left the conversation, remembering every id (see `markForgottenIn`). */
 export function markForgotten(
   synced: SyncedThread,
   ids: readonly string[],
@@ -258,11 +208,6 @@ export function markForgotten(
   return { ...synced, turns: next.turns, forgotten: next.forgotten };
 }
 
-/**
- * Drop an orphaned transport tail. Submit-time pruning runs after the controller tore down its
- * live subscription; only a streaming assistant row can be one, since pending rows and turns
- * awaiting an answer are authoritative server state.
- */
 export function pruneStreamingTail(synced: SyncedThread): SyncedThread {
   const turns = synced.turns.filter(
     (turn) => !(turn.role === "assistant" && turn.status === "streaming"),
@@ -270,7 +215,6 @@ export function pruneStreamingTail(synced: SyncedThread): SyncedThread {
   return turns.length === synced.turns.length ? synced : { ...synced, turns };
 }
 
-/** The host's cell for one chat's value. `get` is undefined until something wrote the chat. */
 export type SyncedCell = {
   get(threadId: string): SyncedThread | undefined;
   set(threadId: string, next: SyncedThread): void;
@@ -278,20 +222,12 @@ export type SyncedCell = {
 
 export type SyncedTurnStoreOptions = {
   cell: SyncedCell;
-  /** ISO time for rows the store creates. */
   now: () => string;
-  /** An assistant turn was ensured (created or already held). */
   onTurnEnsured?(threadId: string, turnId: string): void;
-  /** A held turn's status was written; `before` is the turn as it was. */
   onStatusPatched?(threadId: string, turnId: string, status: TurnStatus, before: Turn): void;
   invalidateThreadSnapshot?(threadId: string): void;
 };
 
-/**
- * The one `TurnStore` the reducer writes through. Each operation reads the cell's current value
- * and writes the next before it returns, because the reducer re-reads after its writes. The
- * callbacks are the host's side effects; they run after the write, never inside it.
- */
 export function syncedTurnStore(options: SyncedTurnStoreOptions): TurnStore {
   const { cell, now } = options;
   const read = (threadId: string) => cell.get(threadId) ?? EMPTY_SYNCED_THREAD;

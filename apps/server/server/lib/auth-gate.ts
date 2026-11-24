@@ -1,11 +1,3 @@
-/**
- * App-layer authentication gate for Nitro HTTP routes and WebSocket entrypoints.
- *
- * This module is the single seam that combines app composition with WorkOS
- * authentication and user-row provisioning. Keeping that wiring here prevents
- * route handlers from accidentally authenticating a request without ensuring
- * the authenticated user exists in the app database.
- */
 import { EXPECTED_ACCOUNT_HEADER, WRONG_ACCOUNT_CODE } from "@meridian/contracts/commands";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { HTTPError } from "nitro/h3";
@@ -23,13 +15,7 @@ export interface AppUserEvent {
   req: Request;
 }
 
-/**
- * The gate every HTTP route passes through. A request that names the account its sender
- * believes it is signed in as (`x-meridian-account`) and is not that account is answered 409
- * `wrong_account` before anything runs: a sender that outlives a sign-in switch must not act
- * for the new account. A request that names none is not checked. WebSocket upgrades cannot
- * carry the header, so they and `/api/auth/me` (which tells a client who it is) do not come here.
- */
+// keep: `x-meridian-account` naming another account is a 409 before anything runs, so a sender outliving a sign-in switch cannot act for the new account; WS upgrades and /api/auth/me carry no header and do not come here
 export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
   const signedIn = await requireAppUserFromRequest(event.req);
   const expected = event.req.headers.get(EXPECTED_ACCOUNT_HEADER);
@@ -45,17 +31,6 @@ export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
   return signedIn;
 }
 
-/**
- * Compose app services + authenticate + provision user row.
- *
- * The single gate every route handler passes through. Combines three concerns:
- * 1. Validate the WorkOS session cookie → external user identity (401 if absent)
- * 2. Get the singleton AppServices (lazy init, gateway, DB)
- * 3. Upsert the user row in our DB and give an account with no live project one → internal UserId
- *
- * Throws 401 if the session is missing or invalid. Throws 500 if user-row
- * provisioning fails (DB unavailable, etc.).
- */
 export async function requireAppUserFromRequest(request: Request): Promise<AppUser> {
   const externalUser = await resolveUser(request);
   if (!externalUser) {
@@ -70,14 +45,6 @@ export async function requireAppUserFromRequest(request: Request): Promise<AppUs
   return { app, user: { ...externalUser, userId } };
 }
 
-/**
- * Non-throwing variant for WS upgrade paths.
- *
- * Returns `null` on 401 (missing/invalid session) instead of throwing.
- * All other errors propagate as throws (server misconfiguration, DB failures,
- * etc.). WS upgrade handlers use this to implement accept-then-close auth
- * without crashing the Nitro dev proxy.
- */
 export async function resolveAppUserFromRequest(request: Request): Promise<AppUser | null> {
   try {
     return await requireAppUserFromRequest(request);
@@ -87,11 +54,6 @@ export async function resolveAppUserFromRequest(request: Request): Promise<AppUs
   }
 }
 
-/**
- * Detect a 401/unauthorized error from either H3's HTTPError or a plain
- * object with a `statusCode` property (some non-H3 middleware throws duck-
- * typed errors that carry `.statusCode` but aren't instanceof HTTPError).
- */
 function isUnauthorized(error: unknown): boolean {
   if (error instanceof HTTPError) return error.statusCode === 401;
   if (!error || typeof error !== "object") return false;

@@ -2,10 +2,6 @@ import { msg } from "@lingui/core/macro";
 
 import { i18n } from "./i18n";
 
-/**
- * Compact trailing timestamp ("now", "2h", "3d", "May 12") for a sidebar row.
- * `now` is a stable epoch-ms reference (loader-provided) so SSR and client agree.
- */
 export function formatRelativeTime(value: string | Date, now: number): string {
   const then = new Date(value);
   const diffMs = now - then.getTime();

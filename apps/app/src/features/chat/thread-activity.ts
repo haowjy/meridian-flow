@@ -1,10 +1,3 @@
-/**
- * Pure helpers for the running-subagents surface: validate activity and select
- * live direct children.
- *
- * No transport or React here — the live wiring lives in `useThreadActivity`,
- * so this logic is directly unit-testable.
- */
 import type { ThreadActivity, ThreadActivityNode } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_ACTIVITY: ThreadActivity = { children: [] };
@@ -14,11 +7,7 @@ export function isThreadActivity(value: unknown): value is ThreadActivity {
   return Array.isArray((value as ThreadActivity).children);
 }
 
-/**
- * A running child is a node with a live lease. A settled child whose process died
- * can retain `spawnStatus: "running"` with no lease, so durable status cannot
- * stand in for liveness.
- */
+// keep: Liveness is the live lease (status.kind === 'awake'), not durable spawnStatus; a dead process can keep spawnStatus 'running' with no lease.
 export function isActiveNode(node: ThreadActivityNode): boolean {
   return node.status.kind === "awake";
 }

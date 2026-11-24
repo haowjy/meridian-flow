@@ -1,8 +1,3 @@
-/**
- * DELETE /api/threads/[threadId]: soft-deletes an owned thread (idempotent) and, in the same
- * transaction, ends its run and subagent subtree. Depends on the auth gate, thread ownership,
- * thread repositories, and the turn runner.
- */
 import { defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
 import { deleteOwnedThreadToTrash } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

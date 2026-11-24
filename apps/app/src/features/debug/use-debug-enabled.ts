@@ -1,4 +1,3 @@
-/** Shared dev-debug state and its single keyboard subscription. */
 import { useEffect, useSyncExternalStore } from "react";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 
@@ -100,7 +99,6 @@ export function closeLlmCalls() {
   publish({ ...state, viewerOpen: false });
 }
 
-/** Reset module state between tests without exposing a production reset path. */
 export function resetDebugStoreForTests() {
   if (import.meta.env.MODE !== "test") {
     throw new Error("resetDebugStoreForTests is only available in tests");

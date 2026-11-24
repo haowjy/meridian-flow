@@ -1,7 +1,3 @@
-/**
- * Route core for GET /api/threads/:threadId/debug/model-requests — owner-gated
- * read of dev-only orchestrator model-request capture.
- */
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
 import { createError } from "nitro/h3";
@@ -37,7 +33,6 @@ function singleQueryValue(
   return value;
 }
 
-/** Parse narrowing selectors strictly so malformed protected-content queries fail closed. */
 export function parseModelRequestDebugQuery(query: ModelRequestDebugQueryParameters): {
   turnId?: string;
   gatewayCallId?: string;
@@ -67,7 +62,6 @@ export function parseModelRequestDebugQuery(query: ModelRequestDebugQueryParamet
   return { turnId, gatewayCallId, iteration, latest };
 }
 
-/** Narrow exported records while retaining only the adjacent prefix context. */
 export function selectModelRequestDebugRecords(
   available: readonly ModelRequestDebugRecord[],
   selection: ModelRequestDebugSelection,

@@ -1,10 +1,3 @@
-/**
- * `thread stop`: the chat's Stop, run by the shared hand-back operation with the body the app
- * builds (`stopRequest` over the newest record). The adapter prints the request (id and frozen
- * body) and the exact replay command before posting, so a lost answer can be replayed with
- * `--replay`: the server returns its stored decision for the same id and body, and the
- * handed-back text with it. A re-run without `--replay` is a new press and may cancel the next reply.
- */
 import {
   apiThreadSnapshotPath,
   stopRequestSchema,
@@ -57,7 +50,6 @@ export const threadStopCommand: CommandSpec = {
       const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
         decode: jsonResponse(threadSnapshotSchema),
       });
-      // `mine` is empty: every message ./mf admitted is in the record at or below `sentThrough`.
       input = { press: { kind: "stop", view: viewOfSnapshot(snapshot) } };
     }
     const { command, result, cancelledExecutionId } = await runHandBack({

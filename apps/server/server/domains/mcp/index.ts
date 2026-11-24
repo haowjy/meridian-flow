@@ -1,5 +1,3 @@
-/** Barrel: the MCP connections domain's public surface. */
-
 export { createDrizzleCallStore } from "./adapters/drizzle/call-store.js";
 export { createDrizzleConnectionStore } from "./adapters/drizzle/connection-store.js";
 export {

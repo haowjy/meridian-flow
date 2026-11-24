@@ -45,9 +45,6 @@ export default defineConfig(({ command, mode }) => {
         ignored: (watchedPath) =>
           watchedPath === repoLogsDir || watchedPath.startsWith(`${repoLogsDir}${path.sep}`),
       },
-      // Bind exactly the port portless proxies to (PORT), never Vite's silent
-      // auto-increment fallback — drifting off it desyncs the proxy route on
-      // restart (502) and orphans the listener. Fail fast if the port is held.
       strictPort: true,
       allowedHosts: [".localhost", ".ts.net"],
       proxy: {
@@ -72,8 +69,7 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       dedupe: ["loro-crdt"],
       alias: [
-        // The base64 build carries its WASM inline, so no WASM plugin is needed. One instance for
-        // the app and the packages: the binding's `instanceof LoroMap` depends on it.
+        // keep: One loro-crdt instance for app and packages; instanceof LoroMap depends on it
         { find: /^loro-crdt$/, replacement: "loro-crdt/base64" },
       ],
       tsconfigPaths: true,

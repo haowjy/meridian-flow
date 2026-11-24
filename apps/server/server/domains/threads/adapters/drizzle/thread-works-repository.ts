@@ -1,8 +1,3 @@
-/**
- * Drizzle ThreadWorksRepository: SQL for the thread_works join table — thread-to-Work
- * membership and primary Work lookup. Primary upserts demote the previous primary first.
- */
-
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
@@ -22,7 +17,6 @@ export function createDrizzleThreadWorksRepository(
   db: DrizzleDatabase,
   workCounts: Pick<WorkProjectionMutation, "recountAfterCommit"> | null,
 ): ThreadWorksRepository {
-  /** The chat's root draft follows it; the Works it left and joined recount after commit. */
   async function carry(threadId: ThreadId, workId: WorkId) {
     const moved = await carryRootDraft(db, threadId, workId);
     if (moved.length > 0) workCounts?.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
@@ -42,7 +36,6 @@ export function createDrizzleThreadWorksRepository(
       const thread = await lockThreadAndWorks(db, threadId, [targetWorkId]);
       if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
       for (const [workId, state] of thread.workStates) {
-        // Leaving an archived Work is cleanup, not acquisition of its content authority.
         if (state !== "active" && (workId === targetWorkId || state !== "archived")) {
           throw new WorkLifecycleUnavailableError(workId, state);
         }

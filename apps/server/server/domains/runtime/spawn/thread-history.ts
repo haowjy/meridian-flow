@@ -1,8 +1,3 @@
-/**
- * `thread_history`: a page of numbered turns, one expanded turn, or one item in
- * full, projected to `HistoryResult` over the shared effective-transcript reader.
- */
-
 import { createHash } from "node:crypto";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -93,10 +88,8 @@ export const ThreadHistoryInputSchema = z
   .strict();
 export type ThreadHistoryInput = z.input<typeof ThreadHistoryInputSchema>;
 
-/** A single message or result on a page. */
 const ITEM_TOKENS = 2000;
 const PAGE_TOKENS = 8000;
-/** One expanded turn or item. */
 const EXPAND_TOKENS = 16000;
 const REPORT_LINES = 20;
 const SCAN_ROWS = 2000;
@@ -152,7 +145,6 @@ function modelHistoryCursor(cursor: string, ref: string): string {
 function capper(tokenizer: TokenizerFamily) {
   const tokens = (value: string) =>
     estimateModelPartTokens({ type: "text", text: value }, tokenizer);
-  /** The longest prefix of `text` within `budget` tokens. */
   const cap = (text: string, budget: number): { text: string; truncated: boolean } => {
     if (tokens(text) <= budget) return { text, truncated: false };
     const chars = Array.from(text);
@@ -202,7 +194,6 @@ const toolState = (
 ): Extract<HistoryItem, { kind: "tool" }>["state"] =>
   described.isError ? "error" : described.open ? (live ? "running" : "cancelled") : "done";
 
-/** A call's one-line form: its shortened arguments, state and summary. */
 const callItem = (described: Tool, live: boolean) => ({
   kind: "tool" as const,
   tool: described.tool,
@@ -211,7 +202,6 @@ const callItem = (described: Tool, live: boolean) => ({
   ...(described.summary ? { summary: described.summary } : {}),
 });
 
-/** A shown write line quotes its edit inputs, so it carries edit evidence for compaction. */
 const lineEvidence = (described: Tool) =>
   described.write && !described.withheld ? editEvidence(described) : [];
 
@@ -253,7 +243,6 @@ export async function readThreadHistory(input: {
   });
 }
 
-/** What one transcript row adds to its turn on a page. */
 interface RowPart {
   item?: HistoryItem;
   hidden?: true;
@@ -262,7 +251,6 @@ interface RowPart {
 }
 type Row = { turn: Turn; block: Block | null; live: boolean };
 
-/** One turn as it accumulates on a page; numbered once the walk ends. */
 interface PageTurn {
   turn: Turn;
   heading: ReturnType<typeof describeTurn>;
@@ -305,14 +293,12 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
   let consumedSettled = false;
   let scanned = 0;
 
-  /** What one row adds to its turn on this page, or null when it adds nothing. */
   async function contribution(
     entry: PageTurn,
     block: Block | null,
     toolPairs: ReadonlyMap<string, Block>,
   ): Promise<RowPart | null> {
     const part = await rowPart(entry, block, toolPairs);
-    // A cancelled turn shows its marker even when every row is hidden; a failed one with nothing left is skipped.
     return part ?? (entry.heading.cancelled && !entry.shown && !hiddenTurn(entry) ? {} : null);
   }
 
@@ -390,7 +376,6 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
     }
   }
 
-  /** A saved report renders once, on the page holding its turn's last row. */
   async function isLastRow(turn: Turn, block: Block | null) {
     if (!block) return true;
     const blocks = await blocksOf(turn);
@@ -432,7 +417,6 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
       );
       scanned += rows.length;
       if (order === "newest_first") rows.reverse();
-      // The live tail reads chronologically and is never part of the cursor.
       const tail = (page.unsettledTail ?? [])
         .slice()
         .sort((left, right) => left.turn.position - right.turn.position)
@@ -486,7 +470,6 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
         }
       }
       if (stopped) {
-        // A live preview has no chain key. Its restart cursor begins at the settled prefix.
         if (!consumedSettled) next = page.restartCursor;
         break;
       }
@@ -499,8 +482,6 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
     throw error;
   }
 
-  // Numbers count conversation turns only (isConversationTurn, the same rule as the
-  // repository count); the walk covered a contiguous run, so they continue from the base.
   const walked = [...turns.values()].sort(
     (left, right) => left.turn.position - right.turn.position,
   );
@@ -566,7 +547,6 @@ function uniqueDocuments(documents: readonly DocumentRevisionEvidence[]) {
   return [...new Map(documents.map((ref) => [ref.documentId, ref])).values()];
 }
 
-/** `expand: N` lists every item of turn N on one line; `expand: "N.k"` shows item k in full. */
 async function expandHistory(p: Projection, expand: number | string) {
   const { repos, target } = p;
   const { tokens, cap } = capper(p.tokenizer);
@@ -660,7 +640,6 @@ async function expandHistory(p: Projection, expand: number | string) {
       return line;
     }
     const size = tokens(item.text);
-    // Messages show in full up to the item cap while the expansion budget lasts; then one line each.
     if (item.kind === "thinking" || budget < Math.min(size, ITEM_TOKENS)) {
       budget -= 20;
       return {

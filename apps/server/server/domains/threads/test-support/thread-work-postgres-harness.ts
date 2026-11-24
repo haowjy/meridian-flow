@@ -1,4 +1,3 @@
-/** Shared destructive seed for PostgreSQL thread Work race suites. */
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";

@@ -1,5 +1,3 @@
-/** Durable ask claims are single-winner and submissions are replay-safe. */
-
 import { describe, expect, it } from "vitest";
 import { createInMemoryAppServices } from "../../../lib/compose.js";
 

@@ -1,4 +1,3 @@
-/** In-memory CreditLedger adapter for fast tests and local composition. */
 import {
   assertPositiveMillicredits,
   type CreditDebitInput,

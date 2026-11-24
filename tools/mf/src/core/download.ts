@@ -1,5 +1,3 @@
-/** Stream an authenticated API download to disk, publishing only a complete response. */
-
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { rename, rm } from "node:fs/promises";
@@ -16,8 +14,7 @@ export async function downloadApiFile(
 ): Promise<void> {
   const origin = new URL(path, session.serverUrl);
   const temporary = `${output}.${randomUUID()}.part`;
-  // A stored file answers with one redirect to a signed store URL. The cookie goes only to the
-  // server's own origin, never to the store.
+  // keep: a stored file answers with one redirect to a signed store URL, and the cookie goes only to the server's own origin
   const fetchInto = (url: URL, redirected: boolean) =>
     new Promise<void>((resolve, reject) => {
       const sameOrigin = url.origin === origin.origin;

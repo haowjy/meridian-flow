@@ -1,4 +1,3 @@
-/** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
 import { isToolNotRunResult, type JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
@@ -60,20 +59,13 @@ import {
   type ToolResultRows,
 } from "./tool-result-preview";
 
-/** Builds an expand's contents on demand. */
 export type ToolExpand = () => ReactNode;
 
 export type ToolRenderer = {
   /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView) => ReactNode;
-  /**
-   * Deferred inline expansion. `null` = no expand affordance on this row. `renderRow` draws a
-   * tool as a row of its own, for a tool that holds others (a script's calls).
-   */
   expand?: (tool: ToolView, renderRow: (tool: ToolView) => ReactNode) => ToolExpand | null;
 };
-
-/* ── input helpers ─────────────────────────────────────────────────────── */
 
 function inputObject(tool: ToolView): Record<string, JsonValue> {
   return toolInputObject(tool);
@@ -83,7 +75,6 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** A parameter the timeline shows as text rather than as a destination. */
 function TextParameter({ children }: { children: ReactNode }) {
   return <span className="min-w-0 truncate">{children}</span>;
 }
@@ -96,8 +87,6 @@ function PhraseTitle({ phrase }: { phrase: ToolActivityPhrase }) {
     />
   );
 }
-
-/* ── inline-expand renderers (curated, never JSON) ─────────────────────── */
 
 function rowKey(row: ToolResultRow, index: number): string {
   return `${index}:${row.uri}`;
@@ -135,7 +124,6 @@ function ResultRows({ results }: { results: GrepResultRows }) {
   );
 }
 
-/** One document's section: its name, how much of the query it holds, its best passage, and a way to see the rest without leaving the transcript. */
 function GrepHit({ row }: { row: GrepHitRow }) {
   const [open, setOpen] = useState(false);
   const [best, ...rest] = row.passages;
@@ -155,8 +143,6 @@ function GrepHit({ row }: { row: GrepHitRow }) {
           <FoldToggle
             open={open}
             onToggle={(event) => {
-              // The row behind this section is the expand toggle; growing a
-              // document must not fold the whole search away.
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
@@ -166,9 +152,6 @@ function GrepHit({ row }: { row: GrepHitRow }) {
             {moreMatchesLabel(rest.length)}
           </FoldToggle>
           {open ? (
-            // Indented against a rule so the extra passages read as belonging
-            // to the document above them. It grows in place: the transcript is
-            // the single scroll owner and no expand may own another.
             <div className="mt-[var(--chat-space-inline)] ml-[var(--chat-tool-list-indent)] space-y-[var(--chat-space-inline)] border-border-subtle border-l pl-2.5">
               {rest.map((passage, index) => (
                 <PassageDoor
@@ -229,7 +212,6 @@ function ListingRows({ results }: { results: ToolResultRows }) {
   );
 }
 
-/** The agent-edit status of a failed `read` or `write`, from its typed result. */
 function documentFailureStatus(tool: ToolView): string | null {
   const result = tool.result;
   if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
@@ -247,7 +229,6 @@ function copyNotFoundCopy(tool: ToolView, source: string, destination: string | 
   return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
 }
 
-/** The document a failed call acted on: a move's is its source, not where it was going. */
 function documentFailureDocumentName(tool: ToolView): string | null {
   const input = inputObject(tool);
   const path = toolCommand(tool) === "move" ? sourcePath(input) : asString(input.path);
@@ -255,27 +236,22 @@ function documentFailureDocumentName(tool: ToolView): string | null {
   return documentDisplayName(path);
 }
 
-/** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
   if (tool.toolName === "mcp_call") return mcpCallFailed(tool);
   if (tool.toolName === "mcp_run") return mcpRunFailed(tool);
   return documentToolFailed(tool);
 }
 
-/** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
 export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
     case "binary_file": {
-      // A block copy's binary file is its source, not the destination in `path`.
       const binary = copySource(tool) ?? name;
       return binary ? t`${binary} is a binary file.` : t`That file is binary.`;
     }
     case "not_found":
     case "document_not_found": {
-      // `path` names the destination, but a copy's missing document is its
-      // source (or, for a block copy, either one), so the copy says which.
       const source = copySource(tool);
       if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
@@ -283,7 +259,6 @@ export function documentToolFailureCopy(tool: ToolView): string {
     case "ambiguous_match":
       return name ? t`Couldn't match a passage in ${name}` : t`Couldn't match a passage`;
   }
-  // A read changes nothing, so the change-shaped copy below never fits it.
   if (tool.toolName === "read") {
     return name
       ? t`Something went wrong while reading ${name}.`
@@ -317,7 +292,6 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
 }
 
-/** Why a returned write came back: the `returned` block of its typed result. */
 function documentFailureWhy(tool: ToolView): string | null {
   const result = tool.result;
   const returned =
@@ -326,7 +300,6 @@ function documentFailureWhy(tool: ToolView): string | null {
   return asString(returned.why) ?? null;
 }
 
-/** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
 function returnedWriteCopy(why: string | null, name: string | null): string {
   switch (why) {
     case "work_archived":
@@ -340,10 +313,6 @@ function returnedWriteCopy(why: string | null, name: string | null): string {
   }
 }
 
-/**
- * A call the run ended never failed: its row names what it was going to do, whatever the tool. A
- * stored "not run" says it never ran; a call the view found unanswered only says it was stopped.
- */
 export function EndedCallTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const { verb, parameter } = descriptorFor(tool).phrases(tool, names).active;
@@ -363,7 +332,6 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
 
   if (documentToolFailed(tool)) {
     const verb = failureOrReturnedVerb(tool);
-    // A move that didn't run left its document where it was.
     const subject = command === "move" ? (sourcePath(input) ?? path) : path;
     return subject ? (
       <CommandTitle verb={verb} parameter={<DocumentName path={subject} />} />
@@ -373,12 +341,8 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   }
 
   const phrase = toolActivityPhrase(tool, names);
-  // A partial call has no settled path yet, so the row names no document —
-  // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
   if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
-  // A deleted document's old address may hold another document now, and a folder opens as no
-  // document: no door.
   if (command === "delete" || path.endsWith("/")) return <PhraseTitle phrase={phrase} />;
   return (
     <CommandTitle
@@ -419,7 +383,6 @@ function documentExpand(tool: ToolView): ToolExpand | null {
   return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
 }
 
-/** What the AI was given of a file that isn't a document, in one line. */
 function fileGivenLine(file: ReadFile): string {
   switch (file.given) {
     case "media":
@@ -458,14 +421,11 @@ function resultPreview(tool: ToolView): ToolExpand | null {
 
 function resultOutline(tool: ToolView): ToolExpand | null {
   const headings = readPayloadOutline(tool.result);
-  // A document with no headings falls back to whole blocks server-side, so the
-  // result really is prose and the row should show it as prose.
   if (!headings) return resultPreview(tool);
   const outline = capList(headings, LISTING_CAP);
   return () => <OutlineRows outline={outline} />;
 }
 
-/** What the model submitted, read from the tool *input*: the result reports what changed, and only the input holds the exact content. */
 function submittedContent(tool: ToolView): ToolExpand | null {
   const content = asString(inputObject(tool).content);
   if (!content) return null;
@@ -484,12 +444,6 @@ function listingOrNothing(tool: ToolView): ToolExpand | null {
 }
 
 function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
-  // A chevron is a promise, and here the contract keeps it: a non-empty
-  // `files` IS content. That lets the closed row answer "is there anything
-  // here?" by looking at the array, and leaves every section — and the totals
-  // scan — for the writer who actually opens it. A settled turn holds a dozen
-  // closed rows; none of them should be parsing grep results. A search that stopped
-  // before it finished opens too, even with no files: its card says it stopped.
   const result = tool.result;
   if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
   const hasFiles = Array.isArray(result.files) && result.files.length > 0;
@@ -538,22 +492,14 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
 
 function WorkToolTitle({ tool }: { tool: ToolView }) {
   if (tool.isError) return descriptorFor(tool).failureVerb();
-  // `block` so truncate applies: the title slot is a flexified span, and an
-  // inline child cannot clip its own overflow.
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
 }
 
-/* ── registry ──────────────────────────────────────────────────────────── */
-
-/** A registered tool whose whole title is its phrase, with no document to name. */
 function phraseTitle(tool: ToolView): ReactNode {
-  // A failure is its own claim: `Searched "Elara"` over an error row says the
-  // search happened.
   if (tool.isError) return descriptorFor(tool).failureVerb();
   return <PhraseTitle phrase={toolActivityPhrase(tool)} />;
 }
 
-/** Tier-1 default — unknown tool. */
 const DEFAULT_RENDERER: ToolRenderer = {
   title: (tool) => humanizeToolName(tool.toolName),
 };
@@ -574,8 +520,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: phraseTitle,
     expand: resultRowsOrNothing,
   },
-  // The skill body is for the model; "Couldn't run that skill" is a failure's
-  // whole claim. Neither row has anything for the writer to open.
   skill: {
     title: phraseTitle,
   },
@@ -585,7 +529,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
   save_agents: {
     title: phraseTitle,
   },
-  // Only a failed `ask_user` has a row; a question that was asked shows as the takeover and receipt.
   ask_user: {
     title: () => t`Couldn't ask a question`,
   },

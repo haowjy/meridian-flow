@@ -1,13 +1,3 @@
-/**
- * The Loro room protocol's application half (design §4): the socket path, room names, the Join
- * auth payload and the per-room refusals. Frames are `loro-protocol`'s; the update and version
- * bytes they carry are `@meridian/document-model` envelopes, which the protocol never decodes.
- *
- * One socket carries several rooms (a Draft tab joins a document's Live room, then its fork room),
- * so a refusal for one room is a frame for that room, not a socket close: a `JoinError` at Join,
- * a `RoomError` after. The socket itself still closes with `WS_CLOSE` for sign-in failures.
- */
-
 import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
 import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
@@ -15,24 +5,17 @@ import type { DocumentId, DraftId } from "../ids.js";
 
 export const LORO_WS_PATH = "/ws/loro";
 
-/** A tree list is one project's or one account's (`user://`). */
 export type TreeListRef =
   | { kind: "project"; projectId: string }
   | { kind: "account"; userId: string };
 
-/**
- * A Loro room. `live` and `fork` rooms hold a document's docs (a structure doc and a text doc per
- * block); a `tree` room holds one project's or account's tree list.
- */
 export type LoroRoom =
   | { kind: "live"; documentId: DocumentId }
   | { kind: "fork"; draftId: DraftId; documentId: DocumentId }
   | { kind: "tree"; list: TreeListRef };
 
-/** The rooms that hold a document. */
 export type DocumentRoom = Extract<LoroRoom, { kind: "live" | "fork" }>;
 
-/** `live:<doc>`, `fork:<draft>:<doc>`, `tree:project:<id>`, `tree:account:<id>`. */
 export function loroRoomName(room: LoroRoom): string {
   switch (room.kind) {
     case "live":
@@ -61,25 +44,14 @@ export function parseLoroRoomName(name: string): LoroRoom | null {
   return null;
 }
 
-/** A fork's Live room: the one it forwards from, which a tab joins first. */
 export function liveRoomOf(room: DocumentRoom): DocumentRoom {
   return { kind: "live", documentId: room.documentId };
 }
 
-/**
- * Peer ids below this are the server's own writers; a client's are at or above it, up to 2^64
- * (design §4). A reader tells the server's ops from a client's by the id alone.
- */
 export const SERVER_PEER_LIMIT = 1n << 48n;
 export const PEER_ID_LIMIT = 1n << 64n;
 
-/**
- * `JoinRequest.auth`: what the server needs to admit this copy to the room beyond the socket's
- * session (the sign-in cookie authenticates the socket once, at upgrade). `schema` is the
- * client's collab schema version (`major.minor.patch`), checked against the document's; `peer`
- * is the Loro peer id this copy writes under in this room: a u64 as a decimal string, in the
- * client range (`SERVER_PEER_LIMIT` and up), so a client's ops never read as the server's.
- */
+// keep: Loro peer ids are decimal u64 strings in the client range so client ops never read as server ops
 export interface LoroJoinAuth {
   schema: string;
   peer: string;
@@ -98,11 +70,6 @@ export function encodeLoroJoinAuth(auth: LoroJoinAuth): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({ v: 1, ...auth }));
 }
 
-/**
- * Null for a payload that is not one, or whose peer is outside the client range: the server
- * answers with `LORO_JOIN_ERROR.BAD_AUTH`. Join is where the server may refuse; a frame's content
- * never is.
- */
 export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
   let value: unknown;
   try {
@@ -114,10 +81,6 @@ export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
   return parsed.success ? { schema: parsed.data.schema, peer: parsed.data.peer } : null;
 }
 
-/**
- * Refusals at Join, sent as `JoinError` with the `appCode`. `terminal` says whether the client
- * stops trying to join the room; the others rejoin when the cause can have changed.
- */
 export const LORO_JOIN_ERROR = {
   BAD_AUTH: { code: JoinErrorCode.AuthFailed, appCode: "bad-auth", terminal: true },
   PERMISSION_DENIED: {
@@ -125,7 +88,6 @@ export const LORO_JOIN_ERROR = {
     appCode: "permission-denied",
     terminal: true,
   },
-  /** A browser connects a document it just made before the server has its `create`. */
   DOCUMENT_UNKNOWN: { code: JoinErrorCode.AppError, appCode: "document-unknown", terminal: false },
   DOCUMENT_DELETED: { code: JoinErrorCode.AppError, appCode: "document-deleted", terminal: true },
   CLIENT_SCHEMA_SUPERSEDED: {
@@ -140,45 +102,19 @@ export const LORO_JOIN_ERROR = {
   },
 } as const;
 
-/**
- * Ends of a joined room, sent as `RoomError` with the reason as its message. The protocol's
- * `RejoinSuggested` rejoins; `Evicted` does not. The server never refuses a frame for what it
- * says: a frame is acked once imported, pending or not, and only these end a room.
- */
 export const LORO_ROOM_ERROR = {
-  /**
-   * The room's file access changed (a Work archived, a move to another source, a create landing in
-   * Live, a project deletion): rejoin at the new access. A close for a closed owner names it,
-   * `access-changed:<ClosedOwnerWhy>`, as the 4409 socket close does.
-   */
   ACCESS_CHANGED: { code: RoomErrorCode.RejoinSuggested, reason: "access-changed" },
   DOCUMENT_DELETED: { code: RoomErrorCode.Evicted, reason: "document-deleted" },
-  /** Bytes that do not decode or fail Loro's checksum. The client keeps its copy and loads fresh. */
   CORRUPT_UPDATE: { code: RoomErrorCode.Evicted, reason: "corrupt-update" },
-  /**
-   * The client's update depends on history below the room's shallow cutoff (a tab offline past
-   * the 7-day cutoff). Its typing cannot land; the tab shows "Couldn't save".
-   */
   HISTORY_CUTOFF: { code: RoomErrorCode.Evicted, reason: "history-cutoff" },
-  /**
-   * The server failed to import the batch for a reason of its own (the database down while the
-   * room loads). Nothing of the batch was acked: rejoin, and the Join exchange resends it.
-   */
   SERVER_ERROR: { code: RoomErrorCode.RejoinSuggested, reason: "server-error" },
 } as const;
 
-/** `RoomError.message` for an access change: `access-changed`, or with the closed owner named. */
 export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
   const { reason } = LORO_ROOM_ERROR.ACCESS_CHANGED;
   return why ? `${reason}:${why}` : reason;
 }
 
-/**
- * `JoinResponseOk.extra`. A document room's `read` Join says why the copy may only read, when a
- * closed owner is the reason (a Work archived or deleted, a frozen chat). A tree room's names the
- * list's id: a client whose stored copy is of another list (a reset database, a recreated account
- * list) drops it and joins again with no version. Empty when there is neither.
- */
 export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string };
 
 export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
@@ -212,7 +148,6 @@ export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtr
 
 export type LoroRoomErrorReason = (typeof LORO_ROOM_ERROR)[keyof typeof LORO_ROOM_ERROR]["reason"];
 
-/** The `LORO_ROOM_ERROR` entry a `RoomError` message names, if any. */
 export function loroRoomErrorOf(message: string) {
   return Object.values(LORO_ROOM_ERROR).find(
     (entry) => message === entry.reason || message.startsWith(`${entry.reason}:`),

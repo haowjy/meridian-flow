@@ -101,7 +101,6 @@ async function fixture(
     ...repos,
     works,
     topPrimaryChats: {
-      // Mirrors the Drizzle resolver: walk up to the primary row, so a fork is its own chat.
       resolveTopPrimaryChat: async (id) => {
         let current = await repos.threads.findById(id);
         while (current && current.kind !== "primary" && current.parentThreadId) {
@@ -209,8 +208,6 @@ describe("frozen prompt provider requests", () => {
       { listModels: () => [model] },
     );
     try {
-      // Use the exact same runtime path as production, with a cache-capable
-      // model so the request goes through the explicit-cache path.
       const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
       const plain = await rig.run(rig.thread.id, tools);
       const { thread: fork } = await forkThreadAgent(rig.derive, {
@@ -231,7 +228,6 @@ describe("frozen prompt provider requests", () => {
       expect(gateway.requests).toHaveLength(3);
       expect(gateway.requests[0]?.promptCacheKey).toBe(rig.thread.id);
       expect(gateway.requests[1]?.promptCacheKey).toBe(rig.thread.id);
-      // The inherited cutoff is owned by the original source, not the first fork.
       expect(gateway.requests[2]?.promptCacheKey).toBe(rig.thread.id);
       expect(gateway.requests[0]?.tools).toEqual(tools);
     } finally {
@@ -582,7 +578,6 @@ describe("frozen prompt provider requests", () => {
     const rig = await fixture();
     await rig.run();
     const parent = await rig.repos.threads.findById(rig.thread.id);
-    // The source's current Work differs from the Work captured by its first bake.
     const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Later Work" });
     await rig.repos.threadWorks.rebindPrimary(rig.thread.id, work.id);
     rig.levels.write(
@@ -634,7 +629,6 @@ describe("frozen prompt provider requests", () => {
       userId: rig.thread.userId,
       agentSelection: rig.original.selection,
     });
-    // The picker's selection pins the revision the source runs, so the edit does not matter.
     expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     expect((await rig.repos.turns.listByThread(handoff.id))[0]).toMatchObject({
       role: "system",

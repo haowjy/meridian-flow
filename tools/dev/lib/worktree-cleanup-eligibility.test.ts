@@ -228,8 +228,6 @@ describe("decideCleanupEligibility", () => {
       evidence: { pullRequestBase: "feat/a", pullRequestNumber: 7 },
     });
 
-    // Batch keeps refusing duplicate exact records: it has no per-target
-    // confirmation, and this was its behavior before base-agnostic matching.
     const batchDuplicate = decideCleanupEligibility({
       branch: "feature",
       plannedOid,
@@ -278,7 +276,6 @@ describe("selectContainedByRef", () => {
         remotes,
       ),
     ).toBeUndefined();
-    // A nested branch name keeps only the ref that names exactly that branch.
     expect(
       selectContainedByRef(
         ["refs/remotes/origin/feat/x", "refs/remotes/origin/feat/x/y"],
@@ -287,19 +284,14 @@ describe("selectContainedByRef", () => {
         remotes,
       ),
     ).toBe("refs/remotes/origin/feat/x/y");
-    // A remote whose own name contains a slash still recognizes its copy of
-    // the branch (the longest configured remote name wins).
     expect(
       selectContainedByRef(["refs/heads/lane", "refs/remotes/team/origin/lane"], "lane", "main", [
         "team/origin",
       ]),
     ).toBeUndefined();
-    // With only `team` configured, the same ref names branch `origin/lane`,
-    // not the branch's own push, so it remains a candidate.
     expect(selectContainedByRef(["refs/remotes/team/origin/lane"], "lane", "main", ["team"])).toBe(
       "refs/remotes/team/origin/lane",
     );
-    // An unresolved remote-tracking ref (no configured remote) never counts.
     expect(selectContainedByRef(["refs/remotes/ghost/lane"], "lane", "main", ["origin"])).toBe(
       undefined,
     );

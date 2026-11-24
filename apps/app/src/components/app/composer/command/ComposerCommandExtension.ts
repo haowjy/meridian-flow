@@ -1,8 +1,3 @@
-/**
- * Composer `/` lane: skills as `/<slug>` atoms, chat verbs as actions. Not
- * manuscript slash insertion.
- */
-
 import {
   createSuggestionLane,
   defaultSuggestionLaneDriver,
@@ -44,7 +39,6 @@ const composerCommandLane = createSuggestionLane<
   meta: (catalog) => ({ groupLabels: catalog.groupLabels }),
   choose: ({ editor, catalog, range, entry }) => {
     if (entry.kind === "command") {
-      // A verb acts on the thread; its trigger text never becomes message content.
       editor.chain().focus().deleteRange(range).run();
       catalog.runCommand?.(entry.slug);
       return;

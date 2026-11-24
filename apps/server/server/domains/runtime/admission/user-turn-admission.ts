@@ -1,4 +1,3 @@
-/** Authoritative parsing, identity, replay, and settlement for writer turns. */
 import { createHash } from "node:crypto";
 import { type LinkAddressKind, spellDocumentHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
@@ -34,7 +33,6 @@ export class InvalidAdmissionError extends Error {
   readonly code = "invalid_message" as const;
 }
 
-/** A picture the writer attached can't be stored: the send fails in the app's words for a failed upload. */
 const attachmentFailed = () => new InvalidAdmissionError("The upload failed.");
 
 export class AdmissionConflictError extends Error {
@@ -89,7 +87,6 @@ export interface AdmissionWriterProducer {
     fingerprint: AdmissionFingerprint;
     blocks: readonly AdmittedMessageBlock[];
     references: readonly AuthorizedReference[];
-    /** Hidden turn metadata; never part of the replay fingerprint. */
     userTurnMetadata?: JsonValue | null;
   }): Promise<UserTurnAdmissionResult>;
 }
@@ -285,11 +282,6 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
   });
 }
 
-/**
- * Re-spells an occurrence's destination through the canonical serializer (names with spaces,
- * `#` or `%` are escaped there), keeping the label exactly as the writer's composer wrote it.
- * Text that is not the canonical spelling of `from` is left as submitted.
- */
 function requalifyLinkText(text: string, kind: LinkAddressKind, from: string, to: string): string {
   const closing = (uri: string) =>
     `](${markdownLinkDestination(spellDocumentHref(null, { kind, uri }))})`;
@@ -392,10 +384,6 @@ function assertMatchingFingerprint(record: AdmissionRecord, fingerprint: string)
   }
 }
 
-/**
- * Turns an expired `pending` record into `rejected` only after holding the run
- * claim so a live writer/runner cannot be reclaimed under it.
- */
 async function recoverAdmission(
   deps: {
     records: AdmissionRecordPort;
@@ -409,7 +397,6 @@ async function recoverAdmission(
   const now = deps.now?.() ?? new Date();
   if (record.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
     return record;
-  // Match runner ordering and keep the claim until the recovery transaction commits.
   const recovered = await deps.runClaim.withExclusiveThread(threadId as never, () =>
     deps.records.recoverExpiredPending({
       threadId,
@@ -431,7 +418,6 @@ export function createUserTurnAdmission(deps: {
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
   chatMedia: ChatMediaPort;
-  /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
   verifyChatUpload?(
     reference: Extract<SubmittedReference, { kind: "document" }> & { intakeId: string },
     threadId: string,
@@ -489,8 +475,6 @@ export function createUserTurnAdmission(deps: {
         });
       }
 
-      // The chat's copies first: a store fault fails the send before anything is reserved, so
-      // the resend runs whole.
       const media = new Map<string, Awaited<ReturnType<ChatMediaPort["admit"]>>>();
       for (const block of blocks)
         if (block.type === "image" && !media.has(block.documentId))
@@ -555,9 +539,6 @@ export function createUserTurnAdmission(deps: {
         }
         const identity = available.get(reference.documentId);
         if (!identity) continue;
-        // A New-chat upload was attached before the chat had a handle, so its atom holds the
-        // chat-relative spelling while the catalog now answers the handle one. A chat upload is
-        // admitted by its verified intake and owner, and records the address it now has.
         const chatUpload = reference.purpose === "upload";
         if (!chatUpload && identity.entry.uri !== reference.uri) continue;
         if (
@@ -572,7 +553,6 @@ export function createUserTurnAdmission(deps: {
         ) {
           continue;
         }
-        // The one admitted occurrence: stored blocks and reference metadata both take this uri.
         const admittedUri = chatUpload ? identity.entry.uri : reference.uri;
         admittedUris.set(referenceIdentity(reference), admittedUri);
         admittedReferences.push({
@@ -589,7 +569,6 @@ export function createUserTurnAdmission(deps: {
           return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
         }
         if (admittedUri === block.uri) return [block];
-        // Requalify the link's href only; the label the writer saw stays.
         return [
           block.type === "reference"
             ? {

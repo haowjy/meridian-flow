@@ -1,40 +1,22 @@
-/**
- * Purpose: Owns deterministic conversion from provider token usage into Meridian
- * millicredits via a layered token-rate source.
- * Key decisions: pinned rates are injected by the composition root (built from the
- * model registry in lib/gateway); mock/stub fixtures live in an explicit override layer.
- * 1 credit = 1¢ = 1,000 millicredits.
- */
-
 import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type { JsonObject, PriceSource } from "@meridian/contracts/threads";
 
 export interface ModelPricing {
-  /** Input size above which the provider reprices the whole request. */
   inputTierTokens?: number;
-  /** Whole-request multipliers above `inputTierTokens`: `input` scales every input-side rate, `output` the output rate. */
   aboveTierMultipliers?: { input: number; output: number };
-  /** USD per 1,000,000 uncached input tokens. */
   inputUsdPerMillionTokens: string;
-  /** USD per 1,000,000 output tokens. */
   outputUsdPerMillionTokens: string;
-  /** USD per 1,000,000 cache-read input tokens, when published separately. */
   cachedInputUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 cache-write input tokens, when published separately (the short-TTL rate when a long-TTL rate is also set). */
   cacheWriteUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 long-TTL cache-write tokens (Anthropic 1h, OpenAI 12h), for providers that bill writes by TTL. */
   cacheWriteLongUsdPerMillionTokens?: string;
-  /** Human-readable attribution for the pinned price. */
   source: string;
 }
 
-/** A model's pinned price tagged with the provider and model it applies to. */
 export type ModelTokenRate = ModelPricing & { provider: string; model: string };
 
 export type ModelTokenRateLayer = "pinned" | "override" | "unmetered";
 
 export interface ResolvedModelTokenRate extends ModelTokenRate {
-  /** Layer that supplied the rate; persisted in pricingSnapshot for audits. */
   sourceLayer: ModelTokenRateLayer;
 }
 
@@ -43,9 +25,7 @@ export interface ModelTokenRateSource {
 }
 
 export interface LayeredTokenRateSourceDeps {
-  /** Registry-extracted pinned rates (base layer). */
   pinnedRates: readonly ModelTokenRate[];
-  /** Test/mock zero-rate fixtures excluded from MODEL_REGISTRY. */
   overrideRates?: readonly ModelTokenRate[];
 }
 
@@ -60,7 +40,6 @@ const ZERO_FIXTURE_SOURCE = "in-process test/mock fixture";
 const COST_MULTIPLIER_NUMERATOR = 115n;
 const COST_MULTIPLIER_DENOMINATOR = 1000n;
 
-/** Mock models intentionally excluded from MODEL_REGISTRY. */
 export const MOCK_FIXTURE_TOKEN_RATES: readonly ModelTokenRate[] = [
   {
     provider: "mock",
@@ -120,8 +99,7 @@ function formatUsdFromMicros(usdMicros: bigint): string {
 }
 
 export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
-  // $1 = 100 credits = 100,000 millicredits. Apply the fixed 1.15 margin
-  // while converting raw USD micros to metered millicredits: ceil(raw * 115 / 1000).
+  // keep: USD micros convert to millicredits as ceil(raw * 115 / 1000), with a 1.15 margin
   return rawUsdMicros === 0n
     ? 0n
     : (rawUsdMicros * COST_MULTIPLIER_NUMERATOR + COST_MULTIPLIER_DENOMINATOR - 1n) /
@@ -129,7 +107,6 @@ export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
 }
 
 function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
-  // A pinned rate's source already names the snapshot it came from.
   return rate.sourceLayer === "override" ? `override: ${rate.source}` : rate.source;
 }
 

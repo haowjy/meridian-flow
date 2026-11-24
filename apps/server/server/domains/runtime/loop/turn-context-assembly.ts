@@ -1,19 +1,3 @@
-/**
- * Shared next-turn model context assembly — the same path the orchestrator uses
- * before gateway.stream(), callable without starting a turn or persisting a bake.
- *
- * Key decisions:
- * - Preview (`persistBake: false`) computes a first-attempt bake in memory only
- *   and returns it as `pendingBake`; the runtime persists it in the delivery commit.
- *   `baked` reflects whether the thread already has an initial bake pointer.
- * - Explicit commit-phase callers may pass `persistBake: true` to persist prompt,
- *   Agent `skills.available` slugs, and advertised tools. Empty Agent available
- *   still writes `[]`. Concurrent attempts use the winning bake row. After first
- *   assembly, dynamic context never rewrites the thread's initial bake.
- * - Runtime freeze commits with the first prepared run start, before model
- *   execution. Later gateway failure or cancellation does not undo that bake.
- */
-
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -67,16 +51,10 @@ import { linkWindowAt } from "./media-link-window.js";
 import { linkWindowSeconds, promptCacheRetentionFor } from "./prefix-cache-state.js";
 import type { WorkContextReader } from "./work-context.js";
 
-/** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
 function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
   return Array.isArray(value) ? (value as unknown as Tool[]) : null;
 }
 
-/**
- * A `/skill` after the bake offers `skill`, which the frozen list can't
- * know. Live policy adds it once the binding records an invocation, and
- * invocations are never removed, so the list changes once and stays stable.
- */
 function withInvokedSkillTool(baked: Tool[], live: Tool[]): Tool[] {
   const isSkill = (tool: Tool) => tool.name === "skill";
   if (baked.some(isSkill)) return baked;
@@ -94,7 +72,6 @@ export interface AssembleNextTurnContextInput {
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
   mediaResolver?: MediaResolverPort;
-  /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
   mediaLinkWindowSeconds?: number;
   mediaInclusions?: Pick<ThreadMediaInclusionRepository, "findByThread">;
   mediaProjectionMode?: CompactionMediaProjectionMode;
@@ -107,7 +84,6 @@ export interface AssembleNextTurnContextInput {
     breaks: readonly MediaContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
   baseTools?: Tool[];
-  /** When true, first-attempt bake is persisted immediately; preview/runtime prep pass false. */
   persistBake?: boolean;
   promptBakes: Pick<PromptBakeRepository, "findById">;
   bakeInitialPrompt?: (
@@ -115,7 +91,6 @@ export interface AssembleNextTurnContextInput {
     input: PromptBakeContent,
   ) => Promise<{ thread: Thread; bake: PromptBake }>;
   workContext: WorkContextReader;
-  /** Absent: no thread holds a connection. */
   connections?: ConnectionsPort;
   eventSink?: EventSink;
 }
@@ -129,18 +104,15 @@ export interface AssembledNextTurnContext {
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
   baked: boolean;
-  /** The connections the thread's prompt holds, as the bake saved or will save them. */
   bakedConnections: McpBakedConnection[];
   compactionTriggerTokens: number | null;
   compactionUsableWindowTokens: number | null;
-  /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
   pendingBake?: PromptBakeContent;
   generateRequest: Pick<
     GenerateRequest,
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey" | "promptCacheRetention"
   >;
   activeHistory: ProjectedActiveHistory;
-  /** The block ids whose observation frontiers may credit the model on this request (C10). */
   creditedBlockIds: ReadonlySet<string>;
   preparationUpdates: { turns: Turn[]; blocks: Block[] };
 }
@@ -163,7 +135,6 @@ export async function composeLivePromptBake(
     agentRevisions: input.agentRevisions,
   });
   const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
-  // A thread that may not call `mcp_call` never reads the writer's connections or their descriptions.
   const connections: ConnectionBake =
     agentContext.policy.has("mcp_call") && input.connections
       ? await input.connections.bake(thread)
@@ -193,7 +164,6 @@ export async function composeLivePromptBake(
   return { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext, agentContext };
 }
 
-/** The records a connection call left that has no stored result, by turn and tool call. */
 async function recordedConnectionCalls(
   connections: ConnectionsPort | undefined,
   threadId: string,
@@ -214,7 +184,6 @@ async function recordedConnectionCalls(
   return recorded;
 }
 
-/** Resolved inputs can be rendered again without reads or image decisions. */
 interface PreparedNextTurnContext
   extends Omit<AssembledNextTurnContext, "tools" | "generateRequest"> {
   advertisedTools: Tool[];
@@ -223,12 +192,6 @@ interface PreparedNextTurnContext
   eventSink?: EventSink;
 }
 
-/**
- * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
- * longer lists runs on the Agent's model, and the turn's recorded model says so. The chat's effort
- * override replaces the Agent's effort always; the gateway runs whichever level it is at the
- * nearest one the model lists.
- */
 function turnGatewayParams(
   gateway: AssembleNextTurnContextInput["gateway"],
   thread: Pick<Thread, "overrides">,
@@ -239,10 +202,6 @@ function turnGatewayParams(
   return effort ? { ...agentParams, model, reasoning: effort } : { ...agentParams, model };
 }
 
-/**
- * The model a chat's turn runs on: its override while the gateway lists it, else its Agent's.
- * Every reader of a chat's model goes through here, so none of them ignores the override.
- */
 export function threadModelId(
   gateway: Pick<Gateway, "listModels">,
   overrides: ThreadOverrides,
@@ -262,10 +221,6 @@ function modelOf(
   return gateway.listModels().find((model) => model.id === modelId);
 }
 
-/**
- * The thread's model, looked up on first use: a reference read learns what it may show the
- * model only once it meets a binary file, and most turns never do.
- */
 export function lazyThreadModel(
   input: Pick<
     AssembleNextTurnContextInput,
@@ -289,7 +244,6 @@ export function lazyThreadModel(
     ));
 }
 
-/** Assemble the next model request context — shared by orchestrator and debug preview. */
 export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
 ): Promise<AssembledNextTurnContext> {
@@ -340,7 +294,6 @@ export async function prepareNextTurnContext(
         throw new Error("Thread prompt freeze returned an unfrozen thread");
       systemPrompt = result.bake.composedSystemPrompt;
       bakedConnections = result.bake.bakedConnections;
-      // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
       tools = toolsFromBakedJson(result.bake.bakedTools) ?? tools;
     } else {
       pendingBake = bakeContent;
@@ -429,7 +382,6 @@ export async function prepareNextTurnContext(
   };
 }
 
-/** Canonical rendering of frozen prepared inputs; no I/O or staged events. */
 export function renderPreparedTurnContext(
   prepared: PreparedNextTurnContext,
 ): AssembledNextTurnContext {
@@ -448,7 +400,6 @@ export function renderPreparedTurnContext(
     generateRequest: {
       messages: built.messages,
       tools: built.tools,
-      // Forks route to the owner of their cutoff; each adapter decides whether to forward it.
       promptCacheKey,
       promptCacheRetention: promptCacheRetentionFor(context.thread.kind),
       ...context.gatewayParams,
@@ -456,7 +407,6 @@ export function renderPreparedTurnContext(
   };
 }
 
-/** Persist a first-turn bake inside delivery commit and make its winner authoritative. */
 export async function persistPreparedPromptBake(
   assembled: AssembledNextTurnContext,
   bakeInitialPrompt: NonNullable<AssembleNextTurnContextInput["bakeInitialPrompt"]>,
@@ -471,7 +421,6 @@ export async function persistPreparedPromptBake(
   assembled.systemPrompt = result.bake.composedSystemPrompt;
   assembled.bakedConnections = result.bake.bakedConnections;
   const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
-  // Match buildContext: an empty advertised tool set is omitted from request bytes.
   assembled.generateRequest.tools = tools.length ? tools : undefined;
   assembled.tools = tools;
 

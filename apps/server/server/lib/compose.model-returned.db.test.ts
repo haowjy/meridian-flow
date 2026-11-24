@@ -1,9 +1,3 @@
-/**
- * The AI's edit that cannot land is answered, not refused: the writer deleted the document or a
- * paragraph, or the Work is closed. (A Discard closes no draft: the next edit lands in the same one.)
- * The call is a plain `done` command row that says `returned`, nothing opens, nothing is journalled, and the result
- * shows the document as it now stands, so the model's next edit lands.
- */
 import { randomUUID } from "node:crypto";
 import { createReplyMutations } from "@meridian/agent-edit/integration";
 import { draftItemKey } from "@meridian/contracts";
@@ -120,7 +114,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    /** One model reply as the loop runs it: frontiers credit the blocks the reply carries. */
     async function reply(chat: typeof DRAFTING) {
       const runtime = await runtimes.compose();
       await writeMarkdown(runtime.ports.documentSync, {
@@ -222,7 +215,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(landed.isError, landed.text).toBeFalsy();
       expect(landed.text).toContain("status: success");
       expect(landed.text).not.toMatch(/re-read|retry|read again/i);
-      // A Discard closes no draft: the write lands in the Work's one draft.
       expect(await draftRows()).toHaveLength(earlier.length);
       const listed = await handleDraftListRequest(selectDraftRouteServices(runtime.app), {
         userId: USER_ID,
@@ -240,8 +232,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(last.status).toBe("done");
       expect(last.result.settled).toBeUndefined();
 
-      // A crash between the row's commit and the answer: the call, sent again under its id,
-      // reads the same row and the same text.
       const replayed = await call("write", args, replayId);
       expect(replayed.text).toBe(landed.text);
       expect((await modelEditRows()).length).toBe(rows.length);
@@ -350,7 +340,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("the writer deletes the document under the edit: it is returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
-      // The path resolved when the call began; the delete lands before the edit takes its lock.
       let deleted = false;
       const remove = setTestHook("command.afterClaim", async () => {
         if (deleted) return;

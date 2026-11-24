@@ -119,7 +119,6 @@ const answerBody = (ids: string[], version = "1001") => ({
 
 describe("hand-back operation", () => {
   it("allocates failures before saving, gives Retry a new occurrence, and preserves it on reload", async () => {
-    // Risk: Retry identities must differ from wire identity without losing a durable command's debt.
     let nextId = 0;
     const r = rig({ saveFails: true, newId: () => (nextId++ === 0 ? REQ : `occ-${nextId}`) });
     const key = (op = r.op) => handBackCards(op.unresolved(), r.view())[0]?.key;
@@ -144,7 +143,6 @@ describe("hand-back operation", () => {
     expect(key(reloaded)).not.toBe(third);
     expect(r.sent.every((sent) => JSON.stringify(sent) === JSON.stringify(r.sent[0]))).toBe(true);
 
-    // A refused Retry metadata write must not turn an already durable command into page memory.
     const resumed = createHandBackOperation({
       threadId: "t1",
       ports: { ...r.ports, newId: () => `retry-${++nextId}` },
@@ -184,8 +182,6 @@ describe("hand-back operation", () => {
       outcome: "ambiguous",
     },
   ])("$row", async ({ reply, outcome }) => {
-    // Risk: the shared lifecycle diverging between clients (#861): retirement, replay, and
-    // the one order that prevents loss (the command is saved before it is posted).
     const r = rig();
     r.answer(reply);
     const result = await r.op.press({ kind: "queue", ids: [M1, M2] });
@@ -212,7 +208,6 @@ describe("hand-back operation", () => {
   });
 
   it("a malformed answer (unreadable JSON, or a valid envelope whose runState is only { version }) is ambiguous and changes nothing", async () => {
-    // Risk: a half-read record applied, or the replay request lost on an unreadable answer.
     const envelope = {
       handedBack: handedBack([M1]),
       answered: [],
@@ -230,7 +225,6 @@ describe("hand-back operation", () => {
   });
 
   it("saves before posting, keeps a command whose content could not be written, and delivers it once on resume", async () => {
-    // Risk: words lost to a failed draft write, or doubled by a replay.
     const unsaved = rig({ saveFails: true });
     expect((await unsaved.op.press({ kind: "queue", ids: [M1] })).kind).toBe("unsaved");
     expect(unsaved.sent).toEqual([]);
@@ -249,7 +243,6 @@ describe("hand-back operation", () => {
     expect(r.op.unresolved()).toEqual([]);
     expect(heardResume).toBeGreaterThan(0);
 
-    // Every change to what is unresolved notifies, so no caller redraws for the operation.
     const gone = rig({ acceptFails: true });
     gone.answer(async () => answerBody([M1]));
     await gone.op.press({ kind: "queue", ids: [M1] });
@@ -273,7 +266,6 @@ describe("hand-back operation", () => {
   });
 
   it("keeps a card for each unresolved command after the hand-back removed its rows", () => {
-    // Risk (Q1): the card vanishing with the rows a messages.handed_back frame removed.
     const rowsGone = receiveRecord(INITIAL_RUN_STATE_VIEW, record("2000"));
     const base = {
       requestId: REQ,
@@ -294,8 +286,6 @@ describe("hand-back operation", () => {
   });
 
   it("one attempt per request: a retry or resume in flight is joined and delivers once", async () => {
-    // Risk (QB2): two Try again presses posting twice, the second's lost answer resurrecting a
-    // card after the first confirmed.
     const r = rig();
     r.answer(async () => ({ status: null }));
     await r.op.press({ kind: "queue", ids: [M1] });
@@ -304,7 +294,7 @@ describe("hand-back operation", () => {
     const a = r.op.retry(REQ);
     const b = r.op.retry(REQ);
     const resumed = r.op.resume();
-    expect(r.sent).toHaveLength(2); // the lost press, then one joined retry
+    expect(r.sent).toHaveLength(2);
     answers[0]?.(answerBody([M1]));
     expect((await a)?.kind).toBe("confirmed");
     expect((await b)?.kind).toBe("confirmed");
@@ -315,8 +305,6 @@ describe("hand-back operation", () => {
   });
 
   it("Stop facts read the same whichever route started the Stop, and a failed Stop's card follows its own reply", async () => {
-    // Risk (QB2, QB4): Stop recovered through retry or resume showing idle; a failed Stop's card
-    // blaming a later reply.
     const ex = { executionId: "e1", currentTurnId: "t" };
     const running = receiveRecord(INITIAL_RUN_STATE_VIEW, {
       ...record("1000", [item(M1, 1)]),
@@ -363,7 +351,6 @@ describe("hand-back operation", () => {
   });
 
   it("a failed Stop with nothing queued shows while its reply runs and is moot once it ends", async () => {
-    // Risk: a Stop with no candidates leaving a hand-back card (and a failed Stop button) behind.
     const ex = { executionId: "e1", currentTurnId: "t" };
     const running = receiveRecord(INITIAL_RUN_STATE_VIEW, { ...record("1000"), execution: ex });
     const ended = receiveRecord(running, record("1001"));
@@ -376,7 +363,6 @@ describe("hand-back operation", () => {
     expect(handBackCards(r.op.unresolved(), ended)).toEqual([]);
     expect(stopStatus(ended, facts)).toBe("idle");
 
-    // The refused moot Stop must not stand in for a later reply's failed Stop.
     const next = receiveRecord(ended, {
       ...record("1002"),
       execution: { executionId: "e2", currentTurnId: "t2" },

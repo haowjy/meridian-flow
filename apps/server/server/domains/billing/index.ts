@@ -1,4 +1,3 @@
-/** Public billing-domain surface for credits ledger, catalog, and free-tier grants. */
 export { createDrizzleCreditLedger } from "./adapters/drizzle/credit-ledger.js";
 export { createStripeCustomerProvisioner } from "./adapters/drizzle/stripe-customer-provisioner.js";
 export { createInMemoryCreditLedger } from "./adapters/in-memory/credit-ledger.js";

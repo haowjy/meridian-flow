@@ -1,4 +1,3 @@
-/** Maps tool commands to their transcript labels and metadata. */
 import { plural, t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
@@ -46,51 +45,33 @@ import { workReceiptLine } from "./work-receipt-copy";
 
 export type ToolActivityPhrase = {
   verb: string;
-  /**
-   * Carries its own trailing ellipsis while in flight, because the ellipsis
-   * belongs at the end of the whole phrase rather than after the verb.
-   */
   parameter?: string;
 };
 
-/** Both tenses of one row's phrase. Tense is protocol state, never timing. */
 export type ToolActivityVocabulary = {
-  /** Awaiting `tool_response`. */
   active: ToolActivityPhrase;
-  /** Result in hand. */
   complete: ToolActivityPhrase;
 };
 
 export type CommandExpand =
-  /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
-  /** The passage the model read, as quoted prose. */
   | "result-preview"
-  /** The headings a skim saw, as a list. */
   | "result-outline"
-  /** What the model submitted, read from the tool input. */
   | "submitted-content"
-  /** Curated per-tool content the registry builds itself. */
   | "renderer";
 
 export type CommandDescriptor = {
-  /** One glyph per command. Read down the icon column and the turn has a shape. */
   Icon: LucideIcon;
-  /** `names` names the owners in Scratch addresses; a move's destination may need one. */
   phrases: (tool: ToolView, names?: OwnerNames) => ToolActivityVocabulary;
-  /** A failure is its own claim, so it never reuses the success verb. */
   failureVerb: () => string;
-  /** The complete-tense title when the command named no document. */
   pathlessTitle: (() => string) | null;
   expand: CommandExpand;
 };
 
-/** A phrase pair with no parameter of its own. */
 function tenses(active: string, complete: string): ToolActivityVocabulary {
   return { active: { verb: active }, complete: { verb: complete } };
 }
 
-/** Search patterns are the model's words; a long one must not run the row. */
 function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
 }
@@ -114,8 +95,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: () => t`Read file`,
     expand: "result-preview",
   },
-  // An outline read returns heading structure, not prose. A row saying "Read"
-  // over that payload claims the model saw the words.
   skim: {
     Icon: List,
     phrases: (tool) => documentTenses(tool, t`Skimming`, t`Skimmed`),
@@ -130,9 +109,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: () => t`Edited file`,
     expand: "submitted-content",
   },
-  // The destination rides the row's document door, so the verb names the source
-  // and the direction: a whole-document copy reads "Copied a to", a block
-  // copy "Copied from a into". The model's `from` stays the only input read.
   copy: {
     Icon: Copy,
     phrases: copyTenses,
@@ -140,8 +116,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: () => t`Copied file`,
     expand: "none",
   },
-  // A move names the document in the verb and where it went as the parameter,
-  // like a whole-document copy; the destination's door opens the document.
   move: {
     Icon: FolderInput,
     phrases: moveTenses,
@@ -163,9 +137,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: () => t`Edited file`,
     expand: "submitted-content",
   },
-  // Reverting a change is not editing. Telling a writer their chapter was
-  // edited when it was put back is the same over-claim as calling a skim a
-  // read, and it holds in draft mode too.
   undo: {
     Icon: Undo2,
     phrases: () => tenses(t`Undoing…`, t`Undid`),
@@ -204,15 +175,12 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  // A `skill` call loads that skill's SKILL.md. The row names the skill, not
-  // the file: the writer never opens a skill body as a document.
   skill: {
     Icon: Sparkles,
     phrases: (tool) => {
       const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
-      // The quotes ride inside the value: an apostrophe in an ICU message
-      // escapes the placeholder next to it.
+      // keep: Keep the quotes inside the value; an apostrophe in an ICU message escapes the placeholder beside it.
       const skill = `'${humanizeSkillSlug(slug)}'`;
       return tenses(t`Invoking ${skill}…`, t`Invoked ${skill}`);
     },
@@ -220,11 +188,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "none",
   },
-  // Work commands manage the writer's Works, never their manuscript, and the
-  // whole family wears the Work glyph (Layers — the same mark that rides
-  // beside every Work name). Within the family the verb carries the
-  // distinction; the glyph answers the icon column's real question, which is
-  // whether the agent touched the book.
   "work-read": {
     Icon: Layers,
     phrases: () => tenses(t`Checking Work…`, t`Checked Work`),
@@ -260,7 +223,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  // What each package's Save did is the card after the turn (`AgentSavesReceipt`).
   "save-agents": {
     Icon: Save,
     phrases: (tool) => {
@@ -278,8 +240,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "none",
   },
-  // A connection's tools are the writer's services, so the row names the connection and the tool
-  // the way the writer's settings do: "pubmed: search articles".
   "mcp-call": {
     Icon: Plug,
     phrases: (tool) => {
@@ -295,7 +255,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  // A script's row is worded from its typed result (`scriptPhrase`): its calls and why it stopped.
   "mcp-run": {
     Icon: Code,
     phrases: (tool) => {
@@ -348,7 +307,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
 };
 
-/** A document command's phrases, naming the document it acted on. */
 function documentTenses(
   tool: ToolView,
   activeVerb: string,
@@ -363,7 +321,6 @@ function documentTenses(
   };
 }
 
-/** A copy's phrases: the source in the verb, the destination as the parameter. */
 function copyTenses(tool: ToolView): ToolActivityVocabulary {
   const input = toolInputObject(tool);
   const from = sourcePath(input);
@@ -381,10 +338,6 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
   };
 }
 
-/**
- * Where a settled undo or move put its document, when that is not the path the model asked
- * for: it landed beside a namesake, so its path carries a `~` suffix. The row names and opens this.
- */
 export function settledDocumentPath(tool: ToolView): string | undefined {
   const command = toolCommand(tool);
   if (tool.status !== "complete" || (command !== "undo" && command !== "move")) return undefined;
@@ -393,10 +346,6 @@ export function settledDocumentPath(tool: ToolView): string | undefined {
   return typeof result.path === "string" && result.path.length > 0 ? result.path : undefined;
 }
 
-/**
- * The node a settled move put in place: where the answer says it landed, else the path asked for,
- * with a document's own name when that path is the folder it went into. A folder ends in `/`.
- */
 export function movedTo(tool: ToolView): string | undefined {
   const input = toolInputObject(tool);
   const asked = documentTarget(input);
@@ -407,7 +356,6 @@ export function movedTo(tool: ToolView): string | undefined {
   return `${asked}${from.slice(from.lastIndexOf("/") + 1)}`;
 }
 
-/** A move's phrases: the document in the verb, where it went (as little as tells it apart) as the parameter. */
 function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary {
   const input = toolInputObject(tool);
   const from = sourcePath(input);
@@ -426,7 +374,6 @@ function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary 
   };
 }
 
-/** A move between a project's files and `user://` copies: the answer lists copies and moved nothing. */
 function copiedOnly(tool: ToolView): boolean {
   const result = tool.result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return false;
@@ -444,7 +391,6 @@ function documentTarget(input: Record<string, JsonValue>): string | undefined {
   return stringInput(input, "path") ?? stringInput(input, "uri") ?? stringInput(input, "file");
 }
 
-/** A write the document's state returned changed nothing, and that is no failure of the call. */
 export function failureOrReturnedVerb(tool: ToolView): string {
   return documentToolReturned(tool) ? t`Not applied to` : descriptorFor(tool).failureVerb();
 }
@@ -453,20 +399,17 @@ export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];
 }
 
-/** A server's tool name as words, without the connection's name it often starts with: `pubmed_search_articles` reads "search articles". */
 export function mcpToolLabel(connection: string, tool: string): string {
   const prefix = new RegExp(`^${connection.replace(/[^A-Za-z0-9]/g, "[_-]?")}[_-]+`, "i");
   const bare = tool.replace(prefix, "") || tool;
   return bare.replace(/[_-]+/g, " ").trim();
 }
 
-/** Arguments are developer detail and never enter a title. */
 export function humanizeToolName(toolName: string): string {
   const words = toolName.replaceAll("_", " ");
   return words.length > 0 ? words[0].toUpperCase() + words.slice(1) : words;
 }
 
-/** The phrase for the tool's current protocol state, never guessed from timing. */
 export function toolActivityPhrase(tool: ToolView, names?: OwnerNames): ToolActivityPhrase {
   const descriptor = descriptorFor(tool);
   if (documentToolFailed(tool)) return { verb: failureOrReturnedVerb(tool) };
@@ -474,12 +417,10 @@ export function toolActivityPhrase(tool: ToolView, names?: OwnerNames): ToolActi
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }
 
-/** Flattens a phrase for the screen reader, which hears no typography. */
 export function toolActivityAnnouncement(phrase: ToolActivityPhrase): string {
   return phrase.parameter ? `${phrase.verb} ${phrase.parameter}` : phrase.verb;
 }
 
-/** Shared writer-facing label for a live tool dispatch (same vocabulary as ToolRow). */
 export function liveToolActivityLabel(toolName: string, input: unknown): string {
   const tool: ToolView = {
     toolCallId: null,

@@ -1,11 +1,3 @@
-/**
- * The failure-record transaction participant: collects `FailureRecord`s a transaction detects and emits
- * them only after the outermost commit. A savepoint that rolls back discards its records, and a record
- * detected twice in one transaction (same occurrence and phase) emits once. It is its own participant,
- * not part of `run_state.changed`: a failure can happen without a run-state change, and chat never
- * coalesces it. The in-memory repositories' transaction defers the same way; outside any transaction
- * there is no commit to wait for, so a record emits at once.
- */
 import type { FailureRecord } from "@meridian/contracts/failures";
 import {
   type DrizzleTransactionParticipant,
@@ -35,10 +27,6 @@ const participant: DrizzleTransactionParticipant<FailureState> = {
   },
 };
 
-/**
- * Queues `record` for emission after the outermost commit, or emits it at once outside a transaction.
- * In-memory repositories pass the owner of their data: the record follows that owner's commit or rollback.
- */
 export function recordFailureAfterCommit(
   record: FailureRecord,
   emit: (record: FailureRecord) => void,

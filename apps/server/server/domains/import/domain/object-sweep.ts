@@ -1,4 +1,3 @@
-/** Prefix reclamation, abandoned-upload expiry, and entry retention. Header identities survive forever. */
 import { derivedObjectKeys, type ObjectStorePort } from "../../storage/index.js";
 import type { ImportRepository } from "../ports/import-repository.js";
 import { IMPORT_MAINTENANCE, maintenanceCutoffs } from "./maintenance-policy.js";
@@ -12,7 +11,6 @@ export async function sweepImportObjects(
   objects: ObjectStorePort,
   input: {
     importId?: string;
-    /** Deletes the first texts a batch wrote under ids whose documents were never created. */
     texts?: { discardUnborn(documentIds: readonly string[]): Promise<void> };
   } = {},
 ): Promise<ImportSweepResult> {
@@ -93,7 +91,7 @@ export async function sweepImportObjects(
         cursor = page.value.cursor;
         keys.push(...page.value.keys.map(({ key }) => key));
       } while (cursor);
-    // Local and in-memory stores use offset cursors: finish listing before deleting.
+    // keep: Finish listing object keys before deleting; local and in-memory cursors are offset-based
     for (const key of keys) {
       if (
         record.projectId !== null &&

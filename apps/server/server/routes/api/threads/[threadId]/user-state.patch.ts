@@ -1,4 +1,3 @@
-/** PATCH favorite state for the authenticated writer. */
 import {
   serializeTransport,
   updateThreadUserStateRequestSchema,

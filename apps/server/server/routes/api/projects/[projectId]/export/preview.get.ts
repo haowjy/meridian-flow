@@ -1,4 +1,3 @@
-/** Current-state preview; it neither prepares nor authorizes a later download. */
 import { createError, defineEventHandler, getQuery, getRouterParam, setHeader } from "nitro/h3";
 import { ExportReadError } from "../../../../../domains/export/domain/project-export.js";
 import { requireProjectOwner } from "../../../../../domains/projects/project-access.js";
@@ -14,7 +13,6 @@ export default defineEventHandler(async (event) => {
   );
   setHeader(event, "Cache-Control", "private, no-store");
   try {
-    // A superseded or closed-dialog preview aborts the request; stop reading documents.
     return await app.projectExport.preview(
       project.id,
       user.userId,

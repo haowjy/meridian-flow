@@ -1,34 +1,3 @@
-/**
- * The chat composer's open-ask mode: the takeover to draw in the box's place, and the writer's
- * draft of the answers (which question they're on, each one's choice and typed words). The draft
- * outlives the takeover, which also hides while this device's answer sends or settles, so a failed
- * send reopens with every answer in place. A refused answer isn't a failed send: it shows a
- * message with no Retry until the writer changes something.
- *
- * Nothing typed is lost: when the ask ends, words that aren't in how it ended (left in a field
- * beside a picked option, typed when the ask timed out and so not sent, or sent but beaten by
- * another resolution) are added to the composer
- * draft once. Closure follows the ask's lifecycle, not the takeover. The writer's draft is kept
- * in this tab's session storage, one per chat, so leaving the chat or reloading keeps the words;
- * an ask that ended meanwhile closes when the chat opens again.
- *
- * A takeover the writer hasn't touched (a reload, another device, coming back to a chat) shows
- * the answers the server holds for the ask (`draftAnswers`), the ones a timeout would use, and
- * follows them as newer ones arrive: a chat left open re-reads them on return. The draft becomes
- * the writer's own at their first change, and no later `ask.updated` replaces it. With two tabs
- * open, the last report to reach the server wins, and a delayed re-send can replace a newer answer from another device; a tab that only sees activity never
- * sends its draft. A send the server refuses as `invalid_answer` moves the draft to
- * the question it names.
- *
- * While a question ask is open, any activity on the page (pointer, keys, wheel, touch) and every
- * change to the draft report it to the server as `ask.presence` (`presence-reporter.ts`), which
- * keeps the idle clock from running while the writer reads. A report carries the answers only
- * while the draft is `owed` (a choice changed and the server hasn't echoed it), so plain activity
- * moves the clock without replacing the answers the server holds, and Back or Next, which change
- * no choice, never do. An answer holds its draft without reporting it: the answer carries it, and
- * the ask is no longer open here. If the send fails and the takeover reopens, answers still owed
- * go out with the next activity.
- */
 import {
   type DraftAnswers,
   questionAnswerSchema,
@@ -42,15 +11,8 @@ import { AskTakeover, type QuestionDraft } from "./AskTakeover";
 import { createPresenceReporter } from "./presence-reporter";
 import { useAnswerAsk } from "./useAnswerAsk";
 
-/**
- * `owed`: the choices changed here and the server has not echoed them in `draftAnswers` yet.
- * It lives with the draft (and in session storage), so a dropped frame, a failed send, leaving
- * the chat or a reload cannot forget what the server is missing; the next connect, mount or
- * activity sends it again.
- */
 type HeldDraft = QuestionDraft & { askId: string | null; owed: boolean };
 
-/** Page activity that shows the writer is there. Not `scroll`: the page scrolls itself too. */
 const ACTIVITY_EVENTS = [
   "pointermove",
   "pointerdown",
@@ -70,11 +32,8 @@ export function useAskTakeover(
   const open = useOpenAsk(threadId);
   const commands = useAnswerAsk(threadId);
   const openId = open?.ask.id ?? null;
-  // ChatView is keyed by chat, so the account and chat are fixed for this hook's life.
   const [stored] = useState(() => heldRecord(accountId, threadId));
   const [held, setHeld] = useState<HeldDraft>(() => stored.read() ?? NONE);
-  // The ref is the truth for the effect and the presence timer: it changes with each write,
-  // before any render the answer's store update causes.
   const heldRef = useRef(held);
   const write = useCallback(
     (next: HeldDraft) => {
@@ -84,13 +43,10 @@ export function useAskTakeover(
     },
     [stored],
   );
-  // The ask whose last answer the server refused; any change to its draft clears it.
   const [refusedAsk, setRefusedAsk] = useState<string | null>(null);
   const tracked = useThreadStore((state) =>
     held.askId === null ? undefined : state.syncedByThread[threadId]?.asks.byId.get(held.askId),
   );
-  // The question ask this takeover shows now; null while an answer sends, once it ends, and for
-  // a permission ask (the server refuses presence for those).
   const askRef = useRef<ThreadAsk | null>(null);
   askRef.current = open?.ask.kind === "question" ? open.ask : null;
   const presence = useMemo(
@@ -114,8 +70,7 @@ export function useAskTakeover(
       for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, report, options);
     };
   }, [presence, questionOpen]);
-  // The server echoes every answer-carrying report, so its echo of the choices is the ack. Runs
-  // before the report effect so a mount with the echo already in the store doesn't re-send.
+  // keep: This effect must run before the report effect; the server echo is the ack, so clearing owed first stops a mount that already has the echo from re-sending.
   useEffect(() => {
     const current = heldRef.current;
     if (
@@ -128,8 +83,6 @@ export function useAskTakeover(
     )
       write({ ...current, owed: false });
   }, [tracked, held.owed, write]);
-  // A draft with answers the server lacks (a reload, a failed send that reopened the takeover)
-  // reports as soon as its ask is open here.
   useEffect(() => {
     if (questionOpen && held.owed) presence.report();
   }, [presence, questionOpen, held.owed]);
@@ -155,7 +108,6 @@ export function useAskTakeover(
   }, [composer, openId, presence, tracked, write]);
 
   if (!open) return null;
-  // Whether the server lacks answers once `next` is the draft: it already did, or a choice changed.
   const owedAfter = (next: QuestionDraft) => {
     const mine = held.askId === open.ask.id;
     const base = mine ? held : seedDraft(open.ask);
@@ -180,11 +132,9 @@ export function useAskTakeover(
       }}
       onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(answer, sent) => {
-        // The answer carries the draft; a report waiting on its interval would only repeat it.
         presence.stop();
         setRefusedAsk(null);
         const askId = open.ask.id;
-        // Held before it sends, so a failed send reopens with every answer picked.
         if (sent) write({ askId, ...sent, owed: owedAfter(sent) });
         void commands.answer(askId, answer).then((result) => {
           const current = heldRef.current;
@@ -231,7 +181,6 @@ function heldRecord(accountId: string, threadId: string) {
   );
 }
 
-/** The draft a takeover starts from: the answers the server holds for the ask, else none. */
 function seedDraft(ask: ThreadAsk): QuestionDraft {
   const count = ask.kind === "question" ? ask.payload.questions.length : 0;
   const held = ask.draftAnswers ?? [];
@@ -239,12 +188,10 @@ function seedDraft(ask: ThreadAsk): QuestionDraft {
     const choice = held[index] ?? null;
     return { choice, words: choice?.kind === "text" ? choice.text : "" };
   });
-  // Resume at the first question still open.
   const open = entries.findIndex((entry) => entry.choice === null);
   return { step: Math.max(open, 0), entries };
 }
 
-/** Each question's typed words that its outcome doesn't hold, one per line; empty when none. */
 function unsettledWords(draft: QuestionDraft, ask: ThreadAsk | undefined): string {
   const outcome =
     ask?.resolution?.kind === "answers" || ask?.resolution?.kind === "timeout"
@@ -259,7 +206,6 @@ function unsettledWords(draft: QuestionDraft, ask: ThreadAsk | undefined): strin
     .join("\n");
 }
 
-/** Whether two lists of choices are the same answers; a missing choice is null (no trailing-null drift). */
 function sameChoices(a: DraftAnswers, b: DraftAnswers): boolean {
   for (let index = 0; index < Math.max(a.length, b.length); index++) {
     const x = a[index] ?? null;

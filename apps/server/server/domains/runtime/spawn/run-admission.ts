@@ -1,8 +1,3 @@
-/**
- * A run's admission at its reservation commit: for a run that continues a resolved ask, the
- * ask's continuation claim; for a subagent run, which invocation its report belongs to (the
- * parent call, a parent's background re-task, or none).
- */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
@@ -11,7 +6,6 @@ import type { StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import type { AskResolvedBody, InboxMessage } from "../loop/ports.js";
 import type { RunLoopInput } from "../loop/run-turn-port.js";
 
-/** The resolved ask a drain run continues, from its `ask_resolved` wake hint. */
 export type ResolvedContinuation = { ask: StoredAsk };
 
 const THREAD_RUN_CORRELATION = {
@@ -23,11 +17,6 @@ const THREAD_RUN_CORRELATION = {
   deliveryMode: "none" as const,
 };
 
-/**
- * What a run-start hint continues. `retire`: its ask owes nothing more (a redelivered
- * row), so it is acknowledged and no turn starts. A continuation's state never
- * returns to owed, so this read needs no lock; admission claims it under the lock.
- */
 export async function readContinuation(
   asks: Pick<ThreadRepositories["asks"], "findById">,
   threadId: ThreadId,
@@ -40,10 +29,6 @@ export async function readContinuation(
   return { ask };
 }
 
-/**
- * Admits a run in its reservation commit: claims the continuation it runs (the thread
- * lock already holds the ask's row), then records a subagent run's report correlation.
- */
 export async function admitRun(
   repos: Pick<ThreadRepositories, "asks" | "executionReports">,
   input: {
@@ -83,11 +68,6 @@ export async function admitRun(
   });
 }
 
-/**
- * A run woken by its parent's background `thread_message` reports back to that
- * parent like a background spawn. The latest re-task in the adopted batch names
- * the invocation; messages from any other thread start an ordinary thread run.
- */
 function parentRetaskCorrelation(
   thread: Thread,
   adopted: readonly InboxMessage[],

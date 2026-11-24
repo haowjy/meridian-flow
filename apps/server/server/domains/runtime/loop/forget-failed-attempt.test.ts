@@ -78,7 +78,6 @@ const run = (retries: string | null = null, executionId = "e2"): AppendedTurns =
 
 describe("decideForgetting", () => {
   it("forgets an empty failure and the message it answered when the chat moves on", () => {
-    // Risk: the writer's abandoned message lingering after they moved on, in the model's memory and on screen.
     const f = failed("f");
     expect(
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext),
@@ -90,7 +89,6 @@ describe("decideForgetting", () => {
   });
 
   it("forgets nothing when the failure kept text, including a reply cut off at max_tokens", () => {
-    // Risk: dropping words the writer may say "continue from there" to. The card still ends.
     const f = failed("f", { blocks: [text("f")], finishReason: "max_tokens" });
     expect(
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext),
@@ -102,7 +100,6 @@ describe("decideForgetting", () => {
   });
 
   it("forgets nothing when a delivery follows the failure", () => {
-    // Risk: forgetting a reply whose subagent report the model has not read.
     const update = turn("s", "system", { metadata: { kind: "subagent_update" } });
     const decision = decideForgetting(
       facts({ members: [member(failed("f"), [update])], answered: [message] }),
@@ -112,7 +109,6 @@ describe("decideForgetting", () => {
   });
 
   it("forgets a failure that only holds an empty reasoning placeholder", () => {
-    // Risk: an invisible reasoning block counted as content, so the abandoned message never leaves.
     const f = failed("f", { blocks: [block("f", "reasoning", { content: { text: "" } })] });
     expect(
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext).forget,
@@ -120,7 +116,6 @@ describe("decideForgetting", () => {
   });
 
   it("keeps a failure that made a hidden tool call, although the writer sees no reply", () => {
-    // Risk: forgetting a spawn that really ran. The model must keep the call and its result.
     const f = failed("f", {
       blocks: [block("f", "tool_use", { content: { toolName: "spawn", toolCallId: "c1" } })],
     });
@@ -134,7 +129,6 @@ describe("decideForgetting", () => {
   });
 
   it("forgets the failed attempt at a Retry and keeps the message the Retry answers", () => {
-    // Risk: the Retry's own request carrying the partial attempt, or the Retry losing its message.
     const f = failed("f", { blocks: [text("f")] });
     expect(
       decideForgetting(facts({ members: [member(f)], answered: [message] }), run("f")),
@@ -146,20 +140,17 @@ describe("decideForgetting", () => {
   });
 
   it("keeps a failed reply with a tool call even when it is retried", () => {
-    // Risk: a write that landed disappearing from the model's memory when the writer presses Retry.
     const f = failed("f", { blocks: [block("f", "tool_use", { content: { toolName: "write" } })] });
     expect(decideForgetting(facts({ members: [member(f)] }), run("f")).forget).toEqual([]);
   });
 
   it("forgets nothing when a message was admitted while the reply ran (carried)", () => {
-    // Risk: forgetting an exchange the writer never chose to move on from. The latest row is their message.
     expect(
       decideForgetting(facts({ latest: turn("u2", "user"), members: [] }), writerNext),
     ).toEqual({ forget: [], ends: [], reason: null });
   });
 
   it("forgets nothing when the same execution continues past a failed compaction", () => {
-    // Risk: a failed compaction forgotten in the middle of the run that carried on past it.
     const c = turn("c", "compaction", { status: "error", executionId: "e1" });
     const decision = decideForgetting(facts({ members: [member(c)] }), run(null, "e1"));
     expect(decision.forget).toEqual([]);
@@ -167,7 +158,6 @@ describe("decideForgetting", () => {
   });
 
   it("still sees the continuation when a fresh agent message is adopted before the successor", () => {
-    // Risk: reading the first closing row's execution (null for an inbox message) instead of the reservation's.
     const c = turn("c", "compaction", { status: "error", executionId: "e1" });
     const appended = appendedTurns([
       turn("m", "user", { origin: "system", metadata: { kind: "inbox_message" } }),
@@ -177,7 +167,6 @@ describe("decideForgetting", () => {
   });
 
   it("never counts a null execution id as a continuation", () => {
-    // Risk: historical rows and writer messages (execution null) matching each other and keeping every failure.
     const f = failed("f", { executionId: null });
     const appended: AppendedTurns = { closes: true, reservationExecutionId: null, retries: null };
     expect(
@@ -186,7 +175,6 @@ describe("decideForgetting", () => {
   });
 
   it("forgets an empty Retry and the message after a partial reply was retried", () => {
-    // Risk: the earlier partial attempt (already forgotten at the Retry) blocking the move-on forever.
     const earlier = failed("f", { blocks: [text("f")], forgottenBy: "r" });
     const decision = decideForgetting(
       facts({ members: [member(failed("r")), member(earlier)], answered: [message] }),
@@ -196,7 +184,6 @@ describe("decideForgetting", () => {
   });
 
   it("keeps a message a complete compaction summarized without pinning", () => {
-    // Risk: forgetting words a summary still holds, when the release has no backfill for old summaries.
     const decision = decideForgetting(
       facts({
         members: [member(failed("f"))],
@@ -209,7 +196,6 @@ describe("decideForgetting", () => {
   });
 
   it("lists only the newest member of a kept Retry chain as ending now", () => {
-    // Risk: Retry C over B over A (A kept for its tool call) ending A again, after B's boundary ended it.
     const a = failed("a", { blocks: [block("a", "tool_use")] });
     const b = failed("b", { executionId: "e2" });
     const decision = decideForgetting(facts({ members: [member(b), member(a)] }), run(null, "e3"));
@@ -220,9 +206,6 @@ describe("decideForgetting", () => {
     });
   });
 
-  // Risk: forgetting content read as ending the failure. Reply F retried through compaction C; C failed and
-  // the same execution continued with R (`C ended moved_on by R`); R failed. Whatever forgets R, then C, then
-  // F (a Retry or the writer moving on), only R's failure ends there. C and F ended at their own boundaries.
   const chainFacts = () => {
     const f = failed("f", { forgottenBy: "c" });
     const c = turn("c", "compaction", {
@@ -247,8 +230,6 @@ describe("decideForgetting", () => {
   });
 
   it("ends a failed handoff seed without forgetting it, whatever the latest row is", () => {
-    // Risk: a first-brief failure with no earlier closing row bypassing the move-on, or being forgotten
-    // although its model text states a fact the model can act on.
     const seed = turn("s", "system", {
       status: "error",
       metadata: { kind: "derivation_seed", derivation: "handoff" },
@@ -260,7 +241,6 @@ describe("decideForgetting", () => {
 });
 
 describe("loadForgettingFacts", () => {
-  /** A fake graph over a chain of turns, newest last. */
   function chain(turns: Turn[]) {
     const linked = turns.map((held, index) => ({
       ...held,
@@ -280,7 +260,6 @@ describe("loadForgettingFacts", () => {
   const blocks = { listByTurnIds: async () => [] as Block[] };
 
   it("reads each turn's blocks once, in one query, however long the failed chain", async () => {
-    // Risk: the walk reloading a member's blocks as the next member's stop, and one read per member.
     const graph = chain([
       turn("u", "user"),
       failed("f", { forgottenBy: "r" }),
@@ -306,8 +285,6 @@ describe("loadForgettingFacts", () => {
   });
 
   it("reads past a Work refresh to the failed reply, so a closing row still forgets it", async () => {
-    // Risk: the app offering a Retry the server refuses, and a failure that escapes forgetting, because
-    // a Work-context refresh (a user turn from the system) after it was taken for a closing row.
     const graph = chain([
       turn("u", "user"),
       failed("f"),
@@ -326,16 +303,11 @@ describe("loadForgettingFacts", () => {
   });
 
   it("names the first closing row after a reply, not the latest, when two follow it", async () => {
-    // Risk: a reply that fails while the writer sends U then V being reported as moved on by V, so the
-    // log names a later boundary than the first one the rule promises.
     const graph = chain([failed("a"), turn("u", "user"), turn("v", "user")]);
     expect((await firstClosingRowAfter(graph as never, "v" as never, "a"))?.id).toBe("u");
     expect(await firstClosingRowAfter(graph as never, "a" as never, "a")).toBeNull();
   });
 
-  // Risk: the delivery walk stopping at a different turn than the view groups reports under, so the loader
-  // forgets a reply whose report the writer sees (or keeps one they cannot). Graph rows carry no blocks;
-  // the loader loads them for the turns it walks, because a thread reference or an empty shell decides a row.
   const agentMessage = turn("m", "user", { origin: "system", metadata: { kind: "inbox_message" } });
   const report = turn("r", "system", { metadata: { kind: "subagent_update" } });
   const handoffSeed = turn("s", "system", {

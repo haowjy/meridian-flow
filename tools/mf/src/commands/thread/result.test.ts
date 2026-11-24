@@ -1,4 +1,3 @@
-/** Deadline classification protects evidence labels independently of transport timing. */
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
@@ -43,7 +42,6 @@ it("classifies a deadline by what the last read can and cannot say: running, the
     next: [`./mf thread tail ${THREAD_ID} --until-idle`],
   });
 
-  // Asleep with nothing owed, or no read at all: never a success claim.
   state.liveState.status = { kind: "asleep" };
   const idle = classifyDeadline(state, THREAD_ID);
   expect(idle).toEqual({

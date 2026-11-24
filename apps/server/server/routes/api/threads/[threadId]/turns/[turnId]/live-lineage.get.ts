@@ -1,4 +1,3 @@
-/** GET /api/threads/:threadId/turns/:turnId/live-lineage: live document lineage for a turn. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

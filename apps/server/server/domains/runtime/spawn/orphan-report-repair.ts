@@ -1,4 +1,3 @@
-/** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
@@ -51,7 +50,6 @@ export function createOrphanReportRepair(deps: {
         while (leaf) {
           const next = turns.find((candidate) => candidate.parentTurnId === leaf?.id);
           if (!next) break;
-          // Every admitted selector begins a separate execution, regardless of turn role.
           if (await deps.repos.executionReports.findByExecution(childThreadId, next.id)) break;
           leaf = next;
           if (next.role === "assistant" || next.role === "compaction") terminal = next;
@@ -83,10 +81,6 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
-  /**
-   * A candidate captured earlier may be stale: repair only the turns it names, so
-   * a newer execution's receipt (admitted since) survives until its own lane.
-   */
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
     const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
       settleStaleExecution(candidate.threadId, () =>
@@ -97,7 +91,6 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
-  /** An expired row is stale as listed: the full settlement ends it, publishing its reports. */
   async function repairExpired(threadId: ThreadId): Promise<void> {
     await deps.authority.withExclusiveThread(threadId, () => settleStaleExecution(threadId));
   }
@@ -145,9 +138,6 @@ export function createOrphanReportRepair(deps: {
       }
     }
 
-    // An expired lease is a stale execution even when no turn is unsettled: an
-    // empty execution that crashed, a row left by older code, or an abandoned
-    // one whose repairs already committed.
     let expired = await deps.authority.listExpiredExecutions(limit, leaseCursor);
     if (expired.length === 0 && leaseCursor) {
       leaseCursor = undefined;

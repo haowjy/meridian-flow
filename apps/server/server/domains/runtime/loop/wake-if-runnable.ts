@@ -1,4 +1,3 @@
-/** Re-reads a thread's queue after a claim release and starts only runnable work. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { next } from "./next-inbox-work.js";
 import type { RunStarter } from "./ports.js";

@@ -1,9 +1,3 @@
-/**
- * Transport adapter for starting an authoritative upload (a chat attach, or a file dropped into a
- * document): reserves it and returns a signed PUT
- * for the bytes. The file never passes through here; `upload/finish` reads it back from the store.
- */
-
 import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";

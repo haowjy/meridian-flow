@@ -1,7 +1,3 @@
-/**
- * Tests contract boundaries behavior.
- */
-
 import { describe, expect, it } from "vitest";
 import { parseThreadReportResult, toReportContentValue } from "./spawn/index.js";
 import { parseWorkReceipt } from "./works/receipts.js";

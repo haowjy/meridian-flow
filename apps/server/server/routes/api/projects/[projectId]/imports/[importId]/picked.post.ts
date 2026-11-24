@@ -1,4 +1,3 @@
-/** Continue's re-picked files whose entries are already received; hashes only, no bytes. */
 import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { defineEventHandler } from "nitro/h3";
 import { z } from "zod";

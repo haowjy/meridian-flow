@@ -1,29 +1,3 @@
-/**
- * What the internal links of one resolution scope name: the local answer the
- * shared link rules give over the scope's catalog (`project-link-catalog.ts`),
- * synchronously, then the server for the rest, in batches. This module holds
- * only that split, the transport, and what a server answer teaches the
- * settlement memo; the rules are `resolveStoredLink`'s.
- *
- * - A `doc:` ref, or an `ahead:` ref the memo knows settled on a document,
- *   resolves locally when the complete index holds that document, wherever it
- *   lives now. A settled ref never answers by its old address again, online
- *   or off, so a renumber that puts another document there never answers
- *   for it.
- * - Any other `ahead:` ref asks the server, because settlement is server
- *   state. Until it answers, a document the complete index holds at exactly
- *   the ref's stored address is the answer, shown at once (a Follow-Create,
- *   say, before the server has settled the ref). Only a server `document`
- *   naming another document, or `gone`, replaces it; with nothing there, the
- *   server's `missing` is "doesn't exist yet".
- * - A link with no ref resolves by its address: the complete index first
- *   (the project trees' walk, through the catalog's `documentFor`), then the
- *   server.
- * - A folder (a `folder:` ref, or a directory address) resolves from the local
- *   index when it can. Otherwise the server answers it in the same request as
- *   documents, so another Work's Scratch folder still becomes filled or gone.
- */
-
 import {
   type DocumentLinkAnswer,
   parseLinkRef,
@@ -46,28 +20,12 @@ import type { LinkSettlements } from "./link-settlements";
 import { createProjectLinkCatalog } from "./project-link-catalog";
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
 
-/**
- * Everything an answer is true of, besides which documents the project holds
- * (the index's revision).
- */
 export type LinkResolutionScope = {
   projectId: string;
-  /** Resolved Work row id, including No Work; unresolved surfaces use a pending scope. */
   workId: string;
-  /**
-   * The lineage a bare `scratch://` means, in a No Work chat or in a note of a
-   * lineage. The server takes it in place of the Work.
-   */
   rootThreadId?: string | null;
-  /** The chat a bare `uploads://` means: the chat itself, or a subagent's top chat. */
   chatThreadId?: string | null;
-  /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
-  /**
-   * The document holding the links, when the scope is one document's text. The
-   * server pins this identity and its current address; only a relative target
-   * without a base URI remains unasked on the client.
-   */
   holderDocumentId?: string | null;
 };
 
@@ -95,8 +53,6 @@ export function createProjectLinkResolver(
   return {
     index,
     local({ ref, target }) {
-      // A relative path with no base cannot be asked; the base arriving is a
-      // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
       const link = { ref, href: linkTargetHref(target) };
       const address = resolveStoredLinkAddress(link, baseUri);
@@ -120,11 +76,7 @@ export function createProjectLinkResolver(
       }
       if (resolution.kind === "document") {
         const answer = indexedAnswer(resolution.document.documentId);
-        // Rule 4 (an ahead ref not known settled, at its exact address) is
-        // the server's to confirm; see `LocalLinkAnswer`.
         const confirmed = resolution.settled || parseLinkRef(ref)?.kind === "doc";
-        // A stored file's size is only the server's to say, so a chip for one asks once;
-        // a picture's size is never drawn.
         const sizeUnknown = answer?.document.file && answer.document.file.fileType !== "image";
         if (answer && confirmed && !sizeUnknown) return answered(answer);
         provisional = answer;
@@ -155,11 +107,6 @@ export function createProjectLinkResolver(
   };
 }
 
-/**
- * The client's answer for the API's. `unresolvable` is no answer at all: the
- * server could not ask the question, which is not "nothing there", so it never
- * draws dashed or offers Create.
- */
 function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
@@ -172,7 +119,6 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         rootThreadId: document.rootThreadId ?? undefined,
       });
       if (found && document.file) found.document.file = document.file;
-      // A hidden document is "in a draft": keep the destination the server named.
       return found && answer.inDraft && answer.draft ? { ...found, draft: answer.draft } : found;
     }
     case "folder":
@@ -196,10 +142,6 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   }
 }
 
-/**
- * What a rule-3 answer says an ahead ref settled on: its document, null for
- * settled gone (identity unknown), undefined for any other answer.
- */
 function settlementOf(answer: DocumentLinkAnswer): string | null | undefined {
   if (answer.state === "document") return answer.settled ? answer.document.id : undefined;
   if (answer.state === "gone") return answer.settled ? null : undefined;

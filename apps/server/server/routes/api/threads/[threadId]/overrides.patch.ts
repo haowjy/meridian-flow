@@ -1,4 +1,3 @@
-/** PATCH /api/threads/:threadId/overrides: sets or clears the chat's model and reasoning overrides, as a command. */
 import type { CommandId, ProjectId } from "@meridian/contracts";
 import { serializeTransport, setThreadOverridesRequestSchema } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
@@ -24,8 +23,6 @@ export default defineEventHandler(async (event) => {
     threadId,
     user.userId,
   );
-  // Stored as asked, never refused: a model the gateway doesn't list, or a reasoning setting the
-  // model doesn't accept, falls back at turn time.
   const result = await runRouteCommand<{
     status: "done";
     threadId: string;

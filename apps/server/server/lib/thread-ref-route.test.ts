@@ -1,4 +1,3 @@
-/** by-ref route core: owner-gated, exact live handle lookup, uniform 404s. */
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";

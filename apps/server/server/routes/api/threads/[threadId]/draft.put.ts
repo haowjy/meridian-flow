@@ -1,4 +1,3 @@
-/** PUT /api/threads/:threadId/draft: the chat's lineage writes into another of its Work's drafts. */
 import type { CommandId, ProjectId, ThreadId } from "@meridian/contracts";
 import type { SetChatDraftResult } from "@meridian/contracts/drafts";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";

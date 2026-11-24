@@ -1,8 +1,3 @@
-/**
- * Guards the risk of a deployed process acting as the dev user: the bypass must
- * throw (never return a user) outside a local dev process, and must not apply to
- * cross-site requests that the old Lax session cookie kept out.
- */
 import { describe, expect, it } from "vitest";
 import { devAuthAppliesToRequest, resolveDevAuthUser } from "./dev-auth";
 

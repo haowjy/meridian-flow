@@ -1,4 +1,3 @@
-/** Canonical writer-facing HTTP envelopes for Work metadata and archive lifecycle refusals. */
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { isError } from "nitro/h3";
 import { WorkLifecycleUnavailableError, WorkLockedError } from "../domains/projects/index.js";
@@ -23,7 +22,6 @@ export function throwWorkMutationHttpError(error: unknown): never {
     );
   }
   if (isError(error) && error.statusCode === 404) {
-    // Owner gates already carry the proof; don't replace a deleted project with a missing Work.
     const data = error.data;
     if (
       data &&

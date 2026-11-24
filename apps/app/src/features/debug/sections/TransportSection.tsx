@@ -15,11 +15,6 @@ import { useThreadTransport } from "@/client/providers/TransportProvider";
 
 import { JsonTree } from "../JsonTree";
 
-/**
- * Live `ConnectionState` from the WS singleton. The transport emits the current
- * state synchronously on subscribe, so the first render already has real data.
- * Shared by the section body and the pill's collapsed header chip.
- */
 export function useConnectionState(): ConnectionState | null {
   const transport = useThreadTransport();
   const [state, setState] = useState<ConnectionState | null>(null);

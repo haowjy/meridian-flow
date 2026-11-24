@@ -1,4 +1,3 @@
-/** Shared report-body presentation for invocation cards and saved report rows. */
 import { Trans } from "@lingui/react/macro";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { ReactNode } from "react";

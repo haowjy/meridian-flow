@@ -1,5 +1,3 @@
-/** Durable asks that settle an execution and are answered by a later continuation. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskContinuationState,
@@ -54,20 +52,15 @@ export const asks = pgTable(
     toolCallId: text("tool_call_id").notNull(),
     kind: text("kind").$type<AskKind>().notNull(),
     payload: jsonb("payload").$type<AskPayload>().notNull(),
-    /** Validated server-only command. Never serialized through threadAsk(). */
     permissionCommand: jsonb("permission_command").$type<Record<string, unknown>>(),
-    /** When a question ask settled the run and opened; its hard timeout limit counts from here. */
     openedAt: timestamp("opened_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
-    /** The most a question waits from the moment it opens, from the asking model's long cache lifetime. */
     hardLimitSeconds: integer("hard_limit_seconds").notNull(),
-    /** The answers a writer had chosen when they last interacted; a timeout resolves from them. */
     draftAnswers: jsonb("draft_answers").$type<DraftAnswers>(),
     status: text("status").$type<AskStatus>().notNull().default("pending"),
     resolution: jsonb("resolution").$type<AskResolution>(),
     submissionId: text("submission_id"),
     continuation: text("continuation").$type<AskContinuationState>(),
-    /** The latest turn admitted to continue this ask. */
     continuationTurnId: uuid("continuation_turn_id").$type<TurnId>(),
     createdAt: createdAt(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
@@ -83,7 +76,7 @@ export const asks = pgTable(
       .on(table.deadlineAt, table.id)
       .where(sql`${table.status} = 'open' AND ${table.deadlineAt} IS NOT NULL`),
     index("asks_thread_created").on(table.threadId, table.createdAt, table.id),
-    // The rows a thread lock takes before its own lock: live asks and owed continuations.
+    // keep: Lock live asks and owed continuations before the thread lock; this index preserves that lock order
     index("asks_held_by_thread")
       .on(table.threadId)
       .where(sql`${table.status} IN ('pending', 'open') OR ${table.continuation} = 'pending'`),

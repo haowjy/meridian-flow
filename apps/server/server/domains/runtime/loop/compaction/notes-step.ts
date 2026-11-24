@@ -1,4 +1,3 @@
-/** Constructs the durable notes marker after request preparation admits the cycle. */
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -45,13 +44,11 @@ export function prepareCompactionNotes(input: { threadId: ThreadId; turns: Turn[
   };
 }
 
-/** Only the run loop installs this value, after the prepared boundary commits. */
 export type NotesContinuation =
   | { kind: "ordinary" }
   | { kind: "notes"; remaining: number }
   | { kind: "compaction_due" };
 
-/** Selects Scratch operations only; ordinary tool validation and file policy still own access. */
 export function isScratchCall(call: { name: string; arguments: unknown }): boolean {
   if (!["read", "write", "ls", "grep"].includes(call.name)) return false;
   if (!call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments))

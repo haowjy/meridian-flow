@@ -1,5 +1,3 @@
-/** Context activation with the shared menu presentation and keyboard equivalent. */
-
 import { ChevronRight } from "lucide-react";
 import { ContextMenu as Primitive } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
@@ -55,7 +53,7 @@ export function ContextMenuContent({
         {...props}
         onPointerUpCapture={(event) => {
           onPointerUpCapture?.(event);
-          // The release that summoned a context menu must not select its first row.
+          // keep: Prevent the right-click release's pointerup or Radix selects the menu's first row
           if (event.button !== 0) event.preventDefault();
         }}
         className={cn(
@@ -75,7 +73,6 @@ export function ContextMenuItem({
   children,
   ...props
 }: ComponentProps<typeof Primitive.Item> & {
-  /** Small words at the row's end, on the label's baseline. Not with `asChild`. */
   note?: ReactNode;
 }) {
   return (

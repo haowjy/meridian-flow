@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/**
- * Blocks temporary console probes from product source before push.
- */
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 

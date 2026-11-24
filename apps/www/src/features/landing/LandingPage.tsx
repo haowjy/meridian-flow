@@ -16,7 +16,6 @@ import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
 
-/** Left to right as they sit round the fire: the ring in `forest.ts` puts Sigrun's row rightmost. */
 const SEATED: readonly CharacterKey[] = ["maren", "oskar", "tam", "sigrun"];
 
 export function LandingPage({ appOrigin }: { appOrigin: string }) {
@@ -390,10 +389,6 @@ function Agent({
   );
 }
 
-/**
- * What the section is for, in plain words: the stacked layout shows it, the film tells it as story
- * instead and keeps it for screen readers and crawlers.
- */
 function SectionHead({ section }: { section: keyof typeof SECTION_HEADS }) {
   const { heading, line } = SECTION_HEADS[section];
   return (

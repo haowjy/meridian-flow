@@ -12,10 +12,6 @@ import { cn } from "@/lib/utils";
 import type { PackageRef } from "./package-save";
 import { type DiffCell, type DiffRow, diffRows, foldRows } from "./saved-diff";
 
-/**
- * One file of a package against its last save, read-only: the saved text beside the file's text
- * now. An added file has only the new side, a deleted one only the saved side.
- */
 export function SavedDiffDialog({
   projectId,
   pkg,
@@ -26,14 +22,11 @@ export function SavedDiffDialog({
 }: {
   projectId: string;
   pkg: PackageRef;
-  /** The package's latest Save, which holds the saved side. */
   saveId: string | null;
   change: AgentFileChange | null;
-  /** The file's document now; null for a deleted file. */
   documentId: string | null;
   onClose: () => void;
 }) {
-  // The dialog fades out after `change` clears; it keeps showing the last file until it is gone.
   const [shown, setShown] = useState(change);
   if (change && change !== shown) setShown(change);
   const saved = useSavedAgentFile(
@@ -92,7 +85,6 @@ function ChangeChip({ change }: { change: AgentFileChange["change"] }) {
   }
 }
 
-/** `saved` null for an added file, `now` null for a deleted one: that column is left out. */
 function DiffView({ saved, now }: { saved: string | null; now: string | null }) {
   const blocks = useMemo(() => foldRows(diffRows(saved, now)), [saved, now]);
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
@@ -165,10 +157,6 @@ function DiffView({ saved, now }: { saved: string | null; now: string | null }) 
 
 const rowKey = (row: DiffRow) => `${row.saved?.n ?? "-"}:${row.now?.n ?? "-"}`;
 
-/**
- * One row of both columns. Below `sm` the columns stack: an unchanged line shows once, and a
- * changed line's saved text sits above its text now.
- */
 function Row({ row, sides }: { row: DiffRow; sides: { saved: boolean; now: boolean } }) {
   const both = sides.saved && sides.now;
   const same = row.kind === "same";

@@ -1,4 +1,3 @@
-/** Per-account recently opened documents used to resume writing across projects. */
 import type { DocumentId, UserId } from "@meridian/contracts";
 import { index, pgTable, primaryKey, timestamp, uuid } from "drizzle-orm/pg-core";
 import { documents } from "./content";

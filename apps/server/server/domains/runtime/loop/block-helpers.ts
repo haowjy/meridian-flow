@@ -1,12 +1,3 @@
-/**
- * Shared block-shape helpers for the runtime loop.
- *
- * These functions keep repository create inputs, persisted block events, and
- * in-memory block snapshots aligned without binding the orchestrator to the
- * thread read-model projector. They are pure data transforms except for local
- * UUID/timestamp minting required before persistence events are emitted.
- */
-
 import {
   type Block,
   type BlockUpsertedRow,
@@ -17,10 +8,6 @@ import {
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type { BlockRepository } from "../../threads/index.js";
 
-// Converts a loose `BlockRepository.create` input (with optional id and
-// textContent/content alternatives) into the canonical `BlockUpsertedRow`
-// shape used in `block.upserted` events. If no id is provided, one is minted
-// locally so the row is self-identifying before persistence.
 export function contentForBlockInput(
   input: Parameters<BlockRepository["create"]>[0],
 ): BlockUpsertedRow {
@@ -36,8 +23,6 @@ export function contentForBlockInput(
   };
 }
 
-// Converts a persisted `BlockUpsertedRow` into the full `Block` contract shape
-// for in-memory accumulation.
 export function localBlockFromEvent(block: BlockUpsertedRow): Block {
   return {
     id: block.id,

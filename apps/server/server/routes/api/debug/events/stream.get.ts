@@ -1,4 +1,3 @@
-/** GET /api/debug/events/stream — authenticated, dev-only live observability SSE feed. */
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { parseEventQueryFilter } from "../../../../lib/event-query-route.js";

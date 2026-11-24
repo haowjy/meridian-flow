@@ -1,8 +1,3 @@
-/**
- * In-memory loop ports for tests and local dev: Map-backed `DeliveryStore` and
- * `RunClaim` plus a recording `RunStarter`. The authority fake takes an
- * injected clock so lease expiry and renewal are deterministic.
- */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
@@ -25,7 +20,6 @@ export function createInMemoryInbox(): DeliveryStore {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
-    // The in-memory adapter publishes no run-state record.
     markRunStateChanged() {},
     async publishRunState() {
       return null;
@@ -136,7 +130,6 @@ interface InMemoryLease {
   executionId: ExecutionId;
   turnId: TurnId | null;
   boundTurnIds: Set<TurnId>;
-  /** Some turn records this execution (bindTurn runs in each reservation). */
   represented: boolean;
   messageIds: string[];
   holderId: string;
@@ -144,15 +137,12 @@ interface InMemoryLease {
   cancelRequested: boolean;
   currentTool: CurrentToolCall | null;
   expiresAt: number;
-  /** Admission order, compared with wake fences. */
   admitted: number;
 }
 
 export interface InMemoryRunClaimOptions {
-  /** Stable holder identity for the adapter; a random one is minted when omitted. */
   holderId?: string;
   leaseTtlMs?: number;
-  /** Injected clock (ms since epoch) so expiry is deterministic in tests. */
   now?: () => number;
 }
 
@@ -164,13 +154,11 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
-  // A sequence, not the clock: a fence and an admission in the same millisecond still order.
+  // keep: Use a monotonic sequence, not millisecond time, to order fences and admissions
   let sequence = 0;
   const fences = new Map<ThreadId, number>();
   const shortClaims = new Set<ThreadId>();
-  // The execution claim, apart from its row: abandon unlocks and keeps the row. It records the
-  // claimant's execution, because settling a stale row happens under the new claimant's claim:
-  // ending the old execution must not unlock the thread the new one holds.
+  // keep: Track the claimant's execution; settling a stale row must not unlock the new claimant's thread
   const locked = new Map<ThreadId, ExecutionId>();
   const unlockIfHeldBy = (lease: Lease) => {
     if (locked.get(lease.threadId) === lease.executionId) locked.delete(lease.threadId);
@@ -429,7 +417,6 @@ export function createInMemoryRunStarter(): InMemoryRunStarter {
   };
 }
 
-/** Reentrant like PostgreSQL's transaction-scoped lock: a holder that locks again runs at once. */
 export function createInMemoryThreadLock(): ThreadLock {
   const chains = new Map<ThreadId, Promise<unknown>>();
   const held = new AsyncLocalStorage<ReadonlySet<ThreadId>>();
@@ -452,11 +439,9 @@ export function createInMemoryThreadLock(): ThreadLock {
   };
 }
 
-/** Bind the memory delivery store and claim to the same receipt owner. */
 export function createInMemoryRuntimeDelivery(
   deps: Omit<Parameters<typeof createDeliveryAdapter>[0], "leaseStore" | "runClaim"> & {
     runClaim: ReturnType<typeof createInMemoryRunClaim>;
-    /** The thread's journal head as the socket numbers its frames: the in-memory record's version. */
     headSeq(threadId: ThreadId): Promise<bigint>;
   },
 ) {
@@ -465,7 +450,6 @@ export function createInMemoryRuntimeDelivery(
     leaseStore: deps.runClaim,
     inbox: {
       ...deps.inbox,
-      // In memory the record is derived on demand at the journal head; nothing is published.
       async answerRunState(threadId) {
         const projection = await deps.inbox.readPendingProjection(threadId);
         const run = deps.runClaim.readDeliveryRun(threadId);

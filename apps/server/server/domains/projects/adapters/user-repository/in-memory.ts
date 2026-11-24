@@ -1,4 +1,3 @@
-/** In-memory UserRepository for tests: Map-backed idempotent user provisioning implementing the port. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
 import {
@@ -13,7 +12,6 @@ type UserRow = EnsureUserInput & {
   updatedAt: string;
 };
 
-/** In-memory {@link UserRepository} for tests. */
 export function createInMemoryUserRepository(): UserRepository {
   const rowsByExternalId = new Map<string, UserRow>();
 

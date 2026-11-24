@@ -1,4 +1,3 @@
-/** PATCH /api/threads/:threadId/title: persists a writer-authored thread title. */
 import { renameThreadRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";

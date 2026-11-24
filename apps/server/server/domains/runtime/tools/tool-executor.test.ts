@@ -12,7 +12,6 @@ import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
 
 __mergedSuite("tool-executor.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/tools/tool-executor.test.ts.
   const executionBase = {
     threadId: "thread-1" as ThreadId,
     turnId: "turn-1" as TurnId,
@@ -40,7 +39,6 @@ __mergedSuite("tool-executor.test.ts", () => {
 });
 
 __mergedSuite("spawn-tools.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/tools/spawn-tools.test.ts.
   __mergedSuite("spawn and thread_message refusals", () => {
     const executor = createToolExecutor(
       createToolRegistry({ registrations: createSpawnToolRegistrations() }),

@@ -13,7 +13,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-/** A deadlock shows up as a hang; fail fast and name the call instead. */
 function settlesWithin<T>(label: string, promise: Promise<T>, ms = 8000): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   return Promise.race([
@@ -55,7 +54,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 6 });
     const runtimes = useComposedRuntimes(() => db);
 
-    /** The production app; the thread resolves from its rows, as a request would. */
     async function createFixture() {
       const runtime = await runtimes.compose();
       const { app, ports } = runtime;
@@ -67,7 +65,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         works: app.workRepo,
         workAuthorityResolver: app.workAuthorityResolver,
       };
-      // Any model tool through the executor, in the turn's recorded response.
       const callTool = async (name: string, input: Record<string, unknown>) => {
         await bindEditAgent(runtime, THREAD_ID);
         return app.toolExecutor.executeTool(
@@ -144,7 +141,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: "assistant",
         status: "complete",
       });
-      // A write called outside a reply records its turn as the authoring response.
       await db.insert(schema.modelResponses).values({
         id: TURN_ID,
         turnId: TURN_ID,
@@ -167,7 +163,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    /** The writer's document: people write live, so it seeds through a live port. */
     async function seedExisting(fixture: Fixture, path: string) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");
@@ -189,7 +184,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.threadWorks.threadId, THREAD_ID));
     }
 
-    // A writer overwrite stays live even when the thread drafts model writes.
     it("overwrites an existing document from a draft-mode thread at once", async () => {
       await bindThread(DRAFT_WORK_ID);
       await db

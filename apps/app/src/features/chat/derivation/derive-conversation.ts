@@ -1,13 +1,3 @@
-/**
- * Navigate-first fork and handoff.
- *
- * The client mints the destination id, shows the destination at once, and
- * creates it in the background through the idempotent create-or-get routes.
- * The intent is journaled per tab, so a reload during creation re-issues the
- * same request and lands on the same thread. A failure stays on the
- * destination with Retry; the writer is never sent back to the source.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
@@ -22,34 +12,25 @@ import type { InheritedView } from "./inherited-view";
 
 export type DerivationKind = "fork" | "handoff";
 
-/** What the writer asked for, journaled until the server has the thread. */
 export type DerivationIntent = {
   kind: DerivationKind;
-  /** The destination, minted on the client. */
   threadId: string;
-  /** The destination's draft: a fork's is its source's, a handoff mints its own lineage's. */
   draftId: string;
   projectId: string;
   sourceThreadId: string;
   sourceTitle: string | null;
-  /** The chosen turn is the exact inherited cutoff. */
   originTurnId: string;
   workId: string | null;
-  /** The source chat's mode, which the server copies onto the destination. */
   aiWriteMode: AiWriteMode;
-  /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
   agent: CreationAgent | null;
   agentName: string | null;
-  /** What the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
   overrides: ThreadOverrides;
   createdAt: string;
 };
 
 export type DerivationStatus = {
   intent: DerivationIntent;
-  /** `created` stays until the tab forgets it, so the destination never flashes empty. */
   state: "creating" | "failed" | "created";
-  /** A fork's prefix, shown before the server can read it. */
   inherited: InheritedView | null;
   failure?: DerivationFailure;
 };
@@ -67,7 +48,6 @@ export type DerivationDeps = {
 
 const persistJobs = new WeakMap<AbortSignal, Map<string, Promise<Thread>>>();
 
-/** Share only create-or-get across mounts in one account epoch; each mount owns dispatch. */
 export function runExclusiveThreadCreation(
   accountEpoch: AbortSignal,
   threadId: string,
@@ -132,7 +112,6 @@ function writeJournal(accountId: string, journal: Record<string, DerivationInten
   }
 }
 
-/** The journaled intent for a destination, when its creation has not been acknowledged. */
 export function readDerivationIntent(accountId: string, threadId: string): DerivationIntent | null {
   return readJournal(accountId)[threadId] ?? null;
 }
@@ -142,7 +121,6 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
     id: intent.threadId,
     draftId: intent.draftId,
     projectId: intent.projectId,
-    // The server titles derivations this way; the list shows the same words at once.
     title:
       intent.kind === "fork"
         ? `Fork from ${intent.sourceTitle ?? "thread"}`
@@ -206,7 +184,6 @@ function create(intent: DerivationIntent, deps: DerivationDeps) {
         inherited: latest?.inherited ?? null,
         failure: classifyDerivationFailure(intent.kind, error),
       });
-      // The destination's alert row says so; the writer is already there.
       settle(threadId, false);
     },
   );
@@ -228,10 +205,6 @@ export function classifyDerivationFailure(kind: DerivationKind, error: unknown):
   return { message: derivationFailureCopy(kind), retryable: true };
 }
 
-/**
- * Open the new conversation now and create it in the background. Returns the
- * destination id, or null when the intent could not be recorded.
- */
 export function startDerivation(
   input: Omit<DerivationIntent, "threadId" | "createdAt">,
   deps: DerivationDeps & {
@@ -254,7 +227,6 @@ export function startDerivation(
   return intent.threadId;
 }
 
-/** Re-issue a journaled creation after a reload; the id makes it the same thread. */
 export function resumeDerivation(intent: DerivationIntent, deps: DerivationDeps) {
   if (statuses.get(intent.threadId)?.state === "creating") return;
   deps.threadActions.ensureThread(optimisticThread(intent, null));
@@ -262,17 +234,12 @@ export function resumeDerivation(intent: DerivationIntent, deps: DerivationDeps)
   create(intent, deps);
 }
 
-/** Retry a failed creation with the same id. */
 export function retryDerivation(threadId: string, deps: DerivationDeps) {
   const status = statuses.get(threadId);
   if (status?.state !== "failed") return;
   create(status.intent, deps);
 }
 
-/**
- * Resolves once the destination exists (true) or its creation failed (false).
- * A thread with no derivation in flight is ready now.
- */
 export function whenDerived(threadId: string, signal?: AbortSignal): Promise<boolean> {
   if (signal?.aborted) return Promise.reject(signal.reason);
   const status = statuses.get(threadId);
@@ -308,19 +275,12 @@ export function useDerivationStatus(threadId: string | null): DerivationStatus |
   );
 }
 
-/** Test seam: forget every in-memory derivation. */
 export function resetDerivationsForTest() {
   statuses.clear();
   waiters.clear();
   publish();
 }
 
-/**
- * A reload during creation: re-issue the journaled request before the chat
- * reads its snapshot (a read before the server has the thread would 404 and
- * let the route give up on it). Returns true while that setup is still owed,
- * so the caller renders the empty frame for that one layout pass.
- */
 export function useDerivationResume(threadId: string | null, deps: DerivationDeps): boolean {
   const pendingCreation = useIsThreadPendingCreation(threadId);
   const status = useDerivationStatus(threadId);

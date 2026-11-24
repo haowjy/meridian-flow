@@ -1,4 +1,3 @@
-/** Exhaustive value comparison for the thread store's Turn and Block contracts. */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 
 type FieldComparison = "value" | "json";

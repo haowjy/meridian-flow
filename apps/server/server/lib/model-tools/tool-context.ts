@@ -1,8 +1,3 @@
-/**
- * Shared ground for the model tools: their dependencies, error shapes, the
- * one per-call resolution (thread, Work, context port, principal), and the
- * model's copy for context errors.
- */
 import type {
   DocumentAddress,
   DocumentVersion,
@@ -69,36 +64,22 @@ export interface ToolWiringDeps {
   notices: Pick<NoticePort, "record">;
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  /** `threadIds` must be parents first (`parentsFirst`). */
+  // keep: `threadIds` must be parents first (`parentsFirst`), or a Stop deadlocks against cancellation
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
-  /** `save_agents` saves through the same path as the writer's Save. */
   agentCatalog: Pick<BoundAgentCatalog, "savePackages">;
   eventSink: EventSink;
-  /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;
-  /** Deletes the duplicate when the copy's destination write fails. */
   release: ObjectRelease;
-  /** Every model read and write asks the file policy first (file-access §1). */
   fileAccess: Pick<
     FileAccess,
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess" | "historyAccess"
   >;
-  /** The removal record behind a missing file the model already addresses by id. */
   documentRemovals: DocumentRemovals;
-  /** Retained project Trash, used to confirm a history-resolved missing document still exists. */
   documentTrash: Pick<DocumentTrash, "retained">;
-  /** The calling thread's bound skills, read as files under `skills://`. */
   agentRevisions: SkillFilesDeps["agentRevisions"];
-  /** The calling thread's delegation chain, read fresh per call (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
-  /** The chain's effective permission, for the action policy. */
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
-  /**
-   * Links shown to the model, per thread and document; writes bind to them
-   * (contract §7). Handlers only read here: they return what they showed as
-   * `shown`, and the document side records it with the result.
-   */
   shownLinks: Pick<ModelEvidence, "forDocument">;
 }
 
@@ -114,7 +95,6 @@ export type ResolvedModelContextPort = {
   port: ContextPort;
 };
 
-/** One tool call's resolved ground: the thread's Work, its context port, and who acts. */
 export interface ToolCall {
   execution: ThreadExecutionContext;
   context: ResolvedModelContextPort;
@@ -151,11 +131,6 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
   );
 }
 
-/**
- * The thread's context, its port at `version` (a live read resolves paths
- * against live membership too), its execution context (the chat's write mode
- * over its Work) and the principal. The thread's Work membership loads once.
- */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
   ctx: { threadId: string; responseIdentity?: ResponseAuthorship },
@@ -193,12 +168,10 @@ export async function resolveContextPort(
   };
 }
 
-// The context error itself rides in `details`; the message is its readable reason.
 export function contextToolError(error: ContextError): ToolErrorOutput {
   return toolError({ code: error.code, message: contextErrorMessage(error), details: error });
 }
 
-// skills:// is model-only, so the shared context parser doesn't name it.
 const MODEL_ADDRESS_ROOTS = [
   ...CONTEXT_URI_SCHEMES.map((scheme) => contextRootUri(scheme)),
   SKILLS_URI_ROOT,
@@ -206,8 +179,6 @@ const MODEL_ADDRESS_ROOTS = [
 
 export function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
-    // The file policy refuses an archived Work's files first, with copy fit for
-    // the agent; this storage-side refusal only follows an archive mid-call.
     const work = error.workHandle ? `Work ${error.workHandle}` : "The requested Work";
     return error.reason === "work_archived"
       ? error.workHandle
@@ -225,7 +196,6 @@ export function contextErrorMessage(error: ContextError): string {
   return `${error.code}: ${error.uri}`;
 }
 
-/** Host evidence for the document a `read` or `write` call touched. */
 export function documentRevisionMetadata(
   address: ResolvedDocumentAddress,
   revision: DocumentRevisionEvidence["revision"],
@@ -241,7 +211,6 @@ export function documentRevisionMetadata(
   };
 }
 
-/** The path as a canonical URI: its folder's own URI (with any owner), then its name. */
 export async function canonicalPath(call: ToolCall, path: string): Promise<string> {
   const { filePath } = splitDocumentFile(path);
   const parsed = parseUnifiedContextUri(filePath);

@@ -1,4 +1,3 @@
-/** Sizes as a writer reads them: "2.4 GB". */
 import { i18n } from "@lingui/core";
 
 export function formatBytes(bytes: number): string {

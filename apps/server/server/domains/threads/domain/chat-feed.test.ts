@@ -1,4 +1,3 @@
-/** Work validation and filtering for the Project chat-feed domain operation. */
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "../../projects/adapters/work-repository/in-memory.js";

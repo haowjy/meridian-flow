@@ -1,7 +1,5 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** Connected listing follows spawn and cutoff-owner edges, with bounded pages. */
-
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
@@ -103,7 +101,6 @@ export function defineThreadLsContract(
         expect(typeof (await f.read(target, { ref: f.root.ref }))).toBe("string");
       }
       expect(handoff.rootThreadId).toBe(handoff.id);
-      // Explicit navigation admits the direct source connection; descendant listings stay lineage-scoped.
       expect(typeof (await f.read(f.root, { ref: handoff.ref }))).toBe("string");
       expect(typeof (await f.read(handoff, { ref: f.root.ref }))).toBe("string");
       const outsider = await f.repos.threads.create({

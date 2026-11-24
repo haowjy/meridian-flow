@@ -1,8 +1,3 @@
-/**
- * The one delivery loop for every command the server may or may not have received. It keeps
- * intent (the journal) and delivers it; what the screen shows stays with each domain. See
- * `.context/CONTEXT.md` for the rules this implements.
- */
 import {
   type CommandLookupResponse,
   type CommandResolveResponse,
@@ -22,14 +17,11 @@ import type {
   WireOutcome,
 } from "./types.js";
 
-/** A request with no answer after this long is sent again under the same id. */
 const REQUEST_DEADLINE_MS = 15_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_CAP_MS = 30_000;
-/** A 500 is a bug on the server: keep the command and keep trying, slowly. */
 const BUG_BACKOFF_START_MS = 30_000;
 const BUG_BACKOFF_CAP_MS = 300_000;
-/** How long a command may go unanswered before the writer is told it is not sent yet. */
 export const NOT_SENT_AFTER_MS = 10_000;
 const DONE_KEPT_MS = 60_000;
 const MAX_WAIT_MS = 10 * 60 * 1000;
@@ -44,21 +36,15 @@ export class JournalUnavailableError extends Error {
 
 export type SubmitInput = {
   kind: string;
-  /**
-   * Ordering: only the earliest unsettled record of a lane is sent. A function is given the
-   * journal's records inside the transaction that saves this one, for lanes that depend on them.
-   */
+  // keep: Only the earliest unsettled record per lane is sent; lanes() receives journal records inside the save transaction
   lanes: readonly string[] | ((records: readonly CommandRecord[]) => readonly string[]);
   body: unknown;
 };
 
 export class CommandDriver {
-  /** The journal's records. */
   private records: readonly CommandRecord[] = [];
-  /** What this tab shows: the journal's records with this tab's own observations. */
   private shown: readonly CommandRecord[] = [];
   private readonly observedHere = new Set<string>();
-  /** Settled records this tab has not observed yet, kept after the journal drops them. */
   private readonly lingering = new Map<string, CommandRecord>();
   private snapshot: DriverSnapshot = { records: [], notSent: false, paused: false };
   private readonly listeners = new Set<() => void>();
@@ -80,14 +66,10 @@ export class CommandDriver {
 
   constructor(private readonly ports: DriverPorts) {}
 
-  /** Reads the journal, follows the other tabs and asks for the right to deliver. */
   async open(): Promise<void> {
     this.stopped = false;
     this.suspended = false;
     this.cleanup.push(this.ports.changes.subscribe(() => this.refresh()));
-    // An unread journal is not an empty one: ask for the right to deliver even when the first
-    // read failed. The read is tried again when the lock is held, on a nudge, and by every
-    // successful write.
     try {
       await this.reload();
     } finally {
@@ -95,7 +77,6 @@ export class CommandDriver {
     }
   }
 
-  /** Whether the journal has been read: false until the first read succeeds. */
   get hasRead(): boolean {
     return this.installedRead > 0;
   }
@@ -110,8 +91,6 @@ export class CommandDriver {
     this.ports.journal.close();
   }
 
-  // --- reading ---
-
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -119,7 +98,6 @@ export class CommandDriver {
 
   getSnapshot = (): DriverSnapshot => this.snapshot;
 
-  /** Resolves with the record once it has settled; null if it was removed unseen. */
   whenSettled(id: string): Promise<CommandRecord | null> {
     return new Promise((resolve) => {
       const check = () => {
@@ -134,9 +112,6 @@ export class CommandDriver {
     });
   }
 
-  // --- writing ---
-
-  /** Resolves once the record is committed to the journal, in its place; rejects if it cannot be. */
   async submit(input: SubmitInput): Promise<CommandRecord> {
     const kind = this.ports.kinds[input.kind];
     if (!kind) throw new Error(`Unknown command kind ${input.kind}`);
@@ -167,12 +142,6 @@ export class CommandDriver {
     return record;
   }
 
-  /**
-   * This tab's own data now includes the outcome of every matching `done` record (a read of it
-   * that started after they settled has returned). Observation is per tab: its record stays in
-   * this tab's snapshot, effect and all, until then, whatever another tab has seen. The journal
-   * only learns that some tab has, which lets the record expire.
-   */
   async observe(match: (record: CommandRecord) => boolean): Promise<void> {
     const seen = this.shown.filter(
       (record) => record.state === "done" && !this.observedHere.has(record.id) && match(record),
@@ -195,10 +164,6 @@ export class CommandDriver {
     }));
   }
 
-  /**
-   * The writer is done with a settled record. A refused record that holds its lanes takes with
-   * it the unsent records waiting on them: they depended on it.
-   */
   dismiss(id: string): Promise<void> {
     return this.mutate(({ records }) => {
       const record = records.find((candidate) => candidate.id === id);
@@ -220,11 +185,6 @@ export class CommandDriver {
     });
   }
 
-  /**
-   * Puts a `never` record back to sending, under a new id for the server. It keeps its place
-   * while nothing later in its lanes has been sent; otherwise it goes to the end, so a lane is
-   * never sent out of order.
-   */
   retry(id: string): Promise<void> {
     this.reacted.delete(id);
     return this.mutate(({ records, nextSeq }) => {
@@ -255,12 +215,10 @@ export class CommandDriver {
     });
   }
 
-  /** Whether a request is mid-send. */
   get delivering(): boolean {
     return this.inFlight.size > 0;
   }
 
-  /** Something that may let a send through changed: back online, tab visible. */
   nudge(): void {
     if (this.installedRead === 0) this.refresh();
     this.retryAt.clear();
@@ -268,9 +226,6 @@ export class CommandDriver {
     this.wake();
   }
 
-  // --- delivery rights ---
-
-  /** The page is going to the back-forward cache or freezing: it cannot deliver, so it lets go. */
   suspend(): void {
     this.suspended = true;
     this.acquiring?.abort();
@@ -283,7 +238,6 @@ export class CommandDriver {
     this.inFlight.clear();
   }
 
-  /** The page is back (or the writer signed in again): ask for the right to deliver. */
   resume(): void {
     if (this.stopped) return;
     this.suspended = false;
@@ -302,7 +256,6 @@ export class CommandDriver {
         if (acquiring.signal.aborted || this.stopped || this.suspended) return release();
         this.release = release;
         this.delivery = new AbortController();
-        // Another tab may have settled or removed records while this one waited.
         this.refresh();
       },
       () => {
@@ -317,8 +270,6 @@ export class CommandDriver {
     this.publish();
   }
 
-  // --- the journal and what this tab shows of it ---
-
   private async mutate<R>(
     decide: (state: JournalState) => { change: JournalChange; result: R },
   ): Promise<R> {
@@ -327,7 +278,6 @@ export class CommandDriver {
     return result;
   }
 
-  /** Tells the other tabs and reads again. The write is committed by now: a failed read is not its failure. */
   private async changed(): Promise<void> {
     this.ports.changes.post();
     await this.reload().then(undefined, (cause) =>
@@ -335,7 +285,6 @@ export class CommandDriver {
     );
   }
 
-  /** Reads again where no caller can act on a failed read: the next one is tried at the next event. */
   private refresh(): void {
     this.reload().then(undefined, (cause) =>
       this.ports.log({ id: "", kind: "journal", attempt: 0, failure: `read: ${String(cause)}` }),
@@ -346,7 +295,6 @@ export class CommandDriver {
     if (this.stopped) return;
     const read = ++this.reads;
     const records = await this.ports.journal.read();
-    // A later read may already be installed; an older one must not replace it.
     if (read < this.installedRead || this.stopped) return;
     this.installedRead = read;
     this.records = [...records].sort((a, b) => a.seq - b.seq);
@@ -361,7 +309,6 @@ export class CommandDriver {
       if (record.state === "done" && !this.observedHere.has(record.id))
         this.lingering.set(record.id, { ...record, observed: false });
     const journaled = new Set(this.records.map((record) => record.id));
-    // Nothing needs an id once the journal has dropped it and this tab has seen it through.
     for (const id of this.observedHere) if (!journaled.has(id)) this.observedHere.delete(id);
     for (const id of this.reacted) if (!journaled.has(id)) this.reacted.delete(id);
     const gone = [...this.lingering.values()].filter((record) => !journaled.has(record.id));
@@ -408,8 +355,6 @@ export class CommandDriver {
     for (const listener of [...this.listeners]) listener();
   }
 
-  // --- delivery ---
-
   private wake(): void {
     const delivery = this.delivery;
     if (!delivery || this.stopped) return;
@@ -425,7 +370,7 @@ export class CommandDriver {
       else if (at > now) next = Math.min(next, at);
     }
     for (const record of this.records) next = Math.min(next, expiry(record));
-    // A timer past 2^31 ms fires at once, so a far expiry is reached in steps.
+    // keep: Clamp long timers below 2^31 ms; larger setTimeout delays fire immediately
     if (next < Number.POSITIVE_INFINITY)
       this.wakeTimer = setTimeout(
         () => this.wake(),
@@ -433,7 +378,6 @@ export class CommandDriver {
       );
   }
 
-  /** Each sending record that is the earliest of every lane it names. */
   private heads(): CommandRecord[] {
     const first = new Map<string, string>();
     for (const record of this.records)
@@ -445,7 +389,6 @@ export class CommandDriver {
     );
   }
 
-  /** Whether later records of its lanes wait for it: it is sending, or refused and held. */
   private holdsLanes(record: CommandRecord): boolean {
     return (
       record.state === "sending" ||
@@ -455,7 +398,6 @@ export class CommandDriver {
 
   private prune(now: number): void {
     if (!this.records.some((record) => expiry(record) <= now)) return;
-    // Decided from what the transaction reads: another tab may have retried a record since.
     this.mutate(({ records }) => ({
       change: {
         remove: records.filter((record) => expiry(record) <= Date.now()).map((record) => record.id),
@@ -480,7 +422,6 @@ export class CommandDriver {
 
   private async attempt(record: CommandRecord, signal: AbortSignal): Promise<void> {
     const kind = this.ports.kinds[record.kind];
-    // After a reload or a lost lock the server may already have it: ask before sending it again.
     if (record.sent && !this.lookedUp.has(record.id)) {
       this.lookedUp.add(record.id);
       const found = await this.call(
@@ -514,8 +455,7 @@ export class CommandDriver {
     if (this.isAccountFault(answer)) return this.fault();
     if (status === 408 || status === 429 || status >= 500)
       return this.later(record, `http_${status}`, status === 500);
-    // Any other refusal says nothing about whether an earlier attempt landed: the server's
-    // stored outcome does, and where there is none it stores a `never`.
+    // keep: Only the server's stored outcome settles a non-retryable 4xx; an unresolved command stores never
     const resolved = await this.call(
       {
         method: "POST",
@@ -556,13 +496,11 @@ export class CommandDriver {
       this.ports.log({ id: record.id, kind: record.kind, attempt: record.attempts, failure });
   }
 
-  /** Saves `sent` (and the request, on the first send) before the request leaves. */
   private markAttempt(record: CommandRecord, kind: CommandKind): Promise<CommandRecord | null> {
     return this.mutate(({ records }) => {
       const stored = records.find((candidate) => candidate.id === record.id);
       if (stored?.state !== "sending" || stored.sendId !== record.sendId)
         return { change: {}, result: null };
-      // Another tab may have put an earlier record of a lane back since this one was chosen.
       if (!this.headsItsLanes(records, stored)) return { change: {}, result: null };
       if (stored.sent) {
         const again = { ...stored, attempts: stored.attempts + 1 };
@@ -584,14 +522,12 @@ export class CommandDriver {
         };
         return { change: { put: [sent] }, result: sent };
       } catch {
-        // A body this build cannot read, never sent: nothing can ever happen to it.
         const never = settled(stored, { status: "never" });
         return { change: { put: [never] }, result: null };
       }
     });
   }
 
-  /** Whether no earlier record that holds its lanes shares a lane with this one. */
   private headsItsLanes(records: readonly CommandRecord[], record: CommandRecord): boolean {
     return !records.some(
       (other) =>
@@ -612,7 +548,6 @@ export class CommandDriver {
   }
 }
 
-/** When a settled record may go: observed `done` after a minute, a `never` after thirty days. */
 function expiry(record: CommandRecord): number {
   if (record.settledAt === undefined) return Number.POSITIVE_INFINITY;
   if (record.state === "done" && record.observed) return record.settledAt + DONE_KEPT_MS;
@@ -624,7 +559,6 @@ function settled(record: CommandRecord, outcome: Outcome): CommandRecord {
   return { ...record, sent: true, state: outcome.status, outcome, settledAt: Date.now() };
 }
 
-/** Until Work refusals are settled outcomes, the server still stores `refused`: it never took effect. */
 function outcomeOf(wire: WireOutcome, code?: string | null): Outcome {
   if (wire.status === "done") return { status: "done", result: wire.result };
   return {

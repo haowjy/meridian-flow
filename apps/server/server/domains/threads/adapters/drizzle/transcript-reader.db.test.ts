@@ -114,8 +114,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     beforeEach(async () => {
-      // Cases mutate only the tail. Reinsert it because prompt-bake assignment
-      // is write-once; the 4,999-turn prefix and 500-block turn stay immutable.
       await db.transaction(async (tx) => {
         await tx
           .delete(schema.eventJournal)

@@ -1,4 +1,3 @@
-/** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
 import { mediaKind, type Tool } from "@meridian-flow/runtime/gateway";
@@ -76,7 +75,6 @@ export type PreparedRequest = {
   assembled: AssembledNextTurnContext;
   events: OrchestratorEvent[];
   compaction: CompactionDecision;
-  /** Host-only reference-read evidence; the commit persisting `events` records it. */
   evidence: ReferenceEvidence;
 };
 
@@ -91,7 +89,6 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
 }
 
 async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedRequest> {
-  // Projected on first use and shared by every lookup: most runs read no reference at all.
   let creditedIds: Promise<string[]> | undefined;
   const requestCreditedIds = () =>
     (creditedIds ??= projectActiveHistoryWithBakes(
@@ -119,7 +116,6 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
             baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
           }),
           signal: input.signal,
-          // The read is shown beside what this request carries, so only that credits it (C10).
           recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {
             threadId: input.threadId,
             turnId: input.currentTurnId,
@@ -191,8 +187,6 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     if (!tokenizer) throw new Error("Scratch update requires the thread tokenizer");
     return estimateRequestTokens({ request: context.generateRequest, baseline: null, tokenizer });
   };
-  // Keep one output's room for tool results and the summary instruction. Oversized results
-  // still take the existing overflow/rolling-summary path, never another optional call.
   const updateLimit =
     usable === null
       ? null
@@ -287,8 +281,6 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
   ) {
     const latest = activeCompaction(input.turns);
     const since = input.turns.filter((turn) => !latest || turn.position > latest.position);
-    // Whether the model has answered since compaction: some assistant turn has a block that
-    // belongs to a response. A call stopped before output leaves a response row with none.
     const answeredTurns = new Set(
       input.blocks.filter((block) => block.responseId !== null).map((block) => block.turnId),
     );

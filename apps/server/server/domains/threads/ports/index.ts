@@ -1,5 +1,3 @@
-/** Barrel: re-exports the threads domain port types — the event-journal ports and the thread/turn/block/model-response repository ports. */
-
 export type { AskRepository, CreateAskInput, StoredAsk } from "./ask-repository.js";
 export type {
   EventJournalReader,

@@ -7,7 +7,6 @@ export type Stack = {
   label: string;
   rssBytes: number;
   processes: number;
-  /** Minutes since last use; null when no watcher is running for the stack. */
   idleMinutes: number | null;
 };
 
@@ -42,7 +41,6 @@ export function mb(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
-/** `MemAvailable` counts reclaimable cache; "free" does not and is always low on Linux. */
 export function memAvailableBytes(): number {
   const line = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+) kB/m);
   if (!line) throw new Error("/proc/meminfo has no MemAvailable");

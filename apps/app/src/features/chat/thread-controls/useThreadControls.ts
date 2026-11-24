@@ -1,21 +1,3 @@
-/**
- * useThreadControls — the imperative shell around `thread-controls.ts`, and the
- * one list of queued commands the transcript shows.
- *
- * `/compact` posts from this hook: it mints the command id, shows the queued
- * row before the network answers, enqueues and withdraws through the threads
- * API, and asks the snapshot to revalidate so the new state reaches the
- * transcript. Withdraw removes the row at once and, once any in-flight enqueue
- * settles, always asks the server: an enqueue that looked failed may still
- * have landed. A 404 means the server did not have it yet: the local send
- * goes, and the row shows again if the inbox lists it later. Announces each
- * state change the writer caused. A running compaction divider's Stop is the
- * chat's Stop (`useChatStop`), not a command of its own.
- *
- * A write-mode switch is the switch view's (`useSwitchView`): its rows,
- * Retry, Withdraw and the chat's mode come from there and are listed after the
- * compaction rows.
- */
 import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { logCommandFailure, occurrenceKey } from "@meridian/thread-client";
@@ -42,10 +24,8 @@ import type { SwitchView } from "./useSwitchView";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
-  /** The chat's mode as the writer should see it: the switch view's fold over the server's record. */
   writeMode: AiWriteMode;
   enqueue: (control: CompactControl) => string;
-  /** Switch the chat's write mode; the row shows at once and the journal posts it in order. */
   switchWriteMode: (mode: AiWriteMode) => void;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
@@ -53,12 +33,9 @@ export type ThreadControls = {
 
 export function useThreadControls(input: {
   threadId: string;
-  /** The run-state record's items. */
   items: readonly PendingInboxItem[];
-  /** The record's version, and the newest accepted snapshot's: what a dropped row waits on. */
   version: string | null;
   history: string | null;
-  /** Every command a transcript divider names. */
   answeredControlIds: ReadonlySet<string>;
   switches: SwitchView;
 }): ThreadControls {
@@ -122,7 +99,6 @@ export function useThreadControls(input: {
     };
     dispatch({ type: "reconcile", facts: facts.current });
   }, [items, switches.rows, answeredControlIds, version, history, dispatch]);
-  /** In-flight enqueues; a withdrawal waits for its enqueue to settle first. */
   const inflight = useRef(new Map<string, Promise<void>>());
   const queryClient = useQueryClient();
 
@@ -138,7 +114,6 @@ export function useThreadControls(input: {
       };
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
-          // The answer's record is a fact like any other; the command is sent if it lists it.
           dispatchRunState(threadId, { type: "snapshot", runState: response.runState });
           dispatch({
             type: "enqueued",
@@ -163,7 +138,6 @@ export function useThreadControls(input: {
             logCommandFailure(log, failure, { threadId }, "moot");
             return;
           }
-          // The failed row is a card (`chatCards`); a command the writer already withdrew has none.
           dispatch({ type: "enqueue_failed", id, failure });
         },
       );
@@ -195,7 +169,6 @@ export function useThreadControls(input: {
       dispatch({ type: "retry", id: controlId });
       const control = localRef.current.get(controlId)?.row.control;
       if (control) announce(controlStatusCopy(control, "queued"));
-      // Same id: the server treats a repeat as the original request.
       const row = localRef.current.get(controlId)?.row;
       if (row?.control.kind === "compact") send(controlId, row.control);
     },
@@ -216,12 +189,9 @@ export function useThreadControls(input: {
           const { outcome, runState } = await withdrawThreadControl(threadId, queued.id);
           dispatchRunState(threadId, { type: "snapshot", runState });
           dispatch({ type: "withdrawn", id: queued.id, version: runState.version });
-          // The row goes either way; the divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
           revalidate();
         } catch (error) {
-          // Not there yet: the send goes, but an enqueue still committing can
-          // list it later, and then the row shows again.
           if (httpErrorStatus(error) === 404) {
             return dispatch({ type: "withdraw_not_found", id: queued.id });
           }
@@ -245,7 +215,6 @@ export function useThreadControls(input: {
   );
 
   const queued = useMemo(() => queuedControls(local), [local]);
-  // Hidden pending attempts still need authoritative removal proof.
   const droppedKey = [...local]
     .filter(([, entry]) => entry.droppedAt !== null)
     .map(([id, entry]) => `${id}:${entry.droppedAt}`)

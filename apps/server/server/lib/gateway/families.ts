@@ -1,25 +1,12 @@
 import { resolveAlias } from "@meridian-flow/mars-schema";
 
-/**
- * One allowlisted family of models in a provider's models.dev catalog, shaped like the
- * `[models.<family>]` tables in meridian-base's mars.toml. A model is offered when its id
- * matches `match` and not `exclude` (`*` is the only wildcard), so a new version in a family
- * appears at the next snapshot refresh without a code change. Every other fact about a model is
- * data in `model-data.json`.
- */
 export interface ModelFamily {
   id: string;
   match: readonly string[];
   exclude?: readonly string[];
 }
 
-/**
- * Keyed by Flow's provider id. A family id is its alias in meridian-base's mars.toml: the
- * picker shows it and an Agent file's `model` may name it. Nothing checks the two agree; keep
- * them equal by hand. The `exclude` entries are dated,
- * deprecated and older-generation ids that models.dev lists and Flow does not offer; delete
- * one to offer that model at the next refresh. Offerings keep this family order.
- */
+// keep: a family id must equal its alias in meridian-base's mars.toml and nothing checks that the two agree
 export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = {
   anthropic: [
     {
@@ -59,10 +46,6 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
   ],
 };
 
-/**
- * The newest of `rows` that `family` admits, by Mars's alias rule (`resolveAlias` in
- * `@meridian-flow/mars-schema`), or null when it admits none.
- */
 export function newestInFamily(
   family: ModelFamily,
   rows: { id: string; provider: string; release_date?: string }[],
@@ -70,7 +53,6 @@ export function newestInFamily(
   return resolveAlias(rows, { match: [...family.match], exclude: [...(family.exclude ?? [])] });
 }
 
-/** The first family of a provider that admits this models.dev id, or undefined. */
 export function findFamily(providerId: string, modelId: string): ModelFamily | undefined {
   return MODEL_FAMILIES[providerId]?.find(
     (family) => newestInFamily(family, [{ id: modelId, provider: providerId }]) !== null,

@@ -1,5 +1,3 @@
-/** Chat Files combines existing shared Scratch with this chat's uploads and source-chat link. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
@@ -48,7 +46,6 @@ export function ChatFilesMenu({
     ? (threads?.find((candidate) => candidate.id === threadId) ?? null)
     : null;
   const topChat = topChatOf(thread, threads);
-  // A fork or handoff is a primary: its origin is read on the chat that owns the files.
   const chatThread = topChat ? (threads?.find((c) => c.id === topChat.chatId) ?? null) : null;
   if (!threadId || !topChat) return null;
   return (
@@ -91,13 +88,10 @@ function FilesDropdown({
     if (upload.reference) insertIntoChatComposer(threadId, upload.reference, upload.fileKind);
   };
 
-  // A deleted upload goes to Trash like a document: its row leaves the list at once, and Undo
-  // shows in a notice.
   const remove = (upload: ChatUpload) => {
     deleteEntries([
       { ref: { kind: "file", id: upload.documentId }, name: upload.name, view: LIVE_VIEW },
     ]);
-    // A gone file must not ride along on the message being written.
     removeFromChatComposer(threadId, upload.documentId);
   };
 
@@ -211,11 +205,6 @@ function UploadRow({
   );
 }
 
-/**
- * Uploads is out-only: its files can be moved or copied elsewhere, but nothing is dropped into it.
- * The section is a drop target that always refuses, so the pointer says why instead of showing a
- * silent no-drop cursor.
- */
 const refuseUploadsDrops: EntriesRoute = {
   verdict: () => ({
     kind: "refuse",
@@ -264,10 +253,6 @@ function ContinuesFrom({ source }: { source: ContinuedSource }) {
   );
 }
 
-/**
- * The chat a fork or handoff continues from: a fork's is the owner of the turn it was cut at,
- * a handoff's is named on its brief. Null for any other chat.
- */
 function useContinuesFrom(chat: Thread | null): ContinuedSource | null {
   const inherited = useInheritedView(chat, null);
   const turns = useThreadStore((state) =>

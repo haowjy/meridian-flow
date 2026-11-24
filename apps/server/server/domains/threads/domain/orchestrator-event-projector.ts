@@ -1,14 +1,3 @@
-/**
- * Orchestrator-event projector: a stateful translator from internal
- * OrchestratorEvents into the AG-UI event protocol, tracking open run/message/
- * reasoning ids so emitted events are well-formed. Text and reasoning message ids
- * use Route A positional identity (`${turnId}::${sequence}`): sequence starts from
- * the assistant turn's block count at run start and advances as stream frontiers
- * begin in the same order persisted block.upserted rows later confirm. The
- * single source of the orchestrator->AG-UI mapping; depends only on the protocol
- * contracts.
- */
-
 import {
   type AGUIEvent,
   EventSchemas,
@@ -36,7 +25,6 @@ import {
 import { REPLY_FINISHED_EVENT_TYPES } from "../ports/event-journal.js";
 import { WriteModeSwitchMetadataCodec } from "./turn-metadata.js";
 
-/** Projecting these rows leaves the same state as a new projector; their own frames still need prior state. */
 export const PROJECTOR_RESET_EVENT_TYPES =
   REPLY_FINISHED_EVENT_TYPES satisfies readonly OrchestratorEvent["type"][];
 
@@ -101,7 +89,6 @@ export function createOrchestratorEventProjector() {
     return sequence;
   }
 
-  // Text and reasoning share nextBlockSequence so ::ids never collide within a turn.
   function positionalMessageId(sequence: number): string | null {
     return state.activeRunId ? `${state.activeRunId}::${sequence}` : null;
   }
@@ -129,8 +116,6 @@ export function createOrchestratorEventProjector() {
           type: EventType.RUN_FINISHED,
           threadId: state.activeThreadId,
           runId: state.activeRunId,
-          // Every cancellation is stored as status "cancelled"; clients read this
-          // marker instead of guessing from a bare finish.
           ...(settledStatus === "cancelled"
             ? { result: { stopReason: "user_cancelled", turnStatus: settledStatus } }
             : settledStatus === "awaiting_answer"
@@ -199,8 +184,6 @@ export function createOrchestratorEventProjector() {
         if (event.kind === "text" && event.text) {
           const events: AGUIEvent[] = closeOpenReasoningMessage();
           if (!state.openMessageId) {
-            // Encode block sequence in the id so each text segment across tool/reasoning
-            // frontiers is uniquely addressable by the client reducer.
             const messageId = positionalMessageId(allocateBlockSequence());
             if (!messageId) return events;
             state.openMessageId = messageId;
@@ -286,17 +269,12 @@ export function createOrchestratorEventProjector() {
         ];
 
       case "model.response_received":
-        // A no-tools notes response can continue without closing the assistant.
-        // End its stream before persisted blocks advance the next response's position.
         return event.response.turnId === state.activeRunId ? closeOpenMessages() : [];
 
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
         if (event.block.blockType !== "custom") return [];
 
-        // Text/reasoning/tool blocks already have delta-based AG-UI paths.
-        // Custom component blocks do not, so projecting only this type avoids
-        // double-emitting streamed blocks.
         const events: AGUIEvent[] = closeOpenMessages();
         events.push(
           parseAguiEvent({
@@ -349,10 +327,6 @@ export function createOrchestratorEventProjector() {
         ];
 
       case "tool.result": {
-        // TOOL_CALL_RESULT.messageId is the owning assistant run, not the tool
-        // call. tool.result only fires mid-turn, so activeRunId is set; if it
-        // is somehow absent the event has no run to attach to — drop it (like
-        // the text/reasoning branches) rather than emit under a bogus id.
         const events: AGUIEvent[] = closeOpenMessages();
         if (!state.activeRunId) return events;
         const messageId = state.activeRunId;
@@ -370,9 +344,6 @@ export function createOrchestratorEventProjector() {
             messageId,
             toolCallId: event.toolCallId,
             content: toolContentText(event.content),
-            // AG-UI's event schema is passthrough: `result` and `metadata`
-            // survive the protocol parse and the client reads them directly
-            // off this event.
             ...(event.result !== undefined ? { result: event.result } : {}),
             ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
           }),
@@ -445,8 +416,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // The producer recomputed the parent's direct children, so this frame is
-      // a bounded replace of the client's activity state with no refetch race.
       case "subagent.activity":
         return [
           parseAguiEvent({
@@ -456,7 +425,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // The record without its version: the hub stamps the frame's own seq on it.
       case "run_state.changed":
         return [
           parseAguiEvent({
@@ -479,7 +447,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // Waiting writer messages left the chat: clients remove those turns at this seq.
       case "messages.handed_back":
         return [
           parseAguiEvent({
@@ -489,7 +456,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // Failed turns left the conversation: clients stamp them at this seq.
       case "turns.forgotten":
         return [
           parseAguiEvent({
@@ -523,7 +489,6 @@ export function createOrchestratorEventProjector() {
   return { project };
 }
 
-/** Project a journal/orchestrator event stream to AG-UI events (one projector state). */
 export function projectOrchestratorEvents(events: OrchestratorEvent[]): AGUIEvent[] {
   const projector = createOrchestratorEventProjector();
   const agui: AGUIEvent[] = [];

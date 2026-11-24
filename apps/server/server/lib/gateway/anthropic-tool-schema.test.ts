@@ -21,7 +21,6 @@ const skillTool = {
 
 type WireTool = { input_schema: { properties: Record<string, { description: string }> } };
 
-/** Sends the request through the gateway to a local Anthropic-wire endpoint and returns what arrived. */
 async function wireTools(
   request: Omit<GenerateRequest, "model" | "messages">,
   model: { id: string; maxOutputTokens: number },
@@ -75,7 +74,6 @@ async function wireTools(
       ],
       defaultModel: model.id,
     });
-    // The endpoint refuses the request; only what it received matters.
     for await (const _ of gateway.stream({
       ...request,
       model: model.id,

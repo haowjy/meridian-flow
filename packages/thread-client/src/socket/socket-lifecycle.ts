@@ -1,5 +1,3 @@
-/** Owns thread handshake phases, reconnects, and current-generation callbacks. */
-
 import type { FailureLog } from "@meridian/contracts/failures";
 import type {
   ConnectivityHintsPort,
@@ -31,24 +29,13 @@ export type SocketLifecycleOptions = {
   handshakeTimeoutMs?: number;
 };
 
-/**
- * Domain callbacks the controller drives. Each is scoped to the socket that is
- * still current; stale-generation events are filtered out before dispatch.
- */
 export type SocketLifecycleConsumer = {
-  /** Same-origin (or threads) WS URL for the next socket. */
   buildUrl: () => string;
-  /** True while the consumer still wants the socket up (drives reconnect). */
   wantsConnection: () => boolean;
-  /** Inbound frame (string control or binary). */
   onMessage: (data: unknown) => void;
-  /** Socket closed for a non-terminal reason; reconnect is being scheduled. */
   onClose?: (event: SocketClose) => void;
-  /** Transient socket "error" event (distinct from a close). */
   onSocketError?: () => void;
-  /** Publish a connection state to the consumer's registry/listeners. */
   publishConnectionState: (state: ConnectionState) => void;
-  /** Optional error fan-out (terminal close + exhausted budget). */
   publishError?: (error: Error) => void;
 };
 
@@ -108,7 +95,6 @@ export class SocketLifecycleController {
     return this.phase === "connected" && this.isSocketOpen();
   }
 
-  /** Complete the current protocol handshake after a parsed `connected` frame. */
   markConnected(): void {
     if (!this.isSocketOpen()) return;
     this.phase = "connected";
@@ -121,7 +107,6 @@ export class SocketLifecycleController {
     this.reconnectAttempt = 0;
   }
 
-  /** Open a socket if one isn't already live. No-op after a terminal close. */
   ensureConnected(): void {
     if (this.connectionState.kind === "terminal") return;
     this.subscribeHints();
@@ -129,7 +114,6 @@ export class SocketLifecycleController {
     this.startSocket();
   }
 
-  /** Force immediate (re)connect, resetting backoff. No-op after terminal. */
   reconnectNow(): void {
     if (this.connectionState.kind === "terminal") return;
     this.subscribeHints();
@@ -140,7 +124,6 @@ export class SocketLifecycleController {
     this.startSocket();
   }
 
-  /** Tear down the socket and timers; publishes `disconnected`. */
   teardown(): void {
     this.stopHints?.();
     this.stopHints = null;
@@ -162,7 +145,6 @@ export class SocketLifecycleController {
     this.publishConnectionState({ kind: "disconnected" });
   }
 
-  /** Write one frame to the current socket. */
   send(data: string): boolean {
     if (!this.isSocketOpen()) return false;
     const socket = this.socket;
@@ -212,8 +194,7 @@ export class SocketLifecycleController {
     this.clearHandshakeTimer();
     this.clearPingTimer();
 
-    // A CLOSING socket still holds `this.socket`; report its close now, because
-    // bumping the generation makes its native close event stale.
+    // keep: Report a replacing CLOSING socket's close before bumping the generation or its native close becomes stale
     const replaced = this.socket;
     if (replaced) {
       this.socket = null;
@@ -276,7 +257,7 @@ export class SocketLifecycleController {
   private closeCurrentSocket(reason: string): void {
     const socket = this.socket;
     if (!socket) return;
-    // Retire before native close: an incomplete upgrade may never acknowledge it.
+    // keep: Retire a socket before native close because an incomplete upgrade may never acknowledge it
     this.handleSocketClose({ code: 4000, reason, wasClean: false });
     try {
       socket.close(4000, reason);

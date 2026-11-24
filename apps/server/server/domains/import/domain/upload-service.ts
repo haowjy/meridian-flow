@@ -1,4 +1,3 @@
-/** Upload-first import commands: immutable selection, staged receipts, and short row-locked transitions. */
 import type {
   ImportDetail,
   ImportFilesResult,
@@ -24,7 +23,6 @@ export function createImportUploadService(deps: {
   admission: ImportAdmission;
   wake: OrganizeWake;
   reportError(cause: unknown): void;
-  /** An image preview that should have been made but failed; the file shows as a card. */
   previewFailed(reason: ImagePreviewFailureReason): void;
 }) {
   const repo = deps.repository;
@@ -54,7 +52,6 @@ export function createImportUploadService(deps: {
       const fingerprint = selectionFingerprint(selection);
       await repo.transaction(async () => {
         await repo.lockUser(userId);
-        // Identity is global: different users cannot race the same UUID into two projects.
         await repo.lockIdentity(selection.importId);
         const existing = await repo.read(selection.importId);
         if (existing) {
@@ -129,7 +126,6 @@ export function createImportUploadService(deps: {
           reportError: deps.reportError,
         },
         async (record, signal) => {
-          // Lost final responses replay even after completion without replacing received bytes.
           const parts = await readParts(signal);
           const candidates = await prepareReceipts(
             repo,
@@ -154,7 +150,6 @@ export function createImportUploadService(deps: {
             signal.throwIfAborted();
             await repo.updateEntries(id, patches);
             await complete(current);
-            // A deadline during a database wait rolls back this transaction as well.
             signal.throwIfAborted();
           });
           const summary = await after(id, projectId);

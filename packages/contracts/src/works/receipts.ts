@@ -1,4 +1,3 @@
-/** JSON-natural Work mutation receipts shared by runtime, reversal, and UI. */
 import type { WorkId } from "../ids.js";
 import { INVALID_WORK_STATUS, normalizeWorkStatus } from "./index.js";
 

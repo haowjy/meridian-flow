@@ -207,18 +207,15 @@ describe("useStatsForNerdsPreference", () => {
       await act(async () => read().change(true));
       expect(read().value).toBe(true);
 
-      // A closes: the runtime aborts its epoch with a plain Error.
       mocks.account.id = "account-b";
       mocks.account.controller = new AbortController();
       epochA.abort(new Error("Account document session runtime is closing"));
       await rerender();
 
-      // Back to A, but this is a new epoch/session, not the one that dispatched.
       mocks.account.id = "account-a";
       mocks.account.controller = new AbortController();
       await rerender();
 
-      // The first write settles only now; its captured epoch is closed and stale.
       await act(async () => write.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: false }));
       await flush();
 

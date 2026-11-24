@@ -1,12 +1,3 @@
-/**
- * Route core for batched stored-link resolution (contract §13): ref links through the
- * reader's prepared link scope, ref-less links through the address resolver.
- *
- * The route pins the holder (by `holderDocumentId` wherever that document now sits, else
- * by the one document at `baseUri`, and only one the reader may name and read) so its
- * relative links spell from where it is now.
- */
-
 import type { DraftOwner } from "@meridian/contracts";
 import {
   type CatalogDocument,
@@ -40,11 +31,8 @@ export interface DocumentLinkRouteDeps {
   linkScopes: DocumentLinkScopes;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** The selected Work's view: its active draft, or live when it has none (F7). */
   drafts: Pick<Drafts, "viewForOwner">;
-  /** Project-authorized retained identities for gone links; purged rows are absent. */
   documentTrash: Pick<DocumentTrash, "retained">;
-  /** What a chip says of a stored file: its type and size. */
   files: Pick<UploadIdentityPort, "lookupDocuments">;
 }
 
@@ -56,16 +44,13 @@ export async function handleDocumentLinkResolveRequest(
 ): Promise<ResolveDocumentLinksResponse> {
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
-  // A lineage note reads project-document refs through its lineage's own drafts.
   const workId = request.rootThreadId ? null : (request.workId ?? null);
-  // The selected Work must be this project's; a draft view is never provisioned for any other.
   if (
     workId &&
     !(await deps.workAuthorityResolver.byId(projectId as ProjectId, workId as WorkId))
   ) {
     throwContextWorkUnavailableHttpError("work_missing");
   }
-  // An owner's draft view is the live tree plus what that draft created.
   const owner: DraftOwner | null = request.rootThreadId
     ? { kind: "lineage", projectId: projectId as ProjectId, rootThreadId: request.rootThreadId }
     : workId
@@ -79,15 +64,13 @@ export async function handleDocumentLinkResolveRequest(
     resolution: LinkResolution;
     candidateId?: DocumentId;
   }> = [];
-  // Relative hrefs resolve against the holder where it is now.
   let baseUri = request.baseUri;
   let linkAddresses: Array<ResolvedDocumentHref | null> = [];
 
-  // A ref is not a capability: the scope answers readability for this account.
+  // keep: a ref is not a capability: the scope answers readability for this account
   await deps.linkScopes.within(
     {
       projectId,
-      // Scratch ownership does not select a reader thread or its primary Work.
       viewer: { accountId: userId },
     },
     async () => {
@@ -115,7 +98,6 @@ export async function handleDocumentLinkResolveRequest(
         holders: holder ? [{ documentId: holder.documentId, view }] : [],
         views: [view],
         refs: scopedLinks.flatMap(({ link }) => (link.ref === null ? [] : [link.ref])),
-        // An unsettled ahead ref resolves by its exact stored address.
         addresses: scopedLinks.flatMap(({ link, address }) =>
           parseLinkRef(link.ref)?.kind === "ahead" && address?.kind === "document"
             ? [address.uri]
@@ -155,7 +137,6 @@ export async function handleDocumentLinkResolveRequest(
   }
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
-  // Address-only links the live tree left unanswered: a Work's draft may have created them.
   const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
@@ -174,7 +155,6 @@ export async function handleDocumentLinkResolveRequest(
         rootThreadId: request.rootThreadId,
         chatId: request.chatId,
         uri: target.uri,
-        // Chat alone may follow a vacated path to the document that left it.
         previousLocations: baseUri === null && request.holderDocumentId === undefined,
       });
       byHref.set(link.href, resolving);
@@ -196,7 +176,6 @@ export async function handleDocumentLinkResolveRequest(
         },
       });
     }
-    // An unreadable occupant answers as nothing there, at the address the client sent.
     answers[index] = { state: "missing", uri: target.uri };
   }
   if (found.length > 0) {
@@ -217,7 +196,6 @@ export async function handleDocumentLinkResolveRequest(
   return holderUri === undefined ? { answers } : { answers, holderUri };
 }
 
-/** A stored file's type and size, on the answers that name one; a tracked document has neither. */
 async function addFileFacts(
   files: DocumentLinkRouteDeps["files"],
   answers: readonly DocumentLinkAnswer[],
@@ -240,12 +218,6 @@ async function addFileFacts(
   }
 }
 
-/**
- * Names the document a Work's draft created at an address the live tree leaves empty (the
- * scope's `draftCreatedAt`, as the draft's tree reaches the address). A live occupant
- * keeps winning, since these never reached one; another draft's creation and what the
- * reader may not read stay missing.
- */
 async function answerFromDraftView(
   deps: DocumentLinkRouteDeps,
   input: {
@@ -272,9 +244,7 @@ async function answerFromDraftView(
   });
 }
 
-/** One reader resolution as the transport answer. */
 function answerOf(resolution: LinkResolution, trashedDocumentId?: string): DocumentLinkAnswer {
-  // Rule 3: the client keeps the settlement and never answers this ref by address again.
   const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
   if (resolution.kind === "document") {
     const { document, inDraft } = resolution;
@@ -302,14 +272,11 @@ function answerOf(resolution: LinkResolution, trashedDocumentId?: string): Docum
     };
   }
   if (resolution.kind === "ahead") return { state: "missing", uri: resolution.uri, ...marks };
-  // gone, and a snapshot miss: never a location the reader was not shown.
   return { state: "gone", ...(trashedDocumentId ? { trashedDocumentId } : {}), ...marks };
 }
 
-/** What an answer says about how a ref was read: settled, or without its holder's bindings. */
 type AheadMarks = { settled?: true };
 
-/** Flatten the prepared document's resolved owner at the transport boundary. */
 function describeDocument(document: CatalogDocument): DocumentAnswer | null {
   const parsed = parseContextUri(document.uri);
   if (!parsed.ok) return null;

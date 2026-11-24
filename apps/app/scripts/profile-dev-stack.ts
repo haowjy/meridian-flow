@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-/** Build and serve the production client behind a same-origin dev-stack gateway. */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
@@ -258,8 +257,6 @@ async function main(): Promise<void> {
     cwd: appRoot,
     env: {
       ...process.env,
-      // Only the built client must be production-mode. The local server keeps
-      // the dev auth bypass and debug routes available against the worktree server.
       NODE_ENV: "development",
       HOST: "127.0.0.1",
       PORT: String(appPort),
@@ -269,8 +266,7 @@ async function main(): Promise<void> {
   const appExit = observeChild(app);
   const resources = new Set<() => void>();
 
-  // Refuse before `proxyHeaders` rewrites `Host`: this gateway has no Vite in front of
-  // it, so the server's dev-auth rule would otherwise only see the rewritten local Host.
+  // keep: Check the real Host before proxyHeaders rewrites it, or the dev-auth rule sees a rewritten local Host
   const gateway = http.createServer((request, response) => {
     if (!isLocalHost(request.headers.host)) {
       response.writeHead(403).end();

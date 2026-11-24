@@ -1,20 +1,9 @@
-/**
- * An undici dispatcher that connects only to public internet addresses, for every request to an
- * address a writer or a model chose (the image proxy, MCP servers).
- *
- * The check runs inside the connection, on the address actually dialled, so a name that resolves
- * to a private address on a later hop or a later connection is refused too. A URL check before
- * the request cannot give that. Scheme, port and redirect policy belong to the caller.
- */
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { BlockList, isIP } from "node:net";
 import { Agent, buildConnector } from "undici";
 import { OUTBOUND_CONNECT_OPTIONS } from "./outbound-http1";
 
-// Only global unicast is public. IPv4 is everything outside the special-purpose blocks below. IPv6
-// is allowed only inside 2000::/3 (so NAT64, IPv4-mapped and IPv4-compatible forms, unique-local,
-// link-local and multicast all fall outside it), minus the blocks inside it that embed or route
-// to non-public space. A list of refusals would miss whatever nobody listed.
+// keep: allow only global unicast, with IPv6 confined to 2000::/3 minus the blocks that embed or route to non-public space; a list of refusals would miss whatever nobody listed
 const IPV4_SPECIAL = new BlockList();
 const ipv4Special = (network: string, prefix: number) =>
   IPV4_SPECIAL.addSubnet(network, prefix, "ipv4");
@@ -30,7 +19,7 @@ ipv4Special("192.168.0.0", 16);
 ipv4Special("198.18.0.0", 15);
 ipv4Special("198.51.100.0", 24);
 ipv4Special("203.0.113.0", 24);
-ipv4Special("224.0.0.0", 3); // multicast, reserved and broadcast
+ipv4Special("224.0.0.0", 3);
 
 const IPV6_GLOBAL = new BlockList();
 IPV6_GLOBAL.addSubnet("2000::", 3, "ipv6");
@@ -38,12 +27,12 @@ IPV6_GLOBAL.addSubnet("2000::", 3, "ipv6");
 const IPV6_SPECIAL = new BlockList();
 const ipv6Special = (network: string, prefix: number) =>
   IPV6_SPECIAL.addSubnet(network, prefix, "ipv6");
-ipv6Special("2001::", 32); // Teredo
-ipv6Special("2001:2::", 48); // benchmarking
-ipv6Special("2001:10::", 28); // ORCHID
-ipv6Special("2001:db8::", 32); // documentation
-ipv6Special("2002::", 16); // 6to4 embeds an IPv4 address
-ipv6Special("3fff::", 20); // documentation
+ipv6Special("2001::", 32);
+ipv6Special("2001:2::", 48);
+ipv6Special("2001:10::", 28);
+ipv6Special("2001:db8::", 32);
+ipv6Special("2002::", 16);
+ipv6Special("3fff::", 20);
 
 export function isPublicAddress(address: string): boolean {
   const family = isIP(address);
@@ -67,7 +56,7 @@ type LookupCallback = (
   family?: number,
 ) => void;
 
-/** A name is refused when ANY address it resolves to is not public, so a mixed answer cannot be picked from. */
+// keep: refuse a name when any address it resolves to is not public, so a mixed answer cannot be picked from
 function publicLookup(hostname: string, options: LookupOptions, callback: LookupCallback): void {
   dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
     if (error) return callback(error, []);
@@ -86,9 +75,7 @@ const dial = buildConnector({
   timeout: 10_000,
 });
 
-/** No proxy from the environment: this Agent reads none. */
 export const publicAddressDispatcher = new Agent({
-  // `lookup` never runs for an IP literal, so a literal is judged here.
   connect: (options, callback) => {
     const host = options.hostname.replace(/^\[|\]$/g, "");
     if (isIP(host) !== 0 && !isPublicAddress(host)) {

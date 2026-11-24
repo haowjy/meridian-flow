@@ -1,7 +1,3 @@
-/**
- * Composition helper: in-memory capture when the composition root enables debug
- * paths, noop otherwise. The gate itself lives at the composition boundary.
- */
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createInMemoryModelRequestDebugStore } from "./adapters/in-memory/in-memory-model-request-debug-store.js";
 import { createNoopModelRequestDebugStore } from "./adapters/noop/noop-model-request-debug-store.js";

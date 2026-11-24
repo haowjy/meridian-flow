@@ -1,4 +1,3 @@
-/** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
 import { apiImageProxyPath } from "@meridian/contracts/protocol";
 import type { PresentationSourceRun } from "@meridian/markup";
 import { type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
@@ -94,7 +93,6 @@ function children(
     const labelPresentation =
       reference && presentation ? { ...presentation, skills: [] } : presentation;
     const label: ReactNode[] = [];
-    // A mixed-format label is one chip (and one outbound arrow), like the Editor.
     for (; index < node.childCount; index++) {
       const part = node.child(index);
       if (!part.marks.some((mark) => mark.eq(link))) break;
@@ -152,11 +150,7 @@ function siblingsOf(node: PMNode): PMNode[] {
   return siblings;
 }
 
-/**
- * A run of sibling blocks drawn as the quotes, lists and items `nest` reads them as, so chat
- * and previews keep real `ul`, `ol`, `li` and `blockquote`. `first` is the run's offset in
- * its parent, which keeps source-map paths pointing at the right block.
- */
+// keep: A block run's first offset keeps source-map paths pointing at the right block
 function renderBlocks(
   blocks: readonly PMNode[],
   breaks: boolean,
@@ -211,7 +205,6 @@ function renderBlocks(
   return render(nestTree(nestNodes(blocks)));
 }
 
-/** Markdown nodes only; MDX's figure/JSX nodes belong to its separate codec. */
 function renderDocumentNode(
   node: PMNode,
   breaks = false,
@@ -317,7 +310,6 @@ function renderDocumentNode(
   }
 }
 
-/** A Markdown image: drawn as written only for an image `data:` URL; a web address waits for the writer's click. */
 function MarkdownImage({ node }: { node: PMNode }) {
   const source = String(node.attrs.src);
   const remote = remotePictureSource(source);
@@ -340,7 +332,6 @@ function MarkdownImage({ node }: { node: PMNode }) {
   );
 }
 
-/** One top-level quote or list (or plain block): the unit that re-renders when its own blocks change. */
 const MarkdownGroup = memo(
   function MarkdownGroup({
     blocks,
@@ -363,7 +354,6 @@ const MarkdownGroup = memo(
     before.blocks.every((block, index) => block === after.blocks[index]),
 );
 
-/** The block indexes a top-level tree node covers, which are contiguous. */
 function coveredBy(node: NestedNode): [number, number] {
   if (node.type === "block") return [node.index, node.index + 1];
   const inner = node.type === "quote" ? node.children : node.items.flatMap((item) => item.children);

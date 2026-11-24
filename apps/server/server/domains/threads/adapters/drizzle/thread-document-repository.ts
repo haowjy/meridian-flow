@@ -1,4 +1,3 @@
-/** Drizzle ThreadDocumentRepository: SQL for thread_documents attach/detach/list. */
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq } from "drizzle-orm";

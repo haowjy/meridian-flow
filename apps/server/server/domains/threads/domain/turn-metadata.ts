@@ -1,5 +1,3 @@
-/** Typed metadata codecs, constructors, and history classification for durable turns. */
-
 import type { TypedFailureReason } from "@meridian/contracts/failures";
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
 import type {
@@ -127,8 +125,7 @@ export const CompactionFailureOutcomeCodec = z.object({
 
 export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
 
-// A reason added to either codec must be classified in `@meridian/contracts/failures`: the constraint
-// fails to compile for an unclassified member (a conditional type resolving to `never` would not).
+// keep: Classify every failure reason; the generic constraint must fail compilation for an unclassified member
 type AssertClassified<_Reason extends TypedFailureReason> = true;
 type _FailureReasonsAreClassified = [
   AssertClassified<z.infer<typeof HandoffFailureReasonCodec>>,
@@ -195,7 +192,6 @@ export const PromptEpochMetadataCodec = z.union([
 
 export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).passthrough();
 
-/** An applied write-mode switch: a complete `system` turn whose text block is the model's notice. */
 export const WriteModeSwitchMetadataCodec = z.object({
   kind: z.literal("write_mode_switch"),
   mode: aiWriteModeSchema,
@@ -235,7 +231,6 @@ export function writerSendMetadata(
   return metadata ?? null;
 }
 
-/** Preserve the writer's own metadata while adding the durable mid-run steer marker. */
 export function steerMetadata(metadata: JsonValue | null | undefined): JsonObject {
   if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
     return { ...(metadata as JsonObject), delivery: "steer" };
@@ -339,13 +334,8 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
   };
 }
 
-/** Cap on the provider message kept on a failed reply. */
 const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
 
-/**
- * Failed-reply metadata: the terminal reason, the gateway's retry verdict when the
- * failure carried one, and the provider's status and capped message when it answered.
- */
 export function replyFailureMetadata(
   metadata: JsonValue | null | undefined,
   failure: { reason: string; retryable?: boolean; providerError?: ProviderErrorResponse },
@@ -373,7 +363,6 @@ export function replyFailureMetadata(
   };
 }
 
-/** Replace failure fields without disturbing the placeholder's control metadata. */
 export function compactionFailureMetadata(
   metadata: JsonValue | null | undefined,
   failure: CompactionFailureOutcome,
@@ -433,7 +422,6 @@ export function isPromptEpochMetadata(metadata: Turn["metadata"]): boolean {
   return PromptEpochMetadataCodec.safeParse(metadata).success;
 }
 
-/** Classifies stored turns once so compaction and history inspection share the same rules. */
 export function classifyHistoryItem(
   turn: Pick<Turn, "role" | "origin" | "metadata">,
 ): HistoryItemClass {

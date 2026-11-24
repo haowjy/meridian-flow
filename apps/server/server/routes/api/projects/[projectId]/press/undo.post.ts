@@ -1,4 +1,3 @@
-/** POST /api/projects/:projectId/press/undo: Take back one press, text and tree. */
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

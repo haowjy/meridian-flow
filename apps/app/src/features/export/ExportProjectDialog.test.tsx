@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Preview races cannot change the options sent to a native download. */
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
@@ -13,10 +12,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-/**
- * Fake timers from the first render through the body; real again before the
- * harness drains a real macrotask on teardown.
- */
 function fakeTimersWhile(body: () => Promise<void>) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   return async () => {
@@ -54,7 +49,6 @@ it("debounces preview options, hides stale counts and downloads directly before 
       ) {
         downloads.push(this.href);
       });
-      // The debounce timer is the only pending timer; running it is the wait.
       const wait = () => act(() => vi.runOnlyPendingTimersAsync());
       expect(fetch).not.toHaveBeenCalled();
       await wait();

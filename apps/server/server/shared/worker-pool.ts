@@ -1,14 +1,3 @@
-/**
- * The worker-thread pool: CPU that is synchronous or bound by hostile input (file conversions,
- * inverse planning) must never run on the server's event loop, and only a thread can be stopped.
- * Each pool owns its jobs: a worker that crashes, runs out of memory or outlives the job's
- * deadline is terminated and replaced, and its job fails with a `WorkerPoolError`.
- *
- * The protocol: the pool posts `{ id, input }`; the worker answers `{ id, reply }` and reports a
- * failure in its reply, not by throwing (a job with no reply runs to its deadline). A worker file
- * imports only packages and types: Node loads it as it is when a test starts it, and nitro bundles
- * it into its own chunk (`nitro.config.ts`).
- */
 import { Worker } from "node:worker_threads";
 
 export type WorkerFailure = "unavailable" | "timeout" | "crashed";
@@ -31,26 +20,20 @@ type Slot<In, Out> = {
 };
 
 export type WorkerPool<In, Out> = {
-  /** Runs one job on a free worker; `timeoutMs` counts from when a worker takes it. */
   run(input: In, timeoutMs: number): Promise<Out>;
 };
 
 export function createWorkerPool<In, Out>(options: {
-  /** The worker file, as a URL relative to the file that makes the pool (`nitro.config.ts` bundles it). */
   entry: URL;
   size: number;
-  /** Node flags for each worker, for a worker file that must be loaded from source. */
   execArgv?: string[];
-  /** Each worker's JS heap cap; buffers outside the heap are bounded by what the job reads. */
   maxOldGenerationSizeMb: number;
-  /** A worker whose reply makes it unfit for another job (a decoder left in a bad state) is replaced. */
   retireAfter?(input: In, reply: Out): boolean;
 }): WorkerPool<In, Out> {
   const slots: Slot<In, Out>[] = [];
   const queue: Job<In, Out>[] = [];
   let nextJobId = 0;
 
-  /** Ends the slot's job and, if the worker is gone, replaces it. */
   function settle(slot: Slot<In, Out>, outcome: { reply: Out } | { error: WorkerPoolError }): void {
     const job = slot.job;
     if (!job) return;
@@ -81,8 +64,6 @@ export function createWorkerPool<In, Out>(options: {
       }
       settle(slot, { reply: message.reply });
     });
-    // A crash or out-of-memory kill ends the worker: fail its job and drop the slot; the next
-    // job starts a fresh one.
     const onGone = (reason: WorkerFailure) => {
       retire(slot);
       settle(slot, { error: new WorkerPoolError(reason) });
@@ -93,8 +74,7 @@ export function createWorkerPool<In, Out>(options: {
       ),
     );
     worker.on("exit", () => onGone("crashed"));
-    // After the listeners: adding a 'message' listener re-refs the worker. Unreffed, an idle pool
-    // never holds the process open; a pending job's timer does.
+    // keep: call `unref()` after the listeners: adding a 'message' listener re-refs the worker, and only an unreffed idle pool lets the process exit
     worker.unref();
     return slot;
   }
@@ -106,7 +86,6 @@ export function createWorkerPool<In, Out>(options: {
         slot = spawnSlot();
         slots.push(slot);
       }
-      // Take a job only once a worker is free to run it; a busy pool leaves the queue for `settle`.
       if (!slot) return;
       const job = queue.shift() as Job<In, Out>;
       const taken = slot;

@@ -1,4 +1,3 @@
-/** Queued-control owner: reconcile authoritative lifetime before projecting optimistic rows. */
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 import {
@@ -24,30 +23,17 @@ type ControlEntry = {
   send?: Send;
   withdrawal?: Withdrawal;
   admitted: boolean;
-  /**
-   * Newest record version known to list the command (an admission answer or an accepted record).
-   * Only a newer record without it proves removal: an older one may predate admission.
-   */
   listedAt: string | null;
-  /** First authoritative absence, retained even while the writer hides the row. */
   droppedAt: string | null;
 };
 export type LocalControls = ReadonlyMap<string, ControlEntry>;
 export const NO_LOCAL_CONTROLS: LocalControls = new Map();
 
-/** `sending`: the writer asked and the server has not answered. */
 export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
 export type QueuedControl = CardControl & {
-  /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
-  /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
   awaitsRun?: boolean;
-  /**
-   * The server will not apply the switch at the next run's start: a reply that already held
-   * the chat when it was made has to finish first (its `deliveryState` is `waiting`). Only the
-   * words depend on it.
-   */
   waiting?: boolean;
 };
 
@@ -107,7 +93,6 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       next.set(id, {
         ...entry,
         admitted: true,
-        // An answer listing the command is admission evidence; one without it fences removal.
         ...(action.sent
           ? { listedAt: newer(entry.listedAt, action.version) }
           : { droppedAt: action.version }),
@@ -169,7 +154,6 @@ function reconcile(state: LocalControls, facts: ControlFacts): LocalControls {
       next.delete(id);
       continue;
     }
-    // A snapshot predating admission cannot disprove a local request still in flight.
     if (present.has(id) || !entry.admitted) continue;
     const absentAt =
       facts.version !== null &&
@@ -189,7 +173,6 @@ function newer(a: string | null, b: string | null): string | null {
   return compareSeq(a, b) >= 0 ? a : b;
 }
 
-/** Visibility has no authority: hiding a pending withdrawal preserves its target evidence. */
 export function queuedControls(state: LocalControls): QueuedControl[] {
   const rows: QueuedControl[] = [];
   for (const entry of state.values()) {

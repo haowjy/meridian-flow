@@ -1,4 +1,3 @@
-/** `seed`: one-shot scenario setup from a fixture. */
 import type { CommandGroup } from "../../core/command";
 import { seedCommand } from "./seed";
 

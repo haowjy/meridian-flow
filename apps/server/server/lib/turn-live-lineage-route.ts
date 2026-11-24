@@ -1,5 +1,3 @@
-/** Route core for authenticated live-lineage document reads for one thread turn. */
-
 import { type ContextUriScheme, PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
@@ -60,7 +58,6 @@ export async function handleTurnLiveLineageRequest(
   return {
     documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([
       ...visibleDocuments,
-      // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
       ...folders,
     ]).map((row) =>
       "nodeId" in row ? serializeLiveLineageFolder(row) : serializeLiveLineageDocument(row),
@@ -69,11 +66,6 @@ export async function handleTurnLiveLineageRequest(
   };
 }
 
-/**
- * The lineage's documents the writer can still read where each edit landed (file-access §6). A
- * document the turn deleted is read where its restore would bring it back, as the card's Undo
- * authorizes it.
- */
 async function filterAccessibleLiveLineageDocuments(
   deps: TurnLiveLineageRouteServices,
   input: { documents: TurnEditedDocument[]; userId: UserId },
@@ -94,8 +86,6 @@ async function filterAccessibleLiveLineageDocuments(
               turnEditDestination(document),
               "read",
             );
-      // An undone draft create has no draft row left. Its immutable receipt still names the
-      // identity, so authorize the row at the same restore seam Redo uses.
       if (isFileAccessDenied(grant) && document.tree?.op !== "delete")
         grant = await deps.fileAccess.authorizeAt(
           principal,
@@ -143,17 +133,12 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
   };
 }
 
-/** The file tree's sections, in the sidebar's order. */
 const SECTIONS: readonly ContextUriScheme[] = [
   ...PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   "scratch",
   "uploads",
 ];
 
-/**
- * The file tree's order: its sections in their order, then within a source rank, then id, at
- * each level (`placement`). A row its view no longer places goes last, in the order it came.
- */
 function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?: string }>(
   rows: Row[],
 ): Row[] {

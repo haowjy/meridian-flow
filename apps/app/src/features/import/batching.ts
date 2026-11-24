@@ -1,12 +1,7 @@
-/** Groups files into multipart requests under the server's request limits. */
 import { IMPORT_ADMISSION } from "@meridian/contracts";
 
 export type BatchItem = { entryId: number; size: number };
 
-/**
- * A file larger than a request's byte budget travels alone, up to the per-file
- * limit. Everything else packs in order, up to the byte and part budgets.
- */
 export function planBatches(items: readonly BatchItem[]): BatchItem[][] {
   const batches: BatchItem[][] = [];
   let current: BatchItem[] = [];

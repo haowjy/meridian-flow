@@ -3,15 +3,6 @@ import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 
 import type { CheckoutReturnStatus } from "./checkout";
 
-/**
- * Honest status for a Stripe redirect back to billing.
- *
- * The live region is mounted for the whole page life and its text changes in
- * place, so a status that appears after the return is announced. Success never
- * appears from Stripe's redirect alone; `useCheckoutReturn` only advances to
- * `confirmed` after the ledger shows an attributable delta. Everything else is
- * reconciled, unverified, or acknowledged plainly.
- */
 export function CheckoutReturnNotice({ status }: { status: CheckoutReturnStatus }) {
   const visible = status !== "idle";
 

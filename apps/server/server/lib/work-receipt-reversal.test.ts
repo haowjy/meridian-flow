@@ -115,7 +115,6 @@ describe("Work receipt reversal", () => {
     Object.assign(h.deps.blocks, {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
     });
-    // Names may repeat: another Work holding the old name doesn't block the rename's Undo.
     await h.works.create({ projectId: "project-1", name: "Arc" });
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID });
     await expect(h.works.findById(work.id)).resolves.toMatchObject(persistedState("Arc"));

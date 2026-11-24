@@ -1,13 +1,3 @@
-/**
- * The one procedure that follows an internal link: ask the scope's resolution
- * cache, then open the document or say what the follow found.
- *
- * Headless and surface-free. Where a found document goes (`open`) and where an
- * outcome is said (`reporter`) are the calling surface's, so a second surface
- * gets the same answers, the same timing, and the same states by passing its
- * own destination and host rather than by writing a second follow.
- */
-
 import { draftItemKey, resolveStoredLinkAddress } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
@@ -19,22 +9,11 @@ import {
   linkTargetHref,
 } from "@/core/editor/links";
 
-/**
- * How long a follow waits before admitting it is still asking. Under this, the
- * answer is usually already cached from rendering the link and the writer sees
- * the document open; over it, a silent click would read as a dead control.
- */
 export const CHECKING_DELAY_MS = 250;
 
-/**
- * A found document. `review` is present for one that exists only in a draft:
- * it opens in that Work's review by item identity, never through the live path.
- */
 export type LinkDocumentRef = {
   documentId: string;
-  /** The resolver already knows this identity is in the trash; skip the live-document race. */
   trashed?: true;
-  /** A document the writer just created: its editor takes the caret. */
   focus?: true;
   review?: {
     draftId: string;
@@ -44,41 +23,18 @@ export type LinkDocumentRef = {
   };
 };
 
-/**
- * Where a found document goes. The calling surface's policy, never this
- * module's. It takes no signal on purpose: once a follow decides to open, the
- * navigation completes. An Editor follow in the current pane replaces the
- * editor that asked, and an abort tied to that editor would cancel its own
- * open.
- */
 export type LinkDestination = (document: LinkDocumentRef) => Promise<unknown>;
 
-/**
- * What one follow does differently from its surface's default: a destination of
- * its own, and what to do when nothing is at the address (instead of reporting it).
- */
 export type FollowPolicy = {
   open?: LinkDestination;
   missing?: () => void;
 };
 
-/** Where an outcome worth interrupting the writer about is said. */
 export type FollowReporter = {
   report(outcome: LinkFollowOutcome): void;
   clear(): void;
 };
 
-/**
- * Cached answer: open, report nothing. Otherwise report checking after 250ms,
- * then open or report an outcome. A gone link opens nothing and says nothing:
- * its chip already says it is no longer available. Aborted before the open:
- * never reports, never opens. The signal is not forwarded into `open`.
- *
- * `scopeReady` is for a surface whose scope is not known yet (a chat whose
- * Work is still loading). The 250ms runs from the click, not from the scope
- * arriving, so a slow scope reads as checking like a slow answer does. It must
- * settle when `signal` aborts.
- */
 export async function followProjectLink({
   target,
   ref = null,
@@ -89,7 +45,6 @@ export async function followProjectLink({
   scopeReady,
 }: {
   target: LinkTarget;
-  /** The stored link's ref; null for a link with none (chat's syntax links). */
   ref?: string | null;
   resolution: LinkAnswerCache;
   open: LinkDestination;
@@ -117,10 +72,7 @@ export async function followProjectLink({
   if (scopeReady) await scopeReady;
   if (signal.aborted) return settle();
 
-  // The common case: the link was resolved to draw it, so following is
-  // instant and nothing is ever shown.
   const known = resolution.read(link);
-  // A folder opens nothing here: each surface opens a folder link's menu itself.
   if (known?.state === "folder") {
     settle();
     reporter.clear();
@@ -130,7 +82,6 @@ export async function followProjectLink({
     settle();
     reporter.clear();
     const documentId = goneLinkDocumentId(known, link);
-    // Trash is one routed auxiliary surface, not a document.
     if (documentId) await open({ documentId, trashed: true });
     return;
   }
@@ -175,7 +126,6 @@ function documentRef(found: DocumentEntry): LinkDocumentRef {
     review: {
       draftId: draft.draftId,
       itemKey: draftItemKey(draft.draftId, document.documentId),
-      // Draft list rows and review launches spell the path with a leading slash.
       contextLocation: {
         scheme: document.scheme,
         path: document.path.startsWith("/") ? document.path : `/${document.path}`,

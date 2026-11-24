@@ -1,13 +1,8 @@
-/**
- * Purpose: Defines the expected AG-UI event stream for the simple tool-call golden turn.
- * Why independent: The fixture is a shared protocol contract example for tool-call projection, not tool execution logic.
- */
 import { type AGUIEvent, EventType } from "../../protocol/index.js";
 
 import { GOLDEN_THREAD_ID } from "./simple-text-turn.js";
 import { GOLDEN_TOOL_ASSISTANT_TURN_ID, GOLDEN_TOOL_CALL_ID } from "./simple-tool-turn.js";
 
-/** Golden AG-UI stream for {@link SIMPLE_TOOL_TURN_ORCHESTRATOR} (server projector output). */
 export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
   {
     type: EventType.RUN_STARTED,

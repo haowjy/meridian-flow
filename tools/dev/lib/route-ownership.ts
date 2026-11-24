@@ -1,4 +1,3 @@
-/** Process working-directory evidence for checkout-owned Portless routes. */
 import { execFileSync } from "node:child_process";
 import { readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";

@@ -1,4 +1,3 @@
-/** Project-chat feed: primary chats ranked by stored conversational activity. */
 import { sql } from "drizzle-orm";
 import type { ProjectChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
@@ -15,7 +14,6 @@ export function createDrizzleProjectChatFeedRepository(
     async queryPage(input) {
       const cursorActivity = input.after?.sortAt ?? null;
       const cursorThreadId = input.after?.threadId ?? null;
-      // LIKE metacharacters in the writer's text match literally.
       const searchPattern = input.search
         ? `%${input.search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
         : null;

@@ -1,9 +1,3 @@
-/**
- * Thread activity read: "what direct subagents are running in this thread" as a
- * pure projection over child rows plus live leases (batch status read). Never
- * persisted as a turn block; the same read feeds snapshots, WS `subscribed`
- * state, and live `subagent.activity` events.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ThreadActivity,
@@ -18,7 +12,6 @@ import type {
   ThreadStatusReader,
 } from "../ports/index.js";
 
-/** Pure projection of child rows, admitted executions, and batch lease state. */
 export function projectThreadActivity(
   children: readonly ThreadChild[],
   leases: ReadonlyMap<ThreadId, ThreadLeaseState>,
@@ -53,7 +46,6 @@ export type ThreadActivityReadDeps = {
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
 };
 
-/** Read `threadId`'s direct-child activity + one batched lease read. */
 export async function readThreadActivity(
   deps: ThreadActivityReadDeps,
   threadId: ThreadId,
@@ -73,7 +65,5 @@ export async function readThreadActivity(
 
 function deliveryMode(run: LatestChildExecution | undefined): ThreadActivityNode["deliveryMode"] {
   if (!run) return null;
-  // `none` is an admitted thread-run without a foreground invocation; its
-  // writer-facing activity is necessarily background, not direct delivery.
   return run.deliveryMode === "direct" ? "direct" : "background_notification";
 }

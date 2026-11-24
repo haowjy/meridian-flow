@@ -1,4 +1,3 @@
-/** Frozen pointers to prior conversations, shared by spawn seeds and handoff briefs. */
 import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { BlockUpsertedRow, Thread } from "@meridian/contracts/threads";
 
@@ -19,7 +18,6 @@ export function threadReferenceText(source: {
 }
 
 export function threadReferenceBlock(source: Thread): BlockUpsertedRow {
-  // resolveReadableThread only admits persisted, parsed refs.
   const ref = source.ref as string;
   const props: Omit<ThreadReferenceProps, "text"> = {
     threadId: source.id,
@@ -30,7 +28,6 @@ export function threadReferenceBlock(source: Thread): BlockUpsertedRow {
   };
   return {
     id: crypto.randomUUID(),
-    // The seed's owning turn and final sequence are assigned by persistWriterTurn.
     turnId: "",
     sequence: 0,
     blockType: "custom",

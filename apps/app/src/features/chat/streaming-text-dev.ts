@@ -1,13 +1,5 @@
-/**
- * streaming-text-dev — DEV-ONLY playback throttling for streaming text.
- *
- * Reads `localStorage('meridian:debug-stream-playback-cps')` and exposes a hook that
- * replays text at a fixed chars/second to simulate slow streaming during local
- * UI work. Owns the debug knob + rAF throttle; never used in production paths.
- */
 import { useEffect, useRef, useState } from "react";
 
-/** Dev-only: `localStorage.setItem('meridian:debug-stream-playback-cps', '60')` then reload. */
 export function readDebugStreamPlaybackCps(): number {
   try {
     const raw = localStorage.getItem("meridian:debug-stream-playback-cps");
@@ -21,7 +13,6 @@ export function readDebugStreamPlaybackCps(): number {
   }
 }
 
-/** Throttles displayed text to simulate slow streaming (dev tooling only). */
 export function useDebugStreamPlayback(target: string, cps: number): string {
   const [displayed, setDisplayed] = useState(target);
   const displayedRef = useRef(target);

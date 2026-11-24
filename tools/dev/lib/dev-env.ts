@@ -9,18 +9,10 @@ export interface DevDatabase {
   readonly envVar: string;
   readonly migrateScript: string;
   readonly label: string;
-  /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
   readonly migrationsDir?: string;
-  /** Command shown when the DB can catch up by applying unapplied migrations. */
   readonly catchUpHint?: string;
 }
 
-/**
- * Meridian Flow keeps a single-registry dev-tool contract against local
- * Postgres (Docker, tools/postgres/Dockerfile). Linked worktrees rewrite registered
- * DB URLs to sibling databases on the same server (`<baseDbName>_<slug>`); the main checkout keeps
- * the bare name from `.env`.
- */
 export const DEV_DATABASES: readonly DevDatabase[] = [
   {
     envVar: "DATABASE_URL",
@@ -84,7 +76,6 @@ function databaseNameFromUrl(databaseUrl: string): string {
   return name;
 }
 
-/** Build the per-worktree Postgres database name from the main-checkout base name. */
 export function resolveWorktreeDatabaseName(baseDbName: string, slug: string): string {
   if (slug.startsWith("test-run-") || slug.startsWith("test-manual-")) {
     throw new Error(`Worktree database slug uses a reserved test namespace: ${slug}`);
@@ -100,11 +91,6 @@ function rewriteDatabaseName(url: string, dbName: string): string {
   return rewritten.toString();
 }
 
-/**
- * The one place a checkout's session identity (and so its database slug) is
- * derived. The dev stack, `dev:gc-dbs`, and every other consumer must call this
- * so they cannot disagree about a checkout's database name.
- */
 export function resolveCheckoutSessionIdentity(checkoutPath: string): SessionIdentity {
   return resolveSessionIdentity({
     branchName: runGit(checkoutPath, ["rev-parse", "--abbrev-ref", "HEAD"]),
@@ -113,7 +99,6 @@ export function resolveCheckoutSessionIdentity(checkoutPath: string): SessionIde
   });
 }
 
-/** Database names owned by every live linked worktree (main checkout excluded). */
 export function resolveLiveWorktreeDatabaseNames(
   repoRoot: string,
   baseDbNames: readonly string[],
@@ -138,13 +123,6 @@ export function resolveLiveWorktreeDatabaseNames(
   return live;
 }
 
-/**
- * Fill step shared by every env consumer: sets variables that are still unset
- * from the checkout's own `.env.local`, then the main checkout's `.env` (so a
- * worktree override beats the shared file, even when its value is empty, and both lose to any
- * value in the caller's environment, empty included: `KEY=` in the shell turns a file setting off), and pins `LOG_DIR`. `.env.local` may not define a database URL:
- * the main `.env` is the one source of the base database.
- */
 export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
   const local = readEnvFile(path.join(repoRoot, ".env.local"));
   for (const db of DEV_DATABASES) {
@@ -160,33 +138,13 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
     if (env[key] === undefined) env[key] = value;
   }
   for (const [key, value] of Object.entries(main)) {
-    // A key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting.
+    // keep: a key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting
     if (env[key] === undefined && !(key in local)) env[key] = value;
   }
 
-  // The dev stack owns the structured-event mirror location. Pin it here rather
-  // than deferring to an inherited value: a relative LOG_DIR (e.g. a stale
-  // `.env` `LOG_DIR=logs`) is never correct because app/server/www each run in
-  // their own package cwd via `pnpm --filter`, so a relative path scatters the
-  // JSONL mirror away from repo-root `logs/events/` (where `logs/portless.log`
-  // and probe tooling look). resolveDevLogDir keeps only an absolute override.
   env.LOG_DIR = resolveDevLogDir(repoRoot, env.LOG_DIR);
 }
 
-/**
- * The one dev-env loader: `fillDevEnv`, then derive this checkout's database.
- * Never call it from a build config (`shared-db-server` loads those in-process
- * and passes its own URL verbatim).
- *
- * `DATABASE_URL`, when the main `.env` defines it: the expected database is the
- * bare name in the main checkout and `<name>_<slug>` in a linked worktree. An
- * incoming value that is unset or empty (so filled from the file), the base, or the
- * expected name resolves to the file's URL with the expected name, so host and
- * credentials always come from the file and a second run is a no-op. Any other
- * name (a worktree's URL left in a shell, then a branch switch) throws.
- * When no file defines it (CI, deploy migrations) the incoming URL is used
- * exactly as given.
- */
 export function applyDevEnvToProcess(
   repoRoot = resolveCurrentRepoRoot(),
   env: NodeJS.ProcessEnv = process.env,
@@ -213,12 +171,6 @@ export function applyDevEnvToProcess(
   }
 }
 
-/**
- * Absolute path to the repo-local structured-event mirror the server EventSink
- * writes in dev. An absolute override is honored as-is; any relative or empty
- * value falls back to the canonical `<repoRoot>/logs/events` — a relative
- * LOG_DIR would resolve against each service's own cwd and never land here.
- */
 export function resolveDevLogDir(repoRoot: string, override?: string): string {
   const raw = override?.trim();
   if (raw && path.isAbsolute(raw)) return raw;

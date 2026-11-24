@@ -1,4 +1,3 @@
-/** Canonical authorship policy for turn-driven thread, Work, and project activity. */
 import type { TurnOrigin } from "@meridian/contracts/threads";
 
 export function turnCountsAsActivity(origin: TurnOrigin): boolean {

@@ -1,9 +1,3 @@
-/**
- * Child process for the tree list's kill test: admits one client update and, at the step named
- * by `STEP`, signals ready and hangs so the parent can SIGKILL it with the transaction open.
- *
- * Env: DATABASE_URL, STEP, READY_PATH, PROJECT_ID, ACCOUNT_ID, UPDATE (base64)
- */
 import { writeFileSync } from "node:fs";
 import { createDb } from "@meridian/database";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";

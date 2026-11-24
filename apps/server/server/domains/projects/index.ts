@@ -56,13 +56,7 @@ export type ProjectBootstrapResult = {
 };
 
 export type ProjectBootstrapRepository = {
-  /**
-   * Makes the account's first project when it has no live one: after its last project is
-   * deleted, the next sign-in makes another. A seed failure leaves it without one for a later
-   * attempt, without failing the authenticated request that found it.
-   */
   ensureDefaultBootstrapReady(userId: UserId): Promise<boolean>;
-  /** The project it made, or null when the account already had a live one. */
   ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult | null>;
 };
 
@@ -152,7 +146,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   ): Promise<DocumentId> {
     async function seedDocument(documentId: DocumentId): Promise<void> {
       try {
-        // Seeded inside the bootstrap transaction: fixed text with no links, so nothing to register.
         const seeded = await deps.documents.seedFromMarkdown(
           documentId,
           deps.documents.bindStatic("# Chapter 1\n\n"),
@@ -195,7 +188,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
-      // A bootstrap that raced this one made it; it is one transaction, so it is whole.
       if (await hasLiveProject(tx, userId)) return null;
       const projectId = await createProject(tx, userId);
       await createNoWork(tx, projectId, userId);
@@ -227,10 +219,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   };
 }
 
-// ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";
-// ── User provisioning ───────────────────────────────────────────────────────
 export { createDrizzleUserRepository } from "./adapters/user-repository/drizzle.js";
 export { createInMemoryUserRepository } from "./adapters/user-repository/in-memory.js";
 export {
@@ -240,7 +230,6 @@ export {
   type WorkWriteOptions,
   type WorkWriteSet,
 } from "./adapters/work-projection-mutation.js";
-// ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";

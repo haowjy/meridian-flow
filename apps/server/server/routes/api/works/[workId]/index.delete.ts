@@ -1,4 +1,3 @@
-/** Soft-deletes a Work and its live children for the retention window. */
 import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from "nitro/h3";
 import {
   requireWorkOwner,
@@ -22,8 +21,6 @@ export default defineEventHandler(async (event) => {
     { includeSoftDeleted: true },
   );
   try {
-    // A tree that changed under the delete's lock rolls the attempt back, claim included, and the
-    // next attempt claims again: the retry wraps the command, not the reverse.
     await runWorkLifecycleCommand(
       (attempt) => attempt(),
       () =>
@@ -49,7 +46,6 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     throwWorkMutationHttpError(error);
   }
-  // The Work's chats left the project list with it; which ones is not known here, so windows probe.
   app.projectWakeHub.publish({
     type: "project-chats-hint",
     projectId: work.projectId,

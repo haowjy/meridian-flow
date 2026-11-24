@@ -1,4 +1,3 @@
-/** Native SSE producer that joins server observability records into the trace ring. */
 import type { EventRecord } from "@meridian/contracts/observability";
 
 import { appendTraceEvent } from "./trace-store";
@@ -27,7 +26,6 @@ function isEventRecord(value: unknown): value is EventRecord {
   );
 }
 
-/** Open the server feed. Native EventSource owns reconnection. */
 export function startServerFeed(): void {
   if (eventSource) return;
 
@@ -57,7 +55,6 @@ export function startServerFeed(): void {
   }
 }
 
-/** Close the feed and return its observable state to idle. */
 export function stopServerFeed(): void {
   eventSource?.close();
   eventSource = undefined;

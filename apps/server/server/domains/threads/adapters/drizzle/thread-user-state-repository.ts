@@ -1,4 +1,3 @@
-/** Per-writer favorite persistence for Project chat rows. */
 import * as schema from "@meridian/database/schema";
 import type { ThreadUserStateRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";

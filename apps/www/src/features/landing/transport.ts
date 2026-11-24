@@ -12,15 +12,10 @@ const PLAY_LABELS: Record<AutoplayState, string> = {
 };
 const GLIDE_SECONDS = 3;
 
-/**
- * Everything that moves the page for the visitor: autoplay, jump links and the
- * glide after Send answers. Any input of theirs takes the scroll back at once.
- */
 export function createTransport(options: {
   root: HTMLElement;
   store: CardStore;
   getLayout: () => Layout;
-  /** The page jumped back: the film should cut there without easing through the story. */
   onJump: () => void;
   signal: AbortSignal;
 }) {
@@ -125,7 +120,6 @@ export function createTransport(options: {
   });
   signal.addEventListener("abort", stopListening);
 
-  // Rekindle: time goes back to the cliff, before anyone was chosen.
   for (const button of root.querySelectorAll("[data-rekindle]")) {
     button.addEventListener(
       "click",
@@ -139,9 +133,7 @@ export function createTransport(options: {
     );
   }
 
-  // The browser restores a reload's offset while the page is still short, and scroll
-  // anchoring then drags it to the end once the film is full height. The film keeps
-  // the visitor's place itself, as a share of the story.
+  // keep: `scrollRestoration` is manual because the browser restores a reload's offset while the page is short and scroll anchoring then drags it to the end
   history.scrollRestoration = "manual";
   const scrollEnd = () => getLayout().documentHeight - getLayout().height;
   addEventListener("pagehide", () => savePlace(scrollY / scrollEnd()), { signal });
@@ -152,7 +144,6 @@ export function createTransport(options: {
   else if (place !== null) scrollTo(0, place * scrollEnd());
 
   return {
-    /** One frame of whatever is moving the page. */
     advance(elapsedMs: number) {
       if (state === "playing") {
         if (Math.abs(scrollY - lastScroll) > 6) {
@@ -179,7 +170,6 @@ export function createTransport(options: {
 
 const PLACE_KEY = "landing-place";
 
-/** Storage may be blocked (private windows, previews); a reload then starts at the top. */
 function readPlace(): number | null {
   try {
     const saved = Number.parseFloat(sessionStorage.getItem(PLACE_KEY) ?? "");
@@ -193,7 +183,6 @@ function savePlace(share: number) {
   try {
     sessionStorage.setItem(PLACE_KEY, String(share));
   } catch {
-    // Storage can be blocked (private mode); losing the saved place is fine.
     return;
   }
 }

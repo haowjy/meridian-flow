@@ -1,8 +1,3 @@
-/**
- * Resolving a request to the file it's about (file-access §1, step 1): a
- * document id, or the container a path creates in.
- */
-
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
@@ -16,19 +11,13 @@ export function documentTarget(documentId: string): FileTarget {
   return { kind: "document", documentId: documentId as DocumentId };
 }
 
-/**
- * The container a project route's scheme names: the account's for the home folder, the
- * project's for a project-scoped source, else the named Work's, or No Work's when none is.
- */
 export async function containerTarget(
   works: Pick<WorkRepository, "findNoWork">,
   input: {
     projectId: string;
-    /** The account the request acts for: the home folder's owner. */
     userId: string;
     scheme: ContextUriScheme;
     workId: string | null;
-    /** The chat that owns uploads; its row may not exist yet. */
     chatId?: string | null;
   },
 ): Promise<FileTarget> {
@@ -65,11 +54,6 @@ export async function containerTarget(
   };
 }
 
-/**
- * The container a thread-addressed path makes its file in: the thread's account's for the home
- * folder, the project's for a project-scoped source, else the Work its authority names (the
- * thread's own when it names none). Null when the path names no Work.
- */
 export async function threadContainerTarget(
   resolution: Pick<
     ThreadContextResolution,
@@ -101,7 +85,6 @@ export async function threadContainerTarget(
     };
   }
   if (scheme === "uploads") {
-    // Uploads belong to a chat: its own for a bare path, another's by handle. A Work owns none.
     const chat =
       authority.kind === "chat"
         ? await resolution.uploadChats?.byRef(thread.projectId, authority.chatRef)

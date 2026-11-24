@@ -1,5 +1,3 @@
-/** Messages shared by the Markdown worker and its main-thread adapter. */
-
 import type { NodePath } from "./markdown-parse-session";
 
 export type MarkdownWorkerRequest =

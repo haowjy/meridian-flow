@@ -1,4 +1,3 @@
-/** One caller/child execution graph and report operations, shared by both adapters and terminal A/B tests. */
 import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import type { Database } from "@meridian/database";
@@ -124,7 +123,6 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     id: ids.childUserTurn,
     threadId: ids.child,
     role: "user",
-    // The child's seed turn is the spawning caller's prompt, not a writer send.
     origin: "system",
     status: "complete",
   });

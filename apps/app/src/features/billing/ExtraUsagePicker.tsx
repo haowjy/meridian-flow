@@ -1,13 +1,3 @@
-/**
- * Extra-usage amount picker — quick-pick chips + a custom USD input, with a
- * single Buy action. The chosen value is the client-side `amountUsd` for the
- * checkout request.
- *
- * Single source of truth: `amount` (string) drives both the input field and
- * the chip pressed-state. A chip is pressed iff its numeric value equals the
- * current amount, so typing a number that matches a preset re-selects it
- * without a parallel "selected chip id" state.
- */
 import { Trans } from "@lingui/react/macro";
 import { useId, useState } from "react";
 
@@ -27,9 +17,7 @@ export interface ExtraUsageAmountOptions {
 interface ExtraUsagePickerProps {
   amountOptions: ExtraUsageAmountOptions;
   disabled: boolean;
-  /** The purchase request for this control is in flight. */
   pending?: boolean;
-  /** Visible failure for this control's last purchase attempt. */
   errorMessage?: string | null;
   onRetry?: () => void;
   onPurchase: (amountUsd: string) => void;

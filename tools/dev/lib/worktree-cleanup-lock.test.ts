@@ -32,7 +32,6 @@ describe("acquireCleanupLock", () => {
       /cleanup is running/,
     );
 
-    // A lock that now carries someone else's pid is left alone on release.
     writeFileSync(lockPath, "999999\n");
     lock.release();
     expect(readFileSync(lockPath, "utf8").trim()).toBe("999999");

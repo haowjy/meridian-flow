@@ -1,4 +1,3 @@
-/** Output contract: compact text by default, one JSON object or NDJSON with --json, errors on stderr. */
 import { CliError } from "./cli-error";
 
 export const TERMINAL_KEYS = ["type", "command", "outcome", "reason"] as const;
@@ -20,10 +19,6 @@ export class Output {
     return this.mode.json;
   }
 
-  /**
-   * For nested runs inside a single-result command: their text progress goes to
-   * stderr (nothing under --json) so stdout stays exactly one result.
-   */
   progressOnly(): Output {
     const discard = { write: () => true };
     return new Output(
@@ -32,7 +27,6 @@ export class Output {
     );
   }
 
-  /** Final result of a non-streaming command: one JSON object, or rendered text. */
   result<T>(value: T, renderText: (value: T) => string): void {
     if (this.mode.json) {
       this.io.stdout.write(`${JSON.stringify(selectFields(value, this.mode.fields))}\n`);
@@ -42,11 +36,6 @@ export class Output {
     if (text) this.io.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
   }
 
-  /**
-   * One stream record: an NDJSON line with --json, otherwise a text line (null skips).
-   * `--fields` keeps `type` plus whichever requested keys each record has, since
-   * terminal records also keep command, outcome and reason. Stream records differ in shape and a missing key is not a usage error there.
-   */
   record(value: Record<string, unknown>, textLine: string | null, textStream: "out" | "err"): void {
     if (this.mode.json) {
       const fields = this.mode.fields;
@@ -67,20 +56,14 @@ export class Output {
     (textStream === "out" ? this.io.stdout : this.io.stderr).write(`${textLine}\n`);
   }
 
-  /** Text-mode stdout payload (e.g. `send`'s final answer); suppressed under --json. */
   text(text: string): void {
     if (!this.mode.json) this.io.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
   }
 
-  /**
-   * A line that always reaches stderr, even under --json (as one JSON record there). For a
-   * request a command is about to post: it must survive whatever the answer does.
-   */
   always(text: string, record: Record<string, unknown>): void {
     this.io.stderr.write(this.mode.json ? `${JSON.stringify(record)}\n` : `${text}\n`);
   }
 
-  /** Human-only progress or notes; never mixed into machine output. */
   note(text: string): void {
     if (!this.mode.json) this.io.stderr.write(`${text}\n`);
   }
@@ -103,7 +86,6 @@ export class Output {
   }
 }
 
-/** gh-style `--fields a,b`: keeps top-level keys of an object or of each array item. */
 export function selectFields<T>(value: T, fields: readonly string[] | undefined): unknown {
   if (!fields?.length) return value;
   const pick = (item: unknown): unknown => {
