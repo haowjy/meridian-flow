@@ -14,7 +14,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
-import type { ContextOwner } from "@/client/query/context-request-options";
+import type { ContextOwner } from "@meridian/contracts/protocol";
 import { useDraftStanding } from "@/client/query/useDraftStanding";
 import { useDraftOnly, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";

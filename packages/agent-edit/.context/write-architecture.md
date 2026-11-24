@@ -98,8 +98,9 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   orders it against what the writer typed there by peer id (`He  loudlygroaned.`).
 - What the lowering does not cover:
   - A write that removes a block and adds another (merging or splitting top-level
-    paragraphs): the writer's typing in the removed
-    block goes, and text deleted from it can come back in the added one.
+    paragraphs) writes no record of the move. Typing the write didn't read brings the
+    removed block back beside the added one (`answerRemovals`), so those words can show
+    twice; text deleted from the removed block can come back in the added one.
   - Two changes the model makes to one word where the writer retyped it merge by peer
     id, as two people's concurrent typing does.
 - Equal serialized content does not preserve CRDT identity or history, so rebuilding an

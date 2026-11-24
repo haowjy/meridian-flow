@@ -20,7 +20,8 @@ that Live does not: `changedBlocks` in `@meridian/document-model` groups them in
 - `actorThreads` lists chats whose writes landed in the draft's fork of the item (their receipts
   name the fork), then the creating chat if absent.
 - `pending` says the draft's fork differs from Live; false means the item is only a created, moved
-  or deleted document. No count of text changes is listed (design §6).
+  or deleted document. `changeCount` is how many changes Review changes steps through there
+  (`changedBlocks`' groups), as the fork's room last saved them.
 - A draft id the server has not stored yet (a Work or chat whose create is still on its way)
   lists as empty, so the browser reads the draft it minted at once. A press needs the stored draft.
 

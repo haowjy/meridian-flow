@@ -11,7 +11,6 @@
     "apps/app/src/client/chat-submissions/store.test.ts": 7,
     "apps/app/src/client/composer-drafts.test.ts": 1,
     "apps/app/src/client/copilot/ThreadRunController.test.ts": 3,
-    "apps/app/src/client/query/context-request-options.test.ts": 2,
     "apps/app/src/client/query/thread-snapshot-query.test.tsx": 1,
     "apps/app/src/client/query/thread-user-state-commands.test.ts": 2,
     "apps/app/src/client/query/useRenameProject.test.tsx": 2,

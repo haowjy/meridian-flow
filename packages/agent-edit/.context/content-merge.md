@@ -212,8 +212,6 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   suites. Nothing in the app mints one id on two sides; the generator does. The merge does not
   repair it.
 - A cut-and-paste racing an edit of the cut text doubles it.
-- Typing into a block that a peer or the model deletes at the same moment, from a tab that was
-  offline or whose frame was still on its way, lands in the deleted block and disappears with it.
 - Undoing a Discard, or restoring a document, after its room closed brings back the server's text
   without the unsent typing; the toast at the close is the only copy.
 
