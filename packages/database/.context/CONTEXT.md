@@ -24,12 +24,12 @@ regenerate the three migration artifacts; never merge their SQL by hand.
 
 ## Schema contracts
 
-A document tombstone has a non-null deletion reason exactly when it has
-`deleted_at`. User, Work and system-cause fields identify its actor; legacy
-actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
-remains its restore marker. Restore clears all removal fields. A draft has no status: it is
-deleted with its Work, or by `Delete draft` (`deleted_at`, purged 30 days later), never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
-been released after the retention window; placement and the removal record remain.
+A document's removal is not a column on `documents`: the project tree's trash record holds it
+(`tree_nodes.trash_record`, `trashed_at` and `trashed_by`, kept in shape by `tree_nodes_trash_shape`
+and `tree_nodes_trashed_by_shape`). `content_purged_at` marks a document whose bytes and content
+history have been released after the retention window; its row, placement and trash record remain.
+A draft has no status: it is
+deleted with its Work, or by `Delete draft` (`deleted_at`, purged 30 days later), never closed.
 
 A `drafts` row is one draft. A Work owns several (`drafts.work_id`, cascade), one of them
 `is_default`, minted with the Work (`mint_work_default_draft` for a raw insert); a No Work
@@ -78,7 +78,8 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back. Every part is a Live edit (`origin` is `live`).
+and the inverse needed to take it back. A part's `origin` is the room it merged into: `{ kind:
+"live" }` or `{ kind: "fork", draftId }`.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
@@ -93,8 +94,9 @@ purge disposes of them. Each project has a locked Work row for the UI's
 `users_create_tree_list` triggers insert the row in the same statement. `project_id` / `user_id`
 name the owner, whose delete takes the row. So no document's or node's id is ever a list's; the
 list's records are the `tree:<list id>` room's snapshot row.
-`agent_edit_wid_counters` mints each document's `e<N>` write handles for the model: a counter per
-document, bumped in the write's transaction.
+`agent_edit_wid_counters` mints the model's `e<N>` write handles: one counter per document (or tree
+node) and chat, keyed `(document_id, thread_id)`, bumped in the write's transaction and shared by
+the document's text writes and its tree changes so Undo, Redo and `revert` order both by it.
 `tree_node_ids` holds the claim on every node id any list has made: its primary key is the
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `draft_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
@@ -110,7 +112,7 @@ copied and a row left behind by a crash is never read). Its `project_id` cascade
 project, and its plain `thread_id` is what `forgetThreads` deletes by when a thread is deleted;
 `thread_shown_links` has the same two columns. The model's frontier for a room is the row with
 the greatest `recorded_seq` among the block ids a lookup names, read through the
-`(room_key, recorded_seq DESC NULLS LAST)` index
+`(room_key, recorded_seq DESC)` index
 ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
 
 `mcp_connections` holds a writer's connections at one level (the account, or one project) with a
@@ -150,5 +152,5 @@ threads, not source rows. Catalog selection and the one-per-thread binding use
 compare-and-set and join the ambient transaction; idempotent binding compares
 revision and configuration and changes neither. The binding's configuration
 holds the resolved model, skill-content identities, and named-target revisions;
-execution identity comes from the thread binding. `project_agent_removals` is only
-a Project/catalog-entry exclusion, never another definition owner.
+execution identity comes from the thread binding. A level's file shadows the same name from a lower
+level; nothing narrower excludes a catalog entry.

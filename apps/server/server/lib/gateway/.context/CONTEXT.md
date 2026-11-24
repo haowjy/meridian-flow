@@ -6,7 +6,7 @@ The model gateway itself is the `@meridian-flow/runtime/gateway` entry of the np
 covers the port, adapters, retry, errors, credentials, media and the mock server. This directory is what Flow
 chooses and reads from its environment: the model registry and prices, the `FLOW_` keys, the
 observability decorator, the dev overrides. To change the package and try it here before it is
-published, see [Shared runtime in the root AGENTS.md](../../../../../AGENTS.md).
+published, see [Shared runtime in the root AGENTS.md](../../../../../../AGENTS.md).
 
 ## Registry and keys
 
@@ -158,7 +158,7 @@ resolution before provider dispatch; no local-data remapping or compatibility al
 With no provider key, or `MODEL_PROVIDER=mock`, `createGatewayFromEnv` starts the package's in-process mock
 server. `MOCK_MODEL_RESPONSE` is a JSON default response for it (tool-free; the same content and pacing
 fields as a script step, never `times`). Controls and fixtures:
-[debugging guide](../../../../../docs/debugging.md#mock-provider-responses). Recipe:
+[debugging guide](../../../../../../docs/debugging.md#mock-provider-responses). Recipe:
 [rich mock provider](qa/mock-provider.md).
 
 ## LIVE_TEST_MODEL (dev and staging)

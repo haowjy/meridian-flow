@@ -23,12 +23,10 @@ refusal for one room is a `loro-protocol` frame, not a close: `LORO_JOIN_ERROR` 
 
 - `Usage.inputTokens` includes the disjoint cache counters, so each gateway adapter
   normalizes provider output before `assertValidUsage`.
-- Asset references persist `assetDocumentId` and a project-relative `assetPath`; signed
-  URLs are render-time details only.
+- An asset reference is the picture's stored `src`: `asset:<documentId>`, a document address, or
+  empty while the upload is pending. Signed URLs are render-time details only, never stored.
 - Blocks describe the writer transcript. Model-only document-text elisions belong in
   compaction metadata, never in transcript block lifecycle fields.
-- Receiving-writer attention is computed per connection as `ChangeEventProjection.swept`,
-  a live-session hint that never enters persisted projections.
 - Thread snapshots compose the canonical `threadSchema` and `turnSchema`. Identity lookups
   are explicit projections and cannot stand in for full DTO validation.
 

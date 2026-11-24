@@ -77,7 +77,8 @@ stateDiagram-v2
 ```
 
 - **`closing` refuses new work and lets go of what is held.** `release` still runs, so a view unmounting during the close does not leak a hold.
-- **Closing the runtime does not delete local copies.** A copy goes at the node's purge or when
-  access is lost (`local-document-copies.ts`); closing ends the sessions and the copies stay for
-  the next sign-in of the same account. The decision also names sign-out as deleting them; the
-  `/logout` route is the server's and tells the browser nothing, so that is not done.
+- **Closing the runtime does not by itself delete local copies.** A copy goes on a fact that is
+  final (the node's purge, its Work or chat purged, the account removed from the project:
+  `list-removal-observer`) or at sign-out (`clearForSignOut` → `clearAccountCopies`, which fails
+  the sign-out with `SignOutIncomplete("copies")` when one remains). A session closing, or access
+  the account lost for now, never deletes one.

@@ -20,4 +20,5 @@ that varies by project goes in `map.config.mjs`, a plain object the browser impo
 - `pnpm dev` serves the viewer through the engine's Vite plugin (registered in `apps/app/vite.config.ts`). It
   serves any git-tracked file at `/architecture/repo/<path>` for the viewer's links; `pnpm dev:funnel`
   publishes that too, which is fine while the repo is public. If it becomes private, set `serveSource: false`.
-- Routes, the Read | Map views and the doc view are described in the engine's AGENTS.md.
+- Routes, the Read | Map views and the doc view are described in the engine's
+  [.context/CONTEXT.md](../../tools/architecture-map/.context/CONTEXT.md).

@@ -15,7 +15,8 @@ For R2 set `S3_ENDPOINT` to the account endpoint, `S3_BUCKET` to the bucket and
 `PROBE_ORIGIN` to the app origin. The script sets bucket CORS (PUT, `Content-Type`) where the
 store supports it; MinIO answers `NotImplemented` and allows all origins by itself.
 
-Each line prints PASS or FAIL; the exit code is the number of failures. They cover an exact PUT,
+Each line prints PASS or FAIL; the script exits 1 if any check failed, 2 when it
+threw, and 0 otherwise. They cover an exact PUT,
 a wrong length, a wrong type, a missing type, a read URL used to write, a repeated PUT replacing
 the object, a PUT after `copy` leaving the copy as it was, `readHead` of an empty, a large and a
 missing object, preflight, an allow-origin header on the PUT, and an expired URL (the script

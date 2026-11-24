@@ -138,8 +138,10 @@ releases them.
 A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transaction) has its
 drafts' tree records discarded. Archive, delete and Trash leave a draft's records pending: the
 press takes an archived Work's or a trashed chat's draft as it takes any. What archive and Trash
-stop is new AI writes, at the model's write (`lockForWrite` in `model-edit-write.ts` refuses a
-closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree judge below.
+stop is new AI writes: the write's seam confirms the bound grant at its destination
+(`enterSeam` → `confirmScopedEdits` in `composition.ts`, through `file-access`'s `confirmEdit`),
+which refuses a closed owner. A closed owner's own notes (its Scratch) stay closed, by the tree
+judge below.
 
 ## Undo and Redo
 

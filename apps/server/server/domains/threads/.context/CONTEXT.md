@@ -15,8 +15,10 @@ subagent creation boundary.
 - `threads.origin_turn_id` is `ON DELETE NO ACTION`: provenance is never nulled to let
   a source turn be deleted. Work purge keeps a deleted Work whose turns another Work's
   fork or handoff still inherits.
-- `threads.derivation_source_thread_id` records the chat the writer acted on,
-  independently of the cutoff owner; it is not a spawn-parent relationship.
+- The cutoff owner is the chat a fork's `origin_turn_id` points at
+  (`findCutoffOwnerThreadId`), never the spawn parent. The chat the writer acted on is
+  recorded beside it: as the handoff seed turn's `metadata.sourceThreadId`, and on the
+  fork's `agent.fork` event.
 
 ## Prompt lifetime
 
@@ -61,9 +63,9 @@ text never enters event logs.
   Finished reply transport rows are pruned in the journal transaction after the next
   reply finishes; the newest finished reply remains available for reconstruction. A
   cursor below that retained boundary gets a replay gap so the client reloads its
-  snapshot instead of silently losing stream frames. Projected rows and
-  A hub that falls behind the retained boundary rebuilds and closes its subscribers'
-  sockets, so they reconnect into that gap. `run_state.changed` rows are not part of this
+  snapshot instead of silently losing stream frames. A hub that falls behind the
+  retained boundary rebuilds and closes its subscribers' sockets, so they reconnect
+  into that gap. Projected rows and `run_state.changed` rows are not part of this
   retention rule.
 - Every custom event name the orchestrator projector emits needs an explicit client
   decision in `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply,
@@ -128,7 +130,7 @@ handle minting through the project advisory lock.
 - `last_activity_at` and `conversational_leaf_turn_id` are written only by database
   projection triggers; no repository recomputes them. This departs from the database
   package's no-triggers rule, which protects columns with exactly one writer: this
-  projection's risk is a future writer (branch switching) bypassing recompute, which
+  projection's risk is a future writer (a draft switch, a rebind) bypassing recompute, which
   only a trigger closes. A handed-back writer message or a forgotten turn never anchors
   the head or its preview; `AFTER UPDATE` triggers on `handed_back_by` and
   `forgotten_by_turn_id` recompute the chat.

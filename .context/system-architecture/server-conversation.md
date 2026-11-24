@@ -42,7 +42,7 @@ A run takes a writer message, calls the model with tools, saves the turns and em
 - Paths: `apps/server/server/domains/runtime`
 - Docs: [CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 - Machines: [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. Also `gateway/config/create-from-env.ts` imports `lib/production-env.ts`, which the root CONTEXT.md forbids. It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
+- Breaks: The runtime is not in the import cycle; its ties to other domains are the rows under "The runtime's ties" on [dependencies](dependencies.md#the-runtimes-ties-to-document-billing-and-work-code). It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
 
 ## threads
 
@@ -89,7 +89,7 @@ Holds the HTTP client, the thread socket and the Loro socket.
 
 The model providers.
 
-Called through the runtime's gateway.
+Called through the model gateway `lib/gateway/` builds and hands the runtime (`LlmGateway`).
 
 - Kind: context
 - See: [models](system.md#models)

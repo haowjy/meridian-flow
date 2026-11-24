@@ -40,4 +40,4 @@ Consumers use `markdownCodec` and `mdxCodec`; codec and plugin composition stays
 Public API contract: [`.context/CONTEXT.md`](.context/CONTEXT.md). Image wire
 format: [`.context/image-wire-format.md`](.context/image-wire-format.md).
 
-Wiki-style link parsing uses the shared scanner for editor ingress, import conversion, and export spelling; do not add a second grammar in an adapter. Frontmatter splitting preserves the raw body and property text so an import/export round trip does not normalize writer-authored YAML.
+Wiki-style link parsing uses the shared scanner for editor ingress and import conversion; export keeps literal wiki spans verbatim through the export codec's text handler (`markdown/export-text.ts`), not the scanner. Do not add a second grammar in an adapter. Frontmatter splitting preserves the raw body and property text so an import/export round trip does not normalize writer-authored YAML.

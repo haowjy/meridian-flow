@@ -4,7 +4,8 @@ How Meridian Flow is built. It is a writing app for long fiction: a writer edits
 the browser and works on it with a model in chat, and both edit the same documents at once.
 Product words are in the [glossary](../glossary.md).
 
-Every page is Markdown with a Mermaid diagram, so it reads on GitHub as it does in the viewer.
+Every page is Markdown, so it reads on GitHub as it does in the viewer; a level page and a flow
+draw their picture in Mermaid.
 `pnpm dev` prints a `map` URL that opens the pages in the viewer. The viewer and the check are a
 reusable engine in [tools/architecture-map](../../tools/architecture-map/README.md); what is
 specific to Meridian is in the pages here and in [map.config.mjs](map.config.mjs).
@@ -84,8 +85,9 @@ Drafts and edits.
   `id["Name<br/><small>role</small>"]:::kind`, an arrow, a note link, or a `%%` comment. A label holds only `<br/>` and `<small>`. Anything else fails the check.
 - **An arrow** is `a -->|"label"| b`, or `<-->` when data flows back, and points from the side that
   starts the exchange. The label says what moves ("streams the reply"). The main path's labels start
-  `1. `, `2. `, … and must run in order on the page; side arrows have no number. An `import` arrow
-  fails: imports are not drawn. A note takes no arrow, only its dotted link.
+  `1. `, `2. `, … and must run in order on the page; side arrows have no number. An arrow carries
+  words, not a kind: a label that starts with one (`import: `, `http: `, `sql: ` or another) fails,
+  and no arrow shows an import. A note takes no arrow, only its dotted link.
 - **A note** explains a box in a sentence or two: `note1["text"]:::note`, attached to the box with an
   unlabelled dotted link, `note1 -.- runtime`. A note takes no `##` section, no `Paths` and no `Kind`;
   it must link to a box. GitHub draws it as an ordinary box.
@@ -127,9 +129,9 @@ The numbered steps under the diagram link to boxes and state machines, and
 
 The rules in prose, then a table with one row per break: `| from | to | rule | example file |`.
 `from` and `to` are named by their last path segment (`runtime`, `lib`, `contracts`, `server`).
-`rule` is one of the rules in `map.config.mjs`, which [CONTEXT.md](../CONTEXT.md) writes down; a
-new rule is a new entry there. Only value imports count: a type-only import is not run-time
-coupling.
+`rule` is one of the rules in `map.config.mjs`, the same list [dependencies.md](dependencies.md)
+writes in prose; a new rule is a new entry there. Only value imports count: a type-only import is
+not run-time coupling.
 
 ### A journey page
 
@@ -140,7 +142,8 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 ## What `pnpm check:architecture` catches
 
 - **Format:** a Mermaid line the format doesn't allow; a box without a section, or a section
-  without a box; a `Kind` that isn't the box's class; numbered arrows out of order; an import arrow;
+  without a box; a `Kind` that isn't the box's class; numbered arrows out of order; an arrow
+  labelled with a kind;
   a group with no `Opens` or with `Paths`; a context box with no `See`; an `Opens` that isn't a
   level page; a list item that isn't one of the known keys; a note that links to nothing, joins two
   notes or two boxes, or has a section.

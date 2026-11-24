@@ -1,7 +1,6 @@
 # The tree list store
 
-Design: `work/project-tree-design/design.md` sections 3 and 4 (docs repository). This page says
-what the code decided and what a change to it must keep.
+This page says what the code decided about the list and what a change to it must keep.
 
 The list (`@meridian/project-tree`: `ops` and `settle` lists in one Loro document per project,
 and per account for `user://`) is stored as one `document_snapshots` row, room key
@@ -33,7 +32,8 @@ are the other two:
   copy this process changed and has not committed is never read: the list is loaded afresh. A
   `make` and a `view` are synchronous, so a copy is never seen half changed.
 - `resync(lists)` brings the rows to the list's replay when something the rows read changed outside
-  the list: a draft ended (a Work purged). It takes the keys, or finds them held. A draft opening changes no row:
+  the list: a draft ended (a Work purged). It takes no key: it throws unless the transaction
+  already holds the list's key. A draft opening changes no row:
   the document must show in the Work's view for the draft to open.
 
 Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advisory lock
@@ -101,9 +101,10 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   replay's row (its source and name as the tree shows them, not the record's), with the
   columns `documents` still has for placement. Step 4 narrows `documents`; the insert in
   `insertDocumentRows` narrows with it.
-- **The whole list is written on every change.** A list of 25,000 records snapshots to about
-  587 KB (design §3); the projects measured are far smaller. If a list's row grows past that,
-  save its changes on the document rooms' debounce instead, not per command.
+- **The whole list is written on every change.** The snapshot grows with the list and every change
+  rewrites it whole; the projects measured are far smaller than the size where that rewrite would
+  dominate. If a list's row grows that big, save its changes on the document rooms' debounce
+  instead, not per command.
 
 ## Reading a Work's tree in SQL
 

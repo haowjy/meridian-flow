@@ -28,8 +28,8 @@ here is a known defect.
 - Prune now runs only when a row moved, so an unlistable row can linger in the
   table until the next real open. Bounded by the cap and invisible to the list
   (which filters it), so it is storage hygiene on a delay, not staleness.
-- `apps/app/src/client/recents/store.ts` `rememberRemovals` keeps 50 removals
-  this record actually held. After 50 later own removals, the oldest falls off
+- `apps/app/src/client/recents/store.ts` keeps the record's `removed` list, capped at
+  `ACCOUNT_RECENTS_CAP` (50), for removals this record actually held. After 50 later own removals, the oldest falls off
   and a list that still has that id can import it. Revisit only if a writer
   sees a long-closed row return after many later removals on this device. Do
   not grow an unbounded log, and do not let lists delete to cover the miss.

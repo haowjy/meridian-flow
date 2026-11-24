@@ -49,7 +49,7 @@ The `_authenticated` layout mounts one provider tree for every route: do not gat
 
 The workspace shell: main and side panes, tabs, Works and routing.
 
-Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes, with the one Live/Draft chip (the page's version chip) that turns every source to the Work's tree. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
+Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar's strip holds Chat, the tree sources the writer picks in its `⋯` menu (Manuscript and Knowledge to start) and, while a Work has drafts, Changes, with the one Live/Draft chip (the page's version chip) that turns every source to the Work's tree; Scratch (under a named Work), Unfiled and Trash sit at its foot. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
 
 The largest feature: every other feature except `billing` imports it or is imported by it.
 
@@ -57,13 +57,13 @@ The largest feature: every other feature except `billing` imports it or is impor
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
 - Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
-- Drift: Features import each other freely: `project` imports `draft-review` from 22 files, `project` imports `chat` from 14, `chat` imports `project` from 19, `editor` imports `draft-review` from 7 (tests left out). No rule forbids it.
+- Drift: Features import each other freely: `project` imports `draft-review` from 19 files, `project` imports `chat` from 14, `chat` imports `project` from 22, `editor` imports `draft-review` from 4 (tests left out). No rule forbids it.
 
 ## conversation
 
 Chat and the Agent picker.
 
-`chat` draws the transcript and the composer from the same view model `./mf` prints; `agents` is the picker and the Agent identity a new chat records.
+`chat` draws the transcript from the same view model `./mf` prints; its composer is `components/app/composer`. `agents` is the picker and the Agent identity a new chat records.
 
 - Kind: group
 - Opens: [Conversation](app-conversation.md)
@@ -81,7 +81,7 @@ Writing and reviewing documents.
 
 The project list, project creation, import, export and the account pages.
 
-`home`, `creation`, `import`, `export`, `account` and `billing`: the screens around the workspace.
+`home`, `creation`, `import`, `export`, `account`, `billing` and `connections`: the screens around the workspace.
 
 - Kind: group
 - Opens: [Library](app-library.md)
@@ -113,7 +113,7 @@ HTTP clients, React Query hooks, the thread store and the transport provider. Al
 
 The editor core: document sessions, the socket to the server, the tree list.
 
-`core-editor`, `core-transport`, `core-tree-list`, `core-uploads` and `core-completion`. They draw nothing of their own; the features use them.
+`core-editor`, `core-transport`, `core-tree-list`, `core-project-tree`, `core-uploads` and `core-completion`. They draw nothing of their own; the features use them.
 
 - Kind: group
 - Opens: [Core](app-core.md)

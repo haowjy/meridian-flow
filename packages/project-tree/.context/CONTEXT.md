@@ -221,14 +221,14 @@ the replay uses them (package `AGENTS.md`).
   name; an old stored move's `name` is dropped when it is read.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
-- **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?)` lands what the
+- **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?, closed?)` lands what the
   replay can place. A partial selection takes only what it stands on (`prerequisites`): the
   drafted creates of the nodes it needs and of the Work-created folders above where each record
   acts, each such folder's last drafted delete or restore before the record, and earlier records
   on the same fact; every other pending change stays pending. When landing that would change what
   the Work's tree showed, it widens to the drafted prefix it stands on, and
   returns `{ command, copies, left, superseded }`: `left` is each record it did not
-  land with `would_loop` or `purged`. A move or rename that waits on a restore (rule 7) is in none, and
+  land with `would_loop`, `purged`, `after_press`, `needs` or `closed`. A move or rename that waits on a restore (rule 7) is in none, and
   is in no plan: the view after Apply must hold both with it and, for what stands, without it, as
   live will show it (a waiting move can put a node inside a delete's cascade). A Discard all takes
   waiting records with the rest.

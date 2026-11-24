@@ -3,11 +3,13 @@
 Editing core for the model's document `read` and `write`, write handles and the receipts their
 Undo reads: `createEditCore` (design §5) on the host's `DocumentRooms`. A write commits at its
 tool call; the host runs it as one command. Hosts supply the rooms, write ordinals, document
-edits and link ports; this package owns no Postgres, routes, auth or Project/Work concepts.
+edits, the codec and the link ports; the core builds its model from the schema it is given. This
+package owns no Postgres, routes, auth or Project/Work concepts.
 
-- Hold no document, cache or LRU between calls. Every call reads the room fresh through
-  `AgentEditRooms.readRoom` and frees that copy at the call's end; a reply's accepted mutations
-  live in the `ReplyMutations` the host's reply owns.
+- Hold no document, room copy or room-derived state between calls. Every call reads the room
+  fresh through `AgentEditRooms.readRoom` and frees that copy at the call's end; a reply's
+  accepted mutations live in the `ReplyMutations` the host's reply owns. The caches it does keep
+  are keyed by node and weak, so a freed document takes its entries with it.
 - Every write lands through `AgentEditRooms.save`, inside the host's command: the batch and its
   `AgentWriteRecord` commit together. Durability comes from the host's commit, never from what
   reached a room.

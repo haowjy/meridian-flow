@@ -84,8 +84,9 @@ client ID is answered with the same execution from durable facts, and once
 so no exit after preparation can strand a heartbeating claim.
 
 `persistModelResponse` mints the response ID used by tool handlers. One
-response's tool calls dispatch one at a time (`orchestrator.ts`, "Sequential
-dispatch is load-bearing"), each result persisting before the next call runs.
+response's tool calls dispatch one at a time in call order (`orchestrator.ts`,
+which awaits each `dispatchToolCall`), each result persisting before the next call
+runs; `tools/tool-executor.ts`'s parallel `executeTools` is not what the loop uses.
 A document-changing call (a registration with `documentCommand`) is a command
 keyed by its response and tool-call id (`modelEditIds`); it commits at its call,
 not at the end of the step, and its result block is final when stored, under the

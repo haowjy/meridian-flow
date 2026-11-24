@@ -15,7 +15,7 @@ Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md).
 `src/diff/correspond.ts` decides which old block is which new block. The content merge asks by
 id (`byId`: [diff](diff.md#block-correspondence-by-id)). Everyone else asks in guess
 mode, for every writer of a sequence of blocks: `resolver/block-alignment.ts` (the model's write)
-and, inside a block, the writer's atoms (breaks, images). Identity comes from content with attributes left out, chosen over the
+and, inside a block, a container's children (`lowerChildren`). Identity comes from content with attributes left out, chosen over the
 whole run, so an attribute-only change (an indent) pairs a block with itself; blocks of
 one type only, since an element cannot change type; a split or join is one unit rooted
 at its first block, and its pieces are of that type too. The pairing is always one ordered

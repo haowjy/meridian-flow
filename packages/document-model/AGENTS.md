@@ -1,7 +1,7 @@
 # @meridian/document-model
 
 A Meridian document as Loro docs, shared by the browser, the server and agent-edit. Design:
-`loro-build/design.md` §1 and §4 in the docs repository.
+`work/local-first-design/loro-build/design.md` §1 and §4 in the docs repository.
 
 - A document room holds one structure doc (value maps `parent`, `order`, `node`, `attrs`,
   `comments`, keyed by block id) and one text doc per textblock, keyed by its block id

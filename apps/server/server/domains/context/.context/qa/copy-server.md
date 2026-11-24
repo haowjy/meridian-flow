@@ -44,8 +44,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    names as twins (`Sheet~…`, `Vault~…`), still holding the draft's text. The same copy where
    the name is held by a live document lands as its twin, `Sheet~…`, and the entry says so.
 3. **Draft source.** A Draft-mode chat of w1 writes into w1's fork of the document, and a copy
-   with `--draft-work w1` reads that fork's text (`metadata.copiedFrom.version` `draft`, the
-   revision ending in `:work:<key>`). A folder with a draft view copies each document
+   with `--draft-work w1` reads that fork's text (`metadata.copiedFrom.version` `draft`, and its
+   revision ending in `:<draftId>`). A folder with a draft view copies each document
    as the Work shows it; a document only w1 created copies too, from its plain text.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
@@ -110,8 +110,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
     tree and into an unrelated source folder every second. Each of those puts waits
     about a second at most (an idle put takes 0.1-0.3 s); on the previous code every
     put waited as long as the copy took, 40 s or more. The 200 rows show one
-    transaction start, and `document_links` holds the copies' links when the copy
-    returns.
+    transaction start; the copies' links reach `document_links` through the post-commit
+    derivation, so a read taken the moment the copy returns may not see them yet.
 17. **Cold rooms.** Restart the server and copy 40 documents that were never opened at
     once into distinct folders: all 40 answer 200. (Before the reads moved out of the
     transaction, ten or more of them held every pool connection and waited for one

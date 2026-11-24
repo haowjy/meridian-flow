@@ -21,8 +21,9 @@ stateDiagram-v2
   it.
 - **A refused file cannot be retried**: its entry has no `run`, and `retry` does nothing
   without one.
-- **An entry belongs to a holder** (the surface that sent it). `discardHeld` drops everything a
-  surface sent when the surface goes; an entry whose node has left the text is kept for a
-  grace period first, so cut and paste or undo does not cancel the upload.
+- **An entry belongs to a holder** (the surface that sent it). `discardHeld` drops all of a
+  holder's entries at once, when the Composer unmounts. Separately, an entry no mounted surface's
+  text holds any more stops sending after `GRACE_MS` (10 s) and keeps its file, so an undo can
+  retry it; a stopped or failed entry that stays out of sight is let go after `KEPT_MS` (10 min).
 - The store is module memory. A reload forgets every unfinished upload; the abandoned sweep on
   the server cleans up what they reserved.

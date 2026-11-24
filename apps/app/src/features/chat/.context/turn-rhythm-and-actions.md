@@ -50,15 +50,19 @@ different feature.
 
 ## The action row
 
-Copy takes `finalMessageItems` plus images. Markdown is the plain-text flavor and is
+Copy takes the reply's items from `finalFrom` on, text and report payloads, and a
+reply's images travel inside that Markdown (`assistantTurnCopyMarkdown`). Markdown is
+the plain-text flavor and is
 memoized. The HTML flavor renders only inside the click handler, through a module-level
 pipeline that strips presentation properties on the HAST tree; a regex on serialized
 HTML corrupts code text. Stripping `className` leaves copied KaTeX unstyled. Report
 payloads stay in a fenced JSON block in both formats.
 
-Info is `TurnInfoButton`, summarizing all assistant parts joined by `continuesResponse`,
-excluding writer steer turns. Cache hit is summed `cacheReadTokens / inputTokens`: input
-includes cache tokens, so cache writes are misses. Output speed sums output tokens and
+Info is `TurnInfoButton`'s popover over `response.stats`, which `turnStats`
+(`@meridian/thread-client`) computes over every assistant part joined by
+`continuesResponse`, writer steer turns excluded. It has a Thread section and a Turn
+section. Cache hit is `cacheReadTokens / cacheReportedInputTokens`: only calls that
+reported cache count, so cache writes are misses. Output speed sums output tokens and
 `generationMs`. Don't derive speed from `latencyMs - timeToFirstTokenMs`: the server nulls
 `generationMs` when backpressure made the measurement unreliable. "Stats for nerds" is
 device-local (`lib/stats-for-nerds.ts`).

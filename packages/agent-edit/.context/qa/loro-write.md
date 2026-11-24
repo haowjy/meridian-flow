@@ -16,7 +16,7 @@ What it covers:
   paragraph as it read it with the other sentence changed: the writer's sentence stays (the write
   plans on a view at the read's frontiers), and the result lists the paragraph under `the user`.
 - The chat's own earlier write in the same turn is not listed as someone else's change.
-- Turn Undo (`undoTurn`, by content from the writes' recorded `delta`) takes the AI's words out and
+- Turn Undo (`undoTurn`, by each write's recorded Loro `edit` through `undoInRooms`) takes the AI's words out and
   leaves a later writer edit.
 - `read` with `format: "edits"` lists the chat's writes by handle.
 - Another chat's change is named by its chat (`authorOfTurn`), and a block the writer removed is

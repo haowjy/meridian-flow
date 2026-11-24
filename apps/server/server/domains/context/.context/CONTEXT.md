@@ -107,7 +107,9 @@ passages in `grep/matcher.ts`, the threads in `grep/match-pool.ts` and
 before matching or counting anything, and walks them in path order until
 `headLimit` files have matched. Patterns are RE2 (`re2js`, no backtracking, but
 time still grows with text times program size, and one call can't be interrupted) matched in worker threads, so a slow pattern ends by termination at the deadline and never blocks the
-event loop. `compileGrep` only validates on the main thread (RE2's own refusals, 512 characters); there is no
+event loop. `compileGrep` only validates on the main thread (RE2's own refusals); the 512-character
+cap is the model `grep` tool's input schema, so another caller of `ContextPort.grep` has no limit.
+There is no
 static size limit, since program size doesn't measure cost. The pool starts threads on demand up to 4
 and keeps them; each serves one request at a time and compiles the pattern it is sent (cached by it), so a
 terminated thread loses only the request that ran there. With all four busy, further requests queue, each
@@ -172,11 +174,12 @@ before the storage-release kernel erases the content.
 
 ## Writes to the tree
 
-Every write of the tree is records made at the call through `treeListStore.submit({ list, make })`
+Every write of the tree is records made at the call through `treeListStore.submit({ lists, make })`
 ([the list store](tree-list-store.md)): ContextFS creates, moves, renames, deletes, copies and uploads,
-and the model's tree tools. `make` runs under the list's lock in the command's transaction, reads
-the list's replay (final names and paths come from it, never from a read before the lock) and returns
-the records, ONLY those that create new nodes claim ids. One command is one `submit`. Lock order:
+and the model's tree tools. `make` runs under the lists' locks in the command's transaction, gets one
+`ListWriter` per list, reads the list's replay (final names and paths come from it, never from a read
+before the lock) and records the changes through that writer; what it returns is the caller's own
+read-back. Only records that create new nodes claim ids. One command is one `submit`. Lock order:
 Work lifecycle rows, the list's key, then namespace keys (an arrival settling ahead refs), then
 document keys; a caller holds no document or namespace key when it submits. `context-fs/tree-writes.ts`
 (`SourceTree`) is the one place ContextFS makes records.
@@ -220,8 +223,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
   sendable, and another request under the id answers `command_conflict`. Inside it the command transaction
   (`commandTransaction.run`) takes the destination's Work and, through `treeListStore.submit`,
   its list. The sources are a frozen cut, so their lists are not locked
-  and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
-  identity destination through the router's one resolver (`destination_missing` when the
+  and a source deleted mid-copy is a copy of what the writer saw.
 
 ## Copy
 
@@ -448,8 +450,7 @@ KB. Its membership means not yet filed; a name does not change membership.
 
 ## Negative space
 
-External connectors (google_drive, dropbox, notion) are schema-only. There is
-no `results://` scheme. The project's recently opened list doesn't live here:
+There is no `results://` scheme. The project's recently opened list doesn't live here:
 it is `domains/recent-documents`.
 
 ## Downlinks

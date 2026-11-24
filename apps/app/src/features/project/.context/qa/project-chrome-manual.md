@@ -65,7 +65,7 @@ Run these against an owned worktree and stack. Discover URLs with
     moves to the side. The side header has no `…` menu: its name and **Swap with main**
     are all it carries.
 21. Open documents A, B, then C. A is no longer main, side or kept. Go Back to B: B's
-    undo history is intact (it was kept, mounted and hidden). A kept document reviews
+    undo history is intact (its session was kept; the kept host only saves a remount). A kept document reviews
     nothing and writes neither pin nor address.
 22. Navigate same-screen after a source rail action. The feedback **expires**;
     ordinary opens do not opt into it.

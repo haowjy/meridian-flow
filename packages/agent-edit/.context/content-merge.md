@@ -108,9 +108,9 @@ a count from production says it never fires.
   added after a full stop sits after it, not as ". Text" before it, so the writer's words typed
   beside it begin at the same place and a full stop is not shared between two sentences.
 - The size limits (`coarse-diff`: a paragraph or run of changed paragraphs past 1,000 tokens, a
-  diff past 4,000 keys, pairing past 40,000 block pairs) turn a diff into one whole replacement, so a
-  change on both sides is one clash and the draft's text stands. `diff/tokens.ts` and `diff/align.ts`
-  apply them and the merge does not count them yet.
+  diff past 4,000 keys, a gap of table cells past 10,000) turn a diff into one whole replacement, so a
+  change on both sides is one clash and the draft's text stands. `diff/tokens.ts`, `diff/align.ts` and
+  `diff/correspond.ts` apply them and the merge does not count them yet.
 
 ## Mechanics of some rules
 

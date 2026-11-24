@@ -20,16 +20,19 @@ Filters and exports use that projection or the live one, never a second store.
 
 ## Producers
 
-The tap attaches at the thread socket's seam, `SocketLifecycleController`.
-`installTraceCapture()` registers it and the agent API before a subtree can create the
-socket. The Loro room socket has no tap yet. The runtime debug toggle controls the viewer,
+The tap attaches at two seams: the thread socket's, `SocketLifecycleController`, and the
+Loro room socket's, `setLoroWireTap`. `installTraceCapture()` registers both, and the agent
+API, before a subtree can create the socket. The runtime debug toggle controls the viewer,
 not capture. Fast Refresh has to preserve observer sequences through `import.meta.hot.data`. The
 [transport context](../../../core/transport/.context/CONTEXT.md) owns the wire
 vocabulary.
 
 Thread records keep only an allowlisted message class, thread ID, sequence, AG-UI event
 type, direction and byte size. They never copy user, agent or tool content, nested
-catch-up events, socket URLs or native close-reason text.
+catch-up events, socket URLs or native close-reason text. Loro records carry the room's
+message class (join, update, ack, leave, error) and its document or draft correlation,
+never the update bytes, the Join's auth or its versions.
 
-The Server feed shows only events server domains emit, and collab success paths emit no
-structured events yet.
+The Server feed shows only events server domains emit. Collab emits a history compaction
+and a snapshot save, a projection refresh's deferral or failure, a press's and a turn's
+Undo, and a failed write.

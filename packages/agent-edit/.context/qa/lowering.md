@@ -2,7 +2,7 @@
 
 `lowering.probe.ts` takes 60 saved `deepseek-flash` rewrites (`lowering-cases.json`: 30
 paragraphs from public-domain novels, each after one of two writer edits: a phrase inserted
-(` of course`) or a word retyped (`said` → `muttered`)) and lowers each with `lowerBlock`, the
+(` of course`, ` quietly`, ` at last`) or a word retyped (`chamber`, `glanced`)) and lowers each with `lowerBlock`, the
 editors read from the model's view as the write does. It applies the splices through
 `replaceText`, the one text write, on a model's copy forked from the view, and imports the
 update into the writer's doc. Run it when `resolver/lower-block.ts` or the text write changes:

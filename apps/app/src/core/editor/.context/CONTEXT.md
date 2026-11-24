@@ -310,7 +310,7 @@ keyboard, pointer, drop, or recovery answer.
   for the landing, and the door returns one plan (`landing/drop-plan.ts`): the
   caret, the hint and the drop all read it. This is the one caret for every
   drag except a block move, which draws and lands its own top-level seam
-  (`block-geometry.ts`). A seam that no blank paragraph covers gets its own new
+  (`features/editor/surfaces/blocks/block-geometry.ts`). A seam that no blank paragraph covers gets its own new
   paragraph, including past the last block. Three doors take a payload: slices
   (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
   or text from outside, read again by the host's text parser where it lands),
@@ -495,8 +495,8 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
 - **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)
   reads its copy beyond its mark (`LocalDocumentCopies.wordsBeyondMark`); the copy has every
   write of the session's by then. Not at the reset: a session kept on screen still shows that
-  text, and a restore that restarts it delivers it. A 4409-style access change is no reset: the
-  room rejoins and keeps its typing. `LocalDocumentCopies.clear`, the only deletion on a final
+  text, and a restore that restarts it delivers it. An access change (`RejoinSuggested`,
+  `access-changed`) is no reset: the room rejoins and keeps its typing. `LocalDocumentCopies.clear`, the only deletion on a final
   fact, reads each copy beyond its mark before deleting it. A copy with no mark counts as marking
   nothing: all of it counts.
 - What it cannot reach: a document no tab has open keeps its typing in its copy until its next

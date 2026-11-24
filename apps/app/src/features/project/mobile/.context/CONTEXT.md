@@ -57,10 +57,9 @@ The presentation value is the whole phone difference: it shows no remote carets 
 binding owner id `mobile-project-document-host`.
 Everything else is the shared host.
 
-The phone must stay on the shared session boundary. Only
-`OpenDocumentSessionBoundary` probes local content and holds the adoption-eligible
-lease that completes a stranded adoption; a phone that binds the live room itself
-is refused with `adoption-pending` while the local copy is reserved.
+The phone must stay on the shared session boundary. `OpenDocumentSessionBoundary` is the
+one place a document's room is bound (`useLiveDocumentBinding`); a phone host never binds a
+room itself.
 
 `MobileDocumentReview` keeps one wrapper in the tree for Live, a plain draft and Review changes.
 In Review changes it shows the same `ReviewBar` as the desktop, with 44px targets, and the body

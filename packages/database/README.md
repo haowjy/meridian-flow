@@ -33,7 +33,7 @@ pnpm test   # non-DB tests; use pnpm test:db from the repo root for DB coverage
 
 - Identity is app-owned **`public.users`** (`external_id` = WorkOS user id).
 - `pnpm bootstrap` applies schema only. Dev user row is created on first sign-in; an account with no live project gets one at sign-in; its home folder source is made with the user row.
-- DB-backed tests must use an **isolated fixture identity** (dedicated email, NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and target a dedicated throwaway DB, never the dev DB.
+- DB-backed tests must use an **isolated fixture identity** (dedicated email, NOT the dev auth bypass identity `DEV_AUTH_USER_ID`, whose default is `test@example.com`) and target a dedicated throwaway DB, never the dev DB.
 
 ## Token usage (`model_responses`)
 

@@ -55,8 +55,11 @@ body, never one rebuilt from a newer record.
 [Turn reads return the conversation][kb-graph]. The adapters own the SQL predicate
 (`inConversationSql`, which also applies the forgetting stamp; `notHandedBackSql`
 stays for identity reads), and it also guards transcript page keys, counts and
-ordinals, `listMessageDeliveries`, `listLatestLocalRequesterText` and the
-chat-activity projection.
+ordinals, `listMessageDeliveries` and `listLatestLocalRequesterText`. The chat-activity
+projection is not one of its readers: the database triggers write
+`threads.last_activity_at` and `threads.conversational_leaf_turn_id` from the same
+visibility rule (`visible-conversation-policy.ts`, `isVisibleConversationalTurn`), and
+the feed reads the stored columns.
 
 Biome's `noRestrictedImports` limits who imports `threads/ports/turn-graph.ts`. Add
 a module to that list only when it walks `prevTurnId` or positions and filters its

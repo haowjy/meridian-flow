@@ -2,8 +2,8 @@
 
 `tool/edit-core.ts` is the composition facade. The resolver-to-apply currency is typed
 ProseMirror content, not Markdown strings or raw CRDT updates: `applyEdits` never
-parses or serializes. Resolver and apply code stay CRDT-neutral through the opaque
-`DocHandle` and `BlockRef`.
+parses or serializes. Resolver and apply code use the core's `LoroDocument` and
+`LoroBlock` types.
 
 The model's view, frontiers and the concurrent-change listing are in [The Model's
 View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
@@ -48,7 +48,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   still writes just the `s`, and a writer's `r` typed into `cat` meanwhile gives `carts`. A change
   that deletes words takes one bordering space with them and keeps the other: the one whose
   editor also typed the kept word beyond it, read with `LoroText.getEditorOf` on the view
-  (`AgentEditModel.unitEditors`; an editor is a Loro peer, one per editing session), else the
+  (`DocumentModel.unitEditors`; an editor is a Loro peer, one per editing session), else the
   one after. The take stops short of a neighbouring insertion's point. The word diff alone keeps
   either of two equal spaces, and when it keeps the one the writer typed beside words the model
   deleted, the writer's Ctrl+Z takes that space out and glues the model's words (`before we of
@@ -139,7 +139,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 - Copies pass nodes from host read results rather than reading source documents inside
   the kernel, so whitespace and blank paragraphs survive and copied blocks receive fresh
   identities.
-- `move` and `delete` are on `WriteToolInputSchema` but not `WriteCommandSchema`: they
+- `move`, `delete` and `restore` are on `WriteToolInputSchema` but not `WriteCommandSchema`: they
   change where a document lives, so the host runs them and reports through the same
   envelope.
 
