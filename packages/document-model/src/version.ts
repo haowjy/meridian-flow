@@ -74,7 +74,10 @@ export function updateEnd(update: Uint8Array): DocVersion {
 
 /** A doc version as Loro encodes it, for a wire or a row. */
 export function encodeDocVersion(version: DocVersion): Uint8Array {
-  return withVector(version, (vector) => vector.encode());
+  // Loro encodes peers in insertion order, so one version could encode two ways and hash to two
+  // revisions; sorted, equal versions encode to equal bytes. `encodeRoomVersion` sorts doc keys too.
+  const sorted = new Map([...version].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return withVector(sorted, (vector) => vector.encode());
 }
 
 export function decodeDocVersion(bytes: Uint8Array): DocVersion {
@@ -83,7 +86,8 @@ export function decodeDocVersion(bytes: Uint8Array): DocVersion {
 
 /** A room version as `JoinRequest`/`JoinResponseOk` carry it: an envelope of encoded vectors. */
 export function encodeRoomVersion(version: RoomVersion): Uint8Array {
-  return encodeEnvelope(new Map([...version].map(([key, vv]) => [key, encodeDocVersion(vv)])));
+  const sorted = [...version].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return encodeEnvelope(new Map(sorted.map(([key, vv]) => [key, encodeDocVersion(vv)])));
 }
 
 export function decodeRoomVersion(bytes: Uint8Array): Map<DocKey, DocVersion> {
