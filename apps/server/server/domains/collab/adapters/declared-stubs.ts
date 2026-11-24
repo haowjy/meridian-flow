@@ -2,7 +2,6 @@
 
 import type { TurnReversalAccess } from "../contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
-import type { TurnInverseNoticePort } from "../domain/reversal-notices.js";
 import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
 
 function threadContextReversalUnsupported(): never {
@@ -22,10 +21,6 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
 
 export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
   async () => threadContextReversalUnsupported();
-
-export const SILENT_TURN_INVERSE_NOTICES: TurnInverseNoticePort = {
-  async record() {},
-};
 
 export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnostics = {
   failed() {},

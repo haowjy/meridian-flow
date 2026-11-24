@@ -31,8 +31,10 @@ and upload content is always live.
 Nothing holds a write: each lands in its command's transaction, so a read always shows the
 writes before it.
 
-The composition root wires required services and provider ports. It owns no business behavior,
-mutable runtime state, or optional capability matrix. `collab-facade.ts` only assembles the
+The composition root wires required services and provider ports. It owns no business behavior
+or mutable runtime state. What a command needs is required (`notices`, `threadContext`); the
+optional deps are side channels a suite may leave out (events, room bounds, ahead-ref arrivals
+and registrations, live text hints). `collab-facade.ts` only assembles the
 domain surface. Agent-edit owns the memory-only mutation kernel; collab owns authorization,
 persistence, and coordination.
 

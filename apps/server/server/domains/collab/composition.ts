@@ -41,10 +41,6 @@ import {
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } from "./adapters/agent-edit-observability.js";
-import {
-  SILENT_TURN_INVERSE_NOTICES,
-  UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-} from "./adapters/declared-stubs.js";
 import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
@@ -117,11 +113,11 @@ type CollabDomainDeps = {
   links: DocumentLinkScopes;
   /** Durable registration of ahead refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  threadContext?: ThreadContextReversalResolver;
+  threadContext: ThreadContextReversalResolver;
   eventSink?: EventSink;
   /** Overrides of the rooms' debounce, idle and size bounds; a DB suite shortens the debounce. */
   roomBounds?: Partial<RoomBounds>;
-  notices?: NoticePort;
+  notices: NoticePort;
   workProjectionMutation: WorkProjectionMutation;
   /**
    * Confirms writes' grants under lock where they become durable (file-access
@@ -300,13 +296,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
-    notices: deps.notices
-      ? createReversalNoticePort({
-          notices: deps.notices,
-          resolveLastDocumentUri,
-          diagnostics: noticeDiagnostics,
-        })
-      : SILENT_TURN_INVERSE_NOTICES,
+    notices: createReversalNoticePort({
+      notices: deps.notices,
+      resolveLastDocumentUri,
+      diagnostics: noticeDiagnostics,
+    }),
     workProjection: deps.workProjectionMutation,
     removals: removalRecords,
     fileAccess: deps.fileAccess,
@@ -371,8 +365,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     commands,
-    threadContext:
-      deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
+    threadContext: deps.threadContext,
   });
   return createCollabFacade({
     importBinder: runtime.importBinder,
