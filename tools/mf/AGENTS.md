@@ -14,7 +14,7 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   unknown body into success.
 - Workspace imports: `@meridian/contracts` and `@meridian/thread-client`, and for `doc` the
   tree-list and document-room clients (`project-tree`, `agent-edit`, `markup`,
-  `prosemirror-schema`): a tree change has no route, so `./mf` writes the list as the browser
+  `prosemirror-schema`, `document-model`, `loro-prosemirror`): a tree change has no route, so `./mf` writes the list as the browser
   does. From
   `tools/dev`, only the Portless route contract: `portless-prefix.ts`,
   `portless-routes.ts`, `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in

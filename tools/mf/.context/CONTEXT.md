@@ -33,7 +33,8 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client`, plus the tree and document-room clients `doc` needs
   (`@meridian/project-tree`, `@meridian/agent-edit`,
-  `@meridian/markup`, `@meridian/prosemirror-schema`). Portless discovery uses the route contract
+  `@meridian/markup`, `@meridian/prosemirror-schema`, `@meridian/document-model`,
+  `@meridian/loro-prosemirror`). Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
   `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
   `dev-session-state.ts`, which finds an active session's routes by its recorded
