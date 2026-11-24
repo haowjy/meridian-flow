@@ -2,8 +2,11 @@
 
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ContextOwner } from "@meridian/contracts/protocol";
-import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
+import {
+  type ContextOwner,
+  contextOwner,
+  type DocumentAddressResult,
+} from "@meridian/contracts/protocol";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   useCallback,
