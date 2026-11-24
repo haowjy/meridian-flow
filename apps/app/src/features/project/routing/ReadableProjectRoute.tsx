@@ -221,7 +221,10 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const routePlace = routePlaceKey(documentDestination, locatorOwner);
   const markedId = rememberedRouteDocument(location.state, routePlace);
   const rememberedId = address.itemKey ? null : markedId;
-  const standing = useDocumentStanding(projectId, rememberedId);
+  const standing = useDocumentStanding(
+    projectId,
+    address.itemKey ? (closingDocumentId ?? null) : markedId,
+  );
   const movedTo = rememberedId ? trees.find(rememberedId) : null;
   // The remembered document is in no list once they have synced (a purged or trashed one still
   // has its standing): the memory is stale and the path decides, as if the entry had none. It
@@ -280,25 +283,23 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const draftTrees = useProjectTrees(draftVersion && !draftDeletes ? projectId : "", {
     version: draftVersion ?? undefined,
   });
-  const placeTrees = draftDeletes ? trees : draftTrees;
-  const draftPlace =
-    addressKind === "draft" && draftItem && closingDocumentId
-      ? placeTrees.find(closingDocumentId)
-      : null;
   // A draft gone from its list stays addressed: its document is found where live has it, since
   // the Work's tree no longer lists the draft, and a page that let go of it then would not have it
   // to keep.
   const endUndecided = draftItem === null;
-  const trashedPlace =
-    addressKind === "draft" && endUndecided && closingDocumentId
-      ? trees.find(closingDocumentId)
-      : null;
+  const reviewTree = endUndecided || draftDeletes ? trees : draftTrees;
   const draftAddress = useMemo((): ReplayAddress | undefined => {
     if (addressKind !== "draft") return undefined;
     if (!closingDocumentId) return { kind: "absent" };
-    const place = trashedPlace ?? draftPlace;
-    const tree = trashedPlace ? trees : placeTrees;
-    if (!place) return tree.isComplete && draftItem ? { kind: "absent" } : undefined;
+    const place = draftItem !== undefined ? reviewTree.find(closingDocumentId) : null;
+    if (!place) {
+      if (!reviewTree.isComplete || draftItem === undefined) return undefined;
+      // An item a press just took out of its list is not in live until the press lands: only
+      // a removal is an answer.
+      if (endUndecided && standing.kind !== "in-trash" && standing.kind !== "purged")
+        return undefined;
+      return { kind: "absent" };
+    }
     const owner = ownerOfSource(place.source);
     return resolveReplayAddress({
       projectId,
@@ -310,17 +311,16 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       },
       workId: owner.workId ?? null,
       rootThreadId: owner.rootThreadId ?? null,
-      tree: { tree: tree.tree(place.source.id), isComplete: true, isError: false },
+      tree: { tree: reviewTree.tree(place.source.id), isComplete: true, isError: false },
       boundDocumentId: closingDocumentId,
     });
   }, [
     addressKind,
     closingDocumentId,
     draftItem,
-    draftPlace,
-    placeTrees,
-    trashedPlace,
-    trees,
+    reviewTree,
+    endUndecided,
+    standing.kind,
     projectId,
     user.userId,
   ]);
@@ -429,7 +429,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // The Trash view shows in place of the document: nothing of the address is presented.
   const presentedDestination = routeTrashed ? null : documentDestination;
   // A prerequisite that failed ends the wait: the address stays, with a way to retry.
-  const addressFailed = addressKind === "plain" ? addressTree.isError : placeTrees.isError;
+  const addressFailed = addressKind === "plain" ? addressTree.isError : reviewTree.isError;
   const documentIssue: ProjectRouteIssue | undefined = !presentedDestination
     ? undefined
     : !documentResult
