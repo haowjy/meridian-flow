@@ -11,6 +11,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { threadQueryKeys } from "./thread-query-keys";
+import { whenRead } from "./when-read";
 
 export const THREAD_SET_OVERRIDES_KIND = "thread_set_overrides";
 
@@ -67,12 +68,8 @@ export function threadOverridesDomain(client: QueryClient): CommandDomain {
         const { threadId } = record.body as ThreadSetOverridesBody;
         const queryKey = threadQueryKeys.snapshot(threadId);
         const startedAt = Date.now();
-        // No snapshot in this tab: nothing shows the record, so the server's value is the truth.
-        if (!client.getQueryState(queryKey)) return observeSettled(threadId, startedAt);
-        void client.refetchQueries({ queryKey }).then(() => {
-          if (client.getQueryState(queryKey)?.status === "success")
-            observeSettled(threadId, startedAt);
-        });
+        void whenRead(client, { queryKey }).then(() => observeSettled(threadId, startedAt));
+        void client.refetchQueries({ queryKey });
       },
     },
   };

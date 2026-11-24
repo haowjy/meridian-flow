@@ -31,7 +31,7 @@ export const docEditCommand: CommandSpec = {
     const replace = stringOption(ctx, "replace");
     if (!find || replace === undefined) throw usageError("--find and --replace are required");
     const draft = stringOption(ctx, "draft");
-    const documentId = await resolveDocumentId(session, projectId, target);
+    const documentId = await resolveDocumentId(session, projectId, target, draft);
     await typeOver(session, documentId, find, replace, draft);
     ctx.out.result(
       { uri: target.uri, documentId, ...(draft ? { draft } : {}), status: "edited" },

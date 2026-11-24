@@ -36,6 +36,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import {
   holdsFrontiers,
   loroFrontiers,
+  sameFrontiers,
   storedFrontiers,
   writeSnapshots,
 } from "../../../shared/document-snapshots.js";
@@ -395,7 +396,8 @@ export function createPostgresDocumentRooms(input: {
    * What a loaded room does with every import: save, tell subscribers, forward forks. A restore
    * the room's copy wrote on the import (design §1, "Removed blocks", rule 1) follows the batch as
    * the room's own. A fork forwarded hears nothing of Live's batch, only its own restore.
-   * `stored`: the rows a commit or seed just wrote. A doc they hold whole is saved already.
+   * `stored`: what the rows this batch came from hold, when they were just written or read (a
+   * commit, a seed, a save's merge). A doc whose row holds all of it needs no save.
    */
   function imported(
     loaded: Loaded,
@@ -404,27 +406,20 @@ export function createPostgresDocumentRooms(input: {
     origin: RoomOrigin,
     stored?: RoomVersion,
   ) {
-    const saved = (key: DocKey) => {
-      const version = stored?.get(key);
-      const doc = version && loaded.docs.doc(key);
-      return Boolean(doc && docCovers(version, docVersion(doc)));
-    };
+    markDirty(loaded, changed);
     if (stored) {
-      for (const key of loaded.dirty) if (saved(key)) loaded.dirty.delete(key);
-      // A pending save timer means something is unsaved; unload counts on it.
-      if (loaded.dirty.size === 0 && loaded.saveTimer) {
-        clearTimeout(loaded.saveTimer);
-        loaded.saveTimer = null;
-        loaded.firstDirtyAt = 0;
-        settleIfIdle(loaded);
+      for (const key of loaded.dirty) {
+        const version = stored.get(key);
+        const doc = version && loaded.docs.doc(key);
+        if (doc && docCovers(version, docVersion(doc))) loaded.dirty.delete(key);
       }
+      if (loaded.dirty.size === 0) cancelSave(loaded);
     }
     if (changed.length === 0) {
       // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
       if (pending && batch) emitTo(loaded.room, batch, origin);
       return;
     }
-    markDirty(loaded, stored ? changed.filter((key) => !saved(key)) : changed);
     if (batch) emitTo(loaded.room, batch, origin);
     if (restore.length) emitTo(loaded.room, encodeChanges(restore), "server:restore");
     if (loaded.room.kind === "live")
@@ -469,6 +464,14 @@ export function createPostgresDocumentRooms(input: {
     loaded.saveTimer.unref?.();
   }
 
+  /** Drops the room's pending save. `settleIfIdle` waits on the timer, and shutdown on that. */
+  function cancelSave(loaded: Loaded) {
+    if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+    loaded.saveTimer = null;
+    loaded.firstDirtyAt = 0;
+    settleIfIdle(loaded);
+  }
+
   const saveFailed = (loaded: Loaded) => (cause: unknown) =>
     emitEvent(eventSink, {
       level: "error",
@@ -480,11 +483,11 @@ export function createPostgresDocumentRooms(input: {
 
   /**
    * Imports the stored rows `docs` lacks (by their frontiers), as one batch. Returns the keys it
-   * changed and the delta it brought, as an envelope, or null.
+   * changed, the delta it brought as an envelope, and the version of each doc its row now holds
+   * whole; or null.
    */
   async function mergeStored(tx: DrizzleDb, name: string, docs: RoomDocs) {
-    const stored = await readFrontiers(tx, name);
-    const lacking = stored
+    const lacking = (await readFrontiers(tx, name))
       .filter((row) => !holdsFrontiers(docs.doc(row.docKey), row.frontiers))
       .map((row) => row.docKey);
     if (lacking.length === 0) return null;
@@ -492,8 +495,17 @@ export function createPostgresDocumentRooms(input: {
     const before = docs.version();
     const { changed } = docs.importBatch(new Map(rows.map((row) => [row.docKey, row.snapshot])));
     if (changed.length === 0) return null;
-    // The delta holds the copy's own restore too, if the import wrote one.
-    return { changed, delta: encodeEnvelope(docs.exportSince(before)) };
+    // The delta holds the copy's own restore too, if the import wrote one: a doc that holds more
+    // than its row ends at other frontiers, so stays unsaved.
+    const held: RoomVersion = new Map(
+      rows.flatMap((row) => {
+        const doc = docs.doc(row.docKey);
+        return doc && sameFrontiers(storedFrontiers(doc), row.frontiers)
+          ? [[row.docKey, docVersion(doc)]]
+          : [];
+      }),
+    );
+    return { changed, delta: encodeEnvelope(docs.exportSince(before)), held };
   }
 
   async function writeRows(
@@ -565,8 +577,7 @@ export function createPostgresDocumentRooms(input: {
   async function saveUnlessIdle(loaded: Loaded, reason: string) {
     if (loaded.docs.isFreed) return;
     if (reason === "debounce" && loaded.dirty.size === 0) return;
-    if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
-    loaded.saveTimer = null;
+    cancelSave(loaded);
     const started = performance.now();
     let keys = new Set<DocKey>();
     let merged = false;
@@ -584,15 +595,13 @@ export function createPostgresDocumentRooms(input: {
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
             const result = { changed: merge.changed, pending: false, restore: [] };
-            imported(loaded, result, merge.delta, "server:merge");
+            imported(loaded, result, merge.delta, "server:merge", merge.held);
           }
           // Taken here, after the merge and right before the export, so a batch landing during
           // the awaits above is in this save and one landing after it stays dirty for the next.
           keys = loaded.dirty;
           loaded.dirty = new Set();
-          loaded.firstDirtyAt = 0;
-          if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
-          loaded.saveTimer = null;
+          cancelSave(loaded);
           written = await writeRows(tx, loaded.room, loaded.docs, keys);
         }),
       );
@@ -631,7 +640,7 @@ export function createPostgresDocumentRooms(input: {
       // the same tick, so nothing imported is ever freed unsaved.
       await loaded.queue;
       while (loaded.dirty.size > 0) await save(loaded, "unload");
-      if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
+      cancelSave(loaded);
       if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
       loaded.docs.free();
       if (room.kind === "live" && loaded.snapshotBytes > bounds.compactBytes)
@@ -807,10 +816,9 @@ export function createPostgresDocumentRooms(input: {
       .sort((a, b) => Number(b.room.kind === "fork") - Number(a.room.kind === "fork"));
     for (const loaded of victims) {
       if (loaded.idleTimer) clearTimeout(loaded.idleTimer);
-      if (loaded.saveTimer) clearTimeout(loaded.saveTimer);
-      loaded.idleTimer = loaded.saveTimer = null;
+      loaded.idleTimer = null;
       loaded.dirty = new Set();
-      loaded.firstDirtyAt = 0;
+      cancelSave(loaded);
       if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
       // A save already running finishes with the docs it started on.
       await loaded.queue;

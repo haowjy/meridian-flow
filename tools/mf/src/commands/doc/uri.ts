@@ -1,4 +1,4 @@
-/** URI → project context route inputs and live document identity, via the app's own address route. */
+/** URI → project context route inputs and document identity, in Live or a draft. */
 import {
   formatParsedContextUri,
   type ParsedContextAuthority,
@@ -17,6 +17,7 @@ import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveWork } from "../project/resolve";
 import { resolveThreadId } from "../thread/resolve";
+import { lookupPath, Trees } from "./tree-address";
 
 export type ResolvedUri = {
   scheme: ProjectContextTreeScheme;
@@ -125,12 +126,27 @@ export async function resolveDocument(session: Session, projectId: string, targe
   return address.document;
 }
 
+/**
+ * The documentId at a URI: in Live through the server's address route, or, given a draft, at the
+ * path in the draft's view of the tree, which holds what only the draft made.
+ */
 export async function resolveDocumentId(
   session: Session,
   projectId: string,
   target: ResolvedUri,
+  draft?: string,
 ): Promise<string> {
-  return (await resolveDocument(session, projectId, target)).documentId;
+  if (!draft) return (await resolveDocument(session, projectId, target)).documentId;
+  const trees = new Trees(session, projectId);
+  try {
+    const { list, source } = await trees.at(target);
+    const { node } = lookupPath(list.replay({ draft }), source, target.path);
+    if (node?.kind !== "document")
+      throw new CliError("not_found", `No document at ${target.uri} in draft ${draft}`);
+    return node.id;
+  } finally {
+    await trees.close();
+  }
 }
 
 /** `--project`/`--work`/`--chat` shared by every command that takes a document URI. */
