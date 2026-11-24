@@ -21,7 +21,10 @@ import { LIVE } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import type { Schema } from "prosemirror-model";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  runInCommandTransaction,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
@@ -274,7 +277,10 @@ if (!RUN) {
           registrar: registry,
         });
         const minted = crypto.randomUUID();
-        await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
+        // As the model's write mints: inside its command.
+        await runInCommandTransaction(db, () =>
+          links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]),
+        );
         expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
         // The first live arrival at the path (a live create there: the draft's document stays the
         // draft's) binds every waiting ref, once.

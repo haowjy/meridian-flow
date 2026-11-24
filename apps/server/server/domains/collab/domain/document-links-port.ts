@@ -11,7 +11,7 @@ import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-lin
 
 export function createScopedDocumentLinks(input: {
   scopes: DocumentLinkScopes;
-  registrar: AheadRefRegistrar;
+  registrar: Pick<AheadRefRegistrar, "registerInCommand">;
 }): DocumentLinksPort {
   const { scopes } = input;
   const holder = (documentId: string, context?: WriteContext) => ({
