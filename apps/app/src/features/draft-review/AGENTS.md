@@ -6,8 +6,9 @@ it. Review lists the owner's draft items (`useOwnerDrafts`) and acts on them wit
 (`usePressCommands`): one server command over a change, a document, the draft or the Work, with
 one Undo (`unpress`).
 
-- A press's items are in flight (`DraftCommandOwner.hold`) until the list is read again: a pressed
-  row leaves the list and comes back if the press fails. Items never end on their own.
+- A press's items are in flight while the journal holds it (`DraftCommandOwner.followPresses`),
+  until a list read after its answer succeeds: a pressed row leaves the list, in every tab and
+  through a reload, and comes back if the press fails. Items never end on their own.
 - A press (Apply or Discard) sits on the sidebar's Undo stack
   (`PressEntries`); Ctrl+Z there, a row's Undo or its notice's Undo takes it back once, and Redo
   presses the same items again.

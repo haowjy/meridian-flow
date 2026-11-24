@@ -1828,7 +1828,7 @@ msgstr "Copying from {source} into"
 msgid "Couldn't add the connection."
 msgstr "Couldn't add the connection."
 
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/draft-command-owner.ts
 msgid "Couldn't apply"
 msgstr "Couldn't apply"
 
@@ -1901,7 +1901,7 @@ msgstr "Couldn't delete {title}"
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/draft-command-owner.ts
 msgid "Couldn't discard"
 msgstr "Couldn't discard"
 
@@ -2235,8 +2235,8 @@ msgstr "Couldn't switch Work"
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/tool-renderers.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/draft-command-owner.ts
 #: src/features/draft-review/press-history.ts
-#: src/features/draft-review/usePressCommands.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 

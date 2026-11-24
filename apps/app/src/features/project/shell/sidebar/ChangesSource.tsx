@@ -31,7 +31,7 @@ import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { changeSummary, DraftFileRow } from "@/features/draft-review/DraftFileRow";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
-import type { DraftNotice } from "@/features/draft-review/draft-notices";
+import { type DraftNotice, workNoticeKey } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
@@ -260,13 +260,20 @@ export function ChangesSource({
     // `sections` is rebuilt every render; what it draws is in the keys below.
   }, [drawnKey, folded, notice]);
   const treeWords = useTreeNoticeWords(projectId, place);
-  const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
+  // A draft's notice speaks on its own rows: two drafts can hold one document. The Work's speaks
+  // on every draft's.
+  const speaksIn = (section: DraftSection) =>
+    !notice ||
+    notice.draftId === section.draftId ||
+    (scope.work !== null && notice.draftId === workNoticeKey(scope.work.id));
+  const wordsOf = (section: DraftSection) => (key: string) =>
+    (speaksIn(section) ? words.word(key) : null) ?? treeWords.word(key);
   const shownOf = (section: DraftSection) =>
     withGone(
       section.items,
       changeKey,
       (taken.get(section.draftId) ?? []).filter(
-        (row) => words.held(row.key) || treeWords.word(row.key),
+        (row) => (speaksIn(section) && words.held(row.key)) || treeWords.word(row.key),
       ),
     );
   const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
@@ -396,7 +403,7 @@ export function ChangesSource({
             shown={shown.get(section.draftId) ?? []}
             controller={controller}
             notice={notice}
-            wordOf={wordOf}
+            wordOf={wordsOf(section)}
             touch={touch}
             isOpen={isOpen}
             onPicked={onPicked}

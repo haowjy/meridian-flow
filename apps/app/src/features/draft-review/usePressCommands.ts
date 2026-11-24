@@ -9,7 +9,6 @@
  * on the Ctrl+Z of each editor open on its documents (`EditorPressStep`); every Undo of it, on
  * its notice, the sidebar or an editor, is the press's one Undo and takes the others' steps away.
  */
-import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
 import {
   type DocumentId,
@@ -32,12 +31,11 @@ import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
-import { pressLaneKey, submitPress, submitPressUndo } from "@/client/query/press-commands";
+import { pressDrafts, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
-import { notifyFailure } from "@/components/app/failure-toast";
 import {
   dropUndoStep,
   type PressStep,
@@ -53,8 +51,8 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useItemLauncher } from "@/features/project/review-launch";
-import { type CommandOutcome, folderKey } from "./draft-command-owner";
-import type { DiscardPart, NoticeSurface } from "./draft-notices";
+import type { CommandOutcome } from "./draft-command-owner";
+import { type DiscardPart, type NoticeSurface, workNoticeKey } from "./draft-notices";
 import {
   type EditorHistory,
   EditorPressStep,
@@ -78,7 +76,8 @@ type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
  */
 type Pressed = {
   commandId: string;
-  lane: string;
+  /** The drafts it pressed, whose lanes its Undo goes in (`submitPressUndo`). */
+  drafts: readonly string[];
   took: readonly string[];
   placement: Placement;
   landed: number;
@@ -132,7 +131,7 @@ export function usePressCommands({
     const drafts = draftsKey ? draftsKey.split(",") : [];
     const draftId = drafts[0] ?? "";
     const workWide = drafts.length > 1 && work !== null;
-    const workKey = work ? `work:${work.id}` : "";
+    const workKey = work ? workNoticeKey(work.id) : "";
     /** Whose notice a press shows: its draft's, or the Work's for a press of every draft. */
     const noticeOf = (scope: Scope) =>
       scope.kind === "work"
@@ -140,16 +139,9 @@ export function usePressCommands({
         : scope.kind === "draft" || scope.kind === "turn"
           ? scope.draft
           : (parseDraftItemKey(scope.item)?.draftId ?? draftId);
-    /** The drafts a press acts on: a change's or a document's own, a turn's one, else all of the surface's. */
-    const scopeDrafts = (scope: Scope): readonly string[] =>
-      scope.kind === "work"
-        ? drafts
-        : scope.kind === "draft" || scope.kind === "turn"
-          ? [scope.draft]
-          : [parseDraftItemKey(scope.item)?.draftId ?? draftId];
     /** The rows listed now of the surface's drafts and, for a press, of its scope's. */
     const rows = (scope?: Scope) =>
-      [...new Set([...drafts, ...(scope ? scopeDrafts(scope) : [])])].flatMap(
+      [...new Set([...drafts, ...(scope ? pressDrafts(scope) : [])])].flatMap(
         (draft) => cachedOwnerDrafts(queryClient, projectId, draft) ?? [],
       );
     const nameOf = (node: string) => {
@@ -174,7 +166,7 @@ export function usePressCommands({
           { cancelRefetch: true },
         );
       await Promise.all(
-        [...new Set([...drafts, ...scopeDrafts(scope)])].map((draft) =>
+        [...new Set([...drafts, ...pressDrafts(scope)])].map((draft) =>
           queryClient.refetchQueries(
             { queryKey: projectQueryKeys.drafts(projectId, draft) },
             { cancelRefetch: false },
@@ -190,11 +182,11 @@ export function usePressCommands({
     /** A press's Undo: the server takes back what that press did, and nothing else. */
     const unpress = async (
       commandId: string,
-      lane: string,
+      pressedDrafts: readonly string[],
       scope: Scope,
     ): Promise<PressUndoResult | Unpressed> => {
       if (!driver) return "failed";
-      const record = await submitPressUndo(driver, lane, {
+      const record = await submitPressUndo(driver, pressedDrafts, {
         projectId,
         pressCommandId: commandId,
       });
@@ -293,7 +285,7 @@ export function usePressCommands({
           // An Apply's Undo takes a created document out of Live: main, read before, follows it to
           // the draft's plain page, where it is a draft's document again.
           const main = presented?.mainDocumentId(projectId);
-          const answer = await unpress(commandId, pressed.lane, scope);
+          const answer = await unpress(commandId, pressed.drafts, scope);
           if (typeof answer === "string")
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
           const created = rows().find((row) => row.documentId === main && row.isNew);
@@ -341,17 +333,18 @@ export function usePressCommands({
     };
 
     /**
-     * One press. Its rows and folders are in flight until the list is read again after it
-     * (`DraftCommandOwner.hold`): they leave the list and the review, and nothing else can be
-     * pressed on them. A row taken whole leaves the cached list too, so a read already out
-     * can't bring it back; a press that fails gives it back with that read.
+     * One press. Its rows and folders are in flight while the journal holds it, until a list read
+     * after its answer (`DraftCommandOwner.followPresses`): they leave the list and the review, and
+     * nothing else can be pressed on them. A row taken whole leaves the cached list too, before the
+     * journal holds it and so a read already out can't bring it back; a press that fails gives it
+     * back with the next read.
      */
     const press = async (
       target: PressTarget,
       live: CommandDriver,
     ): Promise<Pressed | Unpressed> => {
       const { verdict, scope } = target.action;
-      const pressed = scopeDrafts(scope);
+      const pressed = pressDrafts(scope);
       const lists = pressed.flatMap((draft) => {
         const listed = queryClient.getQueryData<DraftItemsResponse>(
           projectQueryKeys.drafts(projectId, draft),
@@ -370,54 +363,47 @@ export function usePressCommands({
           )
         : [];
       const placement = placementOf([...nodes, ...folders.map((folder) => folder.id)]);
-      const release = target.whole
-        ? owner.hold(
-            [
-              ...taken.map((item) => item.itemKey),
-              ...folders.map((folder) => folderKey(folder.draft, folder.id)),
-            ],
-            verdict === "apply",
-          )
-        : () => {};
       const liveVersions = taken.flatMap((item) =>
         item.liveVersion
           ? [{ documentId: item.documentId as DocumentId, version: item.liveVersion }]
           : [],
       );
-      try {
-        // A read already out answers from before the press: it must not bring the rows back.
-        for (const draft of pressed) {
-          await queryClient.cancelQueries({
-            queryKey: projectQueryKeys.drafts(projectId, draft),
-          });
-          patchOwnerDrafts(queryClient, projectId, draft, (rowsNow) =>
-            rowsNow.filter((item) => !gone(item)),
-          );
-        }
-        // Each list's cut is the Work's tree as that list read it: the first is the press's.
-        const saw = lists[0]?.listed.saw;
-        const record = await submitPress(live, {
-          projectId,
-          ...target.action,
-          ...(saw ? { saw } : {}),
-          ...(verdict === "apply" && liveVersions.length ? { liveVersions } : {}),
-        });
-        if (!record) return "told";
-        const settled = await live.whenSettled(record.id);
-        const landed = Date.now();
+      // The rows leave in this frame; a read already out answers from before the press, so it
+      // must not bring them back.
+      for (const draft of pressed)
+        patchOwnerDrafts(queryClient, projectId, draft, (rowsNow) =>
+          rowsNow.filter((item) => !gone(item)),
+        );
+      await Promise.all(
+        pressed.map((draft) =>
+          queryClient.cancelQueries({ queryKey: projectQueryKeys.drafts(projectId, draft) }),
+        ),
+      );
+      // Each list's cut is the Work's tree as that list read it: the first is the press's.
+      const saw = lists[0]?.listed.saw;
+      const record = await submitPress(live, {
+        projectId,
+        ...target.action,
+        ...(saw ? { saw } : {}),
+        ...(verdict === "apply" && liveVersions.length ? { liveVersions } : {}),
+      });
+      if (!record) {
+        // Nothing was kept: the rows come back.
         await refresh(scope);
-        if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
-        const result = settled.outcome.result as PressResult;
-        return {
-          commandId: record.sendId,
-          lane: pressLaneKey(scope),
-          took: [...new Set([...result.documents, ...result.items.map((item) => item.node)])],
-          placement,
-          landed,
-        };
-      } finally {
-        release();
+        return "told";
       }
+      const settled = await live.whenSettled(record.id);
+      const landed = Date.now();
+      await refresh(scope);
+      if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
+      const result = settled.outcome.result as PressResult;
+      return {
+        commandId: record.sendId,
+        drafts: pressed,
+        took: [...new Set([...result.documents, ...result.items.map((item) => item.node)])],
+        placement,
+        landed,
+      };
     };
 
     /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
@@ -435,7 +421,7 @@ export function usePressCommands({
      * its documents: its draft's fork of each, listed or not (an Apply took its rows).
      */
     const editorsOf = (documents: readonly string[], scope: Scope): EditorHistory[] => {
-      const inScope = scopeDrafts(scope);
+      const inScope = pressDrafts(scope);
       const listed = rows(scope);
       return documents.flatMap((node) => {
         const documentId = node as DocumentId;
@@ -463,7 +449,7 @@ export function usePressCommands({
     ): CommandStart => {
       const { verdict, scope } = target.action;
       // A turn's press names its draft; any other presses the surface's.
-      const acting = scopeDrafts(scope);
+      const acting = pressDrafts(scope);
       if (!driver || acting.length === 0 || !acting.every(Boolean)) return blocked();
       // The surface shows one notice: a new press ends the last, whichever draft it was on.
       for (const key of [...drafts, ...(workWide ? [workKey] : [])]) notices.end(key);
@@ -488,17 +474,6 @@ export function usePressCommands({
         if (created.length > 0) removal?.beginOwnRemoval(projectId, created);
       }
       const outcome = press(target, driver).then((pressed): CommandOutcome => {
-        if (pressed === "failed")
-          notifyFailure({
-            key: `press:${noticeKey}`,
-            title:
-              verdict === "apply"
-                ? t`Couldn't apply`
-                : verdict === "restore"
-                  ? t`Couldn't undo`
-                  : t`Couldn't discard`,
-            brief: true,
-          });
         if (typeof pressed === "string") return { kind: "blocked" };
         const sent = target.documents ?? pressed.took;
         const answer = outcomeOf(pressed, sent);
@@ -567,7 +542,7 @@ export function usePressCommands({
       whole: true,
     });
     const draftScope: PressScope = workWide
-      ? { kind: "work", work: work.id as WorkId }
+      ? { kind: "work", work: work.id as WorkId, drafts: drafts as DraftId[] }
       : { kind: "draft", draft: draftId as DraftId };
     const draftTarget = (verdict: Verdict): PressTarget => ({
       action: { verdict, scope: draftScope },
@@ -633,7 +608,7 @@ export function usePressCommands({
       const scope = { kind: "turn", turn, draft } as const;
       restoreInForce(
         scope,
-        { commandId: named, lane: pressLaneKey(scope), took: [], placement: [], landed: readAt },
+        { commandId: named, drafts: [draft], took: [], placement: [], landed: readAt },
         new EditorPressStep([], () => {}),
       );
     };

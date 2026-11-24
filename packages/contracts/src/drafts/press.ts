@@ -11,10 +11,11 @@ export type PressScope =
   | { kind: "document"; item: DraftItemKey }
   | { kind: "draft"; draft: DraftId }
   /**
-   * The Changes tab's `Apply all`: every draft of the Work, pressed one after another in draft id order, each on Live as
-   * the one before left it. Its Undo takes them back draft by draft in the reverse order.
+   * The Changes tab's `Apply all`: the Work's drafts the pressing tab listed (`drafts`, those of them still the Work's),
+   * pressed one after another in draft id order, each on Live as the one before left it. Its Undo takes them back draft
+   * by draft in the reverse order. A browser orders the press after earlier presses of exactly these drafts.
    */
-  | { kind: "work"; work: WorkId };
+  | { kind: "work"; work: WorkId; drafts: DraftId[] };
 
 /**
  * What a press does, and to what. Apply or Discard on one change, a document, a draft or every draft of a Work; or a
