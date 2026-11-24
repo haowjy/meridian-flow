@@ -76,8 +76,8 @@ export type ProjectViewProps = {
   routeIssues?: {
     main?: ProjectRouteIssue;
     editor?: ProjectRouteIssue;
-    /** Why an unavailable Editor destination is gone, when its document was removed. */
-    removed?: ProjectRouteMask["removed"];
+    /** Why an unavailable Editor destination is unavailable, when the route knows. */
+    unavailable?: ProjectRouteMask["unavailable"];
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;

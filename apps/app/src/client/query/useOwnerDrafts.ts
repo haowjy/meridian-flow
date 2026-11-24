@@ -6,7 +6,7 @@
 import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import type { WorksSnapshot } from "@meridian/contracts/works";
 import { type QueryClient, useQueries } from "@tanstack/react-query";
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { listOwnerDrafts } from "@/client/api/drafts-api";
 import { useCreatedDrafts } from "./created-drafts";
@@ -16,6 +16,7 @@ import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
+import { useProjectTrees } from "./useProjectTrees";
 import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
@@ -262,4 +263,25 @@ export function useOwnerDrafts(
 ): OwnerDraftListStatus {
   const owners = useMemo(() => (owner ? [owner] : []), [owner]);
   return useDraftLists(projectId, owners, options).get(owner ?? "") ?? DISABLED;
+}
+
+/**
+ * Whether a page only this draft holds: its row is new and no live tree has the document, so Live
+ * has no version of it to show (design §6). A list another tab's Apply has not refetched yet
+ * still calls the row new; the live tree already has it.
+ */
+export function useDraftOnly(
+  projectId: string,
+  owner: string | null,
+): (documentId: string | null | undefined) => boolean {
+  const drafts = useOwnerDrafts(projectId, owner);
+  const live = useProjectTrees(projectId);
+  return useCallback(
+    (documentId) =>
+      !!documentId &&
+      !!drafts.fileForDocument(documentId)?.draftOnly &&
+      live.isComplete &&
+      !live.find(documentId),
+    [drafts, live],
+  );
 }

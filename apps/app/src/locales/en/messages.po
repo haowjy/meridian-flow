@@ -4227,6 +4227,10 @@ msgstr "Offline"
 msgid "ol"
 msgstr "ol"
 
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Only in draft"
+msgstr "Only in draft"
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr "Only on this device"
@@ -4279,6 +4283,10 @@ msgstr "Open chats"
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open documents"
 msgstr "Open documents"
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Open draft"
+msgstr "Open draft"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"
@@ -4388,6 +4396,10 @@ msgstr "Paragraph"
 #: src/features/chat/tool-renderers.tsx
 msgid "Paragraph gone"
 msgstr "Paragraph gone"
+
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "Paragraph removed elsewhere"
+msgstr "Paragraph removed elsewhere"
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"

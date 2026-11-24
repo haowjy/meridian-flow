@@ -4227,6 +4227,10 @@ msgstr ""
 msgid "ol"
 msgstr ""
 
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Only in draft"
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""
@@ -4278,6 +4282,10 @@ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open documents"
+msgstr ""
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Open draft"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -4387,6 +4395,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Paragraph gone"
+msgstr ""
+
+#: src/core/editor/extensions/KeptExtension.ts
+msgid "Paragraph removed elsewhere"
 msgstr ""
 
 #: src/features/chat/ReportContent.tsx

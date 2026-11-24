@@ -58,7 +58,8 @@ export type DraftSwitcherProps = {
   drafts: readonly DraftVersion[];
   /** The chip names the draft: its owner's when it is not the picked Work's, or its own name among several. */
   owner?: ReactNode;
-  onShowLive: () => void;
+  /** Absent on a page only a draft holds: Live has no version of it to show. */
+  onShowLive?: () => void;
   /** `+ New draft` in the picked Work: makes one and shows it. */
   onNewDraft?: () => void;
   /** `Delete draft`: deletes the draft on screen. */
@@ -107,10 +108,14 @@ export function DraftSwitcher({
         <DropdownMenuLabel>
           <Trans>Versions</Trans>
         </DropdownMenuLabel>
-        <VersionItem current={showing === "live"} onSelect={onShowLive}>
-          <Trans>Live</Trans>
-        </VersionItem>
-        {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
+        {onShowLive ? (
+          <>
+            <VersionItem current={showing === "live"} onSelect={onShowLive}>
+              <Trans>Live</Trans>
+            </VersionItem>
+            {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
+          </>
+        ) : null}
         <WorkDraftRows as="menu" drafts={scoped} onNewDraft={onNewDraft} />
         {others.length > 0 ? <DropdownMenuSeparator /> : null}
         {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}

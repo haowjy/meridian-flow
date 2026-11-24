@@ -8,8 +8,10 @@
 import { plural } from "@lingui/core/macro";
 import type { WorkDraft } from "@meridian/contracts/drafts";
 import type { ReactNode } from "react";
+import { useDraftOnly } from "@/client/query/useOwnerDrafts";
 import {
   useDraftCommandOwner,
+  useOptionalContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
 import type { ShellTreeVersion } from "@/features/project/tree-version";
@@ -53,6 +55,8 @@ export function useWorkDraftMenu(
 } | null {
   const { notices } = useDraftCommandOwner();
   const presented = useOptionalPresentedDocuments();
+  const removal = useOptionalContextRemovalCoordinator();
+  const draftOnly = useDraftOnly(projectId, shell?.draftId ?? null);
   const state = shell?.workDrafts;
   if (!shell || !state?.drafts) return null;
   const list = state.drafts;
@@ -68,9 +72,15 @@ export function useWorkDraftMenu(
     onDeleteDraft: shown
       ? () => {
           state.remove(shown);
-          shell.leave();
           const main = presented?.mainDocumentId(projectId) ?? null;
-          notices.showDiscard({
+          // A page only this draft held closes, and the notice goes where main lands (design §6).
+          let notice: number | null = null;
+          if (main && draftOnly(main))
+            removal?.leaveDraftOnly(projectId, main, (landing) => {
+              if (notice !== null) notices.landed(deleteNoticeKey(projectId), notice, landing);
+            });
+          shell.leave();
+          notice = notices.showDiscard({
             projectId,
             draftId: deleteNoticeKey(projectId),
             surface: main ? { kind: "band", documentId: main } : { kind: "landing" },
