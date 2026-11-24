@@ -1,5 +1,5 @@
 /**
- * Review changes' controls (design §6, item 3), in the toolbar's place while the page reviews:
+ * Review changes' controls, in the toolbar's place while the page reviews:
  * what it compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two
  * columns, then the stepper and, against Live, the chapter's × and ✓; Close is where
  * `Review N changes` was (`ReviewChangesButton`). Against Live the stepper walks this chapter's
@@ -93,7 +93,7 @@ export function ReviewBar() {
         (element) => moveFocus(element, { ring: lastInputWasKeyboard() }),
       );
     mode.close();
-    void review.controller.startItem(verdict, ref).outcome;
+    void review.controller.pressDocument(verdict, ref);
   };
 
   return (

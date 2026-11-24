@@ -1,8 +1,7 @@
 /**
- * A draft's pending move or delete of a document (its tree line), and the words for it: the
- * review row ("ch12: renaming to ch12-old") and the Work notice on the live document ("Ascension
- * is renaming this to ch12-old."). Live doesn't show either until Apply. Works are named,
- * never by handle (#914).
+ * A draft's pending move or delete of a document (its tree line), and the words for it in the Work
+ * notice on the live document ("Ascension is renaming this to ch12-old."). Live doesn't show it
+ * until Apply. Works are named, never by handle.
  */
 import { t } from "@lingui/core/macro";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
@@ -46,7 +45,7 @@ export function hasApply(
 }
 
 /**
- * Whether the item is only a tree change: a delete, or a move with no suggestions. Its review is
+ * Whether the item is only a tree change: a delete, or a move with no text change. Its review is
  * the live document with the draft's tree line.
  */
 export function isTreeOnly(
@@ -56,7 +55,7 @@ export function isTreeOnly(
 }
 
 /**
- * Whether the item opens as a document: it holds suggestions, the Work created it (plain Live
+ * Whether the item opens as a document: its text differs from Live, the Work created it (plain Live
  * text), or it is only a tree change. Otherwise it is a picture the Work added, shown as a preview.
  */
 export function opensAsDocument(
@@ -66,21 +65,6 @@ export function opensAsDocument(
   >,
 ): boolean {
   return item.pending || (item.isNew && !item.binary) || isTreeOnly(item);
-}
-
-/** "ch12: renaming to ch12-old", "ch12: changing position", "ch13: Deleted". */
-export function treeLineSentence(line: TreeLine): string {
-  const { name } = line;
-  switch (line.kind) {
-    case "rename":
-      return t`${name}: renaming to ${line.place}`;
-    case "move":
-      return t`${name}: moving to ${line.place}`;
-    case "reorder":
-      return t`${name}: changing position`;
-    case "delete":
-      return t`${name}: Deleted`;
-  }
 }
 
 /** One draft's tree change to the live document, in the words of its Work notice. */

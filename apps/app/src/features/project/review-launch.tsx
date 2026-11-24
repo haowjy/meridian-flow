@@ -1,7 +1,7 @@
 /**
  * The two ways to open a document on a draft. `openDraft` opens the plain draft; `openReview` opens
  * it in Review changes, against Live unless the caller names another reference, at the clicked
- * change. Every launcher declares which, by how the writer arrived (design §6, item 5). Both set
+ * change. Every launcher declares which, by how the writer arrived. Both set
  * the document's view to the draft and open it in the pane `place` picks: in main the route command
  * writes the address (a review pushes); beside, `place` shows it. Latest launch wins.
  */

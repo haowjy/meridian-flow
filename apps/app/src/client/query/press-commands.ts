@@ -7,13 +7,8 @@
  * socket.
  */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
-import {
-  type DocumentId,
-  type DraftId,
-  draftItemKey,
-  parseDraftItemKey,
-} from "@meridian/contracts";
-import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
+import { type DraftId, parseDraftItemKey } from "@meridian/contracts";
+import type { PressAction, PressRequest, PressScope } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -71,41 +66,6 @@ export function pressRooms(record: CommandRecord): PressRooms {
   };
 }
 
-/** A press journaled before presses named a scope: one draft's documents and folders, or all of it. */
-type PressBodyV1 = {
-  projectId: string;
-  draft: DraftId;
-  verdict: "apply" | "discard";
-  items: { node: string }[] | "all";
-  saw?: TreeSaw;
-};
-
-/**
- * An unsent version 1 press as a scope, where one says the same: all of a draft is the draft, one
- * node is that document (a folder names no item, and presses nothing). A press of several nodes
- * has no scope that takes exactly those, so it throws and the driver settles it as never sent:
- * its rows stay listed to press again, where any scope would press more or less than was chosen.
- */
-function pressBodyFromV1({ projectId, draft, verdict, items, saw }: PressBodyV1): PressBody {
-  let scope: PressScope;
-  if (items === "all") scope = { kind: "draft", draft };
-  else if (items.length === 1 && items[0])
-    scope = { kind: "document", item: draftItemKey(draft, items[0].node as DocumentId) };
-  else throw new Error("A press of several nodes has no scope");
-  return { projectId, verdict, scope, ...(saw ? { saw } : {}) };
-}
-
-/**
- * An unsent version 2 press: a Work's named no drafts, and the drafts its tab listed then are not
- * known offline, so it throws and the driver settles it as never sent: "Couldn't apply", and its
- * rows come back to press again.
- */
-function pressBodyFromV2(body: PressBody): PressBody {
-  if (body.scope.kind === "work" && !Array.isArray(body.scope.drafts))
-    throw new Error("A Work's press named no drafts");
-  return body;
-}
-
 export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
   // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
   // own reads of drafts all begin after it opened, so a press settled before then is in them;
@@ -132,8 +92,10 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
   const kinds: Record<string, CommandKind> = {
     [PRESS_KIND]: {
       version: 3,
-      migrate: (body, from) =>
-        from < 2 ? pressBodyFromV1(body as PressBodyV1) : pressBodyFromV2(body as PressBody),
+      // Nothing reads an older build's press: the driver settles it never sent.
+      migrate: () => {
+        throw new Error("A press from an older build");
+      },
       request: ({ body }) => {
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };

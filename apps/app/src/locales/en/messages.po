@@ -113,6 +113,11 @@ msgstr "(if the server asks for one)"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: notice.documents.length
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0, plural, one {# document applied.} other {# documents applied.}}"
+msgstr "{0, plural, one {# document applied.} other {# documents applied.}}"
+
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0, plural, one {# document discarded.} other {# documents discarded.}}"
@@ -291,14 +296,6 @@ msgstr "{agent} wants to unarchive {work}?"
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to update {work}?"
 msgstr "{agent} wants to update {work}?"
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{all} are now in {place}."
-msgstr "{all} are now in {place}."
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{all} is now in {place}."
-msgstr "{all} is now in {place}."
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "{answered, plural, one {# answered} other {# answered}}"
@@ -588,24 +585,6 @@ msgstr "{name}, {count} to review"
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "{name}; {0} isn't available, so it runs on its default model"
 msgstr "{name}; {0} isn't available, so it runs on its default model"
-
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: changing position"
-msgstr "{name}: changing position"
-
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: Deleted"
-msgstr "{name}: Deleted"
-
-#. placeholder {0}: line.place
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: moving to {0}"
-msgstr "{name}: moving to {0}"
-
-#. placeholder {0}: line.place
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: renaming to {0}"
-msgstr "{name}: renaming to {0}"
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "{named} and {more} more"
@@ -1055,7 +1034,6 @@ msgstr "Apply this chapter"
 msgid "Apply this chat's draft"
 msgstr "Apply this chat's draft"
 
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Applying"
 msgstr "Applying"
@@ -1288,16 +1266,15 @@ msgstr "Can't save {label}"
 msgid "Can't start:"
 msgstr "Can't start:"
 
-#: src/features/chat/DraftDock.tsx
 #: src/features/connections/AddConnectionForm.tsx
 #: src/features/connections/ConnectionPanel.tsx
 #: src/features/connections/ToolChooser.tsx
 #: src/features/creation/CreationDialog.tsx
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/context/entry-drag/DropChoiceMenu.tsx
-#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -2590,10 +2567,6 @@ msgstr "Display text"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Divider"
 msgstr "Divider"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Document"
-msgstr "Document"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
@@ -4213,11 +4186,6 @@ msgstr "now"
 msgid "Now"
 msgstr "Now"
 
-#. placeholder {0}: placeOf(only.uri)
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Now in {0}."
-msgstr "Now in {0}."
-
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -4257,10 +4225,6 @@ msgstr "Open {0}"
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Open {name}"
-msgstr "Open {name}"
 
 #: src/features/project/work/WorkRow.tsx
 msgid "Open {named}"
@@ -6253,6 +6217,7 @@ msgid "Untitled chat"
 msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/DraftFileRow.tsx
 #: src/features/draft-review/tree-line.ts
 #: src/features/project/shell/sidebar/ChangesSource.tsx

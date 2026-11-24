@@ -12,11 +12,6 @@ type Hold = { paint: Paint | null };
 type Surface = { surface: string; state?: "painted" | "pending" | "failed" };
 type FrameProps = { status: string; className?: string; children: ReactNode };
 type Paint = { kind: "captured" | "painted"; html: string; scrolls: number[]; focused: boolean };
-export type CoverAdapter = {
-  annotate?: (live: HTMLElement, copy: HTMLElement) => void;
-  project?: (cover: HTMLElement) => void;
-  read?: (cover: HTMLElement) => unknown;
-};
 const FrameContext = createContext<PaintHold | null>(null);
 const ScopeContext = createContext(true);
 
@@ -31,41 +26,21 @@ export class PaintHold extends Component<FrameProps, Hold> {
   private lastPainted: Paint | null = null;
   private raf = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private released: ((cover: { read: unknown }) => void)[] = [];
-
-  private adapter: CoverAdapter | null = null;
-  private coverRead: unknown;
+  private released: (() => void)[] = [];
 
   private mountCover = (node: HTMLDivElement | null) => {
     this.cover.current = node;
-    if (node && this.state.paint)
-      this.renderCover(node, this.state.paint, this.state.paint.scrolls);
+    const paint = this.state.paint;
+    if (!node || !paint) return;
+    node.innerHTML = paint.html;
+    lockCover(node);
+    for (const [index, editor] of node.querySelectorAll<HTMLElement>(".meridian-editor").entries())
+      editor.scrollTop = paint.scrolls[index] ?? 0;
   };
 
-  private renderCover(cover: HTMLElement, paint: Paint, scrolls: readonly number[]) {
-    cover.innerHTML = paint.html;
-    this.adapter?.project?.(cover);
-    lockCover(cover);
-    for (const [index, node] of cover.querySelectorAll<HTMLElement>(".meridian-editor").entries())
-      node.scrollTop = scrolls[index] ?? 0;
-  }
-
-  projectCover = (adapter: CoverAdapter | null) => {
-    this.adapter = adapter;
-    const { paint } = this.state;
-    if (this.cover.current && paint)
-      this.renderCover(this.cover.current, paint, coverScrolls(this.cover.current));
-  };
-
-  private measureCover(paint: Paint) {
-    const cover = this.cover.current;
-    const scrolled = coverScrolls(cover).some((top, index) => top !== (paint.scrolls[index] ?? 0));
-    this.coverRead = cover && scrolled ? this.adapter?.read?.(cover) : undefined;
-  }
-
-  afterRelease = (work: (cover: { read: unknown }) => void) => {
+  afterRelease = (work: () => void) => {
     if (this.state.paint) this.released.push(work);
-    else work({ read: undefined });
+    else work();
   };
 
   capture = (refresh = false) => {
@@ -76,7 +51,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
       return;
     }
     const copy = page.cloneNode(true) as HTMLElement;
-    this.adapter?.annotate?.(page, copy);
     for (const node of copy.querySelectorAll('[data-paint-scope="inactive"]')) node.remove();
     for (const node of copy.querySelectorAll("[id]")) node.removeAttribute("id");
     this.lastPainted = {
@@ -102,12 +76,10 @@ export class PaintHold extends Component<FrameProps, Hold> {
       this.setState({ paint: this.lastPainted });
       this.timer = setTimeout(() => {
         this.lastPainted = null;
-        if (this.state.paint) this.measureCover(this.state.paint);
         this.setState({ paint: null });
       }, 10_000);
     } else if (paint && !this.pending.size) {
       clearTimeout(this.timer);
-      this.measureCover(paint);
       this.setState({ paint: null });
     } else if (!paint && this.lastPainted && !this.raf) {
       // keep: Wait for the next frame before capturing a synchronous layout dispatch; reuse the painted frame
@@ -122,9 +94,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
       if (previous.paint) {
         const work = this.released;
         this.released = [];
-        const cover = { read: this.coverRead };
-        this.coverRead = undefined;
-        for (const run of work) run(cover);
+        for (const run of work) run();
       }
       if (document.activeElement === this.status.current)
         this.frame.current?.focus({ preventScroll: true });
@@ -176,12 +146,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
   }
 }
 
-function coverScrolls(cover: HTMLElement | null): number[] {
-  return Array.from(cover?.querySelectorAll<HTMLElement>(".meridian-editor") ?? []).map(
-    (node) => node.scrollTop,
-  );
-}
-
 function lockCover(node: Element): void {
   for (const child of Array.from(node.children)) {
     if (child.classList.contains("meridian-editor"))
@@ -230,17 +194,9 @@ export function PaintScope({ active, children }: { active: boolean; children: Re
     </ScopeContext.Provider>
   );
 }
-export function usePaintCoverProjection(): (adapter: CoverAdapter | null) => void {
+export function useAfterPaintRelease(): (work: () => void) => void {
   const frame = useContext(FrameContext);
-  return useCallback((adapter) => frame?.projectCover(adapter), [frame]);
-}
-
-export function useAfterPaintRelease(): (work: (cover: { read: unknown }) => void) => void {
-  const frame = useContext(FrameContext);
-  return useCallback(
-    (work) => (frame ? frame.afterRelease(work) : work({ read: undefined })),
-    [frame],
-  );
+  return useCallback((work) => (frame ? frame.afterRelease(work) : work()), [frame]);
 }
 export function usePaintPending(pending = true) {
   const frame = useContext(FrameContext);

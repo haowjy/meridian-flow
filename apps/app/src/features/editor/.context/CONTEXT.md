@@ -88,22 +88,23 @@ after 500 ms, never a blank or an empty page. Commands and their Undo belong to
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
-## Schema and repair
+## Schema fence and first paint
 
 A schema fence changes the mounted editor to read-only through its options seam;
 it does not rebuild the editor or undo manager. A schema-stale reset unmounts
 it and shows the unavailable state.
 
-Binding waits behind the bounded bind horizon (`editor-bind-horizon.ts`, 5 s), then
-always mounts; when the evidence timed out, `evidenceDegraded` hides the word count.
-There is no repair notice: a schema verdict is a fence, never a report of removed
-text.
-
 `SchemaNotices.tsx` renders the fence as one error bar in
 `EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar: "Editing paused"
 and Refresh, which reloads the page. The same refusal also makes the app reload by
 itself once the writer pauses (`client/release`). The slot collapses (`empty:hidden`)
-when there is no fence.
+when there is no fence. There is no repair notice: a schema verdict is a fence,
+never a report of removed text.
+
+`SessionEditor` binds once the room's local copy has loaded and, when there is no
+local content to show, once the server's first sync lands, so a page doesn't
+paint empty and fill in. A room that never answers still binds after five seconds,
+failed or not: the page is never held shut.
 
 ## Related contracts
 

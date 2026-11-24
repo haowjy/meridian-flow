@@ -2,11 +2,11 @@
  * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
  * presses a change from its margin pair (or takes another draft's paragraph), moves the focus to
  * the next change after a press, and closes Review changes against Live when the chapter has none
- * left, and compares against Live when its target is gone (design §6, item 5).
+ * left, and compares against Live when its target is gone.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import {
   type ReviewChangesConfig,
@@ -37,19 +37,26 @@ const SIDE_BY_SIDE_MIN_PX = 680;
 export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const mode = useReviewMode();
   const review = useOptionalDraftReview();
+  const ownerRevision = useSyncExternalStore(
+    review?.controller.owner.subscribe ?? noSubscription,
+    review?.controller.owner.snapshot ?? zeroSnapshot,
+    zeroSnapshot,
+  );
   const layout = useReviewLayout();
   const surface = useReviewSurface();
   const pane = usePanePlace();
-  // Pressed changes leave the page at once; the server's answer then takes them out of the copy.
-  const [pressed, setPressed] = useState<ReadonlySet<string>>(new Set());
   const rows = useRef<readonly ReviewRow[] | null>(null);
-  const latest = useRef({ mode, review, pressed });
-  latest.current = { mode, review, pressed };
+  const latest = useRef({ mode, review });
+  latest.current = { mode, review };
   const page = useDraftPage();
   const documentId = page?.documentId ?? null;
   const draftId = page?.draftId ?? null;
   const target = mode?.target ?? "live";
   const changeId = mode?.changeId ?? null;
+  const hidden = useMemo(
+    () => review?.controller.owner.heldChanges(mode?.itemKey ?? "") ?? new Set<string>(),
+    [review, mode?.itemKey, ownerRevision],
+  );
   // A plain draft page reads the rows against Live for its header's count; Review changes paints
   // them against its target.
   const active = page !== null;
@@ -62,7 +69,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   // syncing the draft's changes in.
   const closeIfEmpty = () => {
     const { mode } = latest.current;
-    const left = rows.current?.filter((row) => !latest.current.pressed.has(row.id));
+    const left = rows.current?.filter((row) => !hidden.has(row.id));
     if (mode?.target === "live" && left?.length === 0 && mode.listed === false) mode.close();
   };
   useEffect(closeIfEmpty, [mode?.listed]);
@@ -75,10 +82,8 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     if (!active || !documentId || !draftId || editor.isDestroyed) return;
-    const shown = (all: readonly ReviewRow[]) =>
-      all.filter((row) => !latest.current.pressed.has(row.id));
     const nextAfter = (row: ReviewRow) => {
-      const before = shown(rows.current ?? []);
+      const before = (rows.current ?? []).filter((each) => !hidden.has(each.id));
       const index = before.findIndex((each) => each.id === row.id);
       return before[index + 1] ?? before[index - 1];
     };
@@ -87,18 +92,10 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       if (!mode || !review || review.controller.dispositionLocked) return;
       const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
       const next = nextAfter(row);
-      setPressed((prior) => new Set(prior).add(row.id));
       // The writer stays in this chapter's editor, so Ctrl+Z still reaches the press.
       if (next) mode.focus(next.id);
       else mode.close();
-      void review.controller.startChange(verdict, ref, row.id).outcome.then((outcome) => {
-        if (outcome.kind === "done") return;
-        setPressed((prior) => {
-          const rest = new Set(prior);
-          rest.delete(row.id);
-          return rest;
-        });
-      });
+      void review.controller.pressChange(verdict, ref, row.id);
     };
     const config: ReviewChangesConfig = {
       layout: reviewing ? layout : "count",
@@ -107,7 +104,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       reference: referenceDocs,
       draftId,
       focus: changeId,
-      hidden: pressed,
+      hidden,
       labels: {
         apply: t`Apply`,
         discard: t`Discard`,
@@ -130,13 +127,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       focusRow: (row) => latest.current.mode?.focus(row.id),
       onRows: (all) => {
         rows.current = all;
-        // A pressed change the copy no longer holds is settled.
-        setPressed((prior) => {
-          const ids = new Set(all.map((row) => row.id));
-          const kept = new Set([...prior].filter((id) => ids.has(id)));
-          return kept.size === prior.size ? prior : kept;
-        });
-        surface?.publishRows(shown(all));
+        surface?.publishRows(all.filter((row) => !hidden.has(row.id)));
         settle();
       },
     };
@@ -145,7 +136,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     // after a step back from the next chapter).
     const settle = () => {
       const { mode } = latest.current;
-      const left = shown(rows.current ?? []);
+      const left = (rows.current ?? []).filter((row) => !hidden.has(row.id));
       closeIfEmpty();
       if (!mode || left.length === 0) return;
       if (left.some((row) => row.id === mode.changeId)) return landed(pane, mode.documentId);
@@ -158,7 +149,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     };
     setReviewChanges(editor.view, config);
     if (rows.current) {
-      surface?.publishRows(shown(rows.current));
+      surface?.publishRows(rows.current.filter((row) => !hidden.has(row.id)));
       settle();
     }
   }, [
@@ -172,7 +163,7 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     editor,
     layout,
     changeId,
-    pressed,
+    hidden,
     surface,
     pane,
   ]);
@@ -215,6 +206,9 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   }, [editor, focus]);
   return null;
 }
+
+const noSubscription = () => () => {};
+const zeroSnapshot = () => 0;
 
 function useTargetGone(mode: ReturnType<typeof useReviewMode>): boolean {
   const drafts = useShellTreeVersion()?.workDrafts?.drafts ?? null;

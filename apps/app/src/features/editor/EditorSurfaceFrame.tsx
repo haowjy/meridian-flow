@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
-  /** Notes about this document (schema repair, a fenced session), prose-aligned above the toolbar. */
+  /** Notes about this document (a fenced session), prose-aligned above the toolbar. */
   notices?: ReactNode;
   /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;

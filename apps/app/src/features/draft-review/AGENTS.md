@@ -10,12 +10,11 @@ one Undo (`unpress`).
   until a list read after its answer succeeds: a pressed row leaves the list, in every tab and
   through a reload, and comes back if the press fails. Items never end on their own.
 - A press (Apply or Discard) sits on the sidebar's Undo stack
-  (`PressEntries`); Ctrl+Z there, a row's Undo or its notice's Undo takes it back once, and Redo
+  (`PressEntry`); Ctrl+Z there, a row's Undo or its notice's Undo takes it back once, and Redo
   presses the same items again.
-- A tree line's row presses its tree change alone (`half: "tree"`).
+- `ReviewBar.pressChapter` presses the document whole: its text and tree changes are one press.
 - A Discard is not in Trash: its Undo is the press's, as Apply's is, and a reload ends the offer.
 - A press that fails (Apply, Undo, Redo, Discard) is a brief pill (`notifyFailure`),
   never a line in the row or bar the writer pressed.
-- Unknown authorship isn't known-empty: show the text without a byline.
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.

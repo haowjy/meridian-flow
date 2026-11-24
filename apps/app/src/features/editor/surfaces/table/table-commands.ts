@@ -10,7 +10,7 @@
  *
  * Availability is computed from the same command the item dispatches wherever
  * prosemirror-tables already answers it (`mergeCells`, `splitCell`), because a
- * control that looks live and does nothing is the dead control law 5 forbids.
+ * control that looks live and does nothing is a dead control.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -93,7 +93,7 @@ export type TableBlockedReason =
   | "no-column-widths";
 
 export type TableVerbState = {
-  /** The verb's state is already applied (law 6: a toggle shows what it did). */
+  /** The verb's state is already applied: a toggle shows what it did. */
   active: boolean;
   /** Why it cannot run here. Null means it runs. */
   blockedBy: TableBlockedReason | null;

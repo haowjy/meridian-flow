@@ -8,16 +8,7 @@
  * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
  * mounted hidden and paint Live.
  */
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { setDocumentView } from "@/client/project-shell/document-views";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import {
@@ -33,8 +24,7 @@ import {
   ReviewSurface,
   ReviewSurfaceProvider,
 } from "@/features/draft-review/review-mode";
-import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
-import { useShellTreeVersion } from "./tree-version";
+import { useDraftCommandOwner } from "./context/account-feature-context";
 import { useHostReviewMode } from "./use-review-mode";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";
@@ -61,7 +51,6 @@ export function useDocumentReview(
   showing: boolean,
 ): DocumentReview {
   const tab = showing ? hostTab : null;
-  const accountId = useAccountId();
   const paint = useDocumentPaint(projectId, tab);
   const documentId = tab?.documentId ?? null;
   const { workId: activeWorkId } = useWorkScopeState(projectId);
@@ -73,20 +62,7 @@ export function useDocumentReview(
     (activeWorkId === noWork?.id
       ? noWork
       : (works?.find((work) => work.id === activeWorkId) ?? null));
-  // Live for the scope's draft is the toggle's Live (`shownDraft`); another owner's pin just goes.
-  const shell = useShellTreeVersion();
-  const scopeShown = paint.draft !== null && !paint.outOfScope;
-  const showLive = useCallback(() => {
-    if (documentId) setDocumentView(accountId, projectId, documentId, { version: "live" });
-    if (scopeShown) shell?.show("live");
-  }, [accountId, projectId, documentId, scopeShown, shell]);
-  const value = useDraftReviewScopeValue({
-    projectId,
-    work: reviewWork,
-    draftId,
-    threadId: null,
-    showLive,
-  });
+  const value = useDraftReviewScopeValue({ projectId, work: reviewWork, draftId });
 
   const mode = useHostReviewMode(projectId, documentId, paint);
   const pin = paint.draft;
@@ -107,28 +83,7 @@ export function useDocumentReview(
   return { value, paint, mode, page, surface };
 }
 
-/** Exposes one host's review to everything that host renders, in one or several subtrees. */
-export function DocumentReviewBoundary({
-  review,
-  children,
-}: {
-  review: DocumentReview;
-  children: ReactNode;
-}) {
-  return (
-    <DraftReviewBoundary value={review.value}>
-      <DocumentPaintContext.Provider value={review.paint}>
-        <DraftPageProvider value={review.page}>
-          <ReviewModeProvider value={review.mode}>
-            <ReviewSurfaceProvider value={review.surface}>{children}</ReviewSurfaceProvider>
-          </ReviewModeProvider>
-        </DraftPageProvider>
-      </DocumentPaintContext.Provider>
-    </DraftReviewBoundary>
-  );
-}
-
-/** A document host's own review, for a host whose chrome and body share one subtree. */
+/** A document host's own review, for everything that host renders. */
 export function DocumentReviewProvider({
   projectId,
   document,
@@ -142,5 +97,15 @@ export function DocumentReviewProvider({
   children: ReactNode;
 }) {
   const review = useDocumentReview(projectId, document, showing);
-  return <DocumentReviewBoundary review={review}>{children}</DocumentReviewBoundary>;
+  return (
+    <DraftReviewBoundary value={review.value}>
+      <DocumentPaintContext.Provider value={review.paint}>
+        <DraftPageProvider value={review.page}>
+          <ReviewModeProvider value={review.mode}>
+            <ReviewSurfaceProvider value={review.surface}>{children}</ReviewSurfaceProvider>
+          </ReviewModeProvider>
+        </DraftPageProvider>
+      </DocumentPaintContext.Provider>
+    </DraftReviewBoundary>
+  );
 }

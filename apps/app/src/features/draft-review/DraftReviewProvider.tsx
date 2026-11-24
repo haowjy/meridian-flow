@@ -4,17 +4,12 @@ import type { Work } from "@meridian/contracts/works";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
+import { usePressCommands, type WorkDraftCommands } from "./usePressCommands";
 
 export type DraftReviewContextValue = {
-  controller: DraftReviewController;
-  files: ReviewFileTarget[];
+  controller: WorkDraftCommands;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  /** Returns the host's document to Live. */
-  showLive: () => void;
 };
-
-const NO_FILES: ReviewFileTarget[] = [];
 
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 
@@ -33,7 +28,6 @@ export function useDraftReviewScopeValue({
   work,
   draftId,
   threadId = null,
-  showLive,
 }: {
   projectId: string | null;
   /** The Work the draft belongs to, if any. */
@@ -42,21 +36,17 @@ export function useDraftReviewScopeValue({
   draftId: string;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
-  showLive: () => void;
 }): DraftReviewContextValue {
-  const drafts = useOwnerDrafts(projectId, draftId || null);
-  const files = drafts.files ?? NO_FILES;
-  const controller = useDraftReviewController({
+  const { fileForDocument } = useOwnerDrafts(projectId, draftId || null);
+  const drafts = useMemo(() => (draftId ? [draftId] : []), [draftId]);
+  const controller = usePressCommands({
     projectId: projectId ?? "",
     work,
-    draftId,
+    drafts,
     threadId,
+    surface: "page",
   });
-  const fileForDocument = drafts.fileForDocument;
-  return useMemo<DraftReviewContextValue>(
-    () => ({ controller, files, fileForDocument, showLive }),
-    [showLive, controller, files, fileForDocument],
-  );
+  return useMemo(() => ({ controller, fileForDocument }), [controller, fileForDocument]);
 }
 
 export function useDraftReview(): DraftReviewContextValue {

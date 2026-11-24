@@ -4,7 +4,7 @@
  * Draft-only documents (created by the draft, or deleted live while this draft
  * still has them) have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
- * to match and review lands on an empty pane (#153). The document itself is
+ * to match and review lands on an empty pane. The document itself is
  * real — its `documents` row and Live room exist from write time — only the
  * tree manifest entry is missing, so review entry builds the tab from draft
  * metadata instead. The tab is only the document's descriptor: which draft it

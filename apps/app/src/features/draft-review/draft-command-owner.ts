@@ -9,42 +9,27 @@ import type { CommandRecord } from "@meridian/command-driver";
 import { type DraftId, draftItemKey, parseDraftItemKey, type TurnId } from "@meridian/contracts";
 import { type PressBody, pressRooms } from "@/client/query/press-commands";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { type DiscardTook, DraftNotices, workNoticeKey } from "./draft-notices";
-import type { PressEntries } from "./press-history";
+import { DraftNotices, workNoticeKey } from "./draft-notices";
+import type { PressEntry } from "./press-history";
 
-type DraftCommandState = {
-  applying: boolean;
-  /** A press has the item in flight: its rows and review leave until the press answers. */
-  hidden: boolean;
-};
-const EMPTY: DraftCommandState = { applying: false, hidden: false };
-const APPLYING: DraftCommandState = { applying: true, hidden: true };
-const DISCARDING: DraftCommandState = { applying: false, hidden: true };
+/** What a journaled press keeps out of review while it is in flight. */
+type JournalHold =
+  | { kind: "item"; item: string; applying: boolean }
+  | { kind: "drafts"; drafts: ReadonlySet<string>; applying: boolean }
+  | { kind: "change"; item: string; change: string; applying: boolean };
 
-/** What a journaled press takes whole: one document's item, or every item of its drafts. */
-type JournalHold = ({ item: string } | { drafts: ReadonlySet<string> }) & {
-  state: DraftCommandState;
-};
+/** A row a notice keeps in the list, and where it was before the press took it. */
+export type HeldNoticeRow<T> = { key: string; row: T; after: readonly string[] };
+export type HeldNoticeRows = ReadonlyMap<string, readonly HeldNoticeRow<unknown>[]>;
 
-export type CommandOutcome =
-  | { kind: "blocked" }
-  | {
-      kind: "done";
-      /** The press that landed it, which its Undo names. */
-      commandId?: string;
-      /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
-      took?: DiscardTook;
-      /** Takes the press back once, as its notice's Undo does. */
-      undo?: () => Promise<unknown>;
-    }
-  /** The server answered and the press changed none of these items. */
-  | { kind: "settled"; took?: DiscardTook };
+/** `settled`: the server answered and the press changed none of its items. */
+export type CommandOutcome = "done" | "settled" | "blocked";
 
 /**
  * A turn's restore in one draft, as this tab knows it: sent and not yet answered, or in
  * force with its one Undo (`press`).
  */
-export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntries };
+export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntry };
 
 const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
 
@@ -55,9 +40,13 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   /** Every press this tab can still take back or press again. */
-  readonly presses = new Set<PressEntries>();
+  readonly presses = new Set<PressEntry>();
+  /** Rows kept in the Changes list for a notice, removed with that notice. */
+  private readonly noticeRows = new Map<string, HeldNoticeRows>();
   /** One notice per draft owner, outliving the surface that made it. */
-  readonly notices = new DraftNotices();
+  readonly notices = new DraftNotices((draftId, id) => {
+    this.noticeRows.delete(`${draftId}:${id}`);
+  });
   /** `at`: when the entry last changed here; a card read from before then is out of date. */
   private readonly restores = new Map<string, { entry: RestoreEntry | null; at: number }>();
   subscribe = (listener: () => void) => {
@@ -68,17 +57,48 @@ export class DraftCommandOwner {
   };
   snapshot = () => this.revision;
 
-  state(itemKey: string): DraftCommandState {
+  /** Whether the journal currently subtracts this item from every draft-list read. */
+  holds(itemKey: string): boolean {
     const draft = parseDraftItemKey(itemKey)?.draftId;
-    const hold = this.journal.find((each) =>
-      "item" in each ? each.item === itemKey : draft !== undefined && each.drafts.has(draft),
+    return this.journal.some((each) =>
+      each.kind === "item"
+        ? each.item === itemKey
+        : each.kind === "drafts" && draft !== undefined && each.drafts.has(draft),
     );
-    return hold?.state ?? EMPTY;
   }
 
   /** Whether a press in flight takes all of the draft. */
   holdsDraft(draft: string): boolean {
-    return this.journal.some((hold) => "drafts" in hold && hold.drafts.has(draft));
+    return this.journal.some((hold) => hold.kind === "drafts" && hold.drafts.has(draft));
+  }
+
+  /** Whether an Apply in flight takes a whole row from the draft. */
+  applyingDraft(draft: string): boolean {
+    return this.journal.some(
+      (hold) =>
+        hold.applying &&
+        (hold.kind === "drafts"
+          ? hold.drafts.has(draft)
+          : hold.kind === "item" && parseDraftItemKey(hold.item)?.draftId === draft),
+    );
+  }
+
+  /** Change rows a journaled press keeps out of one document's editor review. */
+  heldChanges(itemKey: string): ReadonlySet<string> {
+    return new Set(
+      this.journal.flatMap((hold) =>
+        hold.kind === "change" && hold.item === itemKey ? [hold.change] : [],
+      ),
+    );
+  }
+
+  holdNoticeRows(draftId: string, id: number, rows: HeldNoticeRows | undefined) {
+    if (rows?.size) this.noticeRows.set(`${draftId}:${id}`, rows);
+  }
+
+  heldNoticeRows<T>(draftId: string, id: number, draft: string): readonly HeldNoticeRow<T>[] {
+    return (this.noticeRows.get(`${draftId}:${id}`)?.get(draft) ??
+      []) as readonly HeldNoticeRow<T>[];
   }
 
   /**
@@ -93,10 +113,12 @@ export class DraftCommandOwner {
     const holds = records.flatMap((record): JournalHold[] => {
       if (record.state === "never" || (record.state === "done" && record.observed)) return [];
       const { scope, verdict } = record.body as Partial<PressBody>;
-      const state = verdict === "apply" ? APPLYING : DISCARDING;
-      if (scope?.kind === "document") return [{ item: scope.item, state }];
+      const applying = verdict === "apply";
+      if (scope?.kind === "document") return [{ kind: "item", item: scope.item, applying }];
       if (scope?.kind === "draft" || scope?.kind === "work")
-        return [{ drafts: new Set<string>(pressRooms(record).drafts), state }];
+        return [{ kind: "drafts", drafts: new Set<string>(pressRooms(record).drafts), applying }];
+      if (scope?.kind === "change")
+        return [{ kind: "change", item: scope.item, change: scope.change, applying }];
       return [];
     });
     if (holds.length === 0 && this.journal.length === 0) return;

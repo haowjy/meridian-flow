@@ -197,7 +197,7 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The writer switched a page only a draft holds to Live, which lacks it (design §6): it closes
+   * The writer switched a page only a draft holds to Live, which lacks it: it closes
    * as a Discarded one does, main going back to the document it showed before, else to Recently
    * opened, and its tab closes once main has left it. `landed` hears where main went, as with
    * `beginOwnRemoval`. Nothing happens when main doesn't show it; `isGoingBack` says whether main

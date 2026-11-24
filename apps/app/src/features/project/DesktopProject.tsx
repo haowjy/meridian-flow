@@ -238,7 +238,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   // Sorted by key, never by place: React moves a keyed child that falls behind a sibling, and a
   // moved host is re-inserted in the DOM and, under development StrictMode, has its effects
-  // replayed with its editor destroyed (#1351).
+  // replayed with its editor destroyed.
   const documentHosts = [
     ...(mainTab ? [documentHost(mainTab, "main")] : []),
     ...(sideTab && sideTab.documentId !== mainTab?.documentId

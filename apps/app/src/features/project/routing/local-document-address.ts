@@ -210,7 +210,7 @@ export function draftOnlyTarget(
 /**
  * The draft-only file a plain address names when live has nothing there: the document its entry
  * is bound to, else the file at its path. Read from the draft list the route already holds, so a
- * bare Live address to a page only a draft holds can offer that draft (design §6).
+ * bare Live address to a page only a draft holds can offer that draft.
  */
 export function draftOnlyAt(
   destination: { scheme: string; path: string },

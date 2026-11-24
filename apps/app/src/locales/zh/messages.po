@@ -113,6 +113,11 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: notice.documents.length
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0, plural, one {# document applied.} other {# documents applied.}}"
+msgstr ""
+
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0, plural, one {# document discarded.} other {# documents discarded.}}"
@@ -291,14 +296,6 @@ msgstr "{agent} 想要取消归档 {work}，是否允许？"
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to update {work}?"
 msgstr "{agent} 想要更新 {work}，是否允许？"
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{all} are now in {place}."
-msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "{all} is now in {place}."
-msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "{answered, plural, one {# answered} other {# answered}}"
@@ -587,24 +584,6 @@ msgstr ""
 #. placeholder {0}: modelLabel ?? ""
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "{name}; {0} isn't available, so it runs on its default model"
-msgstr ""
-
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: changing position"
-msgstr ""
-
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: Deleted"
-msgstr ""
-
-#. placeholder {0}: line.place
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: moving to {0}"
-msgstr ""
-
-#. placeholder {0}: line.place
-#: src/features/draft-review/tree-line.ts
-msgid "{name}: renaming to {0}"
 msgstr ""
 
 #: src/features/chat/TurnStoppedLine.tsx
@@ -1055,7 +1034,6 @@ msgstr ""
 msgid "Apply this chat's draft"
 msgstr ""
 
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Applying"
 msgstr ""
@@ -1288,16 +1266,15 @@ msgstr ""
 msgid "Can't start:"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
 #: src/features/connections/AddConnectionForm.tsx
 #: src/features/connections/ConnectionPanel.tsx
 #: src/features/connections/ToolChooser.tsx
 #: src/features/creation/CreationDialog.tsx
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/context/entry-drag/DropChoiceMenu.tsx
-#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr ""
@@ -2589,10 +2566,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Divider"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Document"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -4213,11 +4186,6 @@ msgstr "刚刚"
 msgid "Now"
 msgstr ""
 
-#. placeholder {0}: placeOf(only.uri)
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Now in {0}."
-msgstr ""
-
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -4256,10 +4224,6 @@ msgstr ""
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
-msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Open {name}"
 msgstr ""
 
 #: src/features/project/work/WorkRow.tsx
@@ -6253,6 +6217,7 @@ msgid "Untitled chat"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/DraftFileRow.tsx
 #: src/features/draft-review/tree-line.ts
 #: src/features/project/shell/sidebar/ChangesSource.tsx

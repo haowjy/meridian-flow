@@ -3,12 +3,14 @@
  *
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
+import { type DraftId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import type { WorksSnapshot } from "@meridian/contracts/works";
 import { type QueryClient, useQueries } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { listOwnerDrafts } from "@/client/api/drafts-api";
+import { useOptionalDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { useCreatedDrafts } from "./created-drafts";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
@@ -21,11 +23,16 @@ import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
+const noSubscription = () => () => undefined;
+const zeroSnapshot = () => 0;
+
 export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   /** The owner's active draft: the `draft` of its tree records. */
   draftId: string | null;
+  /** The changed folders left after journal holds are subtracted. */
+  folderIds: readonly string[] | null;
 };
 
 /** The tree owner whose Scratch names this draft's documents: the Work or root chat naming it. */
@@ -99,19 +106,6 @@ export function cachedOwnerDrafts(
     ?.items;
 }
 
-/** Rewrites the owner's cached draft rows until the next read replaces them. */
-export function patchOwnerDrafts(
-  queryClient: QueryClient,
-  projectId: string,
-  owner: string,
-  update: (items: DraftItem[]) => DraftItem[],
-): void {
-  queryClient.setQueryData<DraftItemsResponse>(
-    projectQueryKeys.drafts(projectId, owner),
-    (response) => (response ? { ...response, items: update(response.items) } : response),
-  );
-}
-
 /** One draft's list as `useOwnerDraftLists` reads it: the list query with its rows completed. */
 export type OwnerDraftListQuery = {
   data: DraftItemsResponse | undefined;
@@ -131,6 +125,12 @@ export function useOwnerDraftLists(
   owners: readonly string[],
   enabled: boolean,
 ): ReadonlyMap<string, OwnerDraftListQuery> {
+  const commands = useOptionalDraftCommandOwner();
+  const commandRevision = useSyncExternalStore(
+    commands?.subscribe ?? noSubscription,
+    commands?.snapshot ?? zeroSnapshot,
+    commands?.snapshot ?? zeroSnapshot,
+  );
   const queries = useQueries({
     queries: owners.map((owner) => ({
       ...ownerDraftsQueryOptions(projectId, owner),
@@ -157,10 +157,23 @@ export function useOwnerDraftLists(
     owners.forEach((owner, index) => {
       const query = latest.current[index];
       if (!query) return;
-      const data = query.data;
-      const made = created.get(owner);
+      const read = query.data;
+      const data = read
+        ? {
+            ...read,
+            folders: (read.folders ?? []).filter(
+              (folder) => !commands?.holds(draftItemKey(owner as DraftId, folder.id)),
+            ),
+          }
+        : undefined;
+      const made = created.get(owner) ?? [];
       lists.set(owner, {
-        data: data && made ? { ...data, items: [...data.items, ...made] } : data,
+        data: data
+          ? {
+              ...data,
+              items: [...data.items, ...made].filter((item) => !commands?.holds(item.itemKey)),
+            }
+          : data,
         isPending: query.isPending,
         isFetching: query.isFetching,
         isError: query.isError,
@@ -168,7 +181,7 @@ export function useOwnerDraftLists(
       });
     });
     return lists;
-  }, [owners, read, created]);
+  }, [owners, read, created, commands, commandRevision]);
 }
 
 /** One draft's list (`useOwnerDraftLists`). */
@@ -190,6 +203,7 @@ const DISABLED = {
   files: null,
   fileForDocument: () => null,
   draftId: null,
+  folderIds: null,
 } as const satisfies OwnerDraftListStatus;
 
 /**
@@ -250,6 +264,7 @@ export function useDraftLists(
         files,
         fileForDocument: (documentId) => (documentId ? (byDocument.get(documentId) ?? null) : null),
         draftId: query.data ? owner : null,
+        folderIds: query.data?.folders.map((folder) => folder.id) ?? null,
       });
     }
     return statuses;

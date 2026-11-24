@@ -39,7 +39,6 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
-import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
@@ -206,14 +205,10 @@ export function TreeVersionProvider({
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
   const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
   const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
-  // Documents from the server's pending drafts, folders from the replay; a press in flight takes
-  // its rows out of the list, so the count agrees with it.
+  // Documents and folders come from the draft-list read, which has already subtracted every
+  // journal hold, so all surfaces count the same rows.
   const commands = useDraftCommandOwner();
-  const waiting = (itemKey: string) => !commands.state(itemKey).hidden;
-  const count = () =>
-    (rows ?? []).filter((row) => waiting(row.itemKey)).length +
-    [...(tree?.folders ?? [])].filter((id) => listedDraft && waiting(folderKey(listedDraft, id)))
-      .length;
+  const count = () => (rows?.length ?? 0) + (drafts.folderIds?.length ?? 0);
   const changeCount = useSyncExternalStore(commands.subscribe, count, count);
   const pressed = () =>
     (workDrafts.drafts ?? [])

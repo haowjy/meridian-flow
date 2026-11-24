@@ -45,7 +45,6 @@ import {
   useToolbarTaken,
 } from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
-import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, joinMain } from "./focus-on-open";
@@ -83,9 +82,11 @@ type SessionEditorProps = {
   inMain?: boolean;
 };
 
+const FIRST_PAINT_WAIT_MS = 5_000;
+
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => viewOf(props.session.getSnapshot()));
-  const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
+  const [bindable, setBindable] = useState(false);
   const requiresFirstServerSync = !(
     props.identity.detached || props.surfaceOptions.localContentReady
   );
@@ -99,17 +100,21 @@ export function SessionEditor(props: SessionEditorProps) {
       ),
     [props.session],
   );
+  // The first paint waits for the local copy and, with none, the server's; a room that never
+  // answers still binds after FIRST_PAINT_WAIT_MS, failed or not.
   useEffect(() => {
     let active = true;
-    const firstServerSync = requiresFirstServerSync ? props.session.whenSynced() : undefined;
-    void waitForEditorBindHorizon({
-      localPersistence: props.session.whenLocalPersistenceSynced(),
-      firstServerSync,
-    }).then((result) => {
-      if (active) setBindHorizon(result);
-    });
+    const bind = () => {
+      if (active) setBindable(true);
+    };
+    const timeout = setTimeout(bind, FIRST_PAINT_WAIT_MS);
+    void Promise.allSettled([
+      props.session.whenLocalPersistenceSynced(),
+      ...(requiresFirstServerSync ? [props.session.whenSynced()] : []),
+    ]).then(bind);
     return () => {
       active = false;
+      clearTimeout(timeout);
     };
   }, [props.session, requiresFirstServerSync]);
 
@@ -124,15 +129,9 @@ export function SessionEditor(props: SessionEditorProps) {
     );
   }
 
-  if (!bindHorizon) return <PendingEditorShell {...props.surfaceOptions} />;
+  if (!bindable) return <PendingEditorShell {...props.surfaceOptions} />;
 
-  return (
-    <ActiveSessionEditorView
-      {...props}
-      snapshot={snapshot}
-      evidenceDegraded={bindHorizon.evidenceDegraded}
-    />
-  );
+  return <ActiveSessionEditorView {...props} snapshot={snapshot} />;
 }
 
 /** What the editor view reads of its session: the rest (the save status) is `SyncStatus`'s. */
@@ -153,10 +152,7 @@ const sameView = (shown: SessionView, next: DocumentSessionSnapshot) =>
   shown.schemaFence === next.schemaFence &&
   shown.access === next.access;
 
-type ActiveSessionEditorViewProps = SessionEditorProps & {
-  snapshot: SessionView;
-  evidenceDegraded: boolean;
-};
+type ActiveSessionEditorViewProps = SessionEditorProps & { snapshot: SessionView };
 
 function ActiveSessionEditorView({
   identity,
@@ -166,7 +162,6 @@ function ActiveSessionEditorView({
   inMain = false,
   holderUri: reviewHolderUri,
   snapshot,
-  evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
   const {
     editable = true,
@@ -430,7 +425,7 @@ function ActiveSessionEditorView({
           ) : (
             <SyncStatus session={session} />
           )}
-          {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
+          {editor ? <WordCount editor={editor} /> : null}
         </div>
         <EditorCanvas
           editor={editor}

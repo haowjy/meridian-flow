@@ -18,8 +18,7 @@ manuscript reads "Edited 1 document", or "Changed 1 document" once it moved or d
 or wrote both a draft and the manuscript. A drafted row says "Applied", "Undone" or
 "Discarded" at its end; one still waiting needs no word.
 Expanding shows one row per edited document and shows no per-change detail: the
-card has no Before/After excerpts or word totals. A conversation reveal opened
-from an editor peer mark lands on the owning turn.
+card has no Before/After excerpts or word totals.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies the count
 and the rows, and the durable receipt supplies whole-turn Undo authority. Both
@@ -57,7 +56,7 @@ The restore (`TurnRestoreSlot`) is a press like Apply and Discard (`usePressComm
 each editor open on the turn's documents in that draft gets its Ctrl+Z step and the sidebar its
 step. The card is its notice. Its
 state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in
-force with its one `PressEntries`, so collapsing the card or switching chats loses nothing, and a
+force with its one `PressEntry`, so collapsing the card or switching chats loses nothing, and a
 second press of the same turn and draft is not sent while one is out or in force. The card's read
 reconciles it (`syncRestore`): a press the read names that this tab doesn't hold (another tab's, or
 one from before a reload) is taken on with the card's Undo alone, since its Ctrl+Z and sidebar steps
@@ -97,13 +96,13 @@ A reply's write rows say where its writes are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
 only this reply's own changes, applied ones included, and sends nothing else: the server takes back each of the
 reply's writes in the room it was written in (Live or the draft's fork), whatever was written
-since (design §2, "An Undo always runs"): it deletes what still stands of the write's characters
+since: it deletes what still stands of the write's characters
 and puts back what it deleted, so the writer's words stay. The card never takes back a whole
 Apply; a Changes row's Undo and Ctrl+Z do. Undo is offered while the turn's writes stand: not
 taken back, and still in the history (a write older than the history cutoff can't go back, and
 the answer is `partial` or `expired`). The receipt immediately shows Undoing while the command runs;
 the Live room publishes the edit after durable commit and failures stay on the card.
-The rule is design §2's one Undo rule (`takeBack`), the one a press's Undo uses
+The rule is the one Undo rule (`takeBack`), the one a press's Undo uses
 (server [reversal](../../../../../server/server/domains/collab/.context/reversal.md)). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. A Discard takes the draft's pending changes out as one
@@ -161,5 +160,4 @@ and adds the "Didn't run" line when calls never ran.
 
 The dock's Apply and Discard stay locked while a round runs. A mid-round Discard of a
 document the reply created would send the model "File not found"; the lock lifts when the
-server settles an agent write to a discarded draft with `returned`
-(never-refuse §6).
+server settles an agent write to a discarded draft with `returned`.

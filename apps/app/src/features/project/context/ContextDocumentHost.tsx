@@ -62,7 +62,7 @@ export function ContextDocumentHost({
   const bindingKeys = useRef(new WeakMap<object, string>());
   const paint = useHostDocumentPaint();
   const shownDraftId = paint?.draft?.draftId ?? null;
-  // A document the draft created has no fork: its text is plain in its own Live room (design §2),
+  // A document the draft created has no fork: its text is plain in its own Live room,
   // which the page binds. Every other draft page binds the draft's fork room, changed or not. Until
   // the draft's list says which, the page waits rather than open the wrong room.
   const draftRows = useOwnerDraftRows(projectId, shownDraftId);

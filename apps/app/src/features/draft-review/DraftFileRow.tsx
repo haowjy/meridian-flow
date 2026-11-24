@@ -15,8 +15,8 @@ import { useReferenceDrag } from "@/features/project/context/entry-drag/referenc
 import { useItemLauncher } from "@/features/project/review-launch";
 import { cn } from "@/lib/utils";
 import { draftCopyView } from "./copy-view";
-import { DraftCommandStatus } from "./DraftCommandStatus";
 import { DraftImagePreview } from "./DraftImagePreview";
+import type { HeldNoticeRows } from "./draft-command-owner";
 import { ReviewActions } from "./ReviewActions";
 import { landingFaultSentence } from "./tree-groups";
 import { opensAsDocument, treeLineOf } from "./tree-line";
@@ -45,7 +45,7 @@ export function DraftFileRow({
   draftId: string;
   file: ReviewFileTarget;
   /** Right before this row's Discard or Apply: the list holds what it shows. */
-  onCommand?: () => void;
+  onCommand?: () => HeldNoticeRows;
   /** What the owner's notice says on this row (`useDraftNoticeWords`). */
   notice: ReactNode;
   /** Under its changed folder's row. */
@@ -61,8 +61,14 @@ export function DraftFileRow({
   const { openReviewFile } = useItemLauncher();
   const [previewing, setPreviewing] = useState(false);
   const discard = () => {
-    onCommand?.();
-    void controller.discard(file.documentId, file.item.itemKey);
+    void controller.pressDocument(
+      "discard",
+      {
+        documentId: file.documentId,
+        itemKey: file.item.itemKey,
+      },
+      onCommand?.(),
+    );
   };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, draftId);
@@ -80,8 +86,6 @@ export function DraftFileRow({
   };
   const line = treeLineOf(file.item);
   const deleted = line?.kind === "delete";
-  const command = controller.owner.state(file.item.itemKey);
-
   return (
     <li data-change-row={file.documentId}>
       <ListRow
@@ -101,26 +105,31 @@ export function DraftFileRow({
             density="icon"
             row
             touch={touch}
-            disabled={command.hidden || controller.dispositionLocked}
+            disabled={controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={discard}
             onApply={
               canApply
                 ? () => {
-                    onCommand?.();
-                    void controller.apply(file.documentId, file.item.itemKey);
+                    void controller.pressDocument(
+                      "apply",
+                      {
+                        documentId: file.documentId,
+                        itemKey: file.item.itemKey,
+                      },
+                      onCommand?.(),
+                    );
                   }
                 : undefined
             }
           />
         }
         below={
-          <div className="pl-1">
-            {fault ? (
+          fault ? (
+            <div className="pl-1">
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
-            ) : null}
-            <DraftCommandStatus itemKey={file.item.itemKey} />
-          </div>
+            </div>
+          ) : null
         }
       />
       <DraftImagePreview

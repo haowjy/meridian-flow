@@ -20,7 +20,7 @@ function isOtherField(target: Element): boolean {
 }
 
 /**
- * The one Esc of Review changes (design §6): wherever the focus is on the page, Esc closes the
+ * The one Esc of Review changes: wherever the focus is on the page, Esc closes the
  * review of the host it is in, or main's when it is in no host (the sidebar, the top bar). What
  * handles Esc first (an editor's popup, which prevents it) or owns it (a menu, a dialog, another
  * field) keeps it.

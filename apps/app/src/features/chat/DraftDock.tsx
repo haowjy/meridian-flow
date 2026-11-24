@@ -8,16 +8,14 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { useRef, useState } from "react";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
-  ApplyAllQuestion,
   CommandNotice,
-  type CommandQuestion,
   noticeAction,
+  useApplyAllQuestion,
   useDraftNotice,
   useDraftNoticeWords,
 } from "@/features/draft-review/CommandNotice";
 import { DraftFileRow } from "@/features/draft-review/DraftFileRow";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasApply } from "@/features/draft-review/tree-line";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { useFocusSuccession } from "@/lib/focus-follow";
@@ -25,37 +23,22 @@ import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
-  /** What an Apply of several files deletes, asked about first. */
-  const [asking, setAsking] = useState<readonly string[] | null>(null);
   const touch = useCoarsePointer();
   const words = useDraftNoticeWords(useDraftNotice(dock.draftId));
 
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
+  const count = dock.files.length;
+  // A lone file's row says it deletes: only an Apply of several asks.
+  const { question, start: startApply } = useApplyAllQuestion({
+    deleting: count > 1 ? dock.deletingToApply : [],
+    apply: dock.apply,
+    confirm: <Trans>Apply</Trans>,
+    disabled: !dock.canCommand,
+  });
+  const asking = question !== null;
 
   if (!dock.mounted) return null;
-
-  const untitled = t`Document`;
-  const count = dock.files.length;
-  const startApply = () =>
-    count > 1 && dock.deletingToApply.length > 0
-      ? setAsking(dock.deletingToApply.map((file) => reviewFileTargetName(file, untitled)))
-      : dock.apply();
-  // One question at a time, in the footer below the files: opening it never moves a row.
-  const question: CommandQuestion | null = asking
-    ? {
-        kind: "apply-all",
-        sentence: <ApplyAllQuestion deleting={asking} />,
-        keep: <Trans>Cancel</Trans>,
-        confirm: <Trans>Apply</Trans>,
-        onKeep: () => setAsking(null),
-        onConfirm: () => {
-          setAsking(null);
-          dock.apply();
-        },
-        disabled: !dock.canCommand,
-      }
-    : null;
 
   return (
     // Its background runs on behind the composer's top edge, so dock and composer read as one.

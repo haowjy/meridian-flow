@@ -382,7 +382,7 @@ function DocumentTabChip({
   const paint = useDocumentPaint(projectId, active ? document : null);
   const drafts = useOwnerDrafts(projectId, paint.draft?.draftId ?? null);
   const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
-  const reviewing = active && paint.showing === "draft";
+  const reviewing = active && paint.draft !== null;
   const drag = useReferenceDrag(
     tabSubject(document, {
       reviewing,
