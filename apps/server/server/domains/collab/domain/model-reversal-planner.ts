@@ -1,8 +1,19 @@
-/** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
+/** One document's reversal selection, shared by the model's undo and revert, its edit list and the card. */
 
-import { undoInRooms } from "@meridian/agent-edit/integration";
+import type { StoredDelta } from "@meridian/agent-edit/integration";
+import { captureDelta, undoInRooms } from "@meridian/agent-edit/integration";
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
-import { freshServerPeerId, holdsEdit, type RoomDocs } from "@meridian/document-model";
+import {
+  changedBlocks,
+  editSince,
+  encodeChanges,
+  holdsEdit,
+  type RoomDocs,
+  readDocument,
+  type StoredEdit,
+} from "@meridian/document-model";
+import { nodeOf } from "@meridian/loro-prosemirror";
+import { inverseSchema } from "./edit-excerpt.js";
 import { partKey as key } from "./inverse-actions.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import type {
@@ -17,11 +28,26 @@ export type ModelInverseQuery = TurnInverseQuery & { model: true };
 export type UndoablePart = StoredInversePart & { edit: NonNullable<StoredInversePart["edit"]> };
 export const undoable = (part: StoredInversePart): part is UndoablePart => part.edit !== null;
 
+/** What one step took back in one room: the batch the room commits, and what its receipt says. */
+export type TakenRoom = {
+  room: DocumentRoom;
+  batch: Uint8Array;
+  /** The parts the step took in this room. */
+  parts: UndoablePart[];
+  /** The model's inverse is an edit on its stack: its delta and its edit, which a later Undo reads. */
+  model?: { delta: StoredDelta | null; edit: StoredEdit };
+  /** It took text out of a draft that Live still holds (an Apply put it there). */
+  inManuscript: boolean;
+};
+
 /**
- * One immutable capture's reversal policy. A retry creates a new planner from a new capture. The
- * caller frees it: it takes planned steps back on private copies of the captured rooms.
+ * The reversal policy over one document's history. With room copies (`document.rooms`' `docs`)
+ * each `takeOut` takes its parts back on them, so a later step of one command is judged on what
+ * the earlier ones leave and commits what they took; the caller owns and frees the copies.
+ * Without copies it reads the ledger alone: every part not taken stands, and `takeOut` takes it,
+ * which is what an inverse may write, for its admission before it locks.
  */
-export function createCapturedReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
+export function createReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
   const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);
   const poppableByTurn = new Map<string, Set<string>>();
@@ -38,39 +64,73 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (!captured) throw new Error("A part's room is not among the capture's rooms");
     return captured;
   };
-  const captured = (part: StoredInversePart) => capturedRoom(part.room);
   /** Whether the part's room is held by a closed owner (an archived draft or Work). */
-  const closed = (part: StoredInversePart) => captured(part).closed !== null;
-  /**
-   * Each room after the steps planned so far, so a later step of one command is judged on what
-   * the earlier ones leave, as its commit will: the capture until a step writes there, then a copy.
-   */
-  const planned = new Map<string, RoomDocs>();
-  const docsNow = (part: StoredInversePart) =>
-    planned.get(loroRoomName(part.room)) ?? captured(part).docs;
+  const closed = (part: StoredInversePart) => capturedRoom(part.room).closed !== null;
   /**
    * Why a part can't go back now, or null when it goes back (design §2, "An Undo always runs"): an
    * Undo took it already, or its room cut the history it needs.
    */
-  const unavailable = (part: StoredInversePart) =>
-    taken(part)
-      ? ("already_removed" as const)
-      : !part.edit || !holdsEdit(docsNow(part), part.edit)
-        ? ("compacted" as const)
-        : null;
-  /** Takes `parts` back on the planned copies, each in its room; returns those that went, and those whose history was cut. */
-  const planTakeOut = (parts: readonly StoredInversePart[]) => {
+  const unavailable = (part: StoredInversePart) => {
+    if (taken(part)) return "already_removed" as const;
+    const docs = capturedRoom(part.room).docs;
+    return !part.edit || (docs && !holdsEdit(docs, part.edit)) ? ("compacted" as const) : null;
+  };
+  // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
+  const by = query.model && query.turnId ? { turn: query.turnId } : undefined;
+  /**
+   * Takes `parts` back, newest first as given, each in its room, by design §2's Undo rule
+   * (`undoInRooms`): returns the parts that went, how many stay because their room cut their
+   * history, and each room's batch and receipt.
+   */
+  const takeOut = (parts: readonly StoredInversePart[]) => {
     const held = parts.filter(undoable);
-    const { compacted } = undoInRooms(held, (room) => {
-      const name = loroRoomName(room);
-      let copy = planned.get(name);
-      if (!copy) {
-        copy = capturedRoom(room).docs.fork(freshServerPeerId());
-        planned.set(name, copy);
+    if (!document.copies) return { taken: held, compacted: 0, rooms: [] as TakenRoom[] };
+    const docsOf = (room: DocumentRoom) => capturedRoom(room).docs as RoomDocs;
+    const before = new Map<
+      string,
+      {
+        since: ReturnType<RoomDocs["shownVersion"]>;
+        blocks: ReturnType<typeof blocksIn> | null;
+        pending: Set<string> | null;
       }
-      return copy;
+    >();
+    for (const { room } of held) {
+      const name = loroRoomName(room);
+      if (before.has(name)) continue;
+      const docs = docsOf(room);
+      before.set(name, {
+        since: docs.shownVersion(),
+        blocks: query.model ? blocksIn(docs) : null,
+        pending: room.kind === "fork" ? pendingBlocks(docs) : null,
+      });
+    }
+    const undone = undoInRooms(held, docsOf, by);
+    const went = held.filter((part) => !undone.compacted.has(part));
+    const rooms = undone.rooms.map(({ room, changes }): TakenRoom => {
+      const name = loroRoomName(room);
+      const docs = docsOf(room);
+      const was = before.get(name);
+      const written = [...new Set(changes.map((change) => change.key))];
+      return {
+        room,
+        batch: encodeChanges(changes),
+        parts: went.filter((part) => loroRoomName(part.room) === name),
+        ...(was?.blocks
+          ? {
+              model: {
+                delta: captureDelta(was.blocks, blocksIn(docs)),
+                edit: editSince(docs, was.since, written),
+              },
+            }
+          : {}),
+        // A draft that now differs from Live where it didn't: Live still holds what came out.
+        inManuscript: Boolean(
+          was?.pending && [...pendingBlocks(docs)].some((id) => !was.pending?.has(id)),
+        ),
+      };
     });
-    return { taken: held.filter((part) => !compacted.has(part)), compacted: compacted.size };
+    // A step whose parts changed nothing records nothing and took nothing.
+    return { taken: rooms.length ? went : [], compacted: undone.compacted.size, rooms };
   };
 
   function textSelection(entry: Entry) {
@@ -128,16 +188,12 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return { selection, skipped };
   }
-  return {
-    own,
-    actions,
-    textPlan,
-    turnTextPlan,
-    takenBy,
-    planTakeOut,
-    unavailable,
-    free: () => {
-      for (const copy of planned.values()) copy.free();
-    },
-  };
+  return { own, actions, textPlan, turnTextPlan, takenBy, takeOut, unavailable };
 }
+
+const blocksIn = (docs: RoomDocs) =>
+  readDocument(docs).map((block) => nodeOf(inverseSchema, block));
+
+/** The blocks a draft's copy holds a change in (`changedBlocks`). */
+const pendingBlocks = (docs: RoomDocs) =>
+  new Set(changedBlocks(docs).flatMap((change) => change.blocks));

@@ -1,5 +1,4 @@
-import type { BlockRef } from "../handles.js";
-import type { DocumentModel } from "../ports/model.js";
+import type { DocumentModel, LoroBlock } from "../model/loro-model.js";
 import { type HashLocateContext, locateBlockByHash } from "./hash-locator.js";
 import {
   headingSlugs,
@@ -8,7 +7,7 @@ import {
   sectionNotFoundMessage,
 } from "./heading-sections.js";
 
-export const AROUND_BLOCK_RADIUS = 3;
+const AROUND_BLOCK_RADIUS = 3;
 
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
@@ -20,10 +19,10 @@ export interface ScopeResolveOptions {
 
 export interface BlockScope {
   kind: "document" | "block" | "range" | "section" | "around";
-  blocks: readonly BlockRef[];
+  blocks: readonly LoroBlock[];
   startIndex: number;
   endIndex: number;
-  heading?: BlockRef;
+  heading?: LoroBlock;
   headingLevel?: number;
 }
 
@@ -37,7 +36,7 @@ export type ScopeFailure =
       /** Set when a block number ran past the end, so the reply gives the size, not a re-read. */
       documentBlocks?: number;
     }
-  | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
+  | { ok: false; code: "ambiguous"; message: string; matches: LoroBlock[] };
 
 export function resolveSearchScope(
   ctx: ScopeContext,
@@ -76,7 +75,7 @@ export function resolveScope(
   return resolveSingleHash(ctx, input);
 }
 
-export function resolveFragment(
+function resolveFragment(
   ctx: ScopeContext,
   fragment: string,
   options: ScopeResolveOptions = {},
@@ -98,11 +97,11 @@ export function resolveFragment(
   return byHash.ok || byHash.code !== "not_found" ? byHash : bySlug;
 }
 
-export function isHeading(model: DocumentModel, block: BlockRef): boolean {
+export function isHeading(model: DocumentModel, block: LoroBlock): boolean {
   return model.getHeadingLevel(block) !== undefined;
 }
 
-export function headingLevel(model: DocumentModel, block: BlockRef): number {
+export function headingLevel(model: DocumentModel, block: LoroBlock): number {
   return model.getHeadingLevel(block) ?? 1;
 }
 
@@ -214,8 +213,8 @@ function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
 
 function headingSlugEntries(
   ctx: ScopeContext,
-): Array<{ slug: string; index: number; block: BlockRef }> {
-  const headings: Array<{ index: number; block: BlockRef }> = [];
+): Array<{ slug: string; index: number; block: LoroBlock }> {
+  const headings: Array<{ index: number; block: LoroBlock }> = [];
   ctx.blocks.forEach((block, index) => {
     if (isHeading(ctx.model, block)) headings.push({ index, block });
   });
@@ -227,7 +226,7 @@ function headingSlugEntries(
  * The `#fragment` that reads each heading's section: its slug, or its hash when
  * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
  */
-export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
+export function headingSectionFragments(ctx: ScopeContext): Map<LoroBlock, string | undefined> {
   return new Map(
     headingSlugEntries(ctx).map(({ slug, block }) => [
       block,
@@ -240,7 +239,7 @@ function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResul
   const { blocks } = ctx;
   const heading = blocks[headingIndex];
   const endIndex = sectionEndIndex(blocks.length, headingIndex, (index) =>
-    ctx.model.getHeadingLevel(blocks[index] as BlockRef),
+    ctx.model.getHeadingLevel(blocks[index]),
   );
   return {
     ok: true,
@@ -254,7 +253,7 @@ function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResul
 
 function scopeFromIndexes(
   kind: BlockScope["kind"],
-  allBlocks: readonly BlockRef[],
+  allBlocks: readonly LoroBlock[],
   startIndex: number,
   endIndex: number,
 ): BlockScope {

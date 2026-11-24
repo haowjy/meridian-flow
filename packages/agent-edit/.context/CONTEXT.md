@@ -35,14 +35,14 @@ write carries no ids (it writes text), so its pairing is by content only; the co
 
 ## The edit core
 
-`tool/loro-write.ts` (`createLoroEditCore`) runs `read` and `write` on a room's Loro docs
+`tool/edit-core.ts` (`createEditCore`) runs `read` and `write` on a room's Loro docs
 (`AgentEditRooms.readRoom`, one `RoomDocs` per call, freed at the call's end).
 
 - **Block identity is the block id.** Hashes are `fullHashForBlockId(id)`'s unique prefixes, and
   `ProjectedBlock.key` / `BlockSnapshot.key` carry the id, so echo, receipts and links share one
   path.
 - **A write plans on what the model read**, so a word the writer deleted after that read stays
-  deleted. The read's frontier is a per-doc map (`loro-frontier.ts`, `encodeFrontierMap`), the
+  deleted. The read's frontier is a per-doc map (`frontier.ts`, `encodeFrontierMap`), the
   reply's own batches merged in by their end version; the write plans on `docs.at(frontiers)`,
   exports one batch (`exportSince(shownVersion())`) by its turn (`commitMessage`, `{by: {turn}}`) and
   saves it through `rooms.save` with an `AgentWriteRecord`: its `edit` (`editSince` in
@@ -81,7 +81,7 @@ write carries no ids (it writes text), so its pairing is by content only; the co
   writes the result as a whole-document replace. A block with no full showing whose writer edit
   came after the read is what the fallback loses; a block deleted since answers `not_found` with
   the current text.
-- **Who changed what** (`tool/loro-observation.ts`) comes from the docs that changed since the
+- **Who changed what** (`tool/observation.ts`) comes from the docs that changed since the
   recorded frontier and who their commit messages say wrote them (`authorsSince`, by
   `readCommitMessage`): a turn is a chat (`authorOfTurn`), the reader's own turn is skipped, a
   press is the writer's Apply or Discard, and a commit by no one (typing, a tab's Undo) is the
@@ -91,11 +91,11 @@ write carries no ids (it writes text), so its pairing is by content only; the co
 - Write handles (`e<N>`) come from the host's `WriteOrdinals` (`ports/write-ordinals.ts`), one
   counter per chat and document.
 
-The server's host (`apps/server/server/domains/collab/adapters/loro-agent-edit-host.ts`) runs
-this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
-commit's transaction (`origin`, `delta` and `edit` on the part), and the model's `undo`
-and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
-frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
+The server's host (`apps/server/server/domains/collab/adapters/agent-edit-host.ts`) runs
+this core for every chat: `recordWrite` gets the record and writes the receipt in the commit's transaction (`origin`,
+`delta` and `edit` on the part), and the model's `undo` and `revert` go through `DocumentEdits`
+(`ports/document-edits.ts`), which returns the batches it committed so the reply's frontier
+covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
 document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each
 part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
 over `undoEdits`): every write goes back whatever was written since, but one whose room cut its

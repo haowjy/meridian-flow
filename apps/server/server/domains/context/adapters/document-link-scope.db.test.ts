@@ -364,9 +364,6 @@ if (!RUN) {
       const port = createScopedDocumentLinks({
         scopes,
         registrar: {
-          async register(rows) {
-            registered.push(...rows.map((row) => row.holderProjectId));
-          },
           async registerInCommand(rows) {
             registered.push(...rows.map((row) => row.holderProjectId));
           },

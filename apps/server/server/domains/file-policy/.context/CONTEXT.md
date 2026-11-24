@@ -98,8 +98,7 @@ or purge. A new agent write entry point enters through `modelEdits().write` or a
 container grant.
 
 A path that can run concurrently must not hold one pooled connection while
-acquiring another. Live pulls snapshot before opening their root transaction;
-remaining exceptions are tracked in [collab TODO](../../collab/.context/TODO.md).
+acquiring another; the exceptions are tracked in [collab TODO](../../collab/.context/TODO.md).
 
 Measure statement count and peak connection usage with the current fixtures
 before narrowing confirmation, adding a cache, or changing lock ownership. A

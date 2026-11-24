@@ -68,7 +68,7 @@ export type ContextEnsureTrackedPortOptions = Omit<
 /** What a scheme adapter supports. Checked by the router before dispatch. */
 export type SchemeCapabilities = ContextSchemeCapabilities;
 
-export const CONTEXT_SCHEME_CAPABILITIES = {
+const CONTEXT_SCHEME_CAPABILITIES = {
   manuscript: { writable: true, searchable: true, creatable: true },
   kb: { writable: true, searchable: true, creatable: true },
   user: { writable: true, searchable: true, creatable: true },

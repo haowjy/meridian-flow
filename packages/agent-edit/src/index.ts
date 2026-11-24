@@ -52,11 +52,9 @@ export {
 } from "./tool/result-text.js";
 export type {
   MutationActor,
-  ReadFunction,
   UnexpectedWriteErrorDetail,
   WriteContext,
   WriteErrorStatus,
-  WriteFunction,
   WriteOutcome,
   WriteStatus,
 } from "./tool/types.js";

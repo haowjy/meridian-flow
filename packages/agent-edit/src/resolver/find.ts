@@ -1,9 +1,9 @@
 import type { SerializedBlock } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { BlockRef } from "../handles.js";
 import type { FindSplice } from "../links/find-splice.js";
+import type { LoroBlock } from "../model/loro-model.js";
 import { markdownPlainText, markdownTextView } from "../model/markdown-text-view.js";
-import type { ProjectedBlock } from "../ports/model.js";
+import type { ProjectedBlock } from "../model/types.js";
 import type { BlockScope } from "./scope.js";
 
 export interface FindContext {
@@ -13,7 +13,7 @@ export interface FindContext {
 }
 
 export interface FindMatch {
-  elements: BlockRef[];
+  elements: LoroBlock[];
   startIndex: number;
   endIndex: number;
   rangeSource: string;
@@ -34,7 +34,7 @@ export type FindResult =
     };
 
 interface SerializedBlockEntry {
-  block: BlockRef;
+  block: LoroBlock;
   index: number;
   body: string;
   /** What separates this body from the previous entry's, as the document writes it. */

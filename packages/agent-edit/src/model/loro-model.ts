@@ -14,11 +14,11 @@ import {
   type WriteOptions,
 } from "@meridian/document-model";
 import { blocksOf, inlineOf, nodeOf } from "@meridian/loro-prosemirror";
+import type { ParsedContent } from "@meridian/markup";
 import { newBlockId, withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel, EditOp, ProjectedBlock } from "../ports/model.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "./block-hash.js";
+import type { EditOp, EditOpsResult, EditorOf, ProjectedBlock } from "./types.js";
 
 /**
  * One call's document as agent-edit plans and writes on it: a room copy or a planning view, and the
@@ -101,15 +101,10 @@ export interface LoroBlock {
   readonly document: LoroDocument;
 }
 
-export const toLoroHandle = (document: LoroDocument): DocHandle => document as unknown as DocHandle;
-export const loroDocumentOf = (handle: DocHandle): LoroDocument =>
-  handle as unknown as LoroDocument;
-const refOf = (block: LoroBlock): BlockRef => block as unknown as BlockRef;
-const blockOf = (ref: BlockRef): LoroBlock => ref as unknown as LoroBlock;
+/** The block operations the resolver, apply and the renderers run on a `LoroDocument`. */
+export type DocumentModel = ReturnType<typeof loroModel>;
 
-export type LoroDocumentModel = AgentEditModel & { schema: Schema };
-
-export function loroModel(schema: Schema): LoroDocumentModel {
+export function loroModel(schema: Schema) {
   const nodeFor = (block: LoroBlock): PMNode => {
     const shape = block.document.shape(block.id);
     if (!shape) throw new Error(`Block ${block.id} is not in the document`);
@@ -118,41 +113,37 @@ export function loroModel(schema: Schema): LoroDocumentModel {
   return {
     schema,
 
-    getBlocks: (doc) => {
-      const document = loroDocumentOf(doc);
-      return document.top().map((block) => refOf(document.ref(block.id)));
-    },
+    /** All top-level blocks. */
+    getBlocks: (document: LoroDocument): LoroBlock[] =>
+      document.top().map((block) => document.ref(block.id)),
 
-    getBlockId: (ref) => {
-      const block = blockOf(ref);
-      return block.document.hashOf(block.id);
-    },
+    /** A block's display hash. */
+    getBlockId: (block: LoroBlock): string => block.document.hashOf(block.id),
 
-    getDocumentBlockIds: (doc) => {
-      const document = loroDocumentOf(doc);
-      return document.top().map((block) => document.hashOf(block.id));
-    },
+    /** Every top-level block's display hash, in order. */
+    getDocumentBlockIds: (document: LoroDocument): string[] =>
+      document.top().map((block) => document.hashOf(block.id)),
 
-    isLive: (ref) => {
-      const block = blockOf(ref);
-      return block.document.shape(block.id) !== undefined;
-    },
+    /** Whether the block is still in its document. */
+    isLive: (block: LoroBlock): boolean => block.document.shape(block.id) !== undefined,
 
-    getBlockType: (ref) => blockOf(ref).document.shape(blockOf(ref).id)?.node ?? "",
+    getBlockType: (block: LoroBlock): string => block.document.shape(block.id)?.node ?? "",
 
-    getHeadingLevel: (ref) => {
-      const shape = blockOf(ref).document.shape(blockOf(ref).id);
+    /** The heading level of a heading; undefined otherwise. */
+    getHeadingLevel: (block: LoroBlock): number | undefined => {
+      const shape = block.document.shape(block.id);
       const level = shape?.node === "paragraph" ? shape.attrs.level : undefined;
       return level == null ? undefined : Number(level);
     },
 
-    getText: (ref) => nodeFor(blockOf(ref)).textContent,
+    getText: (block: LoroBlock): string => nodeFor(block).textContent,
 
-    // Each write commits as it applies; there is no transaction to open around it.
-    transact: (_doc, fn) => fn(),
-
-    insertBlocks(doc, after, parsed) {
-      const document = loroDocumentOf(doc);
+    /** Insert blocks after `after` (null: at the start); returns the inserted blocks. */
+    insertBlocks(
+      document: LoroDocument,
+      after: LoroBlock | null,
+      parsed: ParsedContent,
+    ): LoroBlock[] {
       // The codec's blocks have no ids: this is where they become stored blocks.
       const blocks = blocksOf(
         schema.topNodeType.create(
@@ -161,27 +152,31 @@ export function loroModel(schema: Schema): LoroDocumentModel {
         ),
       );
       if (blocks.length === 0) return [];
-      const anchor = after ? blockOf(after).id : null;
+      const anchor = after ? after.id : null;
       const result = document.apply([{ kind: "insert", parent: null, after: anchor, blocks }]);
       if (!result.ok) throw new Error(result.message);
-      return blocks.map((block) => refOf(document.ref(block.id)));
+      return blocks.map((block) => document.ref(block.id));
     },
 
-    deleteBlock(doc, ref) {
-      const result = loroDocumentOf(doc).apply([{ kind: "delete", block: blockOf(ref).id }]);
+    /** Delete a block; the last block is cleared instead. */
+    deleteBlock(document: LoroDocument, block: LoroBlock): void {
+      const result = document.apply([{ kind: "delete", block: block.id }]);
       if (!result.ok) throw new Error(result.message);
     },
 
-    recordPieces(doc, a, b) {
-      const result = loroDocumentOf(doc).apply([
-        { kind: "pieces", blocks: [blockOf(a).id, blockOf(b).id] },
-      ]);
+    /** Record that an edit moved text between two blocks (a split, a join); `b` may be gone. */
+    recordPieces(document: LoroDocument, a: LoroBlock, b: LoroBlock): void {
+      const result = document.apply([{ kind: "pieces", blocks: [a.id, b.id] }]);
       if (!result.ok) throw new Error(result.message);
     },
 
-    applyOps(doc, ref, ops) {
-      const document = loroDocumentOf(doc);
-      const block = blockOf(ref);
+    /**
+     * Apply operations to one top-level block, addressed on its state before any of them.
+     * Every path and offset is checked before anything changes; a write that does not fit
+     * the block fails and leaves it as it was. An edited block keeps its element and its id;
+     * an inserted node keeps an id it already has and takes a new one otherwise.
+     */
+    applyOps(document: LoroDocument, block: LoroBlock, ops: readonly EditOp[]): EditOpsResult {
       const shape = document.shape(block.id);
       if (!shape) return invalid(`block ${block.id} is not in the document`);
       const lowered: ShapeOp[] = [];
@@ -195,8 +190,9 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       return result.ok ? { ok: true } : result;
     },
 
-    unitEditors(ref, path) {
-      const { document, id } = blockOf(ref);
+    /** The editor that typed each unit of the textblock at `path` under a top-level block. */
+    unitEditors(block: LoroBlock, path: readonly number[]): EditorOf {
+      const { document, id } = block;
       const shape = document.shape(id);
       const node = shape && shapeAt(shape, path);
       const rule = node?.kind === "text" ? document.docs.shape.node(node.node) : undefined;
@@ -205,11 +201,11 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       return (unit) => editors[unit];
     },
 
-    projectBlocks(doc) {
-      const document = loroDocumentOf(doc);
+    /** Every top-level block with its display hash and node, built in one walk. */
+    projectBlocks(document: LoroDocument): ProjectedBlock[] {
       return document.top().map(
         (block): ProjectedBlock => ({
-          ref: refOf(document.ref(block.id)),
+          ref: document.ref(block.id),
           key: block.id,
           hash: document.hashOf(block.id),
           fullHash: fullHashForBlockId(block.id),

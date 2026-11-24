@@ -1,7 +1,7 @@
 # @meridian/agent-edit
 
 Editing core for the model's document `read` and `write`, write handles and the receipts their
-Undo reads: `createLoroEditCore` (design §5) on the host's `DocumentRooms`. A write commits at its
+Undo reads: `createEditCore` (design §5) on the host's `DocumentRooms`. A write commits at its
 tool call; the host runs it as one command. Hosts supply the rooms, write ordinals, document
 edits, the codec and the link ports; the core builds its model from the schema it is given. This
 package owns no Postgres, routes, auth or Project/Work concepts.

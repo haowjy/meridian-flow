@@ -6,7 +6,7 @@
  * `readTurnTreeTargets` lists the documents a reply only moved, created or deleted, for its card.
  */
 
-import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { StoredDelta } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {

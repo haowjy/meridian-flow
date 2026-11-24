@@ -5,8 +5,8 @@ must do that the types can't say.
 
 ## `AgentEditRooms`
 
-`save(room, batch, record)` runs inside the host's command: `commit` the batch, then
-`recordWrite` the record and the batch in the same transaction, so a write and its Undo record
+`save(room, batch, record, context)` runs inside the host's command: `commit` the batch, then
+`recordWrite` the record with the call context in the same transaction, so a write and its Undo record
 land or fail together. The record's `delta` is the write's before and after text by block, which
 the card and the edits list show; its `edit` is what turn Undo and the model's `undo` and `revert`
 take back, whole or not at all, by design §2's Undo rule (`undoInRooms`) in the record's `room`, so
@@ -42,7 +42,7 @@ Markdown, for reads, parses and echoes alike.
 A `prepare` that is never called leaves the operation's scope without the row: an unprepared ref or
 address is a snapshot miss (`undefined`), never an invented location.
 
-## `AgentEditModel`
+## `DocumentModel`
 
 The resolver projects once, first (`projectBlocks`); its scopes, hashes and anchors index that
 list, and a whole-document write takes its scope from it, never from a count taken earlier.
@@ -50,7 +50,7 @@ list, and a whole-document write takes its scope from it, never from a count tak
 `key` names the block in this document: its block id. `hash` and `fullHash` come from the same id
 (`fullHashForBlockId`); hash lookup matches `fullHash`.
 
-## `AgentEditCore`
+## `WriteContext`
 
 `responseIdentity` names the response a write is authored in (the host's `ResponseAuthorship`),
 separate from the writing session.

@@ -3,12 +3,6 @@ import {
   canonicalContextUri,
 } from "@meridian/contracts/context-uri";
 
-export function parentSourcePath(sourcePath: string): string {
-  const normalized = sourcePath.replace(/^\/+|\/+$/g, "");
-  const idx = normalized.lastIndexOf("/");
-  return idx <= 0 ? "." : normalized.slice(0, idx);
-}
-
 /** Maps a source path to canonical Scratch results under its factual owner. */
 
 export function resultsUriForSourcePath(

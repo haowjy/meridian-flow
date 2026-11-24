@@ -11,6 +11,7 @@ import {
   freshBatchId,
   LORO_JOIN_ERROR,
   LORO_ROOM_ERROR,
+  type LoroJoinExtra,
   loroAccessChangedReason,
   loroRoomName,
   parseLoroRoomName,
@@ -259,63 +260,35 @@ export function createLoroGateway(services: LoroGatewayServices) {
       if (cause instanceof JoinRefused) return refuse(cause.refusal);
       throw cause;
     }
-    // Subscribe before the sync, so no batch falls between the copy's catch-up and the stream.
-    const joined: Joined = {
+    const keys = admission.accessKeys.join();
+    return openRoom(connection, message, refuse, {
       documentId: room.documentId,
       permission: admission.permission,
+      accessKeys: admission.accessKeys,
       write: async (batch) => {
         await services.rooms.write(room, batch, connection.id);
       },
-      held: [],
-      unsubscribe: services.rooms.subscribe(room, (batch) => {
-        if (batch.origin === connection.id) return;
-        if (joined.held) joined.held.push({ batch: batch.batch });
-        else sendBatch(connection, name, batch.batch);
-      }),
-      registration: {
-        revoke: (why) =>
-          endRoom(connection, name, LORO_ROOM_ERROR.ACCESS_CHANGED, loroAccessChangedReason(why)),
+      subscribe: (hear) =>
+        services.rooms.subscribe(room, (batch) => {
+          if (batch.origin !== connection.id) hear(batch.batch);
+        }),
+      async stillAdmitted() {
+        const settled = await findAccess(userId, admission.target);
+        return Boolean(
+          settled &&
+            settled.permission === admission.permission &&
+            accessKeys(settled.facts, room.documentId).join() === keys,
+        );
       },
-    };
-    connection.joined.set(name, joined);
-    access.register(joined.registration, admission.accessKeys);
-    // A change between admission and registration reached no room. Registered now, the room
-    // hears every later change: ask once more, and end the room when the answer moved.
-    const settled = await findAccess(userId, admission.target);
-    if (
-      !settled ||
-      settled.permission !== admission.permission ||
-      accessKeys(settled.facts, room.documentId).join() !== admission.accessKeys.join()
-    ) {
-      drop(connection, name);
-      return refuse(LORO_JOIN_ERROR.DOCUMENT_UNKNOWN);
-    }
-    const sync = await services.rooms.sync(room, message.version);
-    if (connection.joined.get(name) !== joined) return;
-    send(connection, {
-      type: MessageType.JoinResponseOk,
-      crdt: CrdtType.Loro,
-      roomId: name,
-      permission: admission.permission,
-      version: sync.version,
-      extra: encodeLoroJoinExtra({ readOnlyWhy: admission.readOnlyWhy }),
-    });
-    if (sync.update) sendBatch(connection, name, sync.update);
-    const held = joined.held ?? [];
-    joined.held = null;
-    for (const { batch } of held) sendBatch(connection, name, batch);
-    emitEvent(services.eventSink, {
-      level: "info",
-      source: "collab.rooms",
-      name: "room.join",
-      correlation: {
-        documentId: room.documentId,
-        ...(admission.projectId ? { projectId: admission.projectId } : {}),
-      },
-      payload: {
+      moved: LORO_JOIN_ERROR.DOCUMENT_UNKNOWN,
+      sync: (version) => services.rooms.sync(room, version),
+      extra: { readOnlyWhy: admission.readOnlyWhy },
+      event: {
         room: room.kind,
-        permission: admission.permission,
-        sentBytes: sync.update?.byteLength ?? 0,
+        correlation: {
+          documentId: room.documentId,
+          ...(admission.projectId ? { projectId: admission.projectId } : {}),
+        },
       },
     });
   }
@@ -331,16 +304,52 @@ export function createLoroGateway(services: LoroGatewayServices) {
     list: TreeListRef,
     refuse: (refusal: JoinRefusal) => void,
   ) {
-    const name = message.roomId;
     const { userId } = connection.peer;
     const listId = await services.trees.open(list, userId);
     if (listId === null) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
-    const joined: Joined = {
+    return openRoom(connection, message, refuse, {
       documentId: null,
       permission: "write",
+      accessKeys: [message.roomId],
       write: (batch) => services.trees.write(list, userId, batch),
+      subscribe: (hear) => services.trees.subscribe(listId, hear),
+      // A deletion between the open and the registration reached no room.
+      stillAdmitted: async () => (await services.trees.open(list, userId)) === listId,
+      moved: LORO_JOIN_ERROR.PERMISSION_DENIED,
+      sync: (version) => services.trees.sync(listId, version),
+      extra: { list: listId },
+      event: { room: "tree" },
+    });
+  }
+
+  /** An admitted room's Join: subscribe, register, ask again, sync, answer, then stream. */
+  async function openRoom(
+    connection: LoroGatewayConnection,
+    message: JoinRequest,
+    refuse: (refusal: JoinRefusal) => void,
+    source: {
+      documentId: DocumentId | null;
+      permission: Permission;
+      accessKeys: string[];
+      write(batch: Uint8Array): Promise<void>;
+      /** Hears every batch another peer commits into the room. */
+      subscribe(hear: (batch: Uint8Array) => void): () => void;
+      stillAdmitted(): Promise<boolean>;
+      /** What the Join answers when `stillAdmitted` says no. */
+      moved: JoinRefusal;
+      sync(version: Uint8Array): Promise<{ version: Uint8Array; update: Uint8Array | null }>;
+      extra: LoroJoinExtra;
+      event: { room: string; correlation?: { documentId: DocumentId; projectId?: string } };
+    },
+  ) {
+    const name = message.roomId;
+    // Subscribe before the sync, so no batch falls between the copy's catch-up and the stream.
+    const joined: Joined = {
+      documentId: source.documentId,
+      permission: source.permission,
+      write: source.write,
       held: [],
-      unsubscribe: services.trees.subscribe(listId, (batch) => {
+      unsubscribe: source.subscribe((batch) => {
         if (joined.held) joined.held.push({ batch });
         else sendBatch(connection, name, batch);
       }),
@@ -350,21 +359,22 @@ export function createLoroGateway(services: LoroGatewayServices) {
       },
     };
     connection.joined.set(name, joined);
-    access.register(joined.registration, [name]);
-    // A deletion between the open and the registration reached no room: ask once more.
-    if ((await services.trees.open(list, userId)) !== listId) {
+    access.register(joined.registration, source.accessKeys);
+    // A change between admission and registration reached no room. Registered now, the room
+    // hears every later change: ask once more, and end the room when the answer moved.
+    if (!(await source.stillAdmitted())) {
       drop(connection, name);
-      return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+      return refuse(source.moved);
     }
-    const sync = await services.trees.sync(listId, message.version);
+    const sync = await source.sync(message.version);
     if (connection.joined.get(name) !== joined) return;
     send(connection, {
       type: MessageType.JoinResponseOk,
       crdt: CrdtType.Loro,
       roomId: name,
-      permission: "write",
+      permission: source.permission,
       version: sync.version,
-      extra: encodeLoroJoinExtra({ list: listId }),
+      extra: encodeLoroJoinExtra(source.extra),
     });
     if (sync.update) sendBatch(connection, name, sync.update);
     const held = joined.held ?? [];
@@ -374,7 +384,12 @@ export function createLoroGateway(services: LoroGatewayServices) {
       level: "info",
       source: "collab.rooms",
       name: "room.join",
-      payload: { room: "tree", permission: "write", sentBytes: sync.update?.byteLength ?? 0 },
+      ...(source.event.correlation ? { correlation: source.event.correlation } : {}),
+      payload: {
+        room: source.event.room,
+        permission: source.permission,
+        sentBytes: sync.update?.byteLength ?? 0,
+      },
     });
   }
 

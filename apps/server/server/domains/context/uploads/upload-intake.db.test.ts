@@ -25,7 +25,7 @@ import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import {
   createTestDocumentLinkScopes,
-  testLinkDeps,
+  testCollabDeps,
 } from "../../collab/test-support/document-link-scopes.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
@@ -254,7 +254,7 @@ if (!RUN) {
           slug: "manuscript",
         });
         const collab = createCollabDomain({
-          ...testLinkDeps(db),
+          ...testCollabDeps(db),
           db: db,
           ...createTestRemovalDeps(db),
           fileAccess: createAllowAllFileAccess(),

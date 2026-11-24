@@ -6,7 +6,6 @@ import {
   type AgentEditCodecFactory,
   type LoroDocument,
   loroModel,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { encodeRoomVersion } from "@meridian/document-model";
@@ -92,7 +91,7 @@ export function createDocumentDerivationService(input: {
   };
 }
 
-export async function deriveDocument(
+async function deriveDocument(
   input: { store: DocumentDerivationStore; readCut: ReadCut },
   documentId: DocumentId,
   at = new Date(),
@@ -118,7 +117,7 @@ export async function deriveDocument(
 }
 
 /** The blocks and link rows of the cut's document. */
-export async function deriveDocumentOutputs(
+async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
   readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {
@@ -149,7 +148,7 @@ export function createCutReader(deps: {
   const model = loroModel(deps.schema);
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
-    const read = grepBlocksOf(toLoroHandle(doc), model, deps.codec().markup, verbatim);
+    const read = grepBlocksOf(doc, model, deps.codec().markup, verbatim);
     return {
       blocks: read.map(({ block, destinationFree, text }) => ({
         id: block.key,

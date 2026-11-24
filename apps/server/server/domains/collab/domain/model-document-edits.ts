@@ -1,22 +1,25 @@
-// Composition adapter binds model history commands to the caller's document.
-
 import type { DocumentEditRequest, DocumentEdits } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
-import { currentInversePrincipal } from "./inverse-principal.js";
+import type { AgentCallContext } from "./agent-edit-cores.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
 
-export function createModelDocumentEdits(input: { service(): TurnInverseService }): DocumentEdits {
-  function query(request: DocumentEditRequest & { command: { file: string } }) {
+/** The model's edit list, undo and revert, on the turn-inverse service, as the call's chat. */
+export function createModelDocumentEdits(input: {
+  service(): TurnInverseService;
+}): DocumentEdits<AgentCallContext> {
+  function query(request: DocumentEditRequest<AgentCallContext> & { command: { file: string } }) {
+    const { context } = request;
     return {
       model: true as const,
       documentIds: [request.documentId as DocumentId],
       threadId: request.threadId as ThreadId,
       // A deleted document has no address of its own: results name it by the model's path.
       path: request.command.file,
-      turnId: request.context.turnId as TurnId | undefined,
-      responseIdentity: request.context.responseIdentity,
-      toolCallId: request.context.tool_use_id,
-      principal: currentInversePrincipal(),
+      turnId: context.turnId as TurnId | undefined,
+      responseIdentity: context.responseIdentity,
+      toolCallId: context.tool_use_id,
+      principal: context.grant.principal,
+      view: context.linkView ?? { kind: "live" as const },
     };
   }
   return {

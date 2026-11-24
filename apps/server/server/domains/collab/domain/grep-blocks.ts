@@ -5,11 +5,11 @@
 import { destinationFreeBlocks, grepBlockText } from "@meridian/agent-edit";
 import type {
   AgentEditCodecFactory,
-  AgentEditModel,
-  DocHandle,
+  DocumentModel,
+  LoroDocument,
 } from "@meridian/agent-edit/integration";
 
-type ProjectedBlock = ReturnType<AgentEditModel["projectBlocks"]>[number];
+type ProjectedBlock = ReturnType<DocumentModel["projectBlocks"]>[number];
 
 export type GrepBlock = {
   block: ProjectedBlock;
@@ -20,8 +20,8 @@ export type GrepBlock = {
 };
 
 export function grepBlocksOf(
-  doc: DocHandle,
-  model: AgentEditModel,
+  doc: LoroDocument,
+  model: DocumentModel,
   markup: AgentEditCodecFactory["markup"],
   verbatim: boolean,
 ): GrepBlock[] {

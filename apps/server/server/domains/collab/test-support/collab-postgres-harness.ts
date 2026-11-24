@@ -20,6 +20,7 @@ import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { insertWorks } from "../../../test-support/work-rows.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
+import { createAgentEditHost } from "../adapters/agent-edit-host.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
 import {
@@ -35,14 +36,13 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
-import { createLoroAgentEditHost } from "../adapters/loro-agent-edit-host.js";
 import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import { createAgentEditRouter } from "../domain/agent-edit-router.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
 import { createDraftReviewIdentity } from "../domain/draft-review-identity.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
-import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
+import { createModelEditWriter } from "../domain/model-edit-write.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { createPostgresDocumentRooms } from "../rooms/postgres-document-rooms.js";
 import { liveMarkdown, writeLiveMarkdown } from "./live-room-text.js";
@@ -282,7 +282,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     eventSink,
     schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
   });
-  const loroHost = createLoroAgentEditHost({ db, rooms });
+  const loroHost = createAgentEditHost({ db, rooms });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,
@@ -307,7 +307,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
-  const modelEditRead = createModelEditRead(agentEdit.read);
   const modelEvidence = createDrizzleModelEvidence(db);
   const modelEdits = createDrizzleModelEdits(
     db,
@@ -323,7 +322,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         }),
         links,
       ),
-      read: modelEditRead,
+      read: agentEdit.read,
     },
     modelEvidence,
   );
@@ -409,7 +408,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         grant: testFileGrant({ kind: "live" }, ALPHA_ID),
-        sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseIdentity: { modelResponseId: responseId },

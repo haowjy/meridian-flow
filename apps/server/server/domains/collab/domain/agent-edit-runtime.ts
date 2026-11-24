@@ -3,16 +3,16 @@ import {
   type AgentEditCodecFactory,
   type AgentEditRooms,
   createAgentEditCodecFactory,
-  createLoroEditCore,
-  type LoroDocumentEdits,
-  type LoroEditCoreOptions,
+  createEditCore,
+  type DocumentEdits,
+  type EditCoreOptions,
   type WriteOrdinals,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { AgentEditCore } from "./agent-edit-cores.js";
+import type { AgentCallContext, AgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
@@ -22,7 +22,7 @@ import { createMarkdownDocumentEngine } from "./markdown-document.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type AgentEditObservability = Pick<
-  LoroEditCoreOptions,
+  EditCoreOptions,
   "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 >;
 
@@ -31,7 +31,7 @@ export function createAgentEditRuntime<Tx>(input: {
   loro: {
     rooms: AgentEditRooms;
     ordinals: WriteOrdinals;
-    documentEdits: LoroDocumentEdits;
+    documentEdits: DocumentEdits<AgentCallContext>;
     authorOfTurn(turnId: string): Promise<string | null>;
   };
   lockDocument(documentId: DocumentId): Promise<void>;
@@ -59,7 +59,7 @@ export function createAgentEditRuntime<Tx>(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const core: AgentEditCore = createLoroEditCore({
+  const core: AgentEditCore = createEditCore<AgentCallContext>({
     rooms: input.loro.rooms,
     ordinals: input.loro.ordinals,
     schema,

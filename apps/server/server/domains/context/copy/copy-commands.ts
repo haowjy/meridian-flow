@@ -14,7 +14,7 @@ import type {
 import type { Database } from "@meridian/database";
 import { CommandExistsError, commandDigest } from "../../../shared/commands/command-record.js";
 import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
-import { runDocumentCommand } from "../../collab/adapters/drizzle-document-commands.js";
+import { runDocumentCommand } from "../../collab/index.js";
 
 /** The effect answered an error: nothing is stored, so the same id stays sendable. */
 class FailedCopy extends Error {

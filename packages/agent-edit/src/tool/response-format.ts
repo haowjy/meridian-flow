@@ -15,7 +15,6 @@ export interface ApplySuccessResponseInput {
   writeId?: string;
   echo: ApplyEchoHunk[];
   deletedBlocks?: readonly string[];
-  awarenessDegraded?: boolean;
   /** The write left the document with no text, only the one blank block every document keeps. */
   documentEmpty?: boolean;
   /** A copy reports this instead of echoing what it wrote; its edges are `hash|prefix` lines. */
@@ -54,7 +53,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
         ? { copied: { from: input.copied.summary.from, blocks: input.copied.summary.blocks } }
         : {}),
       ...(blocks.length > 0 ? { blocks } : {}),
-      ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),

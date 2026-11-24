@@ -1,32 +1,22 @@
-/** Branded agent-edit core types and the grant that authorizes and routes each model call. */
-import type { LoroEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
-import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
+import type { EditCore, WriteContext } from "@meridian/agent-edit/integration";
+import type { FileGrant } from "../../file-policy/index.js";
 
 /**
- * A write's context: the edit grant the caller got from the file policy. Its
- * destination routes the call, and the write seams confirm it (file-access §5).
+ * A model call's context: agent-edit's, with the grant the file policy gave the caller. The
+ * call's `linkView` is the grant's destination (Live, or the chat's draft), and the host's ports
+ * read both from here: the room a call reads and writes, and who an inverse acts for.
  */
-export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
+export type AgentCallContext = WriteContext & { grant: FileGrant };
+
+/** A write's context: the edit grant the caller got from the file policy (file-access §5). */
+export type RoutedWriteContext = AgentCallContext & { grant: FileGrant<"edit"> };
 
 /**
  * A read's context. `liveVersion` marks a `version: "live"` read: it reads the live document
  * even when the thread has a Work draft of it, where a default read follows the grant's
  * destination.
  */
-export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
+export type RoutedReadContext = AgentCallContext & { liveVersion?: boolean };
 
-/** An inverse may reverse some writes and name the policy refusals for the rest. */
-export type RoutedWriteOutcome = WriteOutcome & {
-  refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
-};
-
-/**
- * The model's reads and writes: agent-edit's Loro core on the server's rooms, one for every chat.
- * The call's destination (`runAtDestination`) picks Live or the chat's draft fork.
- */
-export type AgentEditCore = Pick<LoroEditCore, "read" | "write">;
-
-export function sameDestination(left: FileDestination, right: FileDestination): boolean {
-  if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
-  return left.draftId === right.draftId;
-}
+/** The model's reads and writes: agent-edit's core on the server's rooms, one for every chat. */
+export type AgentEditCore = Pick<EditCore<AgentCallContext>, "read" | "write">;

@@ -1,7 +1,7 @@
 /** Event-sink adapters for agent-edit diagnostics and lifecycle observability. */
 import type {
+  EditCoreOptions,
   LinkSpliceFallbackDetail,
-  LoroEditCoreOptions,
   ObservationFailedDetail,
   UnexpectedWriteErrorDetail,
 } from "@meridian/agent-edit/integration";
@@ -89,7 +89,7 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
 export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
 }): Pick<
-  LoroEditCoreOptions,
+  EditCoreOptions,
   "onUnexpectedWriteError" | "onLinkSpliceFallback" | "onObservationFailed"
 > {
   return {
@@ -105,7 +105,7 @@ export function createAgentEditObservabilityOptions(input: {
  */
 function observationFailedObserver(
   eventSink?: EventSink,
-): NonNullable<LoroEditCoreOptions["onObservationFailed"]> {
+): NonNullable<EditCoreOptions["onObservationFailed"]> {
   return (event: ObservationFailedDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {
@@ -125,7 +125,7 @@ function observationFailedObserver(
  */
 function linkSpliceFallbackObserver(
   eventSink?: EventSink,
-): NonNullable<LoroEditCoreOptions["onLinkSpliceFallback"]> {
+): NonNullable<EditCoreOptions["onLinkSpliceFallback"]> {
   return (event: LinkSpliceFallbackDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {
@@ -140,7 +140,7 @@ function linkSpliceFallbackObserver(
 
 function unexpectedWriteErrorObserver(
   eventSink?: EventSink,
-): NonNullable<LoroEditCoreOptions["onUnexpectedWriteError"]> {
+): NonNullable<EditCoreOptions["onUnexpectedWriteError"]> {
   return (event: UnexpectedWriteErrorDetail) => {
     if (!eventSink) return;
     emitEvent(eventSink, {
@@ -155,7 +155,6 @@ function unexpectedWriteErrorObserver(
       },
       payload: {
         command: event.command,
-        sessionId: event.sessionId,
         ...(event.responseId ? { responseId: event.responseId } : {}),
         ...(event.toolUseId ? { toolUseId: event.toolUseId } : {}),
         ...unknownToEventPayload(event.cause),

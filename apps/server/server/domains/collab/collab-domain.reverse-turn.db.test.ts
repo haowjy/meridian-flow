@@ -153,7 +153,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             tool_use_id: "call_mock_write_1",
           },
           {
-            sessionId: "session-reused-provider-tool-id-db",
             grant: testFileGrant({ kind: "live" }, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_ID,
@@ -176,7 +175,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             tool_use_id: "call_mock_write_1",
           },
           {
-            sessionId: "session-reused-provider-tool-id-db",
             grant: testFileGrant({ kind: "live" }, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,

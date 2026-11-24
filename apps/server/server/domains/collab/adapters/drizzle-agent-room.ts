@@ -1,19 +1,21 @@
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
-import type { DocumentId, DraftId } from "@meridian/contracts";
+import type { DocumentId, DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { documents, draftTreeNodes } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDestination } from "../domain/agent-destination.js";
 
 /**
- * The room a model call reads and writes `documentId` in (design §5): Live at a Live destination;
- * at a draft, the draft's fork room whether or not the draft has written there, except for a
- * document only the draft holds (its pending create), whose text is in its own Live room.
+ * The room a model call at `view` reads and writes `documentId` in (design §5): Live at Live; at a
+ * draft, the draft's fork room whether or not the draft has written there, except for a document
+ * only the draft holds (its pending create), whose text is in its own Live room.
  */
-export async function agentRoomFor(db: DrizzleDb, documentId: string): Promise<DocumentRoom> {
-  const destination = currentDestination();
-  const draftId = destination.kind === "draft" ? destination.draftId : null;
+export async function agentRoomFor(
+  db: DrizzleDb,
+  documentId: string,
+  view: LinkView,
+): Promise<DocumentRoom> {
+  const draftId = view.kind === "draft" ? view.draftId : null;
   const [row] = await db
     .select({ onlyInDraft: draftTreeNodes.existsOnlyInDraft })
     .from(documents)

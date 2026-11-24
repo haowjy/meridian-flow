@@ -31,8 +31,10 @@ and upload content is always live.
 Nothing holds a write: each lands in its command's transaction, so a read always shows the
 writes before it.
 
-The composition root wires required services and provider ports. It owns no business behavior,
-mutable runtime state, or optional capability matrix. `collab-facade.ts` only assembles the
+The composition root wires required services and provider ports. It owns no business behavior
+or mutable runtime state. What a command needs is required (`notices`, `threadContext`); the
+optional deps are side channels a suite may leave out (events, room bounds, ahead-ref arrivals
+and registrations, live text hints). `collab-facade.ts` only assembles the
 domain surface. Agent-edit owns the memory-only mutation kernel; collab owns authorization,
 persistence, and coordination.
 
@@ -70,8 +72,9 @@ document's lock. A frontier is keyed by its room's name (`loroRoomName`: `live:<
 A call whose caller passes `frontiers` (the read and write tools, and reference reads, which
 pass `recording` only) records an observation frontier in the room its result rendered from. A
 write plans on the `planning` lookup when usable, otherwise on the current room; neither path
-refuses concurrent text. An undo or revert records in the room its inverse committed into
-(`DocumentEditResult.room`). `format: "edits"` reads record none. A model edit as a command
+refuses concurrent text. An undo or revert records none: the batches its inverse committed into the chat's room join the
+reply's own (`DocumentEditResult.updates`), which a later write plans on. `format: "edits"` reads
+record none either. A model edit as a command
 records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)).
 See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 

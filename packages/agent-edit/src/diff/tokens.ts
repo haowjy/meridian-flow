@@ -343,7 +343,7 @@ const splitWords = (text: string): string[] => segmentText(text).map((s) => s.se
 
 const wordKeys = new WeakMap<PMNode, string[]>();
 /** A block's words in order (a non-text block is one pseudo-word: its key). */
-export function blockWords(node: PMNode): string[] {
+function blockWords(node: PMNode): string[] {
   let w = wordKeys.get(node);
   if (!w) {
     w = node.isTextblock

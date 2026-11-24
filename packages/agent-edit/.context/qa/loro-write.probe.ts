@@ -8,7 +8,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import {
   createAgentEditCodecFactory,
-  createLoroEditCore,
+  createEditCore,
   createReplyMutations,
   createStaticDocumentLinks,
   type ObservationFrontier,
@@ -17,7 +17,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "../../src/integration.js";
-import { createInMemoryLoroHost } from "../../src/test-support/in-memory-loro-agent-edit.js";
+import { createInMemoryHost } from "../../src/test-support/in-memory-host.js";
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
@@ -81,16 +81,16 @@ function chat(threadId: string, turnId: string) {
   };
 }
 
-const host = createInMemoryLoroHost(schema);
+const host = createInMemoryHost(schema);
 /** A core for a Live chat (`null`) or a Draft chat on `draftId`, as the server's host builds one. */
 const coreFor = (draftId: string | null) => {
   const chatRooms = host.chat(draftId);
-  return createLoroEditCore({
+  return createEditCore({
     rooms: chatRooms.rooms,
     ordinals: host.ordinals,
     schema,
     codec,
-    links: createStaticDocumentLinks(undefined, { preloaded: true }),
+    links: createStaticDocumentLinks(),
     documentEdits: chatRooms.documentEdits,
     authorOfTurn: async (turn) => (turn === "t-other" ? "agent (c7)" : null),
   });
@@ -412,7 +412,7 @@ check(
 // 10. The Draft turn's restore press takes every write of it back in the draft (design §2: an
 // Undo always runs), the applied one too: Live keeps the applied paragraph, and the draft shows
 // taking it out as a change of its own.
-await host.restoreBefore("ch6", "d1", "t9");
+await host.restoreTurn("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
   (await draftText("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept." &&

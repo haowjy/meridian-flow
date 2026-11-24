@@ -9,9 +9,8 @@ failure-prone operation the current preflight cannot protect.
 
 ## One projection per write plan
 
-A write projects its planning document in `planWrite` and again when it snapshots
-the before-state (`snapshotProjected(model.projectBlocks(planDoc))`), with nothing changing the document in
-between. Sharing one projection needs `projected` on `WritePlan` (`resolver/resolve.ts`)
-and a way to hand it to the write's before-state snapshot, plus a path for the
-`{ blocks }` create, which has no plan
+A write projects its planning document in `planWrite` and again when `finish` snapshots
+the before-state (`snapshotProjected(model.projectBlocks(planDoc))` in `tool/edit-core.ts`),
+with nothing changing the document in between. Sharing one projection needs `projected` on
+`WritePlan`, carried to `finish`, plus a path for the `{ blocks }` create, which has no plan
 projection. Take it when profiling shows edit latency matters.

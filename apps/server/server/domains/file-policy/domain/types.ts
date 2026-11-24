@@ -311,13 +311,6 @@ export function grantOwnerLocks(facts: FileFacts): OwnerLocks {
 
 export type { OwnerLocks };
 
-/** The project an agent's grant was asked in (its thread's); only an agent's grant has one. */
-export function agentProject(grant: Pick<FileGrant, "principal">): ProjectId {
-  const projectId = grant.principal.agent?.projectId;
-  if (!projectId) throw new Error("The grant is not an agent's");
-  return projectId;
-}
-
 /** The draft an agent's drafted writes land in, with its owner. */
 export function agentDraftOwner(principal: Principal): DraftOwnerRef {
   const ref = principal.agent?.draftOwner;

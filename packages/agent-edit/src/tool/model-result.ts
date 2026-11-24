@@ -137,7 +137,6 @@ export interface AgentEditModelPayload {
   };
   blocks?: AgentEditBlockGroup[];
   concurrent?: AgentEditConcurrentListing;
-  awarenessDegraded?: boolean;
   /** The write left the document empty; its one blank block is the empty document, not a leftover. */
   documentEmpty?: boolean;
   /** The document already matched the write, so nothing was recorded and no write id exists. */

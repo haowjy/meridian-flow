@@ -23,11 +23,8 @@ import {
 } from "@meridian/document-model/rooms";
 import { blocksOf, nodeOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import type {
-  AgentEditRooms,
-  AgentWriteRecord,
-  LoroDocumentEdits,
-} from "../ports/document-rooms.js";
+import type { DocumentEdits } from "../ports/document-edits.js";
+import type { AgentEditRooms, AgentWriteRecord } from "../ports/document-rooms.js";
 import { agentEditRooms } from "../ports/document-rooms.js";
 import { editHandle } from "../ports/write-ordinals.js";
 import { undoInRooms } from "../undo-in-rooms.js";
@@ -35,10 +32,10 @@ import { undoInRooms } from "../undo-in-rooms.js";
 /** What a chat's core runs on: its rooms and its edit history. */
 export interface InMemoryChatRooms {
   rooms: AgentEditRooms;
-  documentEdits: LoroDocumentEdits;
+  documentEdits: DocumentEdits;
 }
 
-export interface InMemoryLoroHost {
+export interface InMemoryHost {
   rooms: MemoryDocumentRooms;
   /**
    * A chat's door: Live for `null`, else the draft's fork room from the first read, whether or not
@@ -81,7 +78,7 @@ export interface InMemoryLoroHost {
    * A Draft-mode turn's restore press: the turn's writes into the fork taken back by the
    * Undo rule, newest first (design §2). Returns how many went back.
    */
-  restoreBefore(documentId: string, draftId: string, turnId: string): Promise<number>;
+  restoreTurn(documentId: string, draftId: string, turnId: string): Promise<number>;
   /** Compact the document's history to now (design §4's cutoff), as an unload past the bound does. */
   compact(documentId: string): Promise<void>;
   /** The writer's turn Undo on a chat card: the turn's writes taken back, each in its room (design §5). */
@@ -96,7 +93,7 @@ const fork = (documentId: string, draftId: string): DocumentRoom => ({
   documentId,
 });
 
-export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
+export function createInMemoryHost(schema: Schema): InMemoryHost {
   const rooms = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const records: AgentWriteRecord[] = [];
   /** Writes an inverse took back: the model's undo goes past them, as the server's does. */
@@ -166,7 +163,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     }
   };
 
-  const documentEdits: LoroDocumentEdits = {
+  const documentEdits: DocumentEdits = {
     async read({ documentId, threadId }) {
       const mine = records.filter((r) => r.documentId === documentId && r.threadId === threadId);
       if (mine.length === 0) return { status: "success", message: "No edits by this chat." };
@@ -176,7 +173,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
           .map((record) => {
             const before = record.delta?.before.length ?? 0;
             const after = record.delta?.after.length ?? 0;
-            return `${editHandle(record.wId)} (${record.writeId}): ${before} block(s) before, ${after} after`;
+            return `${editHandle(record.wId)}: ${before} block(s) before, ${after} after`;
           })
           .join("\n"),
       };
@@ -283,7 +280,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
         docs.free();
       }
     },
-    async restoreBefore(documentId, draftId, turnId) {
+    async restoreTurn(documentId, draftId, turnId) {
       const room = loroRoomName(fork(documentId, draftId));
       const parts = records
         .filter(

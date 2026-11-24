@@ -1,6 +1,6 @@
 /**
  * Document-link scopes over a fixed catalog, for compositions with no project
- * tree (in-memory, tests): every scope answers from the catalog (preloaded), so nothing is
+ * tree (in-memory, tests): every scope answers from the catalog, so nothing is
  * loaded and nothing is ever unscoped. An empty catalog spells every stored
  * href as stored and every `asset:` source as an empty destination.
  */
@@ -16,7 +16,7 @@ import type {
 export function createStaticDocumentLinkScopes(
   catalog?: StaticDocumentCatalog,
 ): DocumentLinkScopes {
-  const links = createStaticDocumentLinks(catalog, { preloaded: true });
+  const links = createStaticDocumentLinks(catalog);
   return {
     within: (_key, operation) => operation(),
     prepare: async () => {},

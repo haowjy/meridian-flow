@@ -4,7 +4,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
 import { diffKeys, segmentText, wordDiff } from "../diff/tokens.js";
-import type { EditOp, EditorOf, FormatRange, TextSplice } from "../ports/model.js";
+import type { EditOp, EditorOf, FormatRange, TextSplice } from "../model/types.js";
 import type { TextWindow } from "./find.js";
 
 /** A model change: base units [from, to) become the model's units [at, end). */
@@ -576,8 +576,8 @@ function wordHunks(a: string, b: string): Hunk[] {
 
 /**
  * A changed run that only gained characters (the old run is a subsequence of the new one) keeps
- * the old characters' items and writes just the insertions, so the writer's typing inside an AI
- * word survives an Apply or a pull. Any other change, a deletion or a letter swap, writes the run
+ * the old characters and writes just the insertions, so the writer's typing inside an AI word
+ * survives an Apply. Any other change, a deletion or a letter swap, writes the run
  * whole: a replaced word's letters would otherwise belong to two authors and Undo would restore
  * fragments. Inline atoms never match: two images share a placeholder, not their attributes. A
  * run past the diff bound stays whole.

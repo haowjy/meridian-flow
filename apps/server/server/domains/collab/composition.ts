@@ -35,15 +35,12 @@ import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { createNoopEventSink, type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
+import { createAgentEditHost } from "./adapters/agent-edit-host.js";
 import {
   createAgentEditObservabilityOptions,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } from "./adapters/agent-edit-observability.js";
-import {
-  SILENT_TURN_INVERSE_NOTICES,
-  UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-} from "./adapters/declared-stubs.js";
 import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
@@ -75,7 +72,6 @@ import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
 import { createDrizzleWorkDrafts } from "./adapters/drizzle-work-drafts.js";
 import { createDrizzleWriteOrdinals } from "./adapters/drizzle-write-ordinals.js";
-import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -97,7 +93,7 @@ import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
-import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
+import { createModelEditWriter } from "./domain/model-edit-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
@@ -117,11 +113,11 @@ type CollabDomainDeps = {
   links: DocumentLinkScopes;
   /** Durable registration of ahead refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  threadContext?: ThreadContextReversalResolver;
+  threadContext: ThreadContextReversalResolver;
   eventSink?: EventSink;
   /** Overrides of the rooms' debounce, idle and size bounds; a DB suite shortens the debounce. */
   roomBounds?: Partial<RoomBounds>;
-  notices?: NoticePort;
+  notices: NoticePort;
   workProjectionMutation: WorkProjectionMutation;
   /**
    * Confirms writes' grants under lock where they become durable (file-access
@@ -249,7 +245,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
   });
-  const loroHost = createLoroAgentEditHost({ db: deps.db, rooms });
+  const loroHost = createAgentEditHost({ db: deps.db, rooms });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,
@@ -272,7 +268,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
-  const modelEditRead = createModelEditRead(agentEdit.read);
 
   const modelEditWrite = createModelEditWriter({
     core: runtime.core,
@@ -287,7 +282,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const modelEdits = createDrizzleModelEdits(
     deps.db,
-    { write: scopeModelEditWrite(modelEditWrite, deps.links), read: modelEditRead },
+    { write: scopeModelEditWrite(modelEditWrite, deps.links), read: agentEdit.read },
     modelEvidence,
   );
 
@@ -301,13 +296,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
-    notices: deps.notices
-      ? createReversalNoticePort({
-          notices: deps.notices,
-          resolveLastDocumentUri,
-          diagnostics: noticeDiagnostics,
-        })
-      : SILENT_TURN_INVERSE_NOTICES,
+    notices: createReversalNoticePort({
+      notices: deps.notices,
+      resolveLastDocumentUri,
+      diagnostics: noticeDiagnostics,
+    }),
     workProjection: deps.workProjectionMutation,
     removals: removalRecords,
     fileAccess: deps.fileAccess,
@@ -372,8 +365,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     commands,
-    threadContext:
-      deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
+    threadContext: deps.threadContext,
   });
   return createCollabFacade({
     importBinder: runtime.importBinder,

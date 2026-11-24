@@ -23,7 +23,6 @@ import {
   LoroDocument,
   loroModel,
   overwriteWithAssigned,
-  toLoroHandle,
 } from "../../src/integration.js";
 
 const [chapters, rewrites] = process.argv.slice(2);
@@ -31,13 +30,13 @@ const schema = buildDocumentSchema();
 const shape = shapeSchemaOf(schema);
 const markup = mdxCodec({ schema });
 const codec = createAgentEditCodecFactory(markup).forScope(
-  createStaticDocumentLinks(undefined, { preloaded: true }),
+  createStaticDocumentLinks(),
 );
 const model = loroModel(schema);
 
 function write(docs: RoomDocs, content: string, message?: string) {
   const written = overwriteWithAssigned({
-    doc: toLoroHandle(new LoroDocument(docs, schema, { message })),
+    doc: new LoroDocument(docs, schema, { message }),
     model,
     codec,
     documentId: "d",

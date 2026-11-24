@@ -20,7 +20,7 @@ import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createCollabDomain } from "./composition.js";
-import { testLinkDeps } from "./test-support/document-link-scopes.js";
+import { testCollabDeps } from "./test-support/document-link-scopes.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (postgres)", () => {
@@ -45,7 +45,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
   it("a document seeded in a batch reads, opens and edits like one seeded singly", async () => {
     const collab = createCollabDomain({
       db,
-      ...testLinkDeps(db),
+      ...testCollabDeps(db),
       ...createTestRemovalDeps(db),
       fileAccess: createAllowAllFileAccess(),
       workProjectionMutation: createTestWorkProjectionMutation(db),

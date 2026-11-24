@@ -24,7 +24,7 @@ the agent-edit host picks the room from the call's destination (`agentRoomFor`).
   ([press](.context/press.md#discard-and-what-goes-to-trash)); Work purge's leaves it in no view
   until retention purges it.
 - A model edit plans under the lock its append takes, on the one connection of its command (`modelEdits().write`). Nothing reachable from it may open a second connection or wait on one; see [model edits](.context/model-edits.md). Each tree tool call is such a command too.
-- `mergeCodeText` brings a base→target change into a code document: it takes the document's mutation lock (`lockDocument`) before it reads the live text, then merges and appends under that hold, against what it holds then, and keeps the live text where both changed the same text (an Agent package's Undo). It runs inside the caller's transaction (the coordinator's transaction path takes no process mutex, so the lock never waits behind one); a caller that must merge several documents sorts them by id.
+- `mergeCodeText` brings a base→target change into a code document: it takes the document's mutation lock (`lockDocument`) before it reads the live text, then merges and appends under that hold, against what it holds then, and keeps the live text where both changed the same text (an Agent package's Undo). It runs inside the caller's transaction; a caller that must merge several documents sorts them by id.
 - Destination selection is explicit: don't infer live versus a Work's view from a thread mode.
 
 ## Depth

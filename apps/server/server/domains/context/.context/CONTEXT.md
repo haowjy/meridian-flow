@@ -331,7 +331,7 @@ one source's tree contributes.
   registry: its Live room) and sends
   the same Copy again, backing off from 0.5 s to 5 s, for as long as the answer is
   `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
-  (`findings/unsynced-probe.md`), so the wait ends.
+  ([probe](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/never-refuse/findings/unsynced-probe.md)), so the wait ends.
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities it created.
 
 ## Catalog and publication

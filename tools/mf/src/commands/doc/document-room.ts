@@ -10,7 +10,6 @@ import {
   LoroDocument,
   loroModel,
   overwriteWithAssigned,
-  toLoroHandle,
 } from "@meridian/agent-edit/integration";
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
@@ -122,7 +121,7 @@ export async function writeMarkdown(
         : codec.parse(text).blocks;
     const before = docs.shownVersion();
     const written = overwriteWithAssigned({
-      doc: toLoroHandle(new LoroDocument(docs, schema)),
+      doc: new LoroDocument(docs, schema),
       model: loroModel(schema),
       codec: codec.forScope(UNSCOPED_DOCUMENT_LINKS),
       documentId,

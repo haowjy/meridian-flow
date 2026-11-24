@@ -2,7 +2,7 @@
 
 import {
   agentEditRooms,
-  type LoroDocumentEdits,
+  type DocumentEdits,
   type WriteOrdinals,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -255,7 +255,7 @@ function inMemoryWriteOrdinals(): WriteOrdinals {
   };
 }
 
-const NO_EDIT_HISTORY: LoroDocumentEdits = {
+const NO_EDIT_HISTORY: DocumentEdits = {
   read: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
   execute: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
 };

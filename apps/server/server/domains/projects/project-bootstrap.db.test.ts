@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
+import { testCollabDeps } from "../collab/test-support/document-link-scopes.js";
 import { createTreeReader, LIVE_TREE } from "../context/tree/tree-view.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
@@ -38,7 +38,7 @@ else
     });
     function collab() {
       const domain = createCollabDomain({
-        ...testLinkDeps(db),
+        ...testCollabDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         ...createTestRemovalDeps(db),

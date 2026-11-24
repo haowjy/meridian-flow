@@ -101,7 +101,7 @@ function imageReference(uri: string) {
 
 async function recordNotice(notices: ReturnType<typeof createTestNoticePort>, threadId: string) {
   await notices.record({
-    kind: "awareness_degraded",
+    kind: "undo",
     scope: { kind: "thread", threadId },
     message: "Awareness changed during preparation.",
     data: { documentIds: [], documentNames: [] },

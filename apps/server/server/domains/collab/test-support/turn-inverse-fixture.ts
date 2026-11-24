@@ -27,7 +27,6 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
   });
   await harness.seedWriterDocument("Alpha Beta.\n\nBlue.", responseId);
   const context = {
-    sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { modelResponseId: responseId },

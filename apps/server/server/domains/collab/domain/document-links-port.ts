@@ -7,12 +7,11 @@
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { parseLinkRef } from "@meridian/contracts";
 import { cutRevision } from "./document-revision.js";
-import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function createScopedDocumentLinks(input: {
   scopes: DocumentLinkScopes;
-  registrar: AheadRefRegistrar;
+  registrar: Pick<AheadRefRegistrar, "registerInCommand">;
 }): DocumentLinksPort {
   const { scopes } = input;
   const holder = (documentId: string, context?: WriteContext) => ({
@@ -32,10 +31,8 @@ export function createScopedDocumentLinks(input: {
     scopeFor: (documentId, context) => scopes.holder(holder(documentId, context)),
     async registerAhead(mints) {
       if (mints.length === 0) return;
-      const registrations = aheadRegistrations(mints);
-      // A model edit mints under its lock, on its command's connection.
-      if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
-      else await input.registrar.register(registrations);
+      // The core mints only in a model edit's write, under its lock, on its command's connection.
+      await input.registrar.registerInCommand(aheadRegistrations(mints));
     },
     revision: cutRevision,
   };

@@ -5,7 +5,7 @@ two places:
 
 - `apps/server/server/domains/collab/domain/code-merge.ts` (`mergeCodeText`) brings an agent
   package's Save of a code document into the project's copy.
-- `packages/agent-edit/src/tool/loro-write.ts` (`transcriptMerge`) merges a whole-document write
+- `packages/agent-edit/src/tool/edit-core.ts` (`transcriptMerge`) merges a whole-document write
   with the text the model read when the history cutoff dropped part of that read.
 
 The sides keep the names `base`, `live` and `draft`. This page lists everything in the system that
@@ -25,10 +25,10 @@ same change on both sides applies once. A **merge rule** is anything the merge d
 ## Where the code is
 
 `content-merge/` depends on `diff/` (tokens, `align`, `correspond`, `buildBlocks`), never the
-other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`, and `captureDelta`/`readDelta`,
-which record an AI write's blocks before and after (`document_edit_parts.delta`) for the card's
-rows and the model's edit listing. An AI write's Undo does not read the delta: it is the Loro
-Undo rule (`takeBack` in `@meridian/document-model`).
+other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`. An AI write's
+receipt delta (`captureDelta`/`readDelta`, `tool/delta.ts`, exported from `integration`) is not
+part of it: it records the write's blocks before and after (`document_edit_parts.delta`) for the
+card's rows and the model's edit listing, and no Undo reads it.
 
 `contentMerge(schema, base, live, draft)` returns `{ blocks, rules, overrode, conflicts, orderConflict }`.
 `rules` is the rule name to the number of times it fired in that merge. It carries no text.

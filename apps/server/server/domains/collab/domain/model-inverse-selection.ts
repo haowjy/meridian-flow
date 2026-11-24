@@ -10,7 +10,7 @@ export type Entry = {
   handle: string;
   parts: StoredInversePart[];
 };
-export const entryKeys = (entry: Entry) => entry.parts.map(key);
+const entryKeys = (entry: Entry) => entry.parts.map(key);
 export function entries(history: readonly StoredInversePart[], threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const part of history) {

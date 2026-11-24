@@ -60,7 +60,7 @@ export function planCopyTree(
   return treePlan(input.dir, planLevel(deps, [...input.dir], input.roots));
 }
 
-export function treePlan(dir: readonly string[], planned: readonly PlannedCopyNode[]): CopyPlan {
+function treePlan(dir: readonly string[], planned: readonly PlannedCopyNode[]): CopyPlan {
   const nodes = flatten(planned);
   const identity = createCopyIdentityMap({
     // Binaries are in the map too: an image inside the copied set must show its copy.

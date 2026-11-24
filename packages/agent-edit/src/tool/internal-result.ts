@@ -6,7 +6,7 @@ import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { AgentEditModelPayload } from "./model-result.js";
 import { removedFile } from "./removal-copy.js";
-import type { DocumentCommandName, WriteStatus } from "./types.js";
+import type { WriteStatus } from "./types.js";
 
 export type InternalWriteResult = InternalWriteResultBase & { status: WriteStatus };
 
@@ -27,10 +27,7 @@ interface InternalWriteResultBase {
 }
 
 /** A missing document; a removed one says who removed it and how. */
-export function documentNotFound(
-  commandName: DocumentCommandName,
-  cause?: { removal?: DocumentRemovalRecord },
-): InternalWriteResult {
+export function documentNotFound(cause?: { removal?: DocumentRemovalRecord }): InternalWriteResult {
   if (!cause?.removal) return status("document_not_found", DOCUMENT_NOT_FOUND_MESSAGE);
   const removed = removedFile(cause.removal);
   return status(removed.status, removed.message);
@@ -38,13 +35,6 @@ export function documentNotFound(
 
 /** The one sentence every missing-document result gives the model; a removed file has its own. */
 export const DOCUMENT_NOT_FOUND_MESSAGE = "File not found.";
-
-/** An internal failure that must abort the caller, carrying the model-facing message. */
-export function internalResultError(result: InternalWriteResult): Error {
-  return new Error(
-    result.model?.message ? `${result.status}: ${result.model.message}` : result.status,
-  );
-}
 
 function status(code: Exclude<WriteStatus, "success">, message?: string): InternalWriteResult {
   return { status: code, ...(message ? { model: { message } } : {}) };

@@ -2,8 +2,8 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
-import type { DocHandle } from "../handles.js";
-import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
+import type { DocumentModel, LoroDocument } from "../model/loro-model.js";
+import type { ProjectedBlock } from "../model/types.js";
 import { hashLocateContext } from "../resolver/hash-locator.js";
 import {
   headingSectionFragments,
@@ -32,7 +32,7 @@ export type ReadBlockSelection =
 
 interface DocumentRenderer {
   selectReadBlocks(
-    doc: DocHandle,
+    doc: LoroDocument,
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
@@ -57,7 +57,7 @@ export type ParseForCommandResult =
   | { ok: true; parsed: ParsedContent }
   | { ok: false; message: string };
 
-export function createDocumentRenderer(deps: { model: AgentEditModel }): DocumentRenderer {
+export function createDocumentRenderer(deps: { model: DocumentModel }): DocumentRenderer {
   const { model } = deps;
 
   return {
@@ -67,7 +67,7 @@ export function createDocumentRenderer(deps: { model: AgentEditModel }): Documen
   };
 
   function selectReadBlocks(
-    doc: DocHandle,
+    doc: LoroDocument,
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection {

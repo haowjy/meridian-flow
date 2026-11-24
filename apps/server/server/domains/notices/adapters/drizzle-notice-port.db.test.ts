@@ -68,7 +68,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const port = createDrizzleNoticePort(db);
       for (const threadId of [THREAD_ID, OTHER_THREAD_ID]) {
         await port.record({
-          kind: "awareness_degraded",
+          kind: "undo",
           scope: { kind: "thread", threadId },
           message: "Document awareness degraded",
           data: { documentIds: [] },
@@ -77,7 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const notices = await port.peek(THREAD_ID);
       expect(notices).toMatchObject([
-        { kind: "awareness_degraded", scope: { kind: "thread", threadId: THREAD_ID } },
+        { kind: "undo", scope: { kind: "thread", threadId: THREAD_ID } },
       ]);
       await expect(port.peek(THREAD_ID)).resolves.toHaveLength(1);
       await port.consume(notices.map(({ id }) => id));
@@ -91,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         runInDrizzleTransaction(db, async () => {
           await port.record({
-            kind: "awareness_degraded",
+            kind: "undo",
             scope: { kind: "thread", threadId: THREAD_ID },
             message: "Document awareness degraded",
             data: { documentIds: [] },
@@ -107,7 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
       const port = createDrizzleNoticePort(db);
       await port.record({
-        kind: "awareness_degraded",
+        kind: "undo",
         scope: { kind: "thread", threadId: THREAD_ID },
         message: "Document awareness degraded",
         data: { documentIds: [] },

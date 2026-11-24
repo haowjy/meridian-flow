@@ -1,6 +1,7 @@
 /** An AI write's recorded delta in words, and the schema an inverse reads blocks with. */
-import { readDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
+
 import { wordDiff } from "@meridian/agent-edit/diff";
+import { readDelta, type StoredDelta } from "@meridian/agent-edit/integration";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 
