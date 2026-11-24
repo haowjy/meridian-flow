@@ -24,7 +24,7 @@ export type MainReviewAddress = {
 export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
 /**
- * The host's Review changes (design §6, "The address says which state"): main's from its address,
+ * The host's Review changes: main's from its address,
  * the side's from its stored slot, which carries what main's address does beyond the pin. Null on
  * Live, on a plain draft, and in a host that is not on screen.
  */

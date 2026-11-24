@@ -401,7 +401,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // Rebuilt from JSON snapshots each render: only its serialized meaning is a change.
   const addressedKey = JSON.stringify(addressedNow);
   const addressed = useMemo(() => addressedNow, [addressedKey]);
-  // Live has no page here: leaving the draft closes the page (design §6).
+  // Live has no page here: leaving the draft closes the page.
   const draftOnlyId =
     addressed && isDraftOnly(addressed.document.documentId) ? addressed.document.documentId : null;
   latest.current = {

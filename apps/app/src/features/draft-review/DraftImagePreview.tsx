@@ -1,7 +1,7 @@
 /**
  * DraftImagePreview — opens a binary file that exists only in a Work's draft.
  *
- * A draft-only picture or file has no suggestions to review (there is no text) and no
+ * A draft-only picture or file has no text to review and no
  * live path to read, so the strip and the Work page open it here, in a plain
  * preview signed through the Work that holds it: the picture, or the file card when
  * the browser can't draw it.

@@ -84,12 +84,12 @@ export function DocumentHost(props: DocumentHostProps) {
           ) : null}
           {props.presentation === "phone" ? (
             place === "main" ? (
-              <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+              <PhoneDocumentFrame projectId={projectId} document={tab} />
             ) : (
               <div className="flex h-full min-h-0 flex-col">
                 {props.header}
                 <div className="min-h-0 flex-1">
-                  <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+                  <PhoneDocumentFrame projectId={projectId} document={tab} />
                 </div>
               </div>
             )
@@ -302,11 +302,9 @@ function DesktopDocumentChrome({
 function PhoneDocumentFrame({
   projectId,
   document,
-  local,
 }: {
   projectId: string;
   document: OpenDocument;
-  local: boolean;
 }) {
   const name = document.name;
   return (
@@ -317,10 +315,6 @@ function PhoneDocumentFrame({
       <PaintCapture surface={document.documentId} />
       {document.kind === "viewer" ? (
         <ContextViewerHost projectId={projectId} document={document} />
-      ) : local ? (
-        <div className="flex h-full min-h-0 flex-col">
-          <PhoneEditor projectId={projectId} document={document} />
-        </div>
       ) : (
         <MobileDocumentReview projectId={projectId} document={document}>
           <PhoneEditor projectId={projectId} document={document}>
@@ -372,8 +366,8 @@ function PhoneEditor({
 
 /** Main while its address has no document to paint: opening, or not found. */
 export function MainDocumentStatus({ main }: { main: MainDocument }) {
-  const { catalogResolved, addressState, isError, isFetching } = main;
-  const opening = addressState === "pending" || (isFetching && !catalogResolved);
+  const { catalogResolved, addressState, isError } = main;
+  const opening = addressState === "pending";
   const failed = !opening && (isError || catalogResolved);
   return (
     <div

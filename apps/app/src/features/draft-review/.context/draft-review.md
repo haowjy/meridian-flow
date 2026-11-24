@@ -62,7 +62,7 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
 - **Every press is a Ctrl+Z step** in each editor open on its documents, pushed as it is made in
   `usePressCommands.run`, the one path every press takes (margin, bar, tree row, Changes rows):
   `EditorPressStep`. Its Undo waits for the press's answer, then sends the press's Undo; Redo
-  presses again. An Undo from the sidebar or a notice ends the press (`PressEntries`), which
+  presses again. An Undo from the sidebar or a notice ends the press (`PressEntry`), which
   takes the editor's step away too; one Ctrl+Z took back stays for Redo.
 - **Pressing the last change closes the review** at once. A read that comes back empty closes
   it only once the draft's list agrees (`ReviewMode.listed`): a fork still syncing reads empty
@@ -94,9 +94,8 @@ server: each draft's forks (only the named document's for a change or document) 
 rooms. A copy with unsent words that the tab has no session for (after a reload) is opened so its
 Join sends them. A stuck room of another draft does not hold the press.
 
-A press body is version 3. An unsent version 1 press migrates to a scope where one says the same.
-An unsent version 2 Work press named no drafts and held a `press:work:<id>` lane; the drafts its
-tab listed are not known offline, so it settles `never`: "Couldn't apply", and its rows come back.
+A press body is version 3. An unsent press from an older build is never read: the driver settles
+it `never`, "Couldn't apply", and its rows come back.
 
 The Changes list, the chat strip and a page read the owner's draft list (`useOwnerDrafts`). It is
 re-read when the server wakes the owner (`useProjectWake`) and in each of the account's tabs when a
@@ -117,7 +116,7 @@ In the Changes tab a draft's notice speaks only on its own section's rows: two d
 chapter, and applying one draft's leaves the other's row pending, without the first one's Undo. A
 Work's notice (`workNoticeKey`) speaks on every section.
 
-A press's Undo always runs, whatever was written since (design §2): every row it pressed comes
+A press's Undo always runs, whatever was written since: every row it pressed comes
 back pending.
 
 ## A Work's drafts
@@ -147,12 +146,13 @@ the draft first. A chat started while one of the Work's drafts is showing writes
 surfaces, and outlives them:
 
 - `followPresses` holds the items of the journal's presses in flight, which hides their rows.
-- `presses` holds every press this tab can still take back (`PressEntries`,
+- `presses` holds every press this tab can still take back (`PressEntry`,
   [state-machines.md](state-machines.md)). Its Ctrl+Z step goes into each editor showing one of
   its documents in Live or in a draft of the press's scope that lists it (`editorsOf`), so two
   drafts on one chapter each get theirs.
-- `notices` (`DraftNotices`) holds one notice per draft: the latest Discard with its Undo, or the
-  latest Apply's facts, shown only on the surface it was made on. In the Changes list a notice is
+- `notices` (`DraftNotices`) holds one notice per draft: the latest Discard or Apply, each with
+  its press's one Undo (a closure the notice calls), shown only on the surface it was made on.
+  A delete's notice is the same shape, its Undo the tree's own step. In the Changes list a notice is
   said on its rows (`useDraftNoticeWords`). A page has no rows: an Apply or Discard made on a
   document's page, per paragraph or the whole chapter, is a compact `ActionNotice` with Undo
   floating at that page's foot (`PageNotice`, `DraftNotices.forDocument`), so it never moves the

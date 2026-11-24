@@ -87,3 +87,14 @@ export function documentBasename(contextPath: string | null | undefined): string
   const base = readSegment(trimmed.slice(trimmed.lastIndexOf("/") + 1)).name;
   return base.length > 0 ? base : null;
 }
+
+/**
+ * What a draft's document is called: its name, else (for a new document the AI created unnamed)
+ * the basename of its path, then `untitled`.
+ */
+export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
+  return (
+    row.documentName ??
+    (row.draftOnly ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
+  );
+}

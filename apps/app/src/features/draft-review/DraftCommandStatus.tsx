@@ -1,7 +1,4 @@
-/**
- * A listed file's status: pending delivery stays on the addressed item even when no review groups
- * remain. With nothing to report, it occupies no line.
- */
+/** A listed file's status while a press applies it. With nothing to report, it occupies no line. */
 
 import { Trans } from "@lingui/react/macro";
 import { useSyncExternalStore } from "react";

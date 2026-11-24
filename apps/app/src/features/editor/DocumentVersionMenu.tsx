@@ -111,7 +111,7 @@ export function DocumentVersionMenu({
   const drafts = [...workEntries, ...hinted];
   // As the sidebar's chip shows only while there is a draft to switch to, this one shows only
   // while the document has a version besides the one on screen.
-  const showing = paint && paint.showing !== "live" ? "draft" : "live";
+  const showing = paint?.draft ? "draft" : "live";
   if (showing === "live" && drafts.length === 0) return null;
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
   const workDraft = menu?.drafts.find((draft) => draft.key === shown?.draftId);

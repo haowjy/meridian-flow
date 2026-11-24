@@ -2,7 +2,7 @@
  * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
  * presses a change from its margin pair (or takes another draft's paragraph), moves the focus to
  * the next change after a press, and closes Review changes against Live when the chapter has none
- * left, and compares against Live when its target is gone (design §6, item 5).
+ * left, and compares against Live when its target is gone.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
@@ -91,8 +91,8 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       // The writer stays in this chapter's editor, so Ctrl+Z still reaches the press.
       if (next) mode.focus(next.id);
       else mode.close();
-      void review.controller.startChange(verdict, ref, row.id).outcome.then((outcome) => {
-        if (outcome.kind === "done") return;
+      void review.controller.pressChange(verdict, ref, row.id).then((outcome) => {
+        if (outcome === "done") return;
         setPressed((prior) => {
           const rest = new Set(prior);
           rest.delete(row.id);

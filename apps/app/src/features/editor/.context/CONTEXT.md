@@ -84,27 +84,21 @@ after 500 ms, never a blank or an empty page. Commands and their Undo belong to
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
-## Schema and repair
+## Schema fence and first paint
 
 A schema fence changes the mounted editor to read-only through its options seam;
 it does not rebuild the editor or undo manager. A schema-stale reset unmounts
 it and shows the unavailable state.
 
-Binding waits behind the bounded repair-evidence horizon, then always mounts
-(even when evidence timed out). `SchemaRepairNotice` reports witnessed repairs
-and never gates editing or offers reinsertion or approval. It reads session
-repair snapshots rather than inspecting the editor document.
+The fence bar (`SchemaNotices.tsx`) is one line in `EditorSurfaceFrame`'s
+`notices` slot, prose-aligned above the toolbar, with Refresh; the slot collapses
+when there is no fence. The same refusal also makes the app reload by itself once
+the writer pauses (`client/release`).
 
-Both notices live in `SchemaNotices.tsx` as one-line bars in
-`EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar; the slot
-collapses when neither has anything to say. The fence bar carries Refresh; the same refusal also makes the app reload by itself once the writer pauses (`client/release`). The
-repair bar says only that text was removed; its Details popover holds every
-recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
-push the manuscript down. The popover anchors to the whole bar and takes its
-width, so it fits a narrow side pane. Dismiss hides the bar until the session
-reports another repair and sends focus to the editor, or to Refresh while the
-fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
-and reports a refusal on that excerpt; a pending Copied reset never erases it.
+`SessionEditor` binds once the room's local copy has loaded and, when there is no
+local content to show, once the server's first sync lands, so a page doesn't
+paint empty and fill in. A room that never answers still binds after a bounded
+wait, failed or not: the page is never held shut.
 
 ## Related contracts
 

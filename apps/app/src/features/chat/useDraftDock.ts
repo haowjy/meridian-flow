@@ -8,7 +8,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useWorkDrafts } from "@/client/query/draft-commands";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
+import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import { hasApply } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
@@ -38,7 +38,8 @@ export function useDraftDock({
   const owned = useDraftNotice(draftId);
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
-  const notice = useNoticeLine(here);
+  // An Apply speaks only on its rows.
+  const notice = here?.kind === "discarded" ? here : null;
   const listed = useOwnerDrafts(projectId, draftId).files ?? [];
   const { setWorkId } = useWorkScope(projectId);
 
@@ -54,7 +55,6 @@ export function useDraftDock({
 
   // A press in flight hides its rows.
   const files = listed.filter((file) => !controller.owner.state(file.item.itemKey).hidden);
-  const refs = files.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
   const applicable = files.filter((file) => hasApply(file.item));
   // What the Work's other drafts change, as their rows in the Changes tab count it.
   const workDrafts = useWorkDrafts(projectId, work && !work.isNoWork ? work.id : null).drafts;
@@ -81,7 +81,7 @@ export function useDraftDock({
     canCommand: files.length > 0 && !generating && !controller.dispositionLocked,
     /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.item.tree?.deleted === true),
-    apply: () => void controller.applyMany(refs),
-    discard: () => void controller.discardMany(refs),
+    apply: () => void controller.pressDraft("apply"),
+    discard: () => void controller.pressDraft("discard"),
   };
 }

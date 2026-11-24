@@ -62,7 +62,10 @@ export function DraftFileRow({
   const [previewing, setPreviewing] = useState(false);
   const discard = () => {
     onCommand?.();
-    void controller.discard(file.documentId, file.item.itemKey);
+    void controller.pressDocument("discard", {
+      documentId: file.documentId,
+      itemKey: file.item.itemKey,
+    });
   };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, draftId);
@@ -108,7 +111,10 @@ export function DraftFileRow({
               canApply
                 ? () => {
                     onCommand?.();
-                    void controller.apply(file.documentId, file.item.itemKey);
+                    void controller.pressDocument("apply", {
+                      documentId: file.documentId,
+                      itemKey: file.item.itemKey,
+                    });
                   }
                 : undefined
             }

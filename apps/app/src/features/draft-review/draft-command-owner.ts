@@ -9,8 +9,8 @@ import type { CommandRecord } from "@meridian/command-driver";
 import { type DraftId, draftItemKey, parseDraftItemKey, type TurnId } from "@meridian/contracts";
 import { type PressBody, pressRooms } from "@/client/query/press-commands";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { type DiscardTook, DraftNotices, workNoticeKey } from "./draft-notices";
-import type { PressEntries } from "./press-history";
+import { DraftNotices, workNoticeKey } from "./draft-notices";
+import type { PressEntry } from "./press-history";
 
 type DraftCommandState = {
   applying: boolean;
@@ -26,25 +26,14 @@ type JournalHold = ({ item: string } | { drafts: ReadonlySet<string> }) & {
   state: DraftCommandState;
 };
 
-export type CommandOutcome =
-  | { kind: "blocked" }
-  | {
-      kind: "done";
-      /** The press that landed it, which its Undo names. */
-      commandId?: string;
-      /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
-      took?: DiscardTook;
-      /** Takes the press back once, as its notice's Undo does. */
-      undo?: () => Promise<unknown>;
-    }
-  /** The server answered and the press changed none of these items. */
-  | { kind: "settled"; took?: DiscardTook };
+/** `settled`: the server answered and the press changed none of its items. */
+export type CommandOutcome = "done" | "settled" | "blocked";
 
 /**
  * A turn's restore in one draft, as this tab knows it: sent and not yet answered, or in
  * force with its one Undo (`press`).
  */
-export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntries };
+export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntry };
 
 const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
 
@@ -55,7 +44,7 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   /** Every press this tab can still take back or press again. */
-  readonly presses = new Set<PressEntries>();
+  readonly presses = new Set<PressEntry>();
   /** One notice per draft owner, outliving the surface that made it. */
   readonly notices = new DraftNotices();
   /** `at`: when the entry last changed here; a card read from before then is out of date. */

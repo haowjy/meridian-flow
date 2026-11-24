@@ -20,10 +20,9 @@ import { DisclosureMark } from "@/components/ui/marks";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import {
-  ApplyAllQuestion,
   CommandNotice,
-  type CommandQuestion,
   noticeAction,
+  useApplyAllQuestion,
   useDraftNoticeWords,
   useSurfaceNotice,
 } from "@/features/draft-review/CommandNotice";
@@ -33,7 +32,6 @@ import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
 import { type DraftNotice, workNoticeKey } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
   groupByChangedFolder,
@@ -279,15 +277,6 @@ export function ChangesSource({
   const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
   const goneRows = [...shown.values()].some((rows) => rows.some((row) => row.gone));
 
-  /** What an Apply of several asks about first: the documents it deletes. */
-  const [asking, setAsking] = useState<{
-    targets: readonly ReviewFileTarget[];
-    deleting: readonly ReviewFileTarget[];
-  } | null>(null);
-  useEffect(() => {
-    if (hasFiles) return;
-    setAsking(null);
-  }, [hasFiles]);
   // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
   // saying so, while the notice speaks for it.
   const holdSection = (section: DraftSection) => {
@@ -304,35 +293,22 @@ export function ChangesSource({
   const hold = () => {
     for (const section of sections) holdSection(section);
   };
-  const refsOf = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
-  const everyItem = refsOf(files);
-  const applyAll = (targets: readonly ReviewFileTarget[]) => {
-    hold();
-    void controller.applyMany(refsOf(targets));
-  };
-  const startApply = (targets: readonly ReviewFileTarget[]) => {
-    const deleting = targets.filter((file) => file.item.tree?.deleted === true);
-    if (deleting.length > 0) setAsking({ targets, deleting });
-    else applyAll(targets);
-  };
-  const untitled = t`Untitled document`;
-  const names = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => reviewFileTargetName(file, untitled));
-  const question: CommandQuestion | null = asking
-    ? {
-        kind: "apply-all",
-        sentence: <ApplyAllQuestion deleting={names(asking.deleting)} />,
-        keep: <Trans>Cancel</Trans>,
-        confirm: <Trans>Apply all</Trans>,
-        onKeep: () => setAsking(null),
-        onConfirm: () => {
-          setAsking(null);
-          applyAll(asking.targets);
-        },
-        disabled: controller.dispositionLocked,
-      }
-    : null;
+  const {
+    question,
+    start: startApply,
+    cancel,
+  } = useApplyAllQuestion({
+    deleting: files.filter((file) => file.item.tree?.deleted === true),
+    apply: () => {
+      hold();
+      void controller.pressDraft("apply");
+    },
+    confirm: <Trans>Apply all</Trans>,
+    disabled: controller.dispositionLocked,
+  });
+  useEffect(() => {
+    if (!hasFiles) cancel();
+  }, [hasFiles, cancel]);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
   if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
@@ -370,17 +346,15 @@ export function ChangesSource({
               touch={touch}
               onDiscard={() => {
                 hold();
-                void controller.discardAll(
-                  everyItem,
+                void controller.pressDraft(
+                  "discard",
                   // A lone folder change names itself in the notice.
-                  everyItem.length === 0 && changedFolders.length === 1 && onlyFolder
+                  files.length === 0 && changedFolders.length === 1 && onlyFolder
                     ? onlyFolder.name
                     : null,
                 );
               }}
-              onApply={
-                files.every((file) => hasApply(file.item)) ? () => startApply(files) : undefined
-              }
+              onApply={files.every((file) => hasApply(file.item)) ? startApply : undefined}
             />
           ) : goneRows ? (
             // The rows a command took still show: the bar stays, greyed, so they don't move.

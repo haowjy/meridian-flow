@@ -73,7 +73,7 @@ export function useWorkDraftMenu(
       ? () => {
           state.remove(shown);
           const main = presented?.mainDocumentId(projectId) ?? null;
-          // A page only this draft held closes, and the notice goes where main lands (design §6).
+          // A page only this draft held closes, and the notice goes where main lands.
           let notice: number | null = null;
           if (main && draftOnly(main))
             removal?.leaveDraftOnly(projectId, main, (landing) => {
@@ -84,20 +84,13 @@ export function useWorkDraftMenu(
             projectId,
             draftId: deleteNoticeKey(projectId),
             surface: main ? { kind: "page", documentId: main, draftId: null } : { kind: "landing" },
-            parts: [
-              {
-                documentId: main ?? shown.id,
-                name: workDraftName(shown),
-                scope: "deleted",
-                handle: {
-                  undo: () => {
-                    state.restore(shown);
-                    return { answer: "ok" };
-                  },
-                  end: () => {},
-                },
-              },
-            ],
+            scope: "deleted",
+            name: workDraftName(shown),
+            documentIds: [main ?? shown.id],
+            undo: () => {
+              state.restore(shown);
+              return true;
+            },
           });
         }
       : undefined,

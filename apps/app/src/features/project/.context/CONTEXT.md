@@ -91,7 +91,7 @@ sidebar's Chats list is. Beside a chat:
 `DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
 main's tabs, Recently opened, then the file explorer (`SideExplorer`: the project's areas through
 `useProjectMenuSource`, stepping into folders with `DrillInMenu`'s drill model). Only documents
-that open in the editor are offered (`canSitBeside`); the explorer shows others disabled. Recents
+that open in the editor are offered (each source's `editable`); the explorer shows others disabled. Recents
 and the tabs are choices on offer, never a source of the side. A document fits beside only
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
 one that doesn't (removed, an upload) leaves the side empty. While a describe is out, the side
@@ -113,7 +113,7 @@ how.
 Documents come through `useLinkPlacement` (`review-launch.tsx`: editor links, transcript links,
 chat doors, the draft dock's rows and a reply's "Drafted N documents" rows). Chats come through
 `usePlaceChat`, behind `ChatThreadNavigation` (spawn doors, the subagent button) and the
-conversation reveal (`useRequestConversationReveal` carries the pane, so a reveal in none goes to main: a peer mark's or change's chat
+conversation reveal (`useRequestConversationReveal` carries the pane, so a reveal in none goes to main: a change's chat
 in a document, a subagent link in a chat). So a subagent link inside the side's chat replaces the
 side. The click's modifier (cmd, ctrl, middle) places nothing and the link follower treats every
 follow alike (a newer follow aborts the last): main's opener has no new-tab mode.
@@ -287,10 +287,10 @@ draft end and the toggle goes to Draft (`enterScope`): each page shows the new s
 where it has one, else Live, and never the chat before's draft. A page only a draft holds stays on
 it.
 
-Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`);
-`useReviewAdmission` makes it enter, keep or leave the draft its paint names. Only a host on screen
-reviews: a host that is not showing (the kept document, a closed side) paints no draft, admits
-nothing and writes no pin. That keeps one review per document, and Discard
+Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`); its
+Review changes is `useHostReviewMode`, read from main's address or the side's stored slot. Only a
+host on screen reviews: a host that is not showing (the kept document, a closed side) paints no
+draft and writes no pin. That keeps one review per document, and Discard
 writes into the issuing host's own editor, whose Undo takes it back.
 
 Main's address and main's view stay in step (`use-draft-address-sync.ts`): an address arriving by
@@ -305,7 +305,8 @@ A bound document with no source is pending, never a path's occupant. An unsynced
 doesn't prove absence.
 
 The opening record is taken from main's host, not an intent or create path. It updates
-locally before a server POST, and the POST waits for `whenOnServer`. The side and the kept host
+locally before a server POST, and the POST waits until the project's list has synced
+(`whenListSynced`, `use-record-opened-document.ts`). The side and the kept host
 record no open.
 
 `ProjectAddressDocument` only canonicalizes the address and publishes its admission issue; it

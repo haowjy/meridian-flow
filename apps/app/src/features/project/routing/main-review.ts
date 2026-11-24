@@ -3,7 +3,7 @@ import type { ReviewTarget } from "./project-address";
 /**
  * The history-state key a Review changes entry carries: the document whose plain page it was pushed
  * from. Closing goes Back to that page when the entry still shows that document; otherwise it
- * replaces (design §6, "The address says which state").
+ * replaces.
  */
 const REVIEW_OPENED_FROM = "meridianReviewOpenedFrom";
 

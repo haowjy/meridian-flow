@@ -32,7 +32,7 @@ stay chat resources, not documents main opens.
   an empty line once it is installed and the source is empty. A failed or in-flight load must never read as an
   empty project.
 - Document opening records what main shows, not the intent: the device record updates before
-  the server request, which waits for `whenOnServer`. The side and the kept document don't
+  the server request, which waits for the project's list to sync (`whenListSynced`). The side and the kept document don't
   count.
 - Main with no document is a chooser. Selecting a recent document navigates; route and
   removal owners handle continuity and removal. Main's tabs

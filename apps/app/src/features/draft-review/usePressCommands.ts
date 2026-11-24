@@ -4,8 +4,7 @@
  * press (`press-commands.ts`), run by the server over both halves, with one Undo.
  *
  * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
- * pill. Its notice is the draft notice: a Discard's rows struck with Undo, an Apply's rows with
- * Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`) and, as it is made,
+ * pill. Its notice is the draft notice, with the press's Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`) and, as it is made,
  * on the Ctrl+Z of each editor open on its documents (`EditorPressStep`); every Undo of it, on
  * its notice, the sidebar or an editor, is the press's one Undo and takes the others' steps away.
  */
@@ -52,15 +51,14 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useItemLauncher } from "@/features/project/review-launch";
 import type { CommandOutcome } from "./draft-command-owner";
-import { type DiscardPart, type NoticeSurface, workNoticeKey } from "./draft-notices";
+import { type NoticeSurface, workNoticeKey } from "./draft-notices";
 import {
   type EditorHistory,
   EditorPressStep,
-  PressEntries,
-  type PressPort,
+  PressEntry,
   type Seat,
+  type Undone,
 } from "./press-history";
-import type { DraftItemRef } from "./useDraftReviewController";
 
 type Verdict = "apply" | "discard";
 type Scope = PressAction["scope"];
@@ -93,7 +91,8 @@ type Unpressed = "failed" | "told";
  */
 type PressTarget = { action: PressAction; documents: readonly string[] | null; whole: boolean };
 
-export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
+/** A document of a draft, as a press names it. */
+export type DraftItemRef = { documentId: string; itemKey: string };
 export type WorkDraftCommands = ReturnType<typeof usePressCommands>;
 
 export function usePressCommands({
@@ -174,11 +173,6 @@ export function usePressCommands({
         ),
       );
     };
-    const blocked = (): CommandStart => ({
-      sent: false,
-      outcome: Promise.resolve({ kind: "blocked" }),
-    });
-
     /** A press's Undo: the server takes back what that press did, and nothing else. */
     const unpress = async (
       commandId: string,
@@ -267,7 +261,7 @@ export function usePressCommands({
     };
 
     /**
-     * A press on the sidebar's stack (`PressEntries`): the sidebar's Ctrl+Z, or its notice's Undo,
+     * A press on the sidebar's stack (`PressEntry`): the sidebar's Ctrl+Z, or its notice's Undo,
      * takes back the press once. `dropped`: it was taken back, and its notice goes with it.
      */
     const remember = (
@@ -276,28 +270,26 @@ export function usePressCommands({
       pressed: Pressed,
       editor: EditorPressStep,
       dropped: () => void,
-    ): PressEntries => {
+    ): PressEntry => {
       const taken = pressed.took;
-      const { seat, place } = seatOf(taken, async () => (await entries.undo()).kind !== "failed");
+      const { seat, place } = seatOf(taken, async () => (await entry.undo()).ok);
       place(pressed.placement);
-      const port: PressPort = {
-        unpress: async (commandId) => {
-          // An Apply's Undo takes a created document out of Live: main, read before, follows it to
-          // the draft's plain page, where it is a draft's document again.
-          const main = presented?.mainDocumentId(projectId);
-          const answer = await unpress(commandId, pressed.drafts, scope);
-          if (typeof answer === "string")
-            return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
-          const created = rows().find((row) => row.documentId === main && row.isNew);
-          if (verdict === "apply" && created && main && taken.includes(main))
-            for (const file of projectWorkDraftFiles([created], null))
-              openDraftFile(file, created.draftId);
-          return { kind: "answered", unpressId: commandId, took: true };
-        },
+      const undo = async (): Promise<Undone> => {
+        // An Apply's Undo takes a created document out of Live: main, read before, follows it to
+        // the draft's plain page, where it is a draft's document again.
+        const main = presented?.mainDocumentId(projectId);
+        const answer = await unpress(pressed.commandId, pressed.drafts, scope);
+        if (typeof answer === "string")
+          return answer === "told" ? { ok: false, told: true } : { ok: false };
+        const created = rows().find((row) => row.documentId === main && row.isNew);
+        if (verdict === "apply" && created && main && taken.includes(main))
+          for (const file of projectWorkDraftFiles([created], null))
+            openDraftFile(file, created.draftId);
+        return { ok: true };
       };
-      const entries: PressEntries = new PressEntries(
+      const entry: PressEntry = new PressEntry(
         pressed.commandId,
-        port,
+        undo,
         {
           push: seat.push,
           drop: () => {
@@ -306,11 +298,11 @@ export function usePressCommands({
             dropped();
           },
         },
-        () => owner.presses.delete(entries),
+        () => owner.presses.delete(entry),
         owner.changed,
       );
-      owner.presses.add(entries);
-      return entries;
+      owner.presses.add(entry);
+      return entry;
     };
 
     /**
@@ -322,9 +314,9 @@ export function usePressCommands({
       scope: TurnScope,
       pressed: Pressed,
       editor: EditorPressStep,
-    ): PressEntries => {
+    ): PressEntry => {
       const { turn, draft } = scope;
-      const step: PressEntries = remember(scope, "restore", pressed, editor, () => {
+      const step: PressEntry = remember(scope, "restore", pressed, editor, () => {
         const entry = owner.restore(turn, draft);
         if (entry?.kind === "in-force" && entry.press === step) owner.setRestore(turn, draft, null);
       });
@@ -406,15 +398,6 @@ export function usePressCommands({
       };
     };
 
-    /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
-    const outcomeOf = (pressed: Pressed, nodes: readonly string[]): CommandOutcome => {
-      const took = new Set(pressed.took);
-      const untaken = nodes.filter((node) => !took.has(node));
-      return took.size > 0
-        ? { kind: "done", commandId: pressed.commandId, took: { untaken } }
-        : { kind: "settled", took: { untaken } };
-    };
-
     /**
      * The Ctrl+Z of each editor showing one of the documents now: in Live, or in a draft of the
      * press's scope that changes it. Two drafts of one Work can both hold a chapter. A turn names
@@ -446,11 +429,12 @@ export function usePressCommands({
       target: PressTarget,
       input: { documentId: string | null; name?: string | null },
       again?: EditorPressStep,
-    ): CommandStart => {
+    ): Promise<CommandOutcome> => {
       const { verdict, scope } = target.action;
       // A turn's press names its draft; any other presses the surface's.
       const acting = pressDrafts(scope);
-      if (!driver || acting.length === 0 || !acting.every(Boolean)) return blocked();
+      if (!driver || acting.length === 0 || !acting.every(Boolean))
+        return Promise.resolve("blocked");
       // The surface shows one notice: a new press ends the last, whichever draft it was on.
       for (const key of [...drafts, ...(workWide ? [workKey] : [])]) notices.end(key);
       const noticeKey = noticeOf(scope);
@@ -460,7 +444,7 @@ export function usePressCommands({
           editorsOf(target.documents ?? rows(scope).map((row) => row.documentId), scope),
           (step) => run(target, input, step),
         );
-      let entries: PressEntries | null = null;
+      let entry: PressEntry | null = null;
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows(scope).map((row) => [row.documentId, nameOf(row.documentId)]));
       // A folder has no row: its name is the Work's tree's.
@@ -474,86 +458,65 @@ export function usePressCommands({
         if (created.length > 0) removal?.beginOwnRemoval(projectId, created);
       }
       const outcome = press(target, driver).then((pressed): CommandOutcome => {
-        if (typeof pressed === "string") return { kind: "blocked" };
-        const sent = target.documents ?? pressed.took;
-        const answer = outcomeOf(pressed, sent);
-        if (answer.kind !== "done") return answer;
+        if (typeof pressed === "string") return "blocked";
         const changed = pressed.took;
-        const where = noticeSurface(input.documentId, noticeKey);
-        let step: PressEntries;
+        if (changed.length === 0) return "settled";
         if (scope.kind === "turn") {
           // The turn's card is its notice: it reads the press in force from the owner.
-          step = restoreInForce(scope, pressed, editor);
-        } else if (verdict === "apply") {
-          step = remember(scope, verdict, pressed, editor, () => {
-            if (notices.appliedFacts(noticeKey)?.facts.some((fact) => fact.step === step))
-              notices.end(noticeKey);
-          });
-          notices.showApplied({
+          entry = restoreInForce(scope, pressed, editor);
+          return "done";
+        }
+        const where = noticeSurface(input.documentId, noticeKey);
+        // Taken back elsewhere (the sidebar, an editor): the notice goes with it.
+        let shown: number | null = null;
+        const step = remember(scope, verdict, pressed, editor, () => {
+          if (shown !== null) notices.end(noticeKey, shown);
+        });
+        entry = step;
+        if (verdict === "apply")
+          shown = notices.showApplied({
             projectId,
             draftId: noticeKey,
             surface: where,
             change: scope.kind === "change",
-            facts: changed.map((documentId) => ({
-              documentId,
-              kind: "applied" as const,
-              name: named(documentId),
-              step,
-            })),
+            documents: changed.map((documentId) => ({ documentId, name: named(documentId) })),
+            undo: () => void step.undo(),
           });
-        } else {
-          let shown: number | null = null;
-          step = remember(scope, verdict, pressed, editor, () => {
-            // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
-            const notice = notices.get(noticeKey);
-            if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
-              notice.dismiss();
-          });
+        else {
           const [first] = changed;
-          const part: DiscardPart = {
-            documentId: input.documentId ?? first ?? "",
-            name: input.name ?? named(input.documentId ?? first ?? ""),
-            scope: scope.kind === "change" ? "change" : "draft",
-            ...(changed.length > 1 ? { count: changed.length } : {}),
-            covers: changed,
-            handle: {
-              undo: async () => ({
-                answer: (await step.undo()).kind === "failed" ? "failed" : "ok",
-              }),
-              end: () => {},
-            },
-          };
+          const documentId = input.documentId ?? first ?? "";
           shown = notices.showDiscard({
             projectId,
             draftId: noticeKey,
             surface: where,
-            parts: [part],
+            scope: scope.kind === "change" ? "change" : "draft",
+            name: input.name ?? named(documentId),
+            count: changed.length,
+            documentIds: changed,
+            undo: async () => (await step.undo()).ok,
           });
         }
-        entries = step;
-        return { ...answer, undo: () => step.undo() };
+        return "done";
       });
-      editor.pressing(outcome.then(() => entries));
-      return { sent: true, outcome };
+      editor.pressing(outcome.then(() => entry));
+      return outcome;
     };
 
-    const documentTarget = (verdict: Verdict, item: DraftItemRef): PressTarget => ({
-      action: { verdict, scope: { kind: "document", item: item.itemKey } },
-      documents: [item.documentId],
-      whole: true,
-    });
     const draftScope: PressScope = workWide
       ? { kind: "work", work: work.id as WorkId, drafts: drafts as DraftId[] }
       : { kind: "draft", draft: draftId as DraftId };
-    const draftTarget = (verdict: Verdict): PressTarget => ({
-      action: { verdict, scope: draftScope },
-      documents: null,
-      whole: true,
-    });
-    const startItem = (verdict: Verdict, item: DraftItemRef) =>
-      run(documentTarget(verdict, item), { documentId: item.documentId });
+    /** One document of a draft, both halves. */
+    const pressDocument = (verdict: Verdict, item: DraftItemRef) =>
+      run(
+        {
+          action: { verdict, scope: { kind: "document", item: item.itemKey } },
+          documents: [item.documentId],
+          whole: true,
+        },
+        { documentId: item.documentId },
+      );
     /** One change of a document, named by any of its members (`PressScope`'s `change`). */
-    const startChange = (verdict: Verdict, item: DraftItemRef, change: string) =>
+    const pressChange = (verdict: Verdict, item: DraftItemRef, change: string) =>
       run(
         {
           action: { verdict, scope: { kind: "change", item: item.itemKey, change } },
@@ -561,6 +524,18 @@ export function usePressCommands({
           whole: false,
         },
         { documentId: item.documentId },
+      );
+    /**
+     * The whole draft, or every draft of the Work, folders with only a tree change included.
+     * `name`: what the notice calls it when it took one thing, if not that thing's own name.
+     */
+    const pressDraft = (verdict: Verdict, name: string | null = null) =>
+      run(
+        { action: { verdict, scope: draftScope }, documents: null, whole: true },
+        {
+          documentId: null,
+          name,
+        },
       );
     /**
      * A Draft chat turn's restore (its card's `Undo turn`) in one draft it wrote: `documents` are the ones
@@ -579,7 +554,7 @@ export function usePressCommands({
         { documentId: null },
       );
       // A press that changed nothing, or never landed, leaves nothing in force.
-      void start.outcome.then(() => {
+      void start.then(() => {
         if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
       });
     };
@@ -613,27 +588,6 @@ export function usePressCommands({
         new EditorPressStep([], () => {}),
       );
     };
-    /** The draft's files: one press on the whole draft; a single file presses that document. */
-    const many = (verdict: Verdict, items: readonly DraftItemRef[]) => {
-      const [only] = items;
-      const target =
-        items.length === 1 && only ? documentTarget(verdict, only) : draftTarget(verdict);
-      return run(target, { documentId: only?.documentId ?? null }).outcome.then((outcome) =>
-        items.map(() => outcome),
-      );
-    };
-    const discardSelection = (input: {
-      all?: boolean;
-      items: readonly DraftItemRef[];
-      name: string | null;
-    }): Promise<CommandOutcome> => {
-      const [only] = input.items;
-      const target =
-        !input.all && input.items.length === 1 && only
-          ? documentTarget("discard", only)
-          : draftTarget("discard");
-      return run(target, { documentId: only?.documentId ?? null, name: input.name }).outcome;
-    };
     return {
       projectId,
       work,
@@ -645,20 +599,12 @@ export function usePressCommands({
       threadId,
       owner,
       dispositionLocked: locked,
-      startItem: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item),
-      startChange,
+      pressDocument,
+      pressChange,
+      pressDraft,
       restoreTurn,
       undoRestore,
       syncRestore,
-      apply: (documentId: string, itemKey: string) =>
-        startItem("apply", { documentId, itemKey }).outcome,
-      discard: (documentId: string, itemKey: string) =>
-        startItem("discard", { documentId, itemKey }).outcome,
-      applyMany: (items: readonly DraftItemRef[]) => many("apply", items),
-      discardMany: (items: readonly DraftItemRef[]) => many("discard", items),
-      discardSelection,
-      discardAll: (items: readonly DraftItemRef[], name: string | null) =>
-        discardSelection({ all: true, items, name }),
     };
   }, [
     owner,

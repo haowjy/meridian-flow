@@ -11,7 +11,6 @@ import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
 import type { TreeStep } from "@/core/project-tree/tree-undo";
 import {
-  type DiscardUndo,
   type DraftNotices,
   deleteNoticeKey,
   type NoticeSurface,
@@ -213,39 +212,30 @@ function showDeleteNotice(
   const surface: NoticeSurface = leaving
     ? { kind: "page", documentId: leaving, draftId: null }
     : { kind: "landing" };
-  const handle: DiscardUndo = {
-    undo: async () => ({
-      answer: (await Promise.all(taken.map(({ list, step }) => list.undo(step)))).some(Boolean)
-        ? "ok"
-        : "gone",
-    }),
-    end: () => {},
-  };
   // The notice's one Undo covers every list's step: it ends when the last of them ends or rests.
+  let id: number | null = null;
   const standing = new Set(taken.map(({ step }) => step));
   for (const { step } of taken) {
     const leave = () => {
-      if (!standing.delete(step) || standing.size > 0) return;
-      handle.end();
-      notices.partEnded(handle);
+      if (!standing.delete(step) || standing.size > 0 || id === null) return;
+      notices.end(deleteNoticeKey(projectId), id);
     };
     step.ended = leave;
     step.rested = leave;
   }
-  const id = notices.showDiscard({
+  id = notices.showDiscard({
     projectId,
     draftId: deleteNoticeKey(projectId),
     // Leaving main's document, the notice follows main to where it goes back to (`landed`).
     surface,
-    parts: [
-      {
-        documentId: leaving ?? documentId,
-        name: names[0] ?? "",
-        scope: "deleted",
-        count: names.length,
-        handle,
-      },
-    ],
+    scope: "deleted",
+    name: names[0] ?? "",
+    count: names.length,
+    documentIds: [leaving ?? documentId],
+    undo: async () => {
+      await Promise.all(taken.map(({ list, step }) => list.undo(step)));
+      return true;
+    },
   });
   return id;
 }

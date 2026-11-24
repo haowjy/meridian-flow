@@ -38,7 +38,7 @@ browser); see the KB's path-navigates-lists-edit page.
 Contracts:
 
 - **Keystroke path**: at rest the bar renders from document metadata only. The
-  content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
+  content-suggestion observer (300ms debounce) mounts
   only while the edit field is open on a provisional doc.
 - **Placement grammar** (any Unfiled document or provisional document): the jade chip opens
   an EMPTY field — the content-derived suggestion is ghost placeholder text

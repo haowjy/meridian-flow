@@ -7,7 +7,7 @@
  * What a document paints, in whichever host holds it, is the one version rule (`shownDraft`) over
  * its view on this device (`document-views`) and the sidebar's Live/Draft choice: Live, or a
  * draft. A draft page binds the draft's fork room of the document whether or not the draft has
- * changed it (design §6, "Three page states, one editor"): no list decides it.
+ * changed it: no list decides it.
  */
 import { type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem } from "@meridian/contracts/drafts";
@@ -37,7 +37,6 @@ import { useOptionalChatOnScreen } from "./side/SideView";
 import { useScopeDraftOwner } from "./use-work-scope";
 
 export type DocumentPaint = {
-  showing: "draft" | "live";
   /** The draft painted; null on Live. */
   draft: DraftPin | null;
   /** The painted draft's owner is not the scope's. */
@@ -140,11 +139,10 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     if (pinOwner && pinItem)
       return {
         ...base,
-        showing: "draft",
         draft: { draftId: pinOwner, itemKey: pinItem },
         outOfScope: pinOwner !== scopeDraftId,
       };
-    return { ...base, showing: "live", draft: null, outOfScope: false };
+    return { ...base, draft: null, outOfScope: false };
   }, [scopeDraftId, view, pinOwner, pinItem]);
 }
 
@@ -171,7 +169,6 @@ export type MainDocument = Readonly<{
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
   document: OpenDocument | null;
-  local: false;
   /** Live lacks the document: the descriptor is built from the address's draft row. */
   draftOnly: boolean;
   /** The list has synced: a document its tree lacks is not there. */
@@ -184,7 +181,6 @@ export type MainDocument = Readonly<{
    */
   addressState: AddressState;
   isError: boolean;
-  isFetching: false;
 }>;
 
 export function resolveMainDocument(input: {
@@ -216,12 +212,10 @@ export function resolveMainDocument(input: {
       ...base,
       requested: false,
       document: null,
-      local: false,
       draftOnly: false,
       catalogResolved: false,
       addressState: "settled",
       isError: false,
-      isFetching: false,
     };
   }
   // Identity before path: a bound document is found wherever its path went.
@@ -247,12 +241,10 @@ export function resolveMainDocument(input: {
     ...base,
     requested: true,
     document: resolved,
-    local: false,
     draftOnly: owner.kind === "draft-only",
     catalogResolved: input.tree.isComplete,
     addressState: input.addressState ?? "settled",
     isError: input.tree.isError,
-    isFetching: false,
   };
 }
 

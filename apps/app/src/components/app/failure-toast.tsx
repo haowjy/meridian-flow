@@ -78,11 +78,6 @@ export function dismissFailure(key: string) {
   toast.dismiss(id);
 }
 
-/** Closes every failure under a key prefix, such as a project's on leaving it. */
-export function dismissFailures(prefix: string) {
-  for (const key of [...shown.keys()]) if (key.startsWith(prefix)) dismissFailure(key);
-}
-
 /** Centred under the header on desktop, below the top bar on a phone. */
 const DESKTOP_OFFSET = { top: "3rem" };
 const PHONE_OFFSET = {

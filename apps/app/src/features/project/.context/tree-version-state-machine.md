@@ -96,7 +96,7 @@ stateDiagram-v2
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. A review's Apply or Discard is
   one step in either view (`PressStep`): the press sends that press's own Undo, the same one its
-  notice and an open editor's Ctrl+Z send (`PressEntries`), and is spent once the
+  notice and an open editor's Ctrl+Z send (`PressEntry`), and is spent once the
   server answered, so it never falls through to an older step; one that didn't reach the server
   toasts and stays. On the Changes tab a press takes the latest step of any source; in a source's
   list (the project's or the account's), a step whose documents or folders showed there in the

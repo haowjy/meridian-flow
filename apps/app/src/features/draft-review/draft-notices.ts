@@ -1,12 +1,10 @@
 /**
- * One notice per draft (by its id): the draft's latest Discard with its
- * Undo, or the facts its latest Apply brought; and per project the writer's latest delete
+ * One notice per draft (by its id): the draft's latest Discard or Apply, each with its press's
+ * one Undo; and per project the writer's latest delete
  * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step, for main's page or Recently opened
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { PressEntries } from "./press-history";
-
 export type NoticeSurface =
   | { kind: "changes" }
   | { kind: "strip"; threadId: string | null }
@@ -23,42 +21,10 @@ export type NoticeSurface =
 export const deleteNoticeKey = (projectId: string) => `delete:${projectId}`;
 
 type NoticeSubject =
-  /** `folder`: a folder's changes and everything listed under it. `deleted`: the writer's delete. */
-  | { kind: "draft" | "change" | "folder" | "deleted"; name: string }
+  /** `deleted`: the writer's delete. */
+  | { kind: "draft" | "change" | "deleted"; name: string }
   | { kind: "drafts"; count: number }
   | { kind: "deletes"; count: number };
-
-/**
- * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it
- * found settled already (an earlier Discard's, or an Apply's). A notice lists only what it took.
- */
-export type DiscardTook = { untaken: readonly string[] };
-
-type DiscardUndoAnswer = { answer: "ok" | "failed" | "gone" };
-
-/**
- * One share of a notice's Undo: a Discard the server ran, which the press's Undo takes back, or a
- * delete in the tree, which the tree's own Undo step takes back.
- */
-export type DiscardUndo = {
-  /**
-   * Takes it back now. `ok` once it is back, with `landed` settling when the writer's own room
-   * holds it; `gone`: nothing is left to take back.
-   */
-  undo(): DiscardUndoAnswer | Promise<DiscardUndoAnswer>;
-  end(): void;
-};
-
-export type DiscardPart = {
-  documentId: string;
-  name: string;
-  scope: "draft" | "change" | "folder" | "deleted";
-  /** What it stands for: a whole draft's Discard is one share for all its drafts, a delete for all it took. */
-  count?: number;
-  /** Every document and folder the share brings back, when more than `documentId`. */
-  covers?: readonly string[];
-  handle: DiscardUndo;
-};
 
 /** `draftId`: the draft whose press it tells of, or `workNoticeKey` for a press of a Work's drafts. */
 type Base = { id: number; projectId: string; draftId: string; surface: NoticeSurface };
@@ -70,7 +36,7 @@ export type DraftNotice =
   | (Base & {
       kind: "discarded";
       subject: NoticeSubject;
-      /** What the Discard took (its answer's word, once it came): the rows its Undo brings back. */
+      /** The documents and folders the Discard took: the rows its Undo brings back. */
       documentIds: readonly string[];
       status: "ready" | "undoing";
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
@@ -80,31 +46,32 @@ export type DraftNotice =
     })
   | (Base & {
       kind: "applied";
-      /** What the Apply did that the writer can't see from the rows alone, each on its document. */
-      facts: readonly AppliedFact[];
+      /** The documents the Apply took, each named as it was listed. */
+      documents: readonly { documentId: string; name: string }[];
       /** It took one change of its document (Review changes' Apply), not the whole document. */
       change: boolean;
+      /** The Apply's one Undo (its press's). */
+      undo(): void;
       dismiss(): void;
     });
 
 /**
- * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
- * only its row's Undo shows), or landed somewhere new (`uri`). `step`: the Apply's Undo, while it
- * can be taken back.
+ * A Discard notice: what it took, said as one `name` (`count` 1) or a count, and its one Undo,
+ * which answers whether it took the Discard back.
  */
-export type AppliedFact = { documentId: string; step?: PressEntries } & (
-  | { kind: "applied"; name: string }
-  | { kind: "landed"; uri: string; name: string }
-);
-
-type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
+type DiscardInput = {
+  projectId: string;
+  draftId: string;
+  surface: NoticeSurface;
+  scope: "draft" | "change" | "deleted";
+  name: string;
+  count?: number;
+  documentIds: readonly string[];
+  undo(): boolean | Promise<boolean>;
+};
 
 export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();
-  /** A Discard notice's shares still holding an Undo. */
-  private readonly parts = new Map<number, DiscardPart[]>();
-  /** Notices whose Undo is in flight. */
-  private readonly pressed = new Set<number>();
   private readonly listeners = new Set<() => void>();
   /** The draft pages hosts show now, by document and draft, with how many hosts show each. */
   private readonly shownPages = new Map<string, number>();
@@ -180,67 +147,54 @@ export class DraftNotices {
             notice.surface.documentId === documentId &&
             notice.surface.draftId === draftId
           )
-            this.end(notice.draftId);
+            this.end(notice.draftId, notice.id);
       });
     };
   }
 
-  /** Replaces the owner's notice: an Apply or a Discard with no Undo shows nothing in its place. */
-  end(draftId: string) {
+  /** Ends the owner's notice, or with `id` only that notice: a later one stands. */
+  end(draftId: string, id?: number) {
     const notice = this.notices.get(draftId);
-    if (!notice) return;
-    this.drop(notice);
+    if (!notice || (id !== undefined && notice.id !== id)) return;
+    this.notices.delete(draftId);
     this.publish();
   }
 
   showApplied(
     input: Omit<Extract<DraftNotice, { kind: "applied" }>, "id" | "kind" | "dismiss">,
-  ): void {
-    if (this.closed) return;
-    const held = this.notices.get(input.draftId);
-    if (held) this.drop(held);
+  ): number | null {
+    if (this.closed) return null;
     const id = this.nextId++;
     this.notices.set(input.draftId, {
       ...input,
       kind: "applied",
       id,
-      dismiss: () => this.endIf(input.draftId, id),
+      dismiss: () => this.end(input.draftId, id),
     });
     this.publish();
+    return id;
   }
 
-  /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */
-  appliedFacts(draftId: string) {
-    const held = this.notices.get(draftId);
-    return held?.kind === "applied" ? held : null;
-  }
-
-  showDiscard(input: {
-    projectId: string;
-    draftId: string;
-    surface: NoticeSurface;
-    parts: readonly DiscardPart[];
-  }): number | null {
-    if (this.closed || input.parts.length === 0) {
-      for (const part of input.parts) part.handle.end();
-      return null;
-    }
-    const held = this.notices.get(input.draftId);
-    if (held) this.drop(held);
+  showDiscard({ undo, scope, name, count = 1, ...input }: DiscardInput): number | null {
+    if (this.closed) return null;
     const id = this.nextId++;
-    this.parts.set(id, [...input.parts]);
     const { draftId } = input;
     this.notices.set(draftId, {
+      ...input,
       kind: "discarded",
       id,
-      projectId: input.projectId,
-      draftId,
-      surface: input.surface,
       left: null,
       status: "ready",
-      ...this.subjectOf(input.parts),
-      undo: () => this.undo(draftId, id),
-      dismiss: () => this.endIf(draftId, id),
+      subject:
+        count === 1
+          ? { kind: scope, name }
+          : { kind: scope === "deleted" ? "deletes" : "drafts", count },
+      undo: async () => {
+        if (!this.setStatus(draftId, id, "undoing")) return;
+        if (await undo()) this.end(draftId, id);
+        else this.setStatus(draftId, id, "ready");
+      },
+      dismiss: () => this.end(draftId, id),
     });
     this.publish();
     return id;
@@ -251,131 +205,33 @@ export class DraftNotices {
    * Null: the writer moved first, so no place shows the notice, and its Undo ends.
    */
   landed(draftId: string, id: number, landing: { documentId: string | null } | null) {
-    if (landing) this.update(draftId, id, () => ({ left: { landed: landing.documentId } }));
-    else this.endIf(draftId, id);
+    if (!landing) return this.end(draftId, id);
+    const notice = this.notices.get(draftId);
+    if (notice?.id !== id || notice.kind !== "discarded") return;
+    this.notices.set(draftId, { ...notice, left: { landed: landing.documentId } });
+    this.publish();
   }
 
-  /** A share's Undo ended on its own (refused or blocked): the notice stops naming it. */
-  partEnded(handle: DiscardUndo) {
-    for (const [id, parts] of this.parts) {
-      const index = parts.findIndex((part) => part.handle === handle);
-      if (index < 0) continue;
-      parts.splice(index, 1);
-      const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
-      if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      this.notices.set(notice.draftId, { ...notice, ...this.subjectOf(parts) });
-      this.publish();
-      this.settle(notice.draftId, id);
-      return;
-    }
-  }
-
-  /** The writer left the project: its notices end, and the rooms their Undo held go. */
+  /** The writer left the project: its notices end. */
   endProject(projectId: string) {
     const leaving = [...this.notices.values()].filter((notice) => notice.projectId === projectId);
-    for (const notice of leaving) this.drop(notice);
+    for (const notice of leaving) this.notices.delete(notice.draftId);
     if (leaving.length) this.publish();
   }
 
   close() {
     this.closed = true;
-    for (const notice of [...this.notices.values()]) this.drop(notice);
+    this.notices.clear();
     this.publish();
   }
 
-  private async undo(draftId: string, id: number): Promise<void> {
+  /** Moves a Discard notice's Undo to `status`; false when the notice ended or already is there. */
+  private setStatus(draftId: string, id: number, status: "ready" | "undoing"): boolean {
     const notice = this.notices.get(draftId);
-    const parts = this.parts.get(id);
-    if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
-      return;
-    this.pressed.add(id);
-    this.settle(draftId, id);
-    // Retry takes back only the shares still out: a share that undid leaves the list.
-    const answers = await Promise.all(
-      parts.map(async (part) => ({ part, ...(await part.handle.undo()) })),
-    );
-    const failed = answers.some(({ answer }) => answer === "failed");
-    if (this.parts.has(id)) {
-      this.parts.set(
-        id,
-        parts.filter(
-          (part) =>
-            (answers.find((answered) => answered.part === part)?.answer ?? "failed") === "failed",
-        ),
-      );
-      this.pressed.delete(id);
-      this.settle(draftId, id, failed);
-    }
-  }
-
-  /** The notice as its shares stand: undoing while its Undo is out, gone once nothing is left. */
-  private settle(draftId: string, id: number, narrow = false) {
-    const notice = this.notices.get(draftId);
-    const parts = this.parts.get(id);
-    if (notice?.id !== id || notice.kind !== "discarded" || !parts) return;
-    const status: Discarded["status"] | null = this.pressed.has(id)
-      ? "undoing"
-      : parts.length > 0
-        ? "ready"
-        : null;
-    if (status === null) {
-      this.forget(notice);
-      this.publish();
-      return;
-    }
-    const next = { ...notice, status, ...(narrow ? this.subjectOf(parts) : {}) };
-    if (next.status === notice.status && next.subject === notice.subject) return;
-    this.notices.set(draftId, next);
+    if (notice?.id !== id || notice.kind !== "discarded" || notice.status === status) return false;
+    this.notices.set(draftId, { ...notice, status });
     this.publish();
-  }
-
-  private subjectOf(parts: readonly DiscardPart[]) {
-    const [only] = parts;
-    // A document's text and its move are two shares of one change: it counts once.
-    const counted = new Set<string>();
-    const count = parts.reduce((sum, part) => {
-      if (part.count !== undefined) return sum + part.count;
-      if (counted.has(part.documentId)) return sum;
-      counted.add(part.documentId);
-      return sum + 1;
-    }, 0);
-    return {
-      subject:
-        count === 1 && only
-          ? { kind: only.scope, name: only.name }
-          : only?.scope === "deleted"
-            ? { kind: "deletes" as const, count }
-            : { kind: "drafts" as const, count },
-      documentIds: parts.flatMap((part) => part.covers ?? [part.documentId]),
-    };
-  }
-
-  private update(
-    draftId: string,
-    id: number,
-    patch: () => Partial<Extract<DraftNotice, { kind: "discarded" }>>,
-  ) {
-    const notice = this.notices.get(draftId);
-    if (notice?.id !== id || notice.kind !== "discarded") return;
-    this.notices.set(draftId, { ...notice, ...patch() });
-    this.publish();
-  }
-
-  private endIf(draftId: string, id: number) {
-    const notice = this.notices.get(draftId);
-    if (notice?.id === id) this.end(draftId);
-  }
-
-  private drop(notice: DraftNotice) {
-    const parts = this.parts.get(notice.id) ?? [];
-    this.forget(notice);
-    for (const part of parts) part.handle.end();
-  }
-
-  private forget(notice: DraftNotice) {
-    this.notices.delete(notice.draftId);
-    this.parts.delete(notice.id);
-    this.pressed.delete(notice.id);
+    return true;
   }
 
   private publish() {

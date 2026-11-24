@@ -85,11 +85,10 @@ export type UseChromeLayerOptions = {
    * default hands the caret back to the prose, which is right for a surface the
    * writer summoned at the caret.
    *
-   * A lane supplies its own when its door is a focusable element INSIDE the
-   * manuscript — a peer mark's span, reached by Tab — because a writer who
-   * arrived by keyboard continues from the thing they were on, not from the
-   * caret. It runs under the same two guards, which is the point of routing it
-   * through here rather than racing this handler from a lane's own timer.
+   * A surface supplies its own when the writer was typing somewhere else — the
+   * element that drives a suggestion menu (`SuggestionMenu`) — so they continue there,
+   * not at the caret. It runs under the same two guards, which is the point of
+   * routing it through here rather than racing this handler from its own timer.
    */
   returnFocus?: () => void;
   /**
