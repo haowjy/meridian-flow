@@ -113,6 +113,11 @@ msgstr "(if the server asks for one)"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: notice.documents.length
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0, plural, one {# document applied.} other {# documents applied.}}"
+msgstr "{0, plural, one {# document applied.} other {# documents applied.}}"
+
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0, plural, one {# document discarded.} other {# documents discarded.}}"
@@ -1029,7 +1034,6 @@ msgstr "Apply this chapter"
 msgid "Apply this chat's draft"
 msgstr "Apply this chat's draft"
 
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Applying"
 msgstr "Applying"

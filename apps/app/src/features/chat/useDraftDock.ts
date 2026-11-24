@@ -12,7 +12,6 @@ import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import { hasApply } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
-import { useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
@@ -27,7 +26,6 @@ export function useDraftDock({
   active?: boolean;
 }) {
   const controller = useBoundWorkDraftCommands();
-  const shell = useShellTreeVersion();
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -38,8 +36,7 @@ export function useDraftDock({
   const owned = useDraftNotice(draftId);
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
-  // An Apply speaks only on its rows.
-  const notice = here?.kind === "discarded" ? here : null;
+  const notice = here;
   const listed = useOwnerDrafts(projectId, draftId).files ?? [];
   const { setWorkId } = useWorkScope(projectId);
 
@@ -53,8 +50,7 @@ export function useDraftDock({
     refreshTurnCards(queryClient);
   }, [queryClient, waiting]);
 
-  // A press in flight hides its rows.
-  const files = listed.filter((file) => !controller.owner.state(file.item.itemKey).hidden);
+  const files = listed;
   const applicable = files.filter((file) => hasApply(file.item));
   // What the Work's other drafts change, as their rows in the Changes tab count it.
   const workDrafts = useWorkDrafts(projectId, work && !work.isNoWork ? work.id : null).drafts;
@@ -74,7 +70,7 @@ export function useDraftDock({
     more,
     /** Opens the sidebar's Changes list on this chat's Work, which lists all of its drafts. */
     showChanges: () => {
-      if (work && shell?.draftId !== draftId) setWorkId(work.id);
+      if (work) setWorkId(work.id);
       useSidebarTabs.getState().reveal("changes");
     },
     canApply: applicable.length > 0,

@@ -102,13 +102,14 @@ re-read when the server wakes the owner (`useProjectWake`) and in each of the ac
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
 and comes back with a pill if the press fails. The journal is the one holder of what is in flight,
 in every tab and through a reload: a press not yet answered, or answered and not yet `observed`
-(`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). A press is observed once
+(`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). A change press holds its
+editor row there too, without subtracting the document from the draft list. A press is observed once
 every draft list on screen in that tab has been read from the server since it settled
-(`whenRead`): a read that failed keeps the rows held until one succeeds. The pressing
-tab also takes whole rows out of its cached list in the frame it presses, before the journal
-commits, so neither that gap nor a read already out shows them. The Work's review count leaves
-out what the journal holds (`changeCount`, `pressedDrafts` in `tree-version.tsx`), so its badges
-agree with the list. The follower also shows the "Couldn't apply" pill, once, for a press settled
+(`whenRead`): a read that failed keeps the rows held until one succeeds. Every draft-list read
+subtracts those journal holds once, after server rows and local creates are combined, so a read
+already out cannot put them back. The Work's review count uses that same projected list
+(`changeCount`, `pressedDrafts` in `tree-version.tsx`), so its badges agree with the rows. The
+follower also shows the "Couldn't apply" pill, once, for a press settled
 `never` since the tab opened, in a tab showing that press's project, so a press that fails after a
 reload still says so.
 
@@ -146,6 +147,8 @@ the draft first. A chat started while one of the Work's drafts is showing writes
 surfaces, and outlives them:
 
 - `followPresses` holds the items of the journal's presses in flight, which hides their rows.
+- `noticeRows` keeps the Changes rows a notice still speaks for, keyed to that notice so ending it
+  drops the row snapshots too.
 - `presses` holds every press this tab can still take back (`PressEntry`,
   [state-machines.md](state-machines.md)). Its Ctrl+Z step goes into each editor showing one of
   its documents in Live or in a draft of the press's scope that lists it (`editorsOf`), so two

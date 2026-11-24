@@ -201,6 +201,10 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   return owner;
 }
 
+export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
+  return useContext(DraftCommandsContext);
+}
+
 /** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
 export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
   return useContext(PresentedContext);

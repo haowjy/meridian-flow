@@ -13,7 +13,7 @@ import {
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { type GoneRow, type WithGone, withGone } from "@/components/app/RowWord";
+import { type WithGone, withGone } from "@/components/app/RowWord";
 import { WorkName } from "@/components/app/WorkName";
 import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
@@ -26,9 +26,8 @@ import {
   useDraftNoticeWords,
   useSurfaceNotice,
 } from "@/features/draft-review/CommandNotice";
-import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { changeSummary, DraftFileRow } from "@/features/draft-review/DraftFileRow";
-import { folderKey } from "@/features/draft-review/draft-command-owner";
+import type { HeldNoticeRow, HeldNoticeRows } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
 import { type DraftNotice, workNoticeKey } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -213,7 +212,6 @@ export function ChangesSource({
       if (!next.delete(key)) next.add(key);
       return next;
     });
-  const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const sections: DraftSection[] = scope.drafts.flatMap((draft) => {
     const list = lists.get(draft.id);
     if (!list) return [];
@@ -224,8 +222,7 @@ export function ChangesSource({
         heading: several ? draft.name : null,
         list,
         tree,
-        inFlight,
-        isApplying: (itemKey) => controller.owner.state(itemKey).applying,
+        applying: controller.owner.applyingDraft(draft.id),
         folded: (folder) => folded.has(`${draft.id}/${folder}`),
       }),
     ];
@@ -237,6 +234,14 @@ export function ChangesSource({
 
   const notice = useSurfaceNotice(controller.noticeKeys);
   const words = useDraftNoticeWords(notice);
+  const held = new Map(
+    sections.map((section) => [
+      section.draftId,
+      notice
+        ? controller.owner.heldNoticeRows<ChangeItem>(notice.draftId, notice.id, section.draftId)
+        : [],
+    ]),
+  );
   // One place for the tab's words: a word goes on the row that draws its node, in whichever
   // section, else on the pane's heading. A row a press took stays drawn while a word speaks for it.
   const drawnKey = sections
@@ -247,7 +252,7 @@ export function ChangesSource({
     for (const section of sections) {
       for (const [node, parent] of section.folderOf)
         if (!folderOf.has(node)) folderOf.set(node, parent);
-      for (const { key } of taken.get(section.draftId) ?? [])
+      for (const { key } of held.get(section.draftId) ?? [])
         if (!folderOf.has(key)) folderOf.set(key, null);
     }
     return {
@@ -256,7 +261,7 @@ export function ChangesSource({
       open: (folder) => !sections.some((section) => folded.has(`${section.draftId}/${folder}`)),
     };
     // `sections` is rebuilt every render; what it draws is in the keys below.
-  }, [drawnKey, folded, notice]);
+  }, [drawnKey, folded, notice, held]);
   const treeWords = useTreeNoticeWords(projectId, place);
   // A draft's notice speaks on its own rows: two drafts can hold one document. The Work's speaks
   // on every draft's.
@@ -270,29 +275,27 @@ export function ChangesSource({
     withGone(
       section.items,
       changeKey,
-      (taken.get(section.draftId) ?? []).filter(
+      (held.get(section.draftId) ?? []).filter(
         (row) => (speaksIn(section) && words.held(row.key)) || treeWords.word(row.key),
       ),
     );
   const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
   const goneRows = [...shown.values()].some((rows) => rows.some((row) => row.gone));
 
-  // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
-  // saying so, while the notice speaks for it.
-  const holdSection = (section: DraftSection) => {
+  // A notice holds the list as the writer saw it: a row it took stays in its place while the
+  // notice speaks for it, and the owner drops the snapshot when the notice ends.
+  const snapshotSection = (section: DraftSection): readonly HeldNoticeRow<unknown>[] => {
     const keys = section.items.map(changeKey);
-    taken.set(
-      section.draftId,
-      section.items.map((item, at) => ({
-        key: item.key,
-        row: item,
-        after: keys.slice(0, at).reverse(),
-      })),
+    return section.items.map((item, at) => ({
+      key: item.key,
+      row: item,
+      after: keys.slice(0, at).reverse(),
+    }));
+  };
+  const snapshots = (only?: DraftSection): HeldNoticeRows =>
+    new Map(
+      (only ? [only] : sections).map((section) => [section.draftId, snapshotSection(section)]),
     );
-  };
-  const hold = () => {
-    for (const section of sections) holdSection(section);
-  };
   const {
     question,
     start: startApply,
@@ -300,8 +303,7 @@ export function ChangesSource({
   } = useApplyAllQuestion({
     deleting: files.filter((file) => file.item.tree?.deleted === true),
     apply: () => {
-      hold();
-      void controller.pressDraft("apply");
+      void controller.pressDraft("apply", null, snapshots());
     },
     confirm: <Trans>Apply all</Trans>,
     disabled: controller.dispositionLocked,
@@ -345,13 +347,13 @@ export function ChangesSource({
               density="full"
               touch={touch}
               onDiscard={() => {
-                hold();
                 void controller.pressDraft(
                   "discard",
                   // A lone folder change names itself in the notice.
                   files.length === 0 && changedFolders.length === 1 && onlyFolder
                     ? onlyFolder.name
                     : null,
+                  snapshots(),
                 );
               }}
               onApply={files.every((file) => hasApply(file.item)) ? startApply : undefined}
@@ -383,7 +385,7 @@ export function ChangesSource({
             onPicked={onPicked}
             folded={(folder) => folded.has(`${section.draftId}/${folder}`)}
             onFold={(folder) => fold(section.draftId, folder)}
-            onCommand={() => holdSection(section)}
+            onCommand={() => snapshots(section)}
           />
         ))}
         {hasFiles || goneRows ? null : status === "loading" ? (
@@ -415,42 +417,25 @@ function draftSection({
   heading,
   list,
   tree,
-  inFlight,
-  isApplying,
+  applying,
   folded,
 }: {
   draftId: string;
   heading: string | null;
   list: OwnerDraftListStatus;
   tree: WorkTreeChanges | null;
-  /** A command in flight hides its row. */
-  inFlight: (itemKey: string) => boolean;
-  isApplying: (itemKey: string) => boolean;
+  applying: boolean;
   folded: (folder: string) => boolean;
 }): DraftSection {
-  const listedFiles = (list.files ?? []).filter((file) => !inFlight(file.item.itemKey));
-  const folderInFlight = (id: string) =>
-    list.draftId !== null && inFlight(folderKey(list.draftId, id));
-  // A folder whose own cut is in flight hides as a document does, once nothing under it shows.
-  const shownGroups = (groups: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
-    groups.flatMap((group) => {
-      const inner = shownGroups(group.inner);
-      return group.folder && folderInFlight(group.folder.id) && !group.files.length && !inner.length
-        ? []
-        : [{ ...group, inner }];
-    });
-  const grouped = tree ? groupByChangedFolder(listedFiles, tree) : null;
-  const groups = grouped ? shownGroups(grouped) : [{ folder: null, files: listedFiles, inner: [] }];
-  // An Apply the server is still running (a large Apply all) says so where its rows were.
-  const applyingKey = (itemKey: string) => inFlight(itemKey) && isApplying(itemKey);
-  const applying =
-    (list.files ?? []).some((file) => applyingKey(file.item.itemKey)) ||
-    (list.draftId !== null &&
-      (grouped ?? []).some((group) =>
-        (group.folder?.folders ?? []).some((id) =>
-          applyingKey(folderKey(list.draftId as string, id)),
-        ),
-      ));
+  const listedFiles = list.files ?? [];
+  const visibleFolders = new Set(list.folderIds ?? []);
+  const grouped = tree
+    ? groupByChangedFolder(listedFiles, {
+        ...tree,
+        folders: new Set([...tree.folders].filter((id) => visibleFolders.has(id))),
+      })
+    : null;
+  const groups = grouped ?? [{ folder: null, files: listedFiles, inner: [] }];
   const folderOf = new Map<string, string | null>();
   const walk = (group: ChangeGroup<ReviewFileTarget>, parent: string | null) => {
     const here = group.folder?.id ?? null;
@@ -530,11 +515,11 @@ function DraftChangesSection({
   onPicked?: () => void;
   folded: (folder: string) => boolean;
   onFold: (folder: string) => void;
-  /** A row's own × or ✓ was pressed: the section holds its rows as they were. */
-  onCommand: () => void;
+  /** A row's own × or ✓ was pressed: snapshot the section for its notice. */
+  onCommand: () => HeldNoticeRows;
 }) {
   const openDocument = useOpenProjectDocument(projectId);
-  const { draftId, heading, list, tree, applying } = section;
+  const { draftId, heading, tree, applying } = section;
   if (!applying && shown.length === 0) return null;
 
   return (
@@ -601,7 +586,6 @@ function DraftChangesSection({
               return (
                 <FolderGroupRow
                   key={`folder:${folder.id}`}
-                  draftId={list.draftId}
                   folder={folder}
                   depth={item.depth}
                   open={!folded(folder.id)}
@@ -642,9 +626,6 @@ type ChangeItem = { key: string; name: string; detail: ReactNode } & (
 
 const changeKey = (item: ChangeItem) => item.key;
 
-/** Each owner's list as its latest Discard or Apply found it; its notice says which rows to keep. */
-const taken = new Map<string, readonly GoneRow<ChangeItem>[]>();
-
 const NOTHING = () => {};
 
 /**
@@ -654,7 +635,6 @@ const NOTHING = () => {};
  * under its row.
  */
 function FolderGroupRow({
-  draftId,
   folder,
   depth,
   open,
@@ -671,10 +651,7 @@ function FolderGroupRow({
   open: boolean;
   onToggle: () => void;
   files: readonly ReviewFileTarget[];
-  /** The Work's draft, whose folder items hold the folder's command state. */
-  draftId: string | null;
 }) {
-  const keys = draftId ? folder.folders.map((id) => folderKey(draftId, id)) : [];
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
@@ -694,17 +671,14 @@ function FolderGroupRow({
         detail={folderSummary(folder)}
         notice={notice}
         below={
-          <div className="pl-1">
-            {folder.fault ? (
+          folder.fault ? (
+            <div className="pl-1">
               <InlineErrorRow
                 message={landingFaultSentence(folder.fault)}
                 className="p-0 text-xs"
               />
-            ) : null}
-            {keys.map((key) => (
-              <DraftCommandStatus key={key} itemKey={key} />
-            ))}
-          </div>
+            </div>
+          ) : null
         }
       />
     </li>

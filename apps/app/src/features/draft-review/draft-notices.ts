@@ -50,6 +50,8 @@ export type DraftNotice =
       documents: readonly { documentId: string; name: string }[];
       /** It took one change of its document (Review changes' Apply), not the whole document. */
       change: boolean;
+      /** It took every row of a draft or Work, so its one Undo is said once in a row list. */
+      wholeDraft: boolean;
       /** The Apply's one Undo (its press's). */
       undo(): void;
       dismiss(): void;
@@ -78,6 +80,8 @@ export class DraftNotices {
   private nextId = 1;
   private revision = 0;
   private closed = false;
+
+  constructor(private readonly onEnd?: (draftId: string, id: number) => void) {}
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -157,6 +161,7 @@ export class DraftNotices {
     const notice = this.notices.get(draftId);
     if (!notice || (id !== undefined && notice.id !== id)) return;
     this.notices.delete(draftId);
+    this.onEnd?.(draftId, notice.id);
     this.publish();
   }
 
@@ -215,12 +220,16 @@ export class DraftNotices {
   /** The writer left the project: its notices end. */
   endProject(projectId: string) {
     const leaving = [...this.notices.values()].filter((notice) => notice.projectId === projectId);
-    for (const notice of leaving) this.notices.delete(notice.draftId);
+    for (const notice of leaving) {
+      this.notices.delete(notice.draftId);
+      this.onEnd?.(notice.draftId, notice.id);
+    }
     if (leaving.length) this.publish();
   }
 
   close() {
     this.closed = true;
+    for (const notice of this.notices.values()) this.onEnd?.(notice.draftId, notice.id);
     this.notices.clear();
     this.publish();
   }

@@ -188,7 +188,21 @@ export function DraftNoticeLine({
   useLingui();
   if (notice.kind === "applied") {
     const [first] = notice.documents;
-    if (notice.surface.kind !== "page" || !first) return null;
+    if (!first) return null;
+    if (notice.surface.kind === "strip")
+      return (
+        <ActionNotice
+          data-command-notice="applied"
+          sentence={plural(notice.documents.length, {
+            one: "# document applied.",
+            other: "# documents applied.",
+          })}
+          action={{ label: <Trans>Undo</Trans>, onClick: notice.undo }}
+          onDismiss={notice.dismiss}
+          className={className}
+        />
+      );
+    if (notice.surface.kind !== "page") return null;
     return (
       <ActionNotice
         data-command-notice="applied"
@@ -249,7 +263,8 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
     // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
-    const documentOf = (id: string) => notice.documents.find((each) => each.documentId === id);
+    const visible = notice.wholeDraft ? notice.documents.slice(0, 1) : notice.documents;
+    const documentOf = (id: string) => visible.find((each) => each.documentId === id);
     return {
       held: (id) => documentOf(id) !== undefined,
       word: (id) => {

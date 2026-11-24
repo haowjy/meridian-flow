@@ -12,7 +12,7 @@ one Undo (`unpress`).
 - A press (Apply or Discard) sits on the sidebar's Undo stack
   (`PressEntry`); Ctrl+Z there, a row's Undo or its notice's Undo takes it back once, and Redo
   presses the same items again.
-- A tree line's row presses its tree change alone (`half: "tree"`).
+- `ReviewBar.pressChapter` presses the document whole: its text and tree changes are one press.
 - A Discard is not in Trash: its Undo is the press's, as Apply's is, and a reload ends the offer.
 - A press that fails (Apply, Undo, Redo, Discard) is a brief pill (`notifyFailure`),
   never a line in the row or bar the writer pressed.

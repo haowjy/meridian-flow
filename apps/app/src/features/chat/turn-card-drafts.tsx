@@ -3,7 +3,10 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useWorkDrafts } from "@/client/query/draft-commands";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { workDraftName } from "@/features/draft-review/draft-names";
-import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
+import {
+  useBoundWorkDraftCommands,
+  type WorkDraftCommands,
+} from "@/features/draft-review/usePressCommands";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 
 /** What every turn card of one chat presses with, and how it names the chat's Work's drafts. */
@@ -22,13 +25,7 @@ export function TurnCardDraftsProvider({
   const projectId = useProjectDocumentNavigationProjectId();
   const thread = useDisplayedThread(projectId ?? "", threadId);
   const drafts = useWorkDrafts(projectId ?? "", thread?.workId ?? null).drafts;
-  const commands = usePressCommands({
-    projectId: projectId ?? "",
-    work: null,
-    drafts: drafts?.map((draft) => draft.id) ?? [],
-    threadId,
-    surface: "strip",
-  });
+  const commands = useBoundWorkDraftCommands();
   const value = useMemo(
     () => ({
       commands,

@@ -17,7 +17,6 @@ import {
   type WorkId,
 } from "@meridian/contracts";
 import type {
-  DraftItem,
   DraftItemsResponse,
   PressAction,
   PressResult,
@@ -33,7 +32,7 @@ import { useCommandDriver } from "@/client/commands/driver-context";
 import { pressDrafts, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { cachedOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
 import {
   dropUndoStep,
@@ -50,7 +49,7 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useItemLauncher } from "@/features/project/review-launch";
-import type { CommandOutcome } from "./draft-command-owner";
+import type { CommandOutcome, HeldNoticeRows } from "./draft-command-owner";
 import { type NoticeSurface, workNoticeKey } from "./draft-notices";
 import {
   type EditorHistory,
@@ -327,9 +326,8 @@ export function usePressCommands({
     /**
      * One press. Its rows and folders are in flight while the journal holds it, until a list read
      * after its answer (`DraftCommandOwner.followPresses`): they leave the list and the review, and
-     * nothing else can be pressed on them. A row taken whole leaves the cached list too, before the
-     * journal holds it and so a read already out can't bring it back; a press that fails gives it
-     * back with the next read.
+     * nothing else can be pressed on them. Every list read subtracts the journal hold, including a
+     * read already out; a press that fails releases the hold and gives the rows back.
      */
     const press = async (
       target: PressTarget,
@@ -347,7 +345,6 @@ export function usePressCommands({
       const inScope = lists.flatMap(({ listed }) => listed.items);
       const nodes = target.documents ?? inScope.map((item) => item.documentId);
       const taken = inScope.filter((item) => all || nodes.includes(item.documentId));
-      const gone = (item: DraftItem) => target.whole && (all || nodes.includes(item.documentId));
       // Discard all takes folders with only a tree change too: they have no row.
       const folders = all
         ? lists.flatMap(({ draft, listed }) =>
@@ -360,12 +357,6 @@ export function usePressCommands({
           ? [{ documentId: item.documentId as DocumentId, version: item.liveVersion }]
           : [],
       );
-      // The rows leave in this frame; a read already out answers from before the press, so it
-      // must not bring them back.
-      for (const draft of pressed)
-        patchOwnerDrafts(queryClient, projectId, draft, (rowsNow) =>
-          rowsNow.filter((item) => !gone(item)),
-        );
       await Promise.all(
         pressed.map((draft) =>
           queryClient.cancelQueries({ queryKey: projectQueryKeys.drafts(projectId, draft) }),
@@ -429,6 +420,7 @@ export function usePressCommands({
       target: PressTarget,
       input: { documentId: string | null; name?: string | null },
       again?: EditorPressStep,
+      heldRows?: HeldNoticeRows,
     ): Promise<CommandOutcome> => {
       const { verdict, scope } = target.action;
       // A turn's press names its draft; any other presses the surface's.
@@ -442,7 +434,7 @@ export function usePressCommands({
         again ??
         new EditorPressStep(
           editorsOf(target.documents ?? rows(scope).map((row) => row.documentId), scope),
-          (step) => run(target, input, step),
+          (step) => run(target, input, step, heldRows),
         );
       let entry: PressEntry | null = null;
       // Named as listed now: the press takes the rows out of the list as it is sent.
@@ -479,6 +471,7 @@ export function usePressCommands({
             draftId: noticeKey,
             surface: where,
             change: scope.kind === "change",
+            wholeDraft: scope.kind === "draft" || scope.kind === "work",
             documents: changed.map((documentId) => ({ documentId, name: named(documentId) })),
             undo: () => void step.undo(),
           });
@@ -496,6 +489,7 @@ export function usePressCommands({
             undo: async () => (await step.undo()).ok,
           });
         }
+        if (shown !== null) owner.holdNoticeRows(noticeKey, shown, heldRows);
         return "done";
       });
       editor.pressing(outcome.then(() => entry));
@@ -506,7 +500,7 @@ export function usePressCommands({
       ? { kind: "work", work: work.id as WorkId, drafts: drafts as DraftId[] }
       : { kind: "draft", draft: draftId as DraftId };
     /** One document of a draft, both halves. */
-    const pressDocument = (verdict: Verdict, item: DraftItemRef) =>
+    const pressDocument = (verdict: Verdict, item: DraftItemRef, heldRows?: HeldNoticeRows) =>
       run(
         {
           action: { verdict, scope: { kind: "document", item: item.itemKey } },
@@ -514,6 +508,8 @@ export function usePressCommands({
           whole: true,
         },
         { documentId: item.documentId },
+        undefined,
+        heldRows,
       );
     /** One change of a document, named by any of its members (`PressScope`'s `change`). */
     const pressChange = (verdict: Verdict, item: DraftItemRef, change: string) =>
@@ -529,13 +525,15 @@ export function usePressCommands({
      * The whole draft, or every draft of the Work, folders with only a tree change included.
      * `name`: what the notice calls it when it took one thing, if not that thing's own name.
      */
-    const pressDraft = (verdict: Verdict, name: string | null = null) =>
+    const pressDraft = (verdict: Verdict, name: string | null = null, heldRows?: HeldNoticeRows) =>
       run(
         { action: { verdict, scope: draftScope }, documents: null, whole: true },
         {
           documentId: null,
           name,
         },
+        undefined,
+        heldRows,
       );
     /**
      * A Draft chat turn's restore (its card's `Undo turn`) in one draft it wrote: `documents` are the ones
