@@ -6,7 +6,7 @@
 which hands it to `ChatView` and the chat's navigation provider, so the dock and the
 composer controls share one binding. The review surface is document-host scoped, not
 chat-wide (`DraftReviewBoundary` in `features/draft-review/DraftReviewProvider.tsx`,
-mounted by `ContextDocumentHost`). Project chat always has a Work, named or No Work,
+mounted by `features/project/DocumentReview.tsx`). Project chat always has a Work, named or No Work,
 looked up from `snapshot.noWork` rather than `works.find`. There is no
 first/default-Work fallback.
 
