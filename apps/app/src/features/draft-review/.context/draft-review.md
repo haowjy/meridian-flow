@@ -78,9 +78,13 @@ The tree half of a reviewed document is its row in the pane (`ReviewTreeRow`): D
 
 An Apply or Discard is a press (`usePressCommands`, `client/query/press-commands.ts`) with a scope:
 one change, one document, the draft, or the Work. It is sent through the command driver, which
-resends it under the same id until the server answers. Before the first send the driver waits on
-`ready`: the fork's and Live's rooms have had this tab's edits acknowledged
-(`registry.whenSentAcknowledged`), so the server presses what the writer saw.
+resends it under the same id until the server answers. Before each send the driver waits on
+`ready`: the server holds what this browser's copies of the press's rooms had
+(`registry.whenSentAcknowledged`), so the server presses what the writer saw. The rooms come from
+the press's lane: its draft's forks (only the named document's for a change or document) and their
+Live rooms, or every draft of the Work for a Work's press; an Undo uses its press's lane. A copy
+with unsent words that the tab has no session for (after a reload) is opened so its Join sends
+them. A stuck room of another draft does not hold the press.
 
 The Changes list, the chat strip and a page read the owner's draft list (`useOwnerDrafts`). It is
 re-read when the server wakes the owner (`useProjectWake`) and in each of the account's tabs when a

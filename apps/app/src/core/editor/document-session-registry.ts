@@ -20,6 +20,12 @@ export type DocumentSessionLease = Readonly<{
   room: DocumentRoom;
 }>;
 
+/** What a press presses: the forks of `drafts` (only of `documents` when named) and their Live rooms. */
+export type PressRooms = Readonly<{
+  drafts: readonly DraftId[];
+  documents: readonly DocumentId[] | null;
+}>;
+
 export interface LiveDocumentSessionRegistry {
   /**
    * The lease of the document's Live room, or with `draftId` of that draft's fork room. A fork
@@ -45,10 +51,11 @@ export interface LiveDocumentSessionRegistry {
    */
   openRoomVersion(documentId: DocumentId): Uint8Array | null;
   /**
-   * Settles once every room of these documents this tab holds (forks and Live) acknowledged every
-   * batch it sent; null is every room. A room not connected is not waited for.
+   * Settles once the server holds what this browser's copies of a press's rooms had: each room
+   * open here acknowledged every batch it sent, and each copy here holding unsent words was opened
+   * and its Join acknowledged. A room that is reconnecting is waited for; one that ended is not.
    */
-  whenSentAcknowledged(documentIds: readonly DocumentId[] | null): Promise<void>;
+  whenSentAcknowledged(projectId: ProjectId, rooms: PressRooms): Promise<void>;
   restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

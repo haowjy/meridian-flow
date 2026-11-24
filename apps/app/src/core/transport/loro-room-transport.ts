@@ -88,9 +88,10 @@ export type LoroRoomTransport = {
    */
   whenCurrentChangesAcknowledged(): Promise<void>;
   /**
-   * Resolves once every batch sent on this connection so far is acknowledged, or at once while
-   * the room is not joined, and when the connection closes. A fork room never covers the Live ops
-   * its copy forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
+   * Resolves once every batch sent so far is acknowledged. A room that is not joined is waited
+   * for until it joins and its Join's batch (what the server lacks, offline typing included) is
+   * acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
+   * forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
    */
   whenSentAcknowledged(): Promise<void>;
   /** What the server is known to hold: its Join version, the batches it acked and sent. */
@@ -166,14 +167,25 @@ export function createLoroRoomTransport({
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Batches sent on this connection and not yet acked, with each doc's version once imported. */
   const unacked = new Map<string, RoomVersion>();
-  /** `whenSentAcknowledged` callers, each with the batches still unacked of those it waits on. */
-  const sentWaiters = new Set<{ ids: Set<string>; resolve: () => void }>();
-  const settleSentWaiters = (all: boolean) => {
-    for (const waiter of sentWaiters)
-      if (all || ![...waiter.ids].some((id) => unacked.has(id))) {
-        sentWaiters.delete(waiter);
-        waiter.resolve();
+  /**
+   * `whenSentAcknowledged` callers, each with the batches it waits on: those unacked when it last
+   * saw the room connected, or null until it is again (a dropped socket's batches go in the next
+   * Join's batch, which is sent before the room reads as connected).
+   */
+  const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
+  const settleSentWaiters = () => {
+    for (const waiter of sentWaiters) {
+      if (!destroyed && !ended()) {
+        if (!connected()) {
+          waiter.ids = null;
+          continue;
+        }
+        waiter.ids ??= new Set(unacked.keys());
+        if ([...waiter.ids].some((id) => unacked.has(id))) continue;
       }
+      sentWaiters.delete(waiter);
+      waiter.resolve();
+    }
   };
   const server = new Map<DocKey, DocVersion>();
   /** Fragments of a server batch being reassembled, by batch id. */
@@ -189,9 +201,11 @@ export function createLoroRoomTransport({
     for (const listener of statusListeners) listener(state);
     emitAck();
   };
-  const acknowledged = () => state.kind === "connected" && joined && unacked.size === 0;
+  const connected = () => state.kind === "connected" && joined;
+  const acknowledged = () => connected() && unacked.size === 0;
   let lastAck: boolean | null = null;
   const emitAck = () => {
+    settleSentWaiters();
     const value = acknowledged();
     if (value === lastAck) return;
     lastAck = value;
@@ -346,7 +360,6 @@ export function createLoroRoomTransport({
         unacked.delete(message.refId);
         mergeVersion(server, version);
         settleBarriers();
-        settleSentWaiters(false);
         emitAck();
         return;
       }
@@ -404,7 +417,6 @@ export function createLoroRoomTransport({
       socket = null;
       joined = false;
       unacked.clear();
-      settleSentWaiters(true);
       fragments.clear();
       if (destroyed || ended()) return;
       if (
@@ -453,10 +465,10 @@ export function createLoroRoomTransport({
       return new Promise((resolve, reject) => barriers.add({ want, resolve, reject }));
     },
     whenSentAcknowledged() {
-      if (!joined || unacked.size === 0) return Promise.resolve();
-      return new Promise<void>((resolve) =>
-        sentWaiters.add({ ids: new Set(unacked.keys()), resolve }),
-      );
+      if (destroyed || ended() || acknowledged()) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        sentWaiters.add({ ids: connected() ? new Set(unacked.keys()) : null, resolve });
+      });
     },
     serverVersion: () => server,
     get synced() {
@@ -481,7 +493,7 @@ export function createLoroRoomTransport({
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      settleSentWaiters(true);
+      settleSentWaiters();
       clearTimeout(retryTimer);
       unsubscribeHints?.();
       unsubscribePresence?.();

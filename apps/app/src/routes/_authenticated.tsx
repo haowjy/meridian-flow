@@ -1,4 +1,5 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, type ReactNode, Suspense, useEffect } from "react";
@@ -168,7 +169,9 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
           projectDomain(client),
           threadOverridesDomain(client),
           draftCommandsDomain(client),
-          pressDomain(client, (documents) => registry.whenSentAcknowledged(documents)),
+          pressDomain(client, (projectId, rooms) =>
+            registry.whenSentAcknowledged(projectId as ProjectId, rooms),
+          ),
         )
       }
     >
