@@ -1,7 +1,7 @@
 /**
  * The session-bound half of an open document: one live room binding. Main's and the side's
  * documents both render through it, so a document has exactly one way to reach its
- * `DocumentSession` and no view owns a second Y.Doc or room. The session paints from the
+ * `DocumentSession` and no view owns a second copy of its Loro docs or room. The session paints from the
  * browser's local copy and connects to the room by itself; there is nothing to hand over when
  * the server learns of a document made here.
  */

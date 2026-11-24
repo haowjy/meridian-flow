@@ -149,7 +149,9 @@ surfaces, and outlives them:
   drafts on one chapter each get theirs.
 - `notices` (`DraftNotices`) holds one notice per draft: the latest Discard with its Undo, or the
   latest Apply's facts, shown only on the surface it was made on. In the Changes list a notice is
-  said on its rows (`useDraftNoticeWords`).
+  said on its rows (`useDraftNoticeWords`). A page has no rows: an Apply or Discard made in a
+  document's band or Review changes is a line with Undo in that document's review line
+  (`DraftNotices.forDocument`), where the writer lands when Review changes closes.
 
 An Apply's Undo takes a created document out of Live too; if main shows it, main opens its plain
 draft (`openDraftFile`). After a reload nothing offers a press's Undo.
