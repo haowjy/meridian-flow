@@ -243,22 +243,22 @@ function addNamespaceIssues(
   )
     issue(
       ["path"],
-      `Can't ${value.command} a section: \`${value.command}\` takes a whole document. Drop the \`#fragment\`.`,
+      `Can't ${value.command} a section: \`${value.command}\` takes a whole document. A \`#fragment\` is not allowed.`,
     );
   if (value.command !== "move") return;
   const { path, paths } = value.from ?? {};
   if ((path === undefined) === (paths === undefined))
-    issue(["from"], "Give exactly one of `from.path` or `from.paths`.");
+    issue(["from"], "Exactly one of `from.path` or `from.paths` is required.");
   for (const item of path === undefined ? (paths ?? []) : [path])
     if (fragment(item) !== undefined)
       issue(
         ["from"],
-        "Can't move a section: `move` takes a whole document. Drop the `#fragment` from the path.",
+        "Can't move a section: `move` takes a whole document. A `#fragment` is not allowed in the path.",
       );
   if (fragment(value.path) !== undefined)
     issue(
       ["path"],
-      "Can't move to a section: `path` must name a whole document. Drop the `#fragment` from `path`.",
+      "Can't move to a section: `path` must name a whole document. A `#fragment` is not allowed in `path`.",
     );
   if (paths !== undefined && value.path !== undefined && !value.path.endsWith("/"))
     issue(["path"], "With `from.paths`, `path` is the folder they go into: end it with `/`.");

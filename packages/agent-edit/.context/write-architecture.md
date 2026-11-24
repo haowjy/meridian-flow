@@ -121,9 +121,8 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   normalizes what it keeps, because a whitespace-collapsing cleanup breaks the model's
   retry on text it was just shown (find-all deletion legitimately leaves double spaces).
 - A write's result names, by block hash and author, the blocks others changed after the model
-  last read them, and marks those its echo already shows (the merged text, where a mangled merge
-  would be visible). The list never tells the model to read again: the write landed, and the
-  next write plans on what the result showed. Authors come from the changes' commit messages
+  last read them. The list never tells the model to read again or to repair a merge: the write
+  landed, and the next write plans on what the result showed. Authors come from the changes' commit messages
   (`tool/loro-observation.ts`), never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named

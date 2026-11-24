@@ -79,7 +79,6 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
               : "new chats can't use it until it is saved"
           }. Your edits are in the files.`,
           ...byFile(item.findings, () => "fails the check"),
-          "Fix these and save again.",
         ].join("\n");
       }
       const held = item.findings.filter(
@@ -96,7 +95,6 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
             ? "fails the check, so this edit isn't in use; its last good save stays in use"
             : "fails the check and has no good save, so it is left out",
         ),
-        ...(held.length ? ["Fix these and save again."] : []),
         item.outcome === "unchanged"
           ? `Already saved: ${where(item)} has no ${held.length ? "other " : ""}changes since its saved version.`
           : `Saved ${where(item)}: ${count(item.changes.length, "file")} changed. New chats use it; this chat keeps the version it started with.`,

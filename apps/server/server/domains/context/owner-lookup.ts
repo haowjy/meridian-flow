@@ -45,7 +45,7 @@ export interface OwnerRow {
 /** An address note for a receipt: a sentence to print on its own line, or the owner's label. */
 export type OwnerReceiptNote = { notice: string } | { owner: string };
 
-/** The one error for a Work handle that names no Work. It points to `work list` instead of listing. */
+/** The one error for a Work handle that names no Work. It names no Work and lists none. */
 export function unknownWorkMessage(handle: string): string {
   return `Unknown Work ${handle}.`;
 }
@@ -173,7 +173,7 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
       candidates.length >= NAMED_WORK_CANDIDATES
         ? `${NAMED_WORK_CANDIDATES} or more`
         : String(matches.length);
-    return `"${name}" names ${count} Works: ${handles}. Use a handle.`;
+    return `"${name}" names ${count} Works: ${handles}.`;
   }
 
   async function unknownWork(projectId: string, handle: string): Promise<string> {
@@ -198,7 +198,7 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
       case "name": {
         const work = await workNamed(projectId, slip.token);
         return work
-          ? `Use ${owned("scratch", { kind: "work", workHandle: work.handle })}… (Work "${work.name}").`
+          ? `"${slip.token}" is Work "${work.name}": ${owned("scratch", { kind: "work", workHandle: work.handle })}….`
           : ((await sharedName(projectId, slip.token)) ?? fallback);
       }
       case "subagent": {

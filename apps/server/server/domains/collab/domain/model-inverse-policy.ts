@@ -94,7 +94,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (!entry)
         return {
           status: "invalid_write",
-          message: `Unknown edit ${command.edit} in ${document.uri}. Read with format: "edits" for a valid handle.`,
+          message: `Unknown edit ${command.edit} in ${document.uri}. The handles are listed by format: "edits".`,
         };
       const textPlan = modelTextPlan(entry, "revert");
       if ("status" in textPlan) return textPlan;
@@ -184,7 +184,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     if (before && !own.some((entry) => entry.handle === before))
       return {
         status: "invalid_write",
-        message: `Unknown edit ${before} in ${document.uri}. Read with format: "edits" without before for valid handles.`,
+        message: `Unknown edit ${before} in ${document.uri}. The handles are listed by format: "edits" without before.`,
       };
     const older = own.filter(
         (entry) => !before || Number(entry.handle.slice(1)) < Number(before.slice(1)),

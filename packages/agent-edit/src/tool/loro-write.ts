@@ -888,6 +888,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }
 }
 
-const CHANGED_SINCE_READ = "It has been edited since you read it.";
+const CHANGED_SINCE_READ =
+  "It has been edited since you read it; the block lines below are its current text.";
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";

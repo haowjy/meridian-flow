@@ -160,7 +160,8 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
   return result.destination === "live" ? "live" : "";
 }
 
-const UNCHANGED_NOTE = "unchanged: nothing was written.";
+const UNCHANGED_NOTE =
+  "unchanged: nothing was written; the document as you last read it already held this content.";
 
 function notes(result: AgentEditResultV1): string[] {
   const lines: string[] = [];
@@ -180,8 +181,9 @@ function notes(result: AgentEditResultV1): string[] {
 /** Who changed which blocks after the model last read them, by hash. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
   return listing.groups.flatMap((group) => {
+    const changed = group.changed ?? [...(group.shown ?? []), ...(group.other ?? [])];
     const did = [
-      ...(group.changed?.length ? [`changed ${group.changed.join(", ")}`] : []),
+      ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
       ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
     ];
     return [
