@@ -10,7 +10,6 @@ The rules the map's checker enforces are entries in `map.config.mjs`; the domain
 ordinary imports between apps, packages and features, is not listed anywhere.
 
 - **Apps import packages; no package imports an app.** Nothing breaks it today.
-
 - **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Five domains (`threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
 - **Domains do not import `lib/`.** `lib/` is the composition root: it may import every domain and wire them together.
 - **The app's layers (`routes`, features, `client`, `components`, `core`, `lib`) have no written rule**, and imports run both ways between them, so a feature importing another feature is not a break.
