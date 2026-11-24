@@ -25,7 +25,7 @@ import {
   threadShownLinks,
   userRecentDocuments,
 } from "@meridian/database/schema";
-import { and, inArray, isNull } from "drizzle-orm";
+import { and, inArray, isNull, like, or, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 
@@ -56,10 +56,19 @@ export async function releaseDocumentContent(
     .where(inArray(documentSnapshots.roomKey, list.map(liveRoomKey)));
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
-  // Observation frontiers have no document foreign key; their room key is the only ownership.
+  // Observation frontiers have no document foreign key; their room key is the only ownership. A
+  // fork's are matched by the document in its key, so those of a fork swept earlier go too.
   await tx
     .delete(observationFrontiers)
-    .where(inArray(observationFrontiers.roomKey, list.map(liveRoomKey)));
+    .where(
+      or(
+        inArray(observationFrontiers.roomKey, list.map(liveRoomKey)),
+        and(
+          like(observationFrontiers.roomKey, "fork:%"),
+          inArray(sql`split_part(${observationFrontiers.roomKey}, ':', 3)`, list),
+        ),
+      ),
+    );
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));

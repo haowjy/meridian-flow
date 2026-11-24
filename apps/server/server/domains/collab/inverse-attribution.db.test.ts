@@ -182,7 +182,7 @@ it("an already-connected live room sees the write and its Undo", async () => {
         },
         immediate,
       ),
-    ).toMatchObject({ status: "success", phase: "committed" });
+    ).toMatchObject({ status: "success" });
     await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
     expect(
       await view.collab.reverseTurn({

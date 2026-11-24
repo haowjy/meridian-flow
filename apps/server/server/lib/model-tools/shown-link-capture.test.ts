@@ -94,11 +94,10 @@ function success(
 ): WriteOutcome {
   return {
     status: "success",
-    phase: "committed",
     command,
     isError: false,
     revision: null,
-    result: { command, status: "success", phase: "committed" } as never,
+    result: { command, status: "success" } as never,
     ...(links.length > 0 ? { showing: { holderUri, view, links } } : {}),
   };
 }

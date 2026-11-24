@@ -36,8 +36,8 @@ stateDiagram-v2
 
 1. No transport: `syncing` while one is being attached, else `detached`.
 2. Local persistence not yet replayed: `syncing`.
-3. A sign-in lapse (`unauthorized` with the auth-failed close, `isSignInLapse`): `offline`.
-   Transport `unauthorized` or `reset`: `access-lost`. Transport `terminal`: `offline`.
+3. Transport `unauthorized` or `reset`: `access-lost`. Transport `terminal` or `signed-out` (a
+   sign-in lapse): `offline`.
 4. First server sync not complete: `syncing`.
 5. Transport `disconnected`: `offline`.
 6. Transport `connected`: `synced`.

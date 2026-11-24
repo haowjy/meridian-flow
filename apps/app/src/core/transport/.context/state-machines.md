@@ -18,8 +18,13 @@ stateDiagram-v2
   disconnected --> connecting: the retry timer, or a retry-now hint
   connecting --> reset: JoinError document-deleted or a schema code
   connected --> reset: RoomError document-deleted
-  connecting --> unauthorized: JoinError bad-auth or permission-denied, or close 4401 or 4403
-  connected --> unauthorized: close 4401 or 4403
+  connecting --> unauthorized: JoinError bad-auth or permission-denied, or close 4403
+  connected --> unauthorized: close 4403
+  connecting --> signed_out: close 4401
+  connected --> signed_out: close 4401
+  signed_out --> connected: JoinResponseOk, once the writer has signed in again
+  signed_out --> disconnected: the socket closes with another code
+  state "signed-out" as signed_out
   connected --> terminal: any other RoomError (history-cutoff)
   reset --> [*]
   unauthorized --> [*]
@@ -31,11 +36,14 @@ stateDiagram-v2
   comes back; its owner replaces it. A document session's registry does it with
   `restartUnavailableRoom` when an open binds the room again. A tree list's `TreeListRegistry`
   closes the session when its last hold is released, and the next `acquire` opens a new one.
-- **A sign-in lapse waits like being offline.** A close with 4401 (`AUTH_FAILED`) sets
-  `unauthorized` but, unlike every other end, leaves `whenCurrentChangesAcknowledged` barriers
-  waiting, so a caller waiting on one waits for the writer to sign in and the transport to be
-  replaced; `DocumentSession` reads the state as `offline` (`isSignInLapse`). A JoinError, a 4403
-  close, a reset or a terminal end rejects the barriers.
+- **A sign-in lapse is offline, not an end.** A close with 4401 (`AUTH_FAILED`) sets
+  `signed-out`, and the room keeps retrying on the backoff and on retry-now hints. A retry doesn't
+  pass through `connecting`: `signed-out` lasts until a Join is answered, so the sign-in prompt
+  doesn't flicker. Barriers and `whenSentAcknowledged` waiters stay pending, so a press waits for
+  the writer to sign in (in any tab: the cookie is shared) and leaves once the Join's batch, which
+  carries the typing, is acknowledged. `DocumentSession` reads it as `offline`, `TreeListSession`
+  as `unauthenticated`. Signing in from the prompt reloads the page, and the journaled press waits
+  again on the reloaded rooms.
 - **A rejoin is a close and a connect.** A `JoinError` the server answers for a document it
   doesn't know yet, a `RejoinSuggested` (an access change, or a server error), and `onJoined`
   asking for a rejoin all close the socket with reason `rejoin`, which reconnects at once; any

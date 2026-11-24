@@ -69,6 +69,8 @@ export type RoomConnectionState =
   | { kind: "connecting"; attempt: number }
   | { kind: "connected" }
   | { kind: "disconnected" }
+  /** A close with 4401: the sign-in lapsed. The room retries like a disconnected one. */
+  | { kind: "signed-out" }
   | { kind: "reset"; reason: RoomResetReason; disposition: ResetDisposition }
   | { kind: "unauthorized"; reason: string; code?: number }
   | { kind: "terminal"; reason: string };
@@ -106,9 +108,9 @@ export type LoroRoomTransport = {
    */
   whenCurrentChangesAcknowledged(): Promise<void>;
   /**
-   * Resolves once every batch sent so far is acknowledged. A room that is not joined is waited
-   * for until it joins and its Join's batch (what the server lacks, offline typing included) is
-   * acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
+   * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or
+   * signed out) is waited for until it joins and its Join's batch (what the server lacks, the
+   * typing done while away included) is acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
    * forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
    */
   whenSentAcknowledged(): Promise<void>;
@@ -405,7 +407,8 @@ export function createLoroRoomTransport({
     clearTimeout(retryTimer);
     retryTimer = undefined;
     attempt += 1;
-    emitStatus({ kind: "connecting", attempt });
+    // Signed out lasts until a Join is answered, so a retry doesn't flash the sign-in prompt away.
+    if (state.kind !== "signed-out") emitStatus({ kind: "connecting", attempt });
     const ws = new WebSocket(buildSameOriginWsUrl(LORO_WS_PATH));
     ws.binaryType = "arraybuffer";
     socket = ws;
@@ -437,16 +440,17 @@ export function createLoroRoomTransport({
       unacked.clear();
       fragments.clear();
       if (destroyed || ended()) return;
-      if (
-        event.code === WS_CLOSE.AUTH_FAILED.code ||
-        event.code === WS_CLOSE.PERMISSION_DENIED.code
-      ) {
+      if (event.code === WS_CLOSE.PERMISSION_DENIED.code) {
         emitStatus({ kind: "unauthorized", reason: event.reason, code: event.code });
-        if (event.code === WS_CLOSE.PERMISSION_DENIED.code) failBarriers();
+        failBarriers();
         connectivityHints?.reportDisconnected(source);
         return;
       }
-      emitStatus({ kind: "disconnected" });
+      emitStatus(
+        event.code === WS_CLOSE.AUTH_FAILED.code
+          ? { kind: "signed-out" }
+          : { kind: "disconnected" },
+      );
       connectivityHints?.reportDisconnected(source);
       const delay =
         event.reason === "rejoin" ? 0 : RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];

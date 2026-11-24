@@ -42,7 +42,7 @@ export async function stageDraft(
       },
       context,
     );
-    expect(outcome).toMatchObject({ status: "success", phase: "committed" });
+    expect(outcome).toMatchObject({ status: "success" });
     identities.push(outcome.writeId);
   }
   const edits = await db

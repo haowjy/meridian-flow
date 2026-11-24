@@ -6,10 +6,9 @@ import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { AgentEditModelPayload } from "./model-result.js";
 import { removedFile } from "./removal-copy.js";
-import type { DocumentCommandName, WriteStatus, WriteSuccessPhase } from "./types.js";
+import type { DocumentCommandName, WriteStatus } from "./types.js";
 
-export type InternalWriteResult = InternalWriteResultBase &
-  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+export type InternalWriteResult = InternalWriteResultBase & { status: WriteStatus };
 
 interface InternalWriteResultBase {
   revision?: string | null;

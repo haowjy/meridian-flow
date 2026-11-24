@@ -220,7 +220,6 @@ export async function copyBinary(
     output: modelResult({
       command: "copy",
       status: "success",
-      phase: "committed",
       payload: {
         path: copied.value.uri,
         destination,

@@ -47,7 +47,6 @@ export function errorResponse(
 export function readSuccess(read: RenderedRead): InternalWriteResult {
   return {
     status: "success",
-    phase: "committed",
     model: {
       read: { format: read.format, documentBlocks: read.documentBlocks },
       blocks:

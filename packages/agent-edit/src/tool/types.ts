@@ -9,12 +9,7 @@ import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
-import type {
-  AgentEditResultCommand,
-  AgentEditResultV1,
-  WriteStatus,
-  WriteSuccessPhase,
-} from "./model-result.js";
+import type { AgentEditResultCommand, AgentEditResultV1, WriteStatus } from "./model-result.js";
 
 export type {
   DocumentCommandName,
@@ -26,12 +21,10 @@ export type {
   UndoOutcome,
   WriteErrorStatus,
   WriteStatus,
-  WriteSuccessPhase,
 } from "./model-result.js";
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
-export type WriteOutcome = WriteOutcomeBase &
-  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+export type WriteOutcome = WriteOutcomeBase & { status: WriteStatus };
 
 interface WriteOutcomeBase {
   /** Host-only identity; never included in the model result. */
