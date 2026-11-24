@@ -1,5 +1,3 @@
-/** Bounded H3 SSE delivery for live recent-event subscriptions. */
-
 import { createEventStream } from "nitro/h3";
 import type { EventQuery, EventQueryFilter, EventRecord } from "../domains/observability/index.js";
 import { eventMatchesLiveQueryFilter } from "./event-query-route.js";

@@ -1,14 +1,3 @@
-/**
- * Drizzle BlockRepository: SQL for the thread blocks table (create/list),
- * mapping rows via mappers.ts. Depends inward on the repository port; runs
- * within the shared drizzle-db transaction context.
- *
- * The stored chat-activity projection is not maintained here: a Postgres
- * trigger recomputes it for custom blocks only (see migration 0106 and
- * domains/threads/.context/CONTEXT.md), so plain text/tool block writes never
- * pay for it.
- */
-
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type {
@@ -20,7 +9,6 @@ import { notHandedBackSql } from "./handed-back.js";
 import { mapBlock } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
-/** Every block read returns the conversation: the blocks of a handed-back writer message are not read. */
 const inConversation = notHandedBackSql("turn_blocks.turn_id");
 
 function blockValues(input: CreateBlockInput) {

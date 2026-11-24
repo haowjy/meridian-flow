@@ -1,4 +1,3 @@
-/** AG-UI → dotted CLI events, pinned to the shared golden projector streams. */
 import type { AGUIEvent } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";

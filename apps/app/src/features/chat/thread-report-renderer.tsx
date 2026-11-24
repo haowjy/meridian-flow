@@ -1,10 +1,3 @@
-/**
- * Fold row for `thread_report`: the step where the model read a subagent's
- * report. The report itself lives on the launch card; this row records the read.
- * It reads the typed `tool.result`; `tool.content` is what the model saw.
- * `SubagentRefLine` names the addressed subagent for every ref-addressed row.
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
@@ -18,10 +11,6 @@ import type { SubagentRun } from "./subagent/run-model";
 import { SubagentIdentityName } from "./subagent/SubagentRow";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
-/**
- * The subagent a tool call addressed by ref, named the way the other subagent
- * rows name it. The name is a door to the run's launch card when one exists.
- */
 export function SubagentRefLine({ handle }: { handle: string }) {
   const requestConversationReveal = useRequestConversationReveal();
   const subagent = useSubagentRun({ ref: handle });
@@ -84,11 +73,9 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
 
 type ThreadReportRead = {
   report: ReportContentValue;
-  /** The child is running again; this report is from its previous run. */
   runningAgain: boolean;
 };
 
-/** The finished report in a typed result, or null for not-ready, refusals and malformed results. */
 export function readThreadReport(result: JsonValue | null): ThreadReportRead | null {
   const parsed = parseThreadReportResult(result);
   const report = toReportContentValue(parsed);

@@ -1,4 +1,3 @@
-/** The synced thread's freshness and admission rules, on the pure transitions. */
 import type { Block, JsonValue, Turn } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
@@ -91,13 +90,11 @@ describe("durable block wire freshness", () => {
 });
 
 it("drops an optimistic row whose admission answer names a message another tab handed back", () => {
-  // Risk: a delayed admission answer bringing back a message that already left the chat.
   const when = "2026-09-23T00:00:00.000Z";
   let synced = appendLocalUserTurn(EMPTY_SYNCED_THREAD, localRow);
   synced = removeTurns(synced, ["turn-server-1"], "7000");
   synced = acknowledgeAdmission(synced, localRow.id, "turn-server-1", "6001", when);
   expect(synced.turns).toEqual([]);
-  // A read taken before the removal does not bring it back either.
   const stale = applyRead(synced, {
     turns: [{ id: "turn-server-1", role: "user", blocks: [] } as never],
     asks: [],
@@ -107,8 +104,6 @@ it("drops an optimistic row whose admission answer names a message another tab h
   });
   expect(stale?.turns).toEqual([]);
 
-  // A newer read clears the removal's tombstone while the optimistic row still waits for its
-  // answer; the late answer must still find the removal.
   let waiting = appendLocalUserTurn(EMPTY_SYNCED_THREAD, localRow);
   waiting = removeTurns(waiting, ["turn-server-2"], "7000");
   waiting = applyRead(waiting, {

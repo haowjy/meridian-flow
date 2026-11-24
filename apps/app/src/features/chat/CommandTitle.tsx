@@ -1,4 +1,3 @@
-/** A command and what it acted on, laid out as one line. */
 import type { ReactNode } from "react";
 
 export function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {

@@ -1,4 +1,3 @@
-/** Pure execution-report identity, capture, terminal immutability and publication policy. */
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type {
   ExecutionReportDelivery,
@@ -29,7 +28,6 @@ const artifactSchema: z.ZodType<ArtifactRef> = z.union([
   z.object({ type: z.literal("liveView"), url: z.string(), expiresAt: z.string().optional() }),
 ]);
 
-// Storage has already decoded JSON. Validate the capture shape, not JSON syntax again.
 const captureSchema = z.object({
   summary: z.string(),
   payload: z.custom<JsonValue>().optional(),

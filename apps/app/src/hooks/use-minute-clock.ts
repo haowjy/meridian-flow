@@ -1,4 +1,3 @@
-/** A clock that ticks each minute so relative ages and recency buckets stay current. */
 import { useEffect, useState } from "react";
 
 export function useMinuteClock(): number {

@@ -1,4 +1,3 @@
-/** Project lookup commands. */
 import { API_PROJECTS_PATH, type ListProjectsResponse } from "@meridian/contracts/protocol";
 import type { CommandSpec } from "../../core/command";
 import { unknownJsonResponse } from "../../core/session";

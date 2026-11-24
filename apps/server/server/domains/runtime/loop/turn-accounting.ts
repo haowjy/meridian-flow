@@ -1,12 +1,3 @@
-/**
- * Turn accounting for the runtime loop.
- *
- * This collaborator owns pre-call budget checks, per-iteration spend, model
- * price computation, credit debits, and tree-budget cost recording. Keeping
- * these side effects behind one interface leaves the orchestrator responsible
- * for control flow while billing remains centralized and testable.
- */
-
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
@@ -31,17 +22,13 @@ export interface TurnAccountingDeps {
 }
 
 export interface TurnAccounting {
-  /** Pre-iteration budget and credit checks. Returns MeridianError if exhausted. */
   assertPreIterationBudget(treeBudget: TreeBudget, thread: Thread): Promise<MeridianError | null>;
-  /** Non-spending authorization before preparing any automatic continuation. */
   assertContinuationEligibility(
     remainingIterations: number,
     treeBudget: TreeBudget,
     thread: Thread,
   ): Promise<MeridianError | string | null>;
-  /** Record one iteration spent against the tree budget. */
   recordIterationSpend(treeBudget: TreeBudget): void;
-  /** Compute cost for a model response and debit credits. */
   computeAndDebit(
     response: Pick<GenerateResult, "provider" | "model" | "usage" | "meteringStatus">,
     thread: Thread,
@@ -65,9 +52,6 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       const costBudgetError = assertCostBudget(treeBudget, 0);
       if (costBudgetError) return costBudgetError;
 
-      // Mid-stream calls keep go-negative grace: a turn that spent its last
-      // positive balance may finish, but further model calls stop once debt exists.
-      // DEFERRED(atomic-reserve): pre-call check suffices under serial spawns (design §7.2); reservation/hold semantics land with parallel spawns.
       if (!(await deps.billingUsage.canContinueModelCall(thread.userId))) {
         return meridianErrorFromSystem(
           "credits_exhausted",
@@ -104,8 +88,6 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       });
 
       if (BigInt(computedCost.millicredits) > 0n) {
-        // Meter-pause while parked holds by construction: only model responses
-        // debit credits, and no model calls run while a turn is awaiting_answer.
         await deps.billingUsage.debit({
           userId: thread.userId,
           rootThreadId: thread.rootThreadId,
@@ -116,9 +98,6 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
         });
       }
 
-      // DEFERRED(bigint-millicredits): pilot scale is orders of magnitude below 2^53; move to bigint/string end-to-end when balances can exceed it.
-      // Settlement may retry after its enclosing transaction rolls back. The
-      // provider call was paid once even when its durable debit must be retried.
       if (!recordedSpend.has(usageEventId)) {
         recordCostSpend(treeBudget, Number(computedCost.millicredits));
         recordedSpend.add(usageEventId);

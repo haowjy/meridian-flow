@@ -1,12 +1,6 @@
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { FollowMode } from "./useChatFollowScroll";
 
-/**
- * Where a chat's transcript was when the writer left it: the virtualizer's measured row sizes, its
- * scroll offset and whether it was following the tail. The next mount of that chat starts from
- * this, so it paints at the same place without re-measuring from estimates. Module state, per
- * browser tab, like the chat host's other view state; a reload starts every chat fresh.
- */
 export type ChatViewRecord = {
   measurements: VirtualItem[];
   offset: number;

@@ -1,13 +1,3 @@
-/**
- * CreationDialog — the one way to create a named thing (a Work, a project).
- *
- * Questions as labels and one text size (text-sm, 16px on phones so iOS does
- * not zoom) for labels, fields and placeholders, in the Dialog's default padding
- * with default-size buttons: Cancel beside Create at the bottom right. Create
- * is ready once the name has text; Enter in the name field or Ctrl/Cmd+Enter
- * in the details field creates. Creating closes the dialog at once and hands
- * off to the caller, which navigates first and lets the server catch up.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useId, useState } from "react";
@@ -24,8 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-// One size for labels, fields and placeholders: 16px below md, as the ui
-// Input does, because iOS zooms into smaller fields on focus; text-sm above.
+// keep: Keep inputs at 16px below md; iOS zooms the viewport on focus when the field font-size is smaller.
 const textClass = "text-base md:text-sm";
 const labelClass = `${textClass} font-medium`;
 const fieldClass = `bg-card ${textClass}`;
@@ -44,7 +33,6 @@ export function CreationDialog({
   title: string;
   nameLabel: string;
   namePlaceholder: string;
-  /** The optional second question; omitted when the thing has only a name. */
   details?: { label: string; placeholder: string };
   submitLabel: string;
   onClose: () => void;

@@ -1,5 +1,3 @@
-/** Barrel: observability domain — EventSink port plus local, deferred, in-memory, and no-op adapters. */
-
 export { DeferredEventSink } from "./adapters/deferred/deferred-event-sink.js";
 export {
   createInMemoryEventSink,

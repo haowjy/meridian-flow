@@ -1,7 +1,3 @@
-/**
- * A drawing of the app, disposable with `ProductPlaceholder.tsx`. Real footage
- * replaces this file; the block's box and motion are in `film.css`.
- */
 .slot {
   position: relative;
   display: flex;
@@ -66,8 +62,6 @@
   font-weight: 500;
 }
 
-/* The tree rows mirror the app's context tree: a 16px twistie slot, a 16px
-   icon slot, 16px of indent per depth, and a guide line under each open group. */
 .s-n.in,
 .s-f,
 .s-h {
@@ -438,7 +432,6 @@
   padding: 0 3px;
 }
 
-/* The death's System window, as the manuscript records it. */
 .s-sys {
   width: fit-content;
   padding: 4px 14px 5px;
@@ -589,7 +582,6 @@
   padding-left: 20px;
 }
 
-/* Not a heading element: the drawing's wiki pages would become the landing page's outline. */
 .s-doc .s-heading {
   display: block;
   font-size: 16px;

@@ -25,7 +25,6 @@ try {
   const snapshot = JSON.parse(
     readFileSync(path.join(temporary, "meta/0000_snapshot.json"), "utf8"),
   );
-  // One baseline has no predecessor; fixed identity makes independent regenerations identical.
   snapshot.id = "00000000-0000-4000-8000-000000000001";
   const journal = JSON.parse(readFileSync(path.join(temporary, "meta/_journal.json"), "utf8"));
   journal.entries[0].when = 0;

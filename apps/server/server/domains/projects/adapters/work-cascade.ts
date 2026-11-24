@@ -1,10 +1,3 @@
-/**
- * Table-driven soft-delete and restore cascade for rows owned by a Work. A Work's sources are not
- * in it: a deleted Work's Scratch stays readable, read-only, until the Work is purged, as an
- * archived Work's does; its writes are refused by the Work's own lifecycle. The caller holds the
- * project's tree list lock (`lockProjectTreeList`), after the Work rows.
- */
-
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projectResults, threads } from "@meridian/database/schema";

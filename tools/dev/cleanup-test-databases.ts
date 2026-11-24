@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-/** Detached cleanup of exactly one parent's managed DB run; stale GC is the fallback. */
 import {
   dropDatabaseForUrl,
   listDatabasesWithPrefixForUrl,
@@ -15,8 +14,6 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
     if (managedTestDatabaseOwnerPid(targetDb, mainNames) !== process.ppid) {
       throw new Error("Refusing cleanup: managed database is not owned by the sending parent.");
     }
-    // `<template>-worker-` is unique to this run (the template name carries its pid and start time), so
-    // the prefix also finds suite-owned disposable databases intentionally left for this collector.
     const clones = await listDatabasesWithPrefixForUrl(message.databaseUrl, `${targetDb}-worker-`);
     const urls = [
       ...new Set([
@@ -31,7 +28,6 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
       ]),
       message.databaseUrl,
     ];
-    // Acknowledge ownership while the parent is still alive. No credentials go in argv or logs.
     process.send?.("ready");
     process.disconnect?.();
     for (const url of urls) {

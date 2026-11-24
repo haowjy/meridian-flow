@@ -1,4 +1,3 @@
-/** Canonical grant identity and display-label rules shared by credit ledger adapters. */
 import type { CreditGrantInput, CreditGrantSource, CreditLotView } from "./credit-ledger.js";
 
 export type GrantLotSource = Extract<

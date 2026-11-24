@@ -1,5 +1,3 @@
-/** Strict selection validation and the exact-command identity POST replay checks. */
-
 import { createHash } from "node:crypto";
 import {
   IMPORT_ADMISSION,
@@ -13,18 +11,15 @@ import { addressScheme, isCanonicalAddress } from "@meridian/contracts/context-u
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
-  /** Entries plus every folder the plan synthesizes for their ancestors. */
   plannedNodes: 20_000,
   pathDepth: 64,
   pathBytes: 4096,
   manifestBytes: 32 * 1024 * 1024,
-  /** Multipart framing allowance on top of the file bytes a request may carry. */
   multipartOverheadBytes: 1024 * 1024,
   receivesPerImport: 4,
   openPerUser: 3,
   receiptAgeMs: 60 * 60 * 1000,
 } as const;
-/** A coded refusal; diagnostics stay server-side, the writer-facing app maps the code. */
 export class ImportError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -44,7 +39,6 @@ const name = z
     (value) => value === value.normalize("NFC") && normalEntryName("folder", value) === value,
     "Invalid name",
   );
-// Bounds run before segment validation so a deep path is never split and walked.
 const boundedPath = (segmentOk: (segment: string) => boolean) =>
   z.string().superRefine((value, context) => {
     if (Buffer.byteLength(value) > IMPORT_LIMITS.pathBytes)
@@ -55,11 +49,6 @@ const boundedPath = (segmentOk: (segment: string) => boolean) =>
       context.addIssue({ code: "custom", message: "Invalid relative path" });
   });
 const path = boundedPath((segment) => name.safeParse(segment).success);
-/**
- * An unreadable item is only reported, never named in the tree, so it keeps its
- * source name even when Meridian would refuse it (`Who?.md`). It must still be a
- * plain relative path: no empty, `.` or `..` segment and no control character.
- */
 const sourcePath = boundedPath(
   (segment) =>
     segment.trim() !== "" &&
@@ -195,7 +184,6 @@ export function validateSelection(raw: unknown): ImportSelection {
     refuse("import_too_large", { limit: IMPORT_ADMISSION.totalBytes });
   return value;
 }
-/** Roots, entries, unreadable paths and every distinct folder their paths imply. */
 function plannedNodeCount(manifest: ImportSelection) {
   const folders = new Set<string>();
   for (const root of manifest.roots) if (root.kind === "folder") folders.add(`${root.rootId}:`);
@@ -207,11 +195,6 @@ function plannedNodeCount(manifest: ImportSelection) {
   }
   return folders.size + manifest.entries.length + (manifest.unreadable?.length ?? 0);
 }
-/**
- * Identity of the exact create command: the validated manifest with object keys sorted, so
- * the same POST replays and any other command under that import id (a different destination,
- * root or entry id, file or order) is a mismatch.
- */
 export function selectionFingerprint(manifest: ImportSelection): string {
   const canonical = (value: unknown): unknown =>
     Array.isArray(value)

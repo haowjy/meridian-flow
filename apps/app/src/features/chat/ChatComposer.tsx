@@ -1,4 +1,3 @@
-/** Memoized composer lifecycle: drafts and typing do not follow transcript frames. */
 import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { memo, type ReactNode, type Ref, useCallback, useEffect, useRef } from "react";
@@ -38,7 +37,6 @@ type ChatComposerProps = {
   writeMode: AiWriteMode;
   onWriteModeChange: (mode: AiWriteMode) => void;
   composerStrip?: ReactNode;
-  /** A desktop file drag is over the transcript; the composer is where the files will go. */
   fileDropActive: boolean;
   availableSkills: ReturnType<typeof useThreadAvailableSkills>["skills"];
   referenceCatalog: ReturnType<typeof useReferenceBrowserCatalog>;
@@ -84,7 +82,6 @@ function ChatComposerComponent({
     },
     [ref],
   );
-  // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
   const takeover = useAskTakeover(accountId, threadId, composer);
   const dock = useDraftDock({ threadId, generating, active });
   const openReferenceDocument = useOpenPlacedDocument(projectId);

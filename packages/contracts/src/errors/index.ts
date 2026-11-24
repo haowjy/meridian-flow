@@ -1,4 +1,3 @@
-/** Structured errors shared by runtime, HTTP, WebSocket, and clients. */
 import { z } from "zod";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 
@@ -22,10 +21,6 @@ export type Interrupt = ErrorInterrupt;
 export function errorInterrupt(error: MeridianError): ErrorInterrupt {
   return { kind: "error", error };
 }
-/**
- * Purpose: Maps domain and transport failures to the canonical MeridianError envelope and shared HTTP/WS serialization.
- * Key decisions: one JSON body shape for the error interrupt arm; WS adds only routing fields (`type`, `threadId`).
- */
 
 const MERIDIAN_ERROR_SOURCES = new Set<MeridianErrorSource>([
   "gateway",
@@ -34,7 +29,6 @@ const MERIDIAN_ERROR_SOURCES = new Set<MeridianErrorSource>([
   "system",
 ]);
 
-/** Type guard for a fully-shaped MeridianError (all required fields, correct types). */
 export function isMeridianError(value: unknown): value is MeridianError {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
@@ -47,7 +41,6 @@ export function isMeridianError(value: unknown): value is MeridianError {
   );
 }
 
-/** Serializes a MeridianError to JsonObject for journal events and tool result envelopes. */
 export function meridianErrorToJson(error: MeridianError): JsonObject {
   return JSON.parse(JSON.stringify(error)) as JsonObject;
 }
@@ -99,16 +92,10 @@ export function meridianErrorFromGateway(
   });
 }
 
-/**
- * The code of a tool failure that is a caught exception rather than a deliberate refusal. Its
- * message can carry SQL or internal ids, so the app shows generic copy for this code alone.
- */
 export const TOOL_EXCEPTION_CODE = "tool_exception";
 
-/** The code of a call the run ended before it started or settled: nothing it asked for changed. */
 export const TOOL_NOT_RUN_CODE = "tool_not_run";
 
-/** Whether a tool result says its call never ran. */
 export function isToolNotRunResult(result: unknown): boolean {
   return (
     typeof result === "object" &&
@@ -117,13 +104,8 @@ export function isToolNotRunResult(result: unknown): boolean {
   );
 }
 
-/**
- * The code a reply's view gives a sent call that has no result because the run ended: the app
- * can't know whether it ran, so it claims nothing beyond "stopped". The server never stores it.
- */
 export const TOOL_STOPPED_CODE = "tool_stopped";
 
-/** Whether a tool result is the view's stand-in for a call the run ended without an answer. */
 export function isToolStoppedResult(result: unknown): boolean {
   return (
     typeof result === "object" &&
@@ -177,7 +159,6 @@ export function meridianErrorFromSystem(
   return meridianError({ code, message, source: "system", retryable });
 }
 
-/** Shared interrupt error payload serialized identically on HTTP bodies and WS error frames. */
 export function sharedErrorInterrupt(error: MeridianError): ErrorInterrupt {
   return JSON.parse(JSON.stringify({ kind: "error", error })) as ErrorInterrupt;
 }

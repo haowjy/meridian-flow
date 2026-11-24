@@ -1,10 +1,3 @@
-/**
- * Where `/` opens the composer command menu.
- *
- * Word-boundary like manuscript slash, but this predicate is for the composer
- * StarterKit schema (`hardBreak`), not manuscript insertion.
- */
-
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 import { PROSE_TRIGGER_BLOCKS } from "@/core/editor/extensions/suggestion";

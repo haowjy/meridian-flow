@@ -1,5 +1,3 @@
-/** Materializes the one ordered retained tail shared by planning and projection. */
-
 import type { Block, Turn } from "@meridian/contracts/threads";
 
 export interface RetainedTurnSlice {
@@ -12,22 +10,9 @@ export interface CompactionCut {
   blockSequence?: number;
 }
 
-/**
- * The cut of a compaction whose whole prefix has left the conversation (a hand-back or a forgotten
- * attempt took every turn it covered): nothing before the compaction is covered, so its summary stands
- * alone and the turns after the missing cut are all retained.
- */
 export const EMPTY_CUT = { turnId: null } as const;
 export type ResolvedCut = CompactionCut | typeof EMPTY_CUT;
 
-/**
- * Finds where a complete compaction cut, among the turns the conversation still has. A compaction
- * can cut at (or pin) a writer message that a hand-back or a forgetting later took out of the chat; that
- * turn is not in `turns`. Its place is then read from the chain: the cut becomes the last turn before the
- * cut's successor (the first turn whose `prevTurnId` is the missing turn, else the compaction itself),
- * which is everything the cut covered, or the empty cut when nothing remains of it. Null only when the
- * cut turn sits at or after the compaction itself, which is invalid.
- */
 export function resolveCut(
   turns: readonly Turn[],
   compaction: Pick<Turn, "position">,

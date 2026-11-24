@@ -67,7 +67,6 @@ function deferred<T>() {
 
 const message = turn("u", "user", "complete", 1);
 const failed = turn("f", "assistant", "error", 2);
-/** The record the server held at `version`, with the open execution `executionId` (none when null). */
 function record(version: string, executionId: string | null): RunState {
   return {
     version,
@@ -140,7 +139,6 @@ describe("useReplyRetry", () => {
     await act(async () => latest.retry(failed));
     expect(latest.standIns).toHaveLength(1);
 
-    // An older record, and the Retry's own execution still open: the reply may yet start.
     hold(record("1000", null));
     await act(async () => root.render(<Probe turns={[message, failed]} />));
     expect(latest.standIns).toHaveLength(1);
@@ -148,7 +146,6 @@ describe("useReplyRetry", () => {
     await act(async () => root.render(<Probe turns={[message, failed]} />));
     expect(latest.standIns).toHaveLength(1);
 
-    // At or past the answer, the execution is gone and the store has no reply: nothing will come.
     hold(record("2002", null));
     await act(async () => root.render(<Probe turns={[message, failed]} />));
     expect(latest.standIns).toEqual([]);
@@ -162,7 +159,6 @@ describe("useReplyRetry", () => {
         .mockResolvedValueOnce({ executionId: "e-r", turn: null, runState: record("3000", "e-r") });
       await act(async () => latest.retry(failed));
       const id = latest.outcomes[0]?.requestId ?? "";
-      // The lost request has no answer version, so even an idle record cannot retire it.
       hold(record("3500", null));
       await act(async () => root.render(<Probe turns={[message, failed]} />));
       expect(latest.outcomes).toMatchObject([{ kind: "lost", requestId: id }]);
@@ -180,7 +176,6 @@ describe("useReplyRetry", () => {
     expect(latest.standIns).toEqual([]);
     expect(refusedFor("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-    // The other reply is still running: the card stays. A reply that fails doesn't clear it.
     await act(async () =>
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "streaming", 3)]} />),
     );
@@ -189,12 +184,10 @@ describe("useReplyRetry", () => {
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "error", 3)]} />),
     );
     expect(refusedFor("f")).toBe(true);
-    // A reply that completes after the refusal clears it, with no action from the writer.
     await act(async () =>
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "complete", 3)]} />),
     );
     expect(refusedFor("f")).toBe(false);
-    // Refused again, the writer's next Retry clears it while its request runs.
     await act(async () => latest.retry(failed));
     expect(refusedFor("f")).toBe(true);
     api.retryReply.mockReturnValueOnce(new Promise(() => undefined));
@@ -205,7 +198,6 @@ describe("useReplyRetry", () => {
   it("keeps a lost request's reply, failed, and its Retry re-sends the same id for the same failed reply", async () => {
     api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await act(async () => latest.retry(failed));
-    // A lost request is no errored stand-in: the failed reply shows again, with a lost-Retry outcome.
     expect(latest.standIns).toEqual([]);
     expect(latest.retried.size).toBe(0);
     const [outcome] = latest.outcomes;
@@ -227,13 +219,11 @@ describe("useReplyRetry", () => {
         .mockResolvedValueOnce({ executionId: "execution-r", turn: null });
       await act(async () => latest.retry(failed));
       const id = latest.standIns[0]?.id ?? "";
-      // Not a refusal and not lost: the same id goes again.
       expect(refusedFor("f")).toBe(false);
       expect(latest.requestOf(id)).toBe("sending");
       await act(async () => vi.advanceTimersByTimeAsync(1000));
       expect(api.retryReply).toHaveBeenCalledTimes(2);
       expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id });
-      // The replay found the execution before its reply: the stand-in waits for it.
       expect(latest.requestOf(id)).toBe("sent");
       expect(latest.standIns[0]).toMatchObject({ id, status: "pending" });
     } finally {
@@ -273,7 +263,6 @@ describe("useReplyRetry", () => {
       const id = latest.standIns[0]?.id ?? "";
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
       expect(api.retryReply).toHaveBeenCalledTimes(RETRY_PENDING_ATTEMPTS);
-      // Not refused: nothing says the server wrote nothing.
       expect(refusedFor("f")).toBe(false);
       expect(latest.outcomes).toMatchObject([{ kind: "lost", turnId: "f", requestId: id }]);
 

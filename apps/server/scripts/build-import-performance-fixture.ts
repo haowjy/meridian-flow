@@ -1,4 +1,3 @@
-/** Builds the nested import performance fixture without retaining generated files in git. */
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 

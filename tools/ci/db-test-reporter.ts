@@ -1,4 +1,3 @@
-/** Vitest guard preventing an absent or entirely skipped DB run from passing CI. */
 import type { Reporter, TestModule } from "vitest/node";
 
 export default class DbTestReporter implements Reporter {

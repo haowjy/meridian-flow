@@ -1,7 +1,3 @@
-/**
- * writer — a writer message's visible text with the reference and skill occurrences
- * its text blocks carry, as ranges into that text.
- */
 import {
   referenceOccurrenceContent,
   skillOccurrenceContent,
@@ -28,7 +24,6 @@ export type WriterText = {
 
 const cache = new WeakMap<Turn, WriterText>();
 
-/** Memoized by the turn object: an unchanged message keeps its projection (and range arrays). */
 export function projectWriterText(turn: Turn): WriterText {
   const cached = cache.get(turn);
   if (cached) return cached;

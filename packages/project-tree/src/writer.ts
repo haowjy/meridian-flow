@@ -23,7 +23,6 @@ import { childrenOf, descendantsOf, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
 import { droppedRecords, LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
-/** Where moved nodes land among the parent's children: an index there, or an edge by sibling id. */
 export type MovePlace = number | ContextSiblingPosition;
 
 function indexOf(kids: readonly { id: string }[], place: MovePlace): number {
@@ -34,30 +33,18 @@ function indexOf(kids: readonly { id: string }[], place: MovePlace): number {
   return place.kind === "before" ? at : at + 1;
 }
 
-/**
- * Makes records in one copy of the list, against what that copy's own view shows. The browser
- * writes its own records this way; the server writes Apply, Discard, Undo and an AI tool's
- * records on its copy of the list, and sends the update the copy emits.
- */
 export class TreeWriter {
-  /**
-   * `known` answers a view from a projection the caller already holds, current with `doc`, or
-   * null for a view it does not hold: the browser's session replays once per change, and a
-   * writer that replayed again would pay the whole list for each record.
-   */
   constructor(
     readonly doc: LoroDoc,
     private readonly origin: string = "local",
     private readonly known?: (view: View) => TreeProjection | null,
   ) {}
 
-  /** The last replay of each view and the list lengths it replayed: the list only grows. */
   private readonly replays = new Map<
     string | null,
     { records: number; settles: number; projection: TreeProjection }
   >();
 
-  /** The view's tree, replayed once per version of the list however many times it is asked for. */
   view(view: View): TreeProjection {
     const known = this.known?.(view);
     if (known) return known;
@@ -70,12 +57,10 @@ export class TreeWriter {
     return projection;
   }
 
-  /** Runs `change` as one transaction, so its records and settlements travel as one update. */
   transact(change: () => void): void {
     listOf(this.doc).transact(change, this.origin);
   }
 
-  /** The record for `input`, read through the reader that will read it back: throws when that would drop it. */
   prepare(
     view: View,
     actor: Actor,
@@ -91,15 +76,10 @@ export class TreeWriter {
     } as TreeRecord);
   }
 
-  /** Appends one record. */
   append(record: TreeRecord): void {
     this.transact(() => listOf(this.doc).pushRecords([record]));
   }
 
-  /**
-   * Appends records in one transaction. `seen` are the replays of the views with them appended,
-   * which the writer then keeps: the next read of each is not another replay of the whole list.
-   */
   appendAll(
     records: readonly TreeRecord[],
     seen: ReadonlyArray<{ view: View; projection: TreeProjection }>,
@@ -125,7 +105,6 @@ export class TreeWriter {
     return record;
   }
 
-  /** Appends one settlement. Call inside `transact` with what it settles. */
   settle(
     actor: Actor,
     targets: readonly string[],
@@ -136,16 +115,10 @@ export class TreeWriter {
     listOf(this.doc).pushSettles([{ id: newId(), actor, targets: [...targets], to, ...extra }]);
   }
 
-  /** One create: `createAll` of one. */
   create(view: View, actor: Actor, input: CreateInput): CreateRecord {
     return this.createAll(view, actor, [input])[0] as CreateRecord;
   }
 
-  /**
-   * Creates, in order, against one replay of the view: a rank is placed among the shown siblings
-   * and the ones this call made before it, and a parent may be a node an earlier input created.
-   * A replay per create would cost the whole list each.
-   */
   createAll(view: View, actor: Actor, inputs: readonly CreateInput[]): CreateRecord[] {
     const projection = this.view(view);
     const sources = new Map<string, string>();
@@ -191,7 +164,6 @@ export class TreeWriter {
     return out;
   }
 
-  /** One move: `moveAll` of one, at `index` among the parent's children without `node`. */
   move(
     view: View,
     actor: Actor,
@@ -202,13 +174,6 @@ export class TreeWriter {
     return this.moveAll(view, actor, [node], parent, index)[0] as MoveRecord;
   }
 
-  /**
-   * Moves `nodes` into `parent` together, in order, against one replay of the view: the first
-   * lands at `place`, each later one right after the one before it. An index counts the parent's
-   * children without the node being placed; a sibling `place` names gone from the parent means
-   * the end. A name taken there stays taken: twins are made, nothing is numbered. Callers pass
-   * distinct nodes, none inside another, and no anchor among them.
-   */
   moveAll(
     view: View,
     actor: Actor,
@@ -273,16 +238,10 @@ export class TreeWriter {
     }) as RenameRecord;
   }
 
-  /** One delete: `deleteAll` of one. */
   delete(view: View, actor: Actor, node: string): DeleteRecord {
     return this.deleteAll(view, actor, [node])[0] as DeleteRecord;
   }
 
-  /**
-   * Deletes, against one replay of the view. A node an earlier delete of this call already took
-   * with its folder gets no record of its own, and a folder's cascade leaves out what the call
-   * deleted before it.
-   */
   deleteAll(view: View, actor: Actor, nodes: readonly string[]): DeleteRecord[] {
     const projection = this.view(view);
     const gone = new Set<string>();
@@ -305,7 +264,6 @@ export class TreeWriter {
     return this.author(view, actor, { type: "restore", node }) as RestoreRecord;
   }
 
-  /** Empties one Trash entry: `nodes`, what the delete `entry.id` covers now, are gone for good. */
   purge(actor: Actor, entry: { id: string; node: string }, nodes: readonly string[]): PurgeRecord {
     return this.author(LIVE, actor, {
       type: "purge",
@@ -315,11 +273,6 @@ export class TreeWriter {
     }) as PurgeRecord;
   }
 
-  /**
-   * Restores one Trash entry: the delete named, and no other delete of the same folder. A
-   * folder deleted, brought back for one chapter and deleted again by someone else has two
-   * entries, and restoring one must not undo the other.
-   */
   restoreEntry(view: View, actor: Actor, deleteId: string): RestoreRecord | "unknown" {
     const entry = lastOfFamily(this.doc, view, deleteId);
     if (entry === "unknown" || entry?.type !== "delete") return "unknown";
@@ -332,14 +285,12 @@ export class TreeWriter {
   }
 }
 
-/** What a create asks for: the rank is placed by the writer. */
 export type CreateInput = {
   name: string;
   parent: string;
   index?: number;
   node?: string;
   provisional?: true;
-  /** Server only: what the node was known as before (an import's reveal). */
   aliases?: CreateRecord["aliases"];
   hasProperties?: true;
 } & (

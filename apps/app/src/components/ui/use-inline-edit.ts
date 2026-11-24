@@ -1,16 +1,3 @@
-/**
- * useInlineEdit — the one commit/cancel protocol for text edited in place.
- *
- * Pairs with `InlineEditInput`. Focuses and selects on mount (with a frame
- * retry, since a closing Radix menu holds focus for one frame), unless the
- * caller opens it without focus. Enter or blur
- * commits; Escape cancels; IME composition keys are ignored. An empty or
- * unchanged draft cancels instead of committing. A blocking validation issue
- * keeps the field open; a throw from `onCommit` keeps it open with the thrown
- * message. The caller closes the field from `onCommit` (on success) or
- * `onCancel`. A field that must not retry on its own (a refused rename's repair)
- * sets `commitOnBlur: false`, so blur only dismisses.
- */
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,20 +5,13 @@ export type InlineEditIssue = { level: "error" | "warning"; message: string };
 
 export type UseInlineEditOptions = {
   initial: string;
-  /** The draft that means "no change"; defaults to `initial`. */
   unchanged?: string;
-  /** An error shown from the start, e.g. a failed earlier attempt. */
   initialError?: string;
-  /** Live check of the draft; an `error` blocks commit. */
   validate?: (draft: string) => InlineEditIssue | null;
-  /** Receives the trimmed, changed, valid draft. Throw to stay open. */
   onCommit: (value: string) => void | Promise<void>;
   onCancel: () => void;
-  /** Selection once focused; defaults to selecting everything. */
   select?: (input: HTMLInputElement) => void;
-  /** Take focus on mount; defaults to true. */
   focusOnMount?: boolean;
-  /** Blur commits by default. When false, blur dismisses; only Enter commits. */
   commitOnBlur?: boolean;
 };
 
@@ -52,8 +32,7 @@ export function useInlineEdit({
   const [failure, setFailure] = useState<string | null>(initialError ?? null);
   const [pending, setPending] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Set once the field has handed off (commit in flight, or cancel), so the
-  // blur that follows Enter or Escape does not act a second time.
+  // keep: The blur that follows Enter or Escape must not commit or cancel a second time
   const closed = useRef(false);
 
   useEffect(() => {

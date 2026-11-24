@@ -1,4 +1,3 @@
-/** Editor-to-conversation reveal: one request, one owner per stage. */
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { type PanePlace, useOptionalPanePlace } from "@/features/project/pane-place";
 
@@ -13,7 +12,6 @@ export type { ConversationRevealTarget, TurnRevealRequest };
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-/** Asks to reveal a conversation; it opens where the pane this is called in places it. */
 export function useRequestConversationReveal(): (
   target: DistributiveOmit<ConversationRevealTarget, "from">,
 ) => void {
@@ -32,7 +30,6 @@ function useRevealStage<T>(select: (view: ConversationRevealView) => T | null): 
   );
 }
 
-/** Binds the thread stage to the shell that owns conversation surfaces. */
 export function useConversationRevealRouting(
   revealConversation: (threadId: string, from: PanePlace | undefined) => void,
 ): void {
@@ -47,7 +44,6 @@ export function useConversationRevealRouting(
   }, [request]);
 }
 
-/** The turn this thread's transcript must land on, or null when none is owed. */
 export function useTurnReveal(threadId: string): TurnRevealRequest | null {
   return useRevealStage((current) => (current.turn?.threadId === threadId ? current.turn : null));
 }

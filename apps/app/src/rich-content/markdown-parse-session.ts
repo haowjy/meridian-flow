@@ -1,5 +1,3 @@
-/** Identity-preserving Markdown snapshot assembly shared by worker and synchronous adapters. */
-
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 export type NodePath = { block: number; path: number[] } | null;

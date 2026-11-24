@@ -1,4 +1,3 @@
-/** `doc rm`: delete a document; `deleteAt` is shared with put --overwrite. */
 import { LIVE } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
@@ -6,7 +5,6 @@ import { resolveProjectId } from "../project/resolve";
 import { lookupPath, type OpenedTree, Trees } from "./tree-address";
 import { PROJECT_OPTION, type ResolvedUri, resolveUri } from "./uri";
 
-/** Appends the delete of the document at `target` and waits for the server to admit it; returns its id. */
 export async function deleteAt(opened: OpenedTree, target: ResolvedUri): Promise<string> {
   const { node } = lookupPath(opened.list.replay(), opened.source, target.path);
   if (!node) throw new CliError("not_found", `No live document at ${target.uri}`);

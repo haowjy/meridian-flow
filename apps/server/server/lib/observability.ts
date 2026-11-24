@@ -1,8 +1,3 @@
-/**
- * Process-scoped observability bootstrap. Startup, crash policy, and app
- * composition all share this one deferred sink so buffered backends do not split
- * diagnostics across independent queues or lose early boot events.
- */
 import {
   CorrelatingEventSink,
   DeferredEventSink,

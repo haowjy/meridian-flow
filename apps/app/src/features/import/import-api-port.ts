@@ -1,4 +1,3 @@
-/** The coordinator's HTTP seam, replaceable by a durable fake for workflow tests. */
 import {
   acknowledgeImport,
   createImport,

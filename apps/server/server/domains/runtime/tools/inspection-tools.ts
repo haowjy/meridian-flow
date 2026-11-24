@@ -1,4 +1,3 @@
-/** Read-only connected-conversation tools wired with repositories at composition. */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
@@ -21,7 +20,6 @@ import { renderAsText } from "./tool-content.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
 
-/** `thread_ls` text: the listing itself, or the refusal. */
 function renderThreadLsOutput(value: JsonValue): string {
   const result = value as Partial<ThreadLsResult> | null;
   return typeof result?.listing === "string" ? result.listing : renderRefusal(value);

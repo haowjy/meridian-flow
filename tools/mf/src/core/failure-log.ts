@@ -1,4 +1,3 @@
-/** CLI error delivery never changes its exit code or recursively reports ingest failure. */
 import type { FailureOccurrence } from "@meridian/contracts/failures";
 import { authIdentitySchema } from "@meridian/contracts/protocol";
 import { jsonResponse, type Session, unknownJsonResponse } from "./session";

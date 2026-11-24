@@ -1,5 +1,3 @@
-/** HTTP status mapping for typed conversation-derivation domain failures. */
-
 import { AgentSelectionError } from "../domains/packages/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import {

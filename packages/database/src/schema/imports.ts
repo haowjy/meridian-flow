@@ -1,4 +1,3 @@
-/** Durable upload selections, receipts, and organize leases. Import identities are never reused. */
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -24,7 +23,6 @@ export const imports = pgTable(
     placement: jsonb("placement"),
     fingerprint: text("fingerprint").notNull(),
     state: text("state").notNull(),
-    /** Retained when entries expire, so exact-command replay still returns the terminal summary. */
     counts: jsonb("counts").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
@@ -63,18 +61,12 @@ export const importEntries = pgTable(
     entryId: integer("entry_id"),
     state: text("state").notNull(),
     reason: text("reason"),
-    /** The file on disk differed from the receipt when Continue last re-picked it. Only `picked` writes it. */
     changedAfterUpload: boolean("changed_after_upload").notNull().default(false),
     storageUrl: text("storage_url"),
     objectKey: text("object_key"),
     convertedKey: text("converted_key"),
     receivedSize: bigint("received_size", { mode: "number" }),
     sha256: text("sha256"),
-    /**
-     * What a batch worked out for this file's document and cannot work out twice: its properties
-     * and aliases, and the links it made to documents that do not exist yet, whose random ids are
-     * inside the text the journal holds. Read by the import's last step.
-     */
     ahead: jsonb("ahead"),
   },
   (table) => [

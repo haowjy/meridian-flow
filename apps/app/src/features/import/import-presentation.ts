@@ -1,4 +1,3 @@
-/** Pure mapping from durable progress and this tab's upload facts to what the Import button and popup show. */
 import { plural, t } from "@lingui/core/macro";
 import type { ImportEntryStatus, ImportScheme, ImportSummary } from "@meridian/contracts";
 import { addressScheme } from "@meridian/contracts/context-uri";
@@ -42,16 +41,13 @@ export function importState(summary: ImportSummary, local: LocalUpload): ImportS
   if (local.phase === "missing" || local.phase === "wrong-root" || local.phase === "stalled")
     return local.phase;
   if (local.phase === "uploading") return "uploading";
-  // With no File handles here, a tab holding the import's lock is the only reason to say so.
   return local.elsewhere ? "elsewhere" : "paused";
 }
-/** The area an import lands in, and so the section whose Import button carries it. */
 export const importScheme = (summary: ImportSummary) =>
   (summary.label.kind === "export"
     ? "manuscript"
     : addressScheme(summary.destination.folderUri)) as ImportScheme;
 
-/** `running`: the spinner. `needs-writer`: the dot. */
 export type ImportStatus = "running" | "needs-writer";
 
 const RUNNING: ReadonlySet<ImportState> = new Set([
@@ -64,11 +60,9 @@ const RUNNING: ReadonlySet<ImportState> = new Set([
   "adding",
 ]);
 
-/** A skip the writer would care about. Hidden and trash files are left out of every vault. */
 const skipMatters = ({ state, reason }: ImportEntryStatus) =>
   state === "skipped" && reason !== "hidden" && reason !== "trash";
 
-/** What an import asks of its Import button; null for a clean result, which needs no reading. */
 export function importStatus({
   summary,
   local,
@@ -79,12 +73,10 @@ export function importStatus({
   if (RUNNING.has(state)) return "running";
   if (state !== "done" || summary.destination.fellBack) return "needs-writer";
   if (summary.counts.skipped === 0) return null;
-  // Which files were skipped comes with the detail, which `ImportWatch` loads on finishing.
   if (detail?.state !== "finished") return "running";
   return detail.entries.some(skipMatters) ? "needs-writer" : null;
 }
 
-/** Results the writer has read once the popup closes on them. */
 export const READ_ON_CLOSE: ReadonlySet<ImportState> = new Set(["done", "needs-look", "expired"]);
 
 function fallbackNote(state: ImportState): string | undefined {
@@ -118,7 +110,6 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
     elsewhere: { title: t`Uploading in another window`, detail: count, progress },
     paused: {
       title: t`Upload paused`,
-      // The server already holds the folder rows, which are not files: say "nothing" rather than "0 files".
       detail: received
         ? t`${count} uploaded. Pick ${name} again to continue.`
         : t`Nothing uploaded yet. Pick ${name} again to continue.`,

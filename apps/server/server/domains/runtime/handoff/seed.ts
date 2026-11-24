@@ -1,4 +1,3 @@
-/** Durable seed completion and the frozen handoff-card/system-update projection. */
 import type { HandoffBriefProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { Turn } from "@meridian/contracts/threads";
@@ -55,7 +54,6 @@ type HandoffSeedOutcome = {
   cause?: string;
 };
 
-/** Caller holds the destination lock; the event and pending→terminal transition are atomic. */
 export async function completeHandoffSeed(
   deps: PersistenceDeps,
   completed: Turn,
@@ -91,7 +89,6 @@ export async function completeHandoffSeed(
   return completed;
 }
 
-/** One metadata writer; terminal telemetry belongs only to the winning attempt. */
 export async function recordHandoffSeedOutcome(
   deps: Pick<PersistenceDeps, "repos">,
   turn: Turn,

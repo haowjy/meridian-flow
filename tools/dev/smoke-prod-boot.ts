@@ -1,17 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Production boot smoke — builds each production Nitro artifact (the app, then the API server),
- * starts it as it would run deployed, and asserts the public-route contract against the child's
- * reported bound address. A build that can't start fails here.
- *
- * The config is structurally valid but unmistakably fake. The app's public routes neither
- * authenticate nor touch the database, so it gets a stub endpoint that is never contacted. The API
- * server connects to a database at startup, so it gets a throwaway database on the Postgres that
- * DATABASE_URL names (the dev Postgres locally, the runner's in CI), and the smoke waits for its
- * startup to finish.
- *
- *   pnpm smoke:prod-boot
- */
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -34,15 +21,11 @@ const PROD_BOOT_ENV: NodeJS.ProcessEnv = {
   WORKOS_CLIENT_ID: "client_prod_boot_smoke_not_real",
   WORKOS_COOKIE_PASSWORD: "prod-boot-smoke-cookie-password-000000000000",
   WORKOS_REDIRECT_URI: "https://app.prod-boot.invalid/api/auth/callback",
-  // 32 bytes of base64 that no real deploy uses.
   MCP_TOKEN_KEY: Buffer.alloc(32, "prod-boot-smoke-mcp-token-key").toString("base64"),
   NO_COLOR: "1",
-  // Production refuses it, and agent shells set it.
   LIVE_TEST_MODEL: undefined,
 };
 
-// The API server's schema rejects PORT=0, so it gets a reserved port. It also refuses to boot in
-// production with the local object store unless it has a signing secret and a directory.
 const serverEnv = (
   port: number,
   databaseUrl: string,
@@ -55,14 +38,7 @@ const serverEnv = (
   LOCAL_OBJECT_STORE_DIR: objectStoreDir,
 });
 
-/**
- * Nitro splits the server into chunks that import each other. A cycle among them lets Node
- * evaluate a chunk before the one it needs has run its top level: the build crashed at import with
- * "__exportAll is not a function" when a lib chunk and the chunk holding Rolldown's helpers
- * imported each other. Booting evaluates only the chunks startup reaches, and route handlers are
- * imported lazily, so a cycle in a route's chunks would pass the boot; this walks every chunk's
- * static imports instead.
- */
+// keep: a chunk cycle lets Node evaluate a chunk before the one it needs has run its top level ("__exportAll is not a function"), and booting reaches only startup's chunks, so walk every chunk's static imports
 function chunkCycles(serverDir: string): string[] {
   const graph = new Map<string, string[]>();
   const walk = (dir: string): void => {
@@ -144,8 +120,6 @@ async function main(): Promise<void> {
     throw new Error(`The server build has chunk import cycles:\n${cycles.join("\n")}`);
   }
 
-  // Dev env fills in dev-only settings (auth bypass) that a production start refuses, so only its
-  // DATABASE_URL is used.
   const devEnv = { ...process.env };
   applyDevEnvToProcess(repoRoot, devEnv);
   const baseDatabaseUrl = devEnv.DATABASE_URL;

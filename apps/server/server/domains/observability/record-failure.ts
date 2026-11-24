@@ -1,7 +1,3 @@
-/**
- * The one way a failure transition reaches the event log: `failure.recorded` when a failure is
- * classified, `failure.ended` when it ends. `./mf log --name failure.recorded` reads them.
- */
 import type { FailureRecord } from "@meridian/contracts/failures";
 import { emitEvent } from "./emit-event.js";
 import type { EventSink } from "./ports/event-sink.js";

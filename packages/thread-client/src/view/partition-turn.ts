@@ -1,5 +1,3 @@
-/** partition-turn — folds normalized delivery segments into render items: process folds, prose, reports and artifacts. */
-
 import { isArtifactRef } from "@meridian/contracts/artifacts";
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { type Block, blockPlainText, type JsonValue } from "@meridian/contracts/protocol";
@@ -90,11 +88,8 @@ export function partitionTurn(
       continue;
     }
 
-    // AG-UI progress placeholders parked under a non-canonical blockType are
-    // transport liveness, not deliverable content.
     if (block.blockType === ("activity" as Block["blockType"])) continue;
 
-    // Cards, images and unknown blocks remain outside the process fold.
     flushProcess();
     items.push({ kind: "artifact", block });
   }
@@ -107,12 +102,6 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-/**
- * Tool calls the writer sees elsewhere: a call whose helper card is in the
- * turn shows as that card alone, and the per-tool policy covers the rest. A
- * `thread_message` refused before it started has no card, so its failure row
- * stays.
- */
 export function hiddenToolCallIds(segments: DeliverySegment[]): Set<string> {
   const hidden = new Set<string>();
   for (const segment of segments) {
@@ -131,10 +120,6 @@ export function hiddenToolCallIds(segments: DeliverySegment[]): Set<string> {
   return hidden;
 }
 
-/**
- * Empty reasoning is a provider repair placeholder, not writer-facing thought.
- * Dropping it keeps a blank block from opening an empty Thinking fold.
- */
 export function visibleReasoningText(block: Block): string | null {
   const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
   return text || null;

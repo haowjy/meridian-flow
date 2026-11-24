@@ -1,18 +1,3 @@
-/**
- * UsageCard — single source for the user's usage + balance presentation,
- * shared by the settings Usage section and the standalone /billing page.
- *
- * The balance endpoint sends display-ready included usage:
- *   - "subscription" / "free": monthly usage remaining plus an over-budget
- *     flag. Wording is neutral — "free" vs "subscription" is hidden because
- *     grant size is hidden too. If extra-usage balance is positive, it shows
- *     beneath the bar.
- *   - "none": no bar; only `purchasedBalanceUsd` as "$X.XX remaining".
- *
- * Variants:
- *   - `compact`: bordered summary used in the settings overlay.
- *   - `full`: hero card used on /billing.
- */
 import { Trans } from "@lingui/react/macro";
 import type { BillingBalanceResponse } from "@meridian/contracts/protocol";
 

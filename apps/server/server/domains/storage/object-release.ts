@@ -1,22 +1,13 @@
-/**
- * Best-effort deletion of stored objects that a committed change stopped referencing
- * (a purged Work's blobs, a tombstoned hidden image's bytes). Runs after the change
- * commits; a failure is reported, never thrown, and a missing object is already gone.
- * The files derived from each key (`derivedObjectKeys`) go with it; most keys have none.
- */
 import { derivedObjectKeys, objectStoreKeyFromStorageUrl } from "./object-storage-url.js";
 import type { ObjectStoreError, ObjectStorePort } from "./ports/object-store.js";
 
 export type ObjectRelease = {
-  /** Delete these object keys. */
   keys(keys: readonly string[]): Promise<void>;
-  /** Delete the objects these `object://` storage URLs name; other URLs are skipped. */
   storageUrls(storageUrls: readonly string[]): Promise<void>;
 };
 
 export function createObjectRelease(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
-  /** A failed delete: the store's error, or a thrown error's message. */
   onFailure(key: string, error: ObjectStoreError | string): void;
 }): ObjectRelease {
   async function keys(keys: readonly string[]): Promise<void> {

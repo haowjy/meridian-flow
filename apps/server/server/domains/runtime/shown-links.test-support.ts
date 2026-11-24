@@ -1,5 +1,3 @@
-/** Shared behavioral contract for the document side's shown links, read back through `forDocument`. */
-
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { ShownLink } from "../../shared/model-evidence.js";

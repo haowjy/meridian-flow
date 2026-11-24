@@ -349,8 +349,6 @@ export function resolveTarget(context: CleanupContext, reference: TargetReferenc
   }
   const eligibility = context.eligibilityByBranch.get(worktree.branch);
   if (!eligibility) {
-    // The decision's own reason names what failed (containment, GitHub
-    // discovery); the fallback covers contexts assembled without one.
     const refusal = context.eligibilityRefusalByBranch.get(worktree.branch);
     throw new CleanupResolverError(
       refusal
@@ -408,8 +406,6 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
   actions.push({
     kind: "delete-branch",
     cwd: primaryWorktreePath,
-    // update-ref compares and deletes in one transaction; a ref move between
-    // the final validation and this action is therefore still a refusal.
     command: [
       "git",
       "update-ref",

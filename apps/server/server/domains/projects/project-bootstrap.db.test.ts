@@ -54,7 +54,6 @@ else
       });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       if (!first) throw new Error("The first bootstrap made no project");
-      // A live project makes the bootstrap a no-op.
       expect(await repository.ensureDefaultBootstrap(USER_ID as never)).toBeNull();
       expect(
         await db
@@ -99,7 +98,6 @@ else
         })
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
-      // The home folder is the account's, not the project's.
       expect(manuscript.map((source) => source.slug).sort()).toEqual([
         "agents",
         "kb",
@@ -168,7 +166,6 @@ else
         documents: {
           ...domain,
           async seedFromMarkdown(documentId, markdown, origin) {
-            // The room loads, empty, before the seed commits: a tab that opened it first.
             (await domain.rooms.read({ kind: "live", documentId })).free();
             return domain.seedFromMarkdown(documentId, markdown, origin);
           },

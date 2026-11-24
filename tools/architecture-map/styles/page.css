@@ -1,9 +1,3 @@
-/*
- * The viewers' layout and the diagram's look. Colours come only from the project's token files
- * (served as tokens.css) and the --map-* roles below, built from them; check.mjs fails on a raw
- * colour or a variable nothing defines.
- */
-
 *,
 *::before,
 *::after {
@@ -47,14 +41,11 @@ button {
 
 :root {
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  /* Declared on <html>, where the theme attribute sits, so they follow the theme. */
   --map-muted: color-mix(in oklab, var(--color-foreground) 6%, var(--color-background));
   --map-ink-subtle: color-mix(in oklab, var(--color-muted-foreground) 85%, var(--color-background));
   --map-warning: var(--color-syntax-string);
   --map-warning-tint: color-mix(in oklab, var(--map-warning) 7%, var(--color-card));
 }
-
-/* ---- Page frame ---- */
 
 .app {
   display: grid;
@@ -164,7 +155,6 @@ button {
 }
 
 .view {
-  /* The row stays the tall one when the hidden breadcrumb leaves no element in the second. */
   grid-row: 3;
   min-height: 0;
   min-width: 0;
@@ -185,8 +175,6 @@ button {
   max-width: 560px;
   color: var(--color-muted-foreground);
 }
-
-/* ---- The map ---- */
 
 .canvas {
   display: flex;
@@ -212,7 +200,6 @@ button {
   font-size: 15px;
 }
 
-/* display: flex drops the summary's own marker; the collapsed intro on a phone needs one. */
 .intro summary::before {
   color: var(--color-muted-foreground);
   font-size: 11px;
@@ -338,11 +325,6 @@ button {
   gap: 6px;
 }
 
-/*
- * Node kinds and edge kinds. Mermaid puts the kind on each node as a class, and the edges get
- * theirs from js/map.js; both are styled from tokens here, so a kind's look is one rule.
- */
-
 .kind-person,
 .node.person {
   --fill: color-mix(in oklab, var(--map-warning) 14%, var(--color-card));
@@ -441,8 +423,6 @@ button {
   --border-style: dotted;
 }
 
-/* ---- Boxes and arrows on the canvas ---- */
-
 .card {
   min-width: 120px;
   max-width: 176px;
@@ -469,7 +449,6 @@ button {
   line-height: 1.3;
 }
 
-/* A group opens a page of its own: a stacked card. */
 .card.kind-group {
   box-shadow:
     5px 5px 0 -1px var(--color-card),
@@ -508,7 +487,6 @@ button {
   opacity: 0;
 }
 
-/* Numbered arrows are the main path; the rest are side trips. */
 .react-flow__edge.edge .react-flow__edge-path {
   stroke: var(--color-muted-foreground);
   stroke-width: 1.5px;
@@ -529,7 +507,7 @@ button {
   opacity: 0.12;
 }
 
-/* An arrow's label: js/map.js measures it from these rules before drawing, so keep them here. */
+/* keep: js/map.js measures arrow labels from these rules before drawing, so keep them here */
 .arrow-label {
   position: absolute;
   padding: 2px 6px;
@@ -567,8 +545,6 @@ button {
 .react-flow__controls-button svg {
   fill: currentColor;
 }
-
-/* ---- Side panel ---- */
 
 .panel {
   min-height: 0;
@@ -684,8 +660,6 @@ button {
   color: var(--color-destructive);
 }
 
-/* ---- Journeys ---- */
-
 .journeys {
   min-width: 0;
   overflow-y: auto;
@@ -708,7 +682,6 @@ button {
   gap: 12px;
   padding: 4px 2px 14px;
   overflow-x: auto;
-  /* Room for the selected card's ring when it is scrolled to an edge. */
   scroll-padding-inline: 2px;
   cursor: grab;
 }
@@ -762,8 +735,6 @@ button {
   border-radius: 6px;
   background: var(--map-muted);
 }
-
-/* ---- A .context page over the whole window ---- */
 
 .doc-view {
   position: fixed;
@@ -889,7 +860,6 @@ button {
 
 .md-diagram {
   position: relative;
-  /* A diagram wider than the page scrolls sideways; capping the height keeps that scrollbar on screen. */
   max-height: 80vh;
 }
 
@@ -918,8 +888,6 @@ button {
   font-size: 12px;
   white-space: pre-wrap;
 }
-
-/* ---- Narrow screens: the panel goes under the diagram ---- */
 
 @media (max-width: 719px) {
   .topbar {
@@ -956,7 +924,6 @@ button {
     padding: 8px 12px;
   }
 
-  /* No room for both: the how-to comes with "Read more", and only the opened intro scrolls. */
   .intro:has(.is-clamped) .how-to {
     display: none;
   }
@@ -973,8 +940,6 @@ button {
     width: 220px;
   }
 }
-
-/* ---- A file or directory in the doc view ---- */
 
 .doc-path {
   color: var(--color-muted-foreground);

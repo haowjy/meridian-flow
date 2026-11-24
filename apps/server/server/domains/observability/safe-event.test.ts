@@ -197,7 +197,6 @@ describe("sanitizeEventRecord privacy boundary", () => {
       trigger: "read",
       refusal: "integration",
     });
-    // Only the listed values: the diagnostic keys are not free text.
     expect(sanitize({ stage: "chapter_81", trigger: "the dragon dies" })).toEqual({
       stage: "[redacted]",
       trigger: "[redacted]",

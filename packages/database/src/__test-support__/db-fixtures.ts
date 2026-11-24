@@ -1,7 +1,3 @@
-/**
- * Shared public.users fixture identity for DB-backed tests.
- * Never overlaps the dev auth bypass user (`<DEV_AUTH_USER_ID>@example.com`).
- */
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 
@@ -9,10 +5,8 @@ export const DB_TEST_FIXTURE_USER_ID_PRIMARY = "00000000-0000-4000-8000-00000000
 
 const DEV_DATABASE_NAMES = new Set(["postgres", "meridian"]);
 
-/** Host port mapped in tools/dev/docker-compose.yml — must match LOCAL_DEV_POSTGRES_PORT. */
 const LOCAL_DEV_POSTGRES_PORT = 54422;
 
-/** Reserved RFC 2606 domain; suite suffix keeps emails unique per test file. */
 export function dbTestFixtureEmail(suite: string): string {
   const normalized = suite
     .replace(/[^a-z0-9-]+/gi, "-")
@@ -21,7 +15,6 @@ export function dbTestFixtureEmail(suite: string): string {
   return `fixture+${normalized}@test.invalid`;
 }
 
-/** Deterministic WorkOS external id per test suite (never overlaps production credentials). */
 export function dbTestFixtureExternalId(suite: string): string {
   return `fixture-external-${suite.replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
 }
@@ -48,7 +41,6 @@ function isLocalDevPostgres(databaseUrl: string): boolean {
   }
 }
 
-/** Refuse RUN_DB_TESTS when DATABASE_URL targets the dev database. */
 export function assertThrowawayDatabaseForRunDbTests(databaseUrl: string): void {
   const dbName = databaseNameFromUrl(databaseUrl);
   if (DEV_DATABASE_NAMES.has(dbName)) {
@@ -74,7 +66,6 @@ export function assertLocalDevPostgresOrExplicitAllow(databaseUrl: string | unde
   }
 }
 
-/** Seed or refresh a dedicated fixture user; never uses the dev auth bypass email. */
 export async function resolveDbTestFixtureUserId(
   databaseUrl: string,
   options: { fixtureUserId: string; suite: string },
@@ -126,7 +117,6 @@ export async function seedUser(db: ExecutableDb, id: string, email: string): Pro
   `);
 }
 
-/** Drizzle insert shape for conformance tests that need a fixed user id. */
 export function conformanceUserValues(id: string, suite: string) {
   return {
     id,

@@ -1,11 +1,3 @@
-/**
- * The info button on a finished turn's action row, and its popover of stats.
- *
- * One pattern for every turn that has numbers worth reading: a reply's usage
- * and a compaction divider's context sizes open the same quiet popover of
- * labeled rows, grouped in titled sections. Callers decide the rows; this owns
- * the trigger, the popover, and the grid.
- */
 import { Info } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/icon-button";
@@ -41,7 +33,6 @@ export function TurnInfoButton({
   label,
   sections,
 }: {
-  /** The button's name and tooltip. */
   label: string;
   sections: readonly TurnInfoSection[];
 }) {

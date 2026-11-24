@@ -1,4 +1,3 @@
-/** GET /api/skills: the `/` menu of a chat not yet created. */
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
 import { requireProjectOwner } from "../../domains/projects/index.js";

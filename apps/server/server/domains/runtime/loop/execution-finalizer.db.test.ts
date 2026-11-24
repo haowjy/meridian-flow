@@ -160,7 +160,6 @@ else
                   settle: async () => true,
                 });
                 messageIds.push(writerId);
-                // Replay cannot duplicate the queue row or its eventual turn.
                 await producer.enqueue({
                   threadId: ids.child,
                   intent: "message",
@@ -225,8 +224,6 @@ else
           expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
           const turns = await repos.turns.listByThread(ids.child);
           if (boundary === "rollback") {
-            // The fixture gates the cleanup wake: assert the released lease and pending
-            // messages at that barrier, then drive the successor separately.
             await processDetachedWork.drain();
             expect(cleanupWakes).toEqual([ids.child]);
             expect(terminal).toBeNull();
@@ -304,7 +301,6 @@ else
     );
 
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
-      // Risk: a failure logged for a settlement that never committed, or logged twice for one that retried.
       const emitted: FailureRecord[] = [];
       const logged = {
         appendEvents: (...args: Parameters<typeof eventWriter.appendEvents>) =>
@@ -449,7 +445,6 @@ else
     });
 
     it("keeps the report text when the last response was stopped before any output", async () => {
-      // Risk: a stopped subagent's findings silently vanish because its last response row is empty.
       const earlier = await repos.modelResponses.create({
         turnId: ids.execution,
         sequence: 0,

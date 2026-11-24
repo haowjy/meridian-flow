@@ -22,7 +22,6 @@ import {
 
 export type { PanelFocus };
 
-/** Try again: the server checks now; the row says "Checking…" until the answer replaces it. */
 export function useTryAgain(connection: McpConnectionView) {
   const cache = useMcpConnectionCache();
   return useMutation({
@@ -44,11 +43,9 @@ export function ConnectionRow({
   onRemove,
 }: {
   connection: McpConnectionView;
-  /** For an account connection a project one stands in front of: the project's name for it. */
   shadowName: string | null;
   open: boolean;
   focus: PanelFocus;
-  /** The tools the add just listed, so choosing them needs no second listing. */
   seedTools: McpToolView[] | null;
   onToggle: () => void;
   onAction: (action: ConnectionAction) => void;
@@ -114,7 +111,6 @@ export function ConnectionRow({
   );
 }
 
-/** A removed connection keeps its place, struck through, until the writer moves on; Undo brings it back. */
 export function RemovedConnectionRow({
   connection,
   undoing,

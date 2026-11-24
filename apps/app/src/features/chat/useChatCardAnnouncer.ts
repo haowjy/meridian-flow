@@ -1,15 +1,3 @@
-/**
- * useChatCardAnnouncer — the one announcer for chat failure cards. It speaks each card key once, when
- * the writer watched the card appear, and clears the live region when that card ends. Cards pass
- * `announce={false}` and hooks never call `announceError` for a chat failure.
- *
- * A card present when the history settles (a reload, a restored command, a failure first seen on
- * load) is the baseline and stays silent. Every key that appears after it is announced once. A card
- * that leaves (the chat moved past it, the turn was forgotten, the command was answered) takes its
- * published batch down without re-speaking its surviving cards. A card whose sentence changes while it lives (a Stop's
- * failure that becomes the queue's once its reply ended) is spoken again, so the region never keeps
- * words the card no longer says.
- */
 import type { ChatCard } from "@meridian/thread-client";
 import { useEffect, useRef } from "react";
 import { announceErrors, clearAnnouncement } from "@/client/stores";
@@ -68,7 +56,6 @@ export function useChatCardAnnouncer(
       live.owned.delete(key);
       live.pending.delete(key);
     }
-    // Before the history settles nothing was watched; the first settled projection is the baseline.
     if (!settled) live.known = null;
     else if (live.known === null) live.known = words;
     else for (const key of live.known.keys()) if (!keys.has(key)) live.known.delete(key);

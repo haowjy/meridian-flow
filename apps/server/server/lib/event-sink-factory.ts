@@ -1,7 +1,3 @@
-/**
- * Event-sink factory: resolves Meridian's local observability sink. The default
- * local backend always writes stdout and mirrors to JSONL only when LOG_DIR is set.
- */
 import {
   createLocalEventSink,
   createNoopEventSink,

@@ -1,5 +1,3 @@
-/** Chooses the one summary request shape from facts known before the call. */
-
 import type { Turn } from "@meridian/contracts/threads";
 import {
   CompactionMetadataCodec,
@@ -15,7 +13,6 @@ export function chooseSummaryPath(input: {
   return input.hasRequestInHand && input.cacheState === "warm" ? "branch" : "rolling";
 }
 
-/** Whether the latest settled summary attempt of this owner kind was rejected as too large. */
 export function previousAttemptRejectedAsTooLarge(
   turns: readonly Turn[],
   currentTurnId: string,
@@ -23,8 +20,6 @@ export function previousAttemptRejectedAsTooLarge(
 ): boolean {
   const byId = new Map(turns.map((turn) => [turn.id, turn]));
   const current = byId.get(currentTurnId);
-  // The chain is the graph. A link that left the conversation (a handed-back message) is not in
-  // `turns`, so the walk steps over it to the last turn before the one that pointed at it.
   const stepBack = (child: Turn, parentId: string | null | undefined): Turn | undefined =>
     parentId == null
       ? undefined

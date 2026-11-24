@@ -1,4 +1,3 @@
-/** GET /api/projects/[projectId]/works: lists works in an owned project. Depends on the auth gate, project ownership, and work repository. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam } from "nitro/h3";

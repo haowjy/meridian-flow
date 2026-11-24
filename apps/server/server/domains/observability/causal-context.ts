@@ -1,8 +1,6 @@
-/** Async causal scope and EventSink decorator for boundary-owned correlation. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { EventCorrelation, EventRecord, EventSink } from "./ports/event-sink.js";
 
-/** Only causal identity belongs in async scope; domain/query joins stay explicit. */
 export type EventCorrelationScope = Readonly<Partial<Pick<EventCorrelation, "traceId">>>;
 
 const storage = new AsyncLocalStorage<EventCorrelationScope>();

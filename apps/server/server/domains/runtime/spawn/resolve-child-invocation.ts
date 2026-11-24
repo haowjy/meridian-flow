@@ -1,9 +1,3 @@
-/**
- * resolve-child-invocation — resolve and validate a child invocation's agent
- * selection, per-invocation overlay, and availability against the caller's
- * retained binding. Pure resolution: no thread, turn, run, or repository
- * dependency; the caller owns thread creation and persistence.
- */
 import {
   GENERIC_SUBAGENT_SLUG,
   type InvocationOverlay,
@@ -26,7 +20,6 @@ import {
 } from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
-/** Naming a model: a given name always resolves, no name gives the default. */
 export interface ModelFor {
   (named: string): string;
   (named?: string): string | undefined;
@@ -44,11 +37,8 @@ export interface ResolveChildInvocationDeps {
 
 export interface ResolveChildInvocationInput {
   parentAgent: AgentRevisionBinding;
-  /** Named roster target; an empty slug selects the agent-less generic subagent. */
   requestedSlug: string;
-  /** Per-invocation execution patch, applied over the resolved baseline. */
   overrides?: InvocationPatch;
-  /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
 }
 
@@ -62,7 +52,6 @@ export type ResolveChildInvocationOutcome =
       invocationOverlay: InvocationOverlay | null;
     }
   | { ok: false; error: MeridianError }
-  /** An override the caller may not make: the spawn tool's `invalid_arguments` refusal. */
   | { ok: false; invalidArguments: InvalidArgumentsResult };
 
 export async function resolveChildInvocation(
@@ -141,7 +130,6 @@ export async function resolveChildInvocation(
       }
       throw error;
     }
-    // A patched `model` is a name like an Agent file's, so it resolves the same way.
     configuration =
       input.overrides.model === undefined
         ? patched
@@ -194,11 +182,6 @@ export async function resolveChildInvocation(
   };
 }
 
-/**
- * `overrides.permission` only lowers (file-access §8): asking for `edit`
- * under a `read` parent or a `read` profile is an argument error, never a
- * silent drop.
- */
 function permissionRaiseIssue(input: {
   requested: ResolvedAgentConfiguration["permission"] | undefined;
   parent: ResolvedAgentConfiguration;
@@ -212,7 +195,6 @@ function permissionRaiseIssue(input: {
       message: 'can only lower permission, and yours is "read"',
     };
   }
-  // A generic child copies the parent's configuration, so only a named profile reaches here.
   if (input.child.permission === "read") {
     return {
       path: "overrides.permission",
@@ -222,11 +204,6 @@ function permissionRaiseIssue(input: {
   return null;
 }
 
-/**
- * A child never gets a tool its parent lacks. Naming them in
- * `overrides.disallowed_tools` is the fix, so the refusal says so instead of
- * dropping them silently.
- */
 function toolsBeyondParentIssue(childName: string, tools: string[]): InvalidArgumentIssue {
   const quoted = tools.map((tool) => JSON.stringify(tool));
   const named =

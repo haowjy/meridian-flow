@@ -1,4 +1,3 @@
-/** DELETE /api/projects/[projectId]: soft-deletes a project (idempotent). Depends on the auth gate, project ownership, and project repository. */
 import { defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

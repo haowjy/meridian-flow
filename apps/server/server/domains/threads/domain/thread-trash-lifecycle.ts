@@ -1,4 +1,3 @@
-/** Owner-aware, serialized thread-trash desired-state transition. */
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type {
@@ -29,15 +28,9 @@ interface TransitionThreadTrashDeps {
   works: Pick<WorkRepository, "findById" | "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
-  /**
-   * Ends the thread's run and subagent subtree in this transaction (lineage cancellation).
-   * Runs before the thread row lock: it takes thread locks, parents first, each after its ask rows.
-   */
-  /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }
 
-/** Locks, authorizes, and applies one owned thread-trash desired state. */
 export async function transitionThreadTrash(
   deps: TransitionThreadTrashDeps,
   input: { threadId: ThreadId; userId: UserId; target: ThreadTrashState },
@@ -48,7 +41,7 @@ export async function transitionThreadTrash(
     const noWork = await deps.works.findNoWork(projectId);
     if (!noWork) throw new Error("No Work is missing for this project");
     return deps.repos.transaction(async () => {
-      // Include the possible fallback before locking Works so both ids are acquired in order.
+      // keep: Lock the thread and No Work fallback together in canonical id order
       const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId, [noWork.id]);
       if (!before || before.userId !== input.userId) {
         throw new ThreadTrashUnavailableError(input.threadId);

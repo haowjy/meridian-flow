@@ -1,4 +1,3 @@
-/** Projects custom component blocks to the text visible in model context. */
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 
 export function componentModelText(content: ComponentBlockContent): string | null {
@@ -15,7 +14,6 @@ export function componentModelText(content: ComponentBlockContent): string | nul
   return null;
 }
 
-/** Projects a custom card for history without exposing its host-only correlation props. */
 export function componentHistoryText(content: ComponentBlockContent): string {
   const modelText = componentModelText(content);
   if (modelText) return modelText;

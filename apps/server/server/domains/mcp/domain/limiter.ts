@@ -1,4 +1,3 @@
-/** At most `max` tasks at once; the rest wait their turn in order, and a waiter whose signal fires leaves the queue. */
 export function createLimiter(max: number) {
   let running = 0;
   const waiting: (() => void)[] = [];

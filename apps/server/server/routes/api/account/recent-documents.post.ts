@@ -1,4 +1,3 @@
-/** POST /api/account/recent-documents: records that the authenticated writer opened a document. */
 import type { DocumentId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
@@ -17,7 +16,6 @@ export default defineEventHandler(async (event) => {
   try {
     recorded = await app.recentDocuments.record(user.userId, documentId as DocumentId);
   } catch (error) {
-    // Missing, soft-deleted, and not-owned are one 404. Do not sniff postgres codes.
     if (error instanceof RecentDocumentUnavailableError) {
       throw createError({ statusCode: 404, message: "Document not found" });
     }

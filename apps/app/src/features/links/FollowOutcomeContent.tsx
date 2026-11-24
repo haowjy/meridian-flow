@@ -1,18 +1,3 @@
-/**
- * What a follow says when it has something to say, inside whatever dialog the
- * calling surface hosts it in.
- *
- * A follow that finds nothing is the interesting case. Serial writers link
- * chapters before they write them, so the honest answer is an offer to write
- * the page now rather than an error. Create makes the document at exactly the
- * link's address, so nothing about the link changes when it appears: the
- * resolver simply starts finding it.
- *
- * Host-agnostic: the title goes to the host's dialog title, and this renders
- * the description and footer beneath it. A found or created document leaves
- * through `onOpen`, the surface's own destination.
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
@@ -48,18 +33,12 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
   }
 }
 
-/** What the writer calls the document the link names. */
 function targetName(outcome: LinkFollowOutcome): string {
   return (
     (outcome.address && addressDocumentName(outcome.address)) || linkTargetLabel(outcome.target)
   );
 }
 
-/**
- * Where the link points: the area's icon and the folder, worded as the `@`
- * menu words it, with the full address on hover. A target that names no area
- * is its plain label.
- */
 function TargetLocation({
   outcome,
   projectId,
@@ -69,12 +48,10 @@ function TargetLocation({
   outcome: LinkFollowOutcome;
   projectId: string | null;
   scratchRootThreadId: string | null;
-  /** The location itself describes a creatable missing target to assistive tech. */
   description?: boolean;
 }) {
   const { address, target } = outcome;
   const parsed = address ? parseContextUri(address) : null;
-  // A canonical address names its chat by handle; a bare one means the chat the follow was asked in.
   const lineageKey: LineageKey | null =
     parsed?.ok && parsed.value.authority.kind === "lineage"
       ? { rootThreadRef: parsed.value.authority.rootThreadRef }
@@ -96,7 +73,6 @@ function TargetLocation({
   }
   const { scheme, path } = parsed.value;
   const folder = path.split("/").slice(0, -1).join("/");
-  // A chat's Scratch is named by its chat, never by the first chat's handle.
   const location = lineageRef
     ? [chatTitle ? t`Scratch for ${chatTitle}` : t`Scratch`, folder].filter(Boolean).join("/")
     : documentLocation(scheme, folder);
@@ -127,7 +103,6 @@ export function FollowOutcomeContent({
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
-  /** The lineage a bare `scratch://` means where the follow was asked, for naming it. */
   scratchRootThreadId?: string | null;
   onClose: () => void;
   onRetry: () => void;

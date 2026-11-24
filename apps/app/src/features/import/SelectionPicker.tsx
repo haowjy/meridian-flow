@@ -1,6 +1,5 @@
-/** Hidden native pickers. Choosing starts immediately; cancellation changes nothing. */
 import type { ChangeEvent, RefObject } from "react";
-/** Whether this browser can pick a whole folder. iOS reports it but cannot. */
+// keep: Feature-detect webkitdirectory but exclude iOS; iOS reports support yet cannot pick a folder.
 export function canPickFolders(): boolean {
   if (typeof document === "undefined") return false;
   const input = document.createElement("input");
@@ -11,11 +10,6 @@ export function canPickFolders(): boolean {
   return !ios;
 }
 
-/**
- * The two hidden file inputs behind "Folder…" and "Files…": the OS picker opens
- * when the caller clicks one through its ref. A pick hands over its files and
- * clears the input so the same choice can be made again.
- */
 export function PickInputs({
   folderRef,
   filesRef,
@@ -37,7 +31,6 @@ export function PickInputs({
         type="file"
         hidden
         data-import-input="folder"
-        // The attribute is non-standard; React passes it through as written.
         {...{ webkitdirectory: "" }}
         onChange={handle}
       />

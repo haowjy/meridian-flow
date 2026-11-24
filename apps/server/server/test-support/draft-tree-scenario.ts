@@ -1,9 +1,3 @@
-/**
- * One scenario builder for the draft-tree DB tests (contract §16.1): the world and its
- * seed verbs (`draft-tree-seeds.ts`), plus command verbs over the composed production
- * runtime (`draft-tree-commands.ts`) when one is given. Lock interleavings are
- * `lock-interleave.ts`'s.
- */
 import type { UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import type { useComposedRuntimes } from "./composed-runtime.js";
@@ -24,10 +18,8 @@ export type {
 export { itemFor } from "./draft-tree-commands.js";
 export type { ScenarioSource, ScenarioWork } from "./draft-tree-seeds.js";
 
-/** Seed verbs always; command verbs need `options.runtime` and `options.runtimes`. */
 export type DraftTreeScenario = DraftTreeWorld &
   DraftTreeCommands & {
-    /** A second scenario on the same runtime: another project of this account, or a stranger's. */
     another(scope: "project" | "account"): Promise<DraftTreeScenario>;
   };
 

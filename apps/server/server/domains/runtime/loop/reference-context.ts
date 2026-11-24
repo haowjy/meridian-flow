@@ -1,10 +1,3 @@
-/**
- * Loads explicit references for a turn the run will send; history replays
- * saved results. What the reads showed (shown-link candidates and observation
- * frontiers) travels beside the updated blocks, never inside their content,
- * until the commit that persists those blocks.
- */
-
 import {
   type AgentEditResultV1,
   type FrontierLookup,
@@ -38,24 +31,14 @@ export interface ReferenceReader {
       turnId: string;
       signal?: AbortSignal;
       input?: ReadToolInput;
-      /** The read records its frontier, chained from this lookup. */
       recordingFrontier?: FrontierLookup;
-      /** The thread's model, asked for only when the file is binary and what to show depends on it. */
       model?: () => Promise<ModelInfo | undefined>;
     },
   ): Promise<ReferenceRead & { evidence?: ResultEvidence }>;
 }
 
-/**
- * Host-only: what reference reads showed the model, recorded only by the
- * commit that persists their blocks; a discarded or retried preparation records nothing.
- */
 export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
-  /**
-   * Each reference block's frontier and the tree names its read showed: the block whose
-   * materialized read the model is sent.
-   */
   frontiers: {
     sourceBlockId: string;
     frontier?: ObservationFrontier;
@@ -63,11 +46,6 @@ export interface ReferenceEvidence {
   }[];
 }
 
-/**
- * Hands accepted reference reads' evidence to the document side: shown links under the turn whose
- * request shows them, frontiers on each reference block. Callers run it inside the commit
- * persisting those blocks, so a discarded or retried preparation records nothing.
- */
 export async function recordReferenceEvidence(
   deps: { documentEvidence: Pick<DocumentEvidence, "resultStored"> },
   owner: { projectId: ProjectId; threadId: string; turnId: string },
@@ -112,7 +90,6 @@ export async function loadReferenceReads(input: {
   recordingFrontier?: FrontierLookup;
   model?: () => Promise<ModelInfo | undefined>;
 }): Promise<LoadedReferenceReads> {
-  // A picture the writer attached is already shown as media; its mention reads nothing more.
   const images = new Set(
     input.blocks
       .filter((block) => block.turnId === input.userTurnId && block.blockType === "media")
@@ -153,7 +130,6 @@ export async function loadReferenceReads(input: {
       evidence.shown.push(...(read.evidence?.shown ?? []));
     }
     input.signal?.throwIfAborted();
-    // A repeated mention shows the same read, so its block records the same frontier.
     if (result.frontier || result.names)
       evidence.frontiers.push({
         sourceBlockId: block.id,
@@ -168,7 +144,6 @@ export async function loadReferenceReads(input: {
   return { blocks: updated, evidence };
 }
 
-/** A reference read reaches the model as the same text a `read` call returns. */
 export function referenceReadText(result: JsonValue): string {
   if (typeof result === "string") return result;
   return isAgentEditResultEnvelope(result)
@@ -176,7 +151,6 @@ export function referenceReadText(result: JsonValue): string {
     : JSON.stringify(result);
 }
 
-/** Only the materialized document read changes; writer wording and the mention remain intact. */
 export function elideReferenceRead(
   reference: Extract<ReadReferenceOccurrence, { kind: "document" }>,
   treatment: DocumentTextTreatment,

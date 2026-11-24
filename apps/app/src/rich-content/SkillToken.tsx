@@ -1,5 +1,3 @@
-/** Hover `/slug` token. Name and description only; not a document door. */
-
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function SkillToken({

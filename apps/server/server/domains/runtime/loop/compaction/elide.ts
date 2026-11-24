@@ -1,5 +1,3 @@
-/** Plans immutable model-only document replacements at a compaction boundary. */
-
 import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
@@ -37,13 +35,11 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
       const tool = call.content as JsonObject;
       const policy = policies(tool.toolName as string);
       const input = (tool.input ?? {}) as JsonObject;
-      // A result that shows the document without changing it is a read, whichever tool made it.
       const kind = showsDocumentText(content.result as JsonObject) ? "read" : policy?.kind;
       return policy ? [{ call, result, input, policy, kind }] : [];
     });
 }
 
-/** Raw evidence, not an earlier compaction's substitutions, is the source of each pass. */
 export function collectRecordedDocuments(
   slices: readonly RetainedTurnSlice[],
   policies: DocumentTextPolicies,
@@ -57,8 +53,7 @@ export function collectRecordedDocuments(
         metadata?.documentRevisions as DocumentRevisionEvidence[] | undefined,
       );
     }
-    // The recent picker reverses Map insertion order. Compaction blocks are persisted
-    // most important first, so insert their evidence backwards to favour that first block.
+    // keep: Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
     const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
     for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
@@ -94,11 +89,6 @@ export function changedDocuments(
   return [...recorded.values()].flatMap((refs) => (refs ? staleRefs(refs, current) : []));
 }
 
-/**
- * Why one block's document text is replaced, or null when it stays. Missing
- * evidence fails closed as stale. A copy of a document the compaction re-shows
- * is a duplicate (`reshown`) unless some other document in it also went stale.
- */
 function elisionOf(
   refs: readonly DocumentRevisionEvidence[] | undefined,
   current: ReadonlyMap<string, string | null>,
@@ -116,7 +106,6 @@ export function planModelElisions(input: {
   retainedSuffix: readonly RetainedTurnSlice[];
   recorded: RecordedDocuments;
   current: ReadonlyMap<string, string | null>;
-  /** Documents the compaction re-shows in full after its summary. */
   reshown?: ReadonlySet<string>;
   policies: DocumentTextPolicies;
 }): ModelElisions {
@@ -166,6 +155,5 @@ export function planModelElisions(input: {
       });
     }
   }
-  // No caller-owned object survives inside the write-once metadata.
   return structuredClone(elisions);
 }

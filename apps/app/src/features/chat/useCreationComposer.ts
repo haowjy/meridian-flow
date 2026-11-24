@@ -1,5 +1,3 @@
-/** Send a new project chat in the current pane before background persistence. */
-
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useCallback, useState } from "react";
@@ -62,8 +60,6 @@ export function useCreationComposer(projectId: string) {
           draftScope,
           threadActions,
           selectChat: (threadId) => {
-            // Recording the Send already handed off an unchanged draft; one that moved on since
-            // still names the chat just created, and must not reuse its id.
             draft.handoffCreated(threadId);
             acceptCreatedChat(threadId);
           },

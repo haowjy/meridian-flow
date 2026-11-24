@@ -1,4 +1,3 @@
-/** Read-only source preparation and a single source-shaped summary attempt. */
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { GenerateRequest } from "@meridian-flow/runtime/gateway";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";

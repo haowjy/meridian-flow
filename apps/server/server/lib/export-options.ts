@@ -1,5 +1,3 @@
-/** Shared query validation for stateless ZIP downloads and previews. */
-
 import type { ProjectExportOptions } from "@meridian/contracts";
 import { createError } from "nitro/h3";
 export function exportOptions(query: Record<string, unknown>): ProjectExportOptions {

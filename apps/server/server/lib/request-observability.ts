@@ -1,8 +1,3 @@
-/**
- * Request-observability helpers: mint and read per-request correlation from
- * Nitro event context and build safe route-status diagnostics. Runtime turns
- * carry their own run ids; this covers the rest of the server stack.
- */
 import type { EventRecord } from "../domains/observability/index.js";
 
 export type RequestObservabilityEvent = {

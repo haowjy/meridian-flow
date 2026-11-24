@@ -1,12 +1,3 @@
-/**
- * Seeds a tree for a test through the one path that writes it: `treeListStore.submit`. Folders,
- * documents and files go into a source's list (a project's, or the account's for `user://`),
- * live or in a Work's draft view, and every helper returns the id it made. Paths are
- * source-relative (`Arc 1/Chapter 1.md`); folders on the way are reused by name or created.
- *
- * Nothing here inserts a `documents` or `tree_nodes` row: the rows are the store's replay.
- */
-
 import type { Filetype } from "@meridian/contracts/protocol";
 import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -25,21 +16,15 @@ import type { TreeListStore } from "../domains/context/ports/tree-list-store.js"
 export { treeListOfSource };
 
 export type SeedOptions = {
-  /** `LIVE` (default) or a Work's draft view, `{ draft: draftId }`. */
   view?: View;
-  /** The record's actor; default `system`. */
   actor?: string;
-  /** Another store than the one `treeSeeder` made, when a test composes its own. */
   store?: Pick<TreeListStore, "submit">;
 };
 
 export type SeedDocumentOptions = SeedOptions & {
-  /** The document's type; default from the extension (markdown for a bare name). */
   filetype?: Filetype;
-  /** A node id of the caller's choosing. */
   id?: string;
   provisional?: boolean;
-  /** Text to seed into the document's journal; needs `documentSync` on the seeder. */
   text?: string;
 };
 
@@ -56,7 +41,6 @@ function segmentsOf(path: string): string[] {
   return path.split("/").filter(Boolean);
 }
 
-/** Folders along `dir` in the view: the ones that exist are reused, the rest made. */
 function ensureDir(
   writer: TreeWriter,
   view: View,
@@ -95,7 +79,6 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     return result;
   }
 
-  /** The folder at `path` (every folder on the way made if absent); returns the leaf's id. */
   async function folder(sourceId: string, path: string, options: SeedOptions = {}) {
     return submitIn(sourceId, options, (writer, view, actor) => {
       const id = ensureDir(writer, view, actor, sourceId, segmentsOf(path));
@@ -103,7 +86,6 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     });
   }
 
-  /** A document at `path`, its folders made as needed. A taken name creates a twin. */
   async function document(sourceId: string, path: string, options: SeedDocumentOptions = {}) {
     const segments = segmentsOf(path);
     const leaf = segments.pop();
@@ -133,7 +115,6 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     return id;
   }
 
-  /** A stored file (its bytes are in storage; `blob` points at them) at `path`. */
   async function file(
     sourceId: string,
     path: string,

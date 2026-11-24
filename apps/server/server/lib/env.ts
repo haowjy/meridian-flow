@@ -6,7 +6,6 @@ export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_ENV: z.enum(["dev", "staging", "production"]).default("dev"),
-    /** Explicit opt-in for debug paths; see `resolveDebugPathsEnabled`. */
     APP_DEBUG: z.enum(["0", "1", "true", "false"]).optional(),
     PORT: z.coerce.number().int().positive().default(4000),
     DATABASE_URL: z.string().min(1).optional(),
@@ -20,13 +19,7 @@ export const env = createEnv({
   emptyStringAsUndefined: true,
 });
 
-/**
- * The one gate for every debug path: model-request capture, recent events
- * (`/api/debug/events`), debug routes, and the mock-model script queue.
- *
- * Never on in production (`isProductionEnv`), even with the flag. Everywhere else (dev, test, staging) debug
- * paths are on only with an explicit `APP_DEBUG=1`; `pnpm dev` sets it.
- */
+// keep: the one debug gate: never on in production, and elsewhere only with an explicit APP_DEBUG=1
 export function resolveDebugPathsEnabled(input: {
   rawNodeEnv?: string;
   rawAppEnv?: string;
@@ -42,13 +35,11 @@ export const debugPathsEnabled = resolveDebugPathsEnabled({
   debugFlag: process.env.APP_DEBUG,
 });
 
-/** Wake-sweep cadence; the recovery may also run on process startup. */
 export function resolveWakeSweepIntervalMs(raw: string | undefined): number {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
 }
 
-/** Verbose observability is an explicit opt-in that cannot be enabled in production. */
 export function resolveObsVerbose(input: {
   rawNodeEnv?: string;
   obsVerbose?: string;

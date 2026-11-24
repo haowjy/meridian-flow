@@ -1,5 +1,3 @@
-/** Cursor and page policy for the server-owned Project chat feed. */
-
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { ProjectChatFeedPage } from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";

@@ -1,4 +1,3 @@
-/** Postgres proof for recent-document ownership, work identity, soft-delete cap, and binaries. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
   assertThrowawayDatabaseForRunDbTests,

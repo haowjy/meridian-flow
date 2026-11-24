@@ -1,4 +1,3 @@
-/** One import owner for the authenticated account, independent of the current project. */
 import { t } from "@lingui/core/macro";
 import {
   createContext,
@@ -46,7 +45,6 @@ export function ImportsProvider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
-/** What every import does wherever the writer is: says its milestones and reads its result. */
 function ImportWatches({ coordinator }: { coordinator: ImportCoordinator }) {
   const { imports } = useImportsSnapshot(coordinator);
   return imports

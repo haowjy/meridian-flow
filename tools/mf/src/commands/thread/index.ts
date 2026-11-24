@@ -1,4 +1,3 @@
-/** `thread`: read, drive, and follow thread sessions. */
 import type { CommandGroup } from "../../core/command";
 import { threadAnswerCommand } from "./answer";
 import { threadCancelCommand } from "./cancel";

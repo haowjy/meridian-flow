@@ -1,4 +1,3 @@
-/** GET /api/threads/:threadId/transcript: an authenticated keyset page. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

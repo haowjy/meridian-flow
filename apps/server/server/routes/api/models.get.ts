@@ -1,5 +1,3 @@
-/** GET /api/models: the models the Agent picker offers, and which of them this deployment can run. */
-
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { effortLevels } from "@meridian-flow/mars-schema";
 import { defineEventHandler } from "nitro/h3";
@@ -8,8 +6,6 @@ import { MODEL_REGISTRY } from "../../lib/gateway/registry.js";
 
 export default defineEventHandler(async (event) => {
   const { app } = await requireAppUser(event);
-  // A test-only model exists to be a LIVE_TEST_MODEL target, which overrides the picker anyway.
-  // Hide it from both lists: the gateway's still carries it under the redirect decorator.
   const testOnlyIds = new Set(
     MODEL_REGISTRY.providers
       .filter((provider) => provider.testOnly)
@@ -17,9 +13,6 @@ export default defineEventHandler(async (event) => {
   );
   const gatewayModels = app.gateway.listModels().filter((model) => !testOnlyIds.has(model.id));
   const usable = new Set(gatewayModels.map((model) => model.id));
-  // The registry's own name and levels first: under LIVE_TEST_MODEL the gateway reports every id
-  // as the redirect target. A model the gateway lists but the registry lacks (a mock) falls back
-  // to the gateway's.
   const registered = MODEL_REGISTRY.providers
     .flatMap((provider) => provider.offerings.map((offering) => offering.model))
     .filter((model) => !testOnlyIds.has(model.id));

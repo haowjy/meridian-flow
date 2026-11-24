@@ -1,5 +1,3 @@
-/** TipTap Composer schema, clipboard, draft ownership, and exact selection snapshots. */
-
 import { t } from "@lingui/core/macro";
 import { storedHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
@@ -52,7 +50,6 @@ export type ComposerDraftSnapshot = Readonly<{
   ownedUploads: readonly ComposerOwnedUpload[];
 }>;
 export type ComposerDraftChange = Readonly<{
-  /** Derived convenience projection; snapshot is the authoring authority. */
   text: string;
   snapshot: ComposerDraftSnapshot;
 }>;
@@ -70,15 +67,13 @@ type ComposerDocumentReferenceAttrs = DocumentReference &
   Extract<RestorableReference, { kind: "document" }> & {
     upload: ComposerOwnedUpload | null;
   };
-/** One atom for every reference: the document branch alone owns file facts and uploads. */
 export type ComposerReferenceAttrs =
   | ComposerDocumentReferenceAttrs
   | Extract<RestorableReference, { kind: "folder" }>;
-/** A file on its way into the chat's uploads. How it stands is the upload store's, by `intakeId`. */
 export type ComposerPendingUploadAttrs = { intakeId: string; name: string };
 export type ComposerSkillAttrs = MessageSkill;
 
-/** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
+// keep: Clipboard metadata is untrusted; turn admission must authorize reference identity
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
   if (!raw) return null;
   let value: Record<string, unknown>;
@@ -117,8 +112,6 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
   const uri = referenceUriForAuthority(value.uri, authority);
   const classification = classifyFiletype(value.fileType);
   if (!uri || classification.kind === "unknown") return null;
-  // A copied occurrence owns no upload lifecycle; capability derives from the
-  // file classification, not an independently supplied clipboard boolean.
   return {
     kind: "document",
     documentId,
@@ -174,7 +167,6 @@ function parseAuthority(raw: unknown): StableReferenceAuthority | null {
   }
 }
 
-/** The chip a writer's pick inserts: an ordinary reference, which the server admits by its address. */
 export function pickedReferenceAttrs(
   reference: AuthoritativeReference,
   fileKind: "document" | "asset" | null,
@@ -238,10 +230,6 @@ export const ComposerReferenceNode = Node.create({
             for (const element of container.querySelectorAll("[data-meridian-link]")) {
               if (parseClipboardReference(element.getAttribute("data-composer-reference")))
                 continue;
-              // Manuscript marks carry a target, not admitted attachment identity.
-              // Preserve their Markdown rather than inventing a Composer attachment.
-              // A recorded address (the full Context URI the link named where it
-              // was copied) wins over a relative href.
               const target =
                 clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE)) ??
                 internalClipboardTarget(element.getAttribute("data-meridian-link"));
@@ -313,7 +301,6 @@ export const ComposerSkillNode = Node.create({
   },
 });
 
-/** A chip nothing in this tab is sending (a copy pasted after its upload ended) reads stopped. */
 function chipState(upload: ComposerPendingUploadAttrs): UploadState {
   return uploads.read(upload.intakeId) ?? { kind: "failed", message: t`The upload was stopped.` };
 }
@@ -332,7 +319,6 @@ function chipAttributes(upload: ComposerPendingUploadAttrs, state: UploadState) 
 }
 
 function chipText(upload: ComposerPendingUploadAttrs, state: UploadState): string {
-  // Send refuses while a chip has failed, so the chip is where the writer reads why.
   if (state.kind !== "failed") return `${upload.name}…`;
   const { message } = state;
   return t`${upload.name} (${message} Click to retry, or remove it to send.)`;
@@ -367,8 +353,6 @@ export const ComposerUploadNode = Node.create({
   },
   addNodeView: () => (props) => {
     const upload = props.node.attrs.upload as ComposerPendingUploadAttrs;
-    // The chip itself is swapped inside a frame ProseMirror keeps: a failed chip is a button, so
-    // Enter and a click retry it.
     const frame = document.createElement("span");
     frame.contentEditable = "false";
     let chip: HTMLElement | null = null;
@@ -475,12 +459,10 @@ function restorableSchema(): ReturnType<typeof getSchema> {
   return restorableDraftSchema;
 }
 
-/** The position at the end of a composer document's last paragraph: where a caret after its words goes. */
 export function composerDocEnd(doc: JSONContent): number {
   return Math.max(1, restorableSchema().nodeFromJSON(doc).content.size - 1);
 }
 
-/** Validate stored authoring state, excluding uploads whose bytes lived in memory. */
 export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnapshot | null {
   try {
     if (!value || typeof value !== "object") return null;
@@ -508,7 +490,6 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
             upload.uri !== reference.uri)
         )
           throw new Error("Invalid upload");
-        // A draft saved before an upload's identity was its document id also holds a revision.
         return composerReferenceContent({
           ...reference,
           upload: upload && {

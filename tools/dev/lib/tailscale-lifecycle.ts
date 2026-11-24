@@ -1,4 +1,3 @@
-/** Tailscale serve/funnel lifecycle used by local dev startup. */
 import { execFileSync } from "node:child_process";
 import net from "node:net";
 import type { ExternalDevRoute } from "../portless-routes";

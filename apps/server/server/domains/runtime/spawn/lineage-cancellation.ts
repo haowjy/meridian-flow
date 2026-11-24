@@ -1,14 +1,3 @@
-/**
- * Lineage cancellation as one durable command. In one transaction it takes the owner's thread
- * lock, lets the trigger decide, then takes each target's lock parents first and claims the
- * lineage's asks (open questions, the cancelled execution's pending one and owed continuations
- * become `cancelled`). It then drops the stopped threads' queued machine work, flags the live
- * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
- * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
- * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
- * only make runs stop sooner. A `thread` reach (Stop, Send now) ends only the owner's reply: no
- * descendant is a target. Whether the owner is fenced is the decision's `fenceOwner`, not the reach.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   AskRepository,
@@ -34,7 +23,6 @@ export function createLineageCancellation(deps: {
   asks: Pick<AskService, "recordCancelled">;
   askRows: Pick<AskRepository, "claimLineage">;
   reports: Pick<ExecutionReportRepository, "withdrawNotices">;
-  /** Refreshes the parent's subagent activity for a child whose state changed. */
   refreshActivity(threadId: ThreadId): void;
   afterCommit(task: () => void): void;
 }): LineageCancellation {
@@ -44,7 +32,6 @@ export function createLineageCancellation(deps: {
   ): Promise<LineageCancelled<T>> {
     return deps.transaction(() =>
       asMultiThreadLocker(async () => {
-        // Held to commit (Postgres) and reentrant, so the per-thread pass below locks again.
         const locked: ThreadId[] = [];
         return deps.delivery.withThreadLock(threadId, async () => {
           locked.push(threadId);
@@ -52,10 +39,6 @@ export function createLineageCancellation(deps: {
           const { reach, execution } = decision;
           const done = (targets: ThreadId[]) => ({ result: decision.result, execution, targets });
           if (!reach) return done([]);
-          // Parents first. Under each thread's lock its subtree is listed again: a spawn that
-          // committed before that lock is a target too, and a later one waits for this commit,
-          // then finds its sender cancelled.
-          // `thread` (Stop, Send now) reaches no descendant: the owner's reply is all it ends.
           const targets =
             reach.kind === "thread"
               ? []
@@ -81,18 +64,8 @@ export function createLineageCancellation(deps: {
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);
-          // The owner is fenced when the writer deleted the chat, or when the decision asks for it
-          // (Stop on a subagent). The fence refuses a wake from ANY sender admitted before the Stop,
-          // not only ancestors: a surviving child's mid-run `thread_message` is refused too, while a
-          // child's report lands, since a report row carries no sender. A stopped primary chat is
-          // not fenced, so reports wake it. Send now never fences: it runs the queue next.
           const ownerFenced = reach.kind === "deleted" || decision.fenceOwner === true;
           const fenced = new Set<string>(ownerFenced ? [threadId, ...targets] : targets);
-          // A target loses all its queued machine work; writer sends stay, as the writer's own
-          // request to that chat. A fenced owner loses its queued `agent` messages, and a deleted
-          // one its `child` reports too: a finished child's report is
-          // work Stop keeps (Work notices never start a run, so they stay). Elsewhere only what
-          // names the lineage goes: a target's report notices, and hints for asks this command claimed.
           const drops = (id: ThreadId, row: InboxMessage) =>
             (targetSet.has(id) && row.provenance.kind !== "writer") ||
             (fenced.has(id) &&

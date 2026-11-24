@@ -3,18 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import type { DevMode } from "./dev-mode";
 
-/** Portless's default HTTPS proxy port. Its URLs omit this port. */
 const DEFAULT_PROXY_PORT = 443;
 
 function isPort(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 65_535;
 }
 
-/**
- * The port Portless's proxy is using. `portless list` renders URLs from the
- * running proxy's `proxy.port`, so that file wins over `PORTLESS_PORT`, which
- * only asks a new proxy to start on a port.
- */
 export function resolvePortlessProxyPort(env: NodeJS.ProcessEnv = process.env): number {
   const stateDir = env.PORTLESS_STATE_DIR ?? path.join(os.homedir(), ".portless");
   try {
@@ -32,7 +26,6 @@ export function resolvePortlessProxyPort(env: NodeJS.ProcessEnv = process.env): 
   return isPort(requested) ? requested : DEFAULT_PROXY_PORT;
 }
 
-/** Canonical names used by command rendering, route checks and internal origins. */
 const SERVICE_PORTLESS_NAMES = {
   server: "server.meridian",
   app: "app.meridian",
@@ -55,7 +48,6 @@ function isExpectedServiceName(name: string): name is ExpectedServiceName {
 export type ExpectedServiceDescriptor = {
   name: ExpectedServiceName;
   host: string;
-  /** When true, tools/dev exposes the service through Tailscale/funnel in shared modes. */
   shared: boolean;
 };
 
@@ -70,7 +62,6 @@ const WWW_EXPECTED_SERVICE: ExpectedServiceDescriptor = {
   shared: true,
 };
 
-/** Core app+server always; www when dev-tmux explicitly starts @meridian/www (tailscale/funnel). */
 export function getExpectedServicesForMode(
   mode: DevMode,
 ): ReadonlyArray<ExpectedServiceDescriptor> {
@@ -150,7 +141,6 @@ export interface RouteValidation {
   errors: string[];
 }
 
-/** app/www first — matches how people scan startup output. */
 const SERVICE_DISPLAY_ORDER: ExpectedServiceName[] = ["app", "www", "server"];
 
 const ROUTE_KIND_WIDTH = 6;
@@ -241,7 +231,6 @@ export function resolveExpectedRouteUrls({
   return urls;
 }
 
-/** Labeled full URLs for copy-paste; infra: `pnpm portless:list`. */
 export function formatDevRouteLines(
   output: string,
   mode: DevMode,

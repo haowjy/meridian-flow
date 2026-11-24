@@ -1,4 +1,3 @@
-/** Admit a writer message and serialize its durable admission outcome. */
 import {
   meridianErrorFromSystem,
   type SendMessageRequest,

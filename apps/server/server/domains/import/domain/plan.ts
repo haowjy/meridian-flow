@@ -1,4 +1,3 @@
-/** Pure receipt-driven identity graph and folder-note relocation. */
 import {
   EXPORT_WORKS_FOLDER,
   IMPORT_ADMISSION,
@@ -14,16 +13,13 @@ import { type ImportArea, readExportMarker } from "./export-marker.js";
 import { type ImportRootSettings, rootSettings } from "./link-index.js";
 import type { FileReceipt } from "./receipt.js";
 
-/** Organize supplies only files with receipts, plus folders and unreadable selection items. */
 export type ReceiptSelection = Omit<ImportSelection, "entries"> & {
   entries: (ImportSelection["entries"][number] &
     Pick<FileReceipt, "sha256" | "aliases" | "facts"> & {
-      /** Set on a file organize extracted from another entry (a DOCX's embedded image). */
       derivedFrom?: string;
     })[];
 };
 
-/** The path a derived file's id is minted from: its own namespace, so it never meets a picked path. */
 export const derivedNodePath = (parentId: string, path: string) => `${parentId}/${path}`;
 export interface PlannedNode {
   id: string;
@@ -33,7 +29,6 @@ export interface PlannedNode {
   entryId: number | null;
   path: string;
   filename: string;
-  /** The segment it lands at when it lands as a later twin (`filename~id`, rule 14). */
   segment?: string;
   name: string;
   extension: string;
@@ -45,10 +40,8 @@ export interface PlannedNode {
   state: "planned" | "skipped";
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
-  /** Aliases read from the received Markdown frontmatter. */
   aliases?: string[];
 }
-/** What the plan header keeps of each selected root. */
 export interface PlannedRoot {
   rootId: number;
   kind: "folder" | "file";
@@ -91,7 +84,6 @@ export async function planSelection(
       root.kind === "folder" &&
       (manifest.unreadable ?? []).some((item) => item.rootId === root.rootId && item.path === "");
     const folders = new Map<string, { id: string | null }>();
-    // A file root has no folders of its own, but a DOCX's extracted images sit in one beside it.
     if (root.kind === "file") folders.set("", { id: destinationId });
     if (marker) {
       folders.set("", { id: destinationId });
@@ -150,7 +142,6 @@ export async function planSelection(
       const filename =
         root.kind === "file" && !entry.path ? root.name : (entry.path.split("/").at(-1) ?? "");
       const skip =
-        // A derived file's document already passed admission; capping the image would drop it silently.
         entry.size > IMPORT_ADMISSION.fileBytes && !entry.derivedFrom
           ? "too_large"
           : marker && entry.path.split("/")[0] === EXPORT_WORKS_FOLDER
@@ -208,8 +199,6 @@ export async function planSelection(
       reasonParams: { readReason: unreadable.reason ?? "unreadable" },
     });
   }
-  // Parents precede children; the already-spelled canonical name wins among siblings.
-  // Context allocates final names under its source locks.
   const depths = new Map<string, number>();
   for (const node of nodes) depths.set(node.id, (depths.get(node.parentId ?? "") ?? -1) + 1);
   const depth = (node: PlannedNode) => depths.get(node.id) ?? 0;
@@ -223,7 +212,6 @@ export async function planSelection(
   );
 }
 
-/** Plans with every node id derived by `importNodeId`. */
 export async function planWithDerivedIds(
   manifest: ReceiptSelection,
   scope: { projectId: string },

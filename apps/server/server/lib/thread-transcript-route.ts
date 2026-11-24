@@ -1,5 +1,3 @@
-/** Authenticated writer adapter for the paged transcript contract. */
-
 import type { TranscriptPageResponse } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";

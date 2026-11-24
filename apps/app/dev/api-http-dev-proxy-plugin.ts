@@ -60,8 +60,6 @@ export function apiHttpDevProxyPlugin(
             res.end();
           }
         });
-        // `pipe` alone leaves the upstream request open when the browser goes away mid-upload,
-        // so the server would wait on a dead connection until its request timeout.
         res.on("close", () => {
           if (!res.writableFinished) proxyReq.destroy();
         });

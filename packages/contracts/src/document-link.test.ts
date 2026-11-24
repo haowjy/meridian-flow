@@ -17,7 +17,6 @@ import {
 } from "./document-link.js";
 import { aheadAddress, isAheadFilename, parseLinkRef } from "./document-ref.js";
 
-// UUID-shaped ids: refs are UUID-backed, and anything else is malformed.
 const names = [
   "sibling",
   "cast",
@@ -106,7 +105,6 @@ it("resolves and spells stored links by rule", () => {
     holderUri?: string | null;
     kind: string;
     inDraft?: boolean;
-    /** Rule 3: answered through the ahead ref's settlement. */
     settled?: true;
     spelled: string;
     address: string | null;
@@ -369,7 +367,6 @@ it("classifies written links and mints ahead addresses by grammar", () => {
   for (const [uri, kind, expected] of minted) {
     const address = aheadAddress(uri, kind);
     expect.soft(address, `ahead ${kind} ${uri}`).toBe(expected);
-    // Every minted address is one the registry accepts.
     if (address)
       expect.soft(isAheadFilename(address.slice(address.lastIndexOf("/") + 1)), address).toBe(true);
   }
@@ -394,8 +391,6 @@ it("classifies written links and mints ahead addresses by grammar", () => {
   for (const [value, expected] of refs)
     expect.soft(parseLinkRef(value), `ref ${String(value)}`).toEqual(expected);
 
-  // Classify -> mint and store -> resolve -> spell: an address is decoded, a
-  // stored href is escaped, and filename characters never become href syntax.
   const roundTrips: {
     written: string;
     kind: "link" | "source";
@@ -516,7 +511,6 @@ it("spells lineage links through their holder, without a chat-only spelling chan
   const link = { ref: `doc:${U.cast}`, href: "scratch://@c12/old#gate" };
   const ownScratch = { ...holder, uri: "scratch://@c12/holder" };
   expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x#gate");
-  // Contextual spelling already in the chat's own Scratch stays contextual.
   expect(
     spellStoredLink({ ref: null, href: "scratch://x" }, ownScratch, { kind: "address" }, "holder")
       .href,

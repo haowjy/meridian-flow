@@ -1,8 +1,3 @@
-/**
- * The cards a hand-back or Send now still owes the writer, folded into `chatCards`: which failures
- * show, with which copy, count and action. They depend on the commands, never on rows a hand-back
- * may already have removed, so they sit in the composer's card stack.
- */
 import { classifyCommandFailure } from "@meridian/contracts/failures";
 import { occurrenceKey } from "../commands";
 import type { UnresolvedHandBack } from "../hand-back/operation";
@@ -19,7 +14,6 @@ export function handBackCards(
   const cards: ChatCard[] = [];
   for (const entry of unresolved) {
     if (entry.kind === "send-now") {
-      // The card goes when the reply it targeted ends.
       if (running !== entry.request.seenExecutionId) continue;
       cards.push({
         key: occurrenceKey(entry),
@@ -47,8 +41,6 @@ export function handBackCards(
       failure: classifyCommandFailure({
         kind: refused ? "refused" : entry.status === "unsaved" ? "unsaved" : "lost",
       }),
-      // While the reply the Stop targeted still runs, its failure reads as Stop's; once that
-      // reply ended (even if another runs), as the x's.
       copy:
         entry.commandKind === "stop" &&
         entry.targetExecutionId !== null &&

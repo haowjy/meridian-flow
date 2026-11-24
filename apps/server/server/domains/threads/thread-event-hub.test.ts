@@ -25,7 +25,6 @@ import { createThreadEventHub } from "./thread-event-hub.js";
 const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const PARENT_TURN_ID = "00000000-0000-4000-8000-000000000902";
 
-/** A journal reader whose replay window is the first `windowRows` rows. */
 function createCappedReader(
   windowRows: number,
   headSeq: bigint,

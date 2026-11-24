@@ -1,8 +1,6 @@
-/** Per-process bound on concurrent multipart receives for one import. */
 import { IMPORT_LIMITS, ImportError } from "./manifest.js";
 
 export interface ImportAdmission {
-  /** A release callback, or null when the import already has its limit in flight. */
   enter(importId: string): (() => void) | null;
 }
 
@@ -27,7 +25,6 @@ export function createImportAdmission(
   };
 }
 
-/** The response deadline never releases admission while body/storage execution is still alive. */
 export async function inReceiveScope<Context, Result>(
   input: {
     importId: string;

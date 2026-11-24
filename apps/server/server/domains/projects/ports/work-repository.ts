@@ -1,37 +1,25 @@
-/**
- * Work persistence port: the CRUD contract for "works" (units of work within a
- * project) plus its input/option types. The boundary both the drizzle and
- * in-memory work adapters implement.
- */
 import type { DraftId } from "@meridian/contracts";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
-  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: WorkId;
-  /** The Work's draft, minted by the client beside `id`; the insert mints one if omitted. */
   draftId?: DraftId;
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;
-  /** Omitted or null means no goal. */
   goal?: string | null;
 }
 
 export interface UpdateWorkInput {
   name?: string;
   goal?: string | null;
-  /** AI-owned one-to-three-word progress summary. */
   status?: string | null;
 }
 
 export interface ListWorksOptions {
-  /** Include soft-deleted works. Defaults to false. */
   includeDeleted?: boolean;
-  /** Archive lifecycle selection. Defaults to active. */
   lifecycle?: "active" | "archived" | "all";
-  /** Include the locked No Work row. Defaults to false. */
   includeNoWork?: boolean;
 }
 
@@ -43,7 +31,6 @@ export class WorkLockedError extends Error {
   }
 }
 
-/** Internal transaction retry when a thread joined the Work after the lock set was read. */
 export class WorkDeleteRetryError extends Error {
   constructor() {
     super("Work membership changed during deletion");
@@ -62,25 +49,15 @@ export type WorkRestoration = {
   changed: boolean;
 };
 
-/**
- * Work-item CRUD for the projects domain. Backed by the `schema` `works`
- * table; rows map to the JSON-natural {@link Work} contract.
- *
- * A work item groups one or more primary threads under a project and owns the
- * shared knowledge built during grilling.
- */
 export interface WorkRepository {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
-  /** Locks the Work lifecycle row for the ambient transaction, then returns it. */
   lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
-  /** A named Work of the project by handle, deleted ones included: one indexed read. */
   findByHandle(projectId: ProjectId, handle: string): Promise<Work | null>;
   findNoWork(projectId: ProjectId): Promise<Work | null>;
   ensureNoWork(projectId: ProjectId): Promise<Work>;
-  /** Lists most recently updated first. Named Works only unless includeNoWork. */
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
   snapshotIdentity(projectId: ProjectId): Promise<{
     authorityRevision: string;
@@ -88,23 +65,12 @@ export interface WorkRepository {
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
-  /**
-   * Soft-deletes the Work and marks its live children in the same transaction. `endThreads`
-   * runs first, on the Work's thread tree before any of its rows lock: lineage cancellation,
-   * which takes ask rows and thread locks before thread rows.
-   */
   softDelete(
     id: WorkId,
     endThreads?: (threadIds: readonly ThreadId[]) => Promise<void>,
   ): Promise<WorkDeletion>;
-  /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
   restore(id: WorkId): Promise<WorkRestoration>;
-  /**
-   * The namespace keys `restore` takes for these deleted Works, for a caller that holds document
-   * keys before it restores: they come first in the lock order, so it takes them up front.
-   */
   lockRestoreNamespaces(ids: readonly WorkId[]): Promise<void>;
   touch(id: WorkId): Promise<void>;
-  /** Sets the mode a new chat in this Work starts with; a no-op when it already holds it. */
   setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void>;
 }

@@ -1,13 +1,3 @@
-/**
- * `./mf`'s observer over the shared `ThreadSync`: the Node ports (one HTTP read at a time, the
- * command's deadline, a plain value for the chat), printing frames, and what the claims read from
- * the sync (applied reads, the end-of-turn checks, gaps). The sync decides when to read, how a read
- * joins replay and in what order frames reach the turns; this file decides none of that.
- *
- * It keeps no queue of frames before the first read: the sync delivers none. Each frame is filtered
- * before printing and before claim bookkeeping: it counts only if its seq is above the claim's
- * cursor and above every seq already counted.
- */
 import {
   apiThreadSnapshotPath,
   compareSeq,
@@ -39,51 +29,26 @@ export type ObserverOptions = {
   threadId: string;
   out: Output;
   full: boolean;
-  /** Where text-mode event lines go (`send` keeps stdout for the final answer). */
   textStream: "out" | "err";
-  /** Bounds every read from the start; `until` moves it. */
   deadlineAt: number;
-  /** The chat's value before following: a send's admission has already raised its floor. */
   cell?: SyncedThread;
-  /**
-   * Frames at or below this seq are not the claim's. `send` passes the admission's `resumeAfterSeq`;
-   * `tail` leaves it, and its first applied read's position is the cursor.
-   */
   cursor?: string;
-  /** A counted frame, after it printed. */
   onFrame?(event: CliEvent): void;
-  /** A read the sync applied. */
   onRead?(read: ThreadSnapshotResponse): void;
-  /** The `subscribed` state, after catch-up. */
   onLive?(state: ThreadLiveState): void;
-  /** A gap, after it printed. */
   onGap?(): void;
 };
 
 export type Observer = {
-  /** Ask for the first read. Frames reach the observer only after it applies. */
   start(): void;
-  /** The claim wants a look: an unconditional, debounced read. */
   refresh(): void;
-  /**
-   * Resolve once `predicate` holds, checked after every observation. Rejects with a `timeout`
-   * `CliError` at `deadlineAt`, or with the transport or read failure. `deadlineAt` also bounds
-   * every read: at it no read starts, and the one in flight is abandoned by `close`.
-   */
   until(predicate: () => boolean, deadlineAt: number): Promise<void>;
-  /** Stop the sync, abort the read in flight and close the socket. */
   close(): void;
-  /** Turns the stream named or the record showed running, as the frames and states arrived. */
   readonly turnIds: ReadonlySet<string>;
-  /** A `turn.failed` was counted. */
   readonly failed: boolean;
-  /** A gap that counts against the claim: it reaches past the cursor, or its range is unknown. */
   readonly truncated: boolean;
-  /** The newest applied read. */
   readonly lastRead: ThreadSnapshotResponse | null;
-  /** Claimed terminal turns still awaiting a stream end and its applied-read check. */
   pending(claimed: readonly string[], proving: ReadonlyMap<string, Turn>): string[];
-  /** `liveView` for the claimed assistant turns, from the checks. */
   liveView(claimed: readonly string[]): LiveViewReport;
 };
 
@@ -121,7 +86,6 @@ export function createObserver(options: ObserverOptions): Observer {
   };
 
   const above = (seq: string, floor: string | null) => floor === null || compareSeq(seq, floor) > 0;
-  /** One read at a time. A read that starts after the deadline never starts. */
   async function readOnce(): Promise<void> {
     const remaining = deadline - Date.now();
     if (closed || remaining <= 0) return;
@@ -152,7 +116,6 @@ export function createObserver(options: ObserverOptions): Observer {
   function request(kind: "fresh" | "any") {
     if (closed) return;
     if (inflight) {
-      // "fresh" needs a read that starts after this call; "any" takes the one in flight.
       if (kind === "fresh") queued = true;
       return;
     }
@@ -206,7 +169,6 @@ export function createObserver(options: ObserverOptions): Observer {
         const first = lastRead === null;
         lastRead = read;
         if (cursor === null) cursor = read.liveState.resumeAfterSeq;
-        // The turn running at join belongs to this follow.
         if (first) {
           const running = read.liveState.runState.execution?.currentTurnId;
           if (running) turnIds.add(running);
@@ -228,7 +190,6 @@ export function createObserver(options: ObserverOptions): Observer {
         checks.set(observation.turnId, observation);
         break;
       case "error":
-        // Retryable replay/network errors stay with the transport; only refusals end the command.
         if (observation.error instanceof CliError) failure ??= observation.error;
         break;
     }

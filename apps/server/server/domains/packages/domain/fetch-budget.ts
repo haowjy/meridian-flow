@@ -2,7 +2,6 @@ import { type FetchBudget, FetchBudgetError } from "../ports/package-fetcher.js"
 
 const MB = 1024 * 1024;
 
-/** Starting values from the foreign-import design, to tune. */
 export const FETCH_LIMITS = {
   downloadBytes: 50 * MB,
   expandedBytes: 200 * MB,
@@ -12,7 +11,6 @@ export const FETCH_LIMITS = {
 
 export type FetchLimits = { -readonly [K in keyof typeof FETCH_LIMITS]: number };
 
-/** One per import; every fetch the import makes draws on it. */
 export function createFetchBudget(
   limits: FetchLimits = FETCH_LIMITS,
   now: () => number = Date.now,

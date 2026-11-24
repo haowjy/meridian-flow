@@ -1,9 +1,3 @@
-/**
- * The canonical local (non-provider) turn builder. Turns that carry no model
- * response — the run's user/assistant skeleton, a drained message, and the inbox
- * drain's persisted history — share one shape so the read model and context
- * projection see a single turn contract.
- */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -12,13 +6,11 @@ import type { CompactionDecision } from "./compaction/decision.js";
 import type { CurrentTurn } from "./ports.js";
 
 export function createLocalTurn(input: {
-  /** Deterministic identity for idempotent persistence; minted when omitted. */
   id?: TurnId;
   threadId: ThreadId;
   position: number;
   prevTurnId: TurnId | null;
   role: Turn["role"];
-  /** Who authored the turn; no default, so every caller must decide. */
   origin: Turn["origin"];
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
@@ -82,13 +74,11 @@ function emptyTurnUsage(): NonNullable<Turn["usage"]> {
   };
 }
 
-/** The role-to-kind rule for run-owned turns; SQL bindTurn mirrors this rule. */
 export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
   if (turn.role === "assistant" || turn.role === "compaction") return turn.role;
   throw new Error(`Not a current execution turn: ${turn.role}`);
 }
 
-/** Read the reservation-time trigger before compaction outcome metadata exists. */
 export function readCompactionTrigger(metadata: Turn["metadata"]): "auto" | "manual" {
   if (
     metadata &&
@@ -100,20 +90,12 @@ export function readCompactionTrigger(metadata: Turn["metadata"]): "auto" | "man
   return "auto";
 }
 
-/**
- * What an execution writes on every turn it reserves, in the reserving
- * transaction: its id, the messages the turn is for, and on a Retry's first
- * reservation the failed reply it retries and the request's reply id
- * (`metadata.retryOf`, `metadata.retryReplyId`), so a replay of that request
- * finds its execution before the reply exists.
- */
 export type ReservationIdentity = {
   executionId: string;
   reservedForUserTurnIds: readonly string[];
   retry?: { of: TurnId; replyTurnId: TurnId };
 };
 
-/** Both run-start and split reservation use the boundary's decision unchanged. */
 export function reservationTurn(
   input: Omit<
     Parameters<typeof createLocalTurn>[0],

@@ -1,4 +1,3 @@
-/** Pure legal-state model for the composer Work binding interaction. */
 import type { Work } from "@meridian/contracts/works";
 import type { NormalizedCommit } from "@/client/query/useRebindThreadWork";
 

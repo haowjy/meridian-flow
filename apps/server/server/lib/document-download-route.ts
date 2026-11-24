@@ -1,7 +1,3 @@
-/**
- * Live document downloads: tree admission before content or binary storage access, with a
- * filename derived from the document's persisted type (prose leaves as `<name>.md`).
- */
 import type { DocumentId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { createError, type H3Event, sendRedirect, setHeader } from "nitro/h3";
@@ -28,7 +24,6 @@ export async function downloadDocument(
     ),
   );
   if (document.storageUrl) {
-    // The store serves the bytes, so a large file never passes through this process.
     const key = objectStoreKeyFromStorageUrl(document.storageUrl);
     if (!key) throw createError({ statusCode: 500, message: "Document storage URL is invalid" });
     const signed = await services.objectStore.getSignedUrl(key, {
@@ -42,8 +37,6 @@ export async function downloadDocument(
     setHeader(event, "Cache-Control", "no-store");
     return sendRedirect(event, signed.value, 302);
   }
-  // Only the live read spells links where their targets sit now; the stored
-  // projection can hold a path from before a move, so it is never served.
   const read = await services.documentSync.readAsMarkdown(documentId);
   if (!read.ok) {
     setHeader(event, "Retry-After", "5");

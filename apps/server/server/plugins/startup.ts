@@ -1,8 +1,3 @@
-/**
- * Nitro startup plugin: installs the process crash policy (and, outside production, the
- * test hook controller the crash and race probes arm) and runs config validation at
- * boot, logging warnings through the process EventSink.
- */
 import { isMainThread } from "node:worker_threads";
 import { emitEvent, unknownToEventPayload } from "../domains/observability";
 import { getApp } from "../lib/app";
@@ -39,14 +34,10 @@ async function boot() {
   }
 
   loroGateway = getLoroGateway(await getApp());
-  // Shutdown callbacks start together so document persistence gets the full
-  // process deadline even when runtime settlement is slow.
   registerProcessShutdownCallback(async () => {
     await loroGateway?.drain();
   });
 
-  // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request
-  // (skipped when the local dev auth bypass is on).
   await validateAuthConfiguration();
 
   emitEvent(eventSink, {
@@ -61,14 +52,7 @@ async function boot() {
   });
 }
 
-/**
- * Nitro calls plugins without awaiting them, and the crash policy logs and
- * survives unhandled rejections, so an async plugin's failure would leave a
- * misconfigured server listening. A boot failure must end a built server's process.
- * In `nitro dev` the plugin runs in a worker thread that Nitro restarts without
- * limit when it exits, so there the worker stays up and the per-request auth rules
- * still refuse.
- */
+// keep: Nitro does not await plugins and the crash policy survives rejections, so a failed boot must exit a built server; in `nitro dev` the worker stays up instead, which Nitro would restart without limit
 export default function startupPlugin() {
   boot().catch(async (error: unknown) => {
     const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -82,7 +66,6 @@ export default function startupPlugin() {
       });
       await eventSink.flush();
     } finally {
-      // Runs even if the sink throws; stderr above already has the error.
       if (isMainThread) process.exit(1);
     }
   });

@@ -4,14 +4,6 @@ import { getAppServerConfig } from "./config";
 
 const CALLBACK_PATH = "/api/auth/callback";
 
-/**
- * Resolve the OAuth redirect URI for the current request.
- *
- * In development, sign-in and callback can follow the request origin for
- * portless (`*.localhost`) and Tailscale (`*.ts.net`) when the scheme matches
- * `WORKOS_REDIRECT_URI` (session cookies use that config for the Secure flag).
- * Plain `http://localhost` only participates when the env redirect is also http.
- */
 export function resolveAuthRedirectUri(request: Request): string {
   const { runtime, workosRedirectUri: fallback } = getAppServerConfig();
   if (!fallback) {

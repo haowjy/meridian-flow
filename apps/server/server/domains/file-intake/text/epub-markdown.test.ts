@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { epubToMarkdown } from "./epub-markdown.js";
 import { ConversionRefused } from "./limits.js";
 
-/** Guards: an EPUB is read for its text, and a hostile one is refused before it inflates or resolves anything. */
 const CONTAINER =
   '<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfile full-path="c.opf"/></container>';
 const OPF =

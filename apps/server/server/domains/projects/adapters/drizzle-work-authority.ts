@@ -1,5 +1,3 @@
-/** Drizzle adapter for exact, same-project Work authority resolution. */
-
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
@@ -15,7 +13,6 @@ import {
 export function createDrizzleProjectWorkAuthorityResolver(
   db: Database,
 ): ProjectWorkAuthorityResolver {
-  /** `restorable`: a deleted Work counts until its purge removes the row. */
   function selectWhere(projectId: ProjectId, predicate: ReturnType<typeof eq>, restorable = true) {
     return currentDrizzleDb(db)
       .select({ workId: works.id, workHandle: works.handle, isNoWork: works.isNoWork })

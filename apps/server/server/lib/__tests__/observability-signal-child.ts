@@ -26,8 +26,6 @@ const gateway: Gateway = {
       if (request.signal?.aborted) resolve();
       else request.signal?.addEventListener("abort", () => resolve(), { once: true });
     });
-    // Cross an event-loop turn so shutdown has to drain the paid result rather than observing a
-    // synchronously settled stream.
     await new Promise((resolve) => setImmediate(resolve));
     yield {
       type: "end",

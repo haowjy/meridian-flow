@@ -1,4 +1,3 @@
-/** Authenticated metadata ingest, with bounded process-local deduplication and per-account admission. */
 import { clientFailureBatchSchema, clientFailureEvent } from "@meridian/contracts/failures";
 import { createError } from "nitro/h3";
 import type { EventSink } from "../domains/observability/index.js";
@@ -34,8 +33,6 @@ export async function ingestClientFailures(
     parsed.data.records.flatMap((r) => (r.phase !== "rescued" && r.threadId ? [r.threadId] : [])),
   )) {
     const row = await deps.threads.findByIdIncludingDeleted(threadId as never);
-    // Diagnostics remain useful after deletion or failed creation. Only correlation needs
-    // ownership proof; unknown and foreign targets both become account-scoped metadata.
     if (row?.userId === userId && row.project?.userId === userId) owned.add(threadId);
   }
   let accepted = 0;

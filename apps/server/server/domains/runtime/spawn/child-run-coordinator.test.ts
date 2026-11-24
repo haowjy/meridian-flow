@@ -50,7 +50,6 @@ function stubOrchestrator(
   records: RecordedTurn[],
   repos: ReturnType<typeof createInMemoryRepositories>,
   authority = createInMemoryRunClaim(),
-  /** The run session publishes each report as its run ends. */
   publish: (threadId: ThreadId, executionTurnId: TurnId) => Promise<unknown> = async () => {},
 ): RunTurnPort {
   let counter = 0;
@@ -72,7 +71,6 @@ function stubOrchestrator(
       const userTurn = await repos.turns.create({
         threadId: input.threadId,
         role: "user",
-        // The child's seed turn is the spawning caller's prompt, not a writer send.
         origin: "system",
         status: "complete",
         prevTurnId: (await repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null,
@@ -267,7 +265,6 @@ async function fixture(
   const coreCoordinator = createChildRunCoordinator({
     driver,
     delivery,
-    // These cases are about selection and cards; the fence has its own DB test.
     wakes: { wakeRefusal: async () => null },
     repos: {
       threads: repos.threads,
@@ -286,7 +283,6 @@ async function fixture(
     eventSink,
   });
   let invocation = 0;
-  // Override refusals come back typed; `runChild` is for tests that expect a run.
   const runChildOrRefusal = async (
     request: Parameters<typeof coreCoordinator.runChild>[0],
     options: Parameters<typeof coreCoordinator.runChild>[1],
@@ -818,12 +814,10 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     const childThreadId = result.report.threadId;
 
     const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
-    // One on create (after the lease is acquired) and one on terminal.
     expect(activityEvents).toHaveLength(2);
     expect(activityEvents.every((entry) => entry.threadId === parentThreadId)).toBe(true);
     expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
     expect(activityEvents.every((entry) => entry.childThreadId === childThreadId)).toBe(true);
-    // The other lifecycle facts still land on the immediate parent.
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
   });
 
@@ -863,14 +857,11 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     );
 
     expect(result.status).toBe("completed");
-    // The create-side append landed; only the best-effort terminal append failed.
     expect(appended.filter((entry) => entry.type === "subagent.activity")).toHaveLength(1);
-    // Exactly one terminal fact, and it records the run's success.
     const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
     expect(terminal).toHaveLength(1);
     expect(terminal[0]?.outcome).toBe("succeeded");
     expect(terminal[0]).not.toHaveProperty("result");
-    // The swallowed failure is still observable.
     expect(eventSink.events.some((event) => event.name === "subagent.activity.append_failed")).toBe(
       true,
     );

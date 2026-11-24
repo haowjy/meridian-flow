@@ -1,4 +1,3 @@
-/** Risk: Continue must not silently skip missing files, resend receipts, or pair duplicate names by order. */
 import { expect, it } from "vitest";
 import { fakeImportServer } from "./fake-import-server";
 import { buildSelection } from "./manifest";
@@ -39,7 +38,6 @@ it("sends awaiting files, hashes only received files that differ, and leaves mis
   const match = matchContinue(detail, picked);
   expect([...match.held.keys()]).toEqual([1]);
   expect(match.held.get(1)?.changed).toBe(true);
-  // a.md is received and re-picked unchanged: its receipt still matches, nothing to hash.
   expect(match.received).toEqual([]);
   const edited = matchContinue(
     detail,

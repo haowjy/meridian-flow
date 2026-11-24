@@ -8,8 +8,6 @@ import type { APIRequestContext } from "@playwright/test";
 import postgres from "postgres";
 import { applyDevEnvToProcess } from "../../../../tools/dev/lib/dev-env";
 
-// Every DB-using spec imports this module before it reads `DATABASE_URL`, so a
-// run from a bare shell finds the checkout's database instead of skipping.
 applyDevEnvToProcess();
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -20,7 +18,6 @@ export function openE2eDb(databaseUrl: string): Db {
   return postgres(databaseUrl, { max: 1 });
 }
 
-/** Idempotent e2e fixture user: the dev auth bypass user, without depending on a prior sign-in. */
 export async function ensureTestUserId(db: Db): Promise<string> {
   const { externalId: externalUserId, email } = devAuthIdentity(process.env);
   const rows = await db<{ id: string }[]>`
@@ -59,8 +56,6 @@ export async function seedProjectFixture(
   const threadId = randomUUID();
   const title = `${input.titlePrefix} ${projectId.slice(0, 8)}`;
 
-  // The product's own routes provision the project (with its No Work row), the Work and the
-  // thread; its sources come with the project.
   await postJson(request, "/api/projects", { commandId: randomUUID(), id: projectId, title });
   await postJson(request, `/api/projects/${projectId}/works`, {
     commandId: randomUUID(),
@@ -122,8 +117,6 @@ async function postJson(request: APIRequestContext, path: string, data: unknown)
   }
 }
 
-// Documents are created through the project's tree list on the Loro socket, which `./mf doc put`
-// drives; no HTTP route makes one.
 function createFixtureDocument(
   projectId: string,
   input: { path: string; content: string },
@@ -135,7 +128,6 @@ function createFixtureDocument(
     {
       cwd: REPO_ROOT,
       encoding: "utf8",
-      // Playwright's FORCE_COLOR puts ANSI codes in the portless list mf reads its routes from.
       env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
     },
   );
@@ -228,10 +220,6 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
   });
 }
 
-/**
- * Clear the dev user's projects so the next authenticated request provisions
- * a fresh personal project via ensureDefaultBootstrap.
- */
 export async function prepareAuthenticatedProjectAccess(db: Db): Promise<void> {
   const userId = await ensureTestUserId(db);
   await resetUserProjects(db, userId);

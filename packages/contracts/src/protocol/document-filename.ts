@@ -1,5 +1,3 @@
-/** The input codec for document basenames. Stored parts are the canonical name. */
-
 import { agentsLocationOf } from "../agents/location.js";
 import type { ContextUriScheme } from "../context-uri.js";
 import { readSegment, withSegmentName } from "./entry-segment.js";
@@ -21,11 +19,6 @@ export type DocumentFilenameResult =
   | { ok: true; value: ParsedDocumentFilename }
   | { ok: false; error: { code: "invalid_name"; message: string } };
 
-/**
- * A tracked document's name rules. A registered suffix is explicit; otherwise a destination
- * inherits its source extension. A prose suffix is an alias for the bare name (`ch1.md` is
- * `ch1`). A stored file's name is `fileName`'s, chosen by the row's kind.
- */
 export function parseDocumentFilename(
   filename: string,
   options: { sourceExtension?: string } = {},
@@ -75,12 +68,6 @@ export function parseDocumentFilename(
   };
 }
 
-/**
- * The name parts a document gets when created at `path`, the full source-relative path. The
- * location chooses the kind: a file in an Agents location is code text that keeps its suffix
- * (`agents/critic.md`, `mars.toml`), because Mars reads those bytes. Anywhere else the name codec
- * decides. Later naming follows the stored kind (`storedFilename`).
- */
 export function documentFilenameAt(
   scheme: ContextUriScheme,
   path: string,
@@ -104,9 +91,6 @@ export function documentFilenameAt(
   };
 }
 
-/** Binary storage chooses a registered suffix only when the parsed name is prose.
- * Identity parsing itself never depends on storage kind.
- */
 export function filenameForBinary<
   T extends { name: string; extension: string; filetype?: Filetype | null },
 >(parsed: T, filetype: string, mimeType?: string): T {
@@ -120,18 +104,12 @@ export function filenameForBinary<
     : parsed;
 }
 
-/** Canonical path segment from stored parts. */
 export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
 
 const SUFFIX_BEFORE_EXTENSION = /~([0-9a-f]{4,})\.([^.~]+)$/i;
 
-/**
- * The canonical spelling of a leaf (`ch1.md` is `ch1`, `Kael.md~b21c` is `Kael~b21c`); a name the
- * codec refuses stays literal. A suffix written before a registered extension goes to the end,
- * where the segment has it (`data~3ec0.json` is `data.json~3ec0`).
- */
 export function canonicalLeaf(leaf: string): string {
   const misplaced = SUFFIX_BEFORE_EXTENSION.exec(leaf);
   const spelled =
@@ -144,11 +122,9 @@ export function canonicalLeaf(leaf: string): string {
   });
 }
 
-/** What a row says about its own name: its stored extension and whether it is a tracked document. */
 export interface NamedRow {
   extension: string;
   editable: boolean;
-  /** The row's kind when known: a `source` document keeps its name literally, as a kept file does. */
   filetype?: string | null;
 }
 
@@ -164,11 +140,6 @@ function invalidName(message: string): StoredFilenameResult {
   return { ok: false, message, error: { code: "invalid_name", message } };
 }
 
-/**
- * Destination naming shared by optimistic clients and server commands, chosen by the row's
- * kind and never by its suffix: a stored file keeps its name literally (`fileName`), a tracked
- * document follows the document rules. No row is a create. `filetype` null keeps the file's type.
- */
 export function storedFilename(typed: string, row?: NamedRow): StoredFilenameResult {
   if (row && (!row.editable || row.filetype === "source")) return fileName(typed, row);
   const parsed = parseDocumentFilename(typed, { sourceExtension: row?.extension });
@@ -181,15 +152,6 @@ export function storedFilename(typed: string, row?: NamedRow): StoredFilenameRes
     : invalidName(parsed.error.message);
 }
 
-/**
- * A stored file's name (bytes in object storage, or a file kept under a prose suffix such as
- * `binary.md`): literal, never an alias. A typed registered suffix states the extension, the
- * file's own suffix counts even unregistered, and any other name inherits the row's extension.
- * `filetype` is null while the extension is the row's, so the file keeps its type; any other
- * registered suffix names the type it would convert to, which the mover then refuses or accepts.
- * A kept prose file refuses a different prose suffix here, so the writer sees it at once.
- * The row's extension is compared lowercase and kept as stored.
- */
 function fileName(typed: string, row: NamedRow): StoredFilenameResult {
   const input = typed.trim();
   const dot = input.lastIndexOf(".");
@@ -217,10 +179,6 @@ function fileName(typed: string, row: NamedRow): StoredFilenameResult {
   };
 }
 
-/**
- * The name a copy of a stored file gets: a prose suffix other than the row's own is only a name
- * (a PNG copied to `x.md` is `x.png`), and a kept prose file never converts.
- */
 export function copiedFilename(typed: string, row: NamedRow): StoredFilenameResult {
   const input = typed.trim();
   const dot = input.lastIndexOf(".");
@@ -232,7 +190,6 @@ export function copiedFilename(typed: string, row: NamedRow): StoredFilenameResu
   return fileName(bare, row);
 }
 
-/** Every (name, extension) pair that renders as `filename`: lookups stay exact and indexed. */
 export function filenameSplits(filename: string): { name: string; extension: string }[] {
   const splits = [{ name: filename, extension: "" }];
   for (let at = 1; at < filename.length - 1; at += 1) {
@@ -243,10 +200,6 @@ export function filenameSplits(filename: string): { name: string; extension: str
   return splits;
 }
 
-/**
- * The parts a stored row renders as `filename`: its own `extension`, compared case-insensitively
- * and cut off with the spelling the filename has; a row with no extension is all name.
- */
 export function splitRendered(
   filename: string,
   extension: string,
@@ -257,10 +210,6 @@ export function splitRendered(
     : { name: filename, extension: "" };
 }
 
-/**
- * The spellings a tree lookup tries for a path's leaf, in order: as written (a file kept as
- * `binary.md` has that exact name), then the codec's alias (`ch1.md` is `ch1`).
- */
 export function addressCandidates(leaf: string): string[] {
   const alias = canonicalLeaf(leaf);
   return alias === leaf ? [leaf] : [leaf, alias];

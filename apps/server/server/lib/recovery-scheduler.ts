@@ -1,4 +1,3 @@
-/** Starts independent recovery passes; domains own their claims and cursors. */
 import {
   type EventSink,
   emitEvent,

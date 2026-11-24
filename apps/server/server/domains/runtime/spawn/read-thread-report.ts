@@ -1,5 +1,3 @@
-/** Exact, lineage-authorized saved execution report read. */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";

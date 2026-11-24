@@ -27,23 +27,17 @@ export type RowMenuItem = {
   destructive?: boolean;
 };
 
-/** An item, or a submenu of items. */
 export type RowMenuEntry =
   | RowMenuItem
   | { id: string; label: ReactNode; icon: LucideIcon; items: readonly RowMenuItem[] };
 
-/** A row's actions, drawn the same in its right-click menu and its ⋯. */
 export type RowMenu = {
-  /** Runs of entries, with a separator between runs. */
   groups: readonly (readonly RowMenuEntry[])[];
-  /** Shown, disabled, in place of the groups: why nothing applies. */
   empty?: ReactNode;
-  /** As either menu opens. */
   onOpen?: () => void;
   onSelect: (id: string) => void;
 };
 
-/** Right-click (and Shift+F10, the context-menu key, a long press) on `children` opens the menu. */
 export function RowContextMenu({ menu, children }: { menu: RowMenu; children: ReactElement }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   return (
@@ -60,7 +54,6 @@ export function RowContextMenu({ menu, children }: { menu: RowMenu; children: Re
   );
 }
 
-/** The row's ⋯: the same menu, from a button the row's height doesn't grow for. */
 export function RowMenuButton({ menu, label }: { menu: RowMenu; label: string }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   return (

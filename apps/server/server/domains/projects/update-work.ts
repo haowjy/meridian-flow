@@ -1,5 +1,3 @@
-/** Applies Work metadata and lifecycle changes as one atomic command. */
-
 import type { WorkId } from "@meridian/contracts/runtime";
 import {
   normalizeWorkMetadata,
@@ -33,7 +31,6 @@ export class WorkNameRequiredError extends Error {
   }
 }
 
-/** Canonical metadata semantics for every human, model, and reversal caller. */
 export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateWorkCommandInput {
   const normalized = normalizeWorkMetadata(input);
   if (normalized.ok) return normalized.value;
@@ -88,7 +85,6 @@ export async function updateWorkTransition(
   return { before: result.before, after: result.after, changed: result.changed };
 }
 
-/** Changes archive lifecycle without overloading the AI-owned status text. */
 export async function setWorkArchived(
   deps: {
     works: WorkRepository;

@@ -1,8 +1,3 @@
-/**
- * The catalog the writer sees, computed from the levels' saved versions, and the binding of a
- * chat to one Agent of it. A package is used only once it is saved (`save-packages.ts`); `files`
- * reads the files besides, to say what each package's state is and what a Save would publish.
- */
 import type {
   AgentCatalog,
   AgentCatalogItem,
@@ -64,19 +59,12 @@ export class AgentSelectionError extends Error {
   }
 }
 
-/** A skill the `/` menu offers or a writer invoked. */
 export interface CatalogSkill extends SkillListing {
   level: AgentLevel;
 }
 
 export interface BoundAgentCatalog extends PackageSaver {
-  /** The saved Agents of the built-in, user and (with `projectId`) project levels. */
   list(userId: string, input: { projectId?: string }): Promise<AgentCatalog>;
-  /**
-   * Binds the newest saved Agent of the selection's name; the selection's revision id is used
-   * only when that name is no longer saved, and only if a Save of this account or project (which
-   * the caller has authorized) holds it, or it is a built-in.
-   */
   resolvePrimary(
     userId: string,
     selection: AgentSelection,
@@ -85,60 +73,28 @@ export interface BoundAgentCatalog extends PackageSaver {
     | { ok: true; revision: AgentRevision; configuration: ResolvedAgentConfiguration }
     | { ok: false; reason: "not-found" | "unavailable"; details: string[] }
   >;
-  /**
-   * Every level's Agent and skill files as the files are now, with Mars's verdict and what each
-   * hides, and every package's Save state.
-   */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
-  /**
-   * The binding a chat moves onto when it compacts: the newest saved Agent of its name,
-   * and each skill the chat invoked pinned again to its newest save, whether or not the Agent
-   * moved (a skill no longer saved keeps its pin). A thread with a parent keeps its binding
-   * while its model is offered: its configuration came from the resolver that spawned it, with
-   * the parent's overrides, and this resolver would rebuild it without them. Undefined to keep
-   * the binding: the Agent is gone or its newest save can't run and no skill moved, or nothing
-   * changed. Writes no binding; the caller writes the result with `replaceThreadBinding`.
-   */
   refreshBinding(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
   ): Promise<(AgentRevisionBinding & { revision: AgentRevision }) | undefined>;
-  /**
-   * The binding a turn runs on. A chat bound to a model the host no longer offers moves to its
-   * Agent's current model, children included: the stored binding is replaced and returned. A
-   * model still offered never moves, so a running chat keeps it. Costs no read when it is offered.
-   */
   followRemovedModel(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
     bound: AgentRevisionBinding,
   ): Promise<AgentRevisionBinding>;
-  /**
-   * The Agent file a chat is bound to, as saved, the model, reasoning and availability its next
-   * turn runs at, and whether a newer save of the Agent or of an
-   * invoked skill would take over at the chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
-   */
   boundAgent(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
   ): Promise<ThreadAgent | undefined>;
-  /**
-   * A file's text as its package's latest Save holds it, by level-relative path
-   * (`AgentFileStatus.path`); a built-in's as shipped. Undefined when that version has no such file.
-   */
   savedFile(
     userId: string,
     input: { projectId?: string; level: AgentLevel; path: string },
   ): Promise<string | undefined>;
-  /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
   userSkills(userId: string, input: { projectId?: string }): Promise<CatalogSkill[]>;
-  /**
-   * A saved skill by name for a writer's `/skill`, with the reference that pins the exact files it
-   * was read from. Undefined when no level offers it.
-   */
   resolveSkill(
     userId: string,
     input: { projectId?: string; slug: string },
@@ -149,13 +105,9 @@ export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
   onSaved?: (userId: string, projectId: string | undefined, level: AgentsLevel) => void;
   levelFiles: AgentLevelFiles;
-  /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
-  /** The model id a chat starts with: the default for no name, else an alias resolved; an id stays as written. */
   modelFor(named?: string): string | undefined;
-  /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
-  /** Why the host doesn't offer a model; empty when it does. Says nothing of an Agent's fields or tools. */
   modelUnavailable(model: string): string[];
 }): BoundAgentCatalog {
   const { store } = input;
@@ -169,20 +121,15 @@ export function createBoundAgentCatalog(input: {
       ]),
     ),
   );
-  /** The stored row of `slug` in `pkg`, retaining the package's files the first time. */
   const rowOf = async (pkg: CompiledPackage, slug: string) =>
     (await install(pkg)).definitions.find((definition) => definition.slug === slug);
 
-  /** The model a chat started on this Agent would run. */
   const modelOf = (definition: CompiledAgentDefinition) =>
     input.modelFor(definition.metadata.model);
 
-  /** Why an Agent cannot run: its errors, then what the host adds. */
   const reasonsOf = (
     agent: Pick<CompiledAgent, "definition" | "diagnostics">,
-    /** The file the reasons are read on: its own findings need no file name. */
     ownFile?: string,
-    /** Whether only an Agent a writer can start a conversation with counts as available. */
     asPrimary = true,
   ): string[] => {
     const { definition } = agent;
@@ -199,7 +146,6 @@ export function createBoundAgentCatalog(input: {
     return input.unavailableReasons(definition, model);
   };
 
-  /** The item a writer sees; its revision id names the content shown. */
   const itemOf = (entry: Combined<AgentEntry>): AgentCatalogItem => {
     const found = entry.value?.agent;
     const id =
@@ -248,8 +194,6 @@ export function createBoundAgentCatalog(input: {
   ): ReturnType<BoundAgentCatalog["resolvePrimary"]> => {
     const current = winners(agentsOf(saved)).find((entry) => entry.slug === selection.slug)?.value;
     const newest = current ? await rowOf(current.package, current.agent.slug) : undefined;
-    // The name is no longer saved (removed or renamed) or its newest version cannot run: the
-    // version the picker showed still can, so a chat is not refused over a later Save.
     const builtin = builtinShown.get(selection.definitionRevisionId);
     const shown = async () =>
       builtin
@@ -324,8 +268,6 @@ export function createBoundAgentCatalog(input: {
         levels.readSaves(userId, projectId),
       ]);
       const packages = await statuses(all, saves);
-      // What the saved versions do: a file's hiding and hidden follow the saved catalog, not the
-      // files, and a file with no saved version is not in use at all.
       const savedLevels = await levels.fromSaves(saves);
       const savedAgents = new Map<string, Layered<AgentEntry>>(
         agentsOf(savedLevels).flatMap((entry) =>
@@ -369,7 +311,6 @@ export function createBoundAgentCatalog(input: {
         const path = `${entry.value.folder}${file}`;
         const saved = savedAgents.get(`${entry.level}:${path}`);
         const savedAgent = saved?.value?.agent;
-        // Only a read Agent has runtime reasons; without one, its Errors are its findings.
         const runtimeOf = (agent: CompiledAgent | undefined) =>
           agent?.definition ? reasonsOf(agent, file, false) : null;
         return [
@@ -440,9 +381,7 @@ export function createBoundAgentCatalog(input: {
       const bound = await store.readThreadBinding(thread.id);
       if (!bound?.revision) return undefined;
       const { revision } = bound;
-      // A binding that only moves to another model is not a newer saved version.
       const refreshed = await catalog.refreshBinding(userId, projectId, thread);
-      // Everything below describes the next turn, which a removed model has already moved.
       const runs = await effectiveBinding(userId, projectId, thread, bound, { refreshed });
       const agent = runs.revision ?? revision;
       const source = await store.readSource(agent.packageRevisionId);
@@ -468,7 +407,6 @@ export function createBoundAgentCatalog(input: {
 
     async followRemovedModel(userId, projectId, thread, bound) {
       const moved = await effectiveBinding(userId, projectId, thread, bound);
-      // effectiveBinding returns its input itself when nothing moves; a copy would write every turn.
       if (moved === bound || !moved.revision) return bound;
       await store.replaceThreadBinding(
         thread.id,
@@ -485,24 +423,17 @@ export function createBoundAgentCatalog(input: {
       return refreshFrom(userId, projectId, thread, bound);
     },
   };
-  /**
-   * The binding a chat's next turn runs on, read-only: the stored one, unless the host no longer
-   * offers its model and the Agent's newest save resolves to another, which `followRemovedModel`
-   * writes for the turn and the chat's Agent read reports.
-   */
   async function effectiveBinding(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
     bound: AgentRevisionBinding,
-    /** `refreshFrom`'s result for this binding, when the caller already has it. */
     known?: { refreshed: Awaited<ReturnType<typeof refreshFrom>> },
   ): Promise<AgentRevisionBinding> {
     if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision })) return bound;
     const moved = known ? known.refreshed : await refreshFrom(userId, projectId, thread, bound);
     return moved?.revision ? moved : bound;
   }
-  /** Whether the host still offers the model the chat is bound to. */
   const modelStillOffered = (bound: AgentRevisionBinding & { revision: AgentRevision }) =>
     input.modelUnavailable(bound.configuration.model).length === 0;
 
@@ -514,13 +445,9 @@ export function createBoundAgentCatalog(input: {
   ): ReturnType<BoundAgentCatalog["refreshBinding"]> {
     const { revision } = bound;
     if (!revision) return undefined;
-    // A child's configuration came from the resolver that spawned it, with the parent's
-    // overrides, and this resolver would rebuild it without them: it moves only off a model that left.
     if (thread.parentThreadId !== null && modelStillOffered({ ...bound, revision }))
       return undefined;
     const saved = await levels.saved(userId, projectId);
-    // The bound version is the fallback, so an Agent that is gone or whose newest save can't
-    // run resolves to what the chat already has.
     const newest = await primaryIn(
       saved,
       userId,
@@ -529,9 +456,6 @@ export function createBoundAgentCatalog(input: {
     );
     let moved: { revision: AgentRevision; configuration: ResolvedAgentConfiguration } | undefined;
     if (newest.ok) {
-      // An alias in the Agent's `model` was resolved when the chat started: a newer model in
-      // its family moves no running chat, only a change to the `model` line does, or the
-      // held model leaving the offered ones, which sends the chat to the Agent's current model.
       const named = newest.revision.definition.metadata.model;
       const holds =
         named !== undefined &&
@@ -562,10 +486,6 @@ export function createBoundAgentCatalog(input: {
   return catalog;
 }
 
-/**
- * What a chat would run: the compiled definition and its configuration, without the ids that
- * name a package version. A Save of other files in the package changes those ids, not this.
- */
 function behaviourOf(agent: {
   definition: CompiledAgentDefinition;
   model: string;
@@ -599,10 +519,6 @@ function runsDifferently(
   );
 }
 
-/**
- * Whether a writer can start a conversation with the Agent: only `mode: primary`. An Agent with no
- * `mode` is a subagent, as `mars agents` lists it.
- */
 export function isPrimary(definition: CompiledAgentDefinition): boolean {
   return definition.metadata.mode === "primary" && definition.metadata["user-invocable"] !== false;
 }

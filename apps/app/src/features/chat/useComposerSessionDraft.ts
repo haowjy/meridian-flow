@@ -1,4 +1,3 @@
-/** Mounts a pane on the shared per-tab authoring owner. */
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 
@@ -7,7 +6,6 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     () => composerSessionDraft(accountId, scope),
     [accountId, scope.kind, scope.id],
   );
-  // Re-reads the notices and the outside document change when the store changes; typing never publishes.
   useSyncExternalStore(owner.subscribe, owner.getVersion, owner.getVersion);
   useEffect(() => {
     window.addEventListener("pagehide", owner.flush);

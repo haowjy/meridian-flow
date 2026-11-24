@@ -1,4 +1,3 @@
-/** Account-stamped confirmed-snapshot cache. The server remains the preference authority. */
 import { ACCOUNT_LANGUAGES, ACCOUNT_THEMES } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -9,7 +8,6 @@ export const ACCOUNT_SETTINGS_CACHE_VERSION = 1;
 
 type SettingsCachePayload = { settings: AccountSettings; writeId: string };
 
-/** Self-contained so the classic pre-paint script can use exactly the runtime validator. */
 export function parseSettingsCachePayload(
   value: unknown,
   languages: readonly string[],
@@ -52,7 +50,6 @@ export function readAccountSettingsCache(accountId?: string): AccountSettings | 
 }
 export function writeAccountSettingsCache(accountId: string, settings: AccountSettings): void {
   try {
-    // Confirming an unchanged optimistic value must still wake other tabs.
     if (cache(accountId).write({ settings, writeId: crypto.randomUUID() }))
       localStorage.setItem(ACCOUNT_SETTINGS_ACTIVE_KEY, accountId);
   } catch {

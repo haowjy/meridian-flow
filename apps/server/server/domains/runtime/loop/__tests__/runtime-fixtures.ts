@@ -1,7 +1,5 @@
-/** Small independent notice/binding fixtures shared with non-loop tests. */
 import type { Notice, NoticePort } from "../../../notices/index.js";
 import type { AgentRevisionStore } from "../../../packages/index.js";
-/** Loop fixtures name their bound threads; newly created children remain unbound. */
 export function createTestAgentBinding(
   model: string,
   systemPrompt = "",

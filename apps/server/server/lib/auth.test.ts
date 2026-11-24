@@ -1,7 +1,3 @@
-/**
- * Auth provisioning tests: verify external WorkOS identities map to internal
- * users idempotently and unauthenticated requests are rejected.
- */
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import type { createAuthService } from "@workos/authkit-session";

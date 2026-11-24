@@ -1,4 +1,3 @@
-/** `./mf seed`: one-shot scenario setup (docs, a thread, opening messages) from a JSON fixture. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { EXIT, type ExitCode, usageError } from "../../core/cli-error";
@@ -27,7 +26,6 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-/** Structural validation with precise paths; unknown keys are rejected so typos fail loudly. */
 export function parseSeedFixture(raw: unknown): SeedFixture {
   const fail = (message: string): never => {
     throw usageError(`Invalid seed fixture: ${message}`);

@@ -131,8 +131,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               `;
             }
           } finally {
-            // The watchdog bounds the assertion, not the underlying repository call.
-            // Drain it after releasing the competing lock before the DB runner resets.
             if (warmCall)
               await warmCall.then(
                 () => undefined,

@@ -7,11 +7,6 @@ import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { Switch } from "@/components/ui/switch";
 
-/**
- * The server's tools as it lists them now, to choose which the AI may use. Until the owner
- * decides how calls with effects are held, only tools the server marks read-only can be chosen;
- * the others are listed once, under the reason.
- */
 export function ToolChooser({
   tools,
   initial,
@@ -21,7 +16,6 @@ export function ToolChooser({
   onCancel,
 }: {
   tools: readonly McpToolView[];
-  /** The tools chosen when the list opens. */
   initial: ReadonlySet<string>;
   pending: boolean;
   error: string | null;

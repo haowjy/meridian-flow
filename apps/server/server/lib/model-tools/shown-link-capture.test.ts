@@ -1,16 +1,3 @@
-/**
- * E-2: shown-link capture records only what the model was actually shown
- * (contract §7.2), through the real runtime loop, tool registrations,
- * executor and reference reader. A copy's private source read, a grep match
- * past the passage cap, an unauthorized grep hit, a `thread_history` item
- * quoting an earlier write, a read whose result never came back (cancelled or
- * timed out), a result whose persistence failed, and a reference read from a
- * preparation that failed, was cancelled or was retried never become
- * evidence; the shown read, echo, returned passages and accepted reference
- * reads do, in the view their facts were spelled in, under the turn that
- * shows them. No persisted result carries the evidence itself.
- */
-
 import type { WriteOutcome } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
@@ -59,8 +46,6 @@ const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
 
-// The thread's Work, chain and file policy are not under test: every call
-// resolves to one live context port and every grant is a live edit grant.
 vi.mock("./tool-context.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./tool-context.js")>();
   return {
@@ -82,10 +67,6 @@ const fact = (n: number): SpelledLinkFact => ({
   address: `user://target-${n}`,
 });
 
-/**
- * A core outcome whose facts were spelled in `view` from `holderUri`; either
- * may differ from the grant's and the address the handler resolved.
- */
 function success(
   command: "read" | "insert",
   links: SpelledLinkFact[],
@@ -102,7 +83,6 @@ function success(
   };
 }
 
-/** The three documents at the root of one source, as the tree reads show them to every view. */
 function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
   const found = <T>(node: T | undefined): PathResolution<T> =>
     node ? { kind: "found", node } : { kind: "not_found" };
@@ -126,7 +106,6 @@ function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
   };
 }
 
-/** Five matching blocks in each document, one link each; three passages come back. */
 const grepEntries = Array.from({ length: 5 }, (_, n) => [`h${n}|needle ${n}`, "x|gap"]).flat();
 const grepLinks = grepEntries.map((_, index) => (index % 2 === 0 ? [fact(index / 2)] : []));
 
@@ -148,7 +127,6 @@ const done: GenerateResult = {
   provider: "openai",
 };
 
-/** A plain read that waits for `release`; resolves `started` once it is pending. */
 function pausedRead() {
   let release!: () => void;
   let started!: () => void;
@@ -169,7 +147,6 @@ async function harness(
   options: {
     read?: () => Promise<void>;
     readTimeoutMs?: number;
-    /** The blocks every document's grep read returns, with each block's facts. */
     grep?: { entries: string[]; links: SpelledLinkFact[][] };
     write?: (context: {
       responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
@@ -182,7 +159,6 @@ async function harness(
     threads: { findByIdIncludingDeleted: async () => null },
     turns: { findById: async () => null },
   });
-  // Which turn each showing was recorded under, by document.
   const recordedTurns: Array<{ documentId: string; turnId: string }> = [];
   const store: ShownLinkStore = {
     ...inner,
@@ -192,11 +168,8 @@ async function harness(
         recordedTurns.push({ documentId: showing.documentId, turnId: evidence.turnId });
     },
   };
-  // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
   const agentEdit = {
-    // A copy's source read asks for nodes; a plain read shows facts spelled
-    // in a reply's pinned draft view, not the live grant it was routed with.
     read: async (_command: unknown, context: { includeNodes?: boolean }) => {
       if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
       const n = plainReads++;
@@ -234,11 +207,9 @@ async function harness(
     refreshDocumentProjection: async () => {},
     drafts: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => agentEdit,
-    // Every `write` is a command; this fake runs its effect and answers its result as the outcome.
     modelEdits: () => ({
       ...agentEdit,
       catchUp: async () => {},
-      // An edit's evidence is recorded in its own command, as the document side does.
       run: async (input: {
         owner: { threadId: string; turnId: string };
         effect(): Promise<{ toolResult: unknown; evidence?: ResultEvidence }>;
@@ -290,7 +261,6 @@ async function harness(
     contextPorts: { chatFiles: emptyOwnerLookup },
     fileAccess: {
       authorize: async () => ({ level: "edit", destination: { kind: "live" }, facts: {} }),
-      // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
         new Map(ids.filter((id) => id !== HIDDEN).map((id) => [id, { level: "edit" }])),
     },
@@ -331,14 +301,12 @@ async function harness(
   };
 }
 
-/** The in-memory document evidence, read back through `forDocument`. */
 type ShownLinkStore = ReturnType<typeof createInMemoryDocumentEvidence>;
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
 type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
 
-/** An `@` reference to one of the harness documents. */
 const reference = (documentId: string, name: string) => ({
   type: "reference" as const,
   kind: "document" as const,
@@ -347,12 +315,6 @@ const reference = (documentId: string, name: string) => ({
   uri: `user://${name}`,
 });
 
-/**
- * Runs one model turn that makes `calls`, returning every tool result it
- * persisted. `history` seeds the thread before the run, which then also has
- * the inspection tools. `during` runs once `pending` resolves, while the run
- * prepares or executes.
- */
 async function runTurn(
   h: Harness,
   calls: GenerateResult[],
@@ -365,7 +327,6 @@ async function runTurn(
     history?: (rig: Rig) => Promise<void>;
   } = {},
 ) {
-  // The inspection tools read the scenario's repositories, which exist only once it is built.
   const inspection = {
     repos: undefined as unknown as Rig["repos"],
     registry: undefined as unknown as ToolRegistry,
@@ -427,7 +388,6 @@ async function runTurn(
   };
 }
 
-/** A reader whose read of `uri` fails, as a reference that can't be loaded does; `read` lists what it read. */
 const failingAt = (h: Harness, uri: string) => {
   const reads: string[] = [];
   const read: ReferenceReader["read"] = async (occurrence, ctx) => {
@@ -443,7 +403,6 @@ async function shown(store: ShownLinkStore, threadId: string, documentId: string
     .map((link) => `${link.ref.slice(4, 12)}@${link.view}`)
     .sort();
 }
-/** Host-only evidence: refs and asset identities, and the fields that carry them beside a result. */
 const HOST_FACTS = /doc:|ahead:|asset:|"showing"|"shown"/;
 const expected = (links: SpelledLinkFact[], view = "live") =>
   links.map((link) => `${link.ref.slice(4, 12)}@${view}`).sort();
@@ -511,7 +470,6 @@ const rows: Array<{
   {
     name: "a grep window records neither a link it left out nor one it cut through; verbose shows both",
     async act(check) {
-      // The window keeps about 120 characters either side of the match.
       const filler = "filler ".repeat(100);
       const grep = {
         entries: [
@@ -522,7 +480,6 @@ const rows: Array<{
       };
       const windowed = await harness({ grep });
       const plain = await runTurn(windowed, [toolCall("grep", { pattern: "needle" })]);
-      // What the model reads: the rendered text, not the typed hits beside it.
       const output = plain.results
         .map((result) => toolContentText((result as { content: ToolContentPart[] }).content))
         .join("\n");
@@ -546,7 +503,6 @@ const rows: Array<{
     async act(check) {
       const h = await harness();
       const outcome = success("insert", [fact(96)], undefined, TARGET_URI);
-      // A handler that hands back the whole routed outcome, not the structured shape.
       const registry = createToolRegistry({
         registrations: [
           {
@@ -798,7 +754,6 @@ const rows: Array<{
       const run = await runTurn(h, [], {
         userBlocks: [reference(SOURCE, "source")],
         pending: paused.pending,
-        // A message arriving during the first attempt's read retries it.
         referenceReader: {
           read: (occurrence, ctx) => {
             reads++;
@@ -810,7 +765,6 @@ const rows: Array<{
           paused.release();
         },
       });
-      // The retry answers the newer message, so the discarded read is all there was.
       check(run.outcome.status, "the run completed").toBe("complete");
       check(reads, "the first attempt read the reference").toBe(1);
       check(JSON.stringify(run.referenceBlocks), "its read was discarded").not.toContain("success");

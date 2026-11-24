@@ -1,4 +1,3 @@
-/** Live EventRecord table projection; dev-only inline English is intentional. */
 import type { EventRecord } from "@meridian/contracts/observability";
 import { useEffect, useRef } from "react";
 

@@ -1,5 +1,3 @@
-/** In-memory ProjectRepository for tests: Map-backed project CRUD implementing the port. Shares default-title/slug behavior with the drizzle adapter via shared.ts. */
-
 import type { Project } from "@meridian/contracts/projects";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type {
@@ -10,7 +8,6 @@ import type {
 } from "../../ports/project-repository.js";
 import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
-/** In-memory {@link ProjectRepository} for tests. */
 export function createInMemoryProjectRepository(options?: {
   ensureNoWork?: (projectId: ProjectId) => Promise<unknown>;
 }): ProjectRepository {

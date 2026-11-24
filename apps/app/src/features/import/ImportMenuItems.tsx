@@ -1,4 +1,3 @@
-/** The two items every "Import…" menu offers: pick a folder or pick files. The OS picker opens at once. */
 import { Trans } from "@lingui/react/macro";
 import { Files, Folder } from "lucide-react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";

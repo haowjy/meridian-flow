@@ -1,14 +1,3 @@
-/**
- * useSubagentStop — a running child's Stop, pressed from its card in the parent's transcript.
- * It is the child chat's own Stop: the child's hand-back operation (`useHandBack` on the child's id
- * and composer draft), pressed over the child's newest record, so the child reads Stopped and its
- * queued messages come back to its message box exactly as if the writer had pressed Stop there.
- *
- * The parent holds no live copy of the child's record, and Stop cancels only the execution the
- * press names, so each press first reads the child's snapshot into the store. A read that fails
- * sent nothing; it owes the row the same "Couldn't stop" card a failed Stop does, and Try again
- * presses again.
- */
 import { t } from "@lingui/core/macro";
 import { classifyCommandFailure } from "@meridian/contracts/failures";
 import { readRunState } from "@meridian/contracts/protocol";
@@ -31,7 +20,6 @@ import { useHandBack } from "../useHandBack";
 
 export type SubagentStop = {
   status: StopStatus;
-  /** The failures this row owes the writer, drawn under the row. */
   cards: readonly ChatCard[];
   stop: () => void;
   act: (card: ChatCard) => void;

@@ -1,4 +1,3 @@
-/** Verified byte facts shared by upload receipts and organize inputs. */
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
@@ -24,7 +23,6 @@ export interface FileReceipt {
   storageUrl: string;
   receivedSize: number;
   sha256: string;
-  /** A browser-drawable preview sits beside the object (`previewObjectKey`). */
   hasPreview: boolean;
   facts: {
     kind: "note" | "code" | "docx" | "binary";
@@ -46,7 +44,6 @@ export type ReceiptCandidate =
       entryId: number;
       receipt: FileReceipt;
       changedAfterPick: boolean;
-      /** A document that could not become one (see `classify`); it is stored as a file. */
       keptAsFile: boolean;
     }
   | { kind: "oversize"; entryId: number }
@@ -54,7 +51,6 @@ export type ReceiptCandidate =
 
 const PREVIEWS_IN_FLIGHT = 2;
 
-/** Object I/O finishes before the row lock; losing candidates leave sweepable orphan puts. */
 export async function prepareReceipts(
   repo: ImportRepository,
   objects: ObjectStorePort,
@@ -87,8 +83,6 @@ export async function prepareReceipts(
   for (const part of parts)
     if (!entries.has(part.entryId)) throw new ImportError(404, "entry_not_found");
   const candidates: ReceiptCandidate[] = [];
-  // At most this many of the request's previews are queued at once, so both workers stay busy
-  // while another writer's import still gets its turn in the shared queue.
   const queued = new Set<Promise<void>>();
   const queuePreview = async (task: () => Promise<void>) => {
     if (queued.size >= PREVIEWS_IN_FLIGHT) await Promise.race(queued);
@@ -152,7 +146,6 @@ export async function prepareReceipts(
   return candidates;
 }
 
-/** Pure, request-ordered arbitration against the locked snapshot and its cumulative byte total. */
 export function receiptPatches(
   candidates: ReceiptCandidate[],
   entries: ImportEntry[],

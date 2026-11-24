@@ -1,22 +1,10 @@
-/**
- * The process's one MCP client. Every request it makes to a writer's server goes through
- * `publicFetch`, which allows (`addressRefusal`) https on port 443 only, follows no redirect and dials through the public-address
- * dispatcher (the one import of it for MCP). A session is held per key
- * (`sessionKey`), and one account holds at most `MCP_SESSIONS_PER_ACCOUNT` of them: past that
- * the least recently used idle one closes, a session an edit left behind first.
- */
-
 import { isIP } from "node:net";
 import { MCP_SESSIONS_PER_ACCOUNT, mcpAddressProblem } from "@meridian/contracts/mcp";
 import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/runtime/mcp";
 import { fetch as undiciFetch } from "undici";
 import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispatcher.js";
 
-/**
- * Why Flow will never contact this address, or null. The one rule the settings API applies at
- * add and `publicFetch` applies to every request; a name that only resolves to a private address
- * is refused later by the dispatcher.
- */
+// keep: the one SSRF rule, applied at add and on every request; a name that only resolves to a private address is refused later by the dispatcher
 export function addressRefusal(url: URL): string | null {
   const problem = mcpAddressProblem(url);
   if (problem === "not_https")
@@ -37,7 +25,7 @@ const publicFetch = (async (input: string | URL | Request, init?: RequestInit) =
   const url = new URL(input instanceof Request ? input.url : input);
   const refusal = addressRefusal(url);
   if (refusal) throw new Error(refusal);
-  // Redirects are not followed: a hop could change the scheme or the port.
+  // keep: redirects are not followed: a hop could change the scheme or the port
   const response = await undiciFetch(url, {
     ...(init as Parameters<typeof undiciFetch>[1]),
     dispatcher: publicAddressDispatcher,
@@ -52,7 +40,6 @@ const publicFetch = (async (input: string | URL | Request, init?: RequestInit) =
   return response;
 }) as unknown as typeof fetch;
 
-/** One session per account, connection and settings version: an edit starts a new one in every process. */
 export const sessionKey = (accountId: string, connectionId: string, settingsVersion: number) =>
   `${accountId}/${connectionId}/${settingsVersion}`;
 
@@ -66,7 +53,6 @@ export function createProcessMcpClient(onEvent?: (event: McpEvent) => void): Mcp
   const busy = new Map<string, number>();
   let tick = 0;
   const touch = (key: string) => lastUse.set(key, ++tick);
-  // A key with no session yet is not counted against the limit until its session starts.
   const touchIfOpen = (key: string) => lastUse.has(key) && touch(key);
 
   function enforceLimit(startedKey: string) {
@@ -88,7 +74,6 @@ export function createProcessMcpClient(onEvent?: (event: McpEvent) => void): Mcp
           Number(superseded(b)) - Number(superseded(a)) ||
           (lastUse.get(a) ?? 0) - (lastUse.get(b) ?? 0),
       );
-    // A call is never refused for the limit: with every session busy the account stays over it.
     for (let excess = own.length - MCP_SESSIONS_PER_ACCOUNT; excess > 0 && idle.length; excess--) {
       const key = idle.shift() as string;
       lastUse.delete(key);

@@ -1,9 +1,3 @@
-/**
- * Postgres reads and the stored decision for hand-back and Stop (`HandBackStore`): the facts the
- * pure rule decides from, the `thread_hand_backs` row that makes a replay answer what the first
- * call did, and the content of handed-back messages. Every method runs under the chat's thread lock.
- */
-
 import { type UserMessageBlock, userMessageBlocksFromTurn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
@@ -57,7 +51,6 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
               )
           ).map((turn) => turn.id as string)
         : [];
-      // The predicate of `readOpenExecutionId`: some turn carries the execution, expiry ignored.
       const carried = lease !== undefined && executionTurnIds.length > 0;
       const [holderRow] =
         carried && lease.turnId
@@ -83,8 +76,6 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
       if (scope.kind === "ids") {
         where = and(writer, scope.ids.length > 0 ? inArray(inbox.id, [...scope.ids]) : sql`FALSE`);
       } else {
-        // The rows the record could show (waiting), the ones the open execution answered, the
-        // press's own messages, and every row at or below the watermark another request handed back.
         const mine = scope.mine.length > 0 ? inArray(inbox.id, [...scope.mine]) : sql`FALSE`;
         where = and(
           writer,
@@ -92,7 +83,6 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
             OR (${inbox.handedBackBy} IS NOT NULL AND ${inbox.seq} <= ${scope.seenThrough}))`,
         );
       }
-      // A writer's answer: an option, their own text, or Skip (not an expiry).
       const [writerAnswer] = carried
         ? await db_()
             .select({ id: schema.asks.id })
@@ -150,7 +140,6 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
     },
 
     async cancelExecution(threadId: ThreadId, executionId) {
-      // Matched by execution id with no expiry predicate: an expired holder's row is flagged too.
       const rows = await db_()
         .update(schema.threadRunLeases)
         .set({ cancelRequested: true })

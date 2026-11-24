@@ -65,7 +65,6 @@ const failed = (id: string, prev: string | null, extra: Partial<Turn> = {}) =>
   turn(id, "assistant", prev, { status: "error", error: "boom", ...extra });
 
 it("shows a failed reply's card only while it is the latest row, and a Retry replaces it", () => {
-  // Risk: the card outliving the writer's chance to act (the old split between the view and the block).
   const u1 = turn("u1", "user", null);
   const f = failed("f", "u1");
   const cardsOf = (turns: Turn[], retried?: Set<string>) =>
@@ -84,7 +83,6 @@ it("shows a failed reply's card only while it is the latest row, and a Retry rep
 });
 
 it("anchors a refused Retry on its reply for the view even when the reply was forgotten, and a lost one on the reply itself", () => {
-  // Risk: a refusal card with no row to sit on, and a lost Retry posing as a failed reply.
   const u1 = turn("u1", "user", null);
   const f = failed("f", "u1", { forgottenBy: "r2" });
   const refused = chatCards(
@@ -111,7 +109,6 @@ it("anchors a refused Retry on its reply for the view even when the reply was fo
     ["f", "reply-failed", "retry"],
     ["req:2", "retry-lost", "try_again"],
   ]);
-  // The chat moved past the reply: nothing left to retry.
   const past = chatCards(
     base({
       turns: { turns: [u1, live, turn("u2", "user", "f")] },
@@ -139,7 +136,6 @@ it("anchors a refused Retry on its reply for the view even when the reply was fo
 });
 
 it("cards a manual compaction's failure with Try again, never an autocompaction's, and none once a /compact is queued", () => {
-  // Risk: a bare red line with no action (the old divider), or a Try again that queues a second compaction.
   const u1 = turn("u1", "user", null);
   const compaction = (trigger: "manual" | "auto") =>
     turn("c", "compaction", "u1", {
@@ -179,7 +175,6 @@ it("cards a manual compaction's failure with Try again, never an autocompaction'
 });
 
 it("stacks usage before commands, keeps a writer's unsent words, and anchors a queued command's failures on its row", () => {
-  // Risk: the composer stack's order, and the writer's words or a queued row losing their card.
   const blocked = receiveRecord(
     INITIAL_RUN_STATE_VIEW,
     record({ blocked: { reason: "credits_exhausted" } }, [

@@ -1,5 +1,3 @@
-/** Runs the unlocked summary, then prepares values for an atomic epoch/successor transition. */
-
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { CompactionMetadataCodec } from "../../threads/index.js";
@@ -60,11 +58,7 @@ export async function executeCompaction({
     policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
     revisions: deps.documentRevisions,
   });
-  // The last check before the captured history reaches the summarizer. A Stop on another server has no
-  // local abort: it flags the lease in the transaction that hands the adopted message back, so a set
-  // flag means this history may hold a message that left the chat. The loop's catch turns the throw
-  // into the cancel exit. Stop cancels an expired lease that is still held, so the read is this
-  // execution's own row whatever its expiry; a missing or reassigned row never authorizes the history.
+  // keep: Recheck the execution's owned lease after preparation; a remote Stop may have handed back a message
   const owned = await deps.runClaim.readOwned(input.lease);
   if (!owned || owned.cancelRequested) throw new CompactionCancelledError();
   let summary: SummaryOutcome;
@@ -184,7 +178,6 @@ export async function executeCompaction({
   return { successor };
 }
 
-/** The run was cancelled before the summarizer was called: no history left the process. */
 export class CompactionCancelledError extends Error {
   constructor() {
     super("Compaction cancelled before summarization");

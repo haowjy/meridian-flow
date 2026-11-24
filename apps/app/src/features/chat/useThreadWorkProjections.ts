@@ -1,4 +1,3 @@
-/** A chat's Work-binding subscription: projected signals, receipts and gap resync. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
   decodeWorkHandle,
@@ -74,20 +73,8 @@ export function useThreadWorkProjections({
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
-  /**
-   * Subscription identity, bumped when the thread changes or the hook unmounts.
-   * Only responses belonging to the current subscription may commit.
-   *
-   * Deliberately NOT bumped per trigger: doing that made every trigger cancel
-   * the request the previous one started, so a burst of gaps left the binding
-   * stale — each response arrived to find its own counter already superseded.
-   * Freshness is handled by coalescing below.
-   */
+  // keep: Bump generation only on thread change/unmount, never per trigger; per-trigger bumps cancel the previous request so a burst of gaps leaves the binding stale.
   const generation = useRef(0);
-  /**
-   * The Work-binding resync reads threads + works fresh and converges only if the binding moved.
-   * A gap burst must not run it per gap, so it coalesces: one in flight, one follow-up.
-   */
   const bindingInFlight = useRef(false);
   const bindingAgain = useRef(false);
   const resyncBinding = useCallback(
@@ -126,8 +113,6 @@ export function useThreadWorkProjections({
     const unsubscribe = transport.subscribe(threadId, {
       onLiveState: () => {
         if (accountSignal?.aborted) return;
-        // Head subscriptions omit events between mount and acknowledgment, and a rebind made in
-        // another window pushes nothing: this one fresh read catches both.
         void resyncBinding(threadGeneration);
       },
       onEvent: ({ seq, event }) => {

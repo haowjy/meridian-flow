@@ -1,8 +1,3 @@
-/**
- * The `ls` result: the typed listing the handler returns, and the plain
- * text the model reads of it. The app's tool row and code mode read the
- * fields; nothing parses the text back.
- */
 import type { DocumentFileType } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 
@@ -10,20 +5,14 @@ export interface LsEntry {
   uri: string;
   title?: string | null;
   kind: "file" | "directory";
-  /** True when the agent can't edit the entry. */
   readonly: boolean;
-  /** A non-text file's kind, so the model knows `read` returns no text. Text documents have none. */
   fileType?: DocumentFileType;
-  /** With `verbose`: words in a text document. */
   wordCount?: number;
-  /** With `verbose`: an upload's stored size. */
   sizeBytes?: number;
-  /** With `verbose`: when the file was last edited (ISO 8601). */
   updatedAt?: string;
 }
 
 export interface LsResult {
-  /** The listed folder's URI; null for the root listing, which lists each source. */
   uri: string | null;
   entries: LsEntry[];
 }
@@ -36,7 +25,6 @@ function isLsResult(value: unknown): value is LsResult {
 
 const NAME_ORDER = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
-/** Folders first, then files, each in natural name order (`chapter-2` before `chapter-10`). */
 export function sortLsEntries<T extends Pick<LsEntry, "uri" | "kind">>(entries: readonly T[]): T[] {
   return [...entries].sort(
     (a, b) =>
@@ -45,7 +33,6 @@ export function sortLsEntries<T extends Pick<LsEntry, "uri" | "kind">>(entries: 
   );
 }
 
-/** The model's text for an `ls` result; the executor renders refusals. */
 export function renderLsResult(value: JsonValue): string {
   if (!isLsResult(value)) return JSON.stringify(value);
   if (value.uri === null) {
@@ -54,7 +41,6 @@ export function renderLsResult(value: JsonValue): string {
       : value.entries.map((entry) => entryLine(entry)).join("\n");
   }
   if (value.uri.endsWith("@")) {
-    // An owner listing: each row is the full address to copy, then the owner's label.
     const rows = value.entries.map((entry) => `  ${entry.uri}  ${entry.title ?? ""}`.trimEnd());
     return [value.uri, ...(rows.length > 0 ? rows : ["  (empty)"])].join("\n");
   }
@@ -91,7 +77,6 @@ function words(count: number): string {
   return count === 1 ? "1 word" : `${count} words`;
 }
 
-// Same units as the project rail's file sizes.
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -99,7 +84,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-/** A time as the model reads it: minutes, in UTC. */
 export function formatUtc(value: string | Date): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);

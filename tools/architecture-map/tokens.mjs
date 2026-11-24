@@ -1,12 +1,6 @@
-/**
- * The viewer's colours, read from the project's design token files (the config's `tokens.files`)
- * each time they are asked for: the custom property declarations of the blocks the config names,
- * as one stylesheet. A Tailwind `@theme` block, which a browser ignores, becomes `:root`.
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The top-level blocks of a stylesheet, comments removed: [{ selector, body }]. */
 function topLevelBlocks(css) {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const blocks = [];
@@ -30,11 +24,6 @@ function topLevelBlocks(css) {
   return blocks;
 }
 
-/**
- * The token stylesheet for `tokens` ({ files: [{ file, blocks }] }), read from the repo at `root`.
- * A block is taken when one of the selectors in its list is in `blocks` (`@theme` names the Tailwind block).
- * Returns { css, names: the property names without `--`, missing: "file: selector" for each listed block that isn't there }.
- */
 export function readTokens(root, tokens) {
   const rules = [];
   const names = new Set();

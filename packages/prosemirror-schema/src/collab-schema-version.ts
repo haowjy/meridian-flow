@@ -1,5 +1,3 @@
-/** Canonical version grammar, storage encoding, compatibility algebra, and key tag. */
-
 export type CollabSchemaVersion = {
   major: number;
   minor: number;

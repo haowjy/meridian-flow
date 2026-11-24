@@ -1,4 +1,3 @@
-/** GET /api/projects/:projectId/documents/:documentId/drafts: active drafts with changes to the document. */
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

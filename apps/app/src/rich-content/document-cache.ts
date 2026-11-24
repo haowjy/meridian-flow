@@ -1,4 +1,3 @@
-/** Bounded source-result cache for settled blocks remounted by the virtual transcript. */
 export function createDocumentCache<T>() {
   const entries = new Map<string, T>();
   let characters = 0;

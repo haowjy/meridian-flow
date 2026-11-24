@@ -1,4 +1,3 @@
-/** `log`: recent server observability records. */
 import type { CommandGroup } from "../../core/command";
 import { logCommand } from "./log";
 

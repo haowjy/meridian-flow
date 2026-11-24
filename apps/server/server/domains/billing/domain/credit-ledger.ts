@@ -1,18 +1,13 @@
-/** Credit ledger port consumed by runtime cost gates, billing APIs, and grant provisioning. */
-
 export type CreditGrantSource = "manual" | "stripe" | "subscription" | "free";
 
 export interface CreditGrantInput {
   userId: string;
   source: CreditGrantSource;
   amountMillicredits: string;
-  /** Machine idempotency/grouping key for non-Stripe grants (free_tier_*). Never display to users. */
   reason?: string | null;
-  /** Human-facing activity-feed label. This is the only grant reason text safe to display. */
   displayReason?: string | null;
   expiresAt?: string | Date | null;
   stripeSessionId?: string | null;
-  /** Machine idempotency key for Stripe grants and deterministic free-tier grants. Never display to users. */
   stripeIdempotencyId?: string | null;
   metadata?: Record<string, unknown>;
 }
@@ -31,7 +26,6 @@ export interface CreditDebitInput {
   usageEventId: string;
 }
 
-/** Internal lot view for the balance route to compute percentage + extra-usage USD. */
 export interface CreditLotView {
   source: "purchase" | "grant" | "subscription" | "debt";
   balanceMillicredits: string;
@@ -58,7 +52,6 @@ export interface CreditLedger {
   getBalanceBreakdown(input: { userId: string }): Promise<{ lots: CreditLotView[] }>;
   listTransactions(input: { userId: string; limit?: number }): Promise<CreditTransactionRow[]>;
   getThreadDebitTotal(input: { userId: string; threadId: string }): Promise<string>;
-  /** Entitlement marker: expires_at > NOW() regardless of balance. */
   hasUnexpiredLot(input: { userId: string; source: CreditGrantSource }): Promise<boolean>;
 }
 

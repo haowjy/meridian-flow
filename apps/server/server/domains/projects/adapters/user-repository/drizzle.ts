@@ -1,5 +1,3 @@
-/** Drizzle UserRepository: idempotent user provisioning over the `users` table (ensure-on-auth). */
-
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
@@ -14,17 +12,12 @@ export interface DrizzleUserRepositoryDeps {
   db: Database;
 }
 
-/** Drizzle-backed {@link UserRepository} over the `users` table. */
 export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): UserRepository {
   const { db } = deps;
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
-      // Every authenticated request lands here, and auth never takes a key-exclusive lock on
-      // `users` unless the email changes: naming a unique column in an UPDATE's SET (even to
-      // its current value) locks the row `FOR UPDATE`, which queues behind any open
-      // transaction holding a key-share on it through a foreign key, with a pooled
-      // connection held meanwhile. A plain read and a non-key UPDATE never wait there.
+      // keep: Never SET users.email on a no-change update; FOR UPDATE queues behind FK key-share locks
       const [current] = await db
         .select({
           id: users.id,
@@ -35,7 +28,6 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         .from(users)
         .where(eq(users.externalId, input.externalId))
         .limit(1);
-      // This row holds the email (it is unique), so a profile-only change cannot conflict.
       if (current?.email === input.email) {
         if (current.name !== input.name || current.avatarUrl !== input.avatarUrl) {
           await db
@@ -51,8 +43,6 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
       }
 
       return db.transaction(async (tx) => {
-        // The lock serializes exact database email keys only; unique indexes
-        // remain integrity backstops rather than expected control flow.
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${input.email}`}, 0))`,
         );

@@ -1,4 +1,3 @@
-/** System instruction for the context URI namespaces exposed to model tools. */
 import { CONTEXT_URI_SCHEME_NAMES } from "@meridian/contracts/context-uri";
 
 export const RUNTIME_URI_SYSTEM_INSTRUCTION = [

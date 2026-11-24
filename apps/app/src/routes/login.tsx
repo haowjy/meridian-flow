@@ -46,7 +46,6 @@ function LoginPage() {
   );
 }
 
-/** Branded ink hero — deep ground, glowing needle, wordmark, and a corner seal. */
 function LoginHero() {
   return (
     <section className="relative hidden w-[55%] flex-col justify-center overflow-hidden bg-ink-deep px-14 py-16 lg:flex">

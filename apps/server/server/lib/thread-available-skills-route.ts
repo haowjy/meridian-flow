@@ -1,4 +1,3 @@
-/** Route core for GET /api/threads/:threadId/skills — user slash catalog. */
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
 import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
 import { resolveThreadUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";

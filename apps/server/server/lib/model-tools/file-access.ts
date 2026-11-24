@@ -1,8 +1,3 @@
-/**
- * The model tools' file-access adapter (file-access §1, §8): who a call acts
- * as, the grants it asks the file policy for, and a refusal as the tool's
- * error. Refusal copy lives in `file-access-denial-copy.ts`.
- */
 import {
   DOCUMENT_NOT_FOUND_MESSAGE,
   type DocumentCommandName,
@@ -38,11 +33,6 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/**
- * The agent a tool call acts as (file-access §8): the thread's person, its
- * delegation chain read fresh, and the Work whose drafts its drafted writes
- * land in.
- */
 export async function agentPrincipal(
   deps: Pick<ToolWiringDeps, "readAgentChain">,
   context: ResolvedModelContextPort,
@@ -67,12 +57,6 @@ export async function agentPrincipal(
   };
 }
 
-/**
- * Where an explicit `version: "draft"` read goes: the draft the Work kept of the document, so the
- * result says `draft`. A document whose content source can't hold a draft (its `contentScheme`
- * from the grant's facts, which a move keeps apart from its address), or one with none kept,
- * reads where its access sends it, as `draft` always did there.
- */
 export async function keptDraft(
   deps: Pick<ToolWiringDeps, "drafts">,
   grant: Pick<FileGrant, "facts">,
@@ -87,10 +71,6 @@ export async function keptDraft(
     : null;
 }
 
-/**
- * The file policy's grant on a document, at the destination its access gives or at `at`; a
- * denial comes back as the tool's error.
- */
 export async function documentGrant<N extends FileNeed>(
   deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
@@ -113,10 +93,6 @@ export async function documentGrant<N extends FileNeed>(
     : grant;
 }
 
-/**
- * The removal record behind a `not_found` the principal could have read: a document id the
- * model already holds, whose file was removed. A reader without access learns nothing more.
- */
 export async function removalBehind(
   deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
@@ -128,11 +104,6 @@ export async function removalBehind(
   return (await deps.documentRemovals.lookup([documentId])).get(documentId);
 }
 
-/**
- * Why a refused text edit is returned instead of refused: its Work is archived or deleted (the
- * files read, and take no new words), or its document was removed. Null: the refusal is who is
- * acting, or the file never existed.
- */
 export function returnedWhy(
   denial: FileAccessDenied,
   removal: DocumentRemovalRecord | undefined,
@@ -142,7 +113,6 @@ export function returnedWhy(
   return removal ? "document_removed" : null;
 }
 
-/** A missing file as the tool's error. */
 export function documentNotFoundError(
   command: DocumentCommandName,
   path?: string,
@@ -158,7 +128,6 @@ export function documentNotFoundError(
   };
 }
 
-/** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
 export function fileAccessDeniedError(
   command: DocumentCommandName,
   denial: FileAccessDenied,
@@ -186,11 +155,6 @@ export function firstRefusal(refusal: FileEditRefusedError): FileAccessDenied {
   return denial;
 }
 
-/**
- * Runs `operation` under the edit grant on the container a create or copy
- * makes its file in; the namespace transaction confirms it under its locks
- * (seam C). No target runs it bare.
- */
 export async function inContainer<T>(
   deps: Pick<ToolWiringDeps, "fileAccess">,
   principal: Principal,
@@ -206,7 +170,6 @@ export async function inContainer<T>(
   return fileAccessDeniedError(command, firstRefusal(result.refusal));
 }
 
-/** Whether the agent may create in the folder a path names; undefined when it names no owner. */
 export async function containerReadonly(
   deps: Pick<ToolWiringDeps, "fileAccess" | "works">,
   principal: Principal,
@@ -222,7 +185,6 @@ export async function containerReadonly(
   return isFileAccessDenied(grant);
 }
 
-/** A `version: "live"` read of a listing or search: its documents are decided live, not in a draft. */
 export function liveListing(version: "draft" | "live" | undefined): FileDestination | undefined {
   return version === "live" ? { kind: "live" } : undefined;
 }

@@ -8,16 +8,6 @@ import { didNotRunResult, type ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 
-/**
- * Answers the document commands an assistant turn left open. A model response whose process died
- * can hold `tool_use` blocks for effectful calls that never got their result: the edit may have
- * committed, may be committing, or never started. Each one is resolved under its key and its
- * result block is stored, in call order, under the id the loop would have used.
- *
- * Runs inside the finalizer's thread-lock transaction under the caller's session claim, so no
- * lease check: nothing else can store a block for this turn. Other tools' unanswered calls keep
- * the request-time stub (`context-builder.ts`): nothing can run for them later.
- */
 export function createCommandRecovery(deps: {
   repos: PersistenceDeps["repos"];
   eventWriter: PersistenceDeps["eventWriter"];
@@ -37,7 +27,6 @@ export function createCommandRecovery(deps: {
       const { toolCallId, toolName } = block.content as { toolCallId: string; toolName: string };
       if (!block.responseId || !deps.toolRegistry.getRegistration(toolName)?.documentCommand)
         return [];
-      // The command's identity is the response and the id: a call id is the model's per response.
       return [{ key: { responseId: block.responseId, toolCallId }, toolCallId }];
     });
     if (open.length === 0) return;

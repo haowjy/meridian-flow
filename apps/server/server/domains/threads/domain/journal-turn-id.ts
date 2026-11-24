@@ -1,8 +1,3 @@
-/**
- * Journal turn-id derivation: centralizes how persisted orchestrator events
- * expose their owning turn to JournalEntry metadata. Adapters must use this
- * helper instead of reimplementing shape-specific payload inspection.
- */
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 
 export function deriveJournalTurnId(event: OrchestratorEvent): string | null {

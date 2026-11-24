@@ -1,5 +1,3 @@
-/** Renders the transcript and owns its scroll viewport. */
-
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
 import type {
@@ -45,9 +43,7 @@ import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { ChatStop } from "./useChatStop";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
-/** What the queued rows can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
 export type TurnQueueControls = {
-  /** The x on a queued row. */
   remove: (turnId: string) => void;
   cancelQueue: () => void;
   sendNow: { available: boolean; busy: boolean; send: () => void };
@@ -55,32 +51,19 @@ export type TurnQueueControls = {
 
 export type TurnListProps = {
   threadId: string;
-  /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
   view: TranscriptView;
   historySettled: boolean;
-  /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
-  /** Accessible label for the scroll log region. */
   ariaLabel: string;
-  /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
-  /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
   chatStop?: ChatStop | null;
-  /** The queued rows' x, Cancel queue and Send now. */
   queue?: TurnQueueControls | null;
-  /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
-  /** Edit on the writer's message above a stopped reply: put its words back in the message box. */
   onEditStopped?: ((turnId: string) => void) | null;
-  /** Whether a reply is a Retry's stand-in the server doesn't have yet: nothing to read or act on. */
   isStandIn?: ((turnId: string) => boolean) | null;
-  /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
   busy?: boolean;
-  /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
   inherited?: InheritedView | null;
-  /** The fork's inherited read failed: its history is missing, so say so where it would start. */
   onRetryInherited?: (() => void) | null;
   threadUsage?: {
     inputTokens: number;
@@ -93,10 +76,6 @@ export type TurnListProps = {
   } | null;
 };
 
-/**
- * A virtual row: a transcript row, the missing-history alert above them, or the
- * queued commands at the tail.
- */
 type ListRow =
   | ViewRow
   | { kind: "inherited-failed" }
@@ -107,9 +86,7 @@ const SWITCHES_BEFORE_REPLY_KEY = "queued-controls-before-reply";
 const INHERITED_FAILED_KEY = "inherited-failed";
 const NO_CONTROLS: readonly QueuedControl[] = [];
 
-/** Estimated row height before measurement; corrected by `measureElement`. */
 const ESTIMATED_TURN_HEIGHT = 160;
-/** Top breathing room above the first turn (virtual paddingStart, px). */
 const TOP_INSET = 24;
 
 export function TurnList({
@@ -135,20 +112,12 @@ export function TurnList({
   const { rows } = view;
   const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
   const lastAssistantIdx = findLastLocalAssistantIndex(rows);
-  // While a run is active, usage belongs to that live row. Once it settles,
-  // keep the final aggregate on the latest settled action row. This avoids
-  // moving the snapshot through historical model-step rows at each boundary.
   const stoppedMessageId = useMemo(() => findStoppedMessageId(rows), [rows]);
   const usageAssistantIdx = busy ? findLatestLocalLiveAssistantIndex(rows) : lastAssistantIdx;
-  // Cancel queue and Send now sit on the last queued row; Cancel queue needs two to differ from the x.
   const { lastQueuedTurnId, queuedCount } = useMemo(() => {
     const queued = rows.filter((row) => row.queued);
     return { lastQueuedTurnId: queued.at(-1)?.turn.id ?? null, queuedCount: queued.length };
   }, [rows]);
-  // A command runs only when no message waits, so queued commands sit at the
-  // tail, after every queued message: they take no position until they run. A switch the
-  // record says applies at the next run's start is the exception: its turn lands before that
-  // run's reply, so its notice sits where `viewTranscript` puts the slot.
   const { beforeReply, tailControls } = useMemo(() => {
     const pending = controls?.queued ?? NO_CONTROLS;
     return {
@@ -156,8 +125,6 @@ export function TurnList({
       tailControls: pending.filter((control) => !control.awaitsRun),
     };
   }, [controls?.queued]);
-  // List rows are transcript rows shifted down by the alert, when it shows, and by the notice
-  // that sits among them.
   const rowOffset = onRetryInherited ? 1 : 0;
   const { controlSlot } = view;
   const noticeAt = beforeReply.length ? rowOffset + controlSlot : -1;
@@ -181,7 +148,6 @@ export function TurnList({
     ],
     [onRetryInherited, beforeReply, tailControls, rows, controlSlot],
   );
-  /** A transcript row's place in the list, and back. */
   const listIndexOf = useCallback(
     (rowIdx: number) => rowIdx + rowOffset + (noticeAt >= 0 && rowIdx >= controlSlot ? 1 : 0),
     [rowOffset, noticeAt, controlSlot],
@@ -190,7 +156,6 @@ export function TurnList({
     (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
     [rowOffset, noticeAt],
   );
-  // The chat as the writer last left it: row sizes, offset and follow mode.
   const [restored] = useState(() => readChatViewRecord(threadId));
   const virtualizer = useVirtualizer({
     count: listRows.length,
@@ -204,41 +169,21 @@ export function TurnList({
     },
     overscan: 8,
     paddingStart: TOP_INSET,
-    // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
     initialMeasurementsCache: restored?.measurements,
     initialOffset: restored?.offset,
   });
 
-  // Preserve the reader's place when a row ENTIRELY above the viewport changes
-  // height (a disclosure expands, an image/code block renders). Two traps here:
-  //   1. This is an INSTANCE property in virtual-core@3.17, not an option —
-  //      passing it in the options object is silently ignored (react-virtual's
-  //      option type omits it for the same reason). Assign it on the instance.
-  //   2. The row must be FULLY above (`item.end`, not the default `item.start`):
-  //      a straddling row grows below the reader's eyes (the streaming tail row
-  //      while scrolled a short way up inside it), and compensating that growth
-  //      slides the view back down toward the live edge — a creep that silently
-  //      re-captures follow. `item` carries the pre-resize measurement, which is
-  //      exactly what "was it above the viewport" should be judged against.
+  // keep: shouldAdjustScrollPositionOnItemSizeChange is an instance property in virtual-core@3.17 (an options-object value is silently ignored); use item.end, not item.start, or a straddling row silently re-captures follow.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
 
-  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
-  // the height the virtualized list scrolls over, and it changes on turn append,
-  // on measured streaming-row growth, and on composer-inset change — each change
-  // re-renders this component, so the follow pin fires before paint. Passing the
-  // height (not a bare counter) lets the pin compute the bottom without reading
-  // `scrollHeight`, which would force a layout on every revision.
-  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
   const { mode, currentMode, enterFollow, releaseFollow } = useChatFollowScroll({
     scrollRef: viewportRef,
     contentHeight: virtualizer.getTotalSize(),
     initialMode: restored?.mode,
   });
 
-  // Leaving the chat records where it was. A chat that never measured a row (left before its
-  // history arrived) keeps the record it has.
   useLayoutEffect(
     () => () => {
       const measurements = virtualizer.takeSnapshot();
@@ -252,12 +197,9 @@ export function TurnList({
     [currentMode, threadId, virtualizer],
   );
 
-  // Turn stage of a conversation reveal. The transcript owns the landing (and
-  // the verdict when the turn isn't here); the scroll capability stays here.
   useTurnRevealLanding({
     threadId,
     turns: visibleTurns,
-    // The launch card lives in the origin turn; only "latest" follows the child forward.
     resolveTurnId: (turnId, subagentThreadId, subagentBlock) =>
       subagentThreadId && subagentBlock !== "card"
         ? (view.revealTurnByChildThreadId.get(subagentThreadId) ?? turnId)
@@ -265,14 +207,11 @@ export function TurnList({
     historySettled,
     viewportRef,
     scrollToIndex: (index) => {
-      // A transcript that has just mounted is still following the live edge,
-      // and would pin back to the bottom once the target's rows are measured.
       releaseFollow();
       virtualizer.scrollToIndex(listIndexOf(index), { align: "center" });
     },
   });
 
-  // Reacquire follow when the user submits (each local message bumps the revision).
   useEffect(() => {
     if (tailFollowRevision === 0) return;
     enterFollow();
@@ -298,8 +237,6 @@ export function TurnList({
             onWithdraw={
               withdraw
                 ? (control) => {
-                    // Withdrawing removes the row at once. The last one takes the
-                    // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
                     withdraw(control);
@@ -337,9 +274,6 @@ export function TurnList({
           brief={handoff ? brief : null}
           destinationBusy={handoff && busy}
           owners={row.inherited ? (inherited?.owners ?? null) : null}
-          // Thread cache stats follow the active run, or the latest settled
-          // action row once no assistant row is live. Passing the snapshot to
-          // every historical model-step row defeats the row memo boundary.
           threadUsage={
             assistant && local && usageAssistantIdx !== null && rowIndex === usageAssistantIdx
               ? threadUsage
@@ -380,14 +314,6 @@ export function TurnList({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: transcript is a scroll region — focusable so keyboard users can scroll it (arrows/PageUp/Down).
         tabIndex={0}
         data-ring-on-frame=""
-        // overflow-x-hidden: `overflow-y:auto` forces the x-axis from `visible` to
-        // `auto` (CSS spec), giving an implicit horizontal scroll/rubber-band range we
-        // never want — code blocks scroll internally. min-w-0 keeps children from
-        // widening the flex column.
-        // [overflow-anchor:none]: the virtualizer is the single scroll owner and does
-        // its own scrollTop compensation for above-viewport resizes; browser native
-        // scroll anchoring would be a competing second owner, double-correcting and
-        // leaving the reader's place off. Disable it so TanStack alone drives scroll.
         className="chat-scroll-fade-bottom outline-none size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
@@ -411,7 +337,6 @@ export function TurnList({
                     data-chat-turn-row={transcriptRow ? "settled" : row.kind}
                     data-chat-turn-role={transcriptRow?.turn.role}
                     data-chat-turn-kind={row.kind}
-                    // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
                     data-turn-id={
                       transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
                         ? transcriptRow.turn.id
@@ -435,8 +360,6 @@ export function TurnList({
       <JumpToLatestButton
         hidden={mode === "follow"}
         bottomInset={bottomInset}
-        // Instant jump: mode flips to follow synchronously inside enterFollow, so
-        // the pill hides the same frame the viewport lands at the live edge.
         onClick={enterFollow}
       />
     </div>
@@ -456,9 +379,6 @@ function JumpToLatestButton({
     <div
       className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
       data-hidden={hidden}
-      // `inert` makes the faded-out pill genuinely gone — unclickable, unfocusable,
-      // and out of the accessibility tree — while CSS keeps animating the exit.
-      // Without it the invisible button would still be an enabled hit target.
       inert={hidden}
       style={{ bottom: bottomInset + 12 }}
     >
@@ -581,7 +501,6 @@ const TranscriptRow = memo(function TranscriptRow({
   );
 });
 
-/** One inherited row: its source's header when a run starts, the fork point when it ends. */
 function InheritedRow({
   mark,
   owners,
@@ -605,10 +524,6 @@ function InheritedRow({
   );
 }
 
-/**
- * The writer's message above the chat's latest reply when the writer stopped that reply and the
- * chat hasn't moved past it: the one message Edit puts back. A fork's inherited rows never count.
- */
 function findStoppedMessageId(rows: readonly ViewRow[]): string | null {
   const replyAt = rows.findLastIndex((row) => row.kind === "turn" && row.turn.role === "assistant");
   const reply = rows[replyAt];
@@ -623,7 +538,6 @@ function findStoppedMessageId(rows: readonly ViewRow[]): string | null {
   return null;
 }
 
-/** Index of this thread's own last settled assistant turn, or -1 if none; inherited rows never count. */
 function findLastLocalAssistantIndex(rows: readonly ViewRow[]): number {
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
@@ -633,7 +547,6 @@ function findLastLocalAssistantIndex(rows: readonly ViewRow[]): number {
   return -1;
 }
 
-/** Index of the latest local assistant still running, if any. */
 function findLatestLocalLiveAssistantIndex(rows: readonly ViewRow[]): number | null {
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];

@@ -1,4 +1,3 @@
-/** Canonical thread Work-rebind command shared by model and writer adapters. */
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -60,7 +59,6 @@ function receiptState(work: Work): WorkBindingState {
   };
 }
 
-/** Applies the complete binding transition inside the caller-owned transaction. */
 export async function rebindThreadWork(
   deps: RebindThreadWorkDeps,
   input: RebindThreadWorkInput,
@@ -116,7 +114,6 @@ export async function rebindThreadWork(
   };
 }
 
-/** Rebinds a chat and records its causally paired switch notice in the caller's transaction. */
 export async function switchThreadWork(
   deps: SwitchThreadWorkDeps,
   input: RebindThreadWorkInput,

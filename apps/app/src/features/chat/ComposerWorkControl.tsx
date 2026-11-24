@@ -1,5 +1,3 @@
-/** Work toolbar adapter over the single typed Work binding controller. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";

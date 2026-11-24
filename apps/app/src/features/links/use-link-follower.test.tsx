@@ -40,7 +40,6 @@ function doc(name: string): ResolvedDocumentLink {
   };
 }
 
-/** Server answers the test releases by name. */
 let pending: Map<string, (document: ResolvedDocumentLink | null) => void>;
 let events: string[];
 let resolution: LinkAnswerCache;
@@ -57,7 +56,6 @@ const open: LinkDestination = async (document) => {
   events.push(`open:${document.documentId}`);
 };
 
-/** Incomplete, so every question reaches the (mocked) server. */
 function catalog(revision: string): LinkableDocumentIndex {
   return { ...linkIndexOf([]), revision, complete: false };
 }
@@ -109,7 +107,6 @@ beforeEach(() => {
   events = [];
   resolution = createLinkAnswerCache();
   server.mockReset();
-  // One link per batch here: each follow asks on its own.
   server.mockImplementation(
     (_projectId, { links }) =>
       new Promise((done) => {
@@ -150,7 +147,6 @@ describe("useLinkFollower", () => {
     await answer("Second", doc("second"));
     await answer("First", doc("first"));
 
-    // Nothing was shown, so the second follow has nothing of its own to clear.
     expect(events).toEqual([`open:${IDS.second}`]);
   });
 
@@ -166,7 +162,6 @@ describe("useLinkFollower", () => {
   });
 
   it("keeps the shared missing outcome for a policy that supplies only open", async () => {
-    // A resource door (an upload) has no route to say "missing" in place.
     render({ scope, index: catalog("a") });
     act(() => follower.follow(address("First"), null, { open }));
 

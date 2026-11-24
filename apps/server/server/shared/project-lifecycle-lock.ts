@@ -1,4 +1,3 @@
-/** Advisory gate serializing project deletion with mutations that publish project content. */
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 

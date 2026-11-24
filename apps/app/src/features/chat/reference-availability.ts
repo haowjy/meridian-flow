@@ -1,10 +1,3 @@
-/**
- * Whether the documents and folders a chat's writer messages reference still exist: what an exact
- * `@` reference chip draws (filled, or dashed and unfollowable once its document or folder is
- * gone). Read from the replay of the project's list, so a delete or rename made anywhere shows at
- * once and nothing is asked.
- */
-
 import { useMemo } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -12,10 +5,6 @@ import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptRef
 
 const NOTHING: ReadonlyMap<string, TranscriptReferenceResolution> = new Map();
 
-/**
- * The exact-reference answers a user turn draws, for the identities it references. Until the list
- * has been read, or outside a project, nothing is known: chips stay filled and do not follow.
- */
 export function useReferenceAvailability(
   keys: readonly string[],
 ): ReadonlyMap<string, TranscriptReferenceResolution> {

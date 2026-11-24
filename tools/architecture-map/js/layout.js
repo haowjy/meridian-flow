@@ -1,11 +1,3 @@
-/*
- * Where a level's boxes go, from their measured sizes, so a page carries no coordinates. The
- * numbered path is the spine: its boxes sit on one row in step order, left to right, and the row
- * wraps like a line of text only when it can't be drawn readably in one. Every other box, and every
- * note, sits in a band above or below the row, near what it connects to. No DOM: map.js measures.
- */
-
-/** Card text is 15px and 12px (page.css): at this zoom it is 13.8px and 11px on screen. */
 export const READABLE_ZOOM = 0.92;
 
 const MIN_ROW_GAP = 72;
@@ -18,13 +10,6 @@ const ARC_FIRST = 38;
 const ARC_STEP = 60;
 const FIT_PAD = 16;
 
-/**
- * The spine and the spurs of the numbered path. A step's box joins the row when it follows the
- * row's last box and the path goes on from it (or nothing else does). A spur sits beside the box
- * it came from: a box the path visits without going on, or whose next step comes straight back (a
- * round trip to the server, say). A box that first appears as the start of a step into a placed
- * box is a spur beside that box.
- */
 function mainPath(edges) {
   const steps = edges.filter((e) => e.step !== null).sort((a, b) => a.step - b.step);
   const spine = [];
@@ -46,10 +31,6 @@ function mainPath(edges) {
   return { spine, spurOf };
 }
 
-/**
- * Left edges for one band's boxes ({ id, want: centre x, w, weight }), each as near its wish as the
- * others allow; a heavier box moves less.
- */
 function pack(items) {
   const clusters = [];
   for (const item of [...items].sort((a, b) => a.want - b.want)) {
@@ -62,7 +43,6 @@ function pack(items) {
     while (clusters.length > 1) {
       const [before, last] = clusters.slice(-2);
       if (before.sum / before.n + before.width + BOX_GAP <= last.sum / last.n) break;
-      // Merged, the cluster's left edge is where its members' weighted wishes balance.
       const offset = before.width + BOX_GAP;
       before.sum += last.sum - offset * last.n;
       before.n += last.n;
@@ -82,10 +62,6 @@ function pack(items) {
   return left;
 }
 
-/**
- * Places the boxes with the spine wrapped at `perRow` boxes. Returns { positions, hints, bounds }:
- * top-left positions by id, and per arrow index how it is drawn ({ kind: "row" | "arc" | "wrap" }).
- */
 function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, labelSize }) {
   const size = (id) => sizes.get(id) ?? { width: 180, height: 64 };
   const rows = [];
@@ -101,7 +77,6 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
   const between = (a, b) =>
     edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
 
-  // The spine's centres along each row: a gap holds the widest label of the arrows across it.
   const cx = new Map();
   const rowRight = [];
   rows.forEach((row) => {
@@ -117,8 +92,6 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     rowRight.push(x);
   });
 
-  // Arrows along a row: neighbours join straight, others arc over (forward) or under (back),
-  // nested arcs one level deeper so their labels clear each other.
   const hints = new Map();
   const reach = rows.map(() => ({ above: 0, below: 0 }));
   const arcs = [];
@@ -161,11 +134,9 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     );
   });
 
-  // Every other box gets a row, a side, a band (1 is next to the row) and the x it would like.
   const band = new Map();
   const want = (id) => (rowOf.has(id) ? cx.get(id) : band.get(id).want);
   const chooseSide = (r, x, w) => {
-    // A spur's arrows crowd the space beside it, so it counts double.
     const near = (side) =>
       [...band]
         .filter(
@@ -218,8 +189,6 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     }
   };
   visit();
-  // Boxes the arrows don't reach (tools beside the system, a separate pair) go wherever the last
-  // row's bands have room, beside a box they share a note with.
   const noted = (id) =>
     noteLinks
       .filter((l) => l.from === id || l.to === id)
@@ -253,19 +222,16 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     band.set(note.id, { r, side, depth, want: x, w });
   }
 
-  // Horizontal: pack each band. Vertical: bands stack out from their row; rows stack down the page.
   const x = new Map();
   for (const id of spine) x.set(id, cx.get(id) - size(id).width / 2);
   const bands = new Map();
   for (const [id, b] of band) {
     const key = `${b.r}:${b.side}:${b.depth}`;
     if (!bands.has(key)) bands.set(key, []);
-    // A spur stays over the box it leaves from; the others make room.
     bands.get(key).push({ id, want: b.want, w: b.w, weight: spurOf.has(id) ? 10 : 1 });
   }
   for (const [key, items] of bands) {
     const left = pack(items);
-    // A band that fits within its row's width stays within it, so the drawing is no wider than the row.
     const r = Number(key.split(":")[0]);
     const lo = Math.min(...left.values());
     const hi = Math.max(...items.map((it) => left.get(it.id) + it.w));
@@ -291,7 +257,6 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
           .filter(([, b]) => b.r === r && b.side === side && b.depth === depth)
           .map(([id]) => id);
         if (!members.length) break;
-        // A numbered arrow across the gap shows its label there, so the gap holds it.
         const inner = (id) =>
           depth === 1
             ? rowOf.get(id) === r
@@ -361,7 +326,6 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
   return { positions, hints, bounds };
 }
 
-/** The zoom that fits `bounds` in `area`, leaving a margin. */
 export function fitZoom(bounds, area) {
   return Math.min(
     (area.width - 2 * FIT_PAD) / (bounds.x1 - bounds.x0),
@@ -369,12 +333,6 @@ export function fitZoom(bounds, area) {
   );
 }
 
-/**
- * The layout of a level for a drawing `area` ({ width, height }): the longest row that still fits
- * readably, else the arrangement that draws largest. `nodes` are { id, kind }, `edges` the parsed
- * arrows, `noteLinks` { from, to }, `sizes` id → { width, height }, `labelSize(edge)` → { width, height }.
- * Returns { positions: Map id → { x, y }, hints: Map arrow index → hint }.
- */
 export function layoutLevel(level, area) {
   const path = mainPath(level.edges);
   if (!path.spine.length) path.spine.push(level.nodes.find((n) => n.kind !== "note").id);

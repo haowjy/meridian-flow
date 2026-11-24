@@ -1,17 +1,3 @@
-/**
- * The client's `HolderCatalog`: the shared link rules (`resolveStoredLink`)
- * read the scope's local document index through it, and the account's
- * settlement memo answers `settlement()`.
- *
- * Every lookup the index cannot answer for certain is `undefined`, "not held,
- * ask the server": a `doc:` ref the complete index does not hold may name
- * another Work's Scratch or a document the reader lost, and an incomplete
- * index cannot prove what is at an address. Nothing is ever answered `null`
- * for a document, so on the client a local `gone` is only a malformed ref.
- * Folders follow the same rule: a folder the index holds answers, anything
- * else is `undefined`.
- */
-
 import type { CatalogDocument, CatalogFolder } from "@meridian/contracts";
 import { contextOwner } from "@meridian/contracts/protocol";
 import type { HolderCatalog } from "@meridian/markup/links";
@@ -25,7 +11,6 @@ import type {
   LinkableFolder,
 } from "./useLinkableDocuments";
 
-/** The catalog, and the index row behind each document or folder it answers with. */
 export type ProjectLinkCatalog = HolderCatalog & {
   indexed(documentId: string): LinkableDocument | undefined;
   indexedFolder(folderId: string): LinkableFolder | undefined;
@@ -53,7 +38,6 @@ export function createProjectLinkCatalog(
   });
   const held = (document: LinkableDocument | null | undefined) =>
     document ? catalogDocument(document) : undefined;
-  // Rule 4's lookup by address and pass 3's read the same tree walk.
   const documentFor = (uri: string) =>
     index.complete ? (held(indexedDocumentAt(index, uri)) ?? null) : undefined;
   return {
@@ -64,9 +48,7 @@ export function createProjectLinkCatalog(
     document: (documentId) => (index.complete ? held(byId.get(documentId)) : undefined),
     settlement(aheadId) {
       const settled = settlements.get(aheadId);
-      // Settled on an unknown document: never its address, so ask.
       if (settled === null) return undefined;
-      // Not known settled: rule 4 shows what is at its address while the server is asked.
       return settled ?? null;
     },
     documentAt: documentFor,

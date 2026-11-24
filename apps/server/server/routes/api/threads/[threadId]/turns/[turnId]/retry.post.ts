@@ -1,8 +1,3 @@
-/**
- * POST /api/threads/:threadId/turns/:turnId/retry: retry a latest failed reply.
- * Answers the Retry's execution (201 started, 200 replay); `retry_pending`
- * (503) asks the client to repeat the same request id.
- */
 import {
   type ReplyRetryResponse,
   replyRetryRequestSchema,
@@ -43,7 +38,6 @@ export default defineEventHandler(async (event) => {
       runState: result.runState,
     } satisfies ReplyRetryResponse);
   } catch (error) {
-    // A thrown error builds its own response: headers set on the event are dropped.
     if (error instanceof ReplyRetryPendingError)
       throw createError({ status: 503, message: error.code, headers: { "Retry-After": "1" } });
     if (error instanceof ReplyRetryUnavailableError)

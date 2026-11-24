@@ -1,10 +1,3 @@
-/**
- * In-memory `DocumentEvidence` for runtime tests: the same per-turn shown-link rows, dedup and
- * fork lineage, and the same latest-by-recording frontiers, as the document side's Postgres
- * store. Rows join the repositories' transaction owner, so evidence recorded with blocks that
- * fail to persist rolls back with them. Rows are not removed with their block; a test deletes
- * no blocks.
- */
 import { parseLoroRoomName } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
@@ -31,7 +24,6 @@ interface FrontierRow extends ObservationFrontier {
 }
 
 export function createInMemoryDocumentEvidence(deps: {
-  /** The owner the thread repositories commit through. */
   transactionOwner: InMemoryTransactionOwner;
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   turns: Pick<TurnRepository, "findById">;
@@ -54,7 +46,6 @@ export function createInMemoryDocumentEvidence(deps: {
       return turn ? { threadId: turn.threadId, position: turn.position } : null;
     },
   };
-  /** The rows in `rooms` among `blockIds`, oldest recorded first. */
   const rowsIn = (rooms: FrontierRooms, blockIds: readonly string[]) => {
     const among = new Set(blockIds);
     const inRooms = (room: string) => {

@@ -1,7 +1,3 @@
-/**
- * POST /api/agents/save: Saves packages of the user's `~/.agents/` and, with `projectId`, the
- * project's `.agents/`. A failed check is a result in the body, never an HTTP error.
- */
 import { saveAgentsRequestSchema } from "@meridian/contracts/agents";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";

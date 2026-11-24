@@ -1,5 +1,3 @@
-/** Child-owned process harness shared by the app's dev and production boot gates. */
-
 import { type ChildProcess, spawn } from "node:child_process";
 import net from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -14,7 +12,6 @@ class RingLog {
   private lines: string[] = [];
   private all = "";
 
-  /** Everything the child has written, unlike `tail`, which drops old lines. */
   includes(text: string): boolean {
     return this.all.includes(text);
   }
@@ -170,9 +167,7 @@ export async function runAppBootSmoke(options: {
   readonly boundOriginPattern: RegExp;
   readonly serverName: string;
   readonly successMessage: string;
-  /** Output that means startup finished; the smoke waits for it before probing routes. */
   readonly requiredOutputMarker?: string;
-  /** Output that means startup failed, so the smoke stops waiting. */
   readonly failureOutputMarker?: string;
   readonly detachedProcessGroup?: boolean;
   readonly routes: readonly BootRoute[];

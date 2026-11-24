@@ -113,7 +113,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("deletes and restores archived management identity without unarchiving it", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "Archived history" });
-      // Each lifecycle change re-admits open rooms at the new access level.
       const heard: FileAccessChange[] = [];
       const stopHearing = fileAccessChanges.subscribe((change) => heard.push(change));
       const announced = (closed?: ClosedOwnerWhy) =>
@@ -203,8 +202,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return found.kind === "stored" ? found.outcome.status : found.kind;
       };
 
-      // A resolve that arrives while the first request holds its claim waits for it and answers
-      // the committed outcome, not a `never`.
       const raced = randomUUID();
       let release = () => {};
       const held = new Promise<void>((resolve) => {
@@ -233,7 +230,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await first;
       expect(await resolving).toMatchObject({ kind: "stored", outcome: { status: "done" } });
 
-      // A resend answers the stored Work and creates nothing.
       const resent = await runWorkCommand(commands, input(raced, "work_create"), async () => ({
         work: await works.create({ projectId: PROJECT_ID, name: "Raced" }),
       }));
@@ -242,7 +238,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await works.listByProject(PROJECT_ID, {})).filter((w) => w.name === "Raced"),
       ).toHaveLength(1);
 
-      // A `never` stored first wins: the request arriving after it changes nothing.
       const never = randomUUID();
       await commands.resolve({
         commandId: never as CommandId,
@@ -259,7 +254,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(ran).toBe(false);
       expect(await outcomeOf(never)).toBe("never");
 
-      // A delete that missed and was retried rolls back past its claim and claims again.
       const victim = await works.create({ projectId: PROJECT_ID, name: "Victim" });
       const deleting = randomUUID();
       let attempts = 0;
@@ -591,7 +585,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null }]);
-      // The delete writes no node: a deleted Work's Scratch reads as it was until the purge.
       expect(await nodes()).toEqual(before);
       await works.softDelete(withFile.id);
       expect(await nodes()).toEqual(before);
@@ -603,7 +596,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null }]);
-      // What was deleted on its own stays in Trash through the Work's delete and restore.
       expect(await nodes()).toEqual(before);
     });
 
@@ -616,7 +608,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.contextSources.workId, work.id));
       if (!source) throw new Error("Expected Work context source");
       const document = { id: await treeSeeder(db).document(source.id, "outline") };
-      // The documents some view shows, at their addresses: a Work's delete takes them out.
       const shown = async () =>
         (await loadDocumentAddresses(db, { ids: [document.id as DocumentId] }))
           .filter((address) => !address.deleted)
@@ -953,9 +944,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.works)
         .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
         .where(inArray(schema.works.id, [sourceWork.id, unrelatedWork.id]));
-      // Fill the oldest page with retained sources; the later unrelated Work must still purge.
-      // Extra candidates fill the purge page with deleted roots and live dependent forks.
-      // Bulk seeding avoids provisioning and cascading 99 unrelated context catalogs.
       const expiredAt = new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000);
       const retained = Array.from({ length: 99 }, (_, index) => ({
         workId: crypto.randomUUID(),
@@ -1271,7 +1259,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.contextSources)
           .where(eq(schema.contextSources.id, lineageSource.id)),
       ).toEqual([]);
-      // The document ends as Trash retention ends one: a purged tombstone, and a `purge` record.
       expect(
         await db.select().from(schema.documents).where(eq(schema.documents.id, lineageNote.id)),
       ).toMatchObject([{ contentPurgedAt: expect.any(Date) }]);
@@ -1367,8 +1354,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           size: 42,
         });
         await waitForLock("advisory");
-        // The create holds the project's list lock while it waits on the barrier: the Work's
-        // delete takes the same lock, so it waits behind the create.
         const deletion = works.softDelete(work.id).then(
           () => ({ status: "fulfilled" as const }),
           (reason: unknown) => ({ status: "rejected" as const, reason }),
@@ -1384,7 +1369,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(works.findById(work.id)).resolves.toMatchObject({
           deletedAt: expect.any(String),
         });
-        // The file landed before the delete, and the source's end hides it without a node write.
         await expect(
           db.select().from(schema.treeNodes).where(eq(schema.treeNodes.contextSourceId, sourceId)),
         ).resolves.toHaveLength(1);

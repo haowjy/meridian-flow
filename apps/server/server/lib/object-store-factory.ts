@@ -16,9 +16,6 @@ export function createObjectStoreFromEnv(): {
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
 } {
-  // The provider and the S3 addressing come from the shared reading the app's content security policy
-  // also uses: two readings would let a deployment pass the startup guards and still build the wrong store,
-  // or sign URLs the browser then blocks.
   const config = objectStoreConfig(process.env);
   if (config.provider === "local") {
     const localObjectStore = new LocalObjectStoreAdapter({

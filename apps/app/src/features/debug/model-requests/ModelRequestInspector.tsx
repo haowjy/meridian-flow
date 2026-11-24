@@ -1,4 +1,3 @@
-/** Human lenses over the same canonical model-request records consumed by the CLI. */
 import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,

@@ -61,7 +61,6 @@ else
         predictedCacheReason: "reusable_prefix",
       });
 
-      // A late projection on an older turn must not become the latest cache fact.
       await repos.modelResponses.create({
         ...base,
         turnId: firstTurn.id,
@@ -123,7 +122,6 @@ else
       await repos.modelResponses.create({ ...base, turnId: firstTurn.id, sequence: 0 });
       await repos.modelResponses.create({ ...base, turnId: cutoffTurn.id, sequence: 0 });
       await repos.modelResponses.create({ ...base, turnId: abandonedSibling.id, sequence: 9 });
-      // A call stopped before output records no usage and is not a response the model gave.
       await repos.modelResponses.create({
         ...base,
         outputTokens: 0,

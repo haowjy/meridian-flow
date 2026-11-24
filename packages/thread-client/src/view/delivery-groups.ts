@@ -1,4 +1,3 @@
-/** delivery-groups: which consecutive completion events one reply shows as a single merged row. */
 import type { DeliveryEvent } from "./transcript-model";
 
 export type DeliveryGroup = { id: string; events: readonly DeliveryEvent[] };
@@ -20,7 +19,6 @@ function sameGroup(left: DeliveryGroup, right: DeliveryGroup): boolean {
   });
 }
 
-/** Merge only contiguous completion notices; any other delivery breaks a group. */
 export function groupDeliveryEvents(events: readonly DeliveryEvent[]): readonly DeliveryGroup[] {
   const groups: DeliveryEvent[][] = [];
   for (const event of events) {

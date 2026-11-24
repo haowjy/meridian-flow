@@ -1,4 +1,3 @@
-/** Upload and organizer composition for the durable two-phase import. */
 import { IMPORT_SCHEMES } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

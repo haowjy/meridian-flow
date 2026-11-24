@@ -1,4 +1,3 @@
-/** Confirmed account snapshots with a tab-local optimistic command overlay. */
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
@@ -71,8 +70,6 @@ export function useAccountSettings(
   ) {
     const next = { ...(confirmedRef.current ?? settings) };
     for (const key of KEYS) {
-      // Request start orders reads; settlement fences reads begun before a command completed.
-      // Only pending/failed commands own the displayed value, never a settled revision.
       if (
         generation < (acceptedGenerations.current[key] ?? 0) ||
         (intentsRef.current[key] && key !== ownKey)

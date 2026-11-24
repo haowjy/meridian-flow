@@ -27,10 +27,8 @@ const ROWS = 5;
 const FIGURE = 256;
 const CLIFF_TOP = 0.64;
 const CLIFF_X = 0.11;
-/** Stage shares of the world beat at which the other three catch Tam up. */
 const JOINS = [0, 0.22, 0.4, 0.58];
 
-/** Where the party stands in the fight, for the dragon's aim: stage pixels. */
 export type Party = { rows: readonly (readonly [number, number])[]; size: number };
 
 const noise = (seed: number) => {
@@ -62,9 +60,7 @@ type Pose =
   | { kind: "sit" }
   | { kind: "shadow" };
 
-/** One of the party, facing right, standing on the bottom of its cell. */
 function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
-  // Charred by the breath, any of the four: no build or gear of their own.
   const who = pose.kind === "shadow" ? -1 : row;
   const scale = who < 0 ? 0.95 : [0.8, 0.95, 1.12, 0.92][row];
   const x = FIGURE / 2;
@@ -132,7 +128,6 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     pen.fill();
     pen.fillRect(x - unit * 1.75, shoulder + unit * 0.1, unit * 1.2, unit * 1.5);
     if (pose.kind === "fight") {
-      // Sigrun's arm out, a ward rune ringed in her open hand.
       const hand = shoulderX + unit * 1.7;
       line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], [hand, shoulder - unit * 0.3]);
       pen.lineWidth = unit * 0.13;
@@ -179,7 +174,6 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
   }
 }
 
-/** Two wolves running left, for the fight on the road. */
 function wolves(pen: CanvasRenderingContext2D, phase: number) {
   const wolf = (x: number, ground: number, scale: number, offset: number) => {
     const run = Math.sin(phase + offset);
@@ -215,7 +209,6 @@ function wolves(pen: CanvasRenderingContext2D, phase: number) {
   wolf(FIGURE * 0.72, FIGURE - 16, 0.85, 1.4);
 }
 
-/** The party, one row each, walking, then two fighting frames and sitting; wolves below. */
 function partySheet() {
   const canvas = document.createElement("canvas");
   canvas.width = FIGURE * COLUMNS;
@@ -248,7 +241,6 @@ function partySheet() {
   return canvas;
 }
 
-/** The ground of the story: the trees, and the party crossing them as the page scrolls. */
 export function createForest(root: HTMLElement) {
   const forest = root.querySelector("#forest") as HTMLElement;
   const near = forest.querySelector("canvas") as HTMLCanvasElement;
@@ -278,7 +270,6 @@ export function createForest(root: HTMLElement) {
     const top = H * (1 - GROUND.tall);
     const ground = H * GROUND.floor - top;
     const [shoreFrom, shoreTo] = [GROUND.shore[0] * W, GROUND.shore[1] * W];
-    // The woods' floor, then the beach dropping to the water's edge and rising again at the trees.
     const sand = (x: number) => {
       const into = Math.min(1, Math.max(0, Math.min(x - shoreFrom, shoreTo - x) / (W * 0.12)));
       return ground - H * lerp(0.08, GROUND.floor - GROUND.beach, into * into * (3 - 2 * into));
@@ -301,11 +292,9 @@ export function createForest(root: HTMLElement) {
     for (let i = 0; i < 110; i += 1) {
       const x = noise(i + 1) * forestEnd * 1.04;
       const edge = Math.abs(x / (W * 1.4) - 0.46) * 2;
-      // Thinning and smaller toward the shore.
       const thin = clamp((x - (forestEnd - W * 0.25)) / (W * 0.3));
       if (noise(i + 70) < thin) continue;
       const tall = H * (0.14 + edge * 0.3 + noise(i + 40) * 0.1) * (1 - thin * 0.5);
-      // No taller than the strip, or its top is cut flat.
       spruce(pen, x, sand(x), Math.min(tall, sand(x) * 0.97));
     }
     for (let i = 0; i < 24; i += 1) {
@@ -333,7 +322,6 @@ export function createForest(root: HTMLElement) {
     row: number,
     angle = 0,
   ) => {
-    // Turns about the feet, so a figure falls where it stood.
     figure.style.transform = `translate3d(${x}px,${feet}px,0) rotate(${angle}rad) scale(${size / FIGURE}) translate(-50%,-100%)`;
     figure.style.maskPosition = `${(column / (COLUMNS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
   };
@@ -342,8 +330,6 @@ export function createForest(root: HTMLElement) {
 
   return {
     measure,
-    /** The night sky with the trees in front, for the burn to take away: its still has no DOM. */
-    /** The sky with the trees over it, cut to `frame`, the box the still will be drawn in. */
     withTrees(sky: HTMLCanvasElement, frame: DOMRect) {
       const box = sky.getBoundingClientRect();
       const kx = sky.width / box.width;
@@ -367,14 +353,11 @@ export function createForest(root: HTMLElement) {
       const shown = 1 - smooth(beats.dies, ...DEATH.partyGone);
       walkers.style.opacity = String(shown);
       const drift = W * walked(at, layout);
-      // As the stage starts to scroll away, the trees hand over to a fixed copy behind the page
-      // at the same pixels, and stay there under the end of the page.
       const behind = beats.leave > 0;
       if (behind && !treelineDrawn) {
         const pen = treeline.getContext("2d") as CanvasRenderingContext2D;
         pen.clearRect(0, 0, W, treeline.height);
         pen.drawImage(near, -drift, H - near.height);
-        // On under the frame, as the forest's ground does on the stage.
         pen.fillStyle = getComputedStyle(root).getPropertyValue("--mkt-night");
         pen.fillRect(0, H, W, treeline.height - H);
         treelineDrawn = true;
@@ -383,21 +366,17 @@ export function createForest(root: HTMLElement) {
       treeline.style.visibility = behind ? "" : "hidden";
       const walkOut = smooth(beats.turn, ...TURN.walksOut);
       const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
-      // Looking straight up there is no ground in view: the trees rise as the view tips to the horizon.
       const sunk = (1 - tilt(beats)) * (near.height + layout.stageHeight - H);
       forest.style.transform = `translate3d(${-drift}px,${sunk}px,0)`;
       walkers.style.transform = sunk ? `translate3d(0,${sunk}px,0)` : "";
       if (shown === 0) return null;
 
-      // A phone's stage is narrow: the party shrinks with its width, so the dragon and all four fit.
       const size = Math.min(H * 0.16, W * 0.22);
       const gap = size * 0.5;
       const down = smooth(beats.world, 0, 0.14);
       const leader = lerp(W * CLIFF_X - drift, road, down);
       const feet = lerp(H * CLIFF_TOP, H * GROUND.feet, down);
-      // The camp is in the middle of the stage, and its fire stays on the ground as they leave.
       const campX = W * 0.5;
-      // On a phone they take the left of the stage for the fight, and leave the right to the dragon.
       const standX = campX - (layout.isPhone ? walkOut * W * 0.25 : 0);
       const fireX = campX - (drift - W * walked(spans.camp[1], layout));
       const seated = smooth(beats.camp, ...CAMP.sits);
@@ -413,10 +392,8 @@ export function createForest(root: HTMLElement) {
         const joinsAt = lerp(spans.world[0], spans.world[1], JOINS[row]);
         const joined = row === 0 ? 1 : smooth(at, joinsAt, joinsAt + H * 0.5);
         figure.style.opacity = row === 0 || at > joinsAt ? "1" : "0";
-        // Up from the fire into the order they fight in as they walk onto the shore.
         const stands = lerp(ring[row], ring[FIGHT.places[row]], walkOut);
         const slot = lerp(leader - gap * row, standX + stands * gap, seated);
-        // In the fight they give ground step by step, which also brings the fight to the middle.
         let x = (row === 0 ? slot : lerp(-W * 0.08, slot, joined)) - backed;
         const wolvesAttack = beats.out > 0 && beats.back <= 0;
         const walking = Math.floor(x / (size * 0.16) + row * 2) % WALK_FRAMES;
@@ -424,7 +401,6 @@ export function createForest(root: HTMLElement) {
         let column = moving ? Math.abs(walking) : 0;
         if (wolvesAttack) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (seated > 0.5 && beats.turn <= 0) column = SIT_COLUMN;
-        // Out of the woods onto the shore, then still as it lands.
         if (beats.turn > 0) {
           const stepping = walkOut > 0 && walkOut < 1;
           column = stepping ? Math.floor(drift / (size * 0.16) + row * 2) % WALK_FRAMES : 1;
@@ -436,13 +412,11 @@ export function createForest(root: HTMLElement) {
           return;
         }
         const fate = FIGHT.fates[row];
-        // Oskar's charge at its flank: out to the dragon and back to the line.
         if (row === FIGHT.charge.row) {
           const run = progress(fight, ...FIGHT.charge.at);
           x += Math.sin(run * Math.PI) * W * 0.16;
         }
         const hit = progress(fight, fate.at, fate.at + 0.07);
-        // The breath chars them as it passes; the one left standing is too dark to tell who.
         const charred = smooth(fight, FIGHT.breath[0], FIGHT.breath[1]);
         let angle = 0;
         let feetY = H * GROUND.feet;
@@ -451,19 +425,15 @@ export function createForest(root: HTMLElement) {
         column = hit > 0 ? 1 : FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (fate.kind === "fall") angle = -smooth(hit, 0, 1) * 1.45;
         if (fate.kind === "flung") {
-          // Thrown back by the breath, and down on the sand where it lands.
           const flight = progress(fight, fate.at, fate.at + 0.1);
           fx = x - ease(flight) * W * (layout.isPhone ? 0.08 : 0.16);
           feetY -= Math.sin(flight * Math.PI) * H * 0.1;
           angle = -smooth(flight, 0, 1) * 1.5;
         }
-        // Charred, all four lose their own shapes, and the one left standing comes out of the fire
-        // in the middle of where they stood: nothing says who survives before the card asks.
         if (charred > 0.12) column = SHADOW_COLUMN;
         if (fate.kind === "stand")
           fx = lerp(x, standX - backed, smooth(fight, 0.7, FIGHT.breath[1]));
         const dark = charred * (fate.kind === "stand" ? 0.55 : 0.3);
-        // Lit by the breaths and the ward, they read brighter than on the walk.
         const lit = 1.45 - dark * 1.3;
         figure.style.filter =
           fate.kind === "stand"
@@ -485,7 +455,6 @@ export function createForest(root: HTMLElement) {
         WOLF_ROW,
       );
 
-      // Still burning as they walk away from it, until the ground carries it off.
       const glow = seated * (1 - smooth(beats.turn, 0.45, 0.55));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
       camp.style.transform = `translate3d(${fireX + gap * 0.3 - size * 0.6}px,${H * GROUND.feet - size * 0.86}px,0) scale(${size / 100})`;

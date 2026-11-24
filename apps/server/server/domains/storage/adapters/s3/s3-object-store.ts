@@ -1,8 +1,3 @@
-/**
- * S3 implementation of the object-store port: put/get/delete via the AWS S3 SDK
- * and presigned URLs for signed reads. Owns the S3-specific wiring (bucket,
- * client, presigning); depends inward on the port and URL helper.
- */
 import type { Readable } from "node:stream";
 import {
   CopyObjectCommand,
@@ -35,19 +30,12 @@ import type {
 export interface S3ObjectStoreOptions {
   bucket: string;
   region: string;
-  /** Custom endpoint for S3-compatible stores (e.g. MinIO `http://localhost:9000`). */
   endpoint?: string;
-  /**
-   * Endpoint used when signing read URLs, if it must differ from `endpoint` to be
-   * reachable by the browser (e.g. an HTTPS proxy in front of MinIO). Defaults to `endpoint`.
-   */
   publicEndpoint?: string;
   accessKeyId?: string;
   secretAccessKey?: string;
-  /** Path-style addressing — required for MinIO and most non-AWS S3 stores. */
   forcePathStyle?: boolean;
   signedUrlTtlSeconds: number;
-  /** Create the bucket on first use if it is missing. Dev/MinIO only — never in prod. */
   createBucketIfMissing?: boolean;
 }
 
@@ -68,7 +56,7 @@ function isNotFound(error: unknown): boolean {
 function clientConfig(opts: S3ObjectStoreOptions, endpoint?: string) {
   return {
     region: opts.region,
-    // SDK v3 defaults add a CRC32 trailer to every PUT, which R2 rejects.
+    // keep: Disable SDK v3's default CRC32 PUT trailer; R2 rejects it
     requestChecksumCalculation: "WHEN_REQUIRED" as const,
     responseChecksumValidation: "WHEN_REQUIRED" as const,
     ...(endpoint ? { endpoint } : {}),
@@ -81,7 +69,6 @@ function clientConfig(opts: S3ObjectStoreOptions, endpoint?: string) {
 
 export class S3ObjectStoreAdapter implements ObjectStorePort {
   private readonly client: S3Client;
-  /** Separate client for presigning when the public endpoint differs from the internal one. */
   private readonly presignClient: S3Client;
   private readonly bucket: string;
   private readonly signedUrlTtlSeconds: number;
@@ -140,7 +127,6 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
         options?.maxBytes !== undefined &&
         (response.ContentLength ?? Infinity) > options.maxBytes
       ) {
-        // Dropping the body unread abandons the transfer.
         (body as Readable).destroy();
         return err("too_large", "Object is too large to read");
       }
@@ -189,7 +175,6 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
           CopySource: `${this.bucket}/${fromKey.split("/").map(encodeURIComponent).join("/")}`,
         }),
       );
-      // Described from the destination: the source can be overwritten between a HEAD and the copy.
       const head = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: toKey }),
       );
@@ -211,7 +196,7 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       const { ContentLength: sizeBytes = 0 } = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
       );
-      // A range read of an empty object is a 416.
+      // keep: S3 returns 416 for a range read of an empty object; short-circuit before GetObject
       if (sizeBytes === 0 || headBytes === 0) return ok({ head: new Uint8Array(), sizeBytes });
       const response = await this.client.send(
         new GetObjectCommand({
@@ -234,8 +219,6 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
   ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
-    // The bucket must exist before the browser PUTs to it. No HEAD of the object: it does not
-    // exist yet. The length and type are signed headers, so the store refuses any other.
     const ensured = await this.ensureBucket();
     if (!ensured.ok) return ensured;
 
@@ -338,7 +321,6 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
         new GetObjectCommand({ Bucket: this.bucket, Key: key }),
         { expiresIn: options.expiresInSeconds, signingDate: options.signedAt },
       );
-      // A provider only fetches https; a plain-http dev endpoint has no link to give.
       return ok(url.startsWith("https://") ? url : null);
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
@@ -365,7 +347,6 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       return ok(undefined);
     } catch (error) {
       if (!isNotFound(error)) {
-        // A non-404 (auth/network) error is surfaced; don't mask it as "missing".
         return err("io_error", error instanceof Error ? error.message : "Failed to reach bucket");
       }
     }

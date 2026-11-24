@@ -89,7 +89,6 @@ else
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
       expect(await persistedRoot(fork.id)).toBe(ids.threadId);
 
-      // A subagent's chat is its top primary; a fork of it is a chat of its own.
       await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.threadId));
       const resolver = createDrizzleTopPrimaryChatResolver(db);
       expect(await resolver.resolveTopPrimaryChat(subagent.id)).toEqual({
@@ -98,7 +97,6 @@ else
       });
       expect((await resolver.resolveTopPrimaryChat(fork.id))?.chatId).toBe(fork.id);
 
-      // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
       const { thread: handoff } = await repos.threads.createDerivedPrimary({
         overrides: NO_OVERRIDES,
         aiWriteMode: "direct",

@@ -1,4 +1,3 @@
-/** Postgres import locks, durable receipts, and retained summary counts. */
 import { IMPORT_NEEDS_LOOK_REASONS, type ImportCounts } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { importEntries, imports, projects } from "@meridian/database/schema";
@@ -43,7 +42,6 @@ function projectEntry(row: EntryRow): ImportEntry {
       storageUrl: row.storageUrl,
       receivedSize: row.receivedSize,
       sha256: row.sha256,
-      // Absent from a receipt an older build wrote.
       hasPreview: hasPreview ?? false,
       facts: { kind: fileKind, filetype, mimeType, name, extension },
       aliases,
@@ -185,8 +183,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       ).map((row) => projectEntry(row) as Extract<ImportEntry, { kind: "file" }>);
     },
     async updateEntries(importId, patches) {
-      // Presence flags distinguish omitted fields from explicit NULL. Each values column is typed,
-      // including all-NULL batches; chunking bounds bind parameters, not transaction concurrency.
       const columns = [
         ["facts", "spec", "jsonb"],
         ["state", "state", "text"],
@@ -287,7 +283,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           needsLook: sql<number>`count(*) FILTER (WHERE ${inArray(importEntries.reason, IMPORT_NEEDS_LOOK_REASONS)} OR ${importEntries.changedAfterUpload})::int`,
         })
         .from(importEntries)
-        // Extracted images belong to their document: the writer's counts stay what they picked.
         .where(
           and(
             eq(importEntries.importId, id),

@@ -1,4 +1,3 @@
-/** GET /api/debug/package-fetch?url=[&commit=&ref=&path=] — authenticated, dev-only: fetches a GitHub tree through the package fetch port. */
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import {
   createFetchBudget,

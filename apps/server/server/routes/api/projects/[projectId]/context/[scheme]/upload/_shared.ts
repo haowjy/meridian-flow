@@ -1,4 +1,3 @@
-/** Pieces the upload start and finish routes share. */
 import type { ProjectId, ThreadId } from "@meridian/contracts";
 import { MAX_UPLOAD_BYTES, type UploadIntakeError } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
@@ -8,14 +7,12 @@ import type { ResolvedContextRoute } from "../_helpers.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The browser mints the intake id as a UUID; anything else is refused before it reaches the database. */
 export function uploadIntakeId(value: unknown): string {
   if (typeof value !== "string" || !UUID.test(value))
     throw createError({ statusCode: 400, message: "intakeId must be a UUID" });
   return value;
 }
 
-/** The chat is in the query, as for every uploads route. The client mints its id at the first attach; its row may not exist until Send. */
 export function uploadSubject(projectId: string, chatId: unknown) {
   if (typeof chatId !== "string" || !UUID.test(chatId))
     throw createError({ statusCode: 400, message: "chatId is required" });
@@ -27,11 +24,6 @@ export function uploadSubject(projectId: string, chatId: unknown) {
   return { chatId, container };
 }
 
-/**
- * Where an upload start or finish lands. `uploads` is a chat's attach. Any other source takes a
- * file dropped into a document, into that source's `assets/`; the client mints the file's
- * document id and sends it as the intake id, so the link stands in the document before the file.
- */
 export function uploadDestination(route: ResolvedContextRoute, chatId: unknown) {
   const { projectId } = route;
   if (route.scheme === "uploads") {
@@ -41,8 +33,6 @@ export function uploadDestination(route: ResolvedContextRoute, chatId: unknown) 
       container: subject.container,
     };
   }
-  // A chat lineage's Scratch is the model's to create in; a writer's upload there would fail at
-  // finish, after the bytes were sent.
   if ("kind" in route.authority && route.authority.kind === "lineage")
     throw createError({
       statusCode: 403,

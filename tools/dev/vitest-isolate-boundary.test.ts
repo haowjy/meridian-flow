@@ -15,8 +15,6 @@ import { asVitestGlob, mockedServerTests } from "../../apps/server/vitest.mocked
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const moduleMock = /\bvi\s*\.\s*(?:mock|doMock)\s*\(/;
 
-// The repo's own files only: a running dev stack writes and deletes lock files
-// under the gitignored logs/ while a directory walk would be reading it.
 function walk(directory: string): string[] {
   const listed = execFileSync(
     "git",

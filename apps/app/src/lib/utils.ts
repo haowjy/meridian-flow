@@ -1,16 +1,7 @@
-/**
- * utils — the `cn()` className combiner (clsx + tailwind-merge). Shared by every
- * component for conditional/merged Tailwind classes. Barrel-thin utility module.
- */
 import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
-/**
- * tailwind-merge only knows Tailwind's default theme. A custom `--text-*` size it
- * doesn't know reads as a colour, so `cn("text-xs text-foreground")` would drop
- * the size; a custom shadow reads as a shadow colour. Every custom size, shadow
- * and tracking token in `packages/design-tokens/src/ink-jade.css` is listed here.
- */
+// keep: tailwind-merge needs every custom text/shadow/tracking token listed or cn() drops the size
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {

@@ -1,4 +1,3 @@
-/** JSONL export controls for the dev-only viewer; inline English is intentional. */
 import type { EventRecord } from "@meridian/contracts/observability";
 import { type MouseEvent, useMemo, useState } from "react";
 

@@ -1,4 +1,3 @@
-/** `project`: find projects. */
 import type { CommandGroup } from "../../core/command";
 import { projectDefaultCommand } from "./default";
 import { projectListCommand } from "./list";

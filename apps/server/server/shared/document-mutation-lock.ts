@@ -1,10 +1,8 @@
-/** Postgres transaction lock serializing mutations of one live document or tree list. */
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 
 type DocumentMutationLockDb = Pick<Database, "execute">;
 
-/** Shared key for serializing mutations against one live document. */
 function documentMutationLockKey(documentId: string): string {
   return `document-mutation:${documentId}`;
 }

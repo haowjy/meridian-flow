@@ -1,11 +1,3 @@
-/**
- * CustomBlockRenderer — inline renderer for `blockType: "custom"` chat blocks.
- *
- * Purpose: Parses the custom block content, looks up `content.kind` in the
- * component registry, and mounts the registered component with the component
- * protocol props. Unknown or malformed content renders a visible placeholder
- * rather than falling through to the generic block-step renderer.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block } from "@meridian/contracts/protocol";

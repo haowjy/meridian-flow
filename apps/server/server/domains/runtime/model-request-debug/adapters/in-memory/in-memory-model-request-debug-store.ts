@@ -1,4 +1,3 @@
-/** Bounded in-memory model-request capture; content never enters persistent logs. */
 import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,

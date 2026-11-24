@@ -1,4 +1,3 @@
-/** Command spec, strict flat-arg parsing, and shared resolvers (thread ids, projects, Works, durations). */
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { type ExitCode, usageError } from "./cli-error";
@@ -23,19 +22,15 @@ export interface CommandContext {
 }
 
 export interface CommandSpec {
-  /** Noun-verb path, e.g. ["thread", "view"]. */
   path: string[];
   summary: string;
-  /** Positional synopsis, e.g. "<thread>". */
   args?: string;
-  /** The API route(s) this command wraps; printed by help so the mapping stays obvious. */
   route: string;
   options?: Record<string, OptionSpec>;
   examples: string[];
   run(ctx: CommandContext): Promise<ExitCode | undefined>;
 }
 
-/** One top-level noun (`thread`, `doc`, …): its help summary and every command under it. */
 export interface CommandGroup {
   name: string;
   summary: string;
@@ -110,7 +105,6 @@ export function intOption(ctx: CommandContext, name: string, fallback: number): 
   return value;
 }
 
-/** `90s`, `5m`, `1500ms`, or bare seconds. */
 export function parseDuration(raw: string, name: string): number {
   const match = raw.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/);
   if (!match) throw usageError(`${name} must look like 30s, 5m, or 1500ms`);
@@ -125,7 +119,6 @@ export function durationOption(ctx: CommandContext, name: string, fallbackMs: nu
   return raw === undefined ? fallbackMs : parseDuration(raw, `--${name}`);
 }
 
-/** `@path` reads a file, `-` reads stdin, anything else is literal. */
 export function readValueArg(raw: string): string {
   if (raw === "-") return readFileSync(0, "utf8");
   if (raw.startsWith("@")) {

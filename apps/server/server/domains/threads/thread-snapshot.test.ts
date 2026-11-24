@@ -1,5 +1,3 @@
-/** Thread snapshots aggregate every billed call without borrowing child usage. */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { EMPTY_RUN_STATE } from "../../test-support/run-state.js";

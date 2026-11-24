@@ -1,4 +1,3 @@
-/** Durable notices injected into model context before the next request. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 
 export type NoticeScope = { kind: "thread"; threadId: string };

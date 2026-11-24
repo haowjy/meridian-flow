@@ -1,4 +1,3 @@
-/** Drizzle/Postgres CreditLedger adapter over credit_lots and credit_transactions. */
 import type { Database } from "@meridian/database";
 import { creditLots, creditTransactions } from "@meridian/database/schema";
 import { and, desc, eq, like, type SQL, sql } from "drizzle-orm";

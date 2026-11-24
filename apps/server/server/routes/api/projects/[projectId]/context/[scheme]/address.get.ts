@@ -1,4 +1,3 @@
-/** Private owner-only browser bookmark resolution. Never emit permanent redirects. */
 import type { ProjectId } from "@meridian/contracts";
 import type { UserId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getQuery } from "nitro/h3";

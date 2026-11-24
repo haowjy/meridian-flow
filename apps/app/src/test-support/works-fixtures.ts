@@ -1,4 +1,3 @@
-/** Shared Work fixtures for projection and component tests. */
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 
 export const WORK = {

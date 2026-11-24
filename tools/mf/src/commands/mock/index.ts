@@ -1,4 +1,3 @@
-/** `mock`: script the dev mock model (MODEL_PROVIDER=mock stacks only). */
 import type { CommandGroup } from "../../core/command";
 import { mockClearCommand } from "./clear";
 import { mockListCommand } from "./list";

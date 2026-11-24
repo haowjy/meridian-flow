@@ -1,4 +1,3 @@
-/** What admission takes as sent, and the one verdict the server writes (a create raced into a closed Work). */
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { admit as admitTo, type Connection } from "./admission.js";
@@ -22,7 +21,6 @@ const connection: Connection = {
   closed: (source) => source === "old-scratch",
 };
 
-/** The server's list: two sources the account may write, one it may not, some nodes. */
 function server() {
   const doc = new LoroDoc();
   doc.setPeerId(7);
@@ -54,7 +52,6 @@ function admit(doc: LoroDoc, update: Uint8Array, conn: Connection) {
   return admitTo(new TreeWriter(doc), update, conn);
 }
 
-/** A client's copy, and the update it would send after `change`. */
 function client(doc: LoroDoc, change: (copy: LoroDoc) => void, peer = 5000) {
   const copy = new LoroDoc();
   copy.setPeerId(peer);
@@ -65,7 +62,6 @@ function client(doc: LoroDoc, change: (copy: LoroDoc) => void, peer = 5000) {
   return { copy, update: copy.export({ mode: "update", from: before }) };
 }
 
-/** Appends raw values to a copy's records, as a client's own list would hold them. */
 function append(doc: LoroDoc, ...values: unknown[]) {
   const ops = doc.getList("ops");
   for (const value of values) ops.push(JSON.parse(JSON.stringify(value)));
@@ -73,7 +69,6 @@ function append(doc: LoroDoc, ...values: unknown[]) {
 }
 
 const rid = () => `r${Math.random().toString(36).slice(2)}`;
-/** A well-formed record of its kind, with `over` laid on top. */
 const record = (over: Record<string, unknown> = {}): TreeRecord =>
   ({
     id: rid(),
@@ -210,7 +205,6 @@ describe("a create raced into a closed Work is stamped dropped", () => {
       node: "p",
     });
     const open: Connection = { drafts: connection.drafts, closed: () => false };
-    // Two copies of one list, neither seeing the other's move of Ch1; the server orders a's first.
     const a = client(doc, (copy) => new TreeWriter(copy).move(LIVE, ME, "ch1", "kept"), 5000);
     const offline = new LoroDoc();
     offline.setPeerId(6000);
@@ -221,7 +215,6 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     admit(doc, a.update, open);
     admit(doc, offline.export({ mode: "update", from: since }), open);
     expect(replayView(doc, LIVE).nodes.get("ch1")?.parent).toBe("p");
-    // The Work closes. b's Undo carries Arc, where b saw Ch1; the server's list sends it to Kept.
     since = offline.oplogVersion();
     const back = undoChange(b, LIVE, ME, move.id) as TreeRecord;
     expect(back).toMatchObject({ type: "move", parent: "arc" });

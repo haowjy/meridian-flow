@@ -91,8 +91,6 @@ function waitForEventTypes(ws: WebSocket, expected: Set<string>): Promise<string
   });
 }
 
-// The server runs with DEV_AUTH_BYPASS=1, so requests carry no credentials.
-// Also provisions the dev user on first sign-in.
 const meResponse = await fetch(new URL(API_AUTH_ME_PATH, serverUrl));
 if (!meResponse.ok) throw new Error(`GET ${API_AUTH_ME_PATH} failed: ${meResponse.status}`);
 const { user } = (await meResponse.json()) as AuthMeResponse;
@@ -123,7 +121,6 @@ await db.insert(threads).values({
   projectId,
   createdByUserId: userId,
   title: "Smoke thread",
-  // The chat copies its Work's default, as thread creation does.
   aiWriteMode: "direct",
 });
 await db.insert(threadWorks).values({

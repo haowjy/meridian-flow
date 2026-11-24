@@ -1,5 +1,3 @@
-/** Durable per-execution execution reports and publication obligations. */
-
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
@@ -32,8 +30,7 @@ type ExecutionReportRow = Omit<
 };
 
 function map(row: ExecutionReportRow): SavedExecutionReport {
-  // Read PostgreSQL's serialization so the driver and Drizzle cannot reinterpret
-  // a JSON scalar string as the JSON text it happens to contain.
+  // keep: Select JSONB columns as ::text; the driver otherwise re-parses JSON scalar strings
   return {
     childThreadId: row.childThreadId,
     executionTurnId: row.executionTurnId,
@@ -153,7 +150,6 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         card: card ?? null,
       });
       const values = reportIdentity(input);
-      // A replayed admission of the same execution is a no-op; any other conflict is a bug.
       await currentDrizzleDb(db)
         .insert(table)
         .values(values)

@@ -1,5 +1,3 @@
-/** Connection authority for reading another conversation's history or files. */
-
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
 import type { OwnerLookup } from "../../context/index.js";
@@ -21,7 +19,6 @@ export async function resolveReadableThread(input: {
   ref?: string;
   threads: Pick<ThreadRepository, "findLiveByProjectRef">;
   turns: Parameters<typeof areThreadsConnected>[2];
-  /** Names the target's files in the not-connected refusal; absent where none are wired. */
   chatFiles?: OwnerLookup;
 }): Promise<ReadableThreadOutcome> {
   const ref = input.ref === undefined || input.ref === "current" ? input.caller.ref : input.ref;
@@ -45,7 +42,6 @@ export async function resolveReadableThread(input: {
   return { ok: true, target };
 }
 
-/** Handoff provenance connects only its direct cutoff owner, not either lineage. */
 export async function areThreadsConnected(
   caller: Thread,
   target: Thread,

@@ -26,7 +26,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("permission answer savepoint (postgres)", () => {});
 } else {
   describe("permission answer savepoint (postgres)", () => {
-    // The answer commits for real so after-commit effects run or are discarded.
     const db = createDb(DATABASE_URL, { max: 6 });
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
@@ -34,11 +33,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [users]);
     });
 
-    /**
-     * An open request to rename the target. Before the real
-     * update runs, the Work adapter writes the target's goal and registers an
-     * after-commit effect, then fails as `failure` says.
-     */
     async function openRename(failure: "refused" | "infrastructure") {
       const runtime = await runtimes.compose();
       const userId = randomUUID();

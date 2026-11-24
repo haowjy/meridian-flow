@@ -1,10 +1,3 @@
-/**
- * HTTP orchestration for one Copy: parse the writer's locators, find each source by its node id
- * (where it stands now, or in Trash), ask file policy for read on each source and `command` on
- * the destination, then hand the port canonical addresses. Everything that writes, and what a
- * closed destination Work answers, happens in the domain command.
- */
-
 import { type DraftId, type DraftOwner, isDraftId } from "@meridian/contracts";
 import { formatParsedContextUri, isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { parseHandle } from "@meridian/contracts/handles";
@@ -61,7 +54,6 @@ export interface ContextCopyRouteDeps {
   drafts: Pick<Drafts, "ownerOf">;
 }
 
-/** A copy source: a context locator, or one chat's uploads. */
 type CopySourceLocator =
   | ContextLocator
   | { scope: "chat"; scheme: "uploads"; chatRef: string; path: string };
@@ -143,11 +135,6 @@ function parseSource(raw: unknown): ParsedCopySource {
   };
 }
 
-/**
- * The client's vector is for the one room of the one document it holds open: a folder has no
- * such room, and every child has a room of its own. Decoding it here keeps a malformed
- * vector a client error instead of a failure inside the command.
- */
 function parseRoomVersion(raw: unknown, kind: "file" | "folder"): Uint8Array | undefined {
   if (raw === undefined) return undefined;
   if (kind === "folder") {
@@ -273,7 +260,6 @@ function parseDestination(body: Record<string, unknown>): CopyDestinationLocator
   return { scope: "project", scheme, path };
 }
 
-/** Uploads is where a chat's files arrive; nothing is copied into it, whichever way it is named. */
 function uploadsOutOnly() {
   return createError({
     statusCode: 400,
@@ -295,13 +281,7 @@ interface ResolvedSource {
   view: CopySourceView;
   copyId?: string;
   roomVersion?: Uint8Array;
-  /** The file-policy target its read is granted on. */
   target: FileTarget;
-  /**
-   * `trash`: the node is in Trash, so its read is asked as a `command` (a deleted file's `read`
-   * is not allowed). `gone`: the project holds no such node, so there is nothing to grant and the
-   * command leaves it out.
-   */
   held: "live" | "trash" | "gone";
   workId: string | null;
 }
@@ -313,7 +293,6 @@ export async function handleContextCopyRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const copy = parseContextCopy({ body: input.body });
 
-  /** A draft of this project, with whoever names it; any other draft is not found. */
   const owners = new Map<DraftId, DraftOwner>();
   async function draftOwner(view: CopyContextEntryView): Promise<DraftOwner | null> {
     if (view.kind === "live") return null;
@@ -332,7 +311,6 @@ export async function handleContextCopyRequest(
   ): Promise<ResolvedContextLocator> {
     const resolved = await resolveLocatorFor(deps, input.projectId, locator);
     if (resolved.ok) return resolved.value;
-    // A destination chat that is gone reads as an unavailable owner, a source's as a 404.
     if (options.destination && resolved.error.reason === "chat_missing")
       throwContextWorkUnavailableHttpError("work_missing");
     return throwLocatorRefusal(resolved.error);
@@ -342,8 +320,6 @@ export async function handleContextCopyRequest(
   const workIds = new Set<string>();
   const destinationView: CopySourceView = copy.destinationView;
   const destinationOwner = await draftOwner(destinationView);
-  // The port's own Work is the destination's: a copy reads its sources and writes only there,
-  // so a source Work that has ended must not make the destination unavailable.
   let destinationWorkId: string | null = null;
   if (destinationOwner?.kind === "work") destinationWorkId = destinationOwner.workId;
   for (const source of copy.sources) {
@@ -369,9 +345,6 @@ export async function handleContextCopyRequest(
       });
       continue;
     }
-    // The node is the source wherever it stands now (or stood, in Trash), whatever path the
-    // writer saw. A node the project no longer holds keeps the writer's address: the command
-    // finds nothing there and leaves it out.
     const held = await deps.availability.held(
       {
         projectId: input.projectId as ProjectId,
@@ -394,7 +367,6 @@ export async function handleContextCopyRequest(
     const standing = held?.kind === "held" ? (held.inTrash ? "trash" : "live") : "gone";
     const workId = resolved.scope === "work" ? resolved.authority.workId : null;
     if (workId) workIds.add(workId);
-    // The port below refuses a Work that isn't this project's (`work_missing`).
     const owner = await draftOwner(source.view);
     if (owner?.kind === "work") workIds.add(owner.workId);
     sources.push({
@@ -474,7 +446,6 @@ export async function handleContextCopyRequest(
     ...(copy.position ? { position: copy.position } : {}),
     ...(authorizeDestination ? { authorizeDestination } : {}),
   });
-  // A destination folder the project no longer holds: nothing is copied, and the answer says so.
   if (folder && !folder.ok && folder.error.code === "destination_missing") {
     const left = await port.leftOutForMissingFolder(request(destinationFolderId as string));
     if (!left.ok) contextErrorToHttp(left.error);
@@ -482,7 +453,6 @@ export async function handleContextCopyRequest(
   }
   if (folder && !folder.ok) contextErrorToHttp(folder.error);
   const folderUri = folder?.ok ? folder.value.uri : null;
-  // A folder named by identity can live in Uploads too, and is refused like the path form.
   if (folderUri !== null) {
     const parsed = parseUnifiedContextUri(folderUri);
     if (parsed.ok && parsed.value.scheme === "uploads") throw uploadsOutOnly();
@@ -533,7 +503,6 @@ export async function handleContextCopyRequest(
   return result.value;
 }
 
-/** A resolved destination URI, for the file-policy recheck under the command's locks. */
 async function resolveDestinationUri(
   deps: ContextCopyRouteDeps,
   projectId: string,

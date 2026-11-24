@@ -1,5 +1,3 @@
-/** Drizzle adapter for immutable prompt bake rows. */
-
 import type { PromptBakeId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";

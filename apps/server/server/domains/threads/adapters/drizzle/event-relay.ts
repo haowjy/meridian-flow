@@ -1,4 +1,3 @@
-/** Relays committed PostgreSQL journal notifications into this process's live hub. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { EventSink } from "../../../observability/index.js";
@@ -25,8 +24,6 @@ export async function listenForThreadEvents(input: {
     const separator = payload.lastIndexOf(":");
     if (separator < 1) throw new Error("Malformed thread event notification");
     const threadId = payload.slice(0, separator) as ThreadId;
-    // The sequence only wakes this process. The hub drains all committed rows
-    // after its cursor, so reversed and duplicated notifications are harmless.
     const notifiedSeq = BigInt(payload.slice(separator + 1));
     if (notifiedSeq < 1n) throw new Error("Malformed thread event notification sequence");
     input.eventHub.invalidateCommittedJournal(threadId);

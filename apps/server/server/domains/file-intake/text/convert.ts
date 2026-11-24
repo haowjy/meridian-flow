@@ -1,8 +1,3 @@
-/**
- * The one way EPUB and PDF files are converted: in a worker thread (`conversion-worker.ts`) that
- * is terminated at the deadline and capped in memory, so a hostile or huge file costs the server
- * a refusal, never a frozen event loop. A later converter is one more job kind.
- */
 import { createWorkerPool, WorkerPoolError } from "../../../shared/worker-pool.js";
 import { CONVERSION_LIMITS, ConversionRefused } from "./limits.js";
 
@@ -36,7 +31,6 @@ function unwrap<T extends ConversionReply>(reply: ConversionReply, key: keyof T)
   return (reply as T)[key];
 }
 
-/** The file's Markdown. Throws `ConversionRefused` for a file that is refused, hostile or too slow. */
 export async function convertToMarkdown(
   source: "epub" | "pdf",
   bytes: Uint8Array,
@@ -44,7 +38,6 @@ export async function convertToMarkdown(
   return unwrap<{ markdown: string }>(await run({ kind: source, bytes }), "markdown");
 }
 
-/** The PDF's page count. Throws `ConversionRefused` for a PDF that can't be opened. */
 export async function countPdfPages(bytes: Uint8Array): Promise<number> {
   return unwrap<{ pages: number }>(await run({ kind: "pdf-pages", bytes }), "pages");
 }

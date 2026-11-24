@@ -1,4 +1,3 @@
-/** Artifact references carried by saved agent reports and invocation cards. */
 import { z } from "zod";
 
 export const artifactRefSchema = z.discriminatedUnion("type", [

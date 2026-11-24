@@ -1,4 +1,3 @@
-/** /projects/new: the project library with the creation dialog open over it. */
 import { t } from "@lingui/core/macro";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -12,8 +11,6 @@ export function NewProjectView() {
   const { create } = useCreateProject();
   const router = useRouter();
   useEffect(() => {
-    // The destination UUID does not exist yet, so route preloading would run
-    // owner-gated loaders into a 404. Warm only the inevitable workspace code.
     preloadProjectWorkspace();
   }, []);
   return (

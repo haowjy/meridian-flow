@@ -1,4 +1,3 @@
-/** GET /api/projects/:projectId/documents/:documentId/properties: a document's imported frontmatter, parsed in source order. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

@@ -1,9 +1,3 @@
-/**
- * The model `skill` tool and every other model tool's `skills://`
- * branch. Skills are read-only files: `read` returns a file, one of its
- * `#heading` sections or its outline, `ls` lists folders, and `write`
- * and `grep` refuse.
- */
 import {
   DOCUMENT_NOT_FOUND_MESSAGE,
   markdownSections,
@@ -71,7 +65,6 @@ export function createSkillToolRegistrations(deps: SkillFilesDeps): ToolRegistra
   ];
 }
 
-/** `skill`: `read`'s result for the skill's `SKILL.md`, or the skills it could load instead. */
 async function invokeSkill(deps: SkillFilesDeps, threadId: string, name: string) {
   const file = await readSkillMd(deps, threadId, name);
   if (file.kind === "text") return renderSkillFile(file.skill, file.path, file.text);
@@ -99,12 +92,6 @@ function invalidArguments(issues: InvalidArgumentIssue[]) {
   return { isError: true as const, output: invalidArgumentsResult(issues) };
 }
 
-/**
- * `read` of a `skills://` file: the whole file, one `#heading` section, or an
- * outline of its headings, under the shared header. Sections and slugs
- * follow documents; skill files have no block hashes, so `in` and `around`
- * are refused.
- */
 export async function readSkill(deps: SkillFilesDeps, threadId: string, input: ReadToolInput) {
   const { path, format } = input;
   const selector = input.in !== undefined ? "in" : input.around !== undefined ? "around" : null;
@@ -134,7 +121,6 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
   const span = section ?? { start: 0, end: lines.length };
   const address = section ? `${file.path}#${section.slug}` : file.path;
   const headings = sections.filter(({ start }) => start >= span.start && start < span.end);
-  // An outline of text with no headings is the text, as a document's is.
   if (!outline || headings.length === 0) {
     return renderSkillFile(
       file.skill,
@@ -151,7 +137,6 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
   );
 }
 
-/** The root listing's `skills://` row, only when the agent can see a skill. */
 export async function skillsRootEntries(
   deps: SkillFilesDeps,
   threadId: string,
@@ -162,7 +147,6 @@ export async function skillsRootEntries(
     : [];
 }
 
-/** A `write` naming a `skills://` file as its target or its `from` is refused; null otherwise. */
 export function refuseSkillWrite(parsed: WriteToolInput) {
   const from = "from" in parsed ? parsed.from : undefined;
   const fromPaths = from === undefined ? [] : "paths" in from ? (from.paths ?? []) : [from.path];
@@ -181,7 +165,6 @@ export function refuseSkillWrite(parsed: WriteToolInput) {
   };
 }
 
-/** `grep` scoped to `skills://` is refused; null otherwise. */
 export function refuseSkillGrep(path: string | undefined) {
   if (!path || !isSkillsUri(path)) return null;
   return { isError: true as const, output: meridianErrorFromTool(SKILL_GREP) };

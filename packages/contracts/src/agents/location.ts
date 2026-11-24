@@ -1,5 +1,3 @@
-/** Where a level's Agent files live. The one place that spells those addresses. */
-
 import type { ContextUriScheme, ProjectScopedContextUriScheme } from "../context-uri.js";
 import { readSegment } from "../protocol/entry-segment.js";
 
@@ -7,17 +5,14 @@ export type AgentsLevel = "user" | "project";
 
 export interface AgentsLocation {
   level: AgentsLevel;
-  /** Relative to the level's root: `agents/critic.md`, `packages/x/mars.toml`; empty for the root. */
   path: string;
 }
 
-/** The project level is its own source; the user level is a folder of the account's `user://`. */
 const ROOTS = {
   user: { scheme: "user", path: ".agents" },
   project: { scheme: "agents", path: "" },
 } as const satisfies Record<AgentsLevel, { scheme: ProjectScopedContextUriScheme; path: string }>;
 
-/** Where a level's files live, for readers and provisioning. */
 export function agentsRootOf(level: AgentsLevel): {
   scheme: ProjectScopedContextUriScheme;
   path: string;
@@ -25,7 +20,6 @@ export function agentsRootOf(level: AgentsLevel): {
   return ROOTS[level];
 }
 
-/** Whether an address is in an Agents location, and at which level. */
 export function agentsLocationOf(scheme: ContextUriScheme, path: string): AgentsLocation | null {
   for (const level of ["user", "project"] as const) {
     const root = ROOTS[level];
@@ -40,10 +34,6 @@ export function agentsLocationOf(scheme: ContextUriScheme, path: string): Agents
 const AGENT_FILE = /^(?:packages\/[^/]+\/)?agents\/([^/]+)\.md$/;
 const SKILL_FILE = /^(?:packages\/[^/]+\/)?skills\/([^/]+)\/SKILL\.md$/;
 
-/**
- * What a level-relative path defines, if anything: an Agent or a skill, and its name. A twin
- * (a segment with `~id`, anywhere in the path) defines nothing: Mars sees one file per name.
- */
 export function agentsFileOf(path: string): { kind: "agent" | "skill"; slug: string } | null {
   if (path.split("/").some((segment) => readSegment(segment).suffix !== undefined)) return null;
   const agent = AGENT_FILE.exec(path)?.[1];

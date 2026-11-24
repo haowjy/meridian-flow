@@ -1,4 +1,3 @@
-/** Maps tool views to writer-facing commands and labels. */
 import { type SaveOutcome, saveOutcomeSchema } from "@meridian/contracts/agents";
 import type { McpCallResult, McpDescribeResult, McpRunResult } from "@meridian/contracts/mcp";
 import { isDoneWriteStatus, type JsonValue } from "@meridian/contracts/protocol";
@@ -55,14 +54,12 @@ export function toolCommand(tool: ToolView): ToolCommand {
   }
 }
 
-/** The server's facts for one `work` mutation (Work names before and after, never handles) and the inverse that would undo it; the app writes the line from them. */
 export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
 }
 
-/** One outcome per package a `save_agents` call saved or failed to save (set by the server on the result). */
 export function agentsSaved(tool: ToolView): SaveOutcome[] {
   const outcomes = tool.metadata?.agentsSaved;
   if (!Array.isArray(outcomes)) return [];
@@ -72,18 +69,13 @@ export function agentsSaved(tool: ToolView): SaveOutcome[] {
   });
 }
 
-/** One `mcp_call`, from its typed result once it ends and from its input while it runs. */
 export type McpCallView = {
-  /** The connection's name and the server's tool name; null until the model has named them. */
   connection: string | null;
   tool: string | null;
-  /** What was sent; null while the arguments are still streaming in. */
   arguments: Record<string, JsonValue> | null;
-  /** Null while the call runs. */
   result: McpCallResult | null;
 };
 
-/** A call that ended any way but `answered` failed, whatever the transport said. */
 export function mcpCallFailed(tool: ToolView): boolean {
   if (tool.isError) return true;
   const outcome = mcpCallResult(tool.result)?.outcome;
@@ -105,16 +97,12 @@ export function mcpCall(tool: ToolView): McpCallView {
   };
 }
 
-/** One `mcp_run`: its code, its typed result once it ends, and a row per call, live while it runs. */
 export type McpRunView = {
   code: string | null;
-  /** Null while the script runs. */
   result: McpRunResult | null;
-  /** Each call as an `mcp_call` view, so the call's row is the one `mcp_call` has. */
   calls: ToolView[];
 };
 
-/** A script that ended any way but `returned` failed, whatever the transport said. */
 export function mcpRunFailed(tool: ToolView): boolean {
   if (tool.isError) return true;
   const result = mcpRunResult(tool.result);
@@ -124,7 +112,6 @@ export function mcpRunFailed(tool: ToolView): boolean {
 export function mcpRun(tool: ToolView): McpRunView {
   const result = mcpRunResult(tool.result);
   const code = toolInputObject(tool).code;
-  // The result lists every call; while the script runs, the calls it has made come from the live events.
   const entries: {
     sequence: number;
     id: string;
@@ -188,14 +175,12 @@ function mcpCallResult(value: JsonValue | null): McpCallResult | null {
     : null;
 }
 
-/** `<connection>/<tool>`, split at the first `/`; a bare name is a connection. */
 function splitMcpToolId(id: string | undefined): [string | null, string | null] {
   if (!id) return [null, null];
   const at = id.indexOf("/");
   return at < 0 ? [id, null] : [id.slice(0, at), id.slice(at + 1) || null];
 }
 
-/** What one `mcp_describe` asked for: tool ids and connection names, with what each turned out to be once it ends. */
 export function mcpDescribed(tool: ToolView): {
   connection: string | null;
   tool: string | null;
@@ -218,8 +203,6 @@ export function mcpDescribed(tool: ToolView): {
 }
 
 function workToolCommand(tool: ToolView): ToolCommand {
-  // The receipt is the server's record of what changed, so its operation wins;
-  // a result-only view has no input to classify from.
   const command = workReceipt(tool)?.operation ?? stringInput(toolInputObject(tool), "command");
   switch (command) {
     case "list":
@@ -238,14 +221,6 @@ function workToolCommand(tool: ToolView): ToolCommand {
   }
 }
 
-/**
- * The writer-facing verb for one `write` call. Removing blocks is an edit. A
- * `copy`, or an `insert`/`replace` that takes its blocks from `from`, is a copy:
- * saying it wrote text would hide where the words came from. `move` and
- * `delete` change where a whole document is, not what it says. A call whose
- * command hasn't streamed in yet reads as writing; a command this list doesn't
- * know is `unknown`.
- */
 function writeCommand(input: Record<string, JsonValue>): ToolCommand {
   const command = stringInput(input, "command");
   switch (command) {
@@ -269,7 +244,6 @@ function writeCommand(input: Record<string, JsonValue>): ToolCommand {
   }
 }
 
-/** The document a `write` call takes from, as the model named it (`from.path`): a copy's source, or the document a move moves. */
 export function sourcePath(input: Record<string, JsonValue>): string | undefined {
   const from = input.from;
   if (!from || typeof from !== "object" || Array.isArray(from)) return undefined;
@@ -299,13 +273,8 @@ export function stringInput(input: Record<string, JsonValue>, field: string): st
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** A file inside a skill package: `skills://<skill>/<path>`. */
 type SkillFile = { skill: string; path: string };
 
-/**
- * The skill a `skills://` path belongs to, and the file's path inside it.
- * `skills://` addresses no writer document, so it never parses as a context URI.
- */
 export function skillFile(path: string): SkillFile | null {
   const match = path.trim().match(/^skills:\/\/([^/]+)\/(.+)$/);
   if (!match?.[1] || !match[2]) return null;
@@ -320,7 +289,6 @@ export function humanizeSkillSlug(slug: string): string {
     .join(" ");
 }
 
-/** Domain refusals are failed document operations even when transport succeeded. */
 export function documentToolFailed(tool: ToolView): boolean {
   if (tool.isError) return true;
   if (tool.status !== "complete" || (tool.toolName !== "write" && tool.toolName !== "read"))
@@ -330,10 +298,6 @@ export function documentToolFailed(tool: ToolView): boolean {
   return typeof result.status === "string" && !isDoneWriteStatus(result.status);
 }
 
-/**
- * A write the document's state returned: nothing was kept and the AI carries on. It is a settled
- * outcome, not a failure, even though it takes the failed row's explanation.
- */
 export function documentToolReturned(tool: ToolView): boolean {
   if (tool.isError || tool.status !== "complete" || tool.toolName !== "write") return false;
   const result = tool.result;

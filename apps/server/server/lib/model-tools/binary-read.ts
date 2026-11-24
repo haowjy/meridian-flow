@@ -1,9 +1,3 @@
-/**
- * `read` on a file that is not a tracked document. What the model is given is decided here,
- * once, at the call, and stored with the result: an image, or a PDF the model takes, as a media
- * part; a PDF it can't take, or an EPUB, as the text extracted from it (read like a document);
- * any other file as a description.
- */
 import {
   type AgentEditResultV1,
   createAgentEditCodecFactory,
@@ -26,16 +20,8 @@ import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../domains/st
 import { documentGrant } from "./file-access.js";
 import { isToolError, type ToolCall, type ToolWiringDeps, writeToolError } from "./tool-context.js";
 
-/**
- * Where what the model is given goes: in the tool result (the agent's own read) or in the user
- * message (a file the writer mentioned). Models differ in what they take in each place.
- */
 export type ReadPlacement = "tool-result" | "user-message";
 
-/**
- * Extracted text longer than this many characters (about 7,500 tokens) is read as its outline
- * first, unless the call names a section, a range, a search or a format.
- */
 export const OUTLINE_FIRST_CHARS = 30_000;
 
 const schema = buildDocumentSchema();
@@ -111,8 +97,6 @@ export async function readBinaryFile(
     );
   }
   if (file.mediaType.startsWith("image/")) {
-    // An image type the models don't take goes as the preview the server made of it, whose own
-    // size is the one a provider's link limit applies to.
     const previewKey = ref.hasPreview ? objectStoreKeyFromStorageUrl(ref.storageUrl) : null;
     const preview = previewKey
       ? await deps.objectStore.readHead(previewObjectKey(previewKey), 0)
@@ -134,7 +118,6 @@ export async function readBinaryFile(
   return done(describe("this model can't read files of this type."));
 }
 
-/** A refusal is an error result; anything else the model was given. */
 function done(output: AgentEditResultV1): {
   output: AgentEditResultV1;
   revision: null;
@@ -147,11 +130,6 @@ function done(output: AgentEditResultV1): {
   };
 }
 
-/**
- * The page count of a PDF the model takes as media, or null when it goes as text instead: the
- * model doesn't take PDFs here, the PDF can't be opened (the text read says why), or it is too
- * long for the model.
- */
 async function pdfMediaPages(
   deps: ToolWiringDeps,
   ref: BinaryFileRef,
@@ -193,7 +171,6 @@ function result(file: FileFacts, given: Given, payload: { message?: string }): A
   });
 }
 
-/** The file's extracted text, read through the document renderer; a file with none is described. */
 async function text(
   deps: ToolWiringDeps,
   ref: BinaryFileRef,

@@ -1,13 +1,3 @@
-/**
- * useTurnStop — Stop for a handoff brief being written, through the turn cancel
- * route. (A compaction divider's Stop is the chat's Stop, `useChatStop`.)
- *
- * The turn reads Stopping at once; the turn cancel route catches up and the
- * snapshot revalidates so the settled turn arrives. A failed cancel clears
- * Stopping and holds the failure on the turn, counted by attempt, until the
- * next attempt; `chatCards` draws it as the card on the row that offered Stop.
- */
-
 import type { FailureEnd } from "@meridian/contracts/failures";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { type CommandFailure, logCommandFailure, type Occurrence } from "@meridian/thread-client";
@@ -23,7 +13,6 @@ export type TurnStopCopy = { stopping: string };
 
 export type TurnStop = {
   stopping: ReadonlySet<string>;
-  /** The occurrence owned by each failed Stop. */
   failed: ReadonlyMap<string, Occurrence>;
   stop: (turnId: string, copy: TurnStopCopy) => void;
 };
@@ -39,7 +28,6 @@ function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
   return next;
 }
 
-/** Open failures carry the attempt allocated when Stop was pressed. */
 type Failures = ReadonlyMap<string, CommandFailure>;
 
 export function useTurnStop(threadId: string, turns: readonly Turn[]): TurnStop {

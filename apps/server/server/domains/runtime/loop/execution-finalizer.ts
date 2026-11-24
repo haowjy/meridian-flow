@@ -1,4 +1,3 @@
-/** One terminal transaction for a turn and its admitted child execution report. */
 import type { MeridianError } from "@meridian/contracts/errors";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -34,7 +33,6 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** The provider's own answer, kept on the failed reply's metadata. */
       providerError?: ProviderErrorResponse;
     }
   | { kind: "cancelled"; reason: string };
@@ -45,10 +43,6 @@ export type FinalizedExecution = {
   report: SavedExecutionReport | null;
 };
 
-/**
- * A finished run reports its final response, even an empty one. An interrupted run's last response
- * may have said nothing yet, so it reports the latest text the run wrote.
- */
 function publicText(blocks: Block[], finalResponseId: string | null, interrupted: boolean): string {
   const text = blocks.filter((block) => block.blockType === "text");
   const responseId = interrupted ? (text.at(-1)?.responseId ?? null) : finalResponseId;
@@ -136,10 +130,6 @@ function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "fa
   };
 }
 
-/**
- * Finalize one execution under the thread lock; nested persistence joins its transaction.
- * Failed turns derive generic writer copy from their role; `cause.error` remains diagnostic data.
- */
 export async function finalizeExecution(
   deps: {
     repos: Pick<
@@ -157,17 +147,11 @@ export async function finalizeExecution(
     >;
     eventWriter: LiveEventWriter;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
-    /**
-     * Answers the document commands a dying assistant turn left unanswered. It runs inside this
-     * terminal write, under the thread lock and the caller's session claim (no lease check), so
-     * the turn never becomes terminal with a command still open.
-     */
     recoverCommands(threadId: ThreadId, turn: Turn): Promise<void>;
   },
   input: {
     threadId: ThreadId;
     turnId: TurnId;
-    /** A crash on a placeholder has no report content, even if a candidate was captured earlier. */
     reportContent?: "empty";
     cause: TerminalCause;
   },
@@ -192,8 +176,7 @@ export async function finalizeExecution(
       );
       const existingReport =
         turn.role === "compaction" && ancestorReport?.outcome !== null ? null : ancestorReport;
-      // Every ask transition locks the ask before the thread. The lifecycle
-      // owner uses the same order when deletion or archive races settlement.
+      // keep: Lock asks before threads everywhere; deletion and archive settlement use the same order
       const liveAsk = await deps.repos.asks.findLiveByTurnForUpdate(input.turnId);
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport && turn.role === "assistant") {

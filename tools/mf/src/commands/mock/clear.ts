@@ -1,4 +1,3 @@
-/** `mock clear`: drop one queued mock script, or all. */
 import {
   API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
   mockModelScriptStateSchema,

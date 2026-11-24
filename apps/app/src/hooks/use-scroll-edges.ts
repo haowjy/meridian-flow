@@ -1,8 +1,3 @@
-/**
- * useScrollEdges — which ends of a sideways scroller have content behind them, for the
- * `scroll-fade-x` mask (`styles/globals.css`). It re-measures when the scroller scrolls or
- * resizes and when its children change size or are added, so a strip that gains items fades too.
- */
 import { type RefObject, useEffect, useState } from "react";
 
 export type ScrollEdges = { start: boolean; end: boolean };

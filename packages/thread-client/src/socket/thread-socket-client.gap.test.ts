@@ -18,8 +18,8 @@ import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 const { ThreadSocketClient } = await import("./thread-socket-client");
 
 const THREAD_ID = "thread-1";
-const CAP_WINDOW_SEQ = 10_000_999n; // end cursor of the oldest replayable window
-const HEAD_SEQ = 23_081_999n; // server journal head cursor
+const CAP_WINDOW_SEQ = 10_000_999n;
+const HEAD_SEQ = 23_081_999n;
 
 const LIVE_STATE = {
   threadId: THREAD_ID,
@@ -79,8 +79,6 @@ function createHarness(maxResubscribes = 5) {
     if (frame.type !== "subscribe") return;
 
     subscribeFrames.push(frame);
-    // Stop answering once a runaway loop passes the bound so a pre-fix failure
-    // is a clean assertion, not an unbounded synchronous recursion.
     if (subscribeFrames.length > maxResubscribes) return;
 
     answer(target, frame.requestId ?? "", frame.lastSeq);
@@ -157,7 +155,6 @@ describe("ThreadSocketClient gap recovery", () => {
       state: LIVE_STATE,
     });
 
-    // A reconnect's cursor is event-delivery state, not the durable head.
     activeSocket.deliver(connected);
     expect(requests.at(-1)?.lastSeq).toBe("0");
     unsubscribe();
@@ -167,13 +164,10 @@ describe("ThreadSocketClient gap recovery", () => {
   it("advances the resume point to the gap head and converges after one resubscribe", () => {
     const harness = createHarness();
     try {
-      // The explicit zero cursor requests history → gap. The transport must then
-      // resubscribe from toSeq exactly once; the follow-up is beyond the cap.
       expect(harness.subscribeFrames).toHaveLength(2);
       expect(harness.subscribeFrames[0]?.lastSeq).toBe("0");
       expect(harness.subscribeFrames[1]?.lastSeq).toBe(HEAD_SEQ.toString());
       expect(harness.gapEvents).toEqual([expect.objectContaining({ toSeq: HEAD_SEQ.toString() })]);
-      // The truncated catch-up is skipped, not replayed onto the reducer.
       expect(harness.deliveredEvents).toEqual([]);
     } finally {
       harness.unsubscribe();

@@ -106,7 +106,6 @@ function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
   }
 }
 
-/** Every error names the request it answers when it can; a message that failed to parse has none. */
 type ErrorScope = { requestId?: string; threadId?: string };
 
 function sendError(peer: WsPeer, error: MeridianError, scope: ErrorScope = {}): boolean {
@@ -183,8 +182,7 @@ async function subscribeThread(
   }
   const request = {};
   slot.request = request;
-  // Request arrival wins. Keep an active lease until this request passes auth,
-  // but invalidate an older pending handoff immediately.
+  // keep: request arrival wins: hold the active lease until this request passes auth, but invalidate an older pending handoff at once
   if (slot.lease?.phase !== "active") {
     disposeLease(slot.lease);
     slot.lease = undefined;
@@ -232,7 +230,6 @@ async function subscribeThread(
           if (lease.phase === "active") flushBuffered();
         });
       },
-      // The client reconnects from its own position and takes the replay gap path.
       () => peer.close(1011, "frames_lost"),
     );
     if (!currentLease()) {
@@ -279,7 +276,6 @@ async function subscribeThread(
     }
     disposeLease(lease);
     state.subscriptions.delete(threadId);
-    // A failed read is the one retryable subscribe failure: the client asks again.
     emitEvent(auth.app.eventSink, {
       level: "error",
       source: "wire.thread_ws",
@@ -411,10 +407,8 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                 askId,
                 answers: message.answers,
               });
-              // No reply goes back, so the log is the only trace of a client reporting a bad draft.
               if (refused)
                 emitEvent(peer.context.app.eventSink, {
-                  // A presence crossing an answer or the sweep is routine; a misfit or a stranger is a bug.
                   level: refused === "not_open_question" ? "info" : "warn",
                   source: "wire.thread_ws",
                   name: "ask.presence.refused",

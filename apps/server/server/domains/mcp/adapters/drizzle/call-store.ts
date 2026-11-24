@@ -5,7 +5,7 @@ import { mcpCalls } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { CallStore, RecordedCall } from "../../ports/call-store.js";
 
-/** Plain `db`, never the ambient transaction: a call's record must commit before the call leaves. */
+// keep: Use plain db, not the ambient transaction, so the call record commits before the network call
 export function createDrizzleCallStore({ db }: { db: Database }): CallStore {
   return {
     async open(call) {

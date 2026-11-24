@@ -1,9 +1,3 @@
-/**
- * POST /api/threads/:threadId/send-now: cancels the reply the writer saw so the waiting queue runs
- * next, unless that reply has already taken on a waiting message. Hands nothing back and keeps no
- * decision: `seenExecutionId` makes a repeat of the same body safe. `cancelledExecutionId: null`
- * means this attempt requested no cancellation.
- */
 import { sendNowRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import type { SendNowRequest, SendNowResponse } from "@meridian/contracts/threads";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";

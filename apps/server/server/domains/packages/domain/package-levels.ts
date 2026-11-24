@@ -1,8 +1,3 @@
-/**
- * The three levels' packages, from either place they live: the writer's files as they are now,
- * or the saved versions (`agent_package_saves`). Everything that reads the catalog or saves
- * builds on this, so the two sources come out in one shape and share one compile cache.
- */
 import type { AgentLevel, AgentsLevel } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type { AgentRevisionStore, PackageSave, SaveOwner } from "../ports/agent-revision-store.js";
@@ -18,14 +13,11 @@ import {
 import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
 import { MANIFEST_PATH, readManifest } from "./mars.js";
 
-/** An Agent of one compiled package. */
 export interface AgentEntry {
   package: CompiledPackage;
   agent: CompiledAgent;
-  /** The package's folder in its level: `""` for the root, `packages/<name>/` for an import. */
   folder: string;
 }
-/** A skill of one compiled package; one with an error is held but never offered. */
 export interface SkillEntry {
   package: CompiledPackage;
   slug: string;
@@ -35,7 +27,6 @@ export interface SkillEntry {
 
 export interface PackageLevel {
   level: AgentLevel;
-  /** The level's own files; null when it has none. */
   root: CompiledPackage | null;
   imports: Array<{ name: string; package: CompiledPackage }>;
 }
@@ -43,17 +34,14 @@ export interface PackageLevel {
 export const folderOf = (name: string): string => `${PACKAGES_DIR}${name}/`;
 const nameOf = (folder: string): string => folder.slice(PACKAGES_DIR.length, -1);
 
-/** What identifies a package's files, whatever could not be read from them. */
 export const filesDigest = (pkg: { coordinate: string; files: Record<string, string> }): string =>
   sourceDigest({ coordinate: pkg.coordinate, files: pkg.files });
 
-/** Compiled packages kept between reads, by content digest; a level is a few packages. */
 const CACHED_PACKAGES = 200;
 
 export function createPackageLevels(input: {
   store: AgentRevisionStore;
   levelFiles: AgentLevelFiles;
-  /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
 }) {
   const { store } = input;
@@ -70,7 +58,6 @@ export function createPackageLevels(input: {
     const digest = sourceDigest(source);
     return compiled.get(digest) ?? remember(compiled, digest, compilePackage(source));
   };
-  /** Retains a package the first time this process binds or saves it; later it is in `installed`. */
   const install = async (pkg: CompiledPackage) =>
     installed.get(pkg.contentDigest) ??
     remember(
@@ -84,7 +71,6 @@ export function createPackageLevels(input: {
     package: compile(source),
   }));
 
-  /** A saved version's package. Rows are immutable, so one read per process serves every caller. */
   const savedPackage = async (packageRevisionId: string): Promise<CompiledPackage | undefined> => {
     const cached = savedPackages.get(packageRevisionId);
     if (cached) return cached;
@@ -95,7 +81,6 @@ export function createPackageLevels(input: {
   const ownerOf = (level: AgentsLevel, userId: string, projectId?: string): SaveOwner | null =>
     level === "user" ? { userId } : projectId ? { projectId } : null;
 
-  /** Each level's latest Save of every package, by folder. */
   const readSaves = async (userId: string, projectId?: string) => {
     const read = async (level: AgentsLevel) => {
       const owner = ownerOf(level, userId, projectId);
@@ -106,7 +91,6 @@ export function createPackageLevels(input: {
   };
   type Saves = Awaited<ReturnType<typeof readSaves>>;
 
-  /** The levels as the writer's files hold them now. */
   async function fromFiles(userId: string, projectId: string | undefined) {
     const read = async (level: AgentsLevel) =>
       splitLevel(level, await input.levelFiles.read({ level, userId, projectId }));
@@ -118,7 +102,6 @@ export function createPackageLevels(input: {
     return levelsOf({ user: compileLevel(user), project: compileLevel(project) });
   }
 
-  /** The levels as saved: each package's latest Save, a removed package leaving nothing. */
   async function fromSaves(saves: Saves) {
     const compileLevel = async (list: PackageSave[]) => {
       const packages = await Promise.all(
@@ -164,7 +147,6 @@ export function createPackageLevels(input: {
 }
 export type PackageLevels = ReturnType<typeof createPackageLevels>;
 
-/** Each level's items of `pick`, by name, with the package folder each came from. */
 function layered<T>(
   all: PackageLevel[],
   pick: (pkg: CompiledPackage, folder: string) => Array<{ name: string; value: T }>,

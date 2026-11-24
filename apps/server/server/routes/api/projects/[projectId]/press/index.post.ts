@@ -1,4 +1,3 @@
-/** POST /api/projects/:projectId/press: Apply or Discard a draft's changes, or restore a Draft turn, as one command. */
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

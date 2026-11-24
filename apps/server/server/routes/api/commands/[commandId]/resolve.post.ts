@@ -1,4 +1,3 @@
-/** POST /api/commands/:commandId/resolve: what a command came to, or a `never` that settles it. */
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { handleCommandResolve } from "../../../../lib/command-route.js";

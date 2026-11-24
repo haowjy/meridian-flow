@@ -1,4 +1,3 @@
-/** The media resolver for Meridian Flow: file identity and access from the project, bytes or links from the object store. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type {
   ProjectContextAvailabilityPort,
@@ -17,27 +16,21 @@ import {
 import type { ObjectStorePort } from "../../domains/storage/index.js";
 import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../domains/storage/index.js";
 
-/** The image types every wire takes as they are; any other image is sent as its preview. */
 const UNIVERSAL_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 export function createContextMediaResolver(deps: {
-  /** The writer's read grant on each file a prompt carries (file-access §4). */
   fileAccess: Pick<FileAccess, "authorize">;
   identities: UploadIdentityPort;
   availability: ProjectContextAvailabilityPort;
   objects: ObjectStorePort;
   eventSink: EventSink;
 }): MediaResolverPort {
-  /**
-   * Only a missing object means the file is gone; any other store failure fails the turn, so a
-   * fault is never saved as a decision to leave the file out.
-   */
+  // keep: only a missing object means the file is gone; any other store failure fails the turn rather than saving a decision to leave the file out
   function missingOrFault(error: { code: string; message?: string }): null {
     if (error.code === "not_found") return null;
     throw new MediaResolutionError(`Media storage failed: ${error.code}`);
   }
 
-  /** Null: the object is gone or not what the record says; that file is unavailable, not the turn. */
   async function bytesSource(key: string, mediaType: string, sizeBytes: number) {
     const object = await deps.objects.get(key, { maxBytes: sizeBytes });
     if (!object.ok) return missingOrFault(object.error);
@@ -59,7 +52,6 @@ export function createContextMediaResolver(deps: {
     return link.value === null ? bytesSource(key, mediaType, sizeBytes) : { url: link.value };
   }
 
-  /** A stored file as the request can use it. */
   async function resolvedMedia(file: {
     key: string;
     mediaType: string;
@@ -106,15 +98,12 @@ export function createContextMediaResolver(deps: {
       try {
         const reference = part.ref;
         if (part.chatCopy) {
-          // A file the chat was sent: no placement or grant, and a file that is deleted or purged
-          // changes nothing here.
           const mediaType = part.mediaType;
           return resolvedMedia({
             key: part.chatCopy.key,
             mediaType,
             sizeBytes: part.sizeBytes,
             name: part.name,
-            // A copy records no preview flag; a missing preview object reads as none.
             mayHavePreview: mediaType.startsWith("image/") && !UNIVERSAL_IMAGE_TYPES.has(mediaType),
             window,
           });
@@ -126,8 +115,6 @@ export function createContextMediaResolver(deps: {
         if (placed.inconsistent.has(reference.documentId))
           throw new MediaResolutionError(`Media resolution is indeterminate: ${reference.uri}`);
         if (!placed.documents.has(reference.documentId)) return null;
-        // The path is not checked: a moved or renamed file is the same document, and the read
-        // grant below decides.
         const grant = await deps.fileAccess.authorize(
           { accountId: context.actorUserId as UserId },
           { kind: "document", documentId: reference.documentId as DocumentId },

@@ -1,5 +1,3 @@
-/** Server unit tests that mock modules. They must not share the isolate:false graph. */
-
 export const mockedServerTests = [
   "server/lib/auth.test.ts",
   "server/lib/model-tools/shown-link-capture.test.ts",
@@ -7,7 +5,7 @@ export const mockedServerTests = [
   "server/routes/api/threads/[threadId]/messages.post.test.ts",
 ];
 
-/** Vitest include/exclude treats brackets as character classes. */
+// keep: Vitest include/exclude treats brackets as character classes
 export function asVitestGlob(path: string): string {
   return path.replaceAll("[", "[[]");
 }

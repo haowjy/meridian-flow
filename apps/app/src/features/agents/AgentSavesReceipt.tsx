@@ -1,8 +1,3 @@
-/**
- * What the AI's `save_agents` calls in a turn did, one part per package, in the words the
- * package's own Save result uses: what an Error kept out of use first, then what was saved,
- * renames, warnings, and Undo; or, for a package not saved, its problems.
- */
 import { Trans } from "@lingui/react/macro";
 import { type AgentFinding, type SaveOutcome, shownFindings } from "@meridian/contracts/agents";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";

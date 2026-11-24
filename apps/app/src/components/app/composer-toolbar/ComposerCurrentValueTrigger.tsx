@@ -1,4 +1,3 @@
-/** Current-value chrome for interactive composer controls and readonly status. */
 import { type ComponentProps, forwardRef, type ReactNode } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { ChooserMark } from "@/components/ui/marks";

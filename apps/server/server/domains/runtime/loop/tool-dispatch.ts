@@ -1,15 +1,3 @@
-/**
- * Stateless tool dispatch step for the runtime loop.
- *
- * The orchestrator owns permission. This module runs the allowed call: live
- * output journal appends, spawn/returnResult callback wiring, and durable
- * tool_result persistence, which is also where a
- * result's shown-link candidates become evidence. Writer-facing
- * helper-result cards belong to spawn. return_result settlement (envelope,
- * tool_result + child-report, batch end) is spawn-owned. The caller supplies
- * current turn and block allocation state.
- */
-
 import type { ReplyMutations } from "@meridian/agent-edit/integration";
 import type { ProjectId, TurnBlockId, UserId } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -53,7 +41,6 @@ export interface ToolDispatchDeps extends FrontierRecordingDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
   persistenceDeps: PersistenceDeps;
-  /** Every result block of a running run is stored through this, so a lost lease refuses it. */
   delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "storeUnderLease">;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
@@ -61,10 +48,6 @@ export interface ToolDispatchDeps extends FrontierRecordingDeps {
   askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
 }
 
-/**
- * One provider batch's request rule, keyed on what a call asks for, not on which tool:
- * the first request defers the batch and a later one is refused.
- */
 export type RequestBatch = { deferred: string | null };
 
 export interface ToolDispatchContext {
@@ -79,14 +62,10 @@ export interface ToolDispatchContext {
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
-  /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
   batch: RequestBatch;
-  /** The provider reply's own accepted mutations, replayed after the planning cut. */
   replyMutations: ReplyMutations;
-  /** The run's credited ids, live: a sibling call's result counts as seen. */
   credited: CreditedBlocks;
-  /** The model this turn runs on, so a tool can decide what it can show it. */
   model?: ModelInfo;
 }
 
@@ -94,14 +73,10 @@ export type CompletedToolOutcome = {
   kind: "completed";
   block: Block;
   metadata?: Record<string, unknown>;
-  /** Successful return_result ends the batch and completes the turn. */
   end?: { cause: "success" };
 };
 
-export type ToolDispatchOutcome =
-  | CompletedToolOutcome
-  /** Reserved for durable tools whose result is written after this execution settles. */
-  | { kind: "deferred"; askId: string };
+export type ToolDispatchOutcome = CompletedToolOutcome | { kind: "deferred"; askId: string };
 
 export type ToolDispatchResult = ToolDispatchOutcome | { kind: "cancelled" };
 
@@ -110,7 +85,6 @@ export type BatchDisposition =
   | { kind: "end"; cause: "success" }
   | { kind: "end"; cause: "asked"; askId: string };
 
-/** Reduce once per provider batch, rejecting competing batch-ending outcomes. */
 export function reduceToolBatch(outcomes: readonly ToolDispatchOutcome[]): BatchDisposition {
   let disposition: BatchDisposition = { kind: "continue" };
   for (const outcome of outcomes) {
@@ -222,7 +196,6 @@ export async function dispatchToolCall(
     }
   };
 
-  // A script's call rows are journaled in the order the calls were sent and finished.
   let connectionCalls: Promise<unknown> = Promise.resolve();
   const emitConnectionCall = (
     toolCallId: string,
@@ -419,12 +392,10 @@ export async function dispatchToolCall(
   outputJournal.seal();
   await drainOutput();
   await connectionCalls;
-  // A command's outcome is stored even when the run was stopped: its edit may have committed.
   if (ctx.signal?.aborted && !execResult.blockId) {
     return { kind: "cancelled" };
   }
 
-  // A created ask settles the execution, whatever the tool did after asking.
   if (deferredAskId) return { kind: "deferred", askId: deferredAskId };
 
   if (execResult.returnResult) {
@@ -487,9 +458,6 @@ export async function dispatchToolCall(
     ),
   );
   await testHook("block.afterStore");
-  // The model is shown exactly the result stored above, so its evidence is handed over only now:
-  // a cancelled or timed-out call never reaches this point, and an edit's was recorded in its own
-  // transaction.
   if (execResult.evidence)
     await recordStoredResult(
       deps,

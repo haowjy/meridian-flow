@@ -1,17 +1,3 @@
-/**
- * The hand-back operation: Stop, the queue's x and Cancel queue, run once for the app and `./mf`.
- * Framework-free, over explicit ports; the clients contribute adapters (storage, editor, printing).
- *
- * Order of a press: save the command, add the intent (rows hide at once), post, classify the answer
- * (nothing changes until the whole record validated), then on a confirmed answer receive the record,
- * remove turns at its version, write the content once (`store.accept`), and answer the intent. A lost
- * race (`answered`, nothing handed back) writes nothing. It is not a general mutation framework.
- *
- * One request has one attempt at a time, whoever starts it (a press, the card's Try again, a
- * reload's resume): a running attempt is joined, never duplicated, and a failure never undoes a
- * delivery that confirmed. The operation also owns the facts a Stop control needs (`stopFacts`),
- * so they read the same on every route into it.
- */
 import { type FailureEnd, type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import {
   apiThreadHandBackPath,
@@ -47,40 +33,27 @@ import {
   type ResponseSchema,
 } from "./classify";
 
-/** Stable replay payload, independent of the client attempt that owns it. */
 export type HandBackReplay =
   | { kind: "stop"; requestId: string; body: StopRequest }
   | { kind: "queue"; requestId: string; ids: readonly string[] };
 
-/** What the operation persists before posting. */
 export type HandBackCommand = HandBackReplay & { occurrence: Occurrence };
 
-/** A press: Stop over the view the writer saw, or the x / Cancel queue over the ids drawn as queued. */
 export type HandBackPressInput =
   | { kind: "stop"; view: RunStateView }
   | { kind: "queue"; ids: readonly string[] };
 
-/** The record and the intents, narrowed to what the operation may do. L1's session implements it. */
 export type RunStatePort = {
-  /** Receive a command answer's whole record through the host's one version check. */
   receive(record: RunState): void;
-  /** Hide `candidates` while the request is in flight. */
   addIntent(requestId: string, candidates: readonly string[]): void;
-  /** The server answered at `version`: the intent retires once the held record reaches it. */
   answerIntent(requestId: string, version: string): void;
-  /** The last attempt did not succeed: the rows show again. */
   failIntent(requestId: string): void;
   dropIntent(requestId: string): void;
 };
 
-/**
- * The pending-command store (the app: the composer draft in `sessionStorage`). Every write answers
- * whether it took.
- */
 export type HandBackStore = {
   pending(): readonly HandBackCommand[];
   record(command: HandBackCommand): boolean;
-  /** The content, the receipt and the command's retirement in one checked write. */
   accept(requestId: string, handedBack: HandBackResult["handedBack"]): boolean;
   drop(requestId: string): boolean;
 };
@@ -89,10 +62,8 @@ export type HandBackPorts = {
   failureLog?: FailureLog;
   http: HttpPort;
   runState: RunStatePort;
-  /** Remove turns another request took, at the record's version (the turn store's tombstone fence). */
   removeTurns(ids: readonly string[], version: string): void;
   store: HandBackStore;
-  /** Mints request ids. Defaults to `crypto.randomUUID`. */
   newId?: () => string;
 };
 
@@ -101,68 +72,41 @@ export type HandBackOutcome =
       kind: "confirmed";
       command: HandBackCommand;
       result: HandBackResult;
-      /** Stop only: the execution the press cancelled. */
       cancelledExecutionId: string | null;
     }
-  /** A definite 4xx. The command and the intent are dropped. */
   | { kind: "refused"; command: HandBackCommand; status: number }
-  /** The server may have acted. The command is kept; `request` replays it exactly. */
   | { kind: "ambiguous"; command: HandBackCommand; request: FrozenRequest }
-  /** The store refused the command: nothing was sent. */
   | { kind: "unsaved"; command: HandBackCommand }
-  /** Confirmed, but the content could not be written. The command is kept; a replay brings it again. */
   | { kind: "unwritten"; command: HandBackCommand };
 
 export type UnresolvedStatus = "ambiguous" | "unwritten" | "unsaved" | "refused";
 
-/** A command that still owes the writer something. */
 export type UnresolvedHandBack = {
   kind?: never;
   requestId: string;
   commandKind: HandBackCommand["kind"];
   status: UnresolvedStatus;
-  /** How many messages the press covered (a Stop with nothing queued covers none). */
   count: number;
-  /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
   targetExecutionId: string | null;
-  /** Allocated before saving or posting, persisted with the command, and retained by resume. */
   occurrence: Occurrence;
 };
 
-/**
- * What this tab's Stop control reads from the operation: whether a Stop attempt is in flight (or a
- * Stop still owes a card) and the execution its last confirmed answer cancelled. `stopStatus`
- * folds these with the held record.
- */
 export type StopFacts = {
   request: "idle" | "pending";
   cancelledExecutionId: string | null;
-  /** Every Stop still held; `stopStatus` reads "failed" when any one is not moot. */
   failedStops: readonly FailedStop[];
 };
 
 export type HandBackOperation = {
   press(input: HandBackPressInput): Promise<HandBackOutcome>;
-  /** Re-post every stored command. */
   resume(): Promise<HandBackOutcome[]>;
-  /** Replay one unresolved command that is held (not `refused`): the card's Try again. */
   retry(requestId: string): Promise<HandBackOutcome | null>;
-  /** Forget a `refused` entry: the card's Dismiss. */
   dismiss(requestId: string): void;
-  /**
-   * Called by the host when the store may have changed under the operation (another tab, a
-   * reload): entries whose command left the store stop owing a card.
-   */
   reconcile(view?: RunStateView): void;
-  /** Detach a view; pending commands remain in durable storage for resume. */
   close(): void;
   open(): void;
   unresolved(): readonly UnresolvedHandBack[];
   stopFacts(): StopFacts;
-  /**
-   * Called after every change to `unresolved()` or `stopFacts()`, from every operation call; returns
-   * the unsubscribe. A caller never refreshes the operation itself.
-   */
   subscribe(listener: () => void): () => void;
 };
 
@@ -220,10 +164,8 @@ export function createHandBackOperation(options: {
   const { threadId, ports } = options;
   const { runState, store } = ports;
   const mint = ports.newId ?? (() => globalThis.crypto.randomUUID());
-  /** Every command that owes a card. Commands in the store are also here; page-memory ones only here. */
   const entries = new Map<string, Entry>();
 
-  /** The attempt now running for each request: the one authoritative per-request state. */
   const running = new Map<
     string,
     { kind: HandBackCommand["kind"]; done: Promise<HandBackOutcome> }
@@ -259,7 +201,6 @@ export function createHandBackOperation(options: {
     entries.set(held.command.requestId, { ...held, status, failure });
   };
 
-  /** Run `held`'s attempt, or join the one already running for its request. */
   function attempt(
     held: Held,
     save = true,
@@ -269,7 +210,7 @@ export function createHandBackOperation(options: {
     const joined = running.get(requestId);
     if (joined) return joined.done;
     if (save && !store.record(held.command)) {
-      // An occurrence update cannot turn an already durable, unresolved command into page memory.
+      // keep: An occurrence update must not downgrade an already durable unresolved command to page memory
       fail(held, previousStatus ?? entries.get(requestId)?.status ?? "unsaved");
       changed();
       return Promise.resolve({ kind: "unsaved", command: held.command });
@@ -301,8 +242,7 @@ export function createHandBackOperation(options: {
       return { kind: "refused", command, status: verdict.status };
     }
     if (verdict.kind === "ambiguous") {
-      // A remounted owner may replay while this owner is still posting. Its confirmed
-      // receipt retires the durable command even if our response arrives later and is lost.
+      // keep: A remount may confirm the command while this owner posts; drop the intent when its store entry is gone
       if (!store.pending().some((pending) => pending.requestId === requestId)) {
         runState.dropIntent(requestId);
         retire(requestId, "resolved");
@@ -317,7 +257,6 @@ export function createHandBackOperation(options: {
     runState.receive(record);
     const taken = [...result.handedBack.map((m) => m.userTurnId), ...result.gone];
     if (taken.length > 0) ports.removeTurns(taken, record.version);
-    // A lost race hands nothing back: write nothing, and the row comes back as an ordinary message.
     const written =
       result.handedBack.length > 0
         ? store.accept(requestId, result.handedBack)
@@ -333,7 +272,6 @@ export function createHandBackOperation(options: {
     return { kind: "confirmed", command, result, cancelledExecutionId };
   }
 
-  /** Join an existing attempt, or own a new occurrence before the next save or post. */
   async function replay(entry: Entry): Promise<HandBackOutcome> {
     const requestId = entry.command.requestId;
     const joined = running.get(requestId);
@@ -355,10 +293,8 @@ export function createHandBackOperation(options: {
   return {
     async press(input) {
       if (input.kind === "stop") {
-        // A Stop already in flight is the press; an unresolved one is replayed, never doubled.
         const flying = [...running.values()].find((a) => a.kind === "stop");
         if (flying) return flying.done;
-        // A moot Stop (refused included) targeted a reply that ended and owes nothing: forget it.
         for (const [id, e] of entries)
           if (e.command.kind === "stop" && failedStopIsMoot(input.view, failedStopOf(e))) {
             retire(id, "moot");
@@ -385,7 +321,6 @@ export function createHandBackOperation(options: {
         };
       }
       const { command } = held;
-      // A new press replaces a page-memory entry of its kind; a stored one still holds words.
       for (const [id, entry] of entries)
         if (
           entry.command.kind === command.kind &&
@@ -398,8 +333,6 @@ export function createHandBackOperation(options: {
     async resume() {
       const outcomes: HandBackOutcome[] = [];
       for (const command of store.pending()) {
-        // The list is a snapshot: a command another path confirmed while an earlier one posted
-        // has left the store, and must not be posted (and possibly failed) again.
         if (!store.pending().some((held) => held.requestId === command.requestId)) continue;
         outcomes.push(await attempt({ command, candidates: idsOf(command) }, false));
       }
@@ -474,10 +407,6 @@ export function createHandBackOperation(options: {
   };
 }
 
-/**
- * A `RunStatePort` over a view the host holds (the app's store slice, `./mf`'s local view). The
- * intent shape is the operation's: a `handBack` intent. `update` applies a pure view transition.
- */
 export function viewRunStatePort(
   update: (change: (view: RunStateView) => RunStateView) => void,
   receive: (record: RunState) => void,

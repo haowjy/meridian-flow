@@ -1,9 +1,3 @@
-/**
- * Purpose: Defines JSON-natural HTTP request and response DTOs for project, thread, work, context-tree, and figure APIs.
- * Why independent: These route payloads are the client/server wire contract and stay shared instead of living in app route handlers.
- * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
- */
-
 import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { StoredResult } from "../commands/index.js";
@@ -56,16 +50,12 @@ export type {
 
 export type ThreadLiveState = {
   threadId: string;
-  /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
-  /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
-  /** What the chat is doing, read with the journal head in one transaction; `version` is that head. */
   runState: RunState;
 };
 
 export type CreateProjectRequest = {
-  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
   title: string;
   description?: string | null;
@@ -96,33 +86,24 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
 export type ProjectContextTreeScheme = ContextUriScheme;
 
-/** How long Trash keeps an entry: until a date, or while Works have changes to it. */
 export type TrashRetention =
   | { kind: "scheduled"; purgeAt: string }
   | { kind: "held"; works: Array<{ id: string; name: string }> };
 
-/** One document in a project's trash, on its own or inside a deleted folder. */
 export type DocumentTrashEntry = {
   documentId: string;
   name: string;
   scheme: ProjectContextTreeScheme;
-  /** Source-relative path, including the filename, without a leading slash. */
   formerPath: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
   retention: TrashRetention;
 };
 
-/**
- * What only the server knows of one Trash entry, named by the node its delete took: when, by
- * whom, and how long it stays. Which entries exist, their names, places and what a folder took are
- * the list's own (its replay).
- */
 export type TrashEntryFacts = {
   nodeId: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
-  /** A folder is held while a Work has changes to any document it took. */
   retention: TrashRetention;
 };
 
@@ -130,9 +111,7 @@ export type ListTrashResponse = {
   entries: TrashEntryFacts[];
 };
 
-/** Stable writer-selected parent. URI callers may continue to omit this. */
 export type ContextDestinationParent = {
-  /** Missing address segments created beneath the identity anchor, only for linked creation. */
   createFolders?: string[];
 } & (
   | { kind: "folder"; folderId: string }
@@ -143,87 +122,47 @@ export type ContextDestinationParent = {
     }
 );
 
-/** Relative position within one explicit destination parent. The server resolves it under lock. */
 export type ContextSiblingPosition =
   | { kind: "before" | "after"; siblingId: string }
   | { kind: "start" | "end" };
 
-/** One file or folder by its id. */
 export type ContextEntryRef = { kind: "file" | "folder"; nodeId: string };
 
-export type CopyContextEntryView =
-  /** The live document; what a sidebar row shows. */
-  | { kind: "live" }
-  /**
-   * The document in a draft's view: the draft's fork of it. A draft that
-   * never changed it reads the live document, which is what the draft would have held.
-   */
-  | { kind: "draft"; draft: DraftId };
+export type CopyContextEntryView = { kind: "live" } | { kind: "draft"; draft: DraftId };
 
-/** One selected root: what Copy copies, where it comes from, and how to read it. */
 export type CopyContextEntrySource = {
   scheme: ProjectContextTreeScheme;
-  /** Scheme-relative root path: a file's path, or a folder's. */
   path: string;
-  /** The identity the writer meant; a different one there is a gone source. */
   expected: { kind: "file" | "folder"; nodeId: string };
-  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
   workId?: WorkId | null;
   rootThreadId?: string | null;
-  /** An `uploads` source names the chat that owns it. */
   chatRef?: string | null;
-  /** Defaults to the live document. */
   view?: CopyContextEntryView;
-  /**
-   * The device's identity for this root's copy, when the client minted one: a UUID. The root
-   * takes it and descendants keep server-minted ids, so a replay or a replan keeps the root's
-   * identity. An id another row already holds is a `conflict`, the same answer a document or
-   * folder create gives for a held id.
-   */
   copyId?: string;
-  /**
-   * A document the writer holds open sends its Live room's version (base64), whichever view it
-   * copies. A folder has no room of its own, and a version on one is a 400, as is one that does
-   * not decode. The server
-   * waits about two seconds for the room to hold those updates; if it still does not, the
-   * answer is a 503 `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
-   * and the client sends the same operation ID again until the room has them.
-   */
   roomVersion?: string;
 };
 
-/**
- * One drop: every selected root copied into one destination, atomically. `destinationParent`
- * is the identity-based destination the writer chose; without it, `destinationFolderPath`
- * names the folder path under `destinationScheme`.
- */
 export type CopyContextEntriesRequest = {
   operationId: string;
-  /** Ordered roots; the copies land in this order. */
+  // keep: Copy roots are ordered; copies land in that order
   sources: CopyContextEntrySource[];
   destinationScheme: ProjectContextTreeScheme;
-  /** Scheme-relative parent folder; the empty string means the scheme root. */
   destinationFolderPath: string;
   destinationRootThreadId?: string | null;
   destinationWorkId?: WorkId | null;
   destinationParent?: ContextDestinationParent;
   destinationView?: CopyContextEntryView;
-  /** Where the roots land: the first there, the rest after it in order. Omitted appends. */
   position?: ContextSiblingPosition;
 };
 
-/** One created identity in a copy's receipt; `copiedFrom` names the source it came from. */
 export type CopyContextEntryCreated = {
   kind: "file" | "folder";
   id: string;
-  /** Scheme-relative path the copy landed at, including its name. */
   path: string;
   name: string;
-  /** The source identity: a document id for a file, a folder id for a folder. */
   copiedFrom: string;
 };
 
-/** Every identity one Copy created, roots first, then each root's subtree in order. */
 export const copyContextEntriesResultSchema = z.object({
   status: z.literal("copied"),
   entries: z.array(
@@ -235,13 +174,8 @@ export const copyContextEntriesResultSchema = z.object({
       copiedFrom: z.string().min(1),
     }),
   ),
-  /** The ids of the folders the copy made to reach its destination, outermost first. */
   folders: z.array(z.string().min(1)),
 });
-/**
- * `settled` says what the Copy left undone: `returned` when the destination's Work is closed (no
- * entries are made), and `left_out` for a source or destination that is purged.
- */
 export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema> &
   StoredResult;
 
@@ -253,11 +187,8 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
 
 export type AccountSettings = import("../preferences/index.js").AccountAppearancePreferences;
 
-/** Authenticated identity resolved through Meridian's user provisioning boundary. */
 export type AuthenticatedUser = {
-  /** Canonical internal identity used by Meridian domain and collaboration records. */
   userId: UserId;
-  /** Identity-provider namespace; never use for Meridian record attribution. */
   externalId: string;
   email: string;
   name: string | null;
@@ -270,22 +201,15 @@ export type AuthMeResponse = { user: AuthenticatedUser };
 
 export type ContextReadTrackedResponse = {
   kind: "tracked";
-  /** Schema family used to render/edit this projection. */
   schemaType: TrackedSchemaType;
-  /** Filetype determining the viewer/editor surface. */
   filetype: Filetype;
-  /** Markdown/fenced projection of the document's Live room. */
   content: string;
 };
 
 export type ContextReadBinaryResponse = {
   kind: "binary";
-  /** Short-lived URL of the stored file, for download; clients must not persist it. */
+  // keep: Binary read URLs are short-lived; clients must not persist them
   url: string;
-  /**
-   * Short-lived URL of what to draw for an image: the server's preview, or the original when
-   * browsers draw it. Absent when nothing can be drawn: the client shows the file card.
-   */
   drawUrl?: string;
   fileType: DocumentFileType;
   mimeType: string;
@@ -311,21 +235,13 @@ export const contextReadResponseSchema = z.discriminatedUnion("kind", [
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
 
 export type CreateThreadRequest = {
-  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
-  /** The new chat's lineage draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
   draftId?: DraftId;
   projectId: string;
   title?: string;
   agentSelection: AgentSelection;
-  /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
-  /**
-   * The writer's explicit mode for the new chat. Omitted, the chat copies its Work's default;
-   * given, it also becomes that Work's default.
-   */
   aiWriteMode?: AiWriteMode;
-  /** What the new chat runs on instead of its Agent's own. */
   overrides: ThreadOverrides;
 };
 
@@ -333,25 +249,19 @@ export type CreateThreadResponse = Thread;
 
 export const forkThreadRequestSchema = z
   .object({
-    /** Client-minted id makes a navigate-first fork retryable. */
     id: z.string(),
     originTurnId: z.uuid(),
   })
   .strict();
 
-/** `GET /api/models`: every model Flow knows, for the Agent picker, and Mars's reasoning ladder it settles a level on. */
 export const modelListSchema = z.object({
-  /** Mars's reasoning ladder, lowest first (`effortLevels()`); the picker settles a level a model lacks on it, as the gateway does. */
   reasoningLevels: z.array(z.string()),
   models: z.array(
     z.object({
       id: z.string(),
       name: z.string(),
-      /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
       available: z.boolean(),
-      /** Who made the model, whoever serves it, for the picker's mark; null for one the registry doesn't know (a mock). The picker shows a mark only for a maker it has art for. */
       maker: z.string().nullable(),
-      /** The levels it lists, lowest first; `none` means it can switch reasoning off. */
       efforts: z.array(z.string()),
     }),
   ),
@@ -359,7 +269,6 @@ export const modelListSchema = z.object({
 export type ModelList = z.infer<typeof modelListSchema>;
 export type ModelOption = ModelList["models"][number];
 
-/** `PATCH /api/threads/:threadId/overrides`: sets both; `null` clears one, so the Agent's own applies. */
 export const setThreadOverridesRequestSchema = z.strictObject({
   commandId: z.uuid(),
   overrides: threadOverridesSchema,
@@ -368,11 +277,9 @@ export type SetThreadOverridesRequest = z.infer<typeof setThreadOverridesRequest
 
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
-  /** The new lineage's draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
   draftId: z.string().refine(isDraftId).optional(),
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
-  /** Omitted means none, as a tab from before overrides sends it. */
   overrides: threadOverridesSchema.default(NO_OVERRIDES),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
@@ -380,11 +287,9 @@ export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
 export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
 
-/** Client-minted assistant-turn identity for an explicit retry of a failed reply. */
 export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
 export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
 
-/** Chat Stop: the press set's watermark and the execution the writer saw. Types: `StopRequest`. */
 export const stopRequestSchema = z.strictObject({
   requestId: z.uuid(),
   seenThrough: z.number().int().min(0),
@@ -392,13 +297,11 @@ export const stopRequestSchema = z.strictObject({
   mine: z.array(z.uuid()).max(500),
 });
 
-/** The queue's x and Cancel queue: these waiting messages, by user turn id. Types: `HandBackRequest`. */
 export const handBackRequestSchema = z.strictObject({
   requestId: z.uuid(),
   ids: z.array(z.uuid()).min(1).max(500),
 });
 
-/** Send now: the record the writer saw, and every writer message it showed waiting. Types: `SendNowRequest`. */
 export const sendNowRequestSchema = z.strictObject({
   seenThrough: z.number().int().min(0),
   seenExecutionId: z.string().min(1),
@@ -439,11 +342,6 @@ const handBackResultShape = {
   gone: z.array(z.string()),
 };
 
-/**
- * The command answers, shape-checked in full: the hand-back content (blocks), the id arrays and the whole
- * canonical run-state record (`runStateSchema`). A client confirms a command only from an answer its schema
- * accepts. Types: `StopResponse`, `HandBackResponse`, `SendNowResponse`.
- */
 export const stopResponseSchema = z.object({
   threadId: z.string(),
   ...handBackResultShape,
@@ -462,27 +360,12 @@ export const sendNowResponseSchema = z.object({
   runState: runStateSchema,
 });
 
-/**
- * An accepted Retry: 201 when this request started it, 200 on a replay. The
- * execution is what a client follows until the run-state record shows another or none; it may end
- * on a cancelled compaction without ever reserving the new reply. `turn` is the
- * new reply when this request id names it, else null (a replay matched by the
- * request's first reserved turn, `metadata.retryReplyId`, before the reply was
- * reserved, or a started Retry whose answer couldn't read it). `executionId` is
- * null only for a reply reserved before run identity.
- */
 export type ReplyRetryResponse = {
   executionId: string | null;
   turn: Turn | null;
-  /** The record after the Retry's reservation (read again on a replay), from `answerRunState`. */
   runState: RunState;
 };
 
-/**
- * A Retry replay arrived while the claim was held and nothing it could match was
- * reserved yet (HTTP 503). Not a refusal: repeat the same request id until it
- * answers an execution or a definitive refusal.
- */
 export const REPLY_RETRY_PENDING_CODE = "retry_pending" as const;
 
 export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
@@ -492,7 +375,6 @@ export type SendMessageRequest = {
   text: string;
   blocks: unknown;
   references: SubmittedReference[];
-  /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: string[];
 };
 
@@ -514,19 +396,9 @@ export const sendMessageResponseSchema = z.object({
 
 export type SendMessageResponse = {
   threadId: string;
-  /** Owed until the run-state record stops listing it (`runStateVersion` is where that is first read). */
   userTurnId: string;
-  /**
-   * The stream version of the run-state record this admission's own transaction published, stored so
-   * a replay answers the same value. Null for an admission recorded before run state existed.
-   */
   runStateVersion: string | null;
-  /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
-  /**
-   * Minimum snapshot nextSeq that the client may apply after acknowledgement;
-   * snapshots with a smaller nextSeq are rejected.
-   */
   snapshotFloorNextSeq: string;
   status: "accepted";
 };
@@ -540,9 +412,8 @@ export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 
 export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
-/** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
 export type TranscriptPageResponse = {
-  /** Page entries are chronological, even when requested newest-first. */
+  // keep: Transcript page entries are chronological even on newest-first pages
   entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
   owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
   segment: {
@@ -554,11 +425,9 @@ export type TranscriptPageResponse = {
   segmentBoundary: boolean;
   hasMore: boolean;
   nextCursor?: string;
-  /** A live, non-cursor preview returned only on the first effective newest-first page. */
   unsettledTail?: Array<{ turn: Turn; blocks: Block[] }>;
 };
 
-/** Dev-only: per-request model context captured by the orchestrator. */
 export type ModelRequestDebugListResponse = {
   records: ModelRequestDebugRecord[];
   retention: ModelRequestDebugRetention;
@@ -571,22 +440,15 @@ export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 
 export type DocumentFileType = BinaryDocumentFileType | "binary";
 
-/** A stored image document and the short-lived URLs that draw or download it. */
 export type GetFigureSignedUrlResponse = {
   assetDocumentId: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;
-  /** The file name, for the file card shown when the image can't be drawn. */
   name: string;
   sizeBytes: number;
-  /** Short-lived URL of the original: what Download serves. Do not persist it in a document. */
+  // keep: Figure signed URLs are short-lived; never persist them in a document
   signedUrl: string;
-  /**
-   * Short-lived URL of what to draw: the server's preview of an image browsers can't draw
-   * (TIFF, HEIC, ...), or the original when browsers draw it. Absent when nothing can be
-   * drawn, which shows the file card.
-   */
   drawUrl?: string;
   signedUrlExpiresAt: string;
 };

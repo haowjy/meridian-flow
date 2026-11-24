@@ -1,4 +1,3 @@
-/** Lists metadata only. Bytes are read once, by the upload, never hashed in the browser. */
 import type { ImportSelection } from "@meridian/contracts";
 import type { Selection } from "./selection";
 

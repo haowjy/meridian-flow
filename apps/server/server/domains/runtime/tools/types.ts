@@ -20,20 +20,6 @@ import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
-// ── Payload types (tool call → execution) ──
-
-/**
- * A single tool call produced by the model, ready for dispatch.
- *
- * `id` is the tool-call identifier assigned by the orchestrator (not the
- * provider). It is guaranteed unique within the turn and is used to match
- * results back to calls in journal events and UI projections.
- *
- * `arguments` is the parsed JSON object for this call. When
- * `argumentsParseError` is present, `arguments` is `{}` because the model's
- * emitted JSON could not be parsed/repaired; the executor must surface a
- * model-facing parse error instead of dispatching the handler.
- */
 export interface ToolCallInput {
   id: string;
   name: string;
@@ -41,35 +27,17 @@ export interface ToolCallInput {
   argumentsParseError?: { raw: string; message: string };
 }
 
-/**
- * Execution-scoped metadata passed by the orchestrator to the executor for
- * every batch of tool calls. Distinct from `ToolHandlerContext` — this is
- * the *outer* envelope the orchestrator uses to describe the execution
- * environment, not the per-handler context the tool handler sees.
- *
- * `signal` is the turn-level abort signal. When the user cancels a turn,
- * the orchestrator aborts this signal, and the executor races it against
- * every tool handler so in-flight work is abandoned promptly.
- */
 export interface ToolExecutionContext {
   threadId: ThreadId;
   turnId: TurnId;
-  /** Model-response id currently dispatching tool calls. */
   responseIdentity?: ResponseAuthorship;
-  /** Whose thread this is: what a `documentCommand` call's key names beside its response and call. */
   commandOwner?: Pick<ModelEditKey, "accountId" | "projectId">;
   agentSlug: string | null;
   signal?: AbortSignal;
-  /**
-   * Execution-scope live output sink. The executor binds the current
-   * `ToolCallInput.id` before exposing this as the narrower per-handler
-   * `ctx.emitOutputDelta(chunk)` callback.
-   */
   emitOutputDelta?: (
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
   ) => void;
-  /** Live rows of a script's calls; the executor binds the current `ToolCallInput.id`. */
   emitConnectionCall?: (
     toolCallId: string,
     event: {
@@ -84,135 +52,55 @@ export interface ToolExecutionContext {
   threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
   request?: RequestToolHandlerContext["request"];
-  /** The run's observation-frontier lookups, for tools that show documents. */
   frontiers?: FrontierLookups;
-  /** The run's shown names, forwarded to the handler (see `ToolHandlerContext`). */
   shownNames?: () => Promise<Uint8Array[]>;
-  /** The model this turn runs on. */
   model?: ModelInfo;
 }
 
-/**
- * Normalized result envelope for a single tool execution.
- *
- * `toolCallId` matches `ToolCallInput.id` so the orchestrator can pair
- * results with their originating calls in journal events.
- *
- * `result` is always a JSON-serializable value — the executor runs every
- * handler return value through `JSON.parse(JSON.stringify(...))` to guarantee
- * it survives serialization into journal events and wire protocols.
- *
- * `isError` is a structured flag separate from `content`. A tool handler can
- * signal a recoverable error either by throwing (caught and converted by the
- * executor) or by returning `{ isError: true, output: ... }`. The executor
- * normalizes both paths into this flag so that downstream consumers
- * (orchestrator, UI) can distinguish tool errors from successful outputs
- * without inspecting the result shape.
- */
 export interface ToolExecutionResult {
   toolCallId: string;
-  /** What the model sees, frozen when stored: the renderer's parts, or `result` as one text part. */
   content: ToolContentPart[];
   isError?: boolean;
-  /** Host metadata persisted beside the result for request reconstruction. */
   metadata?: JsonObject;
-  /** Typed return_result envelope; dispatch must not reverse-parse `content`. */
   returnResult?: ReturnResultOutcome;
-  /** The tool's typed value, always set: what `content` was rendered from and what the app reads. */
   result: JsonValue;
-  /**
-   * Host-only evidence the handler returned beside its result
-   * (`{ output, evidence }` or `{ isError: true, output, evidence }`). Dispatch
-   * records it only when it persists this result; an aborted, timed-out or
-   * thrown call carries none. Never part of `content`, `result` or `metadata`.
-   */
   evidence?: ResultEvidence;
-  /**
-   * Set when a `documentCommand` call's effect may have run: the result is the command's
-   * outcome, and its block is stored under this id even if the run was cancelled meanwhile.
-   */
   blockId?: string;
 }
 
 export type { ResultEvidence };
 
-/**
- * The executor port: dispatches tool calls to registered handlers.
- *
- * `getDefinitions` is optional because the executor may not own the full
- * registry — in production the registry is created independently and the
- * orchestrator pulls definitions directly from it. The method exists for
- * callers that want a single-object interface (tests, CLI tools).
- */
 export interface ToolExecutor {
   executeTool(call: ToolCallInput, ctx: ToolExecutionContext): Promise<ToolExecutionResult>;
   getDefinitions?(): Tool[];
 }
 
-/**
- * The base context object passed into every tool handler invocation.
- *
- * Base handlers receive only execution identity, cancellation, and the narrow
- * stdout/stderr streaming sink. Interactive or orchestrator-adjacent powers are
- * explicit registration-declared capabilities: `spawn` receives the nested-agent
- * launcher, `thread_message` receives the thread-messenger, and `return_result`
- * receives the child-to-parent completion hook. The executor
- * enforces that capability declaration before injecting those extensions, so
- * ordinary handlers never see channels they did not request.
- */
 export interface ToolHandlerContext {
   signal: AbortSignal;
-  /** Current tool-call id, forwarded to handlers that need idempotency keys. */
   toolCallId?: string;
   threadId: string;
   turnId: string;
-  /** Model-response id currently dispatching tool calls. */
   responseIdentity?: ResponseAuthorship;
-  /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
-  /**
-   * Optional live-output sink. The orchestrator injects this only for tools
-   * that stream. Undefined for non-streaming handlers.
-   */
   emitOutputDelta?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
-  /**
-   * Live rows for the calls a script makes (`mcp_run`): journaled as the thread's own events, so
-   * the writer sees each call as it is sent and when it finishes. Not `emitOutputDelta`, which
-   * carries text and drops it past a budget.
-   */
   emitConnectionCall?: (event: {
     sequence: number;
     id: string;
     arguments: JsonObject;
     call?: McpScriptCall;
   }) => void;
-  /**
-   * Observation-frontier lookups for a tool that shows documents: the frontier
-   * a result chains from (`recording`) and the request's view (`planning`).
-   */
   frontiers?: FrontierLookups;
-  /**
-   * What the blocks the run carries showed of the tree, each result's added names oldest first
-   * (`domains/context/tree/names-shown.ts`); absent where nothing was shown.
-   */
   shownNames?: () => Promise<Uint8Array[]>;
-  /** The model this turn runs on, for a tool that decides what it can show it. */
   model?: ModelInfo;
-  /** Set for a registration with `documentCommand`: what its effect is keyed by and rendered with. */
   modelEdit?: ModelEditContext;
 }
 
-/**
- * A document-changing call's command: its effect settles under `key`, whatever becomes of the
- * call, and `render` is how its raw handler output becomes the result block's stored result.
- */
 export interface ModelEditContext {
   key: ModelEditKey;
   render(raw: unknown): { toolResult: ModelEditToolResult; evidence?: ResultEvidence };
 }
 
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
-  /** A run's result, or `invalid_arguments` for an override the caller may not make. */
   spawn(input: SpawnToolArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 
@@ -229,86 +117,23 @@ export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
   returnResult(capture: ReturnResultCapture): Promise<ReturnResultOutcome>;
 }
 
-/**
- * Opens a durable ask for this call. `deferred` settles the execution on it, and its answer
- * writes this call's result; `refused` is the call's result (one request per batch).
- */
 export interface RequestToolHandlerContext extends ToolHandlerContext {
   request(
     request: import("../asks/ask-service.js").AskRequest,
   ): Promise<import("../asks/ask-service.js").AskRequestOutcome>;
 }
 
-/**
- * The core tool-handler type signature.
- *
- * When the registration declares `input`, the executor has already parsed the
- * model's arguments with it: `input` is that schema's output and the handler
- * may cast to it. Registrations without `input` still receive raw arguments.
- *
- * The return type is `Promise<unknown>` — handlers are async by convention
- * (most do I/O), and the executor normalizes whatever they return through
- * `toJsonValue` so the downstream pipeline always receives `JsonValue`.
- */
 export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext> = (
   input: unknown,
   context: TContext,
 ) => Promise<unknown>;
 
-/**
- * A complete tool registration: the definition the model sees plus the
- * execution strategy and runtime constraints.
- *
- * Execution strategy (`execution.type`):
- *   - `"server"`: the handler runs inside the Meridian server process.
- *     The model may call this tool without any client round-trip.
- *   - `"client"`: execution is delegated to a client-side runtime
- *     (e.g. a browser or IDE plugin). The model emits the call, the
- *     orchestrator pauses and waits for the client to supply the result.
- *     Not yet implemented — client-type registrations currently produce
- *     an error result.
- *
- * `advertise`: when false, hides the registration from registry-wide default
- *   publication while preserving executor lookup. Used for per-agent skill
- *   tools: agent turn context advertises only resolved skills for that thread.
- *
- * `timeoutMs`: per-invocation wall-clock limit. When set, the executor
- *   races the handler against a timer; if the timer wins, the handler's
- *   AbortSignal is aborted and the result is marked as a timeout error.
- *   If not set, the only deadline is the caller's external `AbortSignal`.
- *
- * `sequential`: when `true`, this tool runs after all parallel tools in
- *   the same batch have completed. Used for tools that must not interleave
- *   with others (file mutation, shell commands).
- *
- * `capability`: declares the single privileged context extension this
- *   registration needs. The executor injects the corresponding callbacks from
- *   `ToolExecutionContext`; registrations without a capability receive only the
- *   base `ToolHandlerContext`.
- */
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
-  /**
-   * What follows a finished call's `→` in `thread_history`, from its typed
-   * result; the line already quotes the arguments. Absent or undefined: no arrow.
-   */
   historySummary?: (input: JsonObject, result: JsonValue) => string | undefined;
-  /**
-   * How `thread_history` shows a call by default. A `routine` call (inspection)
-   * is hidden and counted; any other call is one receipt line. Errors always show.
-   */
   historyKind?: "routine" | ((input: JsonObject) => "routine" | "receipt");
-  /**
-   * Provenance of the registration, used for collision policy. Skill
-   * resolution must never bind a package skill slug to a non-skill tool.
-   */
   source: "core" | "spawn" | "skill" | "mcp";
   definition: Tool;
-  /**
-   * The tool's one input contract. `definition.inputSchema` is its
-   * `modelToolSchema` projection, and the executor parses every call with it
-   * before dispatch: invalid values and unknown keys never reach the handler.
-   */
   input: z.ZodType;
   advertise?: boolean;
   execution:
@@ -325,28 +150,12 @@ export interface ToolRegistration {
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  /**
-   * The call's effect is a command in `commands` (`modelEdits().run`): the executor
-   * gives the handler a `modelEdit` context, and a call that does not finish asks the command
-   * for its outcome instead of assuming it did not run.
-   */
   documentCommand?: true;
   capability?: "spawn" | "thread_message" | "thread_report" | "return_result" | "request";
-  /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
-  /**
-   * Renders the handler's typed result into the parts the model sees,
-   * given the call's parsed input (`{}` when it didn't parse). The executor
-   * stores the typed result beside the parts. A refusal (`MeridianError`) never
-   * reaches it: the executor renders refusals itself.
-   */
   renderResult?: (result: JsonValue, input: JsonObject) => ToolContentPart[];
 }
 
-/**
- * What a handler returns for a call it ran as a command: the command's outcome, which holds the
- * call's stored result, and what that result showed the model.
- */
 export interface ModelEditHandlerResult {
   modelEdit: ModelEditOutcome;
   evidence?: ResultEvidence;
@@ -358,18 +167,6 @@ export interface ToolExecutionError {
   arguments: unknown;
 }
 
-/**
- * The registry port: a name-keyed store of tool registrations.
- *
- * `register` is additive — registering a tool with the same name a second
- * time overwrites the previous registration.
- *
- * `getDefinitions` returns the `Tool[]` array consumed by the
- * gateway as the `tools` field of a model request.
- *
- * `getRegistration` is the lookup used by the executor to find a handler
- * and its constraints (`timeoutMs`, `sequential`) at dispatch time.
- */
 export interface ToolRegistry {
   register(registration: ToolRegistration): void;
   getDefinitions(): Tool[];

@@ -1,5 +1,3 @@
-/** Shared execution-support checks for immutable Agent selection and turn preparation. */
-
 import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { CompiledAgentDefinition } from "../packages/index.js";
@@ -29,7 +27,6 @@ export function agentExecutionUnavailableReasons(
   return reasons;
 }
 
-/** Host-availability check for a model id, independent of any Agent definition. */
 export function agentModelUnavailableReasons(
   gateway: Pick<Gateway, "listModels">,
   model: string,
@@ -46,7 +43,6 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
   }
-  // An unknown name in disallowed-tools denies nothing that exists, so it is ignored.
   for (const name of meta.tools ?? []) {
     if (!catalog.has(name)) reasons.push(`Unknown tool in tools: ${name}`);
   }

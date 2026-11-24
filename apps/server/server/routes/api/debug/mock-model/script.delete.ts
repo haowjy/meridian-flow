@@ -1,4 +1,3 @@
-/** DELETE /api/debug/mock-model/script[?id=] — drop one queued mock-model script, or all. */
 import { defineEventHandler, getQuery } from "nitro/h3";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { clearMockModelScripts } from "../../../../lib/mock-model-script-route.js";

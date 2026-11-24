@@ -1,7 +1,3 @@
-/**
- * Converts real images through the real worker pool. The worker is started by file path, so no
- * other test would notice it failing to load (it broke unseen in `nitro dev`).
- */
 import { encode } from "bmp-ts";
 import sharp from "sharp";
 import { expect, it } from "vitest";

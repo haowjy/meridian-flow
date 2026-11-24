@@ -1,5 +1,3 @@
-/** Live provider probe for the pure compaction request estimator. */
-
 import { readFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 import type { GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/runtime/gateway";
@@ -10,7 +8,6 @@ import {
 } from "../server/domains/runtime/loop/compaction/index.js";
 import { createGatewayFromEnv } from "../server/lib/gateway/create-from-env.js";
 
-/** The final result of a stream; an error event throws. */
 async function collect(events: AsyncIterable<StreamEvent>): Promise<GenerateResult> {
   let result: GenerateResult | undefined;
   for await (const event of events) {

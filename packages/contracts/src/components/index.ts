@@ -1,25 +1,15 @@
-/**
- * Shared custom component blocks.
- */
-
 import { z } from "zod";
 import type { ThreadId, TurnId } from "../runtime/index.js";
 import type { ExecutionReportDelivery, SavedOutcome } from "../spawn/index.js";
 import type { JsonObject } from "../threads/index.js";
 
-/** Registry key for a renderer/tool-owned custom component. */
 export type ComponentKind = string;
 
-/**
- * Canonical content persisted in `Block.content` for `blockType: "custom"` component blocks.
- * Generic props keep the component registry as the extension seam: new components add a kind and renderer without changing the block envelope.
- */
 export type ComponentBlockContent = {
   kind: ComponentKind;
   props: JsonObject;
 };
 
-/** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
 export type ThreadReferenceProps = {
   threadId: string;
   ref: string;
@@ -29,7 +19,6 @@ export type ThreadReferenceProps = {
   text: string;
 };
 
-/** Writer-facing handoff card data, frozen when its seed is reserved. */
 export type HandoffBriefProps = {
   state: "available" | "unavailable";
   brief: string | null;
@@ -41,7 +30,6 @@ export type HandoffBriefProps = {
   modelText: string;
 };
 
-/** Identity and timing shared by every retained child invocation card. */
 type InvocationCardBase = {
   agentSlug: string;
   agentName: string;
@@ -55,7 +43,6 @@ type InvocationCardBase = {
   fromThreadTitle?: string | null;
 };
 
-/** Exact parent invocation identity retained on a child run's historical card. */
 export type InvocationCardProps = InvocationCardBase &
   (
     | {
@@ -112,7 +99,6 @@ export const invocationCardPropsSchema = z.union([
   }),
 ]);
 
-/** Parse the single persisted invocation-card shape; malformed cards are ignored. */
 export function parseInvocationCard(content: unknown): InvocationCardProps | null {
   if (!content || typeof content !== "object" || Array.isArray(content)) return null;
   const candidate = content as Record<string, unknown>;

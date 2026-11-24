@@ -1,5 +1,3 @@
-/** Metadata-only diagnostics for persisted chat records that miss current contracts. */
-
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { PersistedContractFailure } from "@meridian/thread-client";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";

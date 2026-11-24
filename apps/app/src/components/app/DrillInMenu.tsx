@@ -1,15 +1,3 @@
-/**
- * DrillInMenu — a dropdown that browses a folder tree in place and ends in
- * actions. A folder opens inside the same menu, with a "‹ folder" row on top to
- * step back out; there are no flyouts or root heading. A divider separates
- * the tree from the actions. An action with choices opens them the same way,
- * in place of the tree.
- *
- * Document paths and placement menus supply a tree and actions. `useDrill` owns the drill
- * state (trail, back, here-marking, disabled leaves, focus after a drill) for any surface that
- * browses a tree in place; `DrillInMenuBody` draws it as Radix menu rows. Picking an entry and
- * running an action belong to the caller.
- */
 import { t } from "@lingui/core/macro";
 import { entrySegment } from "@meridian/contracts/protocol";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
@@ -35,32 +23,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EntryName } from "@/components/ui/entry-name";
 
-/** The list scrolls above the actions, which stay in reach on a long folder. */
 const MENU_CLASS =
   "flex w-64 max-w-[calc(100vw-1rem)] flex-col overflow-hidden max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))]";
 
 export type DrillNode = {
   id: string;
-  /** The document a file entry opens, when it differs from `id`. */
   documentId?: string;
   name: string;
-  /** A twin's `~id` (`EntryName`). */
   suffix?: string;
-  /** What the back row says inside a folder, when that is richer than the row's name. */
   title?: string;
   icon: LucideIcon;
-  /** A folder drills in; anything else is picked. */
   folder: boolean;
-  /** A file the editor can't open: `false` marks it for callers that only take editable ones. */
   editable?: boolean;
 };
 
 export type DrillTree = {
-  /** Names the tree's source at the top level. */
   heading: string;
-  /** A folder's entries in display order; `null` is the top level. */
   children: (folderId: string | null) => readonly DrillNode[];
-  /** A folder with the ones above it, outermost first, as the tree has them now; null once it is gone. */
   trailInside: (folderId: string) => readonly DrillNode[] | null;
 };
 
@@ -70,37 +49,26 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
-  /** A warning under the label: what the action will also do (a moved row arriving renamed). */
   note?: string | null;
-  /** Selecting the action opens these in place of the tree, with a back row; `onSelect` is unused. */
   choices?: readonly DrillAction[];
 };
 
 export type DrillInMenuProps = {
   tree: DrillTree;
-  /**
-   * Where the writer is: the document and the folders that hold it. Any of them
-   * listed at the level shown is highlighted, so each level marks the way back.
-   */
   hereIds: readonly string[];
-  /** The folders, outermost first, the menu opens inside. */
   openAt: readonly DrillNode[];
-  /** Footer actions for the level on screen; the caller closes the menu when one is done. */
   actions?: (trail: readonly DrillNode[]) => readonly DrillAction[];
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
-  /** Lists folders alone: a destination picker has nothing to do with a file. */
   foldersOnly?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
   onPick: (node: DrillNode) => void;
-  /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
 };
 
-/** Stable Radix trigger boundary; the browsing body and its acquisition mount only while open. */
 export function DrillInMenuRoot({
   children,
   body,
@@ -144,16 +112,13 @@ export function DrillInMenu({ children, open, onOpenChange, ...body }: DrillInMe
 
 export type DrillEntry = {
   node: DrillNode;
-  /** On the way to where the writer is, or the folder just left. */
   here: boolean;
   disabled: boolean;
 };
 
 export type Drill = {
-  /** Put on the element holding the rows, so a drill can move focus onto the new level. */
   scopeRef: RefObject<HTMLDivElement | null>;
   trail: readonly DrillNode[];
-  /** The folder on screen; null at the top level. */
   folder: DrillNode | null;
   entries: readonly DrillEntry[];
   enter: (node: DrillNode) => void;
@@ -161,10 +126,6 @@ export type Drill = {
   focusFirstRow: () => void;
 };
 
-/**
- * The drill-in model: the trail, the level it shows, and focus. Drilling unmounts the row that
- * held focus, so every drill moves it to the new level's first row (the back row inside a folder).
- */
 export function useDrill({
   tree,
   hereIds,
@@ -173,12 +134,8 @@ export function useDrill({
   foldersOnly,
   rowSelector = '[role="menuitem"]',
 }: Pick<DrillInMenuProps, "tree" | "hereIds" | "openAt" | "isDisabled" | "foldersOnly"> & {
-  /** The focusable rows inside `scopeRef`. */
   rowSelector?: string;
 }): Drill {
-  // The trail is the live ancestry of the deepest folder entered that still exists, so a folder
-  // renamed or moved while the menu is open shows its current name and place; one that is gone
-  // leaves the writer in the nearest one that is not.
   const [entered, setEntered] = useState<readonly string[]>(() => openAt.map((node) => node.id));
   const [exitedId, setExitedId] = useState<string | null>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
@@ -192,7 +149,6 @@ export function useDrill({
     }
     return [];
   })();
-  // Drilling unmounts the focused row, so every drill moves focus to the new level.
   const drillTo = (next: readonly DrillNode[]) => {
     setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
     setEntered(next.map((node) => node.id));
@@ -219,7 +175,6 @@ export function useDrill({
   };
 }
 
-/** Mounted with the acquired source, so its first frame already has the correct trail. */
 export function DrillInMenuBody({
   tree,
   hereIds,

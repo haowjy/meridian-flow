@@ -1,13 +1,3 @@
-/**
- * EPUB to Markdown: the container names the package (OPF), the package's spine orders the
- * chapters, each XHTML chapter becomes Markdown. Images, scripts and links' addresses are left out.
- *
- * Hostile input: the central directory's declared sizes are checked before anything inflates, and
- * fflate inflates into a buffer of exactly the declared size, so an entry that lies about it is
- * cut, not grown. Only XML and XHTML entries are inflated. XML with an entity declaration is
- * refused whole (an XXE or entity-expansion file); the package files go through htmlparser2 in XML
- * mode and the chapters through an HTML5 parser, and neither processes a DTD.
- */
 import path from "node:path";
 import { type Unzipped, unzipSync } from "fflate";
 import { Parser } from "htmlparser2";
@@ -20,7 +10,6 @@ const CONTENT_TYPES = new Set(["application/xhtml+xml", "text/html"]);
 
 type Entry = { name: string; size: number };
 
-/** The archive's entries as its central directory declares them, with nothing inflated. */
 function listEntries(bytes: Uint8Array): Entry[] {
   const entries: Entry[] = [];
   let total = 0;
@@ -74,13 +63,6 @@ type Scan = {
   title?: string;
 };
 
-/**
- * One streaming pass over the container or package file, with no tree: a lookup per tag name over
- * a tree of unclosed `<item>`s nests as deep as the file is long and costs the square of it. The
- * parser is lenient XML: `<item/>` closes itself, CDATA is text, and an unclosed or mismatched
- * tag, a duplicate attribute or an unquoted value still reads instead of throwing. Names keep
- * their case, as XML does. The first `rootfile` and the first `dc:title` win.
- */
 function scanXml(text: string): Scan {
   const scan: Scan = { items: new Map(), itemrefs: [] };
   let titleDepth = 0;
@@ -145,12 +127,10 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
     if (!data) continue;
     const markdown = await htmlToMarkdown(xmlText(data));
     if (!markdown) continue;
-    // The book's title heads the text unless the first chapter already does.
     if (!titled) {
       titled = true;
       if (title && !markdown.startsWith(`# ${title}`)) out.add(`# ${title}`);
     }
-    // A chapter with no heading of its own still needs one for the outline to name it.
     const kept = /^#{1,6}\s/m.test(markdown) ? markdown : `## Part ${index + 1}\n\n${markdown}`;
     if (!out.add(kept)) break;
   }

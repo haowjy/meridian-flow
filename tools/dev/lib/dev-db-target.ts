@@ -1,4 +1,3 @@
-/** Resolve and guard database targets used by direct database admin commands. */
 import { isLocalDevPostgres, parseTargetDatabase } from "./dev-db";
 import { applyDevEnvToProcess, resolveMainDatabaseNames } from "./dev-env";
 import { isProcessAncestor, managedTestDatabaseOwnerPid } from "./test-db-lifecycle";

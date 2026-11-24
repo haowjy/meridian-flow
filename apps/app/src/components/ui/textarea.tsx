@@ -1,8 +1,3 @@
-/**
- * Textarea — multiline text input primitive (shadcn-derived; focus treatment
- * is project-owned). Same calm-field focus as `Input`: a border shift to
- * `border-focus`, no ring — see `input.tsx` for why fields never get halos.
- */
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

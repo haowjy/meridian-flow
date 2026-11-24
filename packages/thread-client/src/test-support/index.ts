@@ -1,4 +1,3 @@
-/** Shared in-memory socket boundary. */
 export { FakeThreadSocket } from "./fake-thread-socket";
 export {
   TURN_FIXTURE_EVENTS,

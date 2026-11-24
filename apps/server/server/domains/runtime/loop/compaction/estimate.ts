@@ -1,5 +1,3 @@
-/** Shared per-part and request-level token estimates for planning and delivery checks. */
-
 import type { Block, Turn } from "@meridian/contracts/threads";
 import {
   type GenerateRequest,
@@ -10,9 +8,7 @@ import {
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
-/** A PDF whose page count is unknown. */
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
-/** Conservative CJK code-point rates; refresh from published or live probe evidence. */
 export const CJK_CODE_POINT_TOKEN_RATES: Record<TokenizerFamily, number> = {
   anthropic: 3.0,
   o200k: 1.1,
@@ -74,14 +70,12 @@ function stringTokens(value: unknown, tokenizer: TokenizerFamily): number {
   return 0;
 }
 
-/** Estimates JSON-visible strings with the shared CJK policy plus their structural bytes. */
 export function estimateModelJsonTokens(value: unknown, tokenizer: TokenizerFamily): number {
   return Math.ceil(
     stringTokens(value, tokenizer) + tokensForBytes(encodedBytes(blankStrings(value))),
   );
 }
 
-/** Estimates one model content part; image and media payload bytes are replaced by fixed costs. */
 export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamily): number {
   if (part === null || typeof part !== "object" || Array.isArray(part))
     return estimateModelJsonTokens(part, tokenizer);
@@ -91,7 +85,6 @@ export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamil
     const { data: _payload, ...withoutPayload } = record;
     return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload, tokenizer);
   }
-  // A stored media part is identity, not payload: a link or bytes exist only in a built request.
   if (record.type === "media" && !("ref" in record)) {
     const { source, ...rest } = record as { source?: object } & Record<string, unknown>;
     const {
@@ -142,7 +135,6 @@ function blockModelPart(block: Block): unknown {
   }
 }
 
-/** Default planner estimate for durable turn/block rows, using request per-part rules. */
 export function estimateTurnTokens(
   turn: Turn,
   blocks: readonly Block[],
@@ -177,10 +169,6 @@ function messagesTokens(messages: GenerateRequest["messages"], tokenizer: Tokeni
   return messages.reduce((sum, message) => sum + messageTokens(message, tokenizer), 0);
 }
 
-/**
- * Estimates full input, or a baseline plus only messages appended after its messageCount.
- * Both this check and compaction planning use estimateModelPartTokens for content parts.
- */
 export function estimateRequestTokens(input: {
   tokenizer: TokenizerFamily;
   request: Pick<GenerateRequest, "messages"> & Partial<Pick<GenerateRequest, "tools">>;

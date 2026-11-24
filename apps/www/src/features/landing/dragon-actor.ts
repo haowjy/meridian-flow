@@ -32,50 +32,34 @@ import {
 } from "./timeline";
 
 type Point = readonly [number, number, number];
-/**
- * One point of the dragon's path, in stage pixels at a scroll position. A gliding mark is reached
- * on a curve at an even pace, so a run of them flies without stopping at each.
- */
 type Mark = { at: number; x: number; y: number; size: number; facing: number; glide?: boolean };
 
 const BOX = 200;
 const ROW_SIZE = 34;
 const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
-/** Its size on the ground, in shares of the stage's lesser side: it towers over the party. */
 const DESK_STANDING = 0.62;
 const PHONE_STANDING = 0.85;
-/** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
-/** Where the page's picture sits on a phone, in shares of the stage. */
 const PHONE_PICTURE_Y = 0.312;
-/** Share of the return where the phone dragon settles into the picture's pose (`.s-fig i`). */
 const SETTLES_AT = 0.8;
 const PICTURE_LEAN = -0.38;
 const PICTURE_STROKE = 0.4;
-/** The burning words' resolution, per stage pixel. */
 const WORDS_SCALE = 2;
-/** Matches the `.sys` frame's outer glow in `landing.css`, in CSS pixels. */
 const SYSTEM_GLOW = 22;
-/** How far ahead of the wall the page's own words hand over to the burning ones, in stage heights. */
 const WORDS_HANDOVER = 0.2;
-/** The header's height, which the top of the way back stays under. */
 const TOP_BAR = 55;
-/** The body's rise and fall on each wingbeat, in shares of its size, and its least in stage heights. */
 const BOB = 0.1;
 const LEAST_BOB = 0.018;
-/** The share of the way back after which it comes in front of the product. */
 const ENTERS_PRODUCT = 0.93;
 
-/** Where the dragon is this frame, for the fight to aim at and the fire to start from. */
 export type Dragon = {
   mouth: readonly [number, number];
   body: { x: number; y: number; size: number };
   burn: FireFrame | null;
 };
 
-/** The film's dragon: a speck in the background that grows, burns the page away, then flies on. */
 export function createDragonActor(root: HTMLElement) {
   const flyer = root.querySelector("#flyer") as HTMLElement;
   const wings = flyer.firstElementChild as HTMLElement;
@@ -105,12 +89,8 @@ export function createDragonActor(root: HTMLElement) {
     layout = next;
     const { spans, width: W, height: H } = next;
     unit = Math.min(H, W * 0.62);
-    // Where it stands on the shore; phones have no room for the party to give ground, so it holds
-    // its place there.
     const fightX = (share: number) => (next.isPhone ? 0.78 : onTheShore(share));
-    // A phone's stage is narrow, so its lesser side is short beside the party: it stands bigger.
     const standing = next.isPhone ? PHONE_STANDING : DESK_STANDING;
-    // Stood on the beach: its feet on the sand, whatever its size.
     const onShore = (size: number) => GROUND.beach - (GROUND_FEET * size * unit) / H;
     const mark = (
       at: number,
@@ -130,8 +110,6 @@ export function createDragonActor(root: HTMLElement) {
     marks = [
       mark(0, 0.37, 0.13, 0.01, -1),
       mark(along(spans, "hold", 1), 0.37, 0.13, 0.01, -1),
-      // Out left along the aurora while the product fades, then back right across the open sky,
-      // in view the whole way.
       mark(along(spans, "push", 0.45), 0.16, 0.17, 0.016, -1, true),
       mark(along(spans, "push", 1), 0.36, 0.27, 0.024, 1, true),
       mark(along(spans, "sky", 0.5), 0.62, 0.3, 0.04, 1, true),
@@ -144,8 +122,6 @@ export function createDragonActor(root: HTMLElement) {
       mark(along(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(along(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
       mark(along(spans, "turn", TURN.lands), fightX(0.79), onShore(standing), standing, -1),
-      // It presses in as they give ground, rears back when the spark lands, then comes down
-      // again for the breath that kills them.
       mark(
         along(spans, "fight", FIGHT.spark.eye[1]),
         fightX(0.74),
@@ -162,7 +138,6 @@ export function createDragonActor(root: HTMLElement) {
       ),
       mark(along(spans, "fight", FIGHT.breath[0]), fightX(0.69), onShore(standing), standing, -1),
       mark(spans.flight[0], fightX(0.69), onShore(standing), standing, -1),
-      // Up behind the box, one loop small in the far sky, and out at the left to turn.
       mark(along(spans, "flight", DEATH.loop[0]), 0.72, 0.4, 0.2, -1, true),
       mark(along(spans, "flight", DEATH.loop[1]), 0.5, 0.17, 0.1, -1, true),
       mark(along(spans, "flight", DEATH.loop[2]), 0.26, 0.2, 0.11, -1, true),
@@ -173,12 +148,7 @@ export function createDragonActor(root: HTMLElement) {
     way = wayBack(next);
   };
 
-  /**
-   * Back in at the right where it left the burn, climbing away behind the product, small along the top, then down the
-   * left of the headline wherever it sits. Each point is x, y and size in stage pixels.
-   */
   const wayBack = ({ width: W, height: H, workspace, isPhone }: Layout) => {
-    // A phone has no Knowledge Base row: it lands in the picture on the page that opens.
     if (isPhone) {
       return [
         [W + unit * 0.5, H * 0.44, unit * 0.6],
@@ -218,7 +188,6 @@ export function createDragonActor(root: HTMLElement) {
     ] satisfies Point[];
   };
 
-  /** The big words drawn where they stand, so the fire can burn them letter by letter. */
   const wordsStill = () => {
     const { width: W, height: H } = layout;
     const canvas = document.createElement("canvas");
@@ -231,7 +200,6 @@ export function createDragonActor(root: HTMLElement) {
     const stage = flyer.parentElement?.getBoundingClientRect();
     const left = stage?.left ?? 0;
     const top = stage?.top ?? 0;
-    // The System window under the words, so the fire chars its frame and field too.
     for (const frame of words.querySelectorAll<HTMLElement>(".sys")) {
       const style = getComputedStyle(frame);
       const box = frame.getBoundingClientRect();
@@ -343,13 +311,10 @@ export function createDragonActor(root: HTMLElement) {
     const passing = beats.burn >= DEATH.reveals && !circled;
     const landing = beats.turn >= TURN.descends;
     flyer.style.zIndex = `var(--z-${passing ? "pass" : now.onTop ? "over" : circled || landing ? "low" : "far"})`;
-    // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
-    // as it rears back.
     const facingThem = landing && beats.flight <= 0;
     const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
-    // On the ground it stands still with its wings folded; perched, its head rises to the sky.
     const onGround = grounded(beats);
     flyer.classList.toggle("grounded", onGround);
     const wantedLean = onGround
@@ -379,11 +344,6 @@ export function createDragonActor(root: HTMLElement) {
     wings.style.maskPosition = `${frame * 100}% 0`;
   };
 
-  /**
-   * Perched with its head raised, it sends the Cold Fire straight up in gulps: a column from its
-   * mouth to the top of the stage, and a bright knot rising through it that swells the aurora as
-   * it arrives (`gulpPhase` in `sky.ts`).
-   */
   const rise = (seconds: number, strength: number) => {
     updraft.style.opacity = String(strength);
     if (strength <= 0) return;
@@ -401,10 +361,6 @@ export function createDragonActor(root: HTMLElement) {
   return {
     measure,
     wordsStill,
-    /**
-     * Runs every frame: the scroll position picks the scene, the clock animates it. Returns where
-     * its mouth and body are, and the burn's fire while it crosses the box.
-     */
     update(seconds: number, at: number, beats: BeatProgress): Dragon {
       const { burn: burnP, lore } = beats;
       const { height: H } = layout;

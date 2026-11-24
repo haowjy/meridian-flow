@@ -1,5 +1,3 @@
-/** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
-
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
@@ -46,7 +44,6 @@ const PREPARATION_ATTEMPTS = 3;
 export function createDeliveryAdapter(
   deps: ExecutionSettlementDeps & {
     backgroundTasks: DetachedWorkTracker;
-    /** Absent where hand-back is not supported (the in-memory harness). */
     handBacks?: HandBackStore;
     runClaim: Pick<
       RunClaim,
@@ -69,7 +66,6 @@ export function createDeliveryAdapter(
     selection: TSelection;
     pendingBatch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
-    /** A due switch applies only with the reservation, so preparation must hold the thread lock. */
     requiresLock?: boolean;
     eligibilityKey: string;
   };
@@ -158,7 +154,6 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    /** `lockHeld`: the thread lock is already taken (the last, locked attempt). */
     select: (lockHeld: boolean) => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
@@ -191,7 +186,6 @@ export function createDeliveryAdapter(
         });
         if (!result.retry) return result.value;
       }
-      // The last attempt prepares under the lock, so nothing can change between selection and commit.
       return threadLock.withThreadLock(input.threadId, async () => {
         const selected = await input.select(true);
         input.signal?.throwIfAborted();
@@ -213,7 +207,6 @@ export function createDeliveryAdapter(
       return result;
     }
   }
-  // Every caller holds the receiver's thread lock, which the fence's stamp takes too.
   const enqueue = async ({ sender, ...draft }: MessageDraft) => {
     if (sender) {
       const refusal = await deps.runClaim.wakeRefusal({ sender, receiver: draft.threadId });
@@ -280,16 +273,6 @@ export function createDeliveryAdapter(
       ? ("pending" as const)
       : ("delivered" as const);
   }
-  /**
-   * The admitted run-start boundary's switch rule. A due write-mode switch (`next`
-   * says a run follows it, or a Retry runs) applies in the same thread-lock
-   * transaction that reserves the run: the chat's mode, the switch turn at the
-   * active leaf and the control's ack commit with the reservation, or none do.
-   * Preparation reads storage, so it can't run under the lock for every start;
-   * an optimistic attempt that finds a due switch asks for the locked attempt
-   * instead and applies nothing. A Retry whose leaf moved is refused before the
-   * switch applies, leaving it pending.
-   */
   async function selectRunStart(
     threadId: ThreadId,
     retryOf: TurnId | undefined,
@@ -306,16 +289,11 @@ export function createDeliveryAdapter(
       await applyDueSwitch(threadId, due.control, retryOf);
     }
   }
-  /**
-   * Retry's compare-and-swap: only turns that don't close the failed reply (a switch, a Work refresh, a
-   * notice) may trail it. A newer message or another Retry moved the leaf, so the Retry is refused.
-   */
   async function assertRetryLeaf(threadId: ThreadId, leaf: TurnId | null, retryOf?: TurnId) {
     if (!retryOf) return;
     const { latest } = await latestRowAt(deps.repos.turns, leaf);
     if (latest?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
   }
-  /** Runs under the thread lock the run's reservation also commits in. */
   async function applyDueSwitch(
     threadId: ThreadId,
     control: WriteModeSwitchMessage,
@@ -350,9 +328,7 @@ export function createDeliveryAdapter(
     await ack(threadId, [control.id]);
   }
   async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
-    // Work mutations already hold Work rows. Taking the thread lock here would
-    // invert turn persistence's thread → Work activity order. Immutable markers
-    // need no overwrite lock; exact-ID ack leaves every concurrent insert pending.
+    // keep: Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
     await inbox.enqueue({
       threadId,
       intent: "notice",
@@ -384,8 +360,6 @@ export function createDeliveryAdapter(
     const { lease } = input;
     const batch = selection.batch;
     const threadId = lease.threadId;
-    // Writer enqueue can have persisted and acked an earlier Work prefix while
-    // this run's provider request was in flight. Adopt that committed history too.
     const committed: InboxMessage[] = [];
     const committedWorkIds: string[] = [];
     const expectedLeaf = selection.activeLeafTurnId as TurnId | null;
@@ -404,8 +378,6 @@ export function createDeliveryAdapter(
       if (message) committed.unshift(message);
       else if (systemUpdate.success && systemUpdate.data.section === "work_context") {
         committedWorkIds.push(turn.id);
-        // A writer's prefix transaction already acked this durable notice. Replay
-        // its saved blocks, not a fresh render of the current Work state.
         committed.unshift({
           id: turn.id,
           threadId,
@@ -425,8 +397,6 @@ export function createDeliveryAdapter(
       ...committed,
       ...batch.filter((message) => !committedIds.has(message.id)),
     ];
-    // Notices are folded into the prepared history; no turn is completed or
-    // reserved until all external context reads have finished.
     const split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
@@ -455,8 +425,6 @@ export function createDeliveryAdapter(
     } catch (error) {
       if (input.signal?.aborted) throw error;
       preparationFailure = error;
-      // Rebuild only the durable inbox turns. Reference/image/skill preparation
-      // is intentionally discarded, and NoticePort rows remain queued.
       drain = await drainInbox({
         persistence: deps,
         notices: [],
@@ -513,8 +481,6 @@ export function createDeliveryAdapter(
     let next = currentTurn;
     let completed: typeof currentTurn | undefined;
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
-    // Adopted reference reads count as shown only with the commit that
-    // persists their blocks; a discarded or retried preparation records nothing.
     const recordEvidence = async (turnId: TurnId) => {
       if (!drain.evidence || !hasReferenceEvidence(drain.evidence)) return;
       if (!input.recordEvidence)
@@ -653,8 +619,6 @@ export function createDeliveryAdapter(
       });
       next = completion.turn;
       await ack(threadId, drain.ackIds, deliveredBy(next));
-      // The failed successor is the execution's last turn: it ends in this
-      // commit, and the run exits on the terminal disposition, not a throw.
       await endExecution(lease);
       terminal = true;
     }
@@ -680,7 +644,6 @@ export function createDeliveryAdapter(
     currentFailure?: unknown;
   };
 
-  /** A placeholder finishes through its own callbacks; an assistant needs nothing prepared. */
   async function prepareYield<TCurrent>(
     input: DeliveryBoundary<TCurrent>,
   ): Promise<PreparedYield<TCurrent>> {
@@ -693,13 +656,6 @@ export function createDeliveryAdapter(
     }
   }
 
-  /**
-   * Ends the reply at this request boundary because a message waits behind a
-   * queued switch. Nothing is adopted and no successor is reserved: the
-   * assistant exits through the run's ordinary success close, and a
-   * placeholder completes with its own outcome before the claim is released.
-   * Its receipt stays unacknowledged, so those messages wait for the next run.
-   */
   async function commitYield<TCurrent>(
     input: DeliveryBoundary<TCurrent>,
     prepared: PreparedYield<TCurrent>,
@@ -731,14 +687,12 @@ export function createDeliveryAdapter(
       threadId: input.lease.threadId,
       select: () => selectForPreparation(input.lease.threadId, "boundary"),
       signal: input.signal,
-      // Cancellation wins over a yield: it is checked under the lock first.
       validate: async () => {
         if ((await leaseStore.lockReceipt(input.lease))?.cancelRequested)
           throw new DOMException("The operation was aborted", "AbortError");
       },
       prepare: (selection, work): Promise<PreparedAdoption<TCurrent> | PreparedYield<TCurrent>> =>
         selection.yieldReply ? prepareYield(input) : prepareAdoption(input, selection, work),
-      // A yield consumes no peeked notices; they wait for the next reply.
       hasPreparationFailure: (prepared) =>
         prepared.kind === "yield" || prepared.preparationFailure !== undefined,
       commit: async (_selection, _work, prepared) =>
@@ -760,7 +714,6 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      // A switch never wakes the chat: it waits for the run something else starts.
       enqueueWithoutWake: inbox.enqueue,
       async enqueueSettled(draft, cancelledIds) {
         const message = await inbox.enqueue(draft);
@@ -798,7 +751,6 @@ export function createDeliveryAdapter(
       let threads = await inbox.pendingWorkThreads(100, workCursor);
       if (threads.length === 0 && workCursor) threads = await inbox.pendingWorkThreads(100);
       workCursor = threads.at(-1);
-      // Finish the bounded page even when one target is poisoned.
       const results = await Promise.allSettled(threads.map(materializeIdle));
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
@@ -821,7 +773,6 @@ export function createDeliveryAdapter(
         operation({
           materializePrefix: () => materializePrefix(threadId),
           publishRunState: () => inbox.publishRunState(threadId),
-          // No reserved turn delivers these (a child run aborted before its reservation).
           async acknowledge(ids) {
             await ack(threadId, ids);
           },
@@ -877,7 +828,6 @@ export function createDeliveryAdapter(
         const receipt = await leaseStore.lockReceipt(input.lease);
         const cause = settlement.closeCause(input, receipt);
         if (input.continueOnPending && cause.kind === "success") {
-          // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             selection.batch.some((message) => message.intent === "message") ||

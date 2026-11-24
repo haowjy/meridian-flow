@@ -1,4 +1,3 @@
-/** Request parsing and error mapping for the MCP connections routes. */
 import type {
   McpAddConnectionRequest,
   McpEditConnectionRequest,
@@ -55,7 +54,6 @@ export function parsePinRequest(raw: unknown): McpPinRequest {
   return { tools };
 }
 
-/** Runs a connection operation and turns its refusals into HTTP errors worded for the writer. */
 export async function connectionOperation<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();

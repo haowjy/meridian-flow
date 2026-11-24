@@ -1,8 +1,3 @@
-/**
- * HTTP thread ownership and attested availability errors. Deleted rows stay
- * concealed from foreign users; full owners receive a distinct deletion proof.
- */
-
 import type { UserId } from "@meridian/contracts/runtime";
 import type {
   Thread,
@@ -23,7 +18,6 @@ import {
 } from "./domain/thread-trash-lifecycle.js";
 import type { ThreadRepositories, ThreadRepository } from "./ports/repositories.js";
 
-/** Shared HTTP proof for both repository and runtime owner gates. */
 function throwThreadAvailability(
   code: ThreadAvailabilityCode,
   userId: UserId,
@@ -52,7 +46,6 @@ export function throwThreadDeleted(userId: UserId, projectDeleted = false): neve
   throwThreadAvailability("thread_deleted", userId, projectDeleted);
 }
 
-/** Owner gate: classify ownership before deletion, including the parent project. */
 export async function requireThreadOwner(
   repos: { threads: Pick<ThreadRepository, "findByIdIncludingDeleted"> },
   threadId: string,
@@ -76,11 +69,9 @@ export interface SetOwnedThreadTrashStateDeps {
   workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
   works: Pick<import("../projects/index.js").WorkRepository, "findById" | "findNoWork">;
-  /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly import("@meridian/contracts/runtime").ThreadId[]): Promise<void>;
 }
 
-/** Authenticated adapter for the serialized trash command and restore wake. */
 export async function setOwnedThreadTrashState(
   deps: SetOwnedThreadTrashStateDeps,
   threadId: string,

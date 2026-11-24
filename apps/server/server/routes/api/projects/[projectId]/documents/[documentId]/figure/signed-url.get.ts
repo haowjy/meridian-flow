@@ -1,5 +1,3 @@
-/** Figure signed URL HTTP boundary: resolve the query view, authorize, then sign. */
-
 import { isDraftId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
@@ -16,7 +14,6 @@ type FigureSignedUrlServices = Pick<AppServices, "fileAccess" | "figureAssets"> 
   projectRepo: Pick<AppServices["projectRepo"], "findById">;
 };
 
-/** Authentication is the HTTP boundary; all query, authorization and signing logic stays shared. */
 export function createFigureSignedUrlHandler(
   authenticate: (event: H3Event) => Promise<{
     app: FigureSignedUrlServices;
@@ -34,7 +31,6 @@ export function createFigureSignedUrlHandler(
     }
     const draft = queryDraft ?? null;
     const view = draft ? { kind: "draft" as const, draftId: draft } : { kind: "live" as const };
-    // A draft of another project reads nothing here: its facts name that project's owner.
     const asset = await requireFileGrant(
       app.fileAccess,
       user.userId,

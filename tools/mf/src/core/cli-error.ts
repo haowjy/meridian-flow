@@ -1,5 +1,3 @@
-/** Typed CLI failures and the exit-code contract agents branch on. */
-
 import { classifyCommandFailure, type FailureOccurrence } from "@meridian/contracts/failures";
 
 export const EXIT = {

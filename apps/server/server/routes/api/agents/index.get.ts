@@ -1,4 +1,3 @@
-/** GET /api/agents: the Agents of the built-in, user and (with `projectId`) project levels. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
 import { requireProjectOwner } from "../../../domains/projects/index.js";

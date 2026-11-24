@@ -1,7 +1,3 @@
-/**
- * Binds the shared answer and settle commands to this chat's store, its snapshot read and the
- * socket, plus the still-answering signal that holds a question's deadline off.
- */
 import type { AskAnswer, DraftAnswers } from "@meridian/contracts/threads";
 import {
   type AnswerAskPorts,
@@ -17,11 +13,8 @@ import { useThreadActions } from "@/client/stores";
 
 export type AskCommands = {
   answer(askId: string, answer: AskAnswer): Promise<AnswerAskResult>;
-  /** Read the chat again after an answer could not learn how the ask ended. */
   settle(askId: string): void;
-  /** The writer is still there; `answers` are a draft change. False when the frame couldn't leave. */
   presence(askId: string, answers?: DraftAnswers): boolean;
-  /** Run `listener` each time the socket connects; returns the unsubscribe. */
   onConnected(listener: () => void): () => void;
 };
 
@@ -33,7 +26,6 @@ export function useAnswerAsk(threadId: string): AskCommands {
     const ports: AnswerAskPorts = {
       transport,
       update: (change) => updateAsks(threadId, change),
-      // The snapshot query's read applies through the chat's sync before this resolves.
       refresh: () =>
         queryClient.refetchQueries(
           { queryKey: threadQueryKeys.snapshot(threadId), exact: true },
