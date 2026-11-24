@@ -6,7 +6,6 @@ import { sql } from "drizzle-orm";
 import postgres from "postgres";
 
 export const DB_TEST_FIXTURE_USER_ID_PRIMARY = "00000000-0000-4000-8000-000000000111";
-export const DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL = "00000000-0000-4000-8000-000000000112";
 
 const DEV_DATABASE_NAMES = new Set(["postgres", "meridian"]);
 

@@ -2,6 +2,8 @@
 // unit is the block"): Live is seeded from `<chapters>/<name>.md`, a draft takes
 // `<rewrites>/<name>.<ask>.md` through agent-edit's whole-document write, and `changedBlocks` is
 // counted. Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/change-grouping.probe.ts <chapters> <rewrites>
+// The corpus (three public-domain chapters and twelve deepseek rewrites) and the counts it gave:
+// https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/gate/change-grouping/README.md
 import { readdirSync, readFileSync } from "node:fs";
 import {
   applyBlocks,
