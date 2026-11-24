@@ -1,6 +1,6 @@
 /** An AI write's recorded delta in words, and the schema an inverse reads blocks with. */
 import { readDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
-import { DIFF_DELETE, DIFF_INSERT, wordDiff } from "@meridian/agent-edit/diff";
+import { wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 
@@ -26,9 +26,9 @@ export function deltaExcerpt(stored: StoredDelta | null): { before: string; afte
     after.delete(idOf(block));
     const out: string[] = [];
     const put: string[] = [];
-    for (const [op, run] of wordDiff(block.textContent, next?.textContent ?? ""))
-      if (op === DIFF_DELETE) out.push(run);
-      else if (op === DIFF_INSERT) put.push(run);
+    for (const { kind, text } of wordDiff(block.textContent, next?.textContent ?? ""))
+      if (kind === "removed") out.push(text);
+      else if (kind === "added") put.push(text);
     line(removed, out);
     line(added, put);
   }

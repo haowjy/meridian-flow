@@ -7,10 +7,10 @@ import {
   type RoomDocs,
   type ShapeBlock,
   structureValues,
-  wordDiff,
 } from "@meridian/document-model";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
+import { wordDiff } from "../diff/tokens.js";
 import { toHashline } from "../model/hashline.js";
 import { LoroDocument, type LoroDocumentModel, toLoroHandle } from "../model/loro-model.js";
 import type { ProjectedBlock } from "../ports/model.js";

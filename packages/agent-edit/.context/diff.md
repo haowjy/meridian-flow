@@ -9,7 +9,13 @@ Who uses it now:
 
 - The browser: `countWords` (word count), `wordDiff` (Review changes' word marks, a saved Agent's
   diff) and `diffKeys`.
-- The server: `wordDiff` for an edit's excerpt (`collab/domain/edit-excerpt.ts`).
+- The server: `wordDiff` for an edit's excerpt (`collab/domain/edit-excerpt.ts`), the model's
+  `format: "changes"` read (`tool/draft-changes.ts`) and the AI write's lowering (`lower-block.ts`).
+
+`wordDiff` is the only word diff: the turn card's excerpt, Review changes and what the AI writes
+must mark the same words for one change, so a second one would let them disagree. It rides on
+`diffKeys`, so past `MAX_DIFF_KEYS` segments between the first and last change (about 1,000 words a
+side) a paragraph's change is one removal and one addition, everywhere at once.
 
 
 ## Hunks and changes

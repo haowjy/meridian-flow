@@ -408,12 +408,25 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
   return common / denom;
 }
 
+/** One run of a word diff: text both sides share, or text only one side has. */
+export interface WordPart {
+  kind: "same" | "removed" | "added";
+  text: string;
+}
+
+const PART_KIND = {
+  [DIFF_EQUAL]: "same",
+  [DIFF_DELETE]: "removed",
+  [DIFF_INSERT]: "added",
+} as const;
+
 /**
- * Diff at word granularity over the review's own segments, as `[op, text]` runs. The AI write lowering
- * and the room writer both read it, so one edit has one set of unchanged words; the write then refines
- * a changed run that only gained characters by character (`retainShared`).
+ * Diff at word granularity over the review's own segments. The AI write lowering, the room writer,
+ * Review changes and an edit's excerpt all read it, so one edit has one set of changed words
+ * wherever it shows; the write then refines a changed run that only gained characters by character
+ * (`retainShared`).
  */
-export function wordDiff(a: string, b: string): Array<[number, string]> {
+export function wordDiff(a: string, b: string): WordPart[] {
   const wa = splitWords(a);
   const wb = splitWords(b);
   let i = 0;
@@ -423,6 +436,6 @@ export function wordDiff(a: string, b: string): Array<[number, string]> {
     const at = op === DIFF_INSERT ? j : i;
     if (op !== DIFF_INSERT) i += n;
     if (op !== DIFF_DELETE) j += n;
-    return [op, from.slice(at, at + n).join("")];
+    return { kind: PART_KIND[op as keyof typeof PART_KIND], text: from.slice(at, at + n).join("") };
   });
 }

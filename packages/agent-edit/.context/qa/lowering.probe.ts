@@ -9,13 +9,12 @@ import {
   TEXT_KEY,
   type TextRules,
   unitEditors,
-  wordDiff as reviewWordDiff,
 } from "@meridian/document-model";
 import { inlineNodes, inlineOf, shapeSchemaOf } from "@meridian/loro-prosemirror";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import { LoroDoc, type LoroText, UndoManager } from "loro-crdt";
-import { diffKeys } from "../../src/diff/tokens.js";
+import { diffKeys, wordDiff } from "../../src/diff/tokens.js";
 import { lowerBlock } from "../../src/resolver/lower-block.js";
 
 type E1 =
@@ -380,7 +379,7 @@ function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentP
   // Review changes paints `wordDiff(reference, draft)`: compare its words with the ideal's.
   const highlight = (s: string) => {
     const bag = new Map<string, number>();
-    for (const part of reviewWordDiff(c.base1, s))
+    for (const part of wordDiff(c.base1, s))
       if (part.kind !== "same")
         for (const w of words(part.text))
           bag.set(`${part.kind}:${w}`, (bag.get(`${part.kind}:${w}`) ?? 0) + 1);
