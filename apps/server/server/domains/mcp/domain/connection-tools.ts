@@ -32,8 +32,7 @@ import type { McpConnections } from "./connection-service.js";
 /** Characters of a reply the model reads; the full reply stays in the call's record. */
 export const REPLY_CHARACTER_LIMIT = 24_000;
 /** What the model reads wherever calls that ran are listed: a failed script's list and a restart's stub. */
-export const DO_NOT_REPEAT =
-  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
+export const CALLS_RAN = "These calls ran and are not undone.";
 /** One call's limit, passed to the client: a slow server is `call_timeout`, never also the executor's timeout. */
 const CALL_TIMEOUT_MS = 60_000;
 
@@ -292,7 +291,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
         return {
           isError: true,
           result: failure(
-            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept. Ask for less: a narrower query or fewer results.`,
+            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept.`,
           ),
         };
       case "aborted":
@@ -342,7 +341,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       });
     }
     const shown = cut
-      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown. Ask for less: a narrower query or fewer results.]`
+      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown.]`
       : text;
     return {
       text: lost
@@ -410,7 +409,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
    * One line for each recorded call of these turns, for the stub of a call that did not finish:
    * the call as `mcp_call` takes it (the connection's name from the bake), what was sent, and how
    * far it got, with the kept reply as a failed script's list shows it. The stub opens with
-   * `DO_NOT_REPEAT`. Each stub's lines are capped as that list is.
+   * `CALLS_RAN`. Each stub's lines are capped as that list is.
    */
   async function recordedCalls(
     threadId: string,

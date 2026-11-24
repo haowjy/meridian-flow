@@ -16,7 +16,7 @@ import {
   type ScriptRunner,
 } from "@meridian-flow/runtime/script";
 import { answeredStatus, callLine, capLines, cut, textOf } from "./call-list.js";
-import { type ConnectionCall, type ConnectionTools, DO_NOT_REPEAT } from "./connection-tools.js";
+import { CALLS_RAN, type ConnectionCall, type ConnectionTools } from "./connection-tools.js";
 import { createLimiter, type Limiter } from "./limiter.js";
 import { prepareScript } from "./script-code.js";
 
@@ -45,7 +45,7 @@ const ROW_REPLY_CHARS = 1_000;
 /** What the model reads of each call in a failed script's list, and of the list. */
 
 const MEDIA_LEFT_OUT = (count: number) =>
-  `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. Call this tool with mcp_call to see ${count === 1 ? "it" : "them"}.]`;
+  `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply.]`;
 
 export interface ScriptRunRequest {
   thread: { id: string; userId: UserId };
@@ -159,7 +159,7 @@ export function createScriptRuns(deps: {
         value = scriptValue(call.outcome.reply);
         const bytes = Buffer.byteLength(JSON.stringify(value));
         if (bytes > limits.replyBytes || replyBytes + bytes > limits.totalReplyBytes) {
-          tooLarge = `The reply was ${bytes} bytes, over what a script may take in (${limits.replyBytes} bytes a reply, ${limits.totalReplyBytes} bytes in all). Ask for less: a narrower query or fewer results.`;
+          tooLarge = `The reply was ${bytes} bytes, over what a script may take in (${limits.replyBytes} bytes a reply, ${limits.totalReplyBytes} bytes in all).`;
           result = { ...result, outcome: "too_large", code: "mcp_too_large", message: tooLarge };
         } else replyBytes += bytes;
       }
@@ -327,7 +327,7 @@ export function createScriptRuns(deps: {
     const lines = capLines(
       ran.map((call) => `${call.sequence + 1}. ${scriptCallLine(call, full)}`),
     );
-    return `${full ? DO_NOT_REPEAT : "Calls made:"}\n${lines.join("\n")}`;
+    return `${full ? CALLS_RAN : "Calls made:"}\n${lines.join("\n")}`;
   }
 
   function scriptCallLine(call: McpScriptCall, full: boolean): string {

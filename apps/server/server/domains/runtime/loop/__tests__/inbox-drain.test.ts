@@ -758,7 +758,9 @@ describe("drain-only start", () => {
         message.role === "user" &&
         messageText(message).includes(`Subagent ${child.ref} finished (succeeded)`),
     );
-    expect(messageText(notification as Message)).toContain(`thread_report({"ref":"${child.ref}"})`);
+    expect(messageText(notification as Message)).toContain(
+      `Subagent ${child.ref} finished (succeeded).`,
+    );
     expect(messageText(notification as Message)).not.toContain(execution.id);
     expect(
       JSON.stringify([queued, blocks, requests, rig.projectedEvents.map(({ event }) => event)]),

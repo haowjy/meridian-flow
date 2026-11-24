@@ -14,9 +14,9 @@ export {
   type McpConnections,
 } from "./domain/connection-service.js";
 export {
+  CALLS_RAN,
   type ConnectionTools,
   createConnectionTools,
-  DO_NOT_REPEAT,
   type ReplyStore,
 } from "./domain/connection-tools.js";
 export { type Resolved, winners } from "./domain/resolve-connections.js";

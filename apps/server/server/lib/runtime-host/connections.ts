@@ -10,12 +10,12 @@ import type { Thread } from "@meridian/contracts/threads";
 import type { McpClient } from "@meridian-flow/runtime/mcp";
 import type { ScriptRunner } from "@meridian-flow/runtime/script";
 import {
+  CALLS_RAN,
   type CallStore,
   type ConnectionStore,
   createConnectionBake,
   createConnectionTools,
   createScriptRuns,
-  DO_NOT_REPEAT,
   type McpConnections,
   SCRIPT_LIMITS,
 } from "../../domains/mcp/index.js";
@@ -118,7 +118,7 @@ export function createConnections(deps: {
       return null;
     },
 
-    doNotRepeat: DO_NOT_REPEAT,
+    callsRan: CALLS_RAN,
 
     async recordedCalls(threadId, turnIds) {
       const bake = await bakeOf(await threadOf(threadId));

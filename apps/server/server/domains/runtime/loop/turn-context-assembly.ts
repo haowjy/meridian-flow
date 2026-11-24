@@ -209,7 +209,7 @@ async function recordedConnectionCalls(
     unfinished,
   )) {
     const key = connectionCallKey(turnId, toolCallId);
-    recorded.set(key, [...(recorded.get(key) ?? [connections.doNotRepeat]), line]);
+    recorded.set(key, [...(recorded.get(key) ?? [connections.callsRan]), line]);
   }
   return recorded;
 }

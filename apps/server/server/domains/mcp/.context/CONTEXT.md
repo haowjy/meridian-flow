@@ -88,7 +88,7 @@ connections are prompt text, not tool definitions.
   schema. Pictures are stored in the chat's prefix and travel as stored media parts. An id the
   thread does not hold, and a connection removed since, are made without calling the client.
 - **Restart.** The request-time stub for a connection call with no stored result opens with
-  `DO_NOT_REPEAT`, the text a failed script's list opens with too, and lists its records: each
+  `CALLS_RAN`, the text a failed script's list opens with too, and lists its records: each
   call as the id `mcp_call` takes (`<connection>/<tool>`, the name from the thread's bake), what
   was sent, and how it ended with the kept reply read back from the chat's storage (cut as a
   failed script's list cuts it, by the same line builder in `domain/call-list.ts`, and capped the
