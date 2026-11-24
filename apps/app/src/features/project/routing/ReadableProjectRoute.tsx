@@ -2,6 +2,7 @@
 
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
+import type { ContextOwner } from "@meridian/contracts/protocol";
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
@@ -14,7 +15,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
-import type { ContextOwner } from "@meridian/contracts/protocol";
 import { useDraftStanding } from "@/client/query/useDraftStanding";
 import { useDraftOnly, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
