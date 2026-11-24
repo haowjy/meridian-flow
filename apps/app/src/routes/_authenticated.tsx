@@ -7,7 +7,11 @@ import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
-import { CommandDriverProvider, combineDomains } from "@/client/commands/driver-context";
+import {
+  CommandDriverProvider,
+  combineDomains,
+  useCommands,
+} from "@/client/commands/driver-context";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { FailureLogProvider } from "@/client/failures/failure-log";
 import { readLastShownChat } from "@/client/project-shell/store";
@@ -15,7 +19,7 @@ import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { draftCommandsDomain } from "@/client/query/draft-commands";
-import { pressDomain } from "@/client/query/press-commands";
+import { PRESS_KIND, pressDomain } from "@/client/query/press-commands";
 import { projectDomain } from "@/client/query/project-commands";
 import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { useMcpConnectionsAtOpen } from "@/client/query/useMcpConnections";
@@ -33,6 +37,7 @@ import { installTraceCapture } from "@/features/debug/trace/install-trace-captur
 import { ImportsProvider } from "@/features/import/ImportsProvider";
 import {
   AccountFeatureComposition,
+  useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
 } from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
@@ -175,9 +180,18 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
         )
       }
     >
+      <FollowPresses />
       {children}
     </CommandDriverProvider>
   );
+}
+
+/** The journal's presses hold their rows in every tab and through a reload. */
+function FollowPresses() {
+  const owner = useDraftCommandOwner();
+  const presses = useCommands({ kind: PRESS_KIND });
+  useEffect(() => owner.followPresses(presses), [owner, presses]);
+  return null;
 }
 
 function AuthenticatedProviderTree({

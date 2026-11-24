@@ -13,14 +13,13 @@ import {
   draftItemKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type { PressAction, PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
+import type { PressRequest, PressScope, TreeSaw } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
 import type { PressRooms } from "@/core/editor/document-session-registry";
-import { workDraftsQueryOptions } from "./draft-commands";
 import { refreshDraftReads } from "./useOwnerDrafts";
 import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
@@ -38,40 +37,29 @@ export type PressUndoBody = { projectId: string; pressCommandId: string };
 /** Settles once the server holds what this browser's copies of the press's rooms had. */
 export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
-const WORK_LANE = "work:";
-
-/** One draft's presses and Undos go in the order the writer made them; a Work's press orders after its drafts'. */
-const pressLane = (key: string) => `press:${key}`;
-
-/** The draft a scope presses on (a turn's restore names its draft); a Work's press names its Work. */
-export function pressLaneKey(scope: PressAction["scope"]): string {
-  if (scope.kind === "turn" || scope.kind === "draft") return scope.draft;
-  if (scope.kind === "work") return `${WORK_LANE}${scope.work}`;
-  return parseDraftItemKey(scope.item)?.draftId ?? scope.item;
-}
+/**
+ * A press or Undo holds the lane of each draft it presses, so it goes after every earlier press
+ * on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
+ */
+const PRESS_LANE = "press:";
 
 /**
- * What a journaled press or Undo presses, read from its lane (`pressLaneKey`), which a body of
- * every version has: its draft, or each draft of its Work as the server lists them now; a press
- * of one document or change, only that document.
+ * What a journaled press or Undo presses, read from its record: the drafts its lanes name, and the
+ * document of a press of one document or change. A Work's drafts are the ones it listed when
+ * pressed, so its wait needs no read of the server.
  */
-async function pressRooms(
-  client: QueryClient,
-  record: CommandRecord,
-  projectId: string,
-): Promise<PressRooms> {
+export function pressRooms(record: CommandRecord): PressRooms {
   const scope = (record.body as Partial<PressBody>).scope;
   const parsed =
     scope && (scope.kind === "change" || scope.kind === "document")
       ? parseDraftItemKey(scope.item)
       : null;
-  const documents = parsed ? [parsed.documentId] : null;
-  const key = record.lanes[0]?.slice(pressLane("").length) ?? "";
-  if (!key.startsWith(WORK_LANE)) return { drafts: [key as DraftId], documents };
-  const listed = await client.fetchQuery(
-    workDraftsQueryOptions(projectId, key.slice(WORK_LANE.length)),
-  );
-  return { drafts: listed.drafts.map((draft) => draft.id as DraftId), documents };
+  return {
+    drafts: record.lanes.flatMap((lane) =>
+      lane.startsWith(PRESS_LANE) ? [lane.slice(PRESS_LANE.length) as DraftId] : [],
+    ),
+    documents: parsed ? [parsed.documentId] : null,
+  };
 }
 
 /** A press journaled before presses named a scope: one draft's documents and folders, or all of it. */
@@ -125,10 +113,7 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };
       },
-      ready: async (record) => {
-        const { projectId } = record.body as PressBody;
-        await gate(projectId, await pressRooms(client, record, projectId));
-      },
+      ready: (record) => gate((record.body as PressBody).projectId, pressRooms(record)),
       onSettled: settled,
     },
     [PRESS_UNDO_KIND]: {
@@ -142,10 +127,7 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
           body: { pressCommandId },
         };
       },
-      ready: async (record) => {
-        const { projectId } = record.body as PressUndoBody;
-        await gate(projectId, await pressRooms(client, record, projectId));
-      },
+      ready: (record) => gate((record.body as PressUndoBody).projectId, pressRooms(record)),
       onSettled: settled,
     },
   };
@@ -160,15 +142,24 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
   };
 }
 
-export function submitPress(driver: CommandDriver, body: PressBody) {
+/** `drafts`: the drafts it presses, a Work's every draft (`pressRooms`). */
+export function submitPress(driver: CommandDriver, drafts: readonly string[], body: PressBody) {
   return submitCommand(driver, {
     kind: PRESS_KIND,
-    lanes: [pressLane(pressLaneKey(body.scope))],
+    lanes: drafts.map((draft) => `${PRESS_LANE}${draft}`),
     body,
   });
 }
 
-/** `lane` (the press's `pressLaneKey`) orders the Undo after the press it names. */
-export function submitPressUndo(driver: CommandDriver, lane: string, body: PressUndoBody) {
-  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(lane)], body });
+/** `drafts`: the press's own, so the Undo goes after it. */
+export function submitPressUndo(
+  driver: CommandDriver,
+  drafts: readonly string[],
+  body: PressUndoBody,
+) {
+  return submitCommand(driver, {
+    kind: PRESS_UNDO_KIND,
+    lanes: drafts.map((draft) => `${PRESS_LANE}${draft}`),
+    body,
+  });
 }

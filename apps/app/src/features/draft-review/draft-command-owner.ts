@@ -1,9 +1,14 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`), the presses this tab can still take back (`presses`), each turn's restore in a
- * draft (`restore`) and one notice per draft owner. The press itself is `usePressCommands`.
+ * (`hold`, and every press the journal holds unanswered, `followPresses`), the presses this tab
+ * can still take back (`presses`), each turn's restore in a draft (`restore`) and one notice per
+ * draft owner. The press itself is `usePressCommands`.
  */
-import { type DraftId, draftItemKey, type TurnId } from "@meridian/contracts";
+import { t } from "@lingui/core/macro";
+import type { CommandRecord } from "@meridian/command-driver";
+import { type DraftId, draftItemKey, parseDraftItemKey, type TurnId } from "@meridian/contracts";
+import { type PressBody, pressRooms } from "@/client/query/press-commands";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
 import type { PressEntries } from "./press-history";
 
@@ -13,6 +18,13 @@ type DraftCommandState = {
   hidden: boolean;
 };
 const EMPTY: DraftCommandState = { applying: false, hidden: false };
+const APPLYING: DraftCommandState = { applying: true, hidden: true };
+const DISCARDING: DraftCommandState = { applying: false, hidden: true };
+
+/** What a journaled press takes whole: one document's item, or every item of its drafts. */
+type JournalHold = ({ item: string } | { drafts: ReadonlySet<string> }) & {
+  state: DraftCommandState;
+};
 
 export type CommandOutcome =
   | { kind: "blocked" }
@@ -38,6 +50,9 @@ const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
 
 export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();
+  private journal: readonly JournalHold[] = [];
+  private readonly opened = Date.now();
+  private readonly reported = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   /** Every press this tab can still take back or press again. */
@@ -55,7 +70,35 @@ export class DraftCommandOwner {
   snapshot = () => this.revision;
 
   state(itemKey: string): DraftCommandState {
-    return this.records.get(itemKey) ?? EMPTY;
+    const held = this.records.get(itemKey);
+    if (held) return held;
+    const draft = parseDraftItemKey(itemKey)?.draftId;
+    const hold = this.journal.find((each) =>
+      "item" in each ? each.item === itemKey : draft !== undefined && each.drafts.has(draft),
+    );
+    return hold?.state ?? EMPTY;
+  }
+
+  /**
+   * The account's journaled presses: one not answered yet, or answered and not yet in a list
+   * read, holds its items as `hold` does, so a reload or another tab shows them in flight too. A
+   * press of a change or a turn takes part of a document and holds nothing. One the server never
+   * took, since this tab opened, says so once, wherever it was pressed.
+   */
+  followPresses(records: readonly CommandRecord[]) {
+    for (const record of records) this.reportFailure(record);
+    const holds = records.flatMap((record): JournalHold[] => {
+      if (record.state === "never" || (record.state === "done" && record.observed)) return [];
+      const { scope, verdict } = record.body as Partial<PressBody>;
+      const state = verdict === "apply" ? APPLYING : DISCARDING;
+      if (scope?.kind === "document") return [{ item: scope.item, state }];
+      if (scope?.kind === "draft" || scope?.kind === "work")
+        return [{ drafts: new Set<string>(pressRooms(record).drafts), state }];
+      return [];
+    });
+    if (holds.length === 0 && this.journal.length === 0) return;
+    this.journal = holds;
+    this.changed();
   }
 
   /** Items a press has in flight: hidden, so their rows and review leave, until the release. */
@@ -64,6 +107,29 @@ export class DraftCommandOwner {
     return () => {
       for (const itemKey of itemKeys) this.setState(itemKey, EMPTY);
     };
+  }
+
+  private reportFailure(record: CommandRecord) {
+    if (record.state !== "never" || (record.settledAt ?? 0) < this.opened) return;
+    if (this.reported.has(record.id)) return;
+    this.reported.add(record.id);
+    const { scope, verdict } = record.body as Partial<PressBody>;
+    const owner =
+      scope?.kind === "work"
+        ? `work:${scope.work}`
+        : scope?.kind === "draft" || scope?.kind === "turn"
+          ? scope.draft
+          : scope && parseDraftItemKey(scope.item)?.draftId;
+    notifyFailure({
+      key: `press:${owner ?? record.id}`,
+      title:
+        verdict === "apply"
+          ? t`Couldn't apply`
+          : verdict === "restore"
+            ? t`Couldn't undo`
+            : t`Couldn't discard`,
+      brief: true,
+    });
   }
 
   /** The turn's restore in `draft` this tab has sent or holds in force. */

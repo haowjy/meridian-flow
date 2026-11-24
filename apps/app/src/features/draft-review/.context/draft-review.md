@@ -80,16 +80,26 @@ An Apply or Discard is a press (`usePressCommands`, `client/query/press-commands
 one change, one document, the draft, or the Work. It is sent through the command driver, which
 resends it under the same id until the server answers. Before each send the driver waits on
 `ready`: the server holds what this browser's copies of the press's rooms had
-(`registry.whenSentAcknowledged`), so the server presses what the writer saw. The rooms come from
-the press's lane: its draft's forks (only the named document's for a change or document) and their
-Live rooms, or every draft of the Work for a Work's press; an Undo uses its press's lane. A copy
-with unsent words that the tab has no session for (after a reload) is opened so its Join sends
-them. A stuck room of another draft does not hold the press.
+(`registry.whenSentAcknowledged`), so the server presses what the writer saw. A press holds one
+lane per draft it presses (`press:<draft>`): a Work's press holds every draft the Changes list
+showed, so it goes after an Apply or Discard pressed earlier on any of them, and its Undo holds
+the same lanes. The rooms come from those lanes, with no read of the server: each draft's forks
+(only the named document's for a change or document) and their Live rooms. A copy with unsent
+words that the tab has no session for (after a reload) is opened so its Join sends them. A stuck
+room of another draft does not hold the press.
 
 The Changes list, the chat strip and a page read the owner's draft list (`useOwnerDrafts`). It is
 re-read when the server wakes the owner (`useProjectWake`) and in each of the account's tabs when a
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
-(`DraftCommandOwner.hold`) and comes back with a pill if the press fails.
+and comes back with a pill if the press fails. In flight is the tab's own `DraftCommandOwner.hold`
+or, in every tab and through a reload, a journaled press not yet answered or not yet in a list
+read (`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). That follower also
+shows the "Couldn't apply" pill, once, for a press settled `never` since the tab opened, so a press
+that fails after a reload still says so.
+
+In the Changes tab a draft's notice speaks only on its own section's rows: two drafts can hold one
+chapter, and applying one draft's leaves the other's row pending, without the first one's Undo. A
+Work's notice speaks on every section.
 
 A press's Undo always runs, whatever was written since (design §2): every row it pressed comes
 back pending.

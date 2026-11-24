@@ -9,7 +9,6 @@
  * on the Ctrl+Z of each editor open on its documents (`EditorPressStep`); every Undo of it, on
  * its notice, the sidebar or an editor, is the press's one Undo and takes the others' steps away.
  */
-import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
 import {
   type DocumentId,
@@ -32,12 +31,11 @@ import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
-import { pressLaneKey, submitPress, submitPressUndo } from "@/client/query/press-commands";
+import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
-import { notifyFailure } from "@/components/app/failure-toast";
 import {
   dropUndoStep,
   type PressStep,
@@ -78,7 +76,8 @@ type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
  */
 type Pressed = {
   commandId: string;
-  lane: string;
+  /** The drafts it pressed, whose lanes its Undo goes in (`submitPressUndo`). */
+  drafts: readonly string[];
   took: readonly string[];
   placement: Placement;
   landed: number;
@@ -190,11 +189,11 @@ export function usePressCommands({
     /** A press's Undo: the server takes back what that press did, and nothing else. */
     const unpress = async (
       commandId: string,
-      lane: string,
+      pressedDrafts: readonly string[],
       scope: Scope,
     ): Promise<PressUndoResult | Unpressed> => {
       if (!driver) return "failed";
-      const record = await submitPressUndo(driver, lane, {
+      const record = await submitPressUndo(driver, pressedDrafts, {
         projectId,
         pressCommandId: commandId,
       });
@@ -293,7 +292,7 @@ export function usePressCommands({
           // An Apply's Undo takes a created document out of Live: main, read before, follows it to
           // the draft's plain page, where it is a draft's document again.
           const main = presented?.mainDocumentId(projectId);
-          const answer = await unpress(commandId, pressed.lane, scope);
+          const answer = await unpress(commandId, pressed.drafts, scope);
           if (typeof answer === "string")
             return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
           const created = rows().find((row) => row.documentId === main && row.isNew);
@@ -396,7 +395,7 @@ export function usePressCommands({
         }
         // Each list's cut is the Work's tree as that list read it: the first is the press's.
         const saw = lists[0]?.listed.saw;
-        const record = await submitPress(live, {
+        const record = await submitPress(live, pressed, {
           projectId,
           ...target.action,
           ...(saw ? { saw } : {}),
@@ -410,7 +409,7 @@ export function usePressCommands({
         const result = settled.outcome.result as PressResult;
         return {
           commandId: record.sendId,
-          lane: pressLaneKey(scope),
+          drafts: pressed,
           took: [...new Set([...result.documents, ...result.items.map((item) => item.node)])],
           placement,
           landed,
@@ -488,17 +487,6 @@ export function usePressCommands({
         if (created.length > 0) removal?.beginOwnRemoval(projectId, created);
       }
       const outcome = press(target, driver).then((pressed): CommandOutcome => {
-        if (pressed === "failed")
-          notifyFailure({
-            key: `press:${noticeKey}`,
-            title:
-              verdict === "apply"
-                ? t`Couldn't apply`
-                : verdict === "restore"
-                  ? t`Couldn't undo`
-                  : t`Couldn't discard`,
-            brief: true,
-          });
         if (typeof pressed === "string") return { kind: "blocked" };
         const sent = target.documents ?? pressed.took;
         const answer = outcomeOf(pressed, sent);
@@ -633,7 +621,7 @@ export function usePressCommands({
       const scope = { kind: "turn", turn, draft } as const;
       restoreInForce(
         scope,
-        { commandId: named, lane: pressLaneKey(scope), took: [], placement: [], landed: readAt },
+        { commandId: named, drafts: [draft], took: [], placement: [], landed: readAt },
         new EditorPressStep([], () => {}),
       );
     };

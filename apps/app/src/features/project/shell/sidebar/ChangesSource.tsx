@@ -260,13 +260,20 @@ export function ChangesSource({
     // `sections` is rebuilt every render; what it draws is in the keys below.
   }, [drawnKey, folded, notice]);
   const treeWords = useTreeNoticeWords(projectId, place);
-  const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
+  // A draft's notice speaks on its own rows: two drafts can hold one document. The Work's speaks
+  // on every draft's.
+  const speaksIn = (section: DraftSection) =>
+    !notice ||
+    notice.draftId === section.draftId ||
+    !scope.drafts.some((draft) => draft.id === notice.draftId);
+  const wordsOf = (section: DraftSection) => (key: string) =>
+    (speaksIn(section) ? words.word(key) : null) ?? treeWords.word(key);
   const shownOf = (section: DraftSection) =>
     withGone(
       section.items,
       changeKey,
       (taken.get(section.draftId) ?? []).filter(
-        (row) => words.held(row.key) || treeWords.word(row.key),
+        (row) => (speaksIn(section) && words.held(row.key)) || treeWords.word(row.key),
       ),
     );
   const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
@@ -396,7 +403,7 @@ export function ChangesSource({
             shown={shown.get(section.draftId) ?? []}
             controller={controller}
             notice={notice}
-            wordOf={wordOf}
+            wordOf={wordsOf(section)}
             touch={touch}
             isOpen={isOpen}
             onPicked={onPicked}
