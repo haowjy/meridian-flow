@@ -140,24 +140,6 @@ export function DraftNoticeLine({
   useLingui();
   const openDocument = useOpenProjectDocument(notice.projectId);
   const landed = useLandedNow(notice);
-  if (notice.kind === "stayed") {
-    // The line says where; the rows and the editor's mark say who.
-    const [only] = notice.kept;
-    const documents = new Set(notice.kept.map((fact) => fact.documentId)).size;
-    return (
-      <ActionNotice
-        data-command-notice="stayed"
-        sentence={
-          documents === 1 && only
-            ? (name: string) => t`Undone, except in ${name}, written over since.`
-            : t`Undone, except in ${documents} documents written over since.`
-        }
-        name={documents === 1 ? (only?.name ?? null) : null}
-        onDismiss={notice.dismiss}
-        className={className}
-      />
-    );
-  }
   if (notice.kind === "applied") {
     if (landed.length === 0) return null;
     const [only] = landed;
@@ -227,19 +209,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   useLingui();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
-  if (notice.kind === "stayed") {
-    // A change an Undo left in place keeps its row, with who wrote over it.
-    const factOf = (id: string) => notice.kept.find((fact) => fact.documentId === id);
-    return {
-      held: (id) => factOf(id) !== undefined,
-      word: (id) => {
-        const fact = factOf(id);
-        return fact ? (
-          <RowWord tone="note" word={<Trans>Kept</Trans>} sentence={fact.label} />
-        ) : null;
-      },
-    };
-  }
   if (notice.kind === "applied") {
     // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
     const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);

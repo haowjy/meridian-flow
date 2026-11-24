@@ -47,8 +47,8 @@ written in a draft). So a Draft chat's card that wrote only text in its draft sh
 and no Undo slot.
 
 `Restore before` (`RestoreBeforeSlot`) is a press like Apply and Discard (`usePressCommands.restoreTurn`):
-each editor open on the turn's documents in that draft gets its Ctrl+Z step, the sidebar its step,
-and an Undo that someone wrote over keeps those changes marked `Kept`. The card is its notice. Its
+each editor open on the turn's documents in that draft gets its Ctrl+Z step and the sidebar its
+step. The card is its notice. Its
 state is the owner's, never the slot's (`DraftCommandOwner.restore`, by turn and draft): sent, or in
 force with its one `PressEntries`, so collapsing the card or switching chats loses nothing, and a
 second press of the same turn and draft is not sent while one is out or in force. The card's read
@@ -81,7 +81,7 @@ undone reply back, the writer asks the model to write it again. The card has one
 header with a fixed width: Undo (`control: "undo"`) while a press would take something back,
 "Undoing…" while it runs, "Undone" once the card's Undo ran and nothing is left for it
 (`undone`), else empty, so a change of state moves nothing under the pointer. A press sends one
-command, takes what it can and says nothing: no sentence about what stayed or why, and none for
+command and says nothing: no sentence for
 a held owner (a closed, archived or Trashed Work or chat): the Undo is simply absent until the
 owner reopens. Only a press that failed, or never got an answer, shows a message: the floating
 pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo gets 200 `expired`.
@@ -89,14 +89,14 @@ pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo ge
  where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
 only this reply's own changes, applied ones included, and sends nothing else: the server takes back each of the
-reply's writes that nobody has written over since, whole, in the room it was written in (Live or
-the draft's fork), and leaves whole the ones someone has. The card never takes back a whole Apply; a Changes row's Undo and
-Ctrl+Z do. Undo is offered only while a press would take something back. A write the writer has written
-over (deleted or retyped all of what it put in) stays, and the card's answer is `partial`, or
-`cant_undo_changed` when every write stayed; typing inside the AI's words leaves some of it, so
-it still goes back around the writer's words. The receipt immediately shows Undoing while the command runs;
+reply's writes in the room it was written in (Live or the draft's fork), whatever was written
+since (design §2, "An Undo always runs"): it deletes what still stands of the write's characters
+and puts back what it deleted, so the writer's words stay. The card never takes back a whole
+Apply; a Changes row's Undo and Ctrl+Z do. Undo is offered while the turn's writes stand: not
+taken back, and still in the history (a write older than the history cutoff can't go back, and
+the answer is `partial` or `expired`). The receipt immediately shows Undoing while the command runs;
 the Live room publishes the edit after durable commit and failures stay on the card.
-Eligibility is design §2's one Undo rule (`editStays`), the one a press's Undo uses
+The rule is design §2's one Undo rule (`takeBack`), the one a press's Undo uses
 (server [reversal](../../../../../server/server/domains/collab/.context/reversal.md)). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. A Discard takes the draft's pending changes out as one

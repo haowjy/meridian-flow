@@ -64,9 +64,3 @@ export function blockDiffers(live: Side, fork: Side, id: BlockId): boolean {
   if (!sameValue(live.view.attrs(id), fork.view.attrs(id))) return true;
   return live.rule(id)?.textblock === true && !sameValue(live.inline(id), fork.inline(id));
 }
-
-/** Whether review lists `id` as changed: shown on one side only, or on both and read differently. */
-export function blockPending(live: Side, fork: Side, id: BlockId): boolean {
-  const shown = live.view.shown.has(id);
-  return shown !== fork.view.shown.has(id) || (shown && blockDiffers(live, fork, id));
-}

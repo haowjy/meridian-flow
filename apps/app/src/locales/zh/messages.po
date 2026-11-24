@@ -572,10 +572,6 @@ msgstr ""
 msgid "{name} was removed. Save to stop using it."
 msgstr ""
 
-#: src/core/editor/extensions/KeptExtension.ts
-msgid "{name} wrote over this since. Undo left it as it is."
-msgstr ""
-
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
 msgstr ""
@@ -997,10 +993,6 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "An Agent named {name} is already here."
-msgstr ""
-
-#: src/features/draft-review/stayed-words.ts
-msgid "Another Apply or Discard"
 msgstr ""
 
 #: src/features/draft-review/ReviewTargetPicker.tsx
@@ -1427,11 +1419,6 @@ msgstr ""
 msgid "Chat"
 msgstr ""
 
-#. placeholder {0}: first.ref
-#: src/features/draft-review/stayed-words.ts
-msgid "Chat {0}"
-msgstr ""
-
 #: src/components/app/composer/placeholders.ts
 msgid "Chat away"
 msgstr "随便聊聊"
@@ -1653,10 +1640,6 @@ msgstr ""
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Comment"
 msgstr ""
-
-#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-#~ msgid "Comment:"
-#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 msgid "Compact conversation"
@@ -2980,10 +2963,6 @@ msgstr ""
 msgid "Fork from here"
 msgstr ""
 
-#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-#~ msgid "Formatting changed"
-#~ msgstr ""
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
 msgstr "来自 {senderName}："
@@ -3290,10 +3269,6 @@ msgstr ""
 
 #: src/features/import/ImportPanel.tsx
 msgid "Keep going"
-msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Kept"
 msgstr ""
 
 #: src/features/import/reason-copy.ts
@@ -4209,10 +4184,6 @@ msgstr ""
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
 msgstr ""
-
-#: src/features/chat/TurnRestoreBefore.tsx
-#~ msgid "Nothing to restore"
-#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Nothing to review in {name}."
@@ -5734,10 +5705,6 @@ msgstr ""
 msgid "the built-in one"
 msgstr ""
 
-#: src/features/draft-review/stayed-words.ts
-msgid "The chat “{title}”"
-msgstr ""
-
 #: src/features/agents/AgentPicker.tsx
 msgid "the default model"
 msgstr ""
@@ -6056,10 +6023,6 @@ msgstr ""
 msgid "Too many imports"
 msgstr ""
 
-#: src/features/chat/TurnRestoreBefore.tsx
-#~ msgid "Too old to restore"
-#~ msgstr ""
-
 #: src/features/chat/script-copy.ts
 msgid "took longer than {seconds} seconds"
 msgstr ""
@@ -6238,14 +6201,6 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone {what}"
-msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Undone, except in {documents} documents written over since."
-msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Undone, except in {name}, written over since."
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -6602,10 +6557,6 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
-#: src/core/editor/extensions/KeptExtension.ts
-msgid "Written over since. Undo left it as it is."
-msgstr ""
-
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Yes"
 msgstr ""
@@ -6616,7 +6567,6 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/core/editor/extensions/peer-carets.ts
-#: src/features/draft-review/stayed-words.ts
 msgid "You"
 msgstr ""
 

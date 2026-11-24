@@ -1,10 +1,9 @@
 import type { Frontiers } from "loro-crdt";
-import { inMap, inText, scoped } from "./handles.js";
+import { inMap, scoped } from "./handles.js";
 import { structureValues } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
-import { type BlockId, overrideMap } from "./shape.js";
+import { type BlockId, type DocKey, overrideMap } from "./shape.js";
 import { isOrderKey, type Removal, removalOf, StructureView } from "./structure.js";
-import { copiesOf } from "./take-back.js";
 import { docCovers, docVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -19,59 +18,52 @@ export const UNTRACKED_ORIGIN = "untracked";
  * Bring removed blocks back (design §1, "Removed blocks"): `order[id]` set to the key its record
  * holds, last-writer-wins like any structure value, in a commit no Undo history records. A block
  * that is not removed, or was removed without a record (an older build's `null`), is left alone.
- * A block comes back without the copies a split or a join made of its text, wherever later moves
- * carried them (`copiesOf`): they are deleted, by id, so two copies that both restore it delete
- * them once. Returns the changes to publish.
+ * Returns the changes to publish.
  */
 export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
   const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
-  const removed = [...ids].flatMap((id) => {
+  for (const id of ids) {
     const removal = view.removal(id);
-    return removal ? [[id, removal.at] as const] : [];
-  });
-  const changes: DocChange[] = [];
-  for (const [key, stretches] of copiesOf(
-    docs,
-    removed.map(([id]) => id),
-  )) {
-    const { doc, before } = docs.writableText(key);
-    inText(doc, (text) => {
-      for (const [from, to] of stretches.reverse()) text.delete(from, to - from);
-    });
-    doc.commit({ origin: UNTRACKED_ORIGIN });
-    changes.push({ key, doc, before, after: doc.frontiers() });
+    if (removal) writer.set("order", id, removal.at);
   }
-  for (const [id, at] of removed) writer.set("order", id, at);
   const change = commitStructure(docs, before, { origin: UNTRACKED_ORIGIN });
-  if (change) changes.push(change);
-  return changes;
+  return change ? [change] : [];
 }
 
 /**
- * Rule 1 of "Removed blocks" (design §1): of the removals the ops since `before` brought (an
- * import's, `before` taken just ahead of it), restore each whose record did not count an op, by
- * any peer, that this copy holds in a text doc under the block. `RoomDocs.importBatch` and
- * `forward` run it on every import, before anything reads the copy. A draft's fork answers only
+ * Rule 1 of "Removed blocks" (design §1): restore each removed block whose record did not count
+ * an op, by any peer, that this copy holds in a text doc under it, of the removals the ops since
+ * `before` brought (an import's, `before` taken just ahead of it) and of the removed blocks on the
+ * path of each doc in `typed` (text an Undo put in), for that doc. A shown block in `moved` (one
+ * an Undo moved) brings back every removed block on its path, as a move into a removed container
+ * does anywhere. `RoomDocs.importBatch` and `forward` run it on every import, before anything
+ * reads the copy, and an Undo over its own write (`putBackValues`). A draft's fork answers only
  * the removals in its own overrides. Returns the changes to publish.
  */
-export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange[] {
-  const removed = removedSince(docs, before);
-  if (removed.length === 0) return [];
+export function answerRemovals(
+  docs: RoomDocs,
+  before: Frontiers,
+  { typed = [], moved = [] }: { typed?: Iterable<DocKey>; moved?: Iterable<BlockId> } = {},
+): DocChange[] {
+  const ids = new Set<BlockId>();
   const under = keysUnder(docs);
-  const unread = removed.filter(([id, removal]) =>
-    under(id).some((key) => {
+  const unread = (removal: Removal | null, keys: readonly DocKey[]) =>
+    keys.some((key) => {
       const doc = docs.textOf(key);
-      return doc !== undefined && !docCovers(removal.seen.get(key), docVersion(doc));
-    }),
-  );
-  return unread.length > 0
-    ? restore(
-        docs,
-        unread.map(([id]) => id),
-      )
-    : [];
+      return doc !== undefined && !docCovers(removal?.seen.get(key), docVersion(doc));
+    });
+  for (const [id, removal] of removedSince(docs, before))
+    if (unread(removal, under(id))) ids.add(id);
+  let view: StructureView | undefined;
+  for (const key of typed)
+    for (const removed of removedOnPath(docs, key)) {
+      view ??= new StructureView(docs);
+      if (unread(view.removal(removed), [key])) ids.add(removed);
+    }
+  for (const id of moved) for (const removed of removedOnPath(docs, id)) ids.add(removed);
+  return ids.size > 0 ? restore(docs, ids) : [];
 }
 
 /**

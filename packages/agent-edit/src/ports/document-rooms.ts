@@ -44,9 +44,8 @@ export interface AgentWriteRecord {
   /** Live, or the chat's draft fork: where the model's undo and revert of this write run. */
   room: DocumentRoom;
   /**
-   * The write as one edit of design §2's Undo rule, noted as it landed in the call's copy: the
-   * turn Undo and the model's undo and revert test it with `editStays` and take it back whole
-   * (`takeBack`), or leave it whole when someone wrote over it.
+   * The write as one edit of design §2's Undo rule, as it landed in the call's copy: the turn
+   * Undo and the model's undo and revert take it back (`takeBack`).
    */
   edit: StoredEdit;
   /** Stable write id (`turn:<turn>:tool:<call>`), and its ordinal, rendered `e<N>`. */

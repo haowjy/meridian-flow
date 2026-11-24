@@ -14,26 +14,16 @@ export {
   selectChanges,
   undoPress,
 } from "./changes.js";
-export {
-  type CommitAuthor,
-  type CommitNote,
-  type CopyNote,
-  commitMessage,
-  type OpSpans,
-  readCommitMessage,
-} from "./commit-message.js";
+export { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
 export { inMap, inText, scoped } from "./handles.js";
 export {
-  type EditStayed,
   editSince,
   frontiersOf,
   holdsEdit,
   type StoredEdit,
-  takeBack,
   undoEdits,
   versionOf,
-  whyEditStays,
 } from "./invert.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
@@ -86,7 +76,6 @@ export {
   type NodeRule,
   overrideMap,
   SENTINEL,
-  SETTLED_MAP,
   type ShapeBlock,
   type ShapeSchema,
   STRUCTURE_KEY,
@@ -94,7 +83,6 @@ export {
   type StructureMap,
   type StyleExpand,
   sameValue,
-  settledKey,
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";
@@ -105,16 +93,14 @@ export {
   StructureView,
 } from "./structure.js";
 export {
-  deletedBetween,
   type Edit,
   type EditValues,
-  editStays,
-  noteEdit,
-  opsBetween,
   putBackValues,
+  readOf,
   type SetValue,
   type TextOp,
   type TextSpan,
+  takeBack,
   valuesOf,
 } from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";
@@ -138,8 +124,6 @@ export {
   commitStructure,
   type DocChange,
   encodeChanges,
-  type Moved,
-  type MovedText,
   StructureWriter,
   setCommentBody,
   type WriteOptions,

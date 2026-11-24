@@ -24,12 +24,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import { parseDraftItemKey } from "@meridian/contracts";
-import type {
-  PressAction,
-  PressOverwriter,
-  PressResult,
-  PressUndoResult,
-} from "@meridian/contracts/drafts";
+import type { PressAction, PressResult, PressUndoResult } from "@meridian/contracts/drafts";
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -38,25 +33,18 @@ import {
   documentForks,
   drafts,
   pressChanges,
-  threads,
-  turns,
 } from "@meridian/database/schema";
 import {
   applyBlocks,
   type ChangeSelection,
   type DocChange,
-  type DocVersion,
   discardBlocks,
   editSince,
   encodeChanges,
-  frontiersOf,
-  isServerPeer,
   membersOf,
-  type PeerId,
   type PressedChange,
   type RoomDocs,
   type RoomVersion,
-  readCommitMessage,
   type StoredEdit,
   undoEdits,
   undoPress,
@@ -72,12 +60,11 @@ import {
   undoApply,
 } from "@meridian/project-tree";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import type { Frontiers, LoroDoc } from "loro-crdt";
+import type { LoroDoc } from "loro-crdt";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { NO_OWNERS, type TreeOwners, withTreeOwners } from "../../../shared/tree-owners.js";
-import { isUuid } from "../../../shared/uuid.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -278,8 +265,8 @@ export function createDrizzlePress(
    * A Draft chat turn's `Restore before` in one draft (design §2), from its plan
    * (`drizzle-restore-before.ts`): the turn's writes into the draft's text go back by the one Undo
    * rule, newest first, each in the room it landed in, a fork carried forward to today's Live
-   * first (`undoInRooms`); Live's manuscript is untouched. A write someone wrote over since, or
-   * whose history the room cut, stays whole. Each room's restore is one
+   * first (`undoInRooms`); Live's manuscript is untouched. A write whose history the room cut
+   * stays as it is. Each room's restore is one
    * edit, stored in `press_changes` on the side of the room it was written in (`fork`, or `live`
    * for a document only the draft holds), so the press's Undo takes it back by the same rule.
    * Returns the documents whose text it changed.
@@ -319,12 +306,7 @@ export function createDrizzlePress(
           await deps.rooms.commit(tx(), room, encodeChanges(written), ORIGIN);
         if (!changes.length) continue;
         documents.push(documentId);
-        const edit = editSince(
-          copy,
-          since,
-          copy.peer,
-          new Set(changes.map((change) => change.key)),
-        );
+        const edit = editSince(copy, since, new Set(changes.map((change) => change.key)));
         const members = [
           ...new Set([
             ...edit.texts.map(([key]) => key),
@@ -489,64 +471,6 @@ export function createDrizzlePress(
     return withTreeOwners(db, sources, run);
   }
 
-  /**
-   * Who wrote the commits since `after` by a peer other than the Undo copy's own, into `seen`, by
-   * each one's message (`readCommitMessage`): a chat's turn, a press, or none, which a tab's commit
-   * is the writer's (its Undo and Redo included). A server write by no one (a restore, a copy)
-   * names no author.
-   */
-  function commitsOver(
-    doc: LoroDoc,
-    after: Frontiers,
-    seen: { turns: Set<string>; press: boolean; tab: boolean },
-  ) {
-    const own = doc.peerIdStr;
-    for (const span of doc.findIdSpansBetween(after, doc.frontiers()).forward) {
-      if (span.peer === own) continue;
-      let counter = span.counter;
-      while (counter < span.counter + span.length) {
-        const change = doc.getChangeAt({ peer: span.peer, counter });
-        const { by } = readCommitMessage(change.message);
-        if (by && "turn" in by) seen.turns.add(by.turn);
-        else if (by) seen.press = true;
-        else if (!isServerPeer(span.peer as PeerId)) seen.tab = true;
-        counter = change.counter + change.length;
-      }
-    }
-  }
-
-  /**
-   * Who wrote over a change that stayed, from the commits on its text since the press: each side
-   * read in the room copy that holds it.
-   */
-  async function overwriters(
-    sides: readonly (readonly [RoomDocs | undefined, StoredEdit | null])[],
-  ): Promise<PressOverwriter[]> {
-    const seen = { turns: new Set<string>(), press: false, tab: false };
-    for (const [side, stored] of sides) {
-      if (!side || !stored) continue;
-      for (const [key, span] of stored.texts) {
-        const doc = side.doc(key);
-        if (!doc) continue;
-        const after = frontiersOf(doc, new Map(Object.entries(span.after)) as DocVersion);
-        commitsOver(doc, after, seen);
-      }
-    }
-    const by: PressOverwriter[] = seen.tab ? [{ kind: "writer" }] : [];
-    // A message is the room's content, which any client writes: a turn id that isn't one names no chat.
-    const turnIds = [...seen.turns].filter(isUuid);
-    if (turnIds.length > 0) {
-      const chats = await tx()
-        .selectDistinct({ ref: threads.ref })
-        .from(turns)
-        .innerJoin(threads, eq(threads.id, turns.threadId))
-        .where(inArray(turns.id, turnIds as never[]));
-      for (const { ref } of chats) if (ref) by.push({ kind: "chat", ref });
-    }
-    if (seen.press) by.push({ kind: "press" });
-    return by;
-  }
-
   /** Of a Discard's Trash deletes, those of one draft's part: each takes a node its creates made. */
   function trashedBy(doc: LoroDoc, discarded: string, trashed: readonly string[]): string[] {
     const made = new Set(
@@ -566,21 +490,16 @@ export function createDrizzlePress(
     const pressId = pressCommandId as CommandId;
     const stored = await storedPress(envelope, pressId);
     const pressed = stored?.result;
-    const answer = (
-      documents: Set<string>,
-      stayed: PressUndoResult["stayed"],
-      tree: Set<string>,
-    ): PressUndoResult => ({
+    const answer = (documents: Set<string>, tree: Set<string>): PressUndoResult => ({
       status: "unpressed",
       commandId: envelope.commandId as CommandId,
       pressCommandId: pressId,
       documents: [...documents].sort() as DocumentId[],
-      stayed,
       tree: [...tree].sort(),
     });
     // Another account's press, an unknown id, or one the day-30 purge took: nothing to take back.
     if (!stored || !pressed)
-      return runDocumentCommand(db, envelope, async () => answer(new Set(), [], new Set()));
+      return runDocumentCommand(db, envelope, async () => answer(new Set(), new Set()));
     const lists = listsOf(envelope);
     const trees = await tx()
       .select()
@@ -615,7 +534,6 @@ export function createDrizzlePress(
               ...texts.map((row) => row.documentId),
             ]);
             const documents = new Set<string>();
-            const stayed: PressUndoResult["stayed"] = [];
             const tree = new Set<string>();
             for (const draft of draftIds) {
               // A purged draft's forks went with it: its text has nothing to come back to.
@@ -643,28 +561,11 @@ export function createDrizzlePress(
                         await deps.rooms.commit(tx(), room, encodeChanges(undone.changes), ORIGIN);
                         documents.add(documentId);
                       }
-                      for (const index of undone.stayed.keys()) {
-                        const change = changes[index] as PressedChange;
-                        stayed.push({
-                          documentId,
-                          change: change.members[0],
-                          by: await overwriters([[copy, change.live]]),
-                        });
-                      }
                       continue;
                     }
-                    const undone = undoPress(copy, changes, { by: author });
-                    if (await commitCopy(room, undone)) documents.add(documentId);
+                    if (await commitCopy(room, undoPress(copy, changes, { by: author })))
+                      documents.add(documentId);
                     await markFork(tx(), room, copy);
-                    for (const change of undone.stayed)
-                      stayed.push({
-                        documentId,
-                        change: change.members[0],
-                        by: await overwriters([
-                          [copy.live ?? undefined, change.live],
-                          [copy, change.fork],
-                        ]),
-                      });
                   } finally {
                     copy.free();
                   }
@@ -712,7 +613,7 @@ export function createDrizzlePress(
               pressedAt: stored.pressedAt,
               documentIds: [...documents] as DocumentId[],
             });
-            return answer(documents, stayed, tree);
+            return answer(documents, tree);
           },
           { requireActive: false },
         ),

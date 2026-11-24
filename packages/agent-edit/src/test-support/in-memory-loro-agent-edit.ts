@@ -8,7 +8,6 @@ import {
   type ChangeSelection,
   type CommitAuthor,
   discardBlocks,
-  type EditStayed,
   encodeChanges,
   encodeEnvelope,
   freshPeerId,
@@ -149,7 +148,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
 
   /**
    * `parts` taken back, each in the room it landed in, newest first as given, by the planner the
-   * server runs (`undoInRooms`). Returns the parts that went, and why each that stayed did.
+   * server runs (`undoInRooms`). Returns the parts that went, and those whose history was cut.
    */
   const takeBackIn = async (parts: readonly AgentWriteRecord[], by?: CommitAuthor) => {
     const held = new Map<string, RoomDocs>();
@@ -159,9 +158,9 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const undone = undoInRooms(parts, (room) => held.get(loroRoomName(room)) as RoomDocs, by);
       for (const { room, changes } of undone.rooms)
         await command(() => rooms.commit(inCommand(), room, encodeChanges(changes), "server:undo"));
-      const taken = parts.filter((part) => !undone.stayed.has(part));
+      const taken = parts.filter((part) => !undone.compacted.has(part));
       for (const record of taken) takenBack.add(record);
-      return { taken, stayed: undone.stayed };
+      return { taken, compacted: undone.compacted };
     } finally {
       for (const docs of held.values()) docs.free();
     }
@@ -198,21 +197,16 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
           message: `${editHandle(chosen[0].wId)} is already taken back.`,
         };
       // The model's inverse names its turn, as its writes do.
-      const { taken, stayed } = await takeBackIn(chosen, { turn: context.turnId ?? "model" });
+      const { taken, compacted } = await takeBackIn(chosen, { turn: context.turnId ?? "model" });
       const names = (parts: readonly AgentWriteRecord[]) =>
         parts.map((r) => editHandle(r.wId)).join(", ");
-      const kept = (kind: EditStayed["kind"]) => chosen.filter((r) => stayed.get(r)?.kind === kind);
+      const kept = chosen.filter((r) => compacted.has(r));
       return {
         status: "success",
         message: [
           ...(taken.length ? [`Took ${names(taken)} out.`] : []),
-          ...(kept("written_over").length
-            ? [
-                `${names(kept("written_over"))} stays: someone has written over it since, so it is left as they have it.`,
-              ]
-            : []),
-          ...(kept("compacted").length
-            ? [`${names(kept("compacted"))} stays: the document no longer keeps history that old.`]
+          ...(kept.length
+            ? [`${names(kept)} stays: the document no longer keeps history that old.`]
             : []),
         ].join(" "),
       };

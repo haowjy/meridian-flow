@@ -77,19 +77,7 @@ export type DraftNotice =
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
       dismiss(): void;
-    })
-  | (Base & {
-      kind: "stayed";
-      /**
-       * What a press's Undo left in place because someone wrote over it since
-       * (`PressUndoResult.stayed`): each document, and what its mark says of who.
-       */
-      kept: readonly StayedFact[];
-      dismiss(): void;
     });
-
-/** One document a press's Undo left a change of in place, and who wrote over it. */
-export type StayedFact = { documentId: string; name: string; label: string };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
@@ -140,13 +128,6 @@ export class DraftNotices {
         (notice.surface.kind === "band"
           ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
           : notice.surface.kind === "landing" && documentId === null)
-      )
-        return notice;
-      // What an Undo made there left in place says so on the document.
-      if (
-        notice.kind === "stayed" &&
-        notice.surface.kind === "band" &&
-        notice.surface.documentId === documentId
       )
         return notice;
     }
@@ -201,21 +182,6 @@ export class DraftNotices {
   appliedFacts(draftId: string) {
     const held = this.notices.get(draftId);
     return held?.kind === "applied" ? held : null;
-  }
-
-  /** What an Undo left in place, until the next press or a dismiss. */
-  showStayed(input: Omit<Extract<DraftNotice, { kind: "stayed" }>, "id" | "kind" | "dismiss">) {
-    if (this.closed) return;
-    const held = this.notices.get(input.draftId);
-    if (held) this.drop(held);
-    const id = this.nextId++;
-    this.notices.set(input.draftId, {
-      ...input,
-      kind: "stayed",
-      id,
-      dismiss: () => this.endIf(input.draftId, id),
-    });
-    this.publish();
   }
 
   showDiscard(input: {

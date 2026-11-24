@@ -8,18 +8,15 @@ import {
   type DocKey,
   INLINE_STYLE,
   type InlineItem,
-  inForce,
   type Marks,
   markNameOf,
   type NodeRule,
   overrideMap,
   SENTINEL,
-  SETTLED_MAP,
   type ShapeBlock,
   type ShapeSchema,
   STRUCTURE_KEY,
   sameValue,
-  settledKey,
   storedAttrs,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
@@ -241,7 +238,7 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
   return {
     value(name, key) {
       const override = docs.draft ? get(overrideMap(name), key) : undefined;
-      return inForce(override, get(SETTLED_MAP, settledKey(name, key))) ? override : get(name, key);
+      return override === undefined ? get(name, key) : override;
     },
   };
 }

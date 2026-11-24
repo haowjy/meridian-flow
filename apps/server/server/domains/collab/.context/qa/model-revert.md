@@ -1,14 +1,14 @@
 # Model revert by identity
 
 Checks `write {command: "revert", edit: "e1"}`. Revert takes the edit's write back by design §2's
-Undo rule ([reversal](../reversal.md)): whole, in the room it was written in, unless someone has
-written over it since, and then it stays whole. One write is one part. A part that stays is listed
-by its 1-based number and reason (`written over since, so it stays`), and the result does not quote
-before, after, or current text.
+Undo rule ([reversal](../reversal.md)), in the room it was written in, whatever was written over
+it since: the write's characters that still stand come out and what it deleted comes back. One
+write is one part. A part that can't go back (its room cut the history below it) is listed by its
+1-based number and reason, and the result does not quote before, after, or current text.
 
-When every part stays, the status is `nothing_to_revert` and the failed step says “Couldn't
-revert”. Undo uses the same rule (`cant_undo_changed` when nothing of the edit goes back). `count`
-checks whole stack entries before writing; an excessive count changes nothing.
+When no part can go back, the status is `nothing_to_revert` and the failed step says “Couldn't
+revert”. Undo uses the same rule. `count` checks whole stack entries before writing; an excessive
+count changes nothing.
 
 ## Setup
 
@@ -46,8 +46,8 @@ types into the block's text as a tab does.
 | Plain | N appends ` The dog ran across the yard.` | `reverted: e1 (1 of 1 parts)`; original sentence remains. |
 | Typing elsewhere | N appends the sentence; writer adds `Lin Feng drew his sword.` to another paragraph. | N is undone; both the original sentence and the writer's words remain. |
 | Typed inside N | N appends ` The big black dog ran.`; writer changes `black` to `brown`. | `reverted: e1`: N's text goes, the writer's `brown` stays (`The cat sat on the mat.brown`). Some of what N put in was left, so it goes back around the writer's word. |
-| Retyped all of N | N appends ` The dog ran.`; writer replaces it with ` Snow fell.` | `nothing_to_revert`, `not reverted: part 1: written over since, so it stays`; text is unchanged. |
-| N rebuilt blocks | Seed `Alpha.`, `Beta.`, `Gamma.`; N replaces the passage with `Red.`, `Beta.`, `Blue.`; writer retypes `Red.` as `Green.` | `nothing_to_revert`: N set structure, and someone wrote in it, so it stays whole. |
+| Retyped all of N | N appends ` The dog ran.`; writer replaces it with ` Snow fell.` | `reverted: e1`: N's text is gone already; the writer's ` Snow fell.` stays. |
+| N rebuilt blocks | Seed `Alpha.`, `Beta.`, `Gamma.`; N replaces the passage with `Red.`, `Beta.`, `Blue.`; writer retypes `Red.` as `Green.` | `reverted: e1`: `Alpha.` and `Gamma.` come back; the writer's `Green.` stays beside them. |
 | Two writes, `undo` count 2 | N changes the first paragraph, then a second write the third. | `undone: e2, e1`; the text is the seed. |
 | One paragraph written twice | Two writes in one turn to one paragraph; `undo` count 2. | `undone: e2, e1`; the text is the seed; a further `undo` is `nothing_to_undo`. |
 | Revert of a revert | Revert Plain, then revert the handle it prints. | N's sentence returns. |

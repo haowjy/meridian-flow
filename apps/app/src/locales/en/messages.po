@@ -572,10 +572,6 @@ msgstr "{name} was removed."
 msgid "{name} was removed. Save to stop using it."
 msgstr "{name} was removed. Save to stop using it."
 
-#: src/core/editor/extensions/KeptExtension.ts
-msgid "{name} wrote over this since. Undo left it as it is."
-msgstr "{name} wrote over this since. Undo left it as it is."
-
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
 msgstr "{name}, {count} to review"
@@ -998,10 +994,6 @@ msgstr "Alt text"
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "An Agent named {name} is already here."
 msgstr "An Agent named {name} is already here."
-
-#: src/features/draft-review/stayed-words.ts
-msgid "Another Apply or Discard"
-msgstr "Another Apply or Discard"
 
 #: src/features/draft-review/ReviewTargetPicker.tsx
 msgid "another draft"
@@ -1427,11 +1419,6 @@ msgstr "chart"
 msgid "Chat"
 msgstr "Chat"
 
-#. placeholder {0}: first.ref
-#: src/features/draft-review/stayed-words.ts
-msgid "Chat {0}"
-msgstr "Chat {0}"
-
 #: src/components/app/composer/placeholders.ts
 msgid "Chat away"
 msgstr "Chat away"
@@ -1653,10 +1640,6 @@ msgstr "Commands"
 #: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
 msgid "Comment"
 msgstr "Comment"
-
-#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-#~ msgid "Comment:"
-#~ msgstr "Comment:"
 
 #: src/features/chat/ChatView.tsx
 msgid "Compact conversation"
@@ -2980,10 +2963,6 @@ msgstr "For now the AI can use only tools that read."
 msgid "Fork from here"
 msgstr "Fork from here"
 
-#: src/features/editor/surfaces/review/ReviewChangesSurface.tsx
-#~ msgid "Formatting changed"
-#~ msgstr "Formatting changed"
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
 msgstr "From {senderName}: "
@@ -3291,10 +3270,6 @@ msgstr "Keep editing"
 #: src/features/import/ImportPanel.tsx
 msgid "Keep going"
 msgstr "Keep going"
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Kept"
-msgstr "Kept"
 
 #: src/features/import/reason-copy.ts
 msgid "Kept as a file"
@@ -4209,10 +4184,6 @@ msgstr "Nothing opened yet"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
-
-#: src/features/chat/TurnRestoreBefore.tsx
-#~ msgid "Nothing to restore"
-#~ msgstr "Nothing to restore"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Nothing to review in {name}."
@@ -5734,10 +5705,6 @@ msgstr "the built-in {slug}"
 msgid "the built-in one"
 msgstr "the built-in one"
 
-#: src/features/draft-review/stayed-words.ts
-msgid "The chat “{title}”"
-msgstr "The chat “{title}”"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "the default model"
 msgstr "the default model"
@@ -6056,10 +6023,6 @@ msgstr "Too many files"
 msgid "Too many imports"
 msgstr "Too many imports"
 
-#: src/features/chat/TurnRestoreBefore.tsx
-#~ msgid "Too old to restore"
-#~ msgstr "Too old to restore"
-
 #: src/features/chat/script-copy.ts
 msgid "took longer than {seconds} seconds"
 msgstr "took longer than {seconds} seconds"
@@ -6239,14 +6202,6 @@ msgstr "Undone"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone {what}"
 msgstr "Undone {what}"
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Undone, except in {documents} documents written over since."
-msgstr "Undone, except in {documents} documents written over since."
-
-#: src/features/draft-review/CommandNotice.tsx
-msgid "Undone, except in {name}, written over since."
-msgstr "Undone, except in {name}, written over since."
 
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/context/IdentityChips.tsx
@@ -6602,10 +6557,6 @@ msgstr "Writing"
 msgid "Writing the handoff brief"
 msgstr "Writing the handoff brief"
 
-#: src/core/editor/extensions/KeptExtension.ts
-msgid "Written over since. Undo left it as it is."
-msgstr "Written over since. Undo left it as it is."
-
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Yes"
 msgstr "Yes"
@@ -6616,7 +6567,6 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/core/editor/extensions/peer-carets.ts
-#: src/features/draft-review/stayed-words.ts
 msgid "You"
 msgstr "You"
 

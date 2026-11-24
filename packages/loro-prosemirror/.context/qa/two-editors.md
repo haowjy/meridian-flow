@@ -33,61 +33,57 @@ paste, a Backspace or an Enter brings it back (also when the removal read B's fi
 of a removed table, and under two removals on the caret's path, a paragraph by A and its table by
 a third editor); the caret leaving takes it off the screen; an untracked write elsewhere (an
 attribute and a move of a sibling, as an upload or a chip respelled does) leaves it removed in the
-docs and kept on B's screen. Undo: a Redo of a delete after the peer typed in the block stays (it
-would hide the peer's words), a plain Redo of a delete lands and its Undo brings the block back,
-two levels of Undo and Redo around deletes give back each document, B's Ctrl+Z in a block a
-removal read followed by a batch removing something else leaves the block removed, and an agent's
-text op or delete op (`applyOps` on a server copy) inside a container B's typing brought back keeps
-it, through B's Ctrl+Z.
+docs and kept on B's screen. Undo: a Redo of a delete lands with a record of what it reads now, so a peer's later typing
+brings the block back; its Undo brings the block back; two levels of Undo and Redo around deletes
+give back each document; B's Ctrl+Z in a block a removal read, followed by a batch removing
+something else, leaves the block removed; and an agent's text op or delete op (`applyOps` on a
+server copy) inside a container B's typing brought back keeps it, through B's Ctrl+Z.
 
-Then the step rule (design §2, "An Undo takes an edit back whole, or leaves it whole"): a step
-someone else wrote over stays and writes nothing. A's own Enter goes back and comes back exactly.
-A peer's later move, retype (`code_block` to `jsx_leaf`) or delete of a block survives A's Ctrl+Z
-and Redo; seeds 289 and 55's shape (A and B move one block at once, B's move wins, B's Ctrl+Z puts
-the key back) makes A's Ctrl+Z skip its move for the typing before it, which Redo gives back, as
-it does for typing either side of a move a peer wrote over. After A's Enter, a peer that moves,
-deletes, retypes, wraps, types in or bolds the new half, joins the halves back or deletes the
-first half keeps the Enter (the reviews' torn blocks, text twice and words off the screen); a peer
-typing in the first half does not, nor does typing in the new half that the peer has undone since,
-and a peer typing in the new half while A undoes gets the half back with its words. A join whose target a peer retyped goes back; a wrap a peer moved a block out
-of stays; a move whose Undo would put a block under a container a peer removed stays. From review
-p18993: a peer's deletion still in flight when A's Enter stays lands everywhere (C2); a step that
-stays takes only the steps of its own paragraphs out of the history, so Redo still gives back the
-steps either side of it in other blocks (C3); with nobody else writing, Ctrl+Z takes back a
-picture whose upload landed as an untracked write (C4). A split a peer wrote over takes the typing
-under it out of the history; a peer's rewrite of a word A typed that keeps one of its letters keeps
-A's typing, as a chat's rewrite keeps the letters it shares (#1854: the Undo took those letters out
-of the chat's words), and still keeps it once the peer has undone the rewrite: the peer's Undo put
-A's text back as new characters, which Loro's manager can't delete, so A's Ctrl+Z left "LastOwl."
-(review p19027).
+Then the step rule (design §2, "An Undo always runs"): every Ctrl+Z and Redo runs. A text inverse
+deletes the step's own characters and puts back what it deleted; a structure key goes back by last
+writer wins, over a peer's later write. A's own Enter goes back and comes back exactly. A peer's
+later move, retype (`code_block` to `jsx_leaf`) or delete of a block is written over by A's Ctrl+Z
+and again by its Redo; in seeds 289 and 55's shape (A and B move one block at once, B's move wins,
+B's Ctrl+Z puts the key back), A's Ctrl+Z takes back its typing before the move, and Redo gives it
+back. After A's Enter, A's Ctrl+Z runs over a peer that moves, wraps, types in or bolds the new
+half, deletes the first half or joins the halves back: the tail goes back into the first half, a
+half a peer typed in comes back with those words alone (rule 1 over the Undo's own write), a
+peer's join leaves the tail beside its copy (text twice), and a bold is lost (a hole). A join a
+peer retyped goes back, as does a wrap a peer moved a block out of; a move whose Undo puts a block
+under a container a peer removed brings the container back with it. From review p18993: a peer's
+deletion still in flight when A's Ctrl+Z puts the tail back finds nothing (a hole) and the words
+stay (C2); the steps either side of a split a peer typed in go back and come again (C3); with
+nobody else writing, Ctrl+Z takes back a picture whose upload landed as an untracked write (C4).
 From investigation p18995, one case per cause the seeds found: a peer's join takes away text A
-deleted across two blocks unseen, the import restores the block and takes the join's copy out, and
-A's Ctrl+Z then goes back, the text once (seed 414; before the restore took the copy out, the
-Ctrl+Z stayed rather than show it twice); a
-draft that also deleted A's "F" is pressed into Live and the press undone, and A's Ctrl+Z goes
-back, the undone delete counting as never made (review p19017); B's Ctrl+Z of its own delete of
-that "F", before it sees A's, puts it back, and A's Ctrl+Z stays rather than show it twice; two
-equal removals of one block, and the Ctrl+Z of the one that lost finds the other's value and stays
-(477, with fixed peer ids); a move beside a block the caret keeps leaves that block removed (602);
-the placeholder id `c/empty` (design §1): typing into it stores a fresh id, so an unwrap of the
-container and a peer's concurrent move of it read no id twice and store no placeholder id; three
-copies unwrapping, wrapping and moving the container at once show the typed text once, through
-each copy's Ctrl+Z (review p18998); a peer filling a container whose paragraph B emptied, B's
-caret in it, never shows B's deleted words again (seed 953); typing into the placeholder after a
-peer emptied the container is a new paragraph without the removed one's words, and one Ctrl+Z
-brings the placeholder back. From review p18996: one edit judged on its author's copy and on
-a fresh copy gives one answer. A draft's Redo of a move whose override its Undo deleted stays once
-Live has moved the block since. A Draft tab's Ctrl+Z of a split, a move or a retype the writer
-then applied stays, and the draft shows the applied edit with nothing pending: the press settled
-its values (`d.settled`). With the Apply undone first, `Restore before` of each edit takes it
-back, and so does Ctrl+Z of the move and the retype; Ctrl+Z of the split and the typing stays,
-since the press's Undo returned their text to the draft as put-back text, which Loro's manager
-cannot delete (review p19057). A join that did not read a peer's typing gives the block back
-without its copy, whether the typing arrives after the join (rule 1) or the typer's caret kept the
-block (the caret rule), and so does a join followed by a split of its copy, or two joins in a row:
-the restore follows the copy of a copy (reviews p19056, p19057). A peer's Backspace run (one delete op with a negative `len`) over text A deleted
-keeps A's Ctrl+Z. From review p18998: B's batch between each of A's 1,001 keys splits A's
-one typing step into an item per key, and its Undo takes back every key.
+deleted across two blocks unseen, the import restores the block beside the join's copy, and A's
+Ctrl+Z goes back with no word lost (seed 414); a draft that also deleted A's "F" is pressed into
+Live and the press undone, and A's Ctrl+Z goes back, the undone delete counting as never made
+(review p19017); B's Ctrl+Z of its own delete of that "F", before it sees A's, puts it back, and A's
+Ctrl+Z puts it back too (text twice); a peer's Backspace run (one delete op with a negative `len`)
+over text A deleted, and A's Ctrl+Z puts it back; two equal removals of one block, and the Ctrl+Z
+of the one that lost puts the block back over the other's (477, with fixed peer ids); a move beside
+a block the caret keeps leaves that block removed (602); the placeholder id `c/empty` (design §1):
+typing into it stores a fresh id, so an unwrap of the container and a peer's concurrent move of it
+read no id twice and store no placeholder id; three copies unwrapping, wrapping and moving the
+container at once show the typed text once, through each copy's Ctrl+Z (review p18998); a peer
+filling a container whose paragraph B emptied, B's caret in it, never shows B's deleted words
+again (seed 953); typing into the placeholder after a peer emptied the container is a new
+paragraph without the removed one's words, and one Ctrl+Z brings the placeholder back. A join that
+did not read a peer's typing gives the block back beside its copy, whether the typing arrives
+after the join (rule 1) or the typer's caret kept the block (the caret rule), and so does a join
+followed by a split of its copy, or two joins in a row (reviews p19056, p19057). From review
+p18996: one edit judged on its author's copy and on a fresh copy gives one answer. From review
+p18998: B's batch between each of A's 1,001 keys splits A's one typing step into an item per key,
+and its Undo takes back every key.
+
+Drafts: a draft's Undo deletes its override, Live then moves the block, and the draft's Redo
+writes its override over that move. A Draft tab's Ctrl+Z of an edit the writer then applied: the
+press deleted the overrides it read, so Ctrl+Z of a split, a move or a retype finds nothing to put
+back and the draft shows the applied edit, while Ctrl+Z of typing takes the text back as a pending
+change against Live. With the Apply undone first, Ctrl+Z and `Restore before` of the move and the
+retype take them back; the press's Undo returned the split's and the typing's text to the draft as
+new characters, which neither deletes (they take back the edit's own characters), so that text
+stays and no word is lost (review p19057).
 
 What it checks: after every local edit, Undo, Redo and imported batch, each editor's document
 equals a full read of its docs plus the blocks it keeps (`readProseMirror` without `since`), and
@@ -104,24 +100,25 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
   editor's Join, and that editor's Undo of the Join would look like it took the word (seed 85
   failed this way with peer salt 19; a raced case now runs it);
 - after every Undo and Redo: no block is left with an `order` key and no `node` or `parent` (half a
-  block); no word shows twice that showed once (a run that wrote no text is exempt: the Undo of a
-  delete brings blocks back as they were); no word the other editor typed leaves the screen; no
-  word a peer's edit took off this editor's screen comes back; and no mark a peer set or cleared
-  on a word is undone (judged per place, by block and occurrence: a split and its Undo can
-  leaves a copy of its words in two blocks, and a peer unbolding one copy says nothing about this
-  editor's Undo rebolding the other, seed 1098 at `200 400 900`). A change
-  a batch made is the peer's when the peer's screen shows it too, else it came of two edits meeting (a block moved into a container the other removed), which an
-  Undo may bring back; a kept block leaving on a click counts the same way (seed 415). A Redo
-  may take off the screen only words typed since the editor's Redo was last emptied, by any edit,
-  in a burst too (seeds 460 and 483). The editor's screen counts, kept blocks included;
+  block), and no word the other editor typed leaves the screen. A Redo may take off the screen
+  only words typed since the editor's Redo was last emptied, by any edit, in a burst too (seeds
+  460 and 483). The editor's screen counts, kept blocks included. What last writer wins allows is
+  counted, not failed, and printed in the final line: a word showing twice that showed once
+  (`shownTwice`; a run that wrote no text is exempt, since the Undo of a delete brings blocks back
+  as they were), a word a peer's edit took off the screen coming back, and a mark a peer set or
+  cleared undone (`overPeers`; marks judged per place, by block and occurrence, seed 1098 at
+  `200 400 900`). A change a batch made is the peer's when the peer's screen shows it too, else it
+  came of two edits meeting (a block moved into a container the other removed); a kept block
+  leaving on a click counts the same way (seed 415);
 - a burst of edits with no batch between (and the chain below), started with the caret off any
   kept block, so the editor shows the docs' read, undone until the document is the one from
   before the burst gives it back exactly, and as many Redos give back the one after it; between
   the edits a write no Ctrl+Z takes back (a comment body under `UNTRACKED_ORIGIN`) lands and must
   stay out of every step;
-- from an empty Redo, up to six Ctrl+Z then Redo until none is left give back the document,
-  unless a step stayed on the way (it and the steps sharing its paragraphs leave the history,
-  and what they did is still in the document).
+- from an empty Redo, up to six Ctrl+Z then Redo until none is left give back the document. When
+  a peer wrote over one of the steps since, the steps go back over the peer's write and come again
+  over it, so the document can differ: the chain then passes when no word either editor typed is
+  lost and every block both reads show has the same text (`chainsOverPeers`).
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets
@@ -131,15 +128,14 @@ every step.
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold
 and italic on and off, a heading level, a delete across two blocks, moving a block (the same node
 object at another place), wrapping two paragraphs in a `jsx_container` and unwrapping it,
-inserting a table, emptying a cell to its `<cell>/empty` paragraph, removing a block, a comment
+inserting a table, a paragraph of the editor's own words added inside a container or table cell
+(`nest`: the other editor's Ctrl+Z of that container must leave the words on screen, review
+p19063), emptying a cell to its `<cell>/empty` paragraph, removing a block, a comment
 mark, and a comment's body set or deleted outside the editor (`setCommentBody` under
 `UNTRACKED_ORIGIN`, then `notifyChanged`).
 
 The burst check fails on Undo by character id at the change's own frontier (the rule before
-1f): 9 of 10 seeds at 400 steps. PR #1848's first history (a structure key goes back while it
-holds what the step left, each doc and key alone) fails 11 of the step rule's cases and 66 of 100
-seeds at 400 steps under the Undo checks
-([q14](https://github.com/haowjy/meridian-flow-docs/blob/main/work/local-first-design/loro-build/probe/scripts/q14-step-rule/README.md)). Not covered: drafts beyond the one Redo case (off until phase 2), a real IME composition (the
+1f): 9 of 10 seeds at 400 steps. Not covered: drafts beyond the Redo and Apply cases, a real IME composition (the
 browser matrix; the raced cases dispatch the commit's transaction), the selection Undo puts back (the app sets it; checked by hand in the browser).
 The block-id fixer here gives a fresh id to any missing or taken one; the app's keeps the id on
 the half that was there. The editors' binding stores an empty container's placeholder under the

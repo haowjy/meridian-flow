@@ -7,13 +7,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `comments`, keyed by block id) and one text doc per textblock, keyed by its block id
   (`RoomDocs`). A draft's fork writes only the `d.*` override maps and its own forks of the text
   docs it wrote; it reads Live's text for every other block. Never write a base map from a fork:
-  `StructureWriter` is the one writer of structure values. A press settles an override by a record
-  in `d.settled` (`<map>/<key>` → the value it read), never by writing or deleting the override: an
-  override reads as absent while it equals its settled entry (`inForce`, the one test;
-  `StructureView.override`, `rawOverride` reads past it), and every write of an override deletes
-  its entry in the same commit (`StructureWriter`). An Undo puts back the values its edit
-  changed, entries included, and nothing more (`putBackValues`). Never read a `d.*` map directly;
-  go through `StructureView`, and tell a stored map's kind by `mapKind`, not by its name.
+  `StructureWriter` is the one writer of structure values. A press deletes the overrides it read
+  (`deletePressed`), and an Undo puts back the values its edit changed and nothing more
+  (`putBackValues`). Never read a `d.*` map directly; go through `StructureView`, and tell a
+  stored map's kind by `mapKind`, not by its name.
 - Every `LoroDoc` is WASM memory no garbage collector frees. Whoever creates a `RoomDocs`
   (`create`, `load`, `draftOf`, `fork`, `at`, `DocumentRooms.read`) calls `free()` on it; any use
   after that throws `RoomDocsFreedError`. In the browser, destroy the `EditorView` first, then free
@@ -39,8 +36,8 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   placeholder under (`renamed`). A caller that goes on addressing the paragraph after the call
   must follow `renamed`: agent-edit moves the paragraph's ref onto the fresh id
   (`LoroDocument.apply`), or a later edit in the same command finds no block.
-  Which blocks show is one function, `showRule`: `StructureView` runs it over every block and an
-  Undo's test over the blocks its run changes. Don't write a second copy of it. A local write
+  Which blocks show is one function, `StructureView`'s `showRule`. Don't write a second copy of
+  it. A local write
   into a text doc takes the doc from `writableText`, which tells `beforeTextWrite` listeners
   first: the editor's Undo starts its Loro `UndoManager` for the doc there.
 - `writeDocument`'s `previous` and `readDocument`'s `since` make a write or a read cost what
@@ -56,12 +53,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   record) and its ancestors show. A removed block comes back only by a write of its key:
   `restore`, an Undo's `putBackValues`, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
   import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
-  holder sends and saves it like a local write (`encodeChanges`). A restore also deletes, by
-  character id, every copy a split or a join made of the block's text, in any block, through any
-  number of later splits, joins and take-backs (`copiesOf`, which follows one chain of take-back
-  and copy notes, `chainOf`), so the block never shows beside a copy; a copy whose writer deleted
-  the original there was a move (a split, a drag) and stays. They are the only ways ops enter
-  a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
+  holder sends and saves it like a local write (`encodeChanges`). A restore only sets `order` back
+  to the record's key: a block a split or a join copied can then show beside its copy, which the
+  writer deletes. They are the only ways ops enter a copy; never import into one of its docs
+  directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
   every Undo history. Never move the record into a second map: an Undo can then delete it while
   another peer's removal stands.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
@@ -73,68 +68,51 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `importBatch` and `load` check every entry before touching any doc, so bytes that aren't Loro's
   (`CorruptDocBytesError`) or an update below a doc's shallow cutoff (`HistoryCutoffError`)
   import nothing.
-- Every Undo, the editor's Ctrl+Z and a press's, follows one rule (`take-back.ts`, design §2 "An
-  Undo takes an edit back whole, or leaves it whole"): `editStays` tests an `Edit` (`valuesOf`,
-  its text spans, `noteEdit` after each write or run and before the next import), and only then
-  does the caller take its text back and `putBackValues` write its structure. Don't add a second
-  test beside it. In a draft, an edit a press took into Live stays (a value a press settled, text
-  whose ops stand in Live): the draft reads Live's, so taking it back there would undo the Apply.
-  "Stand" is `standingSince`'s one reading, from where the ops were made: once the press's Undo
-  takes them back, the edit is the draft's alone again. A tab's Ctrl+Z of its typing still stays
-  then: the press's Undo returned that text to the draft as put-back text (`ownTextOnly`).
-  "Someone else" is any peer but `Edit.peer`, the edit's author, never the copy's peer: a press's Undo runs on a server copy with a peer of its own. An edit's ops in a text doc are
-  its span's (`TextSpan.ops`): the author's in the editor, every peer's for a press, which imports
-  its draft's ops. Every commit message is `commit-message.ts`'s, one JSON note: who wrote it
-  (`by`: a turn or a press; none is the writer), and for a commit that puts text back the
-  character each one it inserts stands for and the ops it takes back (`undo: { for:
-  deletedBetween(doc, before, after), ops: span.ops }`); for a commit that carries a block's text
-  into another (a split, a join: `WriteOptions.moved`), the block and the character each one it
-  inserts copies (`copy: { from, for }`), in a commit of its own (Loro merges a commit into the
-  previous change only when their messages match). So `textSince` reads put-back text as the
-  text it deleted, by character id, `editStays` counts ops an Undo took back as never made
-  (`standingSince`: a delete, and typing in a block the run would take away), and attribution
-  still reads who took it back. The rule and the runner that takes the edit back must agree on
-  "whole": a press's inverse deletes text an Undo put back for the press's characters
-  (`putBackOf`), but Loro's manager, which runs a Ctrl+Z step, deletes only the step's own
-  characters, so a step carries `Edit.ownTextOnly` and part 4 reads put-back text as deleted for
-  it. Read the message before the write: a fork of the doc commits its pending ops, without the
-  message.
+- Every Undo follows one rule (`take-back.ts`, design §2 "An Undo always runs"): the editor's
+  Ctrl+Z and Redo, a press's Undo, `Restore before` and agent-edit's undo. It runs whatever was
+  written since. Text goes back by its inverse, which deletes the edit's characters that still
+  stand and puts back the ones it deleted (Loro's `UndoManager` in the editor, `textInverse`
+  here). Structure goes back key by key to the value before the edit, last writer wins. Every
+  edit, stored or an editor step, keeps what its copy showed of the text docs under the blocks it
+  touched (`Edit.read`, `readOf`, taken just after the edit). A removal the Undo writes counts as
+  read only those versions, what its record had read, what a removal below it read and the Undo's
+  own ops; a doc outside them is unread. Under a block the edit made, a doc that shows no character the edit's
+  copy didn't and the undoing side didn't put back counts as read whole (`showsUnread`): ops whose text an Undo
+  since took out bring nothing back. Rule 1 (`answerRemovals`) then runs
+  over the Undo's commit, the text it put in and the shown blocks it moved, so a block anyone typed
+  into comes back and no one's words leave the screen. Text can show twice, and a later write over
+  the edit's characters can lose letters with them: the owner accepted both (design §2). The text
+  inverse reads a delete beside an equal insert as no change only when the insert's characters
+  are the undoing side's (`unchanged`, `putBackBy`): the edit's own peers, the Undo's copy, or a
+  copy whose commits name an author (an earlier Undo's or press's); a writer's retype is a real
+  change. Don't add a test that leaves an Undo out; the one case an Undo
+  can't run is history cut away (`holdsEdit`). Every commit message is `commit-message.ts`'s:
+  who wrote it (`by`: a turn or a press; none is the writer).
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one
   peer across all its docs. A draft copy's own Live copy takes another, which the `RoomDocs`
   constructor enforces: a press writes both rooms from one copy, and one peer would mint the same
   op ids in both.
 - The block-change model (`changes.ts`, `invert.ts`; design §2) works on a draft copy and forwards
-  it first. `changedBlocks` groups what differs from Live into changes: blocks under an inserted or removed
-  container, and blocks a write moved text between, by the `d.pieces` record that write made
-  (`WriteOptions.moved`, the `pieces` op; one key per write, `<a>/<b>/<peer>@<counter>`, so
-  recording a pair again always writes an op). The
-  writer of a split or a join says which blocks they are; nothing here compares two texts to
-  guess. Records form a graph: changed blocks connected in it are one change. A record lives only
-  while its component holds a changed block: every draft write retires the components it touched
-  that hold none (`retirePieces`, in the write's own commit, so its Undo brings them back; never a
-  record the write itself made, or a tab joining back retires the record a press needs), and a
-  press settles the records of the components of the blocks it settles, as it settles any
-  override, so the tab's split or join stays its own edit and its Undo after the press's Undo still
-  goes back. A block
+  it first. `changedBlocks` groups what differs from Live into changes: blocks under an inserted
+  or removed container, and blocks a write moved text between, by the `d.pieces` record that
+  write made (`WriteOptions.pieces`; one key per pair, `pieceKey`). The writer of a split or a
+  join says which blocks they are; nothing here compares two texts to guess. Records form a graph:
+  changed blocks connected in it are one change. A record goes when a press deletes it with the
+  changes it holds (`piecesOf`); a record whose blocks no longer differ groups nothing. A block
   hidden on both sides is never a member: under a changed block, or linked to one by pieces, it
   hangs off that change (`BlockChange.hidden`), so a press writes none of its overrides into Live
-  and settles them with the change. It runs on every fork save
-  and Live batch, so it reads only blocks the fork holds text or an override for (a block with
-  neither reads as Live's), plus Live's carriers of a comment body the fork changed. `applyBlocks`
-  imports the fork's text into Live and writes the chosen overrides there, a removal as a new
-  record stamped with the Live version the writer was shown (`liveVersion`; a text doc it lacks
-  counts as never shown);
-  `discardBlocks` makes the fork take Live's. Run each on a command's own copy, so the press's
-  writes have peers no later write shares. Each returns, per change, the edit it made in each room
-  (`PressedChange`, JSON for `press_changes`), noted as the press left the room: the note can't be
-  taken later. `undoPress` tests each change with `editStays`, its Live and fork sides as one edit,
-  and leaves one someone wrote over (`PressUndo.stayed`); `takeBack` writes the rest, Live's
-  first, each text doc by its inverse moved through `textSince` (`transformedInverse`; a change
-  that goes back goes back whole, as Ctrl+Z's does) before `putBackValues`, so a removal record put back counts the text; then the fork is returned
-  to pending. A press over several drafts is undone one draft at a time, newest first.
+  and deletes them with the change. It runs on every fork save and Live batch, so it reads only
+  blocks the fork holds text or an override for (a block with neither reads as Live's), plus
+  Live's carriers of a comment body the fork changed. `applyBlocks` imports the fork's text into
+  Live and writes the chosen overrides there, a removal as a new record stamped with the Live
+  version the writer was shown (`liveVersion`; a text doc it lacks counts as never shown);
+  `discardBlocks` makes the fork take Live's. Both delete the overrides they read. Run each on a
+  command's own copy, so the press's writes have peers no later write shares. Each returns, per
+  change, the edit it made in each room (`PressedChange`, JSON for `press_changes`). `undoPress`
+  takes both sides of every change back (`takeBack`), Live's first; then the fork is returned to
+  pending. A press over several drafts is undone one draft at a time, newest first.
   `Restore before` is the same rule: `undoEdits` over the turn's stored edits, newest first (the
-  server's `drizzle-press.ts`); there is no frontier restore. A forward's restore is not a write of
-  the press. The hand-run fuzz is
+  server's `drizzle-restore-before.ts`); there is no frontier restore. The hand-run fuzz is
   [block-changes-fuzz](../loro-prosemirror/.context/qa/block-changes-fuzz.md); run it at 10,000
   seeds after changing any of this.
 - No ProseMirror at runtime: callers pass a `ShapeSchema`, which `@meridian/loro-prosemirror`'s

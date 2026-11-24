@@ -74,11 +74,8 @@ synchronously, then drains transports and leases.
   Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
   decorations map through the typing in between: reading on every key costs more than a key may.
   The host turns it on and off with `setReviewChanges`; a plugin's config change needs a reload in
-  dev, since HMR keeps the plugin instance. `KeptExtension` is the one quiet mark on text kept in
-  place: a block someone deleted that the binding keeps while the caret is in it (`loroSyncKey`
-  state `kept`), and for 4 s each edit an Undo or Redo left because it was written over
-  (`HistoryRun.kept`, `showKept`), naming the writer when their copy's presence says who. The press
-  Undo's stayed rows (second round) are to go through `showKept` too.
+  dev, since HMR keeps the plugin instance. `KeptExtension` is the one quiet mark on a block someone
+  deleted that the binding keeps while the caret is in it (`loroSyncKey` state `kept`).
 - Block ids: `extensions/block-id` edits each local transaction in flight (`filterTransaction`,
   not `appendTransaction`, which would reset the input rule it follows and with it Backspace's
   undo of the rule). The block the old document had at that place keeps its id; a split's other
@@ -165,12 +162,8 @@ identity in anchors or holds.
   boundaries. Undo puts back the selection the step started from, as Loro cursors the manager
   carries through its inverse (a deleted selection comes back over the restored text); Redo puts
   back the one Undo was pressed from. Structure values (order, parent, node type, attributes,
-  comment bodies) are not Loro's: each step keeps the values it set. A step goes back whole or
-  stays whole (design §2, "An Undo takes an edit back whole"): when another peer wrote over any of
-  it (a key, the new half of an Enter, a word it typed, a style it set), Ctrl+Z leaves it, writes
-  nothing, drops it and every step sharing its paragraphs from the history, and goes on to the
-  step before; `run`'s result counts the steps that stayed, and what the app shows for them is
-  open (design §9). Typing joins the open step; any other write starts one, and a write that sets
+  comment bodies) are not Loro's: each step keeps the values it set and puts them back, last
+  writer wins, whatever another peer wrote since (design §2, "An Undo always runs"). Typing joins the open step; any other write starts one, and a write that sets
   structure ends it, so an Enter is a step of its own. Destroying an editor only detaches it: the history lasts
   as long as the session, so a tab's undo survives its editor; the session frees its managers
   before its docs. Reload resets it.

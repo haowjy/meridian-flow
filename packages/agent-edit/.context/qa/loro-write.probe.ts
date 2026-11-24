@@ -408,15 +408,16 @@ check(
   listed9,
 );
 
-// 10. `Restore before` the Draft turn takes its writes in the draft back by the Undo rule: the
-// applied paragraph's write is Live's now and stays, so the draft reads as Live again.
+// 10. `Restore before` the Draft turn takes every write of it back in the draft (design §2: an
+// Undo always runs), the applied one too: Live keeps the applied paragraph, and the draft shows
+// taking it out as a change of its own.
 await host.restoreBefore("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
-  (await draftText("ch6")).join("|") === texts(await host.live("ch6")).join("|") &&
+  (await draftText("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept." &&
     texts(await host.live("ch6"))[0] === "The iron gate was shut." &&
-    /No changes/.test(text(changes10)),
-  "Restore before reverts the fork and leaves the applied paragraph in Live",
+    text(changes10).includes("The {--iron --}gate was shut."),
+  "Restore before reverts the fork, the applied write too, and leaves Live",
   { draft: await draftText("ch6"), live: texts(await host.live("ch6")), changes: text(changes10) },
 );
 const liveChanges = await core.read({ ...file("ch6"), format: "changes" } as never, d9.context());
@@ -459,9 +460,9 @@ check(
   text(write11),
 );
 
-// 12. The model's own undo in a Draft chat runs on the fork, on design §2's Undo rule: an edit nobody
-// wrote over comes out of the draft (Live untouched); one whose words the writer retyped in the
-// draft, so none of what it put in is left, stays whole, and the result says so.
+// 12. The model's own undo in a Draft chat runs on the fork, on design §2's Undo rule: every edit
+// goes back (Live untouched), one whose words the writer retyped in the draft too. The rewrite
+// only added to "One.", and the writer's retype deleted that already, so the writer's text stands.
 await host.seed("ch8", [paragraph("w1", "One."), paragraph("w2", "Two.")]);
 const d12 = chat("thread-12", "t12");
 d12.request();
@@ -478,14 +479,16 @@ await host.writerEdit(
 );
 d12.request();
 const undo12 = await run(() => draftCore.write({ command: "undo", ...file("ch8"), count: 2 } as never, d12.context()));
+const draft12 = await draftText("ch8");
 check(
   !undo12.isError &&
-    (await draftText("ch8")).join("|") === "Uno.|Two." &&
+    draft12.join("|") === "Uno.|Two." &&
     texts(await host.live("ch8")).join("|") === "One.|Two." &&
     /e2/.test(text(undo12)) &&
-    /e1 stays: someone has written over it/.test(text(undo12)),
-  "the model's undo in a draft takes back what stands and leaves the writer's text, saying so",
-  { draft: await draftText("ch8"), live: texts(await host.live("ch8")), text: text(undo12) },
+    /e1/.test(text(undo12)) &&
+    !/stays/.test(text(undo12)),
+  "the model's undo in a draft takes both edits back and keeps the writer's text",
+  { draft: draft12, live: texts(await host.live("ch8")), text: text(undo12) },
 );
 
 // 13. After the writer's turn Undo, the same rewrite by hash asked again lands nothing (on the

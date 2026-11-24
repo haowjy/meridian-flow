@@ -2,8 +2,8 @@
  * The document's Undo (design §6, "Ctrl+Z is Loro's, grouped by us"): the binding's
  * `UndoHistory`, which keeps one Loro `UndoManager` per text doc the tab changes and the
  * structure values each step set, and groups one editor step across them, so Ctrl+Z takes back
- * the writer's change and leaves a peer's or the model's alone. A step someone else wrote over
- * stays whole (design §2), and Ctrl+Z goes on to the one before it. The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
+ * the writer's change and leaves a peer's or the model's alone. Every step runs, whatever was
+ * written since (design §2, "An Undo always runs"). The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
  * editor attaches while it shows the document.
  */
 import type { DocChange, RoomDocs } from "@meridian/document-model";
@@ -17,7 +17,6 @@ import {
 } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection } from "@tiptap/pm/state";
-import { showKept, showStayed } from "./extensions/KeptExtension";
 
 const HISTORY_META = "meridian-editor-history";
 
@@ -63,11 +62,6 @@ export class DocumentHistory {
     this.listeners.clear();
   }
 
-  /** Marks blocks a press's Undo left in place, in every editor showing the document. */
-  showStayed(labels: ReadonlyMap<string, string>): void {
-    for (const editor of this.editors) if (!editor.isDestroyed) showStayed(editor.view, labels);
-  }
-
   /** Whether an editor shows the document now: a press made then goes on its Ctrl+Z. */
   get open(): boolean {
     return this.editors.size > 0;
@@ -109,11 +103,7 @@ export class DocumentHistory {
     return this.steps.canRedo();
   }
 
-  /**
-   * Undo or Redo the newest step that can go back whole, synchronously. Returns the run, with how
-   * many steps someone else wrote over stayed and left the history, or null when the history had
-   * no step to try.
-   */
+  /** Undo or Redo the newest step, synchronously. Returns the run, or null when the history had no step. */
   run(direction: "undo" | "redo", editor: Editor): HistoryRun | null {
     if (this.docs.isFreed) return null;
     const ran =
@@ -139,7 +129,6 @@ export class DocumentHistory {
             .scrollIntoView(),
         );
     }
-    if (ran?.kept.length) showKept(editor.view, ran.kept);
     this.changed();
     return ran;
   }

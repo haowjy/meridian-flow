@@ -110,7 +110,8 @@ async function holdLock(
 const cases: ModelEditCase[] = [
   {
     name: "the writer types into the model's paragraph while its Undo captures the document",
-    expected: "the writer's typing is inside the model's paragraph: the Undo leaves it whole",
+    expected:
+      "the Undo runs: the model's words go and the writer's typing, which its capture did not read, stays",
     async run({ h, start }) {
       const { thread, documentId, path } = await seedCase(h, "capture", "direct");
       const child = await start();
@@ -129,9 +130,9 @@ const cases: ModelEditCase[] = [
       };
       assert.deepEqual((await state(h, thread, documentId)).doc, [
         "Live seed.",
-        "Agent paragraph. Writer keeps this.",
+        " Writer keeps this.",
       ]);
-      assert.equal(answer.status === "success", false);
+      assert.equal(answer.status, "reversed");
     },
   },
   {

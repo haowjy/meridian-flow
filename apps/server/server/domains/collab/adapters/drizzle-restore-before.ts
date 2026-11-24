@@ -6,8 +6,9 @@
  * `origin` names its draft either way, design §5). A document the turn wrote while only the draft
  * held it, and the writer has since applied, is the manuscript's now: it stays.
  *
- * The writes go back by the one Undo rule (`undoInRooms`): each whole, or left whole when someone
- * wrote over it since or the room cut its history (design §4's cutoff).
+ * The writes go back by the one Undo rule (`undoInRooms`), whatever was written since; a write an
+ * Undo or the writer's revert already took back is no part of the plan, and one whose history the
+ * room cut (design §4's cutoff) stays as it is.
  */
 import type { RoomPart } from "@meridian/agent-edit/integration";
 import type { CommandId, DocumentId, DraftId, TurnId } from "@meridian/contracts";
@@ -20,7 +21,7 @@ import {
   draftTreeNodes,
   treeEditReceipts,
 } from "@meridian/database/schema";
-import { type RoomDocs, type StoredEdit, whyEditStays } from "@meridian/document-model";
+import { holdsEdit, type RoomDocs, type StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -38,6 +39,13 @@ export type RestorePlan = {
 const onlyInDraft = (draft: DraftId, node: unknown) => sql`EXISTS (
   SELECT 1 FROM ${draftTreeNodes} n
   WHERE n.draft_id = ${draft} AND n.id = ${node} AND n.exists_only_in_draft)`;
+
+/** A part no Undo, nor the writer's revert, has taken back: taking it back again would put its deleted text back twice. */
+const notTakenBack = sql`NOT EXISTS (
+  SELECT 1 FROM ${documentEditParts} u JOIN ${documentEdits} e ON e.id = u.edit_id
+  WHERE (e.kind = 'undo' OR (e.kind = 'revert' AND e.actor = 'human'))
+    AND u.targets @> jsonb_build_array(jsonb_build_object(
+      'editId', ${documentEditParts.editId}::text, 'ordinal', ${documentEditParts.ordinal})))`;
 
 export async function restorePlan(
   tx: DrizzleDb,
@@ -73,6 +81,7 @@ export async function restorePlan(
         sql`${documentEditParts.origin}->>'draftId' = ${draft}`,
         isNotNull(documentEditParts.edit),
         sql`(${documentEditParts.origin}->>'kind' = 'fork' OR ${onlyInDraft(draft, documentEdits.documentId)})`,
+        notTakenBack,
       ),
     )
     .orderBy(desc(documentEditParts.id));
@@ -134,24 +143,23 @@ export async function restoreStates(
   const restored: { draft: DraftId; press: CommandId }[] = [];
   for (const { draft } of drafted) {
     const plan = await restorePlan(tx, turn, draft as DraftId);
-    if (plan.created.length || (await someGoesBack(rooms, plan))) offered.push(draft as DraftId);
     const press = await pressInForce(tx, turn, draft as DraftId);
     if (press) restored.push({ draft: draft as DraftId, press });
+    else if (plan.created.length || (await someStands(rooms, plan))) offered.push(draft as DraftId);
   }
   return { offered, restored };
 }
 
-/** Whether some write of `plan` would go back now (design §2's Undo rule). */
-async function someGoesBack(
+/** Whether some write of `plan` still stands with the history its Undo needs (`holdsEdit`). */
+async function someStands(
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
   plan: RestorePlan,
 ): Promise<boolean> {
   if (!plan.parts.length) return false;
   const copies = await readRooms(rooms, plan);
   try {
-    for (const copy of copies.values()) copy.forward();
-    return plan.parts.some(
-      ({ room, edit }) => !whyEditStays(copies.get(loroRoomName(room)) as RoomDocs, edit),
+    return plan.parts.some(({ room, edit }) =>
+      holdsEdit(copies.get(loroRoomName(room)) as RoomDocs, edit),
     );
   } finally {
     for (const copy of copies.values()) copy.free();

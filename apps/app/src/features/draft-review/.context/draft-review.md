@@ -87,10 +87,8 @@ re-read when the server wakes the owner (`useProjectWake`) and in each of the ac
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
 (`DraftCommandOwner.hold`) and comes back with a pill if the press fails.
 
-**An Undo that leaves some of a press in place** (`PressUndoResult.stayed`: someone wrote over
-it since) keeps those rows, in Review changes and the Changes list, marked `Kept` with who wrote
-over it (`stayed-words.ts`), and the editor shows the same quiet mark Ctrl+Z's do
-(`DocumentHistory.showStayed`).
+A press's Undo always runs, whatever was written since (design §2): every row it pressed comes
+back pending.
 
 ## A Work's drafts
 

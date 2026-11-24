@@ -1,22 +1,18 @@
-import type { BlockId, Moved, MovedText } from "@meridian/document-model";
+import type { BlockId } from "@meridian/document-model";
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
 
 /**
- * What `tr` moved between blocks (`Moved`), read from its steps, never from what the text spells.
- * The pairs of blocks it moved text between, which a draft's write records so the two blocks are
- * one change (design §2):
+ * The pairs of blocks `tr` moved text between, read from its steps, never from what the text
+ * spells, which a draft's write records so the two blocks are one change (design §2):
  * - a step's replaced range that starts in one textblock and ends in another joins the two (a
  *   join, a delete or typing across a paragraph boundary, text read back from the page);
  * - text the steps kept that stands in a textblock with another id than before (Enter inside a
  *   paragraph, a paste of paragraphs into one);
  * - a drop (`uiEvent: "drop"`) moves text from the textblocks it deleted from into those it
  *   inserted into.
- *
- * and each stretch of kept text that stands in another textblock (`copies`), which the write puts
- * in as a copy of the text it came from.
  */
-export function movedPieces(tr: Transaction): Moved {
+export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
   const { before, doc, mapping } = tr;
   // What the steps replaced, in the old document's positions, and what they inserted, in the new.
   const replaced: [number, number][] = [];
@@ -37,9 +33,8 @@ export function movedPieces(tr: Transaction): Moved {
       inserted.push([ahead(newFrom, -1), ahead(newTo, 1)]);
     });
   });
-  if (replaced.length === 0) return { pieces: [], copies: [] };
+  if (replaced.length === 0) return [];
   const pairs = new Map<string, [BlockId, BlockId]>();
-  const copies: MovedText[] = [];
   const pair = (a: BlockId | null, b: BlockId | null) => {
     if (a !== null && b !== null && a !== b) pairs.set(a < b ? `${a}/${b}` : `${b}/${a}`, [a, b]);
   };
@@ -67,16 +62,7 @@ export function movedPieces(tr: Transaction): Moved {
           // The character after `at` was kept: where it stands now.
           const now = mapping.mapResult(at, 1);
           if (now.deleted || mapping.map(at + 1, -1) !== now.pos + 1) continue;
-          const into = textblockAt(doc, now.pos);
-          pair(was, into);
-          if (into !== null && into !== was)
-            copies.push({
-              from: was,
-              into,
-              was: at - start,
-              at: doc.resolve(now.pos).parentOffset,
-              length: points[i + 1] - at,
-            });
+          pair(was, textblockAt(doc, now.pos));
         }
         return false;
       },
@@ -87,7 +73,7 @@ export function movedPieces(tr: Transaction): Moved {
     const into = textblocksIn(doc, inserted);
     for (const a of from) for (const b of into) pair(a, b);
   }
-  return { pieces: [...pairs.values()], copies };
+  return [...pairs.values()];
 }
 
 function textblockAt(doc: Node, pos: number): BlockId | null {

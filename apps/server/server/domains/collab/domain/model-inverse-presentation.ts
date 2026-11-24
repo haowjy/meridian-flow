@@ -6,23 +6,17 @@ type Direction = "undo" | "revert";
 
 export function textPlanRefusal(
   uri: string,
-  handle: string,
-  failure: "draft_archived" | "document_deleted" | "changed",
+  failure: "draft_archived" | "document_deleted",
 ): Exclude<DocumentEditResult, { status: "success" }> {
-  if (failure === "draft_archived")
-    return {
-      status: "work_archived",
-      message: `This draft is archived. Write to an active draft or live version of ${uri}.`,
-    };
-  if (failure === "document_deleted")
-    return {
-      status: "document_not_found",
-      message: "File not found. Read the project to find the right path.",
-    };
-  return {
-    status: `cant_undo_changed`,
-    message: `Can't undo ${handle}: someone has written over it since, so it stays as they left it. Nothing was changed in ${uri}.`,
-  };
+  return failure === "draft_archived"
+    ? {
+        status: "work_archived",
+        message: `This draft is archived. Write to an active draft or live version of ${uri}.`,
+      }
+    : {
+        status: "document_not_found",
+        message: "File not found. Read the project to find the right path.",
+      };
 }
 
 export function textOmission(
@@ -30,12 +24,11 @@ export function textOmission(
   direction: Direction,
   omission: {
     ordinal: number;
-    cause: "already_removed" | "edited_since" | "compacted" | "draft_archived";
+    cause: "already_removed" | "compacted" | "draft_archived";
   },
 ) {
   const words = {
     already_removed: "already removed",
-    edited_since: "written over since, so it stays",
     compacted: "older than the history the document keeps, so it stays",
     draft_archived: "draft archived",
   } as const;

@@ -88,8 +88,7 @@ export const documentEditParts = pgTable(
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
     /**
      * An AI write as one edit of the Undo rule (`StoredEdit` in `@meridian/document-model`): what
-     * the turn Undo and the model's undo and revert test and take back. Null for a part no AI
-     * wrote.
+     * the turn Undo and the model's undo and revert take back. Null for a part no AI wrote.
      */
     edit: jsonb("edit"),
   },

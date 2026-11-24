@@ -80,23 +80,3 @@ export function writeLiveMarkdown(
     });
   });
 }
-
-/** `blocks` with the first occurrence of `from` replaced by `to`, as the writer would type it. */
-export function replacedText(blocks: readonly PMNode[], from: string, to: string): PMNode[] {
-  let done = false;
-  return blocks.map((block) => {
-    if (done || !block.textContent.includes(from)) return block;
-    done = true;
-    const json = block.toJSON() as { content?: { type: string; text?: string }[] };
-    for (const child of json.content ?? [])
-      if (child.text?.includes(from)) child.text = child.text.replace(from, to);
-    return schema.nodeFromJSON(json);
-  });
-}
-
-/** `blocks` with block `index`'s text set to `text`, its id and type kept. */
-export function withBlockText(blocks: readonly PMNode[], index: number, text: string): PMNode[] {
-  return blocks.map((block, at) =>
-    at === index ? block.type.create(block.attrs, text ? schema.text(text) : null) : block,
-  );
-}
