@@ -10,8 +10,15 @@ export type EditorSurfaceFrameProps = {
   notices?: ReactNode;
   /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
+  /**
+   * What holds the toolbar's place instead (Review changes' bar), prose-aligned and never
+   * scrolled: it fits its own width.
+   */
+  toolbarHeld?: ReactNode;
   /** What follows the formatting controls on the toolbar row: the document's state. */
   toolbarTrailing?: ReactNode;
+  /** The row's own look, such as Review changes' band while its bar holds the toolbar's place. */
+  toolbarClassName?: string;
   children: ReactNode;
   /**
    * The whole scroll area is caret territory (the ProseMirror node spans it,
@@ -27,7 +34,9 @@ export type EditorSurfaceFrameProps = {
 export function EditorSurfaceFrame({
   notices,
   toolbar,
+  toolbarHeld,
   toolbarTrailing,
+  toolbarClassName,
   children,
   textCursor,
   scrollClassName,
@@ -44,14 +53,18 @@ export function EditorSurfaceFrame({
           {notices}
         </div>
       ) : null}
-      {toolbar ? (
+      {toolbar || toolbarHeld ? (
         // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
         // edge, in the right gutter, and takes room from the column only when the pane is narrow.
-        <div className="flex h-8 shrink-0 items-center coarse:h-11">
+        <div className={cn("flex h-8 shrink-0 items-center coarse:h-11", toolbarClassName)}>
           <div className="min-w-0 flex-1 basis-0" />
-          {/* The toolbar's geometry is fixed (ten controls, one order), so a
-              pane too narrow for it scrolls the row rather than dropping controls. */}
-          <ToolbarScroller>{toolbar}</ToolbarScroller>
+          {toolbarHeld ? (
+            <div className={cn(editorColumnChrome, "flex h-full min-w-0")}>{toolbarHeld}</div>
+          ) : (
+            // The toolbar's geometry is fixed (ten controls, one order), so a
+            // pane too narrow for it scrolls the row rather than dropping controls.
+            <ToolbarScroller>{toolbar}</ToolbarScroller>
+          )}
           <div className="flex flex-1 basis-0 justify-end pr-3">{toolbarTrailing}</div>
         </div>
       ) : null}

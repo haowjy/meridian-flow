@@ -148,9 +148,9 @@ export function usePressCommands({
       const row = rows().find((item) => item.documentId === node);
       return row?.documentName ?? documentBasename(row?.contextLocation?.path) ?? "";
     };
-    const noticeSurface = (documentId: string | null): NoticeSurface =>
+    const noticeSurface = (documentId: string | null, draft: string): NoticeSurface =>
       surface === "band" && documentId
-        ? { kind: "band", documentId }
+        ? { kind: "band", documentId, draftId: draft }
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
@@ -479,7 +479,7 @@ export function usePressCommands({
         const answer = outcomeOf(pressed, sent);
         if (answer.kind !== "done") return answer;
         const changed = pressed.took;
-        const where = noticeSurface(input.documentId);
+        const where = noticeSurface(input.documentId, noticeKey);
         let step: PressEntries;
         if (scope.kind === "turn") {
           // The turn's card is its notice: it reads the press in force from the owner.

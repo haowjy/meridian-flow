@@ -28,8 +28,11 @@ import { referenceOf, useReviewReference } from "@/features/draft-review/use-rev
 import { usePanePlace } from "@/features/project/pane-place";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 
-/** The editor's width at which Review changes offers two columns. */
-const SIDE_BY_SIDE_MIN_PX = 720;
+/**
+ * The editor's width at which Review changes offers two columns: one side panel open beside a
+ * 1280px window fits them, both open falls back to Inline.
+ */
+const SIDE_BY_SIDE_MIN_PX = 680;
 
 export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const mode = useReviewMode();

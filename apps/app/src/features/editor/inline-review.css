@@ -11,9 +11,10 @@
   --review-del-line: color-mix(in oklab, var(--color-destructive) 40%, transparent);
 }
 
-/* Room in the right margin for each change's pair. */
+/* Room in the right margin for each change's pair: the trailing inset is at least its width, and
+   the prose keeps its reading measure (editor-column.ts). */
 .meridian-editor .ProseMirror.meridian-review {
-  padding-right: 64px;
+  --prose-trail: 4rem;
 }
 
 .meridian-editor .ProseMirror .meridian-review-chg {
@@ -24,12 +25,23 @@
   scroll-margin: 64px 0 96px;
 }
 
+/* Softer than the draft's ink, and still easy to read beside it. */
 .meridian-editor .ProseMirror .meridian-review-ref {
-  margin: 0 0 2px;
-  color: var(--color-muted-foreground);
+  margin: 0 0 0.375em;
+  color: color-mix(in oklab, var(--color-paper-ink) 35%, var(--color-muted-foreground));
   font-size: 0.94em;
-  line-height: 1.625;
   white-space: pre-wrap;
+}
+
+/* Inline, a change (Live's text, then the draft's) stands apart from the prose around it. */
+.meridian-editor .ProseMirror.meridian-review-inline > .meridian-review-chg {
+  margin-top: 1.25em;
+}
+.meridian-editor
+  .ProseMirror.meridian-review-inline
+  > .meridian-review-draft
+  + :not(.meridian-review-draft, .meridian-review-chg) {
+  margin-top: 1.25em;
 }
 
 .meridian-editor .ProseMirror .meridian-review-ref + .meridian-review-ref {
@@ -186,7 +198,7 @@
 }
 
 .meridian-editor .ProseMirror .meridian-review-same {
-  color: color-mix(in oklab, var(--color-muted-foreground) 70%, transparent);
+  color: var(--color-muted-foreground);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -195,9 +207,15 @@
    cell in each column, in DOM order (an empty one where a side lacks it), so the grid's rows pair
    them; margins move to the row gap, so both cells of a row start level. */
 .meridian-editor .ProseMirror.meridian-review-side {
+  --review-gutter: 1.25rem;
+  /* Two columns want the pane's width, not one reading measure: a narrow margin either side,
+     the trailing one holding the pairs, centred once the pane is wider than both columns. */
+  --review-centring: max(0px, (100% - 76rem) / 2);
+  padding-left: calc(var(--review-centring) + 3rem);
+  padding-right: calc(var(--review-centring) + 3.5rem);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: 24px;
+  column-gap: var(--review-gutter);
   row-gap: 0.75em;
   align-items: start;
 }
@@ -222,7 +240,7 @@
 }
 
 .meridian-editor .ProseMirror.meridian-review-side .meridian-review-pair {
-  left: calc(200% + 24px + 6px);
+  left: calc(200% + var(--review-gutter) + 6px);
 }
 
 .meridian-editor .ProseMirror.meridian-review-side .meridian-review-across .meridian-review-pair {

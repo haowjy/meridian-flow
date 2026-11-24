@@ -19,6 +19,7 @@ import {
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useRefreshTurnCardsOnEdit } from "@/client/query/useTurnLiveLineage";
 import { useWorks } from "@/client/query/useWorks";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
@@ -38,7 +39,11 @@ import { useRemovalAnswer } from "@/features/project/context/use-removal-answer"
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree } from "@/lib/focus-follow";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
-import { DocumentStateSlotHost } from "./document-state-slot";
+import {
+  DocumentStateSlotHost,
+  DocumentToolbarSlotHost,
+  useToolbarTaken,
+} from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
@@ -502,6 +507,9 @@ function EditorCanvas({
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   const touch = useCoarsePointer();
+  // The page's chrome may hold the toolbar's place (Review changes' bar), even where the
+  // document has no formatting toolbar of its own.
+  const taken = useToolbarTaken() && active;
   useEffect(
     () =>
       editor && touch && scrollRef?.current
@@ -514,13 +522,20 @@ function EditorCanvas({
     <EditorSurfaceFrame
       notices={notices}
       toolbar={toolbar}
+      toolbarHeld={taken ? <DocumentToolbarSlotHost /> : null}
+      toolbarClassName={taken ? "bg-review" : undefined}
       toolbarTrailing={active ? <DocumentStateSlotHost /> : null}
       textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
-      <EditorContent editor={editor} className={editorColumnFill} />
+      {/* A slow room (a large chapter opening cold) shows the page's skeleton, never a blank. */}
+      {editor ? (
+        <EditorContent editor={editor} className={editorColumnFill} />
+      ) : (
+        <DelayedContentSkeleton />
+      )}
     </EditorSurfaceFrame>
   );
 }

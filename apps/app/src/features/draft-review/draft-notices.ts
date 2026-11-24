@@ -10,8 +10,12 @@ import type { PressEntries } from "./press-history";
 export type NoticeSurface =
   | { kind: "changes" }
   | { kind: "strip"; threadId: string | null }
-  /** A document's review band: the notice shows in that document's identity row. */
-  | { kind: "band"; documentId: string }
+  /**
+   * A document's page: the notice floats at that page's foot. `draftId`: the draft the page showed
+   * when a press there made it, which alone shows it, and leaving it ends it; null for a delete,
+   * which shows wherever main went.
+   */
+  | { kind: "band"; documentId: string; draftId: string | null }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -119,19 +123,25 @@ export class DraftNotices {
   }
 
   /**
-   * The notice a document's identity row shows: an Apply or Discard made in a document's band, on
-   * that document, or a Discard on the one main went back to when it made main leave (null:
-   * Recently opened, whose top slot shows it), or what an Undo made there left in place. A list or
-   * strip keeps its own notice where it was made.
+   * The notice a document's page shows, on the draft it shows (`draftId`, null on Live): an Apply
+   * or Discard made on that page and draft, or a delete on the document main went back to when it
+   * made main leave (null `documentId`: Recently opened, whose top slot shows it). A list or strip
+   * keeps its own notice where it was made.
    */
-  forDocument(projectId: string, documentId: string | null): DraftNotice | null {
+  forDocument(
+    projectId: string,
+    documentId: string | null,
+    draftId: string | null = null,
+  ): DraftNotice | null {
     for (const notice of this.notices.values()) {
       if (notice.projectId !== projectId) continue;
+      const { surface } = notice;
       const left = notice.kind === "discarded" ? notice.left : null;
       if (
-        notice.surface.kind === "band"
-          ? (left ? left.landed : notice.surface.documentId) === documentId
-          : notice.surface.kind === "landing" && documentId === null
+        surface.kind === "band"
+          ? (left ? left.landed : surface.documentId) === documentId &&
+            (surface.draftId === null || surface.draftId === draftId)
+          : surface.kind === "landing" && documentId === null
       )
         return notice;
     }

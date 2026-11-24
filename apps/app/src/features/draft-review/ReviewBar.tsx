@@ -1,22 +1,23 @@
 /**
- * Review changes' controls (design §6, item 3), on the review line above the toolbar: what it
- * compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two columns,
- * against Live the chapter's Discard · Apply, the stepper, and Close, with the stepper between the
- * chapter's × and Close. Against Live the stepper walks this chapter's changes, then the draft's
- * next changed chapter in the Changes list's order, wrapping at the ends; ‹ into the previous
- * chapter lands on its last change. Only the stepper crosses chapters, and it replaces the
- * review's history entry as it does. Against another draft or file it walks this chapter's
- * differences.
+ * Review changes' controls (design §6, item 3), in the toolbar's place while the page reviews:
+ * what it compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two
+ * columns, then the stepper and, against Live, the chapter's × and ✓; Close is where
+ * `Review N changes` was (`ReviewChangesButton`). Against Live the stepper walks this chapter's
+ * changes, then the draft's next changed chapter in the Changes list's order, wrapping at the
+ * ends; ‹ into the previous chapter lands on its last change. Only the stepper crosses chapters,
+ * and it replaces the review's history entry as it does. Against another draft or file it walks
+ * this chapter's differences.
  */
+import "./review-line.css";
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { Columns2, X } from "lucide-react";
+import { Columns2 } from "lucide-react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { usePanePlace } from "@/features/project/pane-place";
 import { useItemLauncher } from "@/features/project/review-launch";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { holdFocus, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
+import { noticeAction } from "./CommandNotice";
 import { useOptionalDraftReview } from "./DraftReviewProvider";
 import { ReviewActions } from "./ReviewActions";
 import { ReviewStepper } from "./ReviewStepper";
@@ -82,16 +83,25 @@ export function ReviewBar() {
       replace: true,
     });
   };
-  const pressChapter = (verdict: "apply" | "discard") => {
+  const pressChapter = (verdict: "apply" | "discard", event: { currentTarget: HTMLElement }) => {
+    // The pressed control leaves with the bar: the focus waits for the notice's Undo.
+    const page = event.currentTarget.closest<HTMLElement>("[data-paint-frame]");
+    if (page)
+      holdFocus(
+        () => pageNoticeAction(page),
+        undefined,
+        (element) => moveFocus(element, { ring: lastInputWasKeyboard() }),
+      );
     mode.close();
     void review.controller.startItem(verdict, ref).outcome;
   };
 
   return (
     <div
+      ref={fitReviewLine}
+      data-review-line
       data-review-bar={mode.documentId}
-      data-draft-review-controls
-      className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5"
+      className="flex min-w-0 flex-1 items-center gap-1.5"
     >
       <ReviewTargetPicker mode={mode} />
       {wide ? (
@@ -105,60 +115,54 @@ export function ReviewBar() {
           <Columns2 aria-hidden />
         </IconButton>
       ) : null}
-      {live ? (
-        <ReviewActions
-          scope="document"
-          labels={{
-            discard: deleted ? t`Restore this chapter` : t`Discard this chapter`,
-            apply: t`Apply this chapter`,
-          }}
-          words={deleted ? { discard: t`Restore` } : undefined}
-          touch={touch}
-          disabled={locked}
-          onDiscard={() => pressChapter("discard")}
-          onApply={() => pressChapter("apply")}
-        />
-      ) : null}
-      <span data-review-secondary className="contents">
-        <ReviewStepper
-          count={total}
-          crosses={elsewhere}
-          focusedIndex={focused < 0 ? -1 : before + focused}
-          disabled={total === 0}
-          onStep={step}
-          touch={touch}
-        />
+      <span data-review-end className="ml-auto flex shrink-0 items-center gap-1.5">
+        <span data-review-secondary className="contents">
+          <ReviewStepper
+            count={total}
+            crosses={elsewhere}
+            focusedIndex={focused < 0 ? -1 : before + focused}
+            disabled={total === 0}
+            onStep={step}
+            touch={touch}
+          />
+        </span>
+        {live ? (
+          <ReviewActions
+            scope="document"
+            labels={{
+              discard: deleted ? t`Restore this chapter` : t`Discard this chapter`,
+              apply: t`Apply this chapter`,
+            }}
+            words={deleted ? { discard: t`Restore` } : undefined}
+            density="icon"
+            touch={touch}
+            disabled={locked}
+            onDiscard={(event) => pressChapter("discard", event)}
+            onApply={(event) => pressChapter("apply", event)}
+          />
+        ) : null}
       </span>
-      {wide ? (
-        <Button type="button" size="sm" variant="quiet" onClick={mode.close}>
-          <X aria-hidden />
-          <Trans>Close</Trans>
-        </Button>
-      ) : (
-        <IconButton size="xs" variant="quiet" label={t`Close`} onClick={mode.close}>
-          <X aria-hidden />
-        </IconButton>
-      )}
     </div>
   );
 }
 
 /**
- * The review line's ref: it gives up, in order, only while the controls don't fit the line's
- * width: the stepper's short count and tighter gaps, then no count, then Discard and Apply as
- * icons, then (a finger only) the stepper (`ACTIONS_DENSITY`, document-identity-row.css).
+ * The review line gives up, in order, only while its controls don't fit its width: the
+ * stepper's short count and tighter gaps, then no count, then (a finger only) the stepper
+ * (review-line.css).
  */
-export function fitReviewLine(line: HTMLDivElement) {
+function fitReviewLine(line: HTMLDivElement | null) {
+  if (!line) return;
+  // The target picker's name shrinks before anything overflows: a cut name doesn't fit either.
+  const fits = () =>
+    line.scrollWidth <= line.clientWidth &&
+    [...line.querySelectorAll<HTMLElement>(".truncate")].every(
+      (label) => label.scrollWidth <= label.clientWidth,
+    );
   const fit = () => {
-    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
-    const style = getComputedStyle(line);
-    const available =
-      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
-    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
+    for (let level = 0; level <= 3; level++) {
       line.dataset.collapse = String(level);
-      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
-      if (!controls || controls.getBoundingClientRect().width <= available) break;
+      if (fits()) break;
     }
   };
   fit();
@@ -172,5 +176,7 @@ export function fitReviewLine(line: HTMLDivElement) {
   };
 }
 
-/** The review actions' form at each collapse level. */
-const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;
+const pageNoticeAction = (page: HTMLElement) => {
+  const foot = page.querySelector<HTMLElement>("[data-page-notice]");
+  return foot ? noticeAction(foot) : null;
+};

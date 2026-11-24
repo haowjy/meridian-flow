@@ -117,6 +117,7 @@ export type LoroRoomTransport = {
   whenSentAcknowledged(): Promise<void>;
   /** What the server is known to hold: its Join version, the batches it acked and sent. */
   serverVersion(): RoomVersion;
+  /** The copy holds what the server held at its first Join: the content is in, not only the Join. */
   readonly synced: boolean;
   readonly whenSynced: Promise<void>;
   subscribeStatus(listener: (state: RoomConnectionState) => void): () => void;
@@ -216,6 +217,13 @@ export function createLoroRoomTransport({
     resolveSynced = resolve;
   });
   let synced = false;
+  /** The Join's version until the copy holds it, after the Join's catch-up batch: then synced. */
+  let catchUp: RoomVersion | null = null;
+  const settleSynced = () => {
+    if (synced || !catchUp || !versionCovers(copy.version(), catchUp)) return;
+    synced = true;
+    resolveSynced();
+  };
 
   const emitStatus = (next: RoomConnectionState) => {
     state = next;
@@ -296,6 +304,7 @@ export function createLoroRoomTransport({
   const receiveBatch = (bytes: Uint8Array) => {
     copy.importRemote(bytes);
     mergeVersion(server, batchEnd(decodeEnvelope(bytes)));
+    settleSynced();
     settleBarriers();
   };
 
@@ -315,7 +324,8 @@ export function createLoroRoomTransport({
         joined = true;
         attempt = 0;
         server.clear();
-        mergeVersion(server, decodeRoomVersion(message.version));
+        const joinVersion = decodeRoomVersion(message.version);
+        mergeVersion(server, joinVersion);
         const { readOnlyWhy } = decodeLoroJoinExtra(message.extra);
         if (message.permission === "write") emitAccess("edit", null);
         else emitAccess("read", readOnlyWhy ?? null);
@@ -332,10 +342,8 @@ export function createLoroRoomTransport({
         }
         const lacking = copy.exportSince(server);
         if (lacking) sendDoc(lacking);
-        if (!synced) {
-          synced = true;
-          resolveSynced();
-        }
+        if (!synced) catchUp = joinVersion;
+        settleSynced();
         settleBarriers();
         emitStatus({ kind: "connected" });
         return;

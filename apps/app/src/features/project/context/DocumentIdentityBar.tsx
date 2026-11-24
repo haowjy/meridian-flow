@@ -1,25 +1,25 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, "Review N changes"). They portal into the document's state slot in the toolbar row;
- * Review changes' controls and a draft's notice take a line of their own above the toolbar.
+ * move, "Review N changes" or Close). They portal into the document's state slot in the toolbar
+ * row; Review changes' controls take the formatting controls' place in that row, and the page's
+ * notice floats at its foot.
  */
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";
-import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
-import { fitReviewLine, ReviewBar } from "@/features/draft-review/ReviewBar";
+import { PageNotice } from "@/features/draft-review/PageNotice";
+import { ReviewBar } from "@/features/draft-review/ReviewBar";
 import { ReviewChangesButton } from "@/features/draft-review/ReviewChangesButton";
 import { useReviewMode } from "@/features/draft-review/review-mode";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
-import { DocumentStatePortal } from "@/features/editor/document-state-slot";
+import { DocumentStatePortal, DocumentToolbarPortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { useFocusSuccession } from "@/lib/focus-follow";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -72,29 +72,15 @@ export function DocumentIdentityBar({
     !draftItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
   const manuscriptState = useManuscriptState(projectId, document);
-  const notice = useDocumentNotice(projectId, document.documentId);
-  const lineFocus = useRef<HTMLDivElement>(null);
-  useFocusSuccession(lineFocus);
 
-  // Reviewing a draft is a mode, not a notice: its controls take a line of their own above the
-  // toolbar, so the formatting controls stay whole. A Discard's notice takes that line when it
-  // ends the review, and shares it, wrapping, when it does not.
   return (
     <>
-      {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
-          Undo and an Undo's back to the controls. */}
-      <div ref={lineFocus} className="contents">
-        {mode || notice ? (
-          <div
-            ref={fitReviewLine}
-            data-review-line
-            className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
-          >
-            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
-            {mode ? <ReviewBar /> : null}
-          </div>
-        ) : null}
-      </div>
+      {mode ? (
+        <DocumentToolbarPortal>
+          <ReviewBar />
+        </DocumentToolbarPortal>
+      ) : null}
+      <PageNotice projectId={projectId} documentId={document.documentId} />
       <DocumentStatePortal>
         <div
           data-document-identity-row

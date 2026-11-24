@@ -57,17 +57,18 @@ export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
 }
 
 /**
- * The Discard notice a document's identity row shows, or with `documentId` null the one the
- * Recently opened landing shows (`DraftNotices.forDocument`).
+ * The notice a document's page shows on the draft it shows (`draftId`, null on Live), or with
+ * `documentId` null the one the Recently opened landing shows (`DraftNotices.forDocument`).
  */
 export function useDocumentNotice(
   projectId: string,
   documentId: string | null,
+  draftId: string | null = null,
 ): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
     notices.subscribe,
-    () => notices.forDocument(projectId, documentId),
+    () => notices.forDocument(projectId, documentId, draftId),
     () => null,
   );
 }
