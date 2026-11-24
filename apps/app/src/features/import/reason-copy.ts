@@ -1,4 +1,3 @@
-/** Server codes become writer-facing sentences here, never raw error messages. */
 import { t } from "@lingui/core/macro";
 import {
   IMPORT_REASON_NEEDS_LOOK,
@@ -33,7 +32,6 @@ function failureSentence(reason: ImportEntryReason | null | undefined): string {
       return t`Couldn't import`;
   }
 }
-/** Every fact that puts a file on the need-a-look list; two can hold at once. */
 export function problemSentences(
   entry: Pick<ImportEntryStatus, "state" | "reason" | "changedAfterUpload">,
 ): string[] {
@@ -43,7 +41,6 @@ export function problemSentences(
   if (entry.changedAfterUpload) sentences.push(t`Edited after upload`);
   return sentences;
 }
-/** Why the server refused an import, where it said: the same import would be refused again. */
 export function refusalReason(error: unknown): string | undefined {
   if (!(error instanceof ImportRequestError)) return undefined;
   switch (error.code) {

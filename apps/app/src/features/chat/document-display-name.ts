@@ -1,10 +1,3 @@
-/**
- * Writer-facing names for context documents and folders shown in chat.
- *
- * This module turns tool addresses into story objects. It owns no lookup or
- * state: context URIs already carry the document basename and location, and an
- * owner's name (a Work's, a chat's) comes from the caller's `OwnerNames`.
- */
 import { t } from "@lingui/core/macro";
 import { splitDocumentHrefSuffix } from "@meridian/contracts";
 import {
@@ -16,14 +9,8 @@ import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/
 import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { areaOf, schemeLabel } from "@/features/project/context/context-schemes";
 
-/** A Scratch or Uploads owner an address names by handle: a Work, a chat's lineage, or a chat. */
 export type ContextOwner = Extract<ParsedContextAuthority, { kind: "work" | "lineage" | "chat" }>;
 
-/**
- * The writer's name for an owner an address names by handle, or a Work a receipt names by id:
- * the Work's name (with its handle only where another Work shares the name) or the chat's
- * title, never the bare handle (#914). Null while it is unknown.
- */
 export type OwnerNames = (
   owner: ContextOwner | { kind: "work-id"; workId: string },
 ) => string | null;
@@ -33,7 +20,6 @@ export const noOwnerNames: OwnerNames = () => null;
 export type ParsedContextLocation = {
   scheme: ProjectContextTreeScheme | null;
   path: string;
-  /** Who owns a Scratch or Uploads document, when its address names them. */
   owner?: ContextOwner | null;
 };
 
@@ -62,10 +48,6 @@ function draftId(owner: ContextOwner | null | undefined): string {
   }
 }
 
-/**
- * A path in its area, whole: "Manuscript/part2/note", "Scratch for Ascension/note" when its owner
- * is named, "~/.agents/agents/critic.md".
- */
 function inArea(
   scheme: ProjectContextTreeScheme,
   owner: ContextOwner | null | undefined,
@@ -84,12 +66,6 @@ const folderOf = (path: string) => {
   return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
 };
 
-/**
- * The document's name as stored, and nothing else: `Chapter 13`, `outline.json`.
- * Where it lives is not part of what a timeline row claims: the row says what
- * the agent did to a document, and the name's door already goes wherever that
- * document is.
- */
 export function documentDisplayName(uriOrPath: string): string {
   const skillFileName = skillFileDisplayName(uriOrPath);
   if (skillFileName) return skillFileName;
@@ -97,10 +73,6 @@ export function documentDisplayName(uriOrPath: string): string {
   return documentTitleFromUri(path) ?? t`Untitled document`;
 }
 
-/**
- * A skill file says whose it is, "prose-critique (Story Review)": its bare name
- * alone would pass for one of the writer's documents.
- */
 function skillFileDisplayName(uriOrPath: string): string | null {
   const file = skillFile(uriOrPath);
   if (!file) return null;
@@ -109,11 +81,6 @@ function skillFileDisplayName(uriOrPath: string): string | null {
   return t`${name} (${skill})`;
 }
 
-/**
- * What a model's move did, as little as tells it apart: for a move, where the document went (its
- * new name for a rename in place; the folder path between folders; the area too between sections
- * or owners); for a reorder, only that its position changed.
- */
 export function describeModelMove(from: string, to: string, names?: OwnerNames) {
   return describeMove(
     parseContextLocation(from),
@@ -123,10 +90,6 @@ export function describeModelMove(from: string, to: string, names?: OwnerNames) 
   );
 }
 
-/**
- * A move between two locations: `rename` when only the name changes, `reorder` when nothing the
- * path shows changes (a position among siblings), and where it lands.
- */
 export function describeMove(
   source: ParsedContextLocation,
   destination: ParsedContextLocation,
@@ -148,10 +111,6 @@ export function describeMove(
     : { kind: "rename", place: name };
 }
 
-/**
- * Where a document is, whole: "Manuscript/part2/note", "Scratch for Ascension/note". A
- * refusal names this, so the writer can find what stands in the way.
- */
 export function documentLocationName(uriOrPath: string, names: OwnerNames = noOwnerNames): string {
   const location = parseContextLocation(uriOrPath);
   const path = `${folderOf(location.path)}${documentDisplayName(uriOrPath)}`;
@@ -160,7 +119,6 @@ export function documentLocationName(uriOrPath: string, names: OwnerNames = noOw
 
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
-  // The writer's Agents level is named as the Agents tab names it, never `.agents` of Your files.
   const place = scheme ? areaOf(scheme, path) : null;
   if (place && place.area !== (scheme && schemeLabel(scheme)) && !place.rest) return place.area;
   const segment = path.split("/").filter(Boolean).at(-1);

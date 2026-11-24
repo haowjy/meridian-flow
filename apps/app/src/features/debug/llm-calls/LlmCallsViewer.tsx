@@ -1,5 +1,3 @@
-/** Pop-out dashboard joining gateway lifecycle events with canonical model requests. */
-
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { EventRecord } from "@meridian/contracts/observability";
@@ -135,13 +133,9 @@ function LlmCallsContent({
     [derivedCalls, filter],
   );
   const responseThreadKey = responseThreadIds.join(",");
-  // A call settling (or a stop landing) is when the turn's status and the response row's
-  // usage metering change, so the snapshot refetches on outcome changes, not only new calls.
   const responseCallKey = derivedCalls
     .map((call) => `${call.gatewayCallId}:${call.outcome}`)
     .join(",");
-  // The turn can settle after its call closes, so a closed call on a turn still streaming
-  // keeps refetching; otherwise a stop would stay `error` until the window remounts.
   const [snapshotRetry, setSnapshotRetry] = useState(0);
   const turnStillSettling = derivedCalls.some(
     (call) =>

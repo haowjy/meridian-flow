@@ -8,7 +8,6 @@ import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useTryAgain } from "./ConnectionRow";
 import { actionLabel, connectionStanding, problemWord, standingAction } from "./connection-status";
 
-/** The connections a new chat would not get working tools from, each with its fix; null when every one works. */
 export function useNewChatConnectionMarks(projectId: string) {
   const list = useMcpConnections(projectId, { watch: true });
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());

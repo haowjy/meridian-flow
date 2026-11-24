@@ -117,7 +117,6 @@ describe("useHandoffBrief Stop", () => {
     transport.cancel.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.stop("s"));
     expect(latest.stopFailures).toEqual([]);
-    // A second failure is a new occurrence of the same Stop.
     await act(async () => root.render(<Probe turns={[seed("s", "pending", 1), reply]} />));
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));

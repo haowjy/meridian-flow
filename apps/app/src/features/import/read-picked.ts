@@ -1,4 +1,3 @@
-/** Selection from a file input: a folder pick (`webkitdirectory`) or loose files (`multiple`). */
 import {
   EXPORT_MARKER_FILENAME,
   importPathDisposition,
@@ -9,7 +8,6 @@ import { readSideFile, type SelectedRoot, type Selection } from "./selection";
 
 const APP_JSON = ".obsidian/app.json";
 
-/** A picked folder's files all start with its name; loose files carry no folder. */
 export async function readPicked(files: readonly File[]): Promise<Selection> {
   const folderPick =
     files.length > 0 && files.every((file) => file.webkitRelativePath.includes("/"));

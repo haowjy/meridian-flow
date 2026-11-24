@@ -1,4 +1,3 @@
-/** App-specific composition of Agent, write-mode, Work and chat-draft toolbar descriptors. */
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useWriteModeToolbarControl } from "@/components/app/work-composer-controls";
@@ -21,7 +20,6 @@ export function ChatComposerToolbar({
   threadId: string;
   work: Work;
   agent: ComposerAgentControlProps;
-  /** This chat's mode, with queued and local switches laid over the server's. */
   writeMode: AiWriteMode;
   onWriteModeChange(mode: AiWriteMode): void;
 }) {

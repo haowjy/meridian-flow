@@ -1,4 +1,3 @@
-/** Adds only pending folder roots; the source's tree remains the sole owner of every real node. */
 import { addressScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";

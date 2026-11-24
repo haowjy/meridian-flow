@@ -1,8 +1,6 @@
-/** Writer-facing words for a chat upload's type and age in the uploads menu. */
 import { plural, t } from "@lingui/core/macro";
 import type { ChatUpload } from "@/client/query/useChatUploads";
 
-/** "PDF", "Image", "Text": what the file is, not its extension. */
 export function uploadTypeLabel(fileType: ChatUpload["fileType"]): string {
   switch (fileType) {
     case "pdf":
@@ -37,7 +35,6 @@ export function uploadTypeLabel(fileType: ChatUpload["fileType"]): string {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** "Just now", "2 min ago", "3 hours ago", "Yesterday", "4 days ago", else the date. */
 export function attachedAgo(iso: string | null, now: number): string {
   if (!iso) return "";
   const then = Date.parse(iso);

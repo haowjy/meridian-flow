@@ -1,4 +1,3 @@
-/** The five pending-root rules. Historical creation is not evidence of current liveness in the tree. */
 import type { ImportSummary } from "@meridian/contracts";
 export type PendingRootMemory = { seen: boolean; drawn: boolean; deadline?: number };
 export function pendingRoot(

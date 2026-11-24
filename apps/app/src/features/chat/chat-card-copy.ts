@@ -1,8 +1,3 @@
-/**
- * The words of every chat card. `chatCards` (`@meridian/thread-client`) decides which cards exist; the
- * card's copy key, count and `text` pick the sentence here, for the card that draws it and for the
- * announcer that speaks it, so what a writer hears is what they see.
- */
 import { plural, t } from "@lingui/core/macro";
 import type { ChatCard } from "@meridian/thread-client";
 import { controlStatusCopy, controlWithdrawFailedCopy } from "./thread-controls/control-copy";

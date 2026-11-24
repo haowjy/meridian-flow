@@ -1,8 +1,3 @@
-/**
- * Composer Agent control. A new chat picks its Agent and the model it runs on; a started chat is
- * bound to one, so it can change only the model, and picking another Agent hands off to it; a
- * subagent's chat only shows its Agent.
- */
 import { t } from "@lingui/core/macro";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { Cpu } from "lucide-react";
@@ -35,19 +30,16 @@ export type ComposerAgentControlProps =
       mode: "interactive";
       projectId?: string;
       selectedAgent: CreationAgent | null;
-      /** The model and reasoning the new chat will run its Agent at, where not its own. */
       overrides: ThreadOverrides;
       onChoose: (choice: AgentChoice) => void;
     }
   | {
       mode: "started";
       projectId: string;
-      /** The chat, whose bound definition the panel can open. */
       threadId: string;
       bound: BoundAgent;
       overrides: ThreadOverrides;
       onOverridesChange: (overrides: ThreadOverrides) => void;
-      /** Null until the server has a turn to hand off from. */
       onHandoff: ((choice: AgentChoice) => void) | null;
     }
   | { mode: "readonly"; name: string; overrides: ThreadOverrides };
@@ -80,8 +72,6 @@ export function useComposerAgentToolbarControl(
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
   const modelLabel = model ? modelName(models, model) : null;
-  // An override the deployment can't run: replies fall back to the Agent's own model. A reasoning
-  // override is always one its model has: the picker settles it when the model changes.
   const fallsBack = Boolean(model && models && !runsAvailable(models, model));
   const effortLabel = overrides.effort ? reasoningName(overrides.effort) : null;
   const runsAt = [modelLabel, effortLabel && t`${effortLabel} reasoning`]
@@ -92,14 +82,11 @@ export function useComposerAgentToolbarControl(
     : fallsBack
       ? t`${name}; ${modelLabel ?? ""} isn't available, so it runs on its default model`
       : t`${name} on ${runsAt}`;
-  // The overflow row shows what the chip shows; the sentence is for its name and tooltip.
   const item = {
     ariaLabel: t`Agent: ${value}`,
     label: t`Agent`,
     value: [name, modelLabel, effortLabel].filter(Boolean).join(" "),
   };
-  // The other model's and reasoning's names; on a phone a chip icon, so the Agent's name keeps its
-  // place inline.
   const shown = (
     <>
       {name}

@@ -1,11 +1,3 @@
-/**
- * A door to a source conversation: the chat a fork inherited from, a handoff
- * came from, or a subagent was pointed at with `from`.
- *
- * The name navigates to that chat. A source in the trash cannot be opened, so
- * it reads as plain text and says so. The current title wins over the one
- * frozen at derivation, because the writer knows the chat by its name today.
- */
 import { t } from "@lingui/core/macro";
 import { useQuery } from "@tanstack/react-query";
 import { readThreadTranscript } from "@/client/api/threads-api";
@@ -16,18 +8,9 @@ import { useOpenChatThread } from "../ChatThreadNavigation";
 
 export type SourceThreadState = {
   title: string | null;
-  /** Null until known. */
   trashed: boolean | null;
 };
 
-/**
- * Whether a source chat is live or in the trash, and its current title.
- * `known` is authoritative when the caller already has it (a fork's inherited
- * read reports its owners' trash state). Otherwise a primary in the project's
- * chat list is live; anything else (a subagent, a trashed chat) asks the
- * server with a one-row transcript read, which names the thread's current
- * title and refuses a trashed thread. The server has no lighter thread read.
- */
 export function useSourceThread(
   threadId: string,
   fallbackTitle: string | null,
@@ -74,7 +57,6 @@ export function SourceChatLink({
   threadId: string;
   title: string | null;
   trashed: boolean | null;
-  /** What to call a source whose title is unknown; refs are handles, never writer copy. */
   fallbackName?: string;
   className?: string;
 }) {

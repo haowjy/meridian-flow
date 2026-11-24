@@ -1,6 +1,3 @@
-/**
- * Pure thread-switcher decisions: title filtering and search visibility.
- */
 type SwitcherThread = {
   title: string | null;
 };

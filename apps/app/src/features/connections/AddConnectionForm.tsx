@@ -16,13 +16,11 @@ import { suggestedName } from "./connection-status";
 
 export type AddValues = {
   url: string;
-  /** Null while it follows the address. */
   name: string | null;
   token: string;
   level: McpConnectionLevel;
 };
 
-/** Why an add failed, shown under the address when the server refused it, else under the form. */
 export type AddError = { on: "address" | "form"; message: string };
 
 export const EMPTY_ADD: AddValues = { url: "", name: null, token: "", level: "account" };
@@ -33,10 +31,6 @@ export function levelLabel(level: McpConnectionLevel): string {
   return level === "account" ? t`All my projects` : t`This project`;
 }
 
-/**
- * Adding a connection: its address, a name the AI calls it by, an optional token, and, inside a
- * project, which level it goes on. The one place Flow says what a server can do with the AI.
- */
 export function AddConnectionForm({
   values,
   inProject,

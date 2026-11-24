@@ -1,15 +1,8 @@
-/**
- * Continue pairs entries by root name and path, never by picker enumeration
- * order. Entries whose bytes the server lacks are sent; entries it already
- * holds are compared by content hash so a re-picked copy can confirm or flag
- * them without sending anything twice. Both indexes are built in one pass, so
- * pairing stays linear in the import's size.
- */
+// keep: Pair Continue entries by root name + path, never by picker enumeration order (duplicate names would mispair); compare by content hash for entries the server already holds.
 import type { ImportDetail } from "@meridian/contracts";
 import type { HeldFile } from "./manifest";
 import type { Selection } from "./selection";
 
-/** A received entry whose re-picked file must be hashed against the receipt. */
 export type PickedReceived = { entryId: number; file: File };
 
 const identity = (name: string, kind: string, path: string) => `${name}\0${kind}\0${path}`;
@@ -17,7 +10,6 @@ const identity = (name: string, kind: string, path: string) => `${name}\0${kind}
 export function matchContinue(detail: ImportDetail, selection: Selection) {
   const held = new Map<number, HeldFile>();
   const received: PickedReceived[] = [];
-  // Received entries matter too: the writer may re-pick after an edit or a copy.
   const entries = detail.entries.filter(
     (entry) => entry.state === "awaiting" || entry.state === "received",
   );
@@ -34,7 +26,6 @@ export function matchContinue(detail: ImportDetail, selection: Selection) {
       if (same) same.push(item);
       else candidates.set(key, [item]);
     }
-  // How many entries share an identity, and an identity plus the pick's size and time.
   const sharing = new Map<string, number>();
   const stamped = new Map<string, number>();
   for (const entry of entries) {
@@ -71,7 +62,6 @@ export function matchContinue(detail: ImportDetail, selection: Selection) {
         changed,
       });
     } else if (changed || entry.reason === "changed_after_pick" || entry.changedAfterUpload) {
-      // Same size and time means the receipt still matches; anything else needs the hash.
       received.push({ entryId: entry.entryId, file: candidate.file });
     }
   }

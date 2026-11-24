@@ -20,7 +20,6 @@ const slices = vi.hoisted(() => ({
   feed: (_action: unknown): void => undefined,
   reset: (): void => undefined,
 }));
-// The chat's slice is the thread store's; here a one-chat stand-in over the real reducer.
 vi.mock("@/client/stores", async () => {
   const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import("@meridian/thread-client");
   const { useSyncExternalStore } = await import("react");
@@ -230,13 +229,11 @@ const mount = () =>
 
 it("calls a switch queued only when the server says a reply it can't affect holds the chat", async () => {
   await mount();
-  // Made in an idle chat, then a send starts a reply: the reply applies it, so no flip.
   await feed("snapshot", "6", [switchItem("s1", "awaiting_run")]);
   expect(view.rows.map((row) => row.waiting)).toEqual([false]);
   replyRunning = true;
   await show([]);
   expect(view.rows.map((row) => row.waiting)).toEqual([false]);
-  // Made while a reply held the chat: it waits, in this tab and in any other.
   await feed("record", "9", [switchItem("s1", "waiting")]);
   expect(view.rows.map((row) => row.waiting)).toEqual([true]);
 });
@@ -244,11 +241,9 @@ it("calls a switch queued only when the server says a reply it can't affect hold
 it("announces a switch as queued from the server's delivery state, not the running reply", async () => {
   await mount();
   await feed("snapshot", "3", []);
-  // A reply is running, but the server says this switch awaits the next run: not queued.
   replyRunning = true;
   await feed("record", "4", [switchItem("a1", "awaiting_run")]);
   expect(announcements.announce).toHaveBeenLastCalledWith("Switched to draft mode");
-  // The reply is over, but the server says this one waits behind a run: queued.
   replyRunning = false;
   await feed("record", "5", [switchItem("a1", "awaiting_run"), switchItem("a2", "waiting")]);
   expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");

@@ -1,9 +1,3 @@
-/**
- * The composer takeover for an open ask: its questions (options, own words, Skip, the deadline,
- * and for several, a step at a time with Back) or a permission request (Deny, Allow always,
- * Allow). Both draw in one frame, in the box's place, so the writer learns it once; only the
- * controls differ.
- */
 import { plural, t } from "@lingui/core/macro";
 import type { AskAnswer, QuestionAnswer, ThreadAsk } from "@meridian/contracts/threads";
 import type { OpenAsk } from "@meridian/thread-client";
@@ -19,22 +13,16 @@ import { permissionRequestText } from "./permission-request";
 type QuestionAsk = Extract<ThreadAsk, { kind: "question" }>;
 type PermissionAsk = Extract<ThreadAsk, { kind: "permission" }>;
 
-/** One question's place in the writer's draft: their choice, and what's in its own-words field. */
 export type QuestionEntry = { choice: QuestionAnswer | null; words: string };
 
-/** Where the writer is in a question ask. The host holds it, so it outlives the takeover. */
 export type QuestionDraft = { step: number; entries: readonly QuestionEntry[] };
 
 export type AskTakeoverProps = {
   open: OpenAsk;
-  /** For a question ask; a permission request has none. */
   draft?: QuestionDraft;
   onDraftChange: (draft: QuestionDraft) => void;
-  /** A question's answer comes with the draft it was sent from, for the host to hold. */
   onAnswer: (answer: AskAnswer, sent?: QuestionDraft) => void;
-  /** The server refused the last answer; the draft is already at the question it named, if any. */
   refused?: boolean;
-  /** Read the chat again: the server closed the ask without saying how. */
   onSettle: () => void;
 };
 
@@ -48,7 +36,6 @@ export function AskTakeover({
 }: AskTakeoverProps) {
   const { ask, attempt } = open;
   if (attempt?.state === "unsettled") {
-    // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
     return (
       <>
         <div className="mb-[var(--chat-space-inline)]">
@@ -97,14 +84,10 @@ export function AskTakeover({
   );
 }
 
-/** How long the keys must rest before a takeover that arrived mid-typing takes the focus. */
 const TYPING_PAUSE_MS = 1000;
 
 function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null);
-  // The box this replaces may hold the writer's focus mid-word: it stays typeable, out of sight,
-  // and the takeover takes the focus once the keys pause, so no key meant for the message lands
-  // on an option.
   useEffect(() => {
     const root = frame.current;
     const box = document.activeElement?.closest<HTMLElement>("[data-composer]");
@@ -142,13 +125,6 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
   );
 }
 
-/**
- * Focus the answer the writer holds, else the question's option group (`data-ask-place`, so Tab
- * reaches the first option next and a screen reader names the question, with no ring on an option
- * nobody chose), unless they are working elsewhere on
- * the page (another tab's answer moves a takeover nobody is using). Never the field: on a phone
- * that would raise the keyboard each time the controls change.
- */
 function focusControls(root: HTMLElement | null) {
   const active = document.activeElement;
   if (active && active !== document.body && !active.closest("[data-composer], [data-ask-takeover]"))
@@ -159,7 +135,6 @@ function focusControls(root: HTMLElement | null) {
   target?.focus({ preventScroll: true });
 }
 
-/** The ask's title alone: it can no longer be answered here. */
 function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
   const titleId = useId();
   return (
@@ -167,7 +142,7 @@ function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
       <TakeoverTitle id={titleId}>
         {ask.kind === "question"
           ? ask.payload.questions.map((item, index) => (
-              // Questions are fixed for the ask's life; their order is their identity.
+              // keep: Questions are fixed for the ask's life and answers are positional, so order is identity and key={index} is correct.
               <span key={index} className="block">
                 {item.question}
               </span>
@@ -186,10 +161,6 @@ function TakeoverTitle({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/**
- * The questions one at a time. One question answers in one action, as a single question always
- * has; several step forward on each choice, with Back to revise, and the last sends the set.
- */
 function QuestionTakeover({
   ask,
   draft,
@@ -218,7 +189,6 @@ function QuestionTakeover({
       { kind: "answers", answers: held.map((item) => item.choice as QuestionAnswer) },
       { step, entries: held },
     );
-  // Words stay in the field when an option is picked: they go back to the composer if unused.
   const choose = (choice: QuestionAnswer) => {
     const next = entries.map((held, index) => (index === step ? { ...held, choice } : held));
     if (!several) return send(next);
@@ -246,9 +216,6 @@ function QuestionTakeover({
   const countdown = ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null;
   const optionList = useRef<HTMLFieldSetElement>(null);
   const shownStep = useRef(step);
-  // A step replaces the controls under the writer's hand; their place is the new question's options.
-  // Compared with the step last shown, not a first-run flag, so a remount or a repeated effect
-  // moves nothing.
   useEffect(() => {
     if (shownStep.current === step) return;
     shownStep.current = step;
@@ -374,14 +341,12 @@ function QuestionTakeover({
   );
 }
 
-/** Time left before the question continues on its own; "Continuing…" at zero, until the server says how. */
 function Countdown({ deadlineAt }: { deadlineAt: string }) {
   const deadline = Date.parse(deadlineAt);
   const [now, setNow] = useState(() => Date.now());
   const left = Math.max(0, deadline - now);
   useEffect(() => {
     if (left === 0) return;
-    // Wake on the next whole second of the countdown, so the label never runs a second behind.
     const timer = setTimeout(() => setNow(Date.now()), left % 1000 || 1000);
     return () => clearTimeout(timer);
   }, [left]);

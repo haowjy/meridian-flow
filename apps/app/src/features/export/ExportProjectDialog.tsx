@@ -1,4 +1,3 @@
-/** Preview selected exclusions before starting a native, stateless browser download. */
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";

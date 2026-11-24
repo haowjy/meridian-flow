@@ -1,10 +1,3 @@
-/**
- * ThreadSwitcherPopover — project thread navigation from the chat pane header.
- *
- * Keeps switching primary, with recency visible at a glance; rename stays
- * attached only to the active row and creation sits above the list.
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
@@ -28,8 +21,6 @@ import { cn } from "@/lib/utils";
 
 import { filterThreadsByTitle, shouldShowThreadSearch } from "./thread-switcher";
 
-/* ── Switcher popover ──────────────────────────────────────────────── */
-
 export function ThreadSwitcherPopover({
   projectId,
   activeThreadId,
@@ -41,7 +32,6 @@ export function ThreadSwitcherPopover({
   activeThreadId: string | null;
   title: string;
   onRename?: () => void;
-  /** Where a closed rename field hands focus back. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { openChat: onSelectThread, openNewChat } = useChatNavigation();

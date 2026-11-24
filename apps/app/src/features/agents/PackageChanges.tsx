@@ -8,11 +8,6 @@ import { FindingsChip } from "./FindingsChip";
 import type { PackageRef } from "./package-save";
 import { SavedDiffDialog } from "./SavedDiffDialog";
 
-/**
- * A package's files added, changed or deleted since its last save, as a chip that lists them;
- * each opens its text against the saved version. `word` is the chip's word where there is room
- * for one ("Unsaved"); without it the chip is the count.
- */
 export function PackageChanges({
   projectId,
   pkg,

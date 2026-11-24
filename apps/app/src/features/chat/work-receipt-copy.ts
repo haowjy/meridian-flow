@@ -1,9 +1,7 @@
-/** Localized presentation for structured Work receipt facts. */
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { i18n } from "@/lib/i18n";
 import type { OwnerNames } from "./document-display-name";
 
-/** `names` gives the Work's name as the project shows it now, its handle included where it repeats. */
 export function workReceiptLine(receipt: WorkReceipt, names?: OwnerNames): string {
   const name = names?.({ kind: "work-id", workId: receipt.workId }) ?? receipt.workName;
   switch (receipt.operation) {

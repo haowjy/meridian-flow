@@ -1,4 +1,4 @@
-/** Installs dev-only client trace capture before the thread and room sockets are created. */
+// keep: Install trace capture before the thread and room sockets are created, or early frames are missed.
 
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { setLoroWireTap, setThreadWireTap } from "@/core/transport/wire-tap";

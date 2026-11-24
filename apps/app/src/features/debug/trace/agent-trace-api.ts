@@ -1,4 +1,3 @@
-/** Programmatic, metadata-only access to the dev trace store for browser agents. */
 import type { EventRecord, TraceStreamRef } from "@meridian/contracts/observability";
 
 import { clearTraceEvents, getTraceSnapshot, subscribeToTraceEvents } from "./trace-store";
@@ -8,7 +7,6 @@ export interface AgentTraceFilter {
   messageClass?: string;
   name?: string;
   direction?: NonNullable<TraceStreamRef["direction"]>;
-  /** Matches the beginning of a stream id. */
   stream?: string;
 }
 

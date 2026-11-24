@@ -116,7 +116,6 @@ describe("startDerivation", () => {
     created.resolve({ ...source, id: threadId, originType: "fork" } as Thread);
     await vi.waitFor(() => expect(ready).toBe(true));
     expect(log.at(-1)).toBe(`clear:${threadId}`);
-    // Acknowledged: a reload no longer re-issues it.
     expect(readDerivationIntent("account", threadId)).toBeNull();
   });
 
@@ -133,7 +132,6 @@ describe("startDerivation", () => {
     expect(await whenDerived(threadId)).toBe(false);
     expect(log).not.toContain(`clear:${threadId}`);
     expect(open).toHaveBeenCalledOnce();
-    // The destination's alert row speaks the failure; no second announcement.
     expect(announcer.announceError).not.toHaveBeenCalled();
 
     api.forkThread.mockResolvedValueOnce({ ...source, id: threadId, originType: "fork" });
@@ -155,7 +153,6 @@ describe("startDerivation", () => {
       inherited: null,
       open: first.open,
     });
-    // A reload: the tab forgets its jobs, the journal survives.
     resetDerivationsForTest();
     const intent = readDerivationIntent("account", threadId);
     expect(intent).not.toBeNull();

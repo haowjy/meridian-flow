@@ -6,10 +6,6 @@ import { AgentFileDialog } from "./AgentFileDialog";
 import { TroubleChip } from "./AgentFileState";
 import { fileTrouble } from "./findings";
 
-/**
- * A built-in Agent or skill opens here, read-only: it is no document, so it has no main address,
- * as a chat's upload has none.
- */
 export function BuiltinAgentFileDialog({
   file,
   onClose,
@@ -17,7 +13,6 @@ export function BuiltinAgentFileDialog({
   file: AgentFileStatus | null;
   onClose: () => void;
 }) {
-  // The dialog fades out after `file` clears; it keeps showing the last file until it is gone.
   const [shown, setShown] = useState(file);
   if (file && file !== shown) setShown(file);
   const text = useSavedAgentFile(

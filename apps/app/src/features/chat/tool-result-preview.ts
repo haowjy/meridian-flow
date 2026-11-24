@@ -1,4 +1,3 @@
-/** Parses tool outputs into bounded, writer-facing previews. */
 import { plural, t } from "@lingui/core/macro";
 
 import type { JsonValue } from "@meridian/contracts/protocol";
@@ -6,26 +5,18 @@ import type { ContextPassageAnchor } from "./ChatContextNavigation";
 
 export type ExcerptSpan = {
   lead: string;
-  /** The match in the document's own casing, empty when the pattern is unknown. */
   match: string;
   trail: string;
-  /** Lead-in was cut, so the row prints a leading ellipsis. */
   clipped: boolean;
 };
 
-export type ToolResultRow =
-  /** A document the tool listed. Its name opens it. */
-  | { kind: "document"; uri: string }
-  /** A folder in a listing. Never a door: folders are not documents. */
-  | { kind: "folder"; uri: string };
+export type ToolResultRow = { kind: "document"; uri: string } | { kind: "folder"; uri: string };
 
-/** One passage a grep matched. */
 export type GrepPassage = {
   excerpt: ExcerptSpan;
   passage?: ContextPassageAnchor;
 };
 
-/** One document a grep matched. `output_mode` decides what it carries: passages, a count, or neither. */
 export type GrepHitRow = {
   uri: string;
   passages: GrepPassage[];
@@ -39,31 +30,25 @@ export type CappedList<T> = {
 
 export type ToolResultRows = CappedList<ToolResultRow>;
 
-/** A capped list of documents plus what the grep found across all of them. */
 export type GrepResultRows = CappedList<GrepHitRow> & {
   matches: number;
-  /** False when `total` is a lower bound: the server stopped counting or the scan stopped. */
   exact: boolean;
 };
 
 export const LISTING_CAP = 8;
 
-/** Cut a discrete list to its cap, keeping the size it was cut from. */
 export function capList<T>(items: readonly T[], cap: number): CappedList<T> {
   return { rows: items.slice(0, cap), total: items.length };
 }
 
 type RowSpec<T> = {
-  /** How many rows fit before the list has to report the rest as a count. */
   cap: number;
   toRow: (entry: Record<string, JsonValue>) => T | null;
 };
 
-/** A section each (name, count, a passage or three), so fewer fit than a bare listing. */
 const GREP_CAP = 4;
 const LISTING: RowSpec<ToolResultRow> = { cap: LISTING_CAP, toRow: listingEntry };
 
-/** What `grep` returned (`{ files, totalFiles }`): the documents the model was shown. */
 export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRows {
   if (!isRecord(output)) return { rows: [], total: 0, matches: 0, exact: true };
   const files = normalizeEntries(output.files, { cap: GREP_CAP, toRow: grepHit });
@@ -71,8 +56,6 @@ export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRo
     typeof output.totalFiles === "number" ? output.totalFiles : files.total,
     files.total,
   );
-  // The model is sent at most `head_limit` files, so their match counts add up to a part of the
-  // total; the header may state a match count only when the files sent are every file that matched.
   return {
     ...files,
     total,
@@ -91,7 +74,6 @@ function totalMatches(files: JsonValue | undefined): number {
   return total;
 }
 
-/** What `ls` returned (`{ uri, entries }`): the folders and documents the model was shown. */
 export function normalizeListing(output: JsonValue | undefined): ToolResultRows {
   return normalizeEntries(isRecord(output) ? output.entries : undefined, LISTING);
 }
@@ -100,7 +82,6 @@ function normalizeEntries<T>(output: JsonValue | undefined, spec: RowSpec<T>): C
   return Array.isArray(output) ? capped(output, spec) : { rows: [], total: 0 };
 }
 
-/** Takes rows until the cap is full, so a long payload is never fully walked. */
 function capped<T>(entries: readonly JsonValue[], spec: RowSpec<T>): CappedList<T> {
   const rows: T[] = [];
   for (const entry of entries) {
@@ -116,7 +97,6 @@ function isRecord(value: JsonValue | undefined): value is Record<string, JsonVal
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-/** One document's section of the result card. */
 function grepHit(row: Record<string, JsonValue>): GrepHitRow | null {
   if (typeof row.uri !== "string" || !Array.isArray(row.matches)) return null;
   const passages: GrepPassage[] = [];
@@ -142,7 +122,6 @@ function grepHit(row: Record<string, JsonValue>): GrepHitRow | null {
   };
 }
 
-/** Where the first match sits in the excerpt, as the server recorded it; results from before grep have none. */
 function matchAnchor(match: Record<string, JsonValue>): { start: number; end: number } | null {
   const anchor = match.anchor;
   if (!isRecord(anchor) || typeof anchor.start !== "number" || typeof anchor.end !== "number")
@@ -150,7 +129,6 @@ function matchAnchor(match: Record<string, JsonValue>): { start: number; end: nu
   return anchor.end > anchor.start ? { start: anchor.start, end: anchor.end } : null;
 }
 
-/** How much run-up to a match the row keeps before it cuts and marks the cut. */
 const LEAD_BUDGET = 40;
 
 function excerptAround(text: string, anchor: { start: number; end: number } | null): ExcerptSpan {
@@ -159,8 +137,6 @@ function excerptAround(text: string, anchor: { start: number; end: number } | nu
 
   const fullLead = text.slice(0, anchor.start);
   const clipped = fullLead.length > LEAD_BUDGET;
-  // Cut on a word boundary: a passage that opens mid-word reads as damage
-  // rather than as an excerpt.
   const lead = clipped
     ? fullLead.slice(fullLead.length - LEAD_BUDGET).replace(/^\S*\s+/, "")
     : fullLead;
@@ -179,7 +155,6 @@ function listingEntry(row: Record<string, JsonValue>): ToolResultRow | null {
   return null;
 }
 
-/** `4 of 42` — a fact about the payload, never an invitation to see more. */
 export function boundLabel<T>({
   rows,
   total,
@@ -187,13 +162,10 @@ export function boundLabel<T>({
 }: CappedList<T> & { exact?: boolean }): string | null {
   if (total <= rows.length) return null;
   const shown = rows.length;
-  // A partial scan's total is a lower bound, as the card's header already says.
   return exact ? t`${shown} of ${total}` : t`${shown} of at least ${total}`;
 }
 
-/** The card's header: what this grep found, and nothing else. */
 export function grepCardSummary({ exact, matches, total: documents }: GrepResultRows): string {
-  // A scan that stopped early can only say it found at least this many.
   if (!exact && documents === 0) return t`No matches found before the search stopped`;
   const inDocuments = plural(documents, { one: "# document", other: "# documents" });
   if (matches <= documents)
@@ -209,7 +181,6 @@ export function matchCountLabel(count: number): string {
   return plural(count, { one: "# match", other: "# matches" });
 }
 
-/** `and 2 more` — the passages the server sent but the section keeps folded. */
 export function moreMatchesLabel(count: number): string {
   return plural(count, { one: "# more", other: "# more" });
 }

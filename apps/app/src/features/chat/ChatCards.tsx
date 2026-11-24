@@ -1,10 +1,3 @@
-/**
- * The chat's failure cards, drawn by anchor. `chatCards` (`@meridian/thread-client`) decides which
- * cards exist and where; this file draws each one as a `FailureCard` where it is anchored (a turn,
- * a queued command's row, a writer message, the composer's card stack) and decides nothing. A card's
- * button calls the handler its copy names; the words come from `chatCardText`, and one announcer
- * (`useChatCardAnnouncer`) speaks each card once.
- */
 import { t } from "@lingui/core/macro";
 import type { ChatCard, ChatCardAnchor } from "@meridian/thread-client";
 import { createContext, memo, type ReactNode, useContext } from "react";
@@ -13,20 +6,13 @@ import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
 import { chatCardText } from "./chat-card-copy";
 
-/** What each card's action does; the hooks behind them own the commands. */
 export type ChatCardHandlers = {
-  /** A failed reply's Retry. */
   retryReply: (turnId: string) => void;
-  /** A failed manual compaction's Try again: send `/compact` again with its instructions. */
   tryAgainCompaction: (turnId: string) => void;
-  /** A lost Retry's Try again: the same request again. */
   retryLost: (turnId: string) => void;
-  /** A handoff brief's failed Stop, again. */
   retryBriefStop: (turnId: string) => void;
-  /** A hand-back or Stop request the card holds. */
   handBack: { retry: (requestId: string) => void; dismiss: (requestId: string) => void };
   sendNow: { retry: () => void; dismiss: () => void };
-  /** A queued command's failed enqueue (Retry) or failed withdraw (Try again). */
   control: { retry: (controlId: string) => void; stop: (controlId: string) => void };
   addUsage: () => void;
 };
@@ -110,12 +96,10 @@ function sameFailure(left: ChatCard["failure"], right: ChatCard["failure"]): boo
   });
 }
 
-/** The cards anchored at one place, in `chatCards` order. */
 export function useCardsAt(anchor: ChatCardAnchor): readonly ChatCard[] {
   return useContext(ChatCardsContext).filter((card) => sameChatCardAnchor(card.anchor, anchor));
 }
 
-/** Every card at an anchor. A message card's Retry and Edit are the writer row's own recovery. */
 function AnchoredCardsReader({
   anchor,
   recovery,
@@ -123,7 +107,6 @@ function AnchoredCardsReader({
 }: {
   anchor: ChatCardAnchor;
   recovery?: UserTurnRecovery | null;
-  /** Wraps the cards in one box, drawn only when there are any. */
   wrapClassName?: string;
 }) {
   const cards = useContext(ChatCardsContext).filter((card) =>

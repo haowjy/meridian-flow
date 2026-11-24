@@ -4,12 +4,6 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { UndoCell } from "./UndoCell";
 
-/**
- * A Draft chat turn card's restore in one draft the turn wrote, labelled `Undo turn`, then
- * `Undone` with its Undo: one press, whose state is the owner's (`DraftCommandOwner.restore`), so
- * the card, every editor's Ctrl+Z and the sidebar show one press with one Undo, and a reload or
- * another tab shows the same once the card's read names it (`named`).
- */
 export function TurnRestoreSlot({
   commands,
   turn,
@@ -23,13 +17,9 @@ export function TurnRestoreSlot({
   commands: WorkDraftCommands;
   turn: TurnId;
   draft: DraftId;
-  /** The documents the turn wrote in this draft. */
   documents: readonly string[];
-  /** The draft's name, when the card names several. */
   name: string | null;
-  /** The card's read says pressing it would change something. */
   offered: boolean;
-  /** The press in force the card's read names: an id, or none; undefined before the card has a read. */
   named: string | null | undefined;
   readAt: number;
 }) {

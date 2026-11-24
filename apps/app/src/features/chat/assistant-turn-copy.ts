@@ -1,4 +1,3 @@
-/** Serialize the visible final answer into Markdown and app-free rich clipboard HTML. */
 import { readSegment } from "@meridian/contracts/protocol";
 import type { AssistantView } from "@meridian/thread-client";
 import { harden } from "rehype-harden";
@@ -39,7 +38,6 @@ const copyProcessor = unified()
   .use(() => (tree) => stripPresentation(tree))
   .use(rehypeStringify);
 
-/** Build Markdown eagerly for the disabled state; rich HTML is deferred until copy. */
 export function assistantTurnCopyMarkdown({ items, finalFrom }: AssistantView): string {
   return items
     .slice(finalFrom)
@@ -67,7 +65,6 @@ function stripPresentation(tree: HastNode): void {
   for (const node of tree.children) {
     if (node.type === "element" && node.properties) {
       for (const key of Object.keys(node.properties)) {
-        // Clipboard HTML carries content, not app presentation or interaction.
         if (
           /^(className|style|role|tabIndex|target|rel)$/.test(key) ||
           /^(aria|data)[A-Z-]/i.test(key)
@@ -87,7 +84,6 @@ type HastNode = {
   children?: HastNode[];
 };
 
-/** Preserve fence metadata and paste document doors as labels, never app controls. */
 function prepareCopyAst(node: CopyAst, source: string): void {
   if (node.type === "code" && node.meta) {
     node.data = { ...node.data, hProperties: { ...node.data?.hProperties, metastring: node.meta } };

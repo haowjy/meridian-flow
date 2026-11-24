@@ -1,5 +1,3 @@
-/** Maps content-free Loro room socket metadata into the shared observability schema. */
-
 import type { EventCorrelation, EventRecord } from "@meridian/contracts/observability";
 import { LORO_JOIN_ERROR, loroRoomErrorOf, parseLoroRoomName } from "@meridian/contracts/protocol";
 import { CrdtType, MessageType, type ProtocolMessage } from "loro-protocol";
@@ -29,10 +27,7 @@ function roomCorrelation(roomId: string): EventCorrelation {
   return {};
 }
 
-/**
- * What a message says about the room, never what it carries: update bytes, the Join's auth and
- * versions stay out, and an error's text only as the reason the contract names.
- */
+// keep: Trace only room metadata; keep update bytes, the Join's auth and versions out and allowlist error text (leak hazard).
 function summarize(message: ProtocolMessage): {
   messageClass: string;
   batchId?: string;

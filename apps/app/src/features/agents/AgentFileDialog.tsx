@@ -5,7 +5,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { ViewerDialog } from "@/components/app/ViewerDialog";
 import { role } from "@/components/ui/roles";
 
-/** An Agent or skill file's text, read-only, in the viewer dialog. `text` is the file's query. */
 export function AgentFileDialog({
   open,
   onClose,
