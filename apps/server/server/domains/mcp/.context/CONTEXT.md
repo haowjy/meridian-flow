@@ -104,7 +104,7 @@ connections are prompt text, not tool definitions.
   value. Code goes through `script-code.ts` first (fences off, types stripped in place by Node's
   `stripTypeScriptTypes`, so an error's line is the line the model wrote). The result text is the
   value, the calls, the logs; a script that did not return also lists each call's arguments and
-  reply and says not to repeat answered calls (without that, models repeated writes); a call
+  reply and states that those calls ran and are not undone; a call
   refused before it was sent is listed apart, as not run. Each call is
   journaled as `tool.connection_call` (sent, then finished) for the chat's live rows; the final
   typed result (`McpRunResult`) lists every call. Limits are `SCRIPT_LIMITS`, which the tool

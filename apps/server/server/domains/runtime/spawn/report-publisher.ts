@@ -184,5 +184,5 @@ export function createReportPublisher(deps: {
 }
 
 function notificationText(report: SavedExecutionReport): string {
-  return `Subagent ${report.handle} finished (${report.outcome}).`;
+  return `Subagent ${report.handle} finished (${report.outcome}). Its report is available through \`thread_report\` with ref ${report.handle}.`;
 }

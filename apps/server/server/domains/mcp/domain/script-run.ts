@@ -45,7 +45,7 @@ const ROW_REPLY_CHARS = 1_000;
 /** What the model reads of each call in a failed script's list, and of the list. */
 
 const MEDIA_LEFT_OUT = (count: number) =>
-  `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply.]`;
+  `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. The left-out parts are available through \`mcp_call\`.]`;
 
 export interface ScriptRunRequest {
   thread: { id: string; userId: UserId };
@@ -284,7 +284,7 @@ export function createScriptRuns(deps: {
     switch (typed.ended) {
       case "returned":
         return typed.value === undefined
-          ? "The script returned nothing. End it with `return` and the value you want."
+          ? "The script returned nothing."
           : JSON.stringify(typed.value);
       case "threw":
         return `The script threw ${typed.error?.name}: ${typed.error?.message?.replace(/\.$/, "")}${at}.${none}`;
@@ -295,7 +295,7 @@ export function createScriptRuns(deps: {
           ? `The script ran out of time: its own running time is limited to ${limits.cpuMs / 1000} seconds (waiting on calls is not counted).${none}`
           : `The script ran out of time: a run is limited to ${limits.wallMs / 1000} seconds, calls included.${none}`;
       case "too_large":
-        return `The script returned ${typed.bytes} bytes; the limit is ${limits.maxValueBytes}. Return less.`;
+        return `The script returned ${typed.bytes} bytes; the limit is ${limits.maxValueBytes}.`;
       case "aborted":
         return `The writer stopped the script.${none}`;
       case "unavailable":
