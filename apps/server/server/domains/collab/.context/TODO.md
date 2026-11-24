@@ -17,6 +17,15 @@
 - A closed Work's dropped create of a Work-only document: `watchBounces` marks the row and ends
   nothing, so an open session of the document keeps rejoining its Live room, at once each time,
   on the server's `document-unknown` until the tab closes it.
+- The turn inverse (`adapters/drizzle-turn-inverse.ts`, the card's Undo and the model's `undo`)
+  chooses its steps from a capture read before its locks, and `commitStep` does not read the
+  ledger again: an Undo of the same part committed between the two (another card press, a
+  restore) is taken twice and its deleted words show twice. Read `taken` again under the commit's
+  locks.
+- The press's `saveLoadedForks`: a fork's first words, still on its save debounce, are in no
+  `document_forks` row and in no snapshot `rooms.read` copies inside a transaction
+  (`copyInTransaction`), so the press flushes loaded forks before its transaction. Dropping it
+  needs the press to read loaded rooms, or a fork's row and snapshot written with its first write.
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931
