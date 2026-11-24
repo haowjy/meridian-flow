@@ -8,6 +8,7 @@ import { parseHandle } from "@meridian/contracts/handles";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
+  type DocumentRoom,
   documentAddressSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
@@ -127,23 +128,29 @@ export async function resolveDocument(session: Session, projectId: string, targe
 }
 
 /**
- * The documentId at a URI: in Live through the server's address route, or, given a draft, at the
- * path in the draft's view of the tree, which holds what only the draft made.
+ * The room that holds the document at a URI: Live's, through the server's address route, or, given
+ * a draft, the path in the draft's view of the tree, in the draft's fork, except for a document
+ * only the draft holds, whose text is in its own Live room (as the server's `agentRoomFor` picks).
  */
-export async function resolveDocumentId(
+export async function resolveDocumentRoom(
   session: Session,
   projectId: string,
   target: ResolvedUri,
   draft?: string,
-): Promise<string> {
-  if (!draft) return (await resolveDocument(session, projectId, target)).documentId;
+): Promise<DocumentRoom> {
+  if (!draft) {
+    const { documentId } = await resolveDocument(session, projectId, target);
+    return { kind: "live", documentId };
+  }
   const trees = new Trees(session, projectId);
   try {
     const { list, source } = await trees.at(target);
     const { node } = lookupPath(list.replay({ draft }), source, target.path);
     if (node?.kind !== "document")
       throw new CliError("not_found", `No document at ${target.uri} in draft ${draft}`);
-    return node.id;
+    return list.onlyInDraft(node.id, draft)
+      ? { kind: "live", documentId: node.id }
+      : { kind: "fork", draftId: draft, documentId: node.id };
   } finally {
     await trees.close();
   }

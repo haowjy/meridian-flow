@@ -1,6 +1,6 @@
 /**
  * A document's text, read and written the way an editor does: join the document's `live:` room on
- * `/ws/loro` (and for a draft its `fork:` room, over Live's, as a Draft page does), wait for the
+ * `/ws/loro` (and for a draft's fork its `fork:` room, over Live's, as a Draft page does), wait for the
  * room's state, overwrite the copy with the parsed blocks (blocks left as they were keep their
  * ids) and send what changed as one batch, as the writer's typing: a client's peer, no message.
  * The tree list makes the document; its content is the room's.
@@ -12,6 +12,7 @@ import {
   overwriteWithAssigned,
   toLoroHandle,
 } from "@meridian/agent-edit/integration";
+import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
   decodeRoomVersion,
@@ -37,10 +38,10 @@ const schema = buildDocumentSchema();
 const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
 
 /** A synced copy of the document's room: Live's, or a draft's fork over Live's. Close it. */
-async function openDocument(session: Session, documentId: string, draftId?: string) {
+async function openDocument(session: Session, documentRoom: DocumentRoom) {
   const live = RoomDocs.create(shapeSchemaOf(schema), freshPeerId());
-  const docs = draftId ? RoomDocs.draftOf(live, freshPeerId()) : live;
-  const room = draftId ? `fork:${draftId}:${documentId}` : `live:${documentId}`;
+  const docs = documentRoom.kind === "fork" ? RoomDocs.draftOf(live, freshPeerId()) : live;
+  const room = loroRoomName(documentRoom);
   const socket = await LoroSocket.open(session);
   const close = () => {
     socket.close();
@@ -48,7 +49,7 @@ async function openDocument(session: Session, documentId: string, draftId?: stri
     live.free();
   };
   try {
-    const liveAnswer = await socket.join(`live:${documentId}`, {
+    const liveAnswer = await socket.join(loroRoomName(liveRoomOf(documentRoom)), {
       peer: live.peer,
       version: new Uint8Array(),
       onBatch: (envelope) => {
@@ -78,13 +79,9 @@ async function openDocument(session: Session, documentId: string, draftId?: stri
   }
 }
 
-/** The document's Markdown as its room reads it: Live's, or a draft's. */
-export async function readMarkdown(
-  session: Session,
-  documentId: string,
-  draftId?: string,
-): Promise<string> {
-  const opened = await openDocument(session, documentId, draftId);
+/** The document's Markdown as its room reads it: Live's, or a draft's fork. */
+export async function readMarkdown(session: Session, room: DocumentRoom): Promise<string> {
+  const opened = await openDocument(session, room);
   try {
     return codec
       .forScope(UNSCOPED_DOCUMENT_LINKS)
@@ -95,8 +92,8 @@ export async function readMarkdown(
 }
 
 /**
- * Writes `markdown` over the document's text, or `edit` of the text it reads, as the writer's
- * typing in Live or a draft. Resolves once the room acknowledges the batch: the room has imported
+ * Writes `markdown` over the document's Live text, or `edit` of the text it reads, as the writer's
+ * typing. Resolves once the room acknowledges the batch: the room has imported
  * it, and readers see it.
  */
 export async function writeMarkdown(
@@ -105,9 +102,11 @@ export async function writeMarkdown(
   markdown: string | ((current: string) => string),
   /** A `source` document holds its text as one code block, byte for byte; prose is parsed. */
   filetype?: string,
-  draftId?: string,
 ): Promise<void> {
-  const { docs, room, socket, close } = await openDocument(session, documentId, draftId);
+  const { docs, room, socket, close } = await openDocument(session, {
+    kind: "live",
+    documentId,
+  });
   try {
     const text =
       typeof markdown === "string"
@@ -142,16 +141,15 @@ export async function writeMarkdown(
 /**
  * Types `replace` over the one occurrence of `find` in a block's text, as the writer selects it in
  * a tab's editor and types: the selection's characters are deleted and the new ones inserted into
- * that block's text doc, in Live or a draft, sent as one batch.
+ * that block's text doc, in the document's room, sent as one batch.
  */
 export async function typeOver(
   session: Session,
-  documentId: string,
+  documentRoom: DocumentRoom,
   find: string,
   replace: string,
-  draftId?: string,
 ): Promise<void> {
-  const { docs, room, socket, close } = await openDocument(session, documentId, draftId);
+  const { docs, room, socket, close } = await openDocument(session, documentRoom);
   try {
     const hits: { id: ShapeBlock["id"]; at: number }[] = [];
     const visit = (blocks: readonly ShapeBlock[]) => {

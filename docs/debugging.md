@@ -120,7 +120,7 @@ the existing server wake retry it.
 ./mf doc read manuscript://mf-scene.md
 ./mf doc put "manuscript://Chapter 1" --text @notes/ch1.md   # create a document and seed its text
 ./mf doc edit "manuscript://Chapter 1" --find "rang" --replace "tolled"               # type over a passage in Live
-./mf doc edit "manuscript://Chapter 1" --find "rang" --replace "tolled" --draft <draft-id>  # the same in a draft's fork
+./mf doc edit "manuscript://Chapter 1" --find "rang" --replace "tolled" --draft <draft-id>  # the same in a draft (the room its editor opens)
 ./mf doc rm "manuscript://Chapter 1"
 ./mf api GET /api/threads/<id>/skills              # any route without a dedicated command
 ```
