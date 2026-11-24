@@ -7,7 +7,7 @@ runtime `control`. A control is not model-visible chat text. Its body is
 
 `PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. The snapshot's run-state record
 and `meridian.run_state` frames share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop gives no command priority. Requests, responses and status codes are in the
+position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages run before the oldest command, which runs alone once no message remains; a notice starts no run and joins a batch only while a message is pending. Stop gives no command priority. Requests, responses and status codes are in the
 [HTTP control API](../../../../docs/api/thread-controls.md); queue selection, the
 run-start apply and Retry are in the
 [runtime controls context](../../../../apps/server/server/domains/runtime/.context/controls.md).

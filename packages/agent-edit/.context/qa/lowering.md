@@ -2,7 +2,7 @@
 
 `lowering.probe.ts` takes 60 saved `deepseek-flash` rewrites (`lowering-cases.json`: 30
 paragraphs from public-domain novels, each after one of two writer edits: a phrase inserted
-(` of course`) or a word retyped (`said` → `muttered`)) and lowers each with `lowerBlock`, the
+(` of course`, ` quietly`, ` at last`) or a word retyped (`chamber`, `glanced`)) and lowers each with `lowerBlock`, the
 editors read from the model's view as the write does. It applies the splices through
 `replaceText`, the one text write, on a model's copy forked from the view, and imports the
 update into the writer's doc. Run it when `resolver/lower-block.ts` or the text write changes:
@@ -22,7 +22,7 @@ whole replacement words, each misplaced concurrent word and each misplaced grown
 
 | column | what it measures |
 |---|---|
-| Ctrl+Z breaks AI words, AI words broken | The writer presses Ctrl+Z (raw `UndoManager.undo()`, no `editStays` gate) after the AI's write. The target is the AI's text with the writer's edit taken back only where the AI kept it word for word; these count cases and AI words the result damages beyond that. |
+| Ctrl+Z breaks AI words, AI words broken | The writer presses Ctrl+Z (raw `UndoManager.undo()`) after the AI's write. The target is the AI's text with the writer's edit taken back only where the AI kept it word for word; these count cases and AI words the result damages beyond that. |
 | as asked, no-op | Undo gave exactly the target; Undo changed nothing. |
 | kept-word comments right | Up to 6 comments per case on words the AI keeps: right when the comment covers exactly that word afterwards. |
 | changed-word comments whole/fragment/lost | Up to 6 per case on words the probe's token alignment counts as replaced. `whole`: covers whole words inside the replacement. |
