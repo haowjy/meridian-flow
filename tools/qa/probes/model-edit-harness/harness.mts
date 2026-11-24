@@ -253,7 +253,7 @@ function resultLabel(content: { result?: Record<string, unknown>; content?: unkn
   const message = String(result.message ?? "");
   if (/did not run/.test(message)) return "did_not_run";
   if (/timed out/.test(message)) return "timeout";
-  return String(result.phase ?? result.status ?? result.code ?? "unknown");
+  return String(result.status ?? result.code ?? "unknown");
 }
 
 /**
