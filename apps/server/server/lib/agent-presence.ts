@@ -60,15 +60,18 @@ export function createAgentPresence(relay: Pick<PresenceRelay, "publish">) {
       show(threadId, chat);
     },
 
-    /** A write by the chat committed: its caret moves to where the write ended. */
-    place(threadId: string, room: DocumentRoom, cursor: DocCursor) {
+    /**
+     * A write by the chat committed: its caret moves to where the write ended, or goes when the
+     * write left nowhere to hold it (null).
+     */
+    place(threadId: string, room: DocumentRoom, cursor: DocCursor | null) {
       // A chat that sent no request from this process has no lifetime to keep its caret by.
       const chat = chats.get(threadId);
       if (!chat) return;
       const roomId = loroRoomName(room);
-      if (chat.caret && chat.caret.roomId !== roomId)
+      if (chat.caret && (chat.caret.roomId !== roomId || !cursor))
         relay.publish(chat.caret.roomId, keyOf(threadId), null);
-      chat.caret = { roomId, cursor };
+      chat.caret = cursor && { roomId, cursor };
       show(threadId, chat);
     },
 
@@ -78,8 +81,12 @@ export function createAgentPresence(relay: Pick<PresenceRelay, "publish">) {
       if (!chat) return;
       const left = (chat.warmUntil ?? 0) - Date.now();
       if (left <= 0) return forget(threadId);
+      if (chat.expiry) clearTimeout(chat.expiry);
       chat.expiry = setTimeout(() => forget(threadId), left);
       chat.expiry.unref?.();
     },
+
+    /** The chat was deleted: its caret goes at once. */
+    deleted: forget,
   };
 }

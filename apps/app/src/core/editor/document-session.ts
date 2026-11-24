@@ -139,7 +139,7 @@ export type DocumentSessionTransportFactory = (opts: {
   copy: {
     version(): RoomVersion;
     exportSince(since: RoomVersion): Uint8Array | null;
-    importRemote(batch: Uint8Array): void;
+    importRemote(batch: Uint8Array, landing: boolean): void;
   };
   presence: LocalPresence["store"];
 }) => DocumentSessionTransportProvider;
@@ -319,12 +319,18 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  /** A peer's batch: imported through the composition guard, then stored. */
-  private importRemote(batch: Uint8Array, store = true): void {
+  /**
+   * A peer's batch: imported through the composition guard, then stored. `landing`: a write the
+   * server pushed as it was made, not a catch-up (`importRemoteUpdate`).
+   */
+  private importRemote(
+    batch: Uint8Array,
+    { store, landing }: { store: boolean; landing: boolean },
+  ): void {
     if (this.destroyed || this.docs.isFreed) return;
     this.importing = true;
     try {
-      importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes));
+      importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes), landing);
     } catch (error) {
       reportError(error);
       return;
@@ -381,8 +387,9 @@ export class DocumentSession {
       }
       // Through the binding like a peer's batch: past the bind horizon an editor may show the
       // copy already.
-      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
-      for (const batch of loaded.updates) this.importRemote(batch, false);
+      const stored = { store: false, landing: false };
+      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), stored);
+      for (const batch of loaded.updates) this.importRemote(batch, stored);
       this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
@@ -428,7 +435,7 @@ export class DocumentSession {
       if (!(event.data?.batch instanceof Uint8Array)) return;
       // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
       this.unsent = null;
-      this.importRemote(event.data.batch, false);
+      this.importRemote(event.data.batch, { store: false, landing: false });
     };
     this.tabs = tabs;
   }
@@ -476,7 +483,7 @@ export class DocumentSession {
           const entries = this.docs.exportSince(since);
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
-        importRemote: (batch) => this.importRemote(batch),
+        importRemote: (batch, landing) => this.importRemote(batch, { store: true, landing }),
       },
       presence: this.localPresence.store,
     });

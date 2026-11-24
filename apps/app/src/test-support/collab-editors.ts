@@ -80,7 +80,7 @@ function mount(copy: Copy): Editor {
 function push(from: Copy, to: Copy): void {
   const batch = from.docs.exportSince(to.docs.version());
   // A restore `to` writes on importing is sent by the next push.
-  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {});
+  if (batch.size > 0) importRemoteUpdate(to.docs, encodeEnvelope(batch), () => {}, true);
 }
 
 function wireView(copy: Copy): WireView {

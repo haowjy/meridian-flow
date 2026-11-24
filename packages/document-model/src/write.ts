@@ -382,7 +382,7 @@ export function commitStructure(
   before: Frontiers,
   options: WriteOptions,
 ): DocChange | null {
-  docs.structure.commit({ message: commitMessage(options.by), origin: options.origin });
+  docs.structure.commit({ message: commitMessage(options.by, docs.draft), origin: options.origin });
   const after = docs.structure.frontiers();
   return sameValue(before, after)
     ? null
@@ -420,7 +420,7 @@ export function writeText(
     target.slice(splice.index, splice.index + splice.insert),
   );
   inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), target, rules));
-  doc.commit({ message: commitMessage(options.by), origin: options.origin });
+  doc.commit({ message: commitMessage(options.by, docs.draft), origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };
 }

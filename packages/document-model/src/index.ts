@@ -57,6 +57,7 @@ export {
   CorruptDocBytesError,
   HistoryCutoffError,
   type Imported,
+  type ImportedBatch,
   RoomDocs,
 } from "./room-docs.js";
 export {

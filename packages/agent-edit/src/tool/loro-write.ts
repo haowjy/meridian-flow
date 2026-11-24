@@ -752,7 +752,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         : {}),
       actor,
       delta: captureDelta(textBefore, textAfter),
-      caret: writeCaret(copy.docs, since, written, textAfter),
+      caret: writeCaret(copy.docs, since, written, textBefore, textAfter),
     });
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(toLoroHandle(copy));

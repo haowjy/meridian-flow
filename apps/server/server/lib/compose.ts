@@ -985,7 +985,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
-  const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
+  const stopThreads = async (threadIds: readonly ThreadId[]) => {
+    await runner.stopThreads(threadIds);
+    // A deleted chat's caret goes once the delete commits, not when its cache goes cold.
+    runAfterDrizzleCommit(() => {
+      for (const threadId of threadIds) ports.agentPresence.deleted(threadId);
+    });
+  };
   const commandResolver: CommandResolver = {
     resolveCommand: (key) => ports.documentSync.modelEdits().resolve(key),
   };

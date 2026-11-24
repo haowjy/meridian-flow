@@ -82,8 +82,11 @@ export type TransportedCopy = {
   version(): RoomVersion;
   /** What the copy holds beyond `since`, as an envelope; null when nothing. */
   exportSince(since: RoomVersion): Uint8Array | null;
-  /** A peer's batch from the server: the session imports it through the composition guard. */
-  importRemote(batch: Uint8Array): void;
+  /**
+   * A peer's batch from the server: the session imports it through the composition guard.
+   * `landing` is false for what a Join catches the copy up with.
+   */
+  importRemote(batch: Uint8Array, landing: boolean): void;
 };
 
 export type LoroRoomTransportOptions = {
@@ -218,15 +221,17 @@ export function createLoroRoomTransport({
   });
   let synced = false;
   /**
-   * Until synced: the Join's version, and what the transport handed the copy (its version at the
-   * Join and each batch received since). Decided from what was handed, not `copy.version()`: the
-   * composition guard can hold a batch and import it later without the transport seeing it.
+   * Until a Join's catch-up is in: the Join's version, and what the transport handed the copy (its
+   * version at the Join and each batch received since). Decided from what was handed, not
+   * `copy.version()`: the composition guard can hold a batch and import it later without the
+   * transport seeing it. The first Join's catch-up being in is `synced`.
    */
   let catchUp: { want: RoomVersion; handed: Map<DocKey, DocVersion> } | null = null;
-  const settleSynced = () => {
-    if (synced || !catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
-    synced = true;
+  const settleCatchUp = () => {
+    if (!catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
     catchUp = null;
+    if (synced) return;
+    synced = true;
     resolveSynced();
   };
 
@@ -307,11 +312,11 @@ export function createLoroRoomTransport({
   };
 
   const receiveBatch = (bytes: Uint8Array) => {
-    copy.importRemote(bytes);
+    copy.importRemote(bytes, catchUp === null);
     const received = batchEnd(decodeEnvelope(bytes));
     mergeVersion(server, received);
     if (catchUp) mergeVersion(catchUp.handed, received);
-    settleSynced();
+    settleCatchUp();
     settleBarriers();
   };
 
@@ -349,8 +354,8 @@ export function createLoroRoomTransport({
         }
         const lacking = copy.exportSince(server);
         if (lacking) sendDoc(lacking);
-        if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
-        settleSynced();
+        catchUp = { want: joinVersion, handed: new Map(copy.version()) };
+        settleCatchUp();
         settleBarriers();
         emitStatus({ kind: "connected" });
         return;

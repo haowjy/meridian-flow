@@ -27,9 +27,15 @@ export interface Imported {
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange[];
+}
+
+/** What a peer's batch brought (`importBatch`): an import, and the turn whose write it is. */
+export interface ImportedBatch extends Imported {
   /**
-   * Who wrote what the import brought, by doc, from its commits' messages (`readCommitMessage`),
-   * read only when asked. A doc that took only the writer's own commits is absent.
+   * The turn that wrote everything the import brought into a doc, by doc, read only when asked: a
+   * turn's write landing. A doc is absent when anything else came with it (the writer's own
+   * commits, a press, another turn), and when the turn wrote it in a draft and this is a Live copy,
+   * or the other way round: an Apply brings a draft's commits into Live as they are.
    */
   authors(): ReadonlyMap<DocKey, CommitAuthor>;
 }
@@ -37,18 +43,24 @@ export interface Imported {
 /** The ops an import brought into each doc, as Loro's import status names them. */
 type Brought = Map<DocKey, { doc: LoroDoc; spans: ImportStatus["success"] }>;
 
-function authorsOf(brought: Brought): ReadonlyMap<DocKey, CommitAuthor> {
+function authorsOf(brought: Brought, intoDraft: boolean): ReadonlyMap<DocKey, CommitAuthor> {
   const out = new Map<DocKey, CommitAuthor>();
-  for (const [key, { doc, spans }] of brought)
+  for (const [key, { doc, spans }] of brought) {
+    let turn: string | null = null;
+    let only = true;
     for (const [peer, span] of spans) {
       let counter = span.start;
-      while (counter < span.end) {
+      while (only && counter < span.end) {
         const change = doc.getChangeAt({ peer, counter });
-        const { by } = readCommitMessage(change.message);
-        if (by) out.set(key, by);
+        const { by, draft } = readCommitMessage(change.message);
+        const same = by && "turn" in by && draft === intoDraft && (turn ?? by.turn) === by.turn;
+        if (same) turn = by.turn;
+        else only = false;
         counter = change.counter + change.length;
       }
     }
+    if (only && turn !== null) out.set(key, { turn });
+  }
   return out;
 }
 
@@ -416,7 +428,7 @@ export class RoomDocs {
    * ops not yet seen, and the restore this copy wrote, which its holder sends and saves like a
    * local write.
    */
-  importBatch(batch: Envelope): Imported {
+  importBatch(batch: Envelope): ImportedBatch {
     this.alive();
     for (const [key, bytes] of batch) {
       const meta = checkBytes(key, bytes, false);
@@ -445,42 +457,36 @@ export class RoomDocs {
       changed,
       pending,
       restore: this.answer(before, changed),
-      authors: () => authorsOf(brought),
+      authors: () => authorsOf(brought, this.draft),
     };
   }
 
   /**
    * Bring a draft's fork up to Live (design §2, "Forwarding"): Live's structure into the structure
    * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
-   * needs nothing. An import like any other (`importBatch`); it never waits on ops.
+   * needs nothing. An import like any other (`importBatch`); it never waits on ops. It brings only
+   * what Live's copy already imported, so Live's import says who wrote it.
    */
   forward(): Imported {
     const live = this.live;
-    if (!live) return { changed: [], pending: false, restore: [], authors: () => new Map() };
+    if (!live) return { changed: [], pending: false, restore: [] };
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
-    const brought: Brought = new Map();
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
       const at = into.oplogFrontiers();
       const update = withVector(docVersion(into), (vector) =>
         from.export({ mode: "update", from: vector }),
       );
-      const status = into.import(update);
+      into.import(update);
       if (!sameFrontiers(into.oplogFrontiers(), at)) changed.push(key);
-      if (status.success.size > 0) brought.set(key, { doc: into, spans: status.success });
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
     for (const [id, doc] of this.texts) {
       const base = live.textOf(id);
       if (base) pull(id, base, doc);
     }
-    return {
-      changed,
-      pending: false,
-      restore: this.answer(before, changed),
-      authors: () => authorsOf(brought),
-    };
+    return { changed, pending: false, restore: this.answer(before, changed) };
   }
 
   private answer(before: Frontiers, changed: DocKey[]): DocChange[] {

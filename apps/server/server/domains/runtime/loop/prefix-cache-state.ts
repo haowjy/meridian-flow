@@ -37,6 +37,20 @@ export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCache
 }
 
 /**
+ * How long a request's prefix cache stays warm, in seconds: the lifetime this thread's requests
+ * ask for. Null when the model names none. The one rule the cache prediction, the media link
+ * window and the agent's caret (`cacheColdAt`) follow.
+ */
+function cacheTtlSeconds(
+  promptCache: PromptCacheDescriptor | undefined,
+  threadKind: Thread["kind"],
+): number | null {
+  return promptCache
+    ? resolvePromptCacheTtlSeconds(promptCache, promptCacheRetentionFor(threadKind))
+    : null;
+}
+
+/**
  * How long a link stays identical when there is no cache lifetime to follow (a model that documents
  * none, or no known model). A link policy, not a cache fact: no cache is waiting on the bytes.
  */
@@ -51,25 +65,19 @@ export function linkWindowSeconds(
   threadKind: Thread["kind"],
   override?: number,
 ): number {
-  const ttl = model
-    ? resolvePromptCacheTtlSeconds(model.promptCache, promptCacheRetentionFor(threadKind))
-    : null;
-  return override ?? ttl ?? DEFAULT_LINK_WINDOW_SECONDS;
+  return override ?? cacheTtlSeconds(model?.promptCache, threadKind) ?? DEFAULT_LINK_WINDOW_SECONDS;
 }
 
 /**
- * When a request's prefix cache goes cold if no request follows it: its start plus the lifetime
- * this thread's requests ask for, the rule `derivePrefixCacheState` applies. Null when the model
- * names no lifetime.
+ * When a request's prefix cache goes cold if no request follows it: its start plus
+ * `cacheTtlSeconds`. Null when the model names no lifetime.
  */
 export function cacheColdAt(
   model: Pick<ModelInfo, "promptCache"> | null,
   threadKind: Thread["kind"],
   requestStartMs: number,
 ): number | null {
-  const ttl = model
-    ? resolvePromptCacheTtlSeconds(model.promptCache, promptCacheRetentionFor(threadKind))
-    : null;
+  const ttl = cacheTtlSeconds(model?.promptCache, threadKind);
   return ttl === null ? null : requestStartMs + ttl * 1_000;
 }
 
@@ -245,18 +253,15 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;
-  const ttlSeconds = resolvePromptCacheTtlSeconds(
-    input.promptCache,
-    promptCacheRetentionFor(input.history.thread.kind),
-  );
-  if (ttlSeconds === null) return cold("ttl_unknown");
+  if (cacheTtlSeconds(input.promptCache, input.history.thread.kind) === null)
+    return cold("ttl_unknown");
   if (response.requestStartedAt === null) return cold("facts_unavailable");
   const responseTimeMs = Date.parse(response.requestStartedAt);
   if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
     return cold("facts_unavailable");
   }
-  const ageMs = Math.max(0, input.nowMs - responseTimeMs);
-  if (ageMs >= ttlSeconds * 1_000) return cold("ttl_expired");
+  const coldAt = cacheColdAt(input, input.history.thread.kind, responseTimeMs);
+  if (coldAt !== null && input.nowMs >= coldAt) return cold("ttl_expired");
   if (
     input.mediaLinkWindowSeconds !== undefined &&
     linkWindowAt(responseTimeMs, input.mediaLinkWindowSeconds).startMs !==

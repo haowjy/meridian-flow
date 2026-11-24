@@ -222,9 +222,10 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
 }
 
 /**
- * Who wrote what a peer's batch brought into the editor, by doc key (a block's text doc is keyed
- * by its block id), from the batch's commit messages; null for any transaction that is not a
- * peer's batch. A doc absent from the map took only writers' own commits.
+ * The turn whose write a peer's batch brought into the editor, by doc key (a block's text doc is
+ * keyed by its block id): a doc is named only when that turn wrote all the batch brought into it,
+ * and the batch is a write landing, not a catch-up (`importRemoteUpdate`). Null for any
+ * transaction that is not a peer's batch.
  */
 export function remoteAuthors(tr: Transaction): ReadonlyMap<DocKey, CommitAuthor> | null {
   const authors = tr.getMeta(AUTHORS_META) as (() => ReadonlyMap<DocKey, CommitAuthor>) | undefined;

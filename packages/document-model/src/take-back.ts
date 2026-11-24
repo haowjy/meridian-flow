@@ -327,7 +327,7 @@ export function takeBack(
       if (inverse.some((op) => op.insert != null)) inserted.add(key);
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(inverse));
-      doc.commit({ message: commitMessage(by) });
+      doc.commit({ message: commitMessage(by, docs.draft) });
       out.push({ key, doc, before, after: doc.frontiers() });
     }
     for (const [name, keys] of edit.values) {

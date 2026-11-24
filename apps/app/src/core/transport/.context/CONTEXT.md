@@ -21,6 +21,11 @@ decided from what was handed, not from `copy.version()`: the composition guard m
 and import it later without the transport seeing it, which left the room never synced. Tree lists
 read the same `synced`.
 
+Every Join's catch-up is tracked the same way, the first and each rejoin's: a batch received
+before the transport has handed the copy that Join's version goes to `copy.importRemote` with
+`landing` false. Only a batch pushed after it is a write landing, which the editor may credit to
+the chat that wrote it (the AI flash); a reconnect's history never flashes.
+
 The server relays presence (`apps/server/server/lib/loro-presence.ts`): a presence Join is answered
 with the presence the room holds, each update goes to the room's other sockets unacked, and a
 socket that leaves has its entries deleted for the others at once.

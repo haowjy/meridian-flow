@@ -2,7 +2,7 @@
  * agent-edit's Loro core on the server's `DocumentRooms`: the room a call reads (`agentRoomFor`, at
  * the call's destination), its writes committed in the model edit's command transaction with
  * their receipts, each naming the room it merged into, and the chat a turn's commit message names.
- * Once a chat's write commits, its caret moves to where the write ended (`AgentCarets`).
+ * Once a chat's write commits, its caret moves to where the write ended, or goes (`AgentCarets`).
  */
 import {
   type AgentEditRooms,
@@ -33,7 +33,8 @@ import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
 /** Where each chat's agent last wrote, shown in that room as its caret (`lib/agent-presence.ts`). */
 export type AgentCarets = {
-  place(threadId: string, room: DocumentRoom, caret: DocCursor): void;
+  /** Moves the chat's caret to `caret` in `room`, or clears it with null. */
+  place(threadId: string, room: DocumentRoom, caret: DocCursor | null): void;
 };
 
 export function createLoroAgentEditHost(input: {
@@ -55,7 +56,7 @@ export function createLoroAgentEditHost(input: {
         await recordWrite(tx, record);
         const { caret, threadId, room, actor } = record;
         // After the room's own after-commit import, so the batch reaches a tab before the caret.
-        if (caret && actor.kind === "agent" && input.carets)
+        if (actor.kind === "agent" && input.carets)
           runAfterDrizzleCommit(() => input.carets?.place(threadId, room, caret));
       },
     }),

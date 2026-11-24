@@ -58,7 +58,10 @@ export interface AgentWriteRecord {
   authoringResponseId?: string;
   actor: MutationActor;
   delta: StoredDelta | null;
-  /** Just after the write's last change (`writeCaret`), where its chat's caret shows; not stored. */
+  /**
+   * Where the write's chat's caret goes (`writeCaret`): beside what it changed, or null to clear
+   * it when no block is left to hold it. Not stored.
+   */
   caret: DocCursor | null;
 }
 

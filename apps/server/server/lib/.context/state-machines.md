@@ -1,8 +1,8 @@
 # WebSocket handler state machines
 
-Two per-connection machines held in process memory, which exist so that a client never receives
-or sends frames for a room it has not been admitted to, and the agent caret the server publishes
-into rooms.
+Three machines held in process memory: two per WebSocket connection, which exist so that a client
+never receives or sends frames for a room it has not been admitted to, and one per chat, the agent
+caret the server publishes into rooms.
 
 ## Thread subscription, server half
 
@@ -78,21 +78,30 @@ re-sends them before peers time them out).
 ```mermaid
 stateDiagram-v2
   [*] --> awake: a model request (orchestrator)
-  awake --> awake: a request moves warmUntil; a committed write places or moves the caret
-  awake --> warm: the run settles (onRunSettled), warmUntil ahead
+  awake --> awake: a request moves warmUntil; a committed write places, moves or clears the caret
+  awake --> warm: the run settles (onRunSettled, a Stop included), warmUntil ahead
   awake --> [*]: the run settles and warmUntil has passed, or the model names no cache lifetime
   warm --> awake: a model request
   warm --> [*]: warmUntil passes (the caret is cleared)
+  awake --> [*]: the chat is deleted (cleared once the delete commits)
+  warm --> [*]: the chat is deleted
 ```
 
 - **Lifetime is the cache prediction's rule.** `warmUntil` is the request's start plus the cache
-  lifetime the thread asks for (`cacheColdAt` in `runtime/loop/prefix-cache-state.ts`, the rule
-  `derivePrefixCacheState` applies). While the run is awake the caret has no expiry, whatever
+  lifetime the thread asks for (`cacheColdAt` in `runtime/loop/prefix-cache-state.ts`, built on
+  `cacheTtlSeconds`, the one lifetime rule `derivePrefixCacheState` applies too). While the run is awake the caret has no expiry, whatever
   `warmUntil` says. The prediction's other cold reasons (a compaction, a model change) are known
   only at the next request, which wakes the chat anyway.
 - **A caret is placed only after its write commits** (`loro-agent-edit-host.ts`, after the room's
   own after-commit import), so a tab has the batch before the caret that points into it; a
   rolled-back write places none. A write from a chat this process sent no request for places none.
+- **Every committed write places it** (`writeCaret` in agent-edit, which walks every block of the
+  document before and after the write): just after its last text change, or beside the blocks it
+  removed, moved or restyled when it changed no text. A write that leaves no block to hold it
+  clears the caret, so it never stays at an older edit.
 - **One room at a time.** A write in another room clears the caret where it was.
+- **Stop is a settle.** Stop ends the reply, the run settles, and the caret stays while the cache
+  is warm, as after any turn: the chat can still be asked to go on. Deleting the chat (or its Work)
+  clears it once the delete commits (`stopThreads` in `lib/compose.ts`).
 - The state is per process and gone on a restart; a tab drops the entry 30 s after the last
   refresh.

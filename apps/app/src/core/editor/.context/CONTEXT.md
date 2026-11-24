@@ -69,13 +69,20 @@ synchronously, then drains transports and leases.
   transaction marked `setMeta(loroSyncKey, REMOTE_META)` and `addToHistory: false`. Code that
   must tell a writer's move from a remote write reads that meta; `notifyChanged` (a write made
   outside the editor, an Undo, a `writeDocument`) dispatches the same way. A peer's batch also
-  says who wrote it: `remoteAuthors(tr)` reads its commits' messages (`{ by: { turn } }` for a
-  chat's write), by doc key; a local write has none.
+  says whose write it is: `remoteAuthors(tr)` names, by doc key, the turn that wrote everything
+  the batch brought into that doc (`RoomDocs.importBatch`'s `authors`, from the commits' messages).
+  A doc that took anything else (the writer's own typing, a press, a second turn) is absent, and
+  so is everything in a batch that is no write landing: a Join's catch-up, the stored copy, another
+  tab's batch (`importRemoteUpdate`'s `landing`). An Apply brings a draft's commits into Live as
+  they are; their messages say they were made in a draft, so a Live copy credits no turn for them.
 - `extensions/agent-edit-flash.ts` highlights, in the agent colour, the text of each block a
-  turn's batch wrote (the span that differs from before, or a block the batch made), and drops it
-  after `FLASH_MS`. It is decorations only and maps through typing; the fade is CSS
-  (`.meridian-agent-flash` in `features/editor/editor.css`), so its look retunes there. It works
-  in Live and in a draft alike: a forward of Live into a draft carries the Live batch's authors.
+  turn's write landed in (the span that differs from before, or a block the batch made), and drops
+  it after `FLASH_MS`. Because a block is credited only when the turn wrote all the batch brought
+  into it, that span is the turn's own text. It is decorations only and maps through typing; each
+  decoration carries when its write landed, so a span the editor redraws resumes its fade instead
+  of restarting it. The fade is CSS (`.meridian-agent-flash` in `features/editor/editor.css`), so
+  its look retunes there. It works in Live and in a draft alike: a forward of Live into a draft
+  carries the Live batch's authors.
 - Review changes (`extensions/review-changes`) is decorations only: Live's text of a changed
   paragraph is a widget, never document text, so typing, Undo and the binding see the draft alone.
   Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its

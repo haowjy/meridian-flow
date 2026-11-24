@@ -187,7 +187,7 @@ export function applyOps(
     // Right to left, so earlier offsets stay where they were planned.
     for (const { from, to, content } of [...op.splices].reverse())
       replaceText(doc, rules, from, to, content);
-    doc.commit({ message: commitMessage(options.by), origin: options.origin });
+    doc.commit({ message: commitMessage(options.by, docs.draft), origin: options.origin });
     record({ key: block, doc, before: start, after: doc.frontiers() });
   }
 
@@ -209,7 +209,7 @@ export function applyOps(
         attrs,
       } as never),
     );
-    doc.commit({ message: commitMessage(options.by), origin: options.origin });
+    doc.commit({ message: commitMessage(options.by, docs.draft), origin: options.origin });
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 

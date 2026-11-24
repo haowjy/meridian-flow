@@ -15,15 +15,14 @@ const EXPIRE = "expire";
 
 /**
  * The text a chat's turn wrote in a peer's batch, as ranges of `tr.doc`: in each block whose text
- * doc the batch's commits name a turn as author (`remoteAuthors`), the span that differs from
- * before, or the whole block when the batch made it.
+ * doc took nothing but that turn's write (`remoteAuthors`), the span that differs from before, or
+ * the whole block when the batch made it.
  */
 function agentRanges(tr: Transaction): { from: number; to: number }[] {
   const authors = remoteAuthors(tr);
   if (!authors) return [];
   const ranges: { from: number; to: number }[] = [];
-  for (const [id, by] of authors) {
-    if (!("turn" in by)) continue;
+  for (const id of authors.keys()) {
     const after = findBlock(tr.doc, id);
     if (!after?.node.isTextblock) continue;
     const start = after.pos + 1;
@@ -41,6 +40,26 @@ function agentRanges(tr: Transaction): { from: number; to: number }[] {
 }
 
 /**
+ * The highlight over [from, to) of a write that landed at `at`, its fade `now - at` along: a span
+ * the editor redraws (the writer typing inside it) resumes the fade instead of restarting it.
+ */
+function flash(from: number, to: number, at: number, now: number): Decoration {
+  const style = `--agent-flash-ms: ${FLASH_MS}ms; animation-delay: ${at - now}ms`;
+  return Decoration.inline(from, to, { class: "meridian-agent-flash", style }, { at });
+}
+
+/** `set` with each flash's fade delay brought up to now, after an edit may redraw its span. */
+function resumed(set: DecorationSet, doc: Transaction["doc"]): DecorationSet {
+  const shown = set.find();
+  if (shown.length === 0) return set;
+  const now = Date.now();
+  return DecorationSet.create(
+    doc,
+    shown.map((each) => flash(each.from, each.to, each.spec.at, now)),
+  );
+}
+
+/**
  * A brief highlight, in the agent colour, over the text a chat's write brings into the editor: in
  * Live, and in a draft where a Draft chat writes. Who wrote a batch comes from its commits, never
  * from timing. Decoration only: the writer's view, caret and typing are untouched, and the
@@ -55,7 +74,9 @@ export const AgentEditFlash = Extension.create({
         state: {
           init: () => ({ set: DecorationSet.empty, latest: 0 }),
           apply(tr, value) {
-            let set = tr.docChanged ? value.set.map(tr.mapping, tr.doc) : value.set;
+            let set = tr.docChanged
+              ? resumed(value.set.map(tr.mapping, tr.doc), tr.doc)
+              : value.set;
             if (tr.getMeta(key) === EXPIRE) {
               const cutoff = Date.now() - FLASH_MS;
               set = set.remove(set.find(undefined, undefined, (spec) => spec.at <= cutoff));
@@ -64,14 +85,7 @@ export const AgentEditFlash = Extension.create({
             if (ranges.length === 0)
               return set === value.set ? value : { set, latest: value.latest };
             const at = Date.now();
-            const flashes = ranges.map(({ from, to }) =>
-              Decoration.inline(
-                from,
-                to,
-                { class: "meridian-agent-flash", style: `--agent-flash-ms: ${FLASH_MS}ms` },
-                { at },
-              ),
-            );
+            const flashes = ranges.map(({ from, to }) => flash(from, to, at, at));
             return { set: set.add(tr.doc, flashes), latest: at };
           },
         },
