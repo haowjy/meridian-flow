@@ -267,7 +267,7 @@
     "apps/server/server/test-support/draft-tree-commands.test.ts": 2,
     "apps/server/server/test-support/drizzle-reset.db.test.ts": 9,
     "packages/agent-edit/src/content-merge/merge.test.ts": 116,
-    "packages/agent-edit/src/diff/diff.test.ts": 9,
+    "packages/agent-edit/src/diff/diff.test.ts": 2,
     "packages/agent-edit/src/links/correspondence.test.ts": 2,
     "packages/agent-edit/src/model/grep-text.test.ts": 9,
     "packages/command-driver/src/driver.test.ts": 24,

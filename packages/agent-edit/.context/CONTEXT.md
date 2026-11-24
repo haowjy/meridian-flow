@@ -31,7 +31,7 @@ budget remove a pair the cut found. An unpaired block is deleted or inserted, an
 rebuilds a block. Inside a block the model's write goes through one lowering
 (`resolver/lower-block.ts`) and one adapter (`applyOps`, `model/loro-model.ts`): a container's
 children pair here too (by id where they have ids), and text is word-diffed as units. The model's
-write carries no ids (it writes text), so its pairing is by content only; `diffBlocks` pairs by id.
+write carries no ids (it writes text), so its pairing is by content only; the content merge pairs by id.
 
 ## The edit core
 
