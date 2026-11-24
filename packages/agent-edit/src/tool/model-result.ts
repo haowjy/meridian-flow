@@ -70,9 +70,6 @@ export interface AgentEditConcurrentGroup {
   /** `the user` for any person, `agent (<chat ref>)` for a traced chat. */
   author: string;
   changed?: string[];
-  /** Before the `changed` list, the same blocks were split in two; a stored result keeps that shape. */
-  shown?: string[];
-  other?: string[];
   removed?: string[];
   /** Blocks this author changed that the write then removed (deleted or joined). */
   overwritten?: string[];

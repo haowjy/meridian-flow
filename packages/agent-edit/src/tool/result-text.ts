@@ -181,7 +181,7 @@ function notes(result: AgentEditResultV1): string[] {
 /** Who changed which blocks after the model last read them, by hash. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
   return listing.groups.flatMap((group) => {
-    const changed = group.changed ?? [...(group.shown ?? []), ...(group.other ?? [])];
+    const changed = group.changed ?? [];
     const did = [
       ...(changed.length ? [`changed ${changed.join(", ")}`] : []),
       ...(group.removed?.length ? [`removed ${group.removed.join(", ")}`] : []),
