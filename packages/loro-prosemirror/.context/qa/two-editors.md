@@ -49,8 +49,9 @@ back. After A's Enter, A's Ctrl+Z runs over a peer that moves, wraps, types in o
 half, deletes the first half or joins the halves back: the tail goes back into the first half, a
 half a peer typed in comes back with those words alone (rule 1 over the Undo's own write), a
 peer's join leaves the tail beside its copy (text twice), and a bold is lost (a hole). A join a
-peer retyped goes back, as does a wrap a peer moved a block out of; a move whose Undo puts a block
-under a container a peer removed brings the container back with it. From review p18993: a peer's
+peer retyped goes back, as does a wrap a peer moved a block out of. Any Ctrl+Z or Redo that puts a
+block back under a container a peer removed brings the whole container back, with the words the
+peer saw and removed in it. From review p18993: a peer's
 deletion still in flight when A's Ctrl+Z puts the tail back finds nothing (a hole) and the words
 stay (C2); the steps either side of a split a peer typed in go back and come again (C3); with
 nobody else writing, Ctrl+Z takes back a picture whose upload landed as an untracked write (C4).
@@ -77,7 +78,8 @@ left on screen). A peer's paragraph in a cell of A's table stays through A's Ctr
 Ctrl+Z of the table (seed 247: the same, after a Redo). A's Ctrl+Z that puts a block back under a
 container a peer removed (an unwrap) brings the container back with it (seed 221). A removal a
 peer's move brought back is written over by A's Ctrl+Z, which puts the block back where it was,
-and again by its Redo, which removes it with the words A saw in it (seeds 23 and 236). From review
+and again by its Redo, which removes it with the words A saw in it (seed 23's shape, with fixed
+peer ids because which concurrent write wins depends on them). From review
 p18996: one edit judged on its author's copy and on a fresh copy gives one answer. From review
 p18998: B's batch between each of A's 1,001 keys splits A's one typing step into an item per key,
 and its Undo takes back every key.
@@ -125,10 +127,11 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
   a peer wrote over one of the steps since, the steps go back over the peer's write and come again
   over it, so the document can differ: the chain then passes when no word either editor typed is
   lost and every block both reads show has the same text (`chainsOverPeers`). A word a Redo took
-  off the screen that the editor showed when it wrote the step is not lost: the step deleted it,
-  and a peer's move had brought it back (seeds 23, 236). The probe notes each step's shown words as
-  it is written, by the history's step id. Such a chain is counted apart (`redeleted`), and any
-  other word gone fails, so a Redo taking words its step never read (seed 35) still fails.
+  off the screen that its step's own edits took off the screen when they were written is not lost:
+  the step deleted it, and a peer's move had brought it back (seed 236). The probe notes, by the
+  history's step id, the words each local edit took off its editor's screen. Such a chain is
+  counted apart (`redeleted`), and any other word gone fails, so a Redo taking words its step
+  never deleted (seed 35) still fails.
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets

@@ -568,14 +568,17 @@ function run(seed: number): string | null {
   /** The id of `e`'s newest Undo step: the probe reads the history's own steps to tell them apart. */
   const newestStep = (e: Editor) =>
     `${e.name}${(e.history as unknown as { undoSteps: { id: number }[] }).undoSteps.at(-1)?.id}`;
-  /** Per step, the typed words its editor showed as it wrote it. */
-  const stepSaw = new Map<string, Set<string>>();
-  /** A local edit, noting what its editor showed as the step took it. */
+  /** Per step, the typed words its own edits took off its editor's screen. */
+  const stepDeleted = new Map<string, Set<string>>();
+  /** A local edit, noting the words it took off the screen under its step. */
   const write = (e: Editor, tr: Transaction) => {
     const saw = shownWords(e);
     e.view.dispatch(fixIds(tr));
+    const after = shownWords(e);
     const step = newestStep(e);
-    stepSaw.set(step, new Set([...(stepSaw.get(step) ?? []), ...saw]));
+    const deleted = stepDeleted.get(step) ?? new Set<string>();
+    for (const word of saw) if (!after.has(word)) deleted.add(word);
+    stepDeleted.set(step, deleted);
   };
   // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
   // same document. A Redo can take two steps when one of them now changes nothing (a peer deleted
@@ -590,15 +593,15 @@ function run(seed: number): string | null {
       if (bad) return bad;
       if (stepHistory(e, "undo")) ran++;
     }
-    // Words a Redo took off the screen that its step's editor saw when it wrote the step: the
-    // step deleted them, and the Redo deletes them again.
+    // Words a Redo took off the screen that its step took off when it was written: the Redo
+    // deletes them again.
     const redone = new Set<string>();
     for (let i = 0; e.history.canRedo(); i++) {
       const before = shownWords(e);
       if (!stepHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
-      const saw = stepSaw.get(newestStep(e)) ?? new Set();
+      const deleted = stepDeleted.get(newestStep(e)) ?? new Set();
       const after = shownWords(e);
-      for (const word of before) if (!after.has(word) && saw.has(word)) redone.add(word);
+      for (const word of before) if (!after.has(word) && deleted.has(word)) redone.add(word);
       const bad = differs(e, `${when}, Redo ${i}`);
       if (bad) return bad;
     }
