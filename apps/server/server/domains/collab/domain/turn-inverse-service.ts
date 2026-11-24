@@ -1,7 +1,7 @@
 /** Writer receipt and failed-response policies over the stored edit parts. */
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
-import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { StoredDelta } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
 import type {
   CommandId,

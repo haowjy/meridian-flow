@@ -7,7 +7,7 @@ import type { Block } from "../codec-types.js";
 import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
-import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
+import type { DocumentCommandName } from "./command-schema.js";
 import type { AgentEditResultCommand, AgentEditResultV1, WriteStatus } from "./model-result.js";
 
 export type {

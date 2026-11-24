@@ -1,5 +1,5 @@
 // Immutable edit receipts shared by the model's writes, writer inverses and the model stack.
-import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { StoredDelta } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,

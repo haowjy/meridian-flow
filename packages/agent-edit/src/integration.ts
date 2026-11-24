@@ -56,6 +56,7 @@ export {
 } from "./ports/static-document-links.js";
 export type { WriteOrdinals } from "./ports/write-ordinals.js";
 export { editHandle, parseEditHandle } from "./ports/write-ordinals.js";
+export { captureDelta, readDelta, type StoredDelta } from "./tool/delta.js";
 export {
   createEditCore,
   type EditCore,

@@ -2,7 +2,7 @@ import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/pr
 import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
-import type { StoredDelta } from "../content-merge/delta.js";
+import type { StoredDelta } from "../tool/delta.js";
 import type { MutationActor, WriteContext } from "../tool/types.js";
 
 export class DocumentNotFoundError extends Error {

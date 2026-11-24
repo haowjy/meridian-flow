@@ -1,8 +1,7 @@
 /** One document's reversal selection, shared by the model's undo and revert, its edit list and the card. */
 
-import type { StoredDelta } from "@meridian/agent-edit/content-merge";
-import { captureDelta } from "@meridian/agent-edit/content-merge";
-import { undoInRooms } from "@meridian/agent-edit/integration";
+import type { StoredDelta } from "@meridian/agent-edit/integration";
+import { captureDelta, undoInRooms } from "@meridian/agent-edit/integration";
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
   changedBlocks,
