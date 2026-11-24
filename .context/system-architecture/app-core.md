@@ -45,6 +45,7 @@ A dev transport exists for local use. The thread socket is not here: it is `@mer
 - Kind: module
 - Paths: `apps/app/src/core/transport`
 - Docs: [CONTEXT](../../apps/app/src/core/transport/.context/CONTEXT.md), [AGENTS](../../apps/app/src/core/transport/AGENTS.md)
+- Machines: [room connection](../../apps/app/src/core/transport/.context/state-machines.md)
 
 ## core-tree-list
 

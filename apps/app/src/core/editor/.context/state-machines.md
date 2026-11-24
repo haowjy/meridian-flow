@@ -12,9 +12,9 @@ stateDiagram-v2
   [*] --> detached: session created, no transport
   detached --> syncing: transport attached
   syncing --> synced: connected and the server has synced
-  synced --> syncing: reconnecting, degraded, or connecting again
-  synced --> offline: disconnected
-  syncing --> offline: disconnected, or a terminal close
+  synced --> syncing: connecting again
+  synced --> offline: disconnected, a terminal close, or a sign-in lapse
+  syncing --> offline: disconnected, a terminal close, or a sign-in lapse
   offline --> syncing: the transport reconnects
   syncing --> detached: detachTransport
   synced --> detached: detachTransport
@@ -36,16 +36,17 @@ stateDiagram-v2
 
 1. No transport: `syncing` while one is being attached, else `detached`.
 2. Local persistence not yet replayed: `syncing`.
-3. Transport `unauthorized` or `reset`: `access-lost`. Transport `terminal`: `offline`.
+3. A sign-in lapse (`unauthorized` with the auth-failed close, `isSignInLapse`): `offline`.
+   Transport `unauthorized` or `reset`: `access-lost`. Transport `terminal`: `offline`.
 4. First server sync not complete: `syncing`.
 5. Transport `disconnected`: `offline`.
-6. Transport `reconnecting`, `degraded` or `connecting`, or the provider not synced: `syncing`.
-7. Otherwise `synced`.
+6. Transport `connected`: `synced`.
+7. Otherwise (`connecting`): `syncing`.
 
 - **The terminal checks come before the first-sync gate** (step 3 before 4). After a permanent
   denial the first sync never completes, and with the order reversed the document would show
   "syncing" forever.
-- **`reconnecting` is `syncing`, not `offline`.** `offline` means edits are only being kept
+- **`connecting` is `syncing`, not `offline`.** `offline` means edits are only being kept
   locally; the pill the writer sees is built on that difference
   ([sync status](../../../features/editor/.context/state-machines.md)).
 - **`synced` does not mean the server has every local edit.** That is
@@ -57,9 +58,7 @@ stateDiagram-v2
   when no view wants its socket open and it has no unsent edits
   (`detachUnwantedTransport`). An attach that follows waits for the detach to finish closing.
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
-- The transport states are `ConnectionState` from
-  [thread-client](../../../../../../packages/thread-client/.context/state-machines.md); the
-  document transport is the publisher of `reset` and `unauthorized`.
+- The transport states are the [room connection](../../transport/.context/state-machines.md)'s.
 
 ## Account session runtime
 

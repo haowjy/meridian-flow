@@ -5,12 +5,13 @@ Four names; never let one stand in for another.
 | Name | Is | On the wire as |
 |---|---|---|
 | **draft** | A `drafts` row: the pending changes one Work, or one chat lineage under No Work, holds. | `draftId`, or `draft` |
-| **item** | One document's reviewable change in a Work: its suggestions, its tree records, or both. | `itemKey` (`${draftId}:${documentId}`) |
+| **item** | One document's reviewable change in a draft: its fork's text changes, its tree records, or both. | `itemKey` (`${draftId}:${documentId}`) |
 | **command** | One writer action (a press or its Undo, a chat card's Undo, or a Copy), one `commands` row. | a client-made `commandId` |
-| **presented address** | What the writer is looking at: `{ itemKey, changeId? }`. | `item=` and `change=` in the URL |
+| **presented address** | What the writer is looking at: the draft item, whether Review changes is on and against what, and the change in focus. | `item=`, `review=` and `change=` in the URL |
 
-A draft's text changes are its suggestion marks in the Live document, each mark naming the draft
-id. `change=` names a suggestion id in that document.
+A draft's text changes are what its fork room of the document (`fork:<draft>:<document>`) holds
+that Live does not: `changedBlocks` in `@meridian/document-model` groups them into changes.
+`change=` names one by the id of any of its members (a block id, or a comment id).
 
 ## Lists
 
@@ -25,7 +26,9 @@ id. `change=` names a suggestion id in that document.
 
 ## Commands
 
-A press (`press.ts`) is `{ draft, verdict, items | "all", saw? }`, addressed by the draft
-id, which every Work and root chat carries from its creation.
+A press (`press.ts`) is a verdict (`apply`, `discard`, or a turn's `restore`) on a scope: one
+change, a document, a draft, or the drafts of a Work; with `saw` (the tree cut) and
+`liveVersions` (the Live text the writer was shown). Every Work and root chat carries its draft
+from its creation.
 Its Undo names the press's command id. The authenticated scope and whole body are part of the
 request digest. The server side is [the press](../../../../../apps/server/server/domains/collab/.context/press.md).

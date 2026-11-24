@@ -104,9 +104,8 @@ export function scopeModelEditWrite(
 }
 
 /**
- * Draft-aware reads, in the reader's thread: its draft and its reply's
- * staged creates decide what a draft view holds. The revision depends on the
- * tree, so it is scoped like the text.
+ * Reads in the reader's link scope: its thread decides the tree view links spell
+ * in. The revision depends on the tree, so it is scoped like the text.
  */
 export function scopeEffectiveReader(
   access: Omit<EffectiveDocumentReader, "writeWorkCreatedContent">,

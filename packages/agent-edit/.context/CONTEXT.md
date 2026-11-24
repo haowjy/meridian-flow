@@ -8,8 +8,7 @@ Read the page that owns the seam you are changing:
 - [Diff](diff.md): the block diff and block correspondence.
 - [Content merge](content-merge.md): the three-way block merge and what an AI edit's change is in a text now: its rules, repairs, rescues and known losses.
 
-Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
-directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
+Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md).
 
 ## Block correspondence
 

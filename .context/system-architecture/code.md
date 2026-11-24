@@ -153,7 +153,7 @@ Plans, lowers and describes one model write on a document room, and builds the i
 
 The project tree as an append-only list of records in a Loro document, and the replay that turns it into a tree.
 
-The records, the replay and its rules, Apply, Discard and Undo, the server's check of a client's update, and the rows to write after a replay. It owns no database or access rules: the server supplies what only it knows.
+The records, the replay and its rules, Apply, Discard and Undo, the server's admission of a client's update (stored as sent; a record that changes a closed Work is stamped `dropped`), and the rows to write after a replay. It owns no database or access rules: the server supplies what only it knows.
 
 - Kind: package
 - Paths: `packages/project-tree/src`
@@ -183,7 +183,7 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 
 ## loro-prosemirror
 
-Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin, the composition guard, and the editor's Ctrl+Z (`UndoHistory`: one Loro `UndoManager` per text doc a tab changes, grouped into editor steps, each run only while `document-model`'s take-back rule finds nobody else wrote over it).
+Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin, the composition guard, and the editor's Ctrl+Z (`UndoHistory`: one Loro `UndoManager` per text doc a tab changes, grouped into editor steps; every step runs, whatever was written since, and puts back the structure values it set with `document-model`'s `putBackValues`).
 
 Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. The app's editor mounts it; the server and agent-edit use its codec.
 

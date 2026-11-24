@@ -223,8 +223,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   turn the stream never carried, the sync holds the divider out and asks for a read; it never
   inserts the divider at the tail. `./mf` has no recovery code of its own.
 - `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask. Its answers are one `--answer option:<label>|text:<words>|skip` per question, in order, or `--answers` JSON. `thread presence` sends the takeover's `ask.presence`: clock-only by default, or with `--answer`/`--answers` as the held answers (`none` for unanswered) over the same socket and waits 300 ms for it to flush, since the server sends no reply.
-  `events` on a replay gap is 6 `replay_truncated` after printing. Tool results distinguish staged
-  `tool.completed` from committed `tool.settled`.
+  `events` on a replay gap is 6 `replay_truncated` after printing. A call's first result is
+  `tool.completed`, any later one for the same call `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and
   `serializeMessageDoc` (reference labels and image capability from the address
   route's catalog entry). Reference lookups run sequentially: a failed lookup leaves no

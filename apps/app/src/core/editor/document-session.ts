@@ -51,11 +51,14 @@ import {
   UNTRACKED_ORIGIN,
   writeProseMirror,
 } from "@meridian/loro-prosemirror";
-import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { requireReload } from "@/client/release/release";
-import type { LoroRoomTransport } from "@/core/transport/loro-room-transport";
+import type {
+  LoroRoomTransport,
+  ResetDisposition,
+  RoomConnectionState,
+} from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
 import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
 import {
@@ -101,7 +104,7 @@ export type DocumentSessionSnapshot = {
   status: DocumentSessionStatus;
   /** Server acknowledged every local change on this connection (see file header). */
   serverHasLocalChanges: boolean;
-  connectionState: DocumentSessionConnectionState | null;
+  connectionState: RoomConnectionState | null;
   /**
    * The scope the server last named for this room, kept across reconnects and transport
    * restarts; `null` until it names one. An unnamed room is writable (local-first).
@@ -122,38 +125,16 @@ export type DocumentSessionSnapshot = {
 
 export type DocumentSessionAccess = "edit" | "read";
 
-export type DocumentSessionResetReason =
-  | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
-  | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  /** The document was deleted or discarded; its rooms never reopen. */
-  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
-
-/**
- * How a terminal room reset treats its unacknowledged edits. `removed`: the document was purged,
- * so nothing reconnects on its own; the session stays read-only until its owner closes it, or an
- * exact open proves the document present and restarts it.
- */
-export type ResetDisposition = "schema" | "removed";
-
 /**
  * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
  * edits like an offline one, and the account's list shows the "sign in again" prompt.
  */
-export function isSignInLapse(state: DocumentSessionConnectionState | null | undefined): boolean {
+export function isSignInLapse(state: RoomConnectionState | null | undefined): boolean {
   return state?.kind === "unauthorized" && state.code === WS_CLOSE.AUTH_FAILED.code;
 }
 
-export type DocumentSessionConnectionState =
-  | Exclude<ConnectionState, { kind: "reset" }>
-  | {
-      kind: "reset";
-      reason: DocumentSessionResetReason;
-      disposition: ResetDisposition;
-      code?: number;
-    };
-
 /** The server ended the room: its update depends on history below the room's cutoff. */
-export function historyCutOff(state: DocumentSessionConnectionState | null | undefined): boolean {
+export function historyCutOff(state: RoomConnectionState | null | undefined): boolean {
   return state?.kind === "terminal" && state.reason === "history-cutoff";
 }
 
@@ -225,7 +206,7 @@ export class DocumentSession {
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private emittedKey = "";
-  private transportState: DocumentSessionConnectionState | null = null;
+  private transportState: RoomConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
   /** What the server is known to hold, across connections: the copy's `server` meta. */
@@ -894,7 +875,7 @@ export class DocumentSession {
     this.emit();
   }
 
-  private lastEmittedState: DocumentSessionConnectionState | null = null;
+  private lastEmittedState: RoomConnectionState | null = null;
 
   private deriveStatus(): DocumentSessionStatus {
     if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";

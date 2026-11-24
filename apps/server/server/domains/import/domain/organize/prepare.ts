@@ -87,7 +87,7 @@ export async function prepareImportEntries(
   let total = input.entries.length;
 
   // A lost image is rebuilt by converting its document again. Past that (the document is
-  // already staged) the image is failed and its document is the one named for a look.
+  // already seeded) the image is failed and its document is the one named for a look.
   const lostImageOf = new Set<string>();
   for (const entry of input.entries) {
     const parentId = entry.selection.derivedFrom;

@@ -238,15 +238,15 @@ export interface SourceTree {
     },
   ): Promise<Result<InsertedTrees, AdapterFault>>;
   /**
-   * One tree command on this source's list: `make` runs under the list's lock on the copy at the
-   * journal's head, makes whatever records it decides on and returns its answer. A refused answer
+   * One tree command on this source's list: `make` runs under the list's lock on a copy of the list as
+   * it stands, makes whatever records it decides on and returns its answer. A refused answer
    * stores nothing: what `make` wrote before it refused is dropped with the copy, as a throw does.
    */
   run<T>(
     target: TreeWriteTarget,
     make: (scope: TreeScope) => { result: T; refused?: boolean },
   ): Promise<T>;
-  /** What this source's tree shows in `view`, at the journal's head. */
+  /** What this source's tree shows in `view`, as the list stands. */
   read<T>(view: View, read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T): Promise<T>;
 }
 

@@ -2,9 +2,8 @@
 
 A writer asks the model for a chapter, watches it work, then reviews what it drafted and applies it
 or throws it away. In Draft mode the model's writes land in the chat's draft: its tree changes (new
-documents, renames, moves, deletes) and, per document, a fork room of the text. Phase 2 of the move to
-Loro is bringing the text half back: the server writes forks and presses them now, and the
-browser's review lands with the rest of phase 2.
+documents, renames, moves, deletes) and, per document, a fork room of the text, which the writer
+opens and edits as the draft and a press applies to Live or discards.
 
 ## Pick the Work
 

@@ -1,6 +1,6 @@
 /**
- * Day-30 purge of presses and their Undos: the command row, which carries its text effects with
- * it, in one transaction. This is the only reader of the clock for them: an Undo after the purge
+ * Day-30 purge of presses and their Undos: the command row, which carries its `press_changes`
+ * rows with it, in one transaction. This is the only reader of the clock for them: an Undo after the purge
  * finds no press and takes nothing back. A drafted create is not ours: the tree purges
  * it on its own clock (`purgeUnviewed`), and the tree's `discarded` settlements stay.
  *

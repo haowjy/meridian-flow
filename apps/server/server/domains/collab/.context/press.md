@@ -92,12 +92,9 @@ it.
 
 The card's own Undo (`reverse_turn`, [reversal](reversal.md)) takes none of this: it takes the
 turn's writes and tree changes outside a draft, so a Draft chat's reply has one action on its
-card. It replaced (2026-11-23) a card Undo that also took the turn's drafted tree changes, which
-put two Undos for one reply side by side.
-
-It replaced (2026-11-23, `loro-build/gate/press-whole/`) a frontier restore that put each text doc
-back to the turn's first version, which reversed whatever came after in those docs (half of a later
-split) and nothing beside them.
+card. Restore takes back each write by the Undo rule, never by putting a text doc back to the
+turn's first version: that would also reverse whatever came after in the doc (half of a later
+split).
 
 ## Discard, and what goes to Trash
 
@@ -153,7 +150,7 @@ and unpress rows are purged with discards after 30 days.
 ## Work-only documents
 
 A document that exists only in a Work is the tree's drafted create; its text is plain in Live
-(`model-edit-write.ts`, `existsOnlyIn`). Applying the create makes it
+(`draft_tree_nodes.exists_only_in_draft`, read by `agentRoomFor` in `adapters/drizzle-agent-room.ts`). Applying the create makes it
 visible; a press's Discard puts it in Trash. The browser opens it in its Live room as plain text:
 the project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the
 room gateway admits the room through `documentSync.draftsHolding`.

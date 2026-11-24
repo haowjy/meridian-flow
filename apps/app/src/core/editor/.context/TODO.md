@@ -25,11 +25,6 @@ decoration (flat model design, section 7).
 - Both views share the session's one undo stack (`DocumentSession.history`), so Ctrl+Z in
   either view reverts the writer's last edit in the document, whichever view made it.
 
-## Left for phase 2 (drafts on Loro forks)
-
-- `tab-change-counts` has no publisher while drafts are off.
-- `RoomError` `server-error` (1b) rejoins.
-
 ## What an Enter or a mark toggle costs outside the binding
 
 The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800

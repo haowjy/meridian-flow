@@ -11,7 +11,7 @@ page says where each part lives and what the code decided where the design left 
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
 | `validate.ts` | `readStored` (every read of the list) builds the record a value stands for from its own allowed fields, or says why there is none; `writable`, which every record the package writes goes through; which fields are the server's |
 | `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`) |
-| `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
+| `list-index.ts` | `assertNewCommand`: the command ids a copy's settlements carry, kept with the copy |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
 | `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then withdrawn nodes and the twin suffixes (rules 15 and 14, in `derive`) |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
@@ -33,7 +33,7 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 7. A move or rename of a node in Trash in live and in the Work's view waits in the Work: Apply
    neither lands it nor lists it in `left`, and it lands once the node is restored. A document the
    writer trashed leaves every Work's view with it; the server drops its text from the counts and
-   Changes until a restore brings it back with its marks.
+   Changes until a restore brings it back with its draft's changes.
 8. A restore brings back the node and what its own delete took; `undoes` lifts one delete alone.
 9. A move or rename of a node in Trash restores it (a record with `undoes` never does). A live
    record lifts live deletes by list order; a drafted record lifts only its Work's own: the Work's

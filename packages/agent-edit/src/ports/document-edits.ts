@@ -1,4 +1,4 @@
-// Host-owned immutable edit history and forward inverses; no reconstruction journal.
+// Host-owned immutable edit history and forward inverses.
 
 import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../tool/types.js";
 
@@ -20,7 +20,7 @@ export type DocumentEditResult =
       /** The text cuts around the inverse; both absent when it changed no text (a move's undo). */
       before?: Uint8Array;
       after?: Uint8Array;
-      /** An inverse's committed bytes, exactly as journaled, in order: the reply replays them. */
+      /** An inverse's committed bytes, in order: the reply's later writes plan on them. */
       updates?: readonly Uint8Array[];
       /** The version that held the reversed edit; absent when one command reached several versions. */
       destination?: "live" | "draft";

@@ -14,41 +14,15 @@ const TEST_HOOK_POINTS = [
   "treeList.afterRows",
   "treeList.afterCommit",
   // Collab.
-  "draft.ensure.afterDocumentLock",
-  "draft.peer.afterDocumentLock",
-  /** A reply's save has opened its transaction and taken no Work lock yet. */
-  "save.beforeWorkLock",
-  "save.afterWorkLock",
-  /** A reply's save holds its live document locks and has not confirmed its grants. */
-  "save.afterDocumentLock",
-  "checkpoint.afterAuthorityRead",
-  /** A Discard attempt has not entered its commit scope. */
-  "discard.beforeCommitScope",
-  /** A committed transaction's draft retirement (any cause: Discard, removal, draft close) is about to run. */
-  "draft.beforeRetirement",
-  /** A thread core's access, or a peer pull past its ensures, is about to read its drafts. */
-  "draft.beforeAccess",
-  "apply.beforeCompile",
-  "apply.beforeBoundary",
-  "apply.afterLive",
   /** An inverse's capture read a document's live bytes and nothing after them. */
   "inverse.afterCaptureRead",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */
   "inverse.beforeCommitScope",
-  /**
-   * An append inserted its rows and receipts and still holds the draft row; nothing has
-   * committed. A crash here leaves neither.
-   */
-  "draft.append.beforeCommit",
-  /** A writer frame's append committed; the frame is not yet acknowledged. */
-  "draft.append.afterCommit",
-  /** A draft rewrite wrote its checkpoint; the transaction has not committed. */
-  "draft.rewrite.beforeCommit",
   /** A model edit's command has not claimed its id. */
   "command.beforeClaim",
   /** The command holds its claim and has run nothing of its effect. */
   "command.afterClaim",
-  /** A model edit holds its destination's lock (the document, or the draft row) and has read nothing. */
+  /** A model edit holds its document's lock and has read nothing. */
   "command.afterLock",
   /** The effect ran and its outcome is stored; nothing has committed. */
   "command.beforeCommit",

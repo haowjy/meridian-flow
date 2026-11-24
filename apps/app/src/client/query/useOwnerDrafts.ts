@@ -14,7 +14,6 @@ import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
-import { useTabChangeCounts, withTabChangeCounts } from "./tab-change-counts";
 import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
@@ -123,8 +122,8 @@ export type OwnerDraftListQuery = {
 
 /**
  * Drafts' lists as this browser knows them, read together, by draft: the server's rows, then the
- * drafts its pending creates make that the server has not listed yet (`useCreatedDrafts`), each
- * open document's text changes counted from its editor (`withTabChangeCounts`).
+ * drafts its pending creates make that the server has not listed yet (`useCreatedDrafts`). A
+ * document's row follows the server's `pending`, which a fork room's save sets after the typing.
  */
 export function useOwnerDraftLists(
   projectId: string,
@@ -152,7 +151,6 @@ export function useOwnerDraftLists(
     return map;
   }, [owners, enabled, read]);
   const created = useCreatedDrafts(projectId, listed);
-  const tab = useTabChangeCounts();
   return useMemo(() => {
     const lists = new Map<string, OwnerDraftListQuery>();
     owners.forEach((owner, index) => {
@@ -160,11 +158,8 @@ export function useOwnerDraftLists(
       if (!query) return;
       const data = query.data;
       const made = created.get(owner);
-      const items = data
-        ? withTabChangeCounts(made ? [...data.items, ...made] : data.items, owner, tab)
-        : undefined;
       lists.set(owner, {
-        data: data && items && items !== data.items ? { ...data, items } : data,
+        data: data && made ? { ...data, items: [...data.items, ...made] } : data,
         isPending: query.isPending,
         isFetching: query.isFetching,
         isError: query.isError,
@@ -172,7 +167,7 @@ export function useOwnerDraftLists(
       });
     });
     return lists;
-  }, [owners, read, created, tab]);
+  }, [owners, read, created]);
 }
 
 /** One draft's list (`useOwnerDraftLists`). */

@@ -20,7 +20,6 @@ import { insertWorks } from "../../../test-support/work-rows.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
-import { convergedReview } from "./converged-review.js";
 import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
 
 export const USER_ID = "00000000-0000-4000-8000-000000000701";
@@ -40,16 +39,14 @@ export function createWorkDraftFixture(db: Database) {
   const collabs: Array<{ dispose(): Promise<void> }> = [];
   /** Without custom links, use the real tree-backed scope, as production does. */
   const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
-    const collab = convergedReview(
-      createCollabDomain({
-        links: links ?? createTestDocumentLinkScopes(db),
-        aheadRefs: UNSUPPORTED_AHEAD_REFS,
-        fileAccess: createAllowAllFileAccess(),
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        ...createTestRemovalDeps(db),
-      }),
-    );
+    const collab = createCollabDomain({
+      links: links ?? createTestDocumentLinkScopes(db),
+      aheadRefs: UNSUPPORTED_AHEAD_REFS,
+      fileAccess: createAllowAllFileAccess(),
+      db,
+      workProjectionMutation: createTestWorkProjectionMutation(db),
+      ...createTestRemovalDeps(db),
+    });
     collabs.push(collab);
     return collab;
   };

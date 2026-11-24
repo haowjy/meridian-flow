@@ -14,8 +14,9 @@
   cannot delete existing content.
 - Works mutation boundary (`projects/adapters/work-projection-mutation.ts`):
   determine what remains of [#931].
-- A closed Work's dropped create of a Work-only document is no longer ended client-side by
-  `watchBounces`, so its Live room can retry `DOCUMENT_UNKNOWN` until the tab closes it.
+- A closed Work's dropped create of a Work-only document: `watchBounces` marks the row and ends
+  nothing, so an open session of the document keeps rejoining its Live room, at once each time,
+  on the server's `document-unknown` until the tab closes it.
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931

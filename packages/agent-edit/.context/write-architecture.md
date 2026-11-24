@@ -126,7 +126,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   (`tool/loro-observation.ts`), never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
-  is gone (`block_gone`, decided by `hasMissingTarget` against the room copy), or the host found
+  is gone (`block_gone`, decided by `missingTarget` against the room copy), or the host found
   its Work closed or its document removed. The result carries the
   document as it stands, recorded as the model's latest view, so its next write plans on it. A
   hash or number the view does not hold (`not_found`) carries the current text for the same

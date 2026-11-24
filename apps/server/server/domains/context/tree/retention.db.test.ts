@@ -1,9 +1,9 @@
 /**
  * Retention over Postgres: nothing is released while anything can still bring the document
  * back. A Work's view is kept for every Work that can come back (open, archived, deleted and
- * restorable), so an archived Work's drafted create, an archived Work's suggestions in a trashed
- * document and a restorable deleted Work's drafted create all outlive the purge windows, and a
- * whole Discard ends the hold.
+ * restorable), so an archived Work's drafted create, an archived Work's pending fork of a trashed
+ * document and a restorable deleted Work's drafted create all outlive the purge windows, and
+ * discarding a draft's tree records whole (a Work's purge) ends a drafted create's hold.
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
