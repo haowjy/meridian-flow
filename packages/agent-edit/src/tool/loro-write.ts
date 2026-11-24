@@ -46,7 +46,7 @@ import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { copySummary } from "./copy-receipt.js";
 import { createDocumentRenderer, type ParseForCommandResult } from "./document-renderer.js";
 import { draftChangeLines } from "./draft-changes.js";
-import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
+import type { InternalWriteResult } from "./internal-result.js";
 import { recordLoroObservation } from "./loro-observation.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { renderReceipt, returnedWriteResult } from "./receipt.js";
@@ -166,7 +166,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
         });
-      result = writeError(cause, commandName);
+      result = writeError(cause);
     }
     return toOutcome(commandName, result, command.file);
   }
@@ -180,19 +180,12 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     );
   }
 
-  /** The call's room copy, freed when `use` settles; a missing document answers its result. */
+  /** The call's room copy, freed when `use` settles. */
   async function withRoom(
     documentId: string,
-    commandName: DocumentCommandName,
     use: (read: AgentRoomRead, copy: LoroDocument) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    let read: AgentRoomRead;
-    try {
-      read = await rooms.readRoom(documentId);
-    } catch (cause) {
-      if (!isDocumentNotFoundError(cause)) throw cause;
-      return documentNotFound(commandName, cause);
-    }
+    const read = await rooms.readRoom(documentId);
     try {
       return await use(read, new LoroDocument(read.docs, schema));
     } finally {
@@ -235,7 +228,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command) as Address;
-    return withRoom(address.documentId, "read", async (room, copy) => {
+    return withRoom(address.documentId, async (room, copy) => {
       const commandLinks = await links(address.documentId, copy, context);
       if (command.format === "changes") {
         const lines = room.docs.draft
@@ -375,7 +368,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       ...status("invalid_write", `${address.filePath} holds text; nothing was written.`),
       occupied: true,
     };
-    return withRoom(address.documentId, command.command, async (read, copy) => {
+    return withRoom(address.documentId, async (read, copy) => {
       const existing = !isEmptyDocument(blocksOf(copy));
       if (existing && command.overwrite !== true) return occupied;
       const planned = existing
@@ -457,7 +450,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(threadId, address.documentId, context);
-    return withRoom(address.documentId, command.command, async (read, copy) => {
+    return withRoom(address.documentId, async (read, copy) => {
       const planned = await planningDoc(read, copy, address.documentId, context, actor);
       try {
         const shown = copiedNodes ? [] : ((await context.shownLinks?.(address.documentId)) ?? []);

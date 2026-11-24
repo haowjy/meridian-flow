@@ -6,7 +6,7 @@ import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { AgentEditModelPayload } from "./model-result.js";
 import { removedFile } from "./removal-copy.js";
-import type { DocumentCommandName, WriteStatus } from "./types.js";
+import type { WriteStatus } from "./types.js";
 
 export type InternalWriteResult = InternalWriteResultBase & { status: WriteStatus };
 
@@ -27,10 +27,7 @@ interface InternalWriteResultBase {
 }
 
 /** A missing document; a removed one says who removed it and how. */
-export function documentNotFound(
-  commandName: DocumentCommandName,
-  cause?: { removal?: DocumentRemovalRecord },
-): InternalWriteResult {
+export function documentNotFound(cause?: { removal?: DocumentRemovalRecord }): InternalWriteResult {
   if (!cause?.removal) return status("document_not_found", DOCUMENT_NOT_FOUND_MESSAGE);
   const removed = removedFile(cause.removal);
   return status(removed.status, removed.message);

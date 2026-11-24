@@ -1,8 +1,6 @@
 /** Notice construction for reversal and writer-awareness events. */
 
 import type { DraftId } from "@meridian/contracts";
-import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
 
 export { documentTitleFromUri } from "@meridian/contracts/context-uri";

@@ -16,11 +16,7 @@ import {
   type Principal,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import {
-  HTTP_INTERRUPT_ENVELOPE_KEY,
-  isHttpInterruptEnvelope,
-  throwHttpInterrupt,
-} from "../shared/interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";

@@ -4,8 +4,8 @@
  * another project's documents. Every check that pairs a draft with a document (draft
  * admission, file facts) asks here.
  */
-import type { ContextSourceId, DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
-import { contextSources, drafts, projects, works } from "@meridian/database/schema";
+import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
+import { contextSources, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList } from "../ports/tree-list-store.js";
