@@ -29,14 +29,18 @@ export type ProjectRouteMask = {
   destinationKey?: string;
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
-  /**
-   * An unavailable destination whose document was removed shows the Discard's notice, with its
-   * Undo, while one can bring it back. A deleted one says nothing of its own.
-   */
-  removed?: { documentId: string };
-  /** An unavailable destination only a draft holds: it offers that draft. */
-  inDraft?: { file: ReviewFileTarget; draftId: string };
+  /** Why an unavailable destination is unavailable, when the route knows. */
+  unavailable?: UnavailableReason;
 };
+
+/**
+ * `removed`: its document was removed; it shows the Discard's notice, with its Undo, while one
+ * can bring it back, and a deleted one says nothing of its own. `in-draft`: only a draft holds
+ * it; it offers that draft.
+ */
+export type UnavailableReason =
+  | { kind: "removed"; documentId: string }
+  | { kind: "in-draft"; file: ReviewFileTarget; draftId: string };
 
 export function ProjectRouteBoundary({
   issue,
@@ -44,8 +48,7 @@ export function ProjectRouteBoundary({
   retainWhileLoading = false,
   destinationKey,
   onRetry,
-  removed,
-  inDraft,
+  unavailable,
 }: ProjectRouteMask & { children: ReactNode }) {
   const blocked = isProjectRouteMasked({ issue, retainWhileLoading });
   return (
@@ -80,10 +83,10 @@ export function ProjectRouteBoundary({
               <Trans>Not available</Trans>
             ) : issue === "error" ? (
               <Trans>This destination couldn’t load.</Trans>
-            ) : removed ? (
-              <RemovedDestination removed={removed} />
-            ) : inDraft ? (
-              <OnlyInDraft {...inDraft} />
+            ) : unavailable?.kind === "removed" ? (
+              <RemovedDestination documentId={unavailable.documentId} />
+            ) : unavailable?.kind === "in-draft" ? (
+              <OnlyInDraft file={unavailable.file} draftId={unavailable.draftId} />
             ) : (
               <Trans>This destination is unavailable.</Trans>
             )}
@@ -94,8 +97,8 @@ export function ProjectRouteBoundary({
   );
 }
 
-function RemovedDestination({ removed }: { removed: { documentId: string } }) {
-  const discarded = useDiscardingNotice(removed.documentId);
+function RemovedDestination({ documentId }: { documentId: string }) {
+  const discarded = useDiscardingNotice(documentId);
   return discarded ? (
     <DraftNoticeLine notice={discarded} className="max-w-md" />
   ) : (

@@ -39,8 +39,9 @@ stay chat resources, not documents main opens.
   (`client/project-shell/main-tabs.ts`) are the one record of open documents;
   `PresentedDocuments` only records what hosts mount and show. A new way for the writer or a
   removal to end a document (beyond close, Discard, vanish and the list's removal batch) must go
-  through the coordinator's `forget` (or `leaveDraftOnly`), which also close its tab, or the desktop keeps it as a
-  tab and brings it back in the side.
+  through one of the coordinator's entry points that close its tab, `applyRemovals` (a removal
+  batch) or `leaveDraftOnly` (a draft-only page switched to Live), or the desktop keeps it as a tab
+  and brings it back in the side.
 - The writer's own delete or Discard of a document begins with the removal coordinator's
   `beginOwnRemoval`: it sends main back to the document
   shown before. A new door that removes documents for the writer must use it. A delete door goes

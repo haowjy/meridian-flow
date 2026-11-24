@@ -143,7 +143,11 @@ A page only a draft holds closes the same way when it leaves that draft for Live
 (design §6): the toggle or the version chip moving to Live, or `Delete draft` on its draft. The
 route sees the pin drop on a draft-only address and calls the coordinator's `leaveDraftOnly`
 instead of writing the bare address; main goes back as above and the page's tab closes once main
-has left. `Delete draft` begins it itself, so its notice follows main (`notices.landed`). The
+has left. When main isn't leaving (its presented document lags the address), the route writes the
+bare address after all, which shows "Only in draft". `Delete draft` begins it itself, so its notice
+follows main (`notices.landed`). One hook, `useDraftOnly`, decides "draft-only" for the route, the
+chip and `Delete draft`: the row is new and no live tree has the document, so a chapter another
+tab applied, whose list hasn't refetched, isn't closed. The
 document's chip offers no `Live` there. A Work switch is not a move to Live: the page stays pinned
 to its draft. A bare Live address that still reaches such a page (a reload, another tab, a stripped
 link) shows "Only in draft" with `Open draft` when the scope's draft list, which the route already

@@ -1,7 +1,8 @@
 /**
  * A paragraph someone deleted while the caret was in it, kept while the caret stays (the
  * binding's `kept`, design §1, "The caret rule"), shows in muted ink and nothing else: no words,
- * and no mark once it goes. A screen reader hears it once, as the caret's block enters the state.
+ * and no mark once it goes. A screen reader hears it once, as the caret's block enters the state,
+ * in the editor that has focus.
  */
 import { t } from "@lingui/core/macro";
 import { loroSyncKey } from "@meridian/loro-prosemirror";
@@ -32,7 +33,7 @@ export const KeptExtension = Extension.create({
           update(view, previous) {
             const was = loroSyncKey.getState(previous)?.kept.size ?? 0;
             const now = loroSyncKey.getState(view.state)?.kept.size ?? 0;
-            if (was === 0 && now > 0) announce(t`Paragraph removed elsewhere`);
+            if (was === 0 && now > 0 && view.hasFocus()) announce(t`Paragraph removed elsewhere`);
           },
         }),
         props: {

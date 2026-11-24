@@ -200,22 +200,20 @@ export class ContextRemovalCoordinator {
    * The writer switched a page only a draft holds to Live, which lacks it (design §6): it closes
    * as a Discarded one does, main going back to the document it showed before, else to Recently
    * opened, and its tab closes once main has left it. `landed` hears where main went, as with
-   * `beginOwnRemoval`; returns whether main is leaving it.
+   * `beginOwnRemoval`. Nothing happens when main doesn't show it; `isGoingBack` says whether main
+   * is leaving.
    */
   leaveDraftOnly(
     projectId: string,
     documentId: string,
     landed?: (landing: MainLanding | null) => void,
-  ): boolean {
+  ): void {
     // The pin's follow asks again on each render until main has left.
-    if (this.unavailable() || this.goingBack.has(`${projectId}/${documentId}`)) return false;
-    const close = () => this.forget(projectId, [documentId]);
-    const leaving = this.beginOwnRemoval(projectId, [documentId], (landing) => {
-      close();
+    if (this.unavailable() || this.isGoingBack(projectId, documentId)) return;
+    this.beginOwnRemoval(projectId, [documentId], (landing) => {
+      this.forget(projectId, [documentId]);
       landed?.(landing);
     });
-    if (!leaving) close();
-    return leaving !== null;
   }
 
   /**
