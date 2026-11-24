@@ -35,8 +35,10 @@ export function observeListRemovals(input: {
     LiveDocumentSessionRegistry,
     "observeLocalCopies" | "observeRetainedLiveDocuments"
   >;
-  /** The sign-in did not hold: the writer signs in again. Called once per time it begins. */
+  /** The sign-in lapsed: the writer signs in again. Called once each time it begins. */
   signInRequired(): void;
+  /** The list joined again after a lapse: the writer signed in, in this tab or another. */
+  signInRestored(): void;
 }): ListRemovalObserver {
   const { projectId, standings, removal, registry } = input;
   const cleared = new Set<string>();
@@ -72,7 +74,10 @@ export function observeListRemovals(input: {
     if (status === "unauthenticated" && !askedToSignIn) {
       askedToSignIn = true;
       input.signInRequired();
-    } else if (status !== "unauthenticated") askedToSignIn = false;
+    } else if (status !== "unauthenticated" && askedToSignIn) {
+      askedToSignIn = false;
+      input.signInRestored();
+    }
 
     const viewIds = [...new Set([...removal.watchedDocumentIds(projectId), ...retained])];
     const commands: RemovalCommand[] = [];
