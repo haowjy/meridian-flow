@@ -68,7 +68,14 @@ synchronously, then drains transports and leases.
 - The binding rebuilds only the blocks a remote batch touched and dispatches them as one
   transaction marked `setMeta(loroSyncKey, REMOTE_META)` and `addToHistory: false`. Code that
   must tell a writer's move from a remote write reads that meta; `notifyChanged` (a write made
-  outside the editor, an Undo, a `writeDocument`) dispatches the same way.
+  outside the editor, an Undo, a `writeDocument`) dispatches the same way. A peer's batch also
+  says who wrote it: `remoteAuthors(tr)` reads its commits' messages (`{ by: { turn } }` for a
+  chat's write), by doc key; a local write has none.
+- `extensions/agent-edit-flash.ts` highlights, in the agent colour, the text of each block a
+  turn's batch wrote (the span that differs from before, or a block the batch made), and drops it
+  after `FLASH_MS`. It is decorations only and maps through typing; the fade is CSS
+  (`.meridian-agent-flash` in `features/editor/editor.css`), so its look retunes there. It works
+  in Live and in a draft alike: a forward of Live into a draft carries the Live batch's authors.
 - Review changes (`extensions/review-changes`) is decorations only: Live's text of a changed
   paragraph is a widget, never document text, so typing, Undo and the binding see the draft alone.
   Its rows are read 150 ms after typing pauses (`changedBlocks` of the fork against Live) and its
@@ -133,10 +140,16 @@ the outer boundary. A second presence write path creates ghost carets. `detachTr
 one suspension and the next attach releases it; the session also suspends on `pagehide` and
 resumes on `pageshow` only if it holds that suspension.
 
+A chat's agent is one more peer in the room it last wrote in, published by the server
+(`apps/server/server/lib/agent-presence.ts`) as `{ user: { name, agent: true }, cursor }`.
+`peer-carets.ts` draws it in `--color-collab-agent` with its name always showing ("AI" when the
+Agent has none); the server decides when it comes and goes, the editor only draws it.
+
 ## Anchors and holds
 
 A remote write can move or replace any block. Long-lived UI uses `EditorAnchor` backed by Loro
-cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `anchors.ts`:
+cursors (`loro-points.ts`: `pointAt`; the binding's `encodePoint`/`decodePoint` for storage and
+presence, shared with the server; `anchors.ts`:
 `resolveAnchor`), resolves it at use time, and validates the object found there. `NodeHold` adds the node's block id and
 type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
 replacement; an inline atom with no id resolves by the seams around it. `carryAnchor` is used

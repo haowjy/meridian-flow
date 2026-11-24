@@ -87,6 +87,8 @@
   --color-collab-cursor-6: oklch(0.55 0.12 120);
   --color-collab-cursor-7: oklch(0.54 0.09 250);
   --color-collab-cursor-8: oklch(0.52 0.1 310);
+  /* A chat's agent: its caret and the flash on what it wrote. A hue no writer's caret takes. */
+  --color-collab-agent: oklch(0.52 0.16 275);
 
   /* Three shadows: a control lifted off its track, anything floating, and a modal. */
   --shadow-*: initial;

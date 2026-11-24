@@ -401,7 +401,7 @@ export function createPostgresDocumentRooms(input: {
    */
   function imported(
     loaded: Loaded,
-    { changed, pending, restore }: Imported,
+    { changed, pending, restore }: Pick<Imported, "changed" | "pending" | "restore">,
     batch: Uint8Array | null,
     origin: RoomOrigin,
     stored?: RoomVersion,

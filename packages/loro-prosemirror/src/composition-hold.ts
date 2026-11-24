@@ -3,6 +3,7 @@ import {
   type DocKey,
   decodeEnvelope,
   type Envelope,
+  type Imported,
   type RoomDocs,
 } from "@meridian/document-model";
 import type { EditorView } from "prosemirror-view";
@@ -24,11 +25,14 @@ export interface EditorListener {
   /** Called before a batch is imported, while the editor and the docs still agree. */
   before(): void;
   /**
-   * Called after, with the doc keys that changed in the docs this listener is bound to, and
-   * whether a peer's batch changed them (else a local write outside the editor, `notifyChanged`).
+   * Called after, with the doc keys that changed in the docs this listener is bound to, and the
+   * peer's batch that changed them, or null for a local write outside the editor (`notifyChanged`).
    */
-  after(changed: ReadonlySet<DocKey>, remote: boolean): void;
+  after(changed: ReadonlySet<DocKey>, remote: RemoteBatch | null): void;
 }
+
+/** A peer's batch as its listeners see it: who wrote each doc it brought. */
+export type RemoteBatch = Pick<Imported, "authors">;
 
 /** Sends a write the copy made itself on an import (a restore, `RoomDocs.importBatch`) as a local one. */
 export type PublishWrite = (changes: DocChange[]) => void;
@@ -96,7 +100,7 @@ export function notifyChanged(docs: RoomDocs, changed: Iterable<DocKey>) {
   const hold = holdFor(docs);
   const keys = new Set(changed);
   for (const listener of hold.listeners.get(docs) ?? []) listener.before();
-  deliver(hold, docs, keys, false);
+  deliver(hold, docs, keys, null);
 }
 
 function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrite) {
@@ -107,13 +111,16 @@ function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrit
   const result = docs.importBatch(batch);
   if (result.restore.length) publish(result.restore);
   const changed = new Set(result.changed);
-  deliver(hold, docs, changed, true);
-  if (!docs.live) forwardInto(hold, changed);
+  deliver(hold, docs, changed, result);
+  if (!docs.live) forwardInto(hold, changed, result);
   return { changed: result.changed, pending: result.pending };
 }
 
-/** Bring every registered draft up to Live, after Live's docs changed by `changed`. */
-function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
+/**
+ * Bring every registered draft up to Live, after Live's docs changed by `changed`: by `live`, a
+ * peer's batch, or by this copy's own write.
+ */
+function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>, live: RemoteBatch | null) {
   for (const [draft, publishDraft] of hold.drafts) {
     // The draft reads Live's text for blocks it has not written, and its structure fork follows
     // Live's structure once forwarded.
@@ -123,7 +130,9 @@ function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
       ...forwarded.changed,
       ...[...changed].filter((key) => !draft.texts.has(key)),
     ]);
-    deliver(hold, draft, keys, true);
+    // A forward is the draft's import of Live: whoever wrote the ops it brings wrote them here.
+    const authors = () => new Map([...(live?.authors() ?? []), ...forwarded.authors()]);
+    deliver(hold, draft, keys, { authors });
   }
 }
 
@@ -140,7 +149,7 @@ export function forwardLocalWrite(live: RoomDocs, changed: Iterable<DocKey>) {
   if (hold.drafts.size === 0) return;
   for (const draft of hold.drafts.keys())
     for (const listener of hold.listeners.get(draft) ?? []) listener.before();
-  forwardInto(hold, new Set(changed));
+  forwardInto(hold, new Set(changed), null);
 }
 
 /**
@@ -157,7 +166,12 @@ export function registerDraft(draft: RoomDocs, publish: PublishWrite): () => voi
   };
 }
 
-function deliver(hold: Hold, docs: RoomDocs, changed: ReadonlySet<DocKey>, remote: boolean) {
+function deliver(
+  hold: Hold,
+  docs: RoomDocs,
+  changed: ReadonlySet<DocKey>,
+  remote: RemoteBatch | null,
+) {
   for (const listener of hold.listeners.get(docs) ?? []) listener.after(changed, remote);
 }
 

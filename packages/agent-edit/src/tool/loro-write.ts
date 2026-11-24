@@ -65,6 +65,7 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
+import { writeCaret } from "./write-caret.js";
 import {
   createAutoTurnIdNonce,
   errorResponse,
@@ -751,6 +752,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         : {}),
       actor,
       delta: captureDelta(textBefore, textAfter),
+      caret: writeCaret(copy.docs, since, written, textAfter),
     });
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(toLoroHandle(copy));

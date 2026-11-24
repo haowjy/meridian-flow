@@ -41,48 +41,48 @@ msgstr "正在汇报…"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "Added a passage"
-msgstr "新增了一段内容"
+#~ msgid "Added a passage"
+#~ msgstr "新增了一段内容"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "Replaced a passage"
-msgstr "替换了一段内容"
+#~ msgid "Replaced a passage"
+#~ msgstr "替换了一段内容"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "Deleted a passage"
-msgstr "删除了一段内容"
+#~ msgid "Deleted a passage"
+#~ msgstr "删除了一段内容"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "Collaborator edited text"
-msgstr "协作者编辑了文本"
+#~ msgid "Collaborator edited text"
+#~ msgstr "协作者编辑了文本"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "Show change details for {label}"
-msgstr "显示{label}的更改详情"
+#~ msgid "Show change details for {label}"
+#~ msgstr "显示{label}的更改详情"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "AI"
-msgstr ""
+#~ msgid "AI"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "{agentName} added a passage"
-msgstr ""
+#~ msgid "{agentName} added a passage"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "{agentName} replaced a passage"
-msgstr ""
+#~ msgid "{agentName} replaced a passage"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
-msgid "{agentName} deleted a passage"
-msgstr ""
+#~ msgid "{agentName} deleted a passage"
+#~ msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid ", "
@@ -920,6 +920,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Agents not saved"
+msgstr ""
+
+#: src/core/editor/extensions/peer-carets.ts
+msgid "AI"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx

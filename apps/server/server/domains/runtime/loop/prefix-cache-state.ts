@@ -57,6 +57,22 @@ export function linkWindowSeconds(
   return override ?? ttl ?? DEFAULT_LINK_WINDOW_SECONDS;
 }
 
+/**
+ * When a request's prefix cache goes cold if no request follows it: its start plus the lifetime
+ * this thread's requests ask for, the rule `derivePrefixCacheState` applies. Null when the model
+ * names no lifetime.
+ */
+export function cacheColdAt(
+  model: Pick<ModelInfo, "promptCache"> | null,
+  threadKind: Thread["kind"],
+  requestStartMs: number,
+): number | null {
+  const ttl = model
+    ? resolvePromptCacheTtlSeconds(model.promptCache, promptCacheRetentionFor(threadKind))
+    : null;
+  return ttl === null ? null : requestStartMs + ttl * 1_000;
+}
+
 export interface PrefixCacheHistory {
   thread: CacheHistoryThread;
   turns: readonly Turn[];

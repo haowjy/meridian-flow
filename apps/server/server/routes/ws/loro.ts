@@ -49,6 +49,7 @@ function selectLoroGatewayServices(app: AppServices): LoroGatewayServices {
       onRoomsEnded: sync.onRoomsEnded,
     },
     eventSink: app.eventSink,
+    presence: app.presence,
   };
 }
 

@@ -1,6 +1,7 @@
 import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
 import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
+import type { DocCursor } from "@meridian/loro-prosemirror";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/delta.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
@@ -57,6 +58,8 @@ export interface AgentWriteRecord {
   authoringResponseId?: string;
   actor: MutationActor;
   delta: StoredDelta | null;
+  /** Just after the write's last change (`writeCaret`), where its chat's caret shows; not stored. */
+  caret: DocCursor | null;
 }
 
 /**

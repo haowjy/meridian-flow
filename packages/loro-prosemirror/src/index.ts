@@ -26,6 +26,9 @@ export {
 export {
   cursorAt,
   type DocCursor,
+  decodePoint,
+  type EncodedPoint,
+  encodePoint,
   resolveCursor,
   type SelectionCursors,
   selectionCursors,
@@ -43,4 +46,5 @@ export {
   loroSyncKey,
   loroSyncPlugin,
   REMOTE_META,
+  remoteAuthors,
 } from "./sync-plugin.js";

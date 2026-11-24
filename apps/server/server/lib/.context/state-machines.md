@@ -1,7 +1,8 @@
 # WebSocket handler state machines
 
-Two per-connection machines held in process memory. Both exist so that a client never receives
-or sends frames for a room it has not been admitted to.
+Two per-connection machines held in process memory, which exist so that a client never receives
+or sends frames for a room it has not been admitted to, and the agent caret the server publishes
+into rooms.
 
 ## Thread subscription, server half
 
@@ -66,3 +67,32 @@ stateDiagram-v2
   with no version.
 - **Frames over the protocol's cap come in fragments** (`docUpdateFrames`, `createFrameReader` in
   `@meridian/contracts/protocol`), joined back into one batch before it is handled.
+
+## An agent's caret
+
+One chat's agent as a peer in the room it last wrote in (`agent-presence.ts`, a `Chat` entry in
+process memory), shown on every screen in that room through the presence relay
+(`loro-presence.ts`, which holds the server's own entries while no socket is on the room and
+re-sends them before peers time them out).
+
+```mermaid
+stateDiagram-v2
+  [*] --> awake: a model request (orchestrator)
+  awake --> awake: a request moves warmUntil; a committed write places or moves the caret
+  awake --> warm: the run settles (onRunSettled), warmUntil ahead
+  awake --> [*]: the run settles and warmUntil has passed, or the model names no cache lifetime
+  warm --> awake: a model request
+  warm --> [*]: warmUntil passes (the caret is cleared)
+```
+
+- **Lifetime is the cache prediction's rule.** `warmUntil` is the request's start plus the cache
+  lifetime the thread asks for (`cacheColdAt` in `runtime/loop/prefix-cache-state.ts`, the rule
+  `derivePrefixCacheState` applies). While the run is awake the caret has no expiry, whatever
+  `warmUntil` says. The prediction's other cold reasons (a compaction, a model change) are known
+  only at the next request, which wakes the chat anyway.
+- **A caret is placed only after its write commits** (`loro-agent-edit-host.ts`, after the room's
+  own after-commit import), so a tab has the batch before the caret that points into it; a
+  rolled-back write places none. A write from a chat this process sent no request for places none.
+- **One room at a time.** A write in another room clears the caret where it was.
+- The state is per process and gone on a restart; a tab drops the entry 30 s after the last
+  refresh.

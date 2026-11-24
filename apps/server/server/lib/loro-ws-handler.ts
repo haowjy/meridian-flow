@@ -55,7 +55,7 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
-import { createPresenceRelay } from "./loro-presence.js";
+import type { PresenceRelay } from "./loro-presence.js";
 import type { TreeRooms } from "./loro-tree-rooms.js";
 import { createRoomAccessIndex, type RoomRegistration } from "./room-access.js";
 
@@ -73,6 +73,8 @@ export type LoroGatewayServices = {
     onRoomsEnded(listener: (documentIds: readonly DocumentId[]) => void): () => void;
   };
   eventSink: AppServices["eventSink"];
+  /** The rooms' presence; the gateway frees it when it drains. */
+  presence: PresenceRelay;
 };
 
 export type LoroGatewayPeer = {
@@ -125,7 +127,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
   let accepting = true;
   const connections = new Set<LoroGatewayConnection>();
   const access = createRoomAccessIndex();
-  const presence = createPresenceRelay();
+  const { presence } = services;
   const unsubscribeAccess = services.fileAccessChanges.subscribe((change) =>
     access.revokeOwner(fileAccessChangeKey(change), "closed" in change ? change.closed : undefined),
   );

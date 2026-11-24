@@ -75,7 +75,7 @@ import { createDrizzleWorkDraftDisposal } from "./adapters/drizzle-work-disposal
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-work-draft-pending.js";
 import { createDrizzleWorkDrafts } from "./adapters/drizzle-work-drafts.js";
 import { createDrizzleWriteOrdinals } from "./adapters/drizzle-write-ordinals.js";
-import { createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
+import { type AgentCarets, createLoroAgentEditHost } from "./adapters/loro-agent-edit-host.js";
 import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -145,6 +145,8 @@ type CollabDomainDeps = {
     /** Cancels what is pending; the composition's `dispose` calls it. */
     stop(): void;
   };
+  /** Shows each chat's caret where its last write ended. */
+  agentCarets?: AgentCarets;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -249,7 +251,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const observability = createAgentEditObservabilityOptions({
     eventSink: deps.eventSink,
   });
-  const loroHost = createLoroAgentEditHost({ db: deps.db, rooms });
+  const loroHost = createLoroAgentEditHost({
+    db: deps.db,
+    rooms,
+    ...(deps.agentCarets ? { carets: deps.agentCarets } : {}),
+  });
   const runtime = createAgentEditRuntime({
     loro: {
       rooms: loroHost.rooms,

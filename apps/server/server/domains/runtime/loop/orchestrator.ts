@@ -150,6 +150,7 @@ import { missingToolRefusal } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Lease, RunClaim, ThreadPhase } from "./ports.js";
 import {
+  cacheColdAt,
   createPrefixCacheStateService,
   linkWindowSeconds,
   type PrefixCacheState,
@@ -259,6 +260,16 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
+  /**
+   * The chat is sending a model request: its agent's caret shows while it is awake and warm
+   * (`lib/agent-presence.ts`).
+   */
+  agentPresence?: {
+    requested(
+      threadId: ThreadId,
+      request: { agentName: string | null; warmUntil: number | null },
+    ): void;
+  };
   /** Lineage cancellation across processes: turn cancel, delete, and a child's terminal run end a subtree; Stop and Send now end only the reply. */
   lineage: LineageCancellation;
   askRequests: Pick<AskService, "request">;
@@ -1904,6 +1915,10 @@ async function executeLoop({
             payload: unknownToEventPayload(cause),
           });
         }
+        deps.agentPresence?.requested(input.threadId, {
+          agentName: thread.agentName,
+          warmUntil: cacheColdAt(built.resolvedModel, thread.kind, Date.now()),
+        });
 
         try {
           deps.modelRequestDebug.capture({

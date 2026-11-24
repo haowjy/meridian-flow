@@ -1,18 +1,28 @@
 import { t } from "@lingui/core/macro";
 import type { RoomDocs } from "@meridian/document-model";
-import { resolveCursor } from "@meridian/loro-prosemirror";
+import { decodePoint, encodePoint, resolveCursor } from "@meridian/loro-prosemirror";
 import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { getEditorChrome, hoverOwner, watchManuscriptLayout } from "../chrome";
+import { AGENT_CURSOR_COLOR } from "../collaboration-colors";
 import type { LocalPresenceFields } from "../local-presence";
-import { decodePoint, encodePoint, pointAt } from "../loro-points";
+import { pointAt } from "../loro-points";
 
 /** How far either side of a peer's caret line still names the peer, in px. */
 const REACH = 4;
 
-export type PeerUser = { accountId?: string; name?: string; color?: string };
+/** `agent`: a chat's agent the server publishes (`agent-presence.ts`), drawn in the agent colour. */
+export type PeerUser = {
+  accountId?: string;
+  name?: string | null;
+  color?: string;
+  agent?: boolean;
+};
+
+/** The colour a peer's caret and selection are drawn in. */
+const colorOf = (user: PeerUser) => (user.agent ? AGENT_CURSOR_COLOR : String(user.color ?? ""));
 
 const key = new PluginKey<DecorationSet>("peerCarets");
 const REDRAW = "peerCaretsRedraw";
@@ -78,7 +88,8 @@ export type PeerCaretsOptions = {
  * Peers' carets and selections, and this editor's own caret on the wire. A peer's selection is a
  * highlight; its caret is drawn on a layer over the prose (not a widget in the line, which would
  * split the browser's selection anchor around it), and its name shows while the pointer is on or
- * beside its line, read from the editor's one pointer source.
+ * beside its line, read from the editor's one pointer source. A chat's agent is one more peer: its
+ * name always shows, so the writer can see where the AI is working.
  */
 export const PeerCarets = Extension.create<PeerCaretsOptions>({
   name: "peerCarets",
@@ -99,7 +110,7 @@ export const PeerCarets = Extension.create<PeerCaretsOptions>({
             Decoration.inline(caret.from, caret.to, {
               nodeName: "span",
               class: "meridian-collab-selection",
-              style: `--caret-color: ${String(caret.user.color ?? "")}`,
+              style: `--caret-color: ${colorOf(caret.user)}`,
             }),
           ),
       );
@@ -159,12 +170,16 @@ export const PeerCarets = Extension.create<PeerCaretsOptions>({
               const at = view.coordsAtPos(peer.head);
               const { element } = caret;
               element.hidden = pannedAway(view, peer.head, at.left);
-              element.style.setProperty("--caret-color", peer.user.color ?? "");
+              element.toggleAttribute("data-agent", peer.user.agent === true);
+              element.style.setProperty("--caret-color", colorOf(peer.user));
               element.style.left = `${at.left - base.left}px`;
               element.style.top = `${at.top - base.top}px`;
               element.style.height = `${at.bottom - at.top}px`;
-              (element.firstElementChild as HTMLElement).textContent =
-                self && peer.user.accountId === self ? t`You` : peer.user.name || t`Someone`;
+              (element.firstElementChild as HTMLElement).textContent = peer.user.agent
+                ? peer.user.name || t`AI`
+                : self && peer.user.accountId === self
+                  ? t`You`
+                  : peer.user.name || t`Someone`;
             }
           };
 

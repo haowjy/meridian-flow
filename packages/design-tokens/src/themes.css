@@ -52,4 +52,6 @@
   --color-syntax-builtin: oklch(0.72 0.09 195);
   --color-syntax-punctuation: oklch(0.68 0.006 60);
 
+  --color-collab-agent: oklch(0.7 0.13 275);
+
 }

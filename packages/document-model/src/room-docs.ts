@@ -1,4 +1,5 @@
-import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
+import { decodeImportBlobMeta, type Frontiers, type ImportStatus, LoroDoc } from "loro-crdt";
+import { type CommitAuthor, readCommitMessage } from "./commit-message.js";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
@@ -26,6 +27,29 @@ export interface Imported {
   pending: boolean;
   /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange[];
+  /**
+   * Who wrote what the import brought, by doc, from its commits' messages (`readCommitMessage`),
+   * read only when asked. A doc that took only the writer's own commits is absent.
+   */
+  authors(): ReadonlyMap<DocKey, CommitAuthor>;
+}
+
+/** The ops an import brought into each doc, as Loro's import status names them. */
+type Brought = Map<DocKey, { doc: LoroDoc; spans: ImportStatus["success"] }>;
+
+function authorsOf(brought: Brought): ReadonlyMap<DocKey, CommitAuthor> {
+  const out = new Map<DocKey, CommitAuthor>();
+  for (const [key, { doc, spans }] of brought)
+    for (const [peer, span] of spans) {
+      let counter = span.start;
+      while (counter < span.end) {
+        const change = doc.getChangeAt({ peer, counter });
+        const { by } = readCommitMessage(change.message);
+        if (by) out.set(key, by);
+        counter = change.counter + change.length;
+      }
+    }
+  return out;
 }
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
@@ -402,6 +426,7 @@ export class RoomDocs {
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
+    const brought: Brought = new Map();
     let pending = false;
     for (const [key, bytes] of batch) {
       let doc = this.doc(key);
@@ -414,8 +439,14 @@ export class RoomDocs {
       const status = doc.import(bytes);
       if (status.pending) pending = true;
       if (!sameFrontiers(doc.oplogFrontiers(), at)) changed.push(key);
+      if (status.success.size > 0) brought.set(key, { doc, spans: status.success });
     }
-    return { changed, pending, restore: this.answer(before, changed) };
+    return {
+      changed,
+      pending,
+      restore: this.answer(before, changed),
+      authors: () => authorsOf(brought),
+    };
   }
 
   /**
@@ -425,24 +456,31 @@ export class RoomDocs {
    */
   forward(): Imported {
     const live = this.live;
-    if (!live) return { changed: [], pending: false, restore: [] };
+    if (!live) return { changed: [], pending: false, restore: [], authors: () => new Map() };
     for (const listener of this.importListeners) listener();
     const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
+    const brought: Brought = new Map();
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
       const at = into.oplogFrontiers();
       const update = withVector(docVersion(into), (vector) =>
         from.export({ mode: "update", from: vector }),
       );
-      into.import(update);
+      const status = into.import(update);
       if (!sameFrontiers(into.oplogFrontiers(), at)) changed.push(key);
+      if (status.success.size > 0) brought.set(key, { doc: into, spans: status.success });
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
     for (const [id, doc] of this.texts) {
       const base = live.textOf(id);
       if (base) pull(id, base, doc);
     }
-    return { changed, pending: false, restore: this.answer(before, changed) };
+    return {
+      changed,
+      pending: false,
+      restore: this.answer(before, changed),
+      authors: () => authorsOf(brought),
+    };
   }
 
   private answer(before: Frontiers, changed: DocKey[]): DocChange[] {

@@ -4,11 +4,11 @@
  * it, anyone's.
  */
 import type { RoomDocs } from "@meridian/document-model";
-import { resolveCursor } from "@meridian/loro-prosemirror";
+import { decodePoint, encodePoint, resolveCursor } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { NodeSelection, Selection, TextSelection } from "@tiptap/pm/state";
-import { decodePoint, docsOf, encodePoint, findBlock, pointAt } from "./loro-points";
+import { docsOf, findBlock, pointAt } from "./loro-points";
 import type { ReadingAnchor, ReadingPosition } from "./reading-position-store";
 
 function anchor(docs: RoomDocs, doc: Node, pos: number): ReadingAnchor | null {

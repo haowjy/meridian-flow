@@ -38,6 +38,7 @@ have it:
 | Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | A joined `/ws/loro` room | One room a socket joined (a document's Live or fork, or a tree list): join, batches, how it ends | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| An agent's caret | One chat's agent shown as a peer where it last wrote: awake, warm, gone | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
 

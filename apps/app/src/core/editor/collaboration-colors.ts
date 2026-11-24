@@ -18,3 +18,6 @@ export function resolveCollaborationColor(token: string): string {
   const resolved = getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim();
   return resolved || token;
 }
+
+/** A chat's agent: its caret and the flash on its writes. Never published, so never resolved. */
+export const AGENT_CURSOR_COLOR = "var(--color-collab-agent)";
