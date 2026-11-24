@@ -92,10 +92,10 @@ write carries no ids (it writes text), so its pairing is by content only; the co
   counter per chat and document.
 
 The server's host (`apps/server/server/domains/collab/adapters/agent-edit-host.ts`) runs
-this core for every chat: `recordWrite` gets the record and the batch and writes the receipt in the
-commit's transaction (`room`, `before`, `after` and `edit` on the part), and the model's `undo`
-and `revert` go through `LoroDocumentEdits`, which returns the batches it committed so the reply's
-frontier covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
+this core for every chat: `recordWrite` gets the record and writes the receipt in the commit's transaction (`origin`,
+`delta` and `edit` on the part), and the model's `undo` and `revert` go through `DocumentEdits`
+(`ports/document-edits.ts`), which returns the batches it committed so the reply's frontier
+covers them. Its `roomFor` gives a Draft chat its draft's fork room, its lookups are per
 document across the document's rooms, and its inverse (`drizzle-turn-inverse.ts`) takes each
 part back in the room it was written in by design §2's Undo rule (`undoInRooms`, `undo-in-rooms.ts`,
 over `undoEdits`): every write goes back whatever was written since, but one whose room cut its

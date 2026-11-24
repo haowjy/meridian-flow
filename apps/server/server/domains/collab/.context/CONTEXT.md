@@ -72,8 +72,9 @@ document's lock. A frontier is keyed by its room's name (`loroRoomName`: `live:<
 A call whose caller passes `frontiers` (the read and write tools, and reference reads, which
 pass `recording` only) records an observation frontier in the room its result rendered from. A
 write plans on the `planning` lookup when usable, otherwise on the current room; neither path
-refuses concurrent text. An undo or revert records in the room its inverse committed into
-(`DocumentEditResult.room`). `format: "edits"` reads record none. A model edit as a command
+refuses concurrent text. An undo or revert records none: the batches its inverse committed into the chat's room join the
+reply's own (`DocumentEditResult.updates`), which a later write plans on. `format: "edits"` reads
+record none either. A model edit as a command
 records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)).
 See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 

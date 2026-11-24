@@ -3,7 +3,7 @@
 Editing core for the model's document `read` and `write`, write handles and the receipts their
 Undo reads: `createEditCore` (design §5) on the host's `DocumentRooms`. A write commits at its
 tool call; the host runs it as one command. Hosts supply the rooms, write ordinals, document
-edits, link and model ports; this package owns no Postgres, routes, auth or Project/Work concepts.
+edits and link ports; this package owns no Postgres, routes, auth or Project/Work concepts.
 
 - Hold no document, cache or LRU between calls. Every call reads the room fresh through
   `AgentEditRooms.readRoom` and frees that copy at the call's end; a reply's accepted mutations

@@ -412,7 +412,7 @@ check(
 // 10. The Draft turn's restore press takes every write of it back in the draft (design §2: an
 // Undo always runs), the applied one too: Live keeps the applied paragraph, and the draft shows
 // taking it out as a change of its own.
-await host.restoreBefore("ch6", "d1", "t9");
+await host.restoreTurn("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
   (await draftText("ch6")).join("|") === "The gate was shut.|Rain all night.|The dog slept." &&

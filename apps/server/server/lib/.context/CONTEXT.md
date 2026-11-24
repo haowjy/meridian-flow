@@ -122,7 +122,7 @@ shares), so it never resolves a path and never sees a draft.
 A move inside one list, and every rename, delete and create in it, is a record the browser
 writes in the tree's room (`loro-tree-rooms.ts`, on `/ws/loro`); no route takes those, and nothing moves between
 a project's files and the account's: between the two the action is Copy. Owner resolution and the edit recheck are
-`context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy, and the
+`context-locator.ts`'s `resolveLocator` and `canCommandContextUri`, shared with Copy, and the
 destination parsers are in `context-destination.ts`.
 
 Move and Copy run inside `withDurableIntentInterruptBoundary` (`shared/interrupt-boundary.ts`),
@@ -130,7 +130,7 @@ which turns any bare Nitro `HTTPError` 4xx (one thrown without the envelope, suc
 ownership `createError`) into a typed, non-retryable envelope with the same status, message and
 `data`. It leaves 401, 408 and 429 bare, so a client retries them. A request parser must refuse
 a malformed identifier itself: a non-UUID Work id, No Work's id as a Scratch owner, or a chat
-owner on a scheme that has none is a 400 (`parseWorkId`, `destinationRootUri`), because a value
+owner on a scheme that has none is a 400 (`parseWorkId`, `parseDestinationParent`), because a value
 that reaches the domain or the database fails as an untyped 500.
 
 Domain failures go through `contextErrorToHttp`, which types every code;

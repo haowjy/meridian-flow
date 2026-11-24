@@ -17,7 +17,4 @@ text. The inverse's part records its `delta` (collab's
 
 ## Deferred until earned
 
-- Remove the remaining ProseMirror shape coupling from parsed-content types;
-  the live-doc side already uses the neutral `AgentEditModel` seam.
-- Freeze a public `DocumentPort`/`HistoryPort` after a second implementation
-  reveals stable contracts.
+- Remove the remaining ProseMirror shape coupling from parsed-content types.

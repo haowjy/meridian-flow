@@ -1,6 +1,6 @@
 # collab TODO
 
-- The live agent-edit coordinator: measure paths outside a command that hold a pooled connection while acquiring
+- Measure paths outside a command that hold a pooled connection while acquiring
   another (inside one, `assertOutsideCommandTransaction` refuses it in dev and test). Restructure
   on demonstrated pool exhaustion; preserve lock order.
 - `context/adapters/project-context-availability.ts` `lookup`: reached from a model edit's

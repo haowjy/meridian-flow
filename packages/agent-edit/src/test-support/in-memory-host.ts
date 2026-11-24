@@ -78,7 +78,7 @@ export interface InMemoryHost {
    * A Draft-mode turn's restore press: the turn's writes into the fork taken back by the
    * Undo rule, newest first (design §2). Returns how many went back.
    */
-  restoreBefore(documentId: string, draftId: string, turnId: string): Promise<number>;
+  restoreTurn(documentId: string, draftId: string, turnId: string): Promise<number>;
   /** Compact the document's history to now (design §4's cutoff), as an unload past the bound does. */
   compact(documentId: string): Promise<void>;
   /** The writer's turn Undo on a chat card: the turn's writes taken back, each in its room (design §5). */
@@ -280,7 +280,7 @@ export function createInMemoryHost(schema: Schema): InMemoryHost {
         docs.free();
       }
     },
-    async restoreBefore(documentId, draftId, turnId) {
+    async restoreTurn(documentId, draftId, turnId) {
       const room = loroRoomName(fork(documentId, draftId));
       const parts = records
         .filter(
