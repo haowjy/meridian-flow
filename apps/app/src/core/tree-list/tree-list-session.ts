@@ -70,7 +70,7 @@ function freshDoc(): LoroDoc {
 function statusOf(state: RoomConnectionState, synced: boolean): TreeListStatus {
   switch (state.kind) {
     case "connected":
-      return "synced";
+      return synced ? "synced" : "waiting";
     case "connecting":
     case "disconnected":
       return synced ? "offline" : "waiting";
@@ -226,7 +226,6 @@ export class TreeListSession {
   };
 
   private connect() {
-    let synced = false;
     const transport = createLoroRoomTransport({
       room: { kind: "tree", list: this.list },
       peer: this.current.doc.peerIdStr,
@@ -244,10 +243,13 @@ export class TreeListSession {
       onJoined: this.onJoined,
     });
     this.transport = transport;
-    transport.subscribeStatus((state) => {
-      if (state.kind === "connected") synced = true;
-      this.publish({ status: statusOf(state, synced) });
+    let state: RoomConnectionState = { kind: "connecting", attempt: 1 };
+    const publishStatus = () => this.publish({ status: statusOf(state, transport.synced) });
+    transport.subscribeStatus((next) => {
+      state = next;
+      publishStatus();
     });
+    void transport.whenSynced.then(publishStatus);
   }
 
   private publish(change: Partial<TreeListSnapshot>) {

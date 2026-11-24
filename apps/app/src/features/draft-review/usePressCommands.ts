@@ -1,6 +1,6 @@
 /**
  * The commands of a Work's review surfaces (the Changes list, a chat's strip, a document's
- * band): every Apply and Discard of a document, a folder, a selection or the whole Work is one
+ * page): every Apply and Discard of a document, a folder, a selection or the whole Work is one
  * press (`press-commands.ts`), run by the server over both halves, with one Undo.
  *
  * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
@@ -112,7 +112,7 @@ export function usePressCommands({
    */
   drafts: readonly string[];
   threadId?: string | null;
-  /** Where this surface's notices show: the Changes list, a chat's strip, or a document's band. */
+  /** Where this surface's notices show: the Changes list, a chat's strip, or a document's page. */
   surface: NoticeSurface["kind"];
 }) {
   // A new array each render would remake every command: the list's ids are what matter.
@@ -148,9 +148,9 @@ export function usePressCommands({
       const row = rows().find((item) => item.documentId === node);
       return row?.documentName ?? documentBasename(row?.contextLocation?.path) ?? "";
     };
-    const noticeSurface = (documentId: string | null): NoticeSurface =>
-      surface === "band" && documentId
-        ? { kind: "band", documentId }
+    const noticeSurface = (documentId: string | null, draft: string): NoticeSurface =>
+      surface === "page" && documentId
+        ? { kind: "page", documentId, draftId: draft }
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
@@ -479,7 +479,7 @@ export function usePressCommands({
         const answer = outcomeOf(pressed, sent);
         if (answer.kind !== "done") return answer;
         const changed = pressed.took;
-        const where = noticeSurface(input.documentId);
+        const where = noticeSurface(input.documentId, noticeKey);
         let step: PressEntries;
         if (scope.kind === "turn") {
           // The turn's card is its notice: it reads the press in force from the owner.

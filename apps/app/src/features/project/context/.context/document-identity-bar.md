@@ -18,20 +18,20 @@ leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
-A review's controls take a line of their own above the toolbar (the review line), one rule for
-main and the side. The owner tried them on the toolbar's row (2026-11-12) and went back: the
-formatting controls must stay whole, and a lone notice must not take their room. The line sits on
-the document's page, as the side has its own page, and is a strip row (`--strip-row`, the chat's
-draft dock and edits receipt). It holds the layout toggle (a pane of 720px or more; a narrower one
-offers Inline only), the chapter's `Discard` · `Apply` (bare verbs on screen, "this chapter" in
-their names), the stepper, and Close, with the stepper between the chapter's × and Close. A line
-too narrow for the controls gives up in steps (`fitReviewLine` in `features/draft-review/ReviewBar.tsx`,
-`document-identity-row.css`): the stepper's short count and tighter gaps, then no step count, then
-Discard and Apply as icons, then (a finger only) the stepper. The phone's review row uses the same
-ladder. A Discard's notice takes that line when the Discard ends the review, and shares it,
-wrapping, when it does not; it never sits in the toolbar row, which a narrow pane can't widen. In
-the notice only the document's name shortens: the verb and Undo always show. The phone's review header gives the
-notice a row of its own under its first row. Coarse pointers give each control a 44px box. Renaming and
+A review's controls take the formatting toolbar's place in the toolbar row
+(`DocumentToolbarPortal`), one rule for main and the side, and the row takes the review tint. The
+owner first kept them on a line above the toolbar (2026-11-12) so the formatting controls stayed
+whole; mockup round 2 (2026-11-22) and the UX lead's call on #1881 replaced that: three stacked
+bars cost writing space, and the shortcuts still work with the buttons gone. Close is
+`ReviewChangesButton` in Review changes, in the state slot where `Review N changes` was. The bar
+holds the target picker, the layout toggle (a pane of 680px or more; a narrower one offers Inline
+only), the stepper, and the chapter's × and ✓. A bar too narrow gives up in steps (`fitReviewLine`
+in `features/draft-review/ReviewBar.tsx`, `review-line.css`): the short count and tighter gaps,
+then no count, then (a finger only) the stepper. A cut picker name counts as not fitting only
+until the count is gone: only an overflow hides the stepper. The phone's review row uses the same
+bar and the same labelled Close. A page's notice (`PageNotice`) floats at the page's foot,
+never in a row, so nothing moves when it comes or goes; on a narrow page it sits above the word
+count. Coarse pointers give each control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, the sidebar's sources, phone
 browser); see the KB's path-navigates-lists-edit page.
 

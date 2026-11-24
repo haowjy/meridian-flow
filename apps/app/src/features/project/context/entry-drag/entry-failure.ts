@@ -211,7 +211,7 @@ function showDeleteNotice(
 ): number | null {
   const names = taken.flatMap((each) => each.names);
   const surface: NoticeSurface = leaving
-    ? { kind: "band", documentId: leaving }
+    ? { kind: "page", documentId: leaving, draftId: null }
     : { kind: "landing" };
   const handle: DiscardUndo = {
     undo: async () => ({

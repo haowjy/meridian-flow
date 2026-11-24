@@ -14,6 +14,13 @@ The Join exchange, which the server's handler speaks too (local-first design §4
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
+`whenSynced` resolves once the transport has handed the copy the first Join's version (the copy's
+version at the Join merged with each batch received since), not at `JoinResponseOk`: an editor
+bound at the answer alone showed a large chapter as an empty page until its text arrived. It is
+decided from what was handed, not from `copy.version()`: the composition guard may hold a batch
+and import it later without the transport seeing it, which left the room never synced. Tree lists
+read the same `synced`.
+
 The server relays presence (`apps/server/server/lib/loro-presence.ts`): a presence Join is answered
 with the presence the room holds, each update goes to the room's other sockets unacked, and a
 socket that leaves has its entries deleted for the others at once.

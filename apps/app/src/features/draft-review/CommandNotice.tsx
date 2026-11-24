@@ -57,17 +57,18 @@ export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
 }
 
 /**
- * The Discard notice a document's identity row shows, or with `documentId` null the one the
- * Recently opened landing shows (`DraftNotices.forDocument`).
+ * The notice a document's page shows on the draft it shows (`draftId`, null on Live), or with
+ * `documentId` null the one the Recently opened landing shows (`DraftNotices.forDocument`).
  */
 export function useDocumentNotice(
   projectId: string,
   documentId: string | null,
+  draftId: string | null = null,
 ): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
     notices.subscribe,
-    () => notices.forDocument(projectId, documentId),
+    () => notices.forDocument(projectId, documentId, draftId),
     () => null,
   );
 }
@@ -125,7 +126,7 @@ export function CommandNotice({
 
 /**
  * One notice: "Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
- * or what an Apply did: in a document's band, "Change applied to Live." with Undo, since the page
+ * or what an Apply did: on a document's page, "Change applied to Live." with Undo, since the page
  * has no rows to say it.
  * An Undo that failed shows the pill toast, and the notice keeps its Undo. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
@@ -142,7 +143,7 @@ export function DraftNoticeLine({
   const openDocument = useOpenProjectDocument(notice.projectId);
   const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
-    if (notice.surface.kind === "band")
+    if (notice.surface.kind === "page")
       return <BandAppliedLine notice={notice} className={className} />;
     if (landed.length === 0) return null;
     const [only] = landed;
@@ -196,7 +197,7 @@ export function DraftNoticeLine({
   );
 }
 
-/** A band's Apply: one change, or the whole document, now in Live, with the press's Undo. */
+/** A page's Apply: one change, or the whole document, now in Live, with the press's Undo. */
 function BandAppliedLine({
   notice,
   className,

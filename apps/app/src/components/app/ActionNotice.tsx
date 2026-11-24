@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The line a command leaves where it happened: what was done, the way to take it back, and
- * Dismiss ("Deleted Chapter 3 · Undo · ×"). A sentence with a name keeps to one line, the name
+ * Dismiss ("Chapter 3 deleted. Undo ×"), with no separator glyph between them. A sentence with a name keeps to one line, the name
  * shortening; one without wraps. An Undo that failed takes the line's place as
  * `InlineErrorRow`, so its message names what failed. The caller owns when it shows, what Undo
  * does and where focus first goes; the caller places the line in its host (`className`).

@@ -1573,7 +1573,7 @@ msgstr ""
 #: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
-#: src/features/draft-review/ReviewBar.tsx
+#: src/features/draft-review/ReviewChangesButton.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileSideSheetHeader.tsx

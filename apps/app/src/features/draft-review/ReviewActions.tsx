@@ -3,22 +3,20 @@
  * jade button; Discard is quiet ink, never red and never a trash icon (red and the trash
  * belong to Delete). Each scope has one name everywhere (`reviewActionNames`).
  *
- * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
+ * A change's or a document's ✓ in a list row (`row`) is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
  * Discard never asks: every Discard's notice has its Undo.
  *
- * Each button has a word on screen and a name: the name ("Discard draft", or the caller's
- * `labels` where the row names more) is the accessible name and the tooltip. A change's and a
- * draft's word is the bare verb, since what they act on is named beside them (the change, the
- * Draft chip, the row); `named` says nothing beside the pair names it, and the word is then the
- * name. `density` picks the form: the word or ×/✓. Leave `density` unset where
- * a container measures its own fit and sets `data-density` on `[data-review-actions]`
- * itself (the identity row's ladder); React then never resets that attribute.
+ * Each button has a word on screen or an icon, and a name: the name ("Discard draft", or the
+ * caller's `labels` where the row names more) is the accessible name and the tooltip. A change's
+ * and a draft's word is the bare verb, since what they act on is named beside them (the change,
+ * the Draft chip, the row); `named` says nothing beside the pair names it, and the word is then
+ * the name. `density` picks the form: the word or ×/✓.
  */
 import { t } from "@lingui/core/macro";
 import { Check, Loader2, X } from "lucide-react";
-import { type MouseEventHandler, type ReactNode, useRef, useState } from "react";
+import { type MouseEventHandler, type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -49,9 +47,11 @@ type ReviewActionsProps = {
   words?: { discard?: string };
   /** Nothing beside the pair names its scope: the words on screen are the full names. */
   named?: boolean;
-  density?: ReviewDensity;
+  density: ReviewDensity;
+  /** In a list row: Apply's ✓ is jade ink, not a fill. */
+  row?: boolean;
   /** Absent withdraws Discard: a change no Discard command takes, such as a folder alone. */
-  onDiscard?: () => void;
+  onDiscard?: MouseEventHandler<HTMLButtonElement>;
   /** Absent withdraws Apply; Discard still applies. */
   onApply?: MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
@@ -69,6 +69,7 @@ export function ReviewActions({
   words,
   named = false,
   density,
+  row = false,
   onDiscard,
   onApply,
   disabled = false,
@@ -86,9 +87,8 @@ export function ReviewActions({
   return (
     <span
       data-review-actions
-      data-density={density}
       className={cn(
-        "group/review flex shrink-0 items-center whitespace-nowrap",
+        "flex shrink-0 items-center whitespace-nowrap",
         touch ? "gap-3" : "gap-1.5",
         className,
       )}
@@ -103,7 +103,7 @@ export function ReviewActions({
           disabled={disabled}
           onClick={(event) => {
             event.stopPropagation();
-            onDiscard();
+            onDiscard(event);
           }}
         />
       ) : null}
@@ -113,7 +113,7 @@ export function ReviewActions({
           {...names("apply")}
           icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
           busy={applying}
-          variant={scope !== "all" && density === "icon" ? "row" : "default"}
+          variant={row ? "row" : "default"}
           touch={touch}
           disabled={disabled || applyDisabled}
           onClick={onApply}
@@ -123,11 +123,7 @@ export function ReviewActions({
   );
 }
 
-/**
- * One action's form. A set `density` renders that form alone; unset, both render and
- * the container's `data-density` shows one. The full name is the accessible name
- * throughout, and the tooltip carries it whenever the words on screen don't say all of it.
- */
+/** One action's form; the full name is the accessible name, and the tooltip wherever the form doesn't say all of it. */
 function ReviewActionButton({
   density,
   word,
@@ -139,7 +135,7 @@ function ReviewActionButton({
   disabled,
   onClick,
 }: {
-  density: ReviewDensity | undefined;
+  density: ReviewDensity;
   /** On screen in the full form. */
   word: string;
   /** The accessible name and the tooltip. */
@@ -152,15 +148,12 @@ function ReviewActionButton({
   disabled: boolean;
   onClick: MouseEventHandler<HTMLButtonElement>;
 }) {
-  const fullRef = useRef<HTMLSpanElement>(null);
+  const iconOnly = density === "icon";
   const [tooltip, setTooltip] = useState(false);
-  const renders = (form: ReviewDensity) => density === undefined || density === form;
   return (
     <Tooltip
       open={tooltip}
-      onOpenChange={(open) =>
-        setTooltip(open && (name !== word || fullRef.current?.offsetParent == null))
-      }
+      onOpenChange={(open) => setTooltip(open && (iconOnly || name !== word))}
     >
       <TooltipTrigger asChild>
         <Button
@@ -172,23 +165,13 @@ function ReviewActionButton({
           className={cn(
             variant === "row" && "text-jade-text",
             "coarse:min-w-11",
-            "group-data-[density=icon]/review:w-6 group-data-[density=icon]/review:px-0",
-            touch &&
-              "h-11 min-w-11 px-4 text-sm group-data-[density=icon]/review:w-11 [&_svg:not([class*='size-'])]:size-5",
+            iconOnly && "w-6 px-0",
+            touch && "h-11 min-w-11 px-4 text-sm [&_svg:not([class*='size-'])]:size-5",
+            touch && iconOnly && "w-11",
           )}
         >
-          {busy || renders("icon") ? (
-            <span
-              className={busy ? "contents" : "hidden group-data-[density=icon]/review:contents"}
-            >
-              {icon}
-            </span>
-          ) : null}
-          {renders("full") ? (
-            <span ref={fullRef} className="group-data-[density=icon]/review:hidden">
-              {word}
-            </span>
-          ) : null}
+          {busy || iconOnly ? icon : null}
+          {iconOnly ? null : word}
         </Button>
       </TooltipTrigger>
       <TooltipContent>{name}</TooltipContent>

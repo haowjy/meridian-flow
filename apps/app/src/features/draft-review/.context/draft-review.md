@@ -17,11 +17,15 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   entry is the page's own, and otherwise replace. The stepper, a press and the target picker
   replace. Esc is one handler per host (`ReviewEscapeScope`) at page scope, after any menu, dialog
   or field that handles it.
-- **The controls** (`ReviewBar`) take the review line above the toolbar, so the formatting
-  controls stay whole: the target picker (`against Live ▾`), the layout toggle, against Live the
-  chapter's `Discard` · `Apply` (named "this chapter" for assistive tech), the stepper and Close. A pane under 720px offers Inline only and an icon
-  Close; a line too narrow gives up in steps (`fitReviewLine`,
-  [the identity bar](../../project/context/.context/document-identity-bar.md)).
+- **The controls** (`ReviewBar`) take the formatting toolbar's place in its row while the page
+  reviews (`DocumentToolbarPortal`; the shortcuts still work), so the page has one bar: the target
+  picker (`against Live ▾`), the layout toggle, then the stepper and, against Live, the chapter's
+  × and ✓ (icons, named "this chapter"). Close is `ReviewChangesButton` in Review changes, in the
+  very place `Review N changes` was, so the writer goes in and out without moving the pointer. A
+  pane under 680px offers Inline only (one side panel open beside a 1280px window fits Side by
+  side, both open does not); nothing closes a panel for it. A line too narrow gives up in steps
+  (`fitReviewLine`, `review-line.css`): the short count, no count, then (a finger only) no
+  stepper. The phone's review row is the same bar with its own Close.
 - **The rows** are the editor's: `ReviewChangesExtension` (`core/editor/extensions/review-changes`)
   reads `changedBlocks` of the fork against Live 150 ms after typing pauses, or after Live's copy
   imports (a press, Live typed in elsewhere), and maps its decorations through the typing in
@@ -33,7 +37,7 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   word at every size (`Moved`, `Style` for attributes or marks), and a comment body's change shows
   `Comment` and the two bodies on the paragraph the comment is on, across both columns Side by
   side. A row is
-  named by one of its members, which a press takes; a link may name any member (`members`). It publishes the rows to the host's `ReviewSurface` for the review line and "Review N changes". The layout
+  named by one of its members, which a press takes; a link may name any member (`members`). It publishes the rows to the host's `ReviewSurface` for the review bar and "Review N changes". The layout
   (Inline or Side by side) is a device preference, not in the address; Side by side gives every
   row both columns, an empty cell where one side has nothing.
 - **A row's pair** presses that change (`startChange`, scope `change`). The row hides at once, the
@@ -72,7 +76,7 @@ fields in its stored slot (`ShownDocument`). `useHostReviewMode` reads whichever
   in count mode, which paints nothing.
 
 The tree half of a reviewed document is its row in the pane (`ReviewTreeRow`): Deleted, New, or
-"Was <path>". The chapter's pair is on the review line.
+"Was <path>". The chapter's pair is on the review bar.
 
 ## Presses
 
@@ -149,9 +153,14 @@ surfaces, and outlives them:
   drafts on one chapter each get theirs.
 - `notices` (`DraftNotices`) holds one notice per draft: the latest Discard with its Undo, or the
   latest Apply's facts, shown only on the surface it was made on. In the Changes list a notice is
-  said on its rows (`useDraftNoticeWords`). A page has no rows: an Apply or Discard made in a
-  document's band or Review changes is a line with Undo in that document's review line
-  (`DraftNotices.forDocument`), where the writer lands when Review changes closes.
+  said on its rows (`useDraftNoticeWords`). A page has no rows: an Apply or Discard made on a
+  document's page, per paragraph or the whole chapter, is a compact `ActionNotice` with Undo
+  floating at that page's foot (`PageNotice`, `DraftNotices.forDocument`), so it never moves the
+  toolbar or the prose. It belongs to the draft the page showed: once no host shows that document
+  on that draft (switching to another draft, to Live or to another document), it ends silently,
+  and coming back doesn't bring it back. Each host registers the page it shows
+  (`DraftNotices.showPage`, from `useDocumentReview`), so a side panel opening or the chapter
+  moving to the other pane keeps the notice; it never ends from a component's unmount.
 
 An Apply's Undo takes a created document out of Live too; if main shows it, main opens its plain
 draft (`openDraftFile`). After a reload nothing offers a press's Undo.

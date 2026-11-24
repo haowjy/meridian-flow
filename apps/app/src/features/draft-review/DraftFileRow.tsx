@@ -99,6 +99,7 @@ export function DraftFileRow({
             scope="document"
             labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
+            row
             touch={touch}
             disabled={command.hidden || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}

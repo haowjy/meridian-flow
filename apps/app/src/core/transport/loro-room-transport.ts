@@ -117,6 +117,7 @@ export type LoroRoomTransport = {
   whenSentAcknowledged(): Promise<void>;
   /** What the server is known to hold: its Join version, the batches it acked and sent. */
   serverVersion(): RoomVersion;
+  /** The copy holds what the server held at its first Join: the content is in, not only the Join. */
   readonly synced: boolean;
   readonly whenSynced: Promise<void>;
   subscribeStatus(listener: (state: RoomConnectionState) => void): () => void;
@@ -216,6 +217,18 @@ export function createLoroRoomTransport({
     resolveSynced = resolve;
   });
   let synced = false;
+  /**
+   * Until synced: the Join's version, and what the transport handed the copy (its version at the
+   * Join and each batch received since). Decided from what was handed, not `copy.version()`: the
+   * composition guard can hold a batch and import it later without the transport seeing it.
+   */
+  let catchUp: { want: RoomVersion; handed: Map<DocKey, DocVersion> } | null = null;
+  const settleSynced = () => {
+    if (synced || !catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
+    synced = true;
+    catchUp = null;
+    resolveSynced();
+  };
 
   const emitStatus = (next: RoomConnectionState) => {
     state = next;
@@ -295,7 +308,10 @@ export function createLoroRoomTransport({
 
   const receiveBatch = (bytes: Uint8Array) => {
     copy.importRemote(bytes);
-    mergeVersion(server, batchEnd(decodeEnvelope(bytes)));
+    const received = batchEnd(decodeEnvelope(bytes));
+    mergeVersion(server, received);
+    if (catchUp) mergeVersion(catchUp.handed, received);
+    settleSynced();
     settleBarriers();
   };
 
@@ -315,7 +331,8 @@ export function createLoroRoomTransport({
         joined = true;
         attempt = 0;
         server.clear();
-        mergeVersion(server, decodeRoomVersion(message.version));
+        const joinVersion = decodeRoomVersion(message.version);
+        mergeVersion(server, joinVersion);
         const { readOnlyWhy } = decodeLoroJoinExtra(message.extra);
         if (message.permission === "write") emitAccess("edit", null);
         else emitAccess("read", readOnlyWhy ?? null);
@@ -332,10 +349,8 @@ export function createLoroRoomTransport({
         }
         const lacking = copy.exportSince(server);
         if (lacking) sendDoc(lacking);
-        if (!synced) {
-          synced = true;
-          resolveSynced();
-        }
+        if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
+        settleSynced();
         settleBarriers();
         emitStatus({ kind: "connected" });
         return;

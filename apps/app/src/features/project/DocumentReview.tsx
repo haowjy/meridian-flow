@@ -8,7 +8,15 @@
  * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
  * mounted hidden and paint Live.
  */
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
@@ -25,7 +33,7 @@ import {
   ReviewSurface,
   ReviewSurfaceProvider,
 } from "@/features/draft-review/review-mode";
-import { useAccountId } from "./context/account-feature-context";
+import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
 import { useHostReviewMode } from "./use-review-mode";
 import { useWorkScopeState } from "./use-work-scope";
@@ -88,6 +96,12 @@ export function useDocumentReview(
         ? { projectId, documentId, draftId: pin.draftId, itemKey: pin.itemKey }
         : null,
     [projectId, documentId, pin],
+  );
+  const { notices } = useDraftCommandOwner();
+  const pageDraftId = page?.draftId;
+  useEffect(
+    () => (documentId && pageDraftId ? notices.showPage(documentId, pageDraftId) : undefined),
+    [notices, documentId, pageDraftId],
   );
   const [surface] = useState(() => new ReviewSurface());
   return { value, paint, mode, page, surface };
