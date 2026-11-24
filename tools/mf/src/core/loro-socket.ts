@@ -1,8 +1,3 @@
-/**
- * `./mf` as a `/ws/loro` client: one socket with the session's cookie, rooms joined on it the way
- * a browser tab joins them, batches sent as envelopes and acknowledged one by one.
- */
-
 import {
   createFrameReader,
   decodeLoroJoinExtra,
@@ -30,7 +25,6 @@ const ACK_TIMEOUT_MS = 15_000;
 
 type Joined = {
   onBatch(envelope: Uint8Array): void;
-  /** Settles the Join; afterwards, the room's end. */
   answer?: { resolve(value: JoinAnswer): void; reject(error: CliError): void };
 };
 
@@ -82,10 +76,6 @@ export class LoroSocket {
     });
   }
 
-  /**
-   * Joins `roomId` as a copy writing under `peer`, at the copy's room `version` (empty for a copy
-   * with nothing). `onBatch` hears every envelope the room sends, the Join's catch-up first.
-   */
   join(
     roomId: string,
     input: { peer: string; version: Uint8Array; onBatch(envelope: Uint8Array): void },
@@ -108,7 +98,6 @@ export class LoroSocket {
     });
   }
 
-  /** Sends one envelope to a joined room and resolves once the room acknowledges it. */
   send(roomId: string, envelope: Uint8Array): Promise<void> {
     if (this.ended) return Promise.reject(this.ended);
     const batchId = freshBatchId();
@@ -129,7 +118,6 @@ export class LoroSocket {
     return acked;
   }
 
-  /** Closes the socket. Its rooms are dropped first: a batch already queued reaches no callback. */
   close() {
     this.rooms.clear();
     this.ws.close();

@@ -1,10 +1,3 @@
-/**
- * PostgreSQL adapters for cross-process thread-run ownership. The session
- * advisory lock stays the atomic mutex (crash-safe because the DB session
- * dies); `RunClaim` adds the queryable, expiring lease row that
- * `holder()` and derived status can read from another process.
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
@@ -25,7 +18,6 @@ import { markRunStateChanged } from "./drizzle-run-state.js";
 import { createDrizzleSessionLock, type SessionLockClaim } from "./drizzle-session-lock.js";
 
 export interface DrizzleRunClaimOptions {
-  /** Stable holder identity for this worker; a random one is minted when omitted. */
   holderId?: string;
   leaseTtlMs?: number;
 }
@@ -45,7 +37,6 @@ export function createDrizzleRunClaim(
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
 
-  /** Whether the record showed the row: it bound a turn or receipt, or a turn carries its execution. */
   const leaseWasVisible = async (
     released: { threadId: ThreadId; executionId: string },
     row: { turnId: string | null; adoptedMessageIds: string[] },
@@ -64,7 +55,6 @@ export function createDrizzleRunClaim(
     return carrier !== undefined;
   };
 
-  // The one "live lease" predicate; every read and cancel derives from it.
   const liveLeaseWhere = (threadId: ThreadId) =>
     and(
       eq(schema.threadRunLeases.threadId, threadId),
@@ -112,8 +102,6 @@ export function createDrizzleRunClaim(
       const claim = await hold(threadId);
       if (!claim) return null;
       try {
-        // The claim proves the previous holder is gone: settle its row before
-        // a new execution is visible beside its turns.
         await settle();
         await db_().insert(schema.threadRunLeases).values({
           threadId,
@@ -125,7 +113,7 @@ export function createDrizzleRunClaim(
           phase: "generating",
           cancelRequested: false,
           currentTool: null,
-          // The database's clock, as the wake fence uses: admission and fence order on one clock.
+          // keep: Use the database wall clock for lease acquisition; fences order on the same clock
           acquiredAt: sql`clock_timestamp()`,
           renewedAt: new Date(),
           expiresAt: nextExpiry(),
@@ -259,8 +247,6 @@ export function createDrizzleRunClaim(
 
     async fenceWakes(threadIds) {
       if (threadIds.length === 0) return;
-      // The database's wall clock, as lease admission uses, not the transaction's start: a lease
-      // acquired while this command waited on locks must not read as admitted before the fence.
       await db_()
         .update(schema.threads)
         .set({ wakeFenceAt: sql`clock_timestamp()` })
@@ -341,23 +327,17 @@ export function createDrizzleRunClaim(
         turnId: schema.threadRunLeases.turnId,
         adoptedMessageIds: schema.threadRunLeases.adoptedMessageIds,
       });
-      // A row no turn carries and that bound nothing was never in the record, so deleting it changes
-      // nothing; a bare claim cycle needs no thread lock.
       const [gone] = deleted;
       if (gone && (await leaseWasVisible(lease, gone))) markRunStateChanged(lease.threadId);
       if (entry?.executionId !== lease.executionId || entry.holderId !== lease.holderId)
         return deleted.length > 0;
 
       const unlock = async () => {
-        // A stale callback must not release a newer run. Keep the entry on
-        // unlock failure so the run owner's final release can retry it.
+        // keep: Ignore stale unlock callbacks; keep a failed claim entry for the owner's final release
         if (held.get(lease.threadId) !== entry) return;
         await entry.claim.release();
         if (held.get(lease.threadId) === entry) held.delete(lease.threadId);
       };
-      // A terminal transaction deletes the lease row atomically with its
-      // terminal write. Its physical session lock remains held until the outer
-      // commit; rollback leaves both the lease and the claim in place.
       if (!deferUntilDrizzleCommit(unlock)) await unlock();
       return deleted.length > 0;
     },

@@ -46,12 +46,10 @@ else
     const { assertPublicationHooks, openAuditedDatabase } = await import(
       "../../../test-support/run-state-publication.js"
     );
-    // Publication pins run in a database this suite owns and drops.
     const audited = await openAuditedDatabase(url, { max: 8 });
     const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => audited.close());
-    // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
@@ -63,7 +61,6 @@ else
       return rig;
     }
 
-    /** Every appended journal row with its journal seq and projected socket frames. */
     async function appendedFrames(appended: {
       mock: { calls: unknown[][]; results: { value: unknown }[] };
     }) {
@@ -113,10 +110,6 @@ else
         .orderBy(schema.eventJournal.threadId, schema.eventJournal.seq);
     }
 
-    /**
-     * A turn's run identity: its row, which must match the turn its journaled
-     * start carries (the `RUN_STARTED` payload's source).
-     */
     async function identity(turnId: string | undefined) {
       if (!turnId) throw new Error("No turn");
       const [row] = await db
@@ -141,7 +134,6 @@ else
       return fromRow;
     }
 
-    /** The turn that delivered a message. */
     async function deliveredBy(messageId: string | undefined) {
       if (!messageId) throw new Error("No message");
       const [row] = await db
@@ -155,7 +147,6 @@ else
       return row.byTurnId;
     }
 
-    /** Whether an execution that reserved a turn has ended: its lease row is gone. */
     async function ended(executionId: string | null) {
       if (!executionId || !/^[0-9a-f-]{36}$/.test(executionId)) return false;
       const [carried] = await db
@@ -170,11 +161,10 @@ else
       return carried !== undefined && rows.length === 0;
     }
 
-    /** Starts a reply; a due switch applies at its run-start boundary. */
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
-    } /** A turn's `forgotten_by_turn_id`, read from the row. */
+    }
     async function stampOf(turnId: string) {
       const [row] = await db
         .select({ by: schema.turns.forgottenByTurnId })
@@ -183,7 +173,6 @@ else
       return row?.by ?? null;
     }
 
-    /** One writer message answered by an empty failed reply: the abandoned exchange. */
     async function emptyFailure(rig: Awaited<ReturnType<typeof fixture>>, text: string) {
       const failed = await (
         await rig.orchestrator.prepare({ threadId: rig.threadId, tools: [], userText: text })
@@ -199,8 +188,6 @@ else
     }
 
     it("forgets an empty failure and its message when /compact follows, before the summary is planned (C1a)", async () => {
-      // Risk (FX1 review blocker): the summary holding the abandoned message's words, or the cut resting on a
-      // turn the conversation no longer has, so the next run start and the handoff fail to project.
       const summarizer = scriptedSummarizer();
       const rig = await manualFixture({
         gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
@@ -215,14 +202,12 @@ else
       expect(await stampOf(reply.id)).toBe(compaction?.id);
       expect(await stampOf(message.id)).toBe(compaction?.id);
       expect(JSON.stringify(summarizer.calls)).not.toContain("FORGET-ME");
-      // The journal states what the commit forgot, after the reservation that forgot it.
       const forgotten = (await journal()).find(({ eventType }) => eventType === "turns.forgotten");
       expect(forgotten?.payload).toMatchObject({
         turnIds: [reply.id, message.id],
         byTurnId: compaction?.id,
         reason: "forgotten",
       });
-      // A later run start and a handoff-shaped projection of the whole conversation both succeed.
       const thread = await rig.repos.threads.findById(rig.threadId);
       if (!thread) throw new Error("Expected the thread");
       const context = await loadThreadConversationContext(rig.repos, thread);
@@ -240,7 +225,6 @@ else
     });
 
     it("refuses /compact before any completed reply and forgets nothing, so the failure keeps Retry (C1b)", async () => {
-      // Risk: a refused command still stamping turns, or the refusal costing the writer their Retry.
       const rig = await manualFixture({
         empty: true,
         gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
@@ -267,8 +251,6 @@ else
     });
 
     it("keeps a message a pre-release summary holds when a failed Retry's chat moves on (C12)", async () => {
-      // Risk: forgetting a writer message whose words a complete compaction already summarized without
-      // pinning it. The release has no backfill, so the real loader must protect it. The others go.
       const rig = await manualFixture({
         gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
       });
@@ -289,8 +271,6 @@ else
       );
       const [, first, second] = messages;
       if (!f || !first || !second) throw new Error("Expected two delivered messages and a failure");
-      // The pre-release shape: a Retry-led compaction C summarized `first` without pinning it, and the
-      // Retry R failed empty.
       const replyId = crypto.randomUUID();
       const compaction = await rig.repos.turns.create({
         threadId: rig.threadId,
@@ -467,7 +447,6 @@ else
         return input;
       };
       expect(started.created).toBe(true);
-      // The Retry is reserved for the failed reply's messages, in a new execution.
       const retried = await identity(replyTurnId);
       expect(retried.reservedForUserTurnIds).toEqual(
         (await identity(failed.id)).reservedForUserTurnIds,
@@ -494,7 +473,6 @@ else
       expect(comparable(retryRequest)).toEqual(comparable(originalRequest));
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
-      // Every Retry precondition except the failed leaf still holds for the original.
       expect(await rig.repos.turns.findById(failed.id)).toMatchObject({
         threadId: rig.threadId,
         role: "assistant",
@@ -596,7 +574,6 @@ else
         expect.objectContaining({ id: queued.id }),
       ]);
 
-      // The test starts each run itself; a release wake would take the claim first.
       const recovery = createOrchestrator({
         ...rig.deps,
         runClaim: replacement,
@@ -815,7 +792,6 @@ else
         outcome: "withdrawn",
         runState: { mode: (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode },
       });
-      // The answer's clock reaches the withdrawal's own run-state frame.
       const [withdrawal] = (await appendedFrames(appended)).filter((row) =>
         row.frames.some((frame) => frame.name === "meridian.run_state"),
       );
@@ -993,7 +969,6 @@ else
       const control = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
 
-      // Drop the owning DB session after the command's start commit, as a process crash does.
       await releaseLeaseUnderLock(db, rig.runClaim, {
         threadId: rig.threadId,
         executionId: run.executionId,
@@ -1005,7 +980,6 @@ else
         eventWriter: rig.eventWriter,
         runClaim: replacement,
       });
-      // The test starts each run itself; a release wake would take the claim first.
       const recovery = createOrchestrator({
         ...rig.deps,
         runClaim: replacement,
@@ -1121,8 +1095,6 @@ else
         const rig = await manualFixture({ gateway });
         const queued = await switchMode(rig, "draft");
 
-        // Nothing runs, so nothing applies: no turn, the chat keeps its mode, and
-        // the answer carries the pending switch for the toolbar.
         expect(queued).toMatchObject({
           created: true,
           response: {
@@ -1137,7 +1109,6 @@ else
         expect(await threadMode(rig)).toBe("direct");
 
         const appended = vi.spyOn(rig.eventWriter, "appendEvents");
-        // Writer admission persists the message first; the switch applies behind it, before the reply.
         const admitted = await rig.send(rig.threadId, "Write it.");
         await drainControls(rig);
         const turns = await settled(rig);
@@ -1163,7 +1134,6 @@ else
         expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
           "The writer switched this chat to draft mode.",
         );
-        // The apply is a frame of its own, ahead of the run-state frame that empties the queue.
         const frames = (await appendedFrames(appended)).flatMap((row) => row.frames);
         const names = frames.map((frame) => frame.name);
         const switched = names.indexOf("meridian.write_mode.switched");
@@ -1181,8 +1151,6 @@ else
           outcome: "already_started",
         });
 
-        // The apply's own transaction publishes the record with the new mode, after the divider's
-        // turn.created.
         const journal = await journalEventsByThread(db, rig.threadId);
         const divider = journal.find(
           (row) =>
@@ -1210,8 +1178,6 @@ else
           results: [toolUse],
           onStream: async (call) => {
             if (call !== 1) return;
-            // Another tab's switch commits after this send reads the inbox but
-            // before it takes the thread lock: the stamp must still say `send`.
             const lock = rig.delivery.withThreadLock;
             vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
               queued = await switchMode(rig, "draft");
@@ -1221,8 +1187,6 @@ else
           },
         });
         rig = await manualFixture({ gateway });
-        // The budget is spent while the switch waits: only a yield before the
-        // budget check keeps A from failing.
         vi.spyOn(rig.deps.billingUsage, "canContinueModelCall").mockImplementation(async () =>
           (await rig.delivery.selectPending(rig.threadId)).every(
             (row) => row.body.kind !== "write_mode",
@@ -1260,7 +1224,6 @@ else
         expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
           tail.slice(0, -1).map((turn) => turn.id),
         );
-        // A made one request; the next reply answers M2 after the notice.
         expect(gateway.requests).toHaveLength(2);
         const reply = JSON.stringify(gateway.requests[1]?.messages);
         expect(reply.indexOf("The writer switched this chat to draft mode.")).toBeGreaterThan(
@@ -1269,8 +1232,6 @@ else
         expect(tail[2]?.metadata).not.toMatchObject({ delivery: "steer" });
         expect(admitted).toMatchObject({ userTurnId: tail[2]?.id });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
-        // A yielded with M2 undelivered, so A's execution ended and B, in a new
-        // execution reserved for M2, delivered it.
         const a = await identity(tail[1]?.id);
         const b = await identity(tail[4]?.id);
         expect(a.reservedForUserTurnIds).toEqual([tail[0]?.id]);
@@ -1302,7 +1263,6 @@ else
         const tail = (await settled(rig)).slice(start);
 
         expect(tail.map((turn) => turn.role)).toEqual(["user", "assistant", "user", "assistant"]);
-        // M2 was steered into A; B, in A's execution, is reserved for M2 and delivers it.
         expect(admitted).toMatchObject({ userTurnId: tail[2]?.id });
         expect(tail[2]?.metadata).toMatchObject({ delivery: "steer" });
         const a = await identity(tail[1]?.id);
@@ -1326,8 +1286,6 @@ else
         const aDone = a.execute();
         await gateway.untilGatewayBoundary();
         await switchMode(rig, "draft");
-        // M2 saw A live, then A ends and its release applies the switch before
-        // M2 takes the thread lock: M2 is answered by a new reply, not A.
         const lock = rig.delivery.withThreadLock;
         vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
           gateway.release();
@@ -1344,7 +1302,6 @@ else
 
         await drainControls(rig);
         const turns = await settled(rig);
-        // The message's turn is persisted at admission; the pending switch applies after it, before the reply.
         const switchTurn = turns.find((turn) => turn.prevTurnId === admitted.userTurnId);
         expect(switchTurn?.metadata).toMatchObject({ kind: "write_mode_switch" });
         const answer = turns.find((turn) => turn.prevTurnId === switchTurn?.id);
@@ -1361,8 +1318,6 @@ else
         });
         const aDone = a.execute();
         await gateway.untilGatewayBoundary();
-        // The first attempt sees A live and loses its turn start; A ends before
-        // the retry takes the lock, so the retry must not join A.
         vi.spyOn(rig.repos, "runTurnStartTransition").mockRejectedValueOnce(
           new TurnStartConflictError(rig.threadId, "already_running"),
         );
@@ -1437,7 +1392,6 @@ else
           },
         });
         rig = await manualFixture({ gateway });
-        // The parent aborts while the boundary read is in flight; no durable flag is set.
         const yields = rig.delivery.yieldsAtBoundary.bind(rig.delivery);
         vi.spyOn(rig.delivery, "yieldsAtBoundary").mockImplementation(async (id) => {
           const result = await yields(id);
@@ -1491,7 +1445,6 @@ else
         const requestsBefore = rig.gateway.requests.length;
 
         const outcome = await drainControls(rig);
-        // The compaction run released with C as its last turn: no successor.
         expect(outcome.status === "failed" ? null : outcome.turn).toMatchObject({
           role: "compaction",
           status: "complete",
@@ -1506,7 +1459,6 @@ else
         );
         expect(compaction?.status).toBe("complete");
         expect(switchTurn?.position).toBeGreaterThan(compaction?.position ?? 0);
-        // M2 was never adopted by the compaction run: it joins the graph after the switch.
         expect(message?.prevTurnId).toBe(switchTurn?.id);
         expect(answer).toMatchObject({ status: "complete", prevTurnId: message?.id });
         expect(
@@ -1535,7 +1487,6 @@ else
           body: { kind: "text", text: "M2 follows" },
           idempotencyKey: "m2-after-crashed-compaction",
         });
-        // A crash drops the claim's DB session but leaves the lease row and its C/[M1] receipt.
         const [lease] = await db
           .select()
           .from(schema.threadRunLeases)
@@ -1549,7 +1500,6 @@ else
         });
         await db.insert(schema.threadRunLeases).values(lease);
         rig.setThreshold(100000);
-        // A replacement process: its own claim, delivery, and wake path.
         const replacement = createDrizzleRunClaim(db, { holderId: "replacement-worker" });
         const delivery = createTestDrizzleDelivery(db, {
           repos: rig.repos,
@@ -1588,8 +1538,6 @@ else
         const first = crypto.randomUUID();
         const back = crypto.randomUUID();
         const newer = crypto.randomUUID();
-        // The journal is what other tabs and replays see: a settled request
-        // publishes only the final queue, never a state with both switches.
         const appended = vi.spyOn(rig.eventWriter, "appendEvents");
         const publishedQueues = () =>
           appended.mock.calls.flatMap(([, events]) =>
@@ -1615,14 +1563,11 @@ else
           expect.objectContaining({ id: newer }),
         );
         appended.mockClear();
-        // Same mode as the queued switch: written settled, the queued one stays.
-        // The answer names the thread's queued switch, not only its own row.
         expect((await switchMode(rig, "draft")).response).toMatchObject({
           runState: { items: [expect.objectContaining({ id: newer })] },
           turnId: null,
         });
         expect(publishedQueues()).toEqual([[newer]]);
-        // A retried cancel answers its own settled row.
         expect(await switchMode(rig, "direct", back)).toMatchObject({
           created: false,
           response: {
@@ -1638,7 +1583,6 @@ else
         expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
           newer,
         ]);
-        // A message starts the next run, which applies the switch queued ahead of it.
         await rig.delivery.enqueue({
           threadId: rig.threadId,
           intent: "message",
@@ -1655,7 +1599,6 @@ else
         expect(await rig.delivery.withdrawControl(rig.threadId, first)).toMatchObject({
           outcome: "withdrawn",
         });
-        // Already in draft mode: a new draft request changes nothing.
         expect((await switchMode(rig, "draft")).response).toMatchObject({
           runState: { items: [] },
           turnId: null,
@@ -1676,14 +1619,12 @@ else
         });
         const turnsBefore = (await rig.repos.turns.listByThread(rig.threadId)).length;
 
-        // The production starter: the refusal comes before the switch applies.
         const starter = createRunStarter(
           { startDrain: (id) => rig.orchestrator.startDrain(id) },
           rig.deps.eventSink,
         );
         await starter.start(rig.threadId);
 
-        // The refusal reserves nothing: no turn, no lease, no execution, no switch.
         expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toEqual({
           reason: "credits_exhausted",
         });
@@ -1701,8 +1642,6 @@ else
         expect(reply).toMatchObject({ status: "complete" });
         expect(await switchTurns(rig)).toHaveLength(1);
         expect(await threadMode(rig)).toBe("draft");
-        // Usage returning clears the block with the last waiting row, and the reply's
-        // execution ended once with its delivery recorded.
         expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toBeUndefined();
         const execution = await identity(reply?.id);
         expect(execution.executionId).not.toBeNull();
@@ -1711,7 +1650,6 @@ else
         expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       });
 
-      /** A chat whose latest reply failed, and a hook that runs while a start waits on the run claim. */
       async function failedReplyRig() {
         const gateway = scriptedGateway({ usage: lowUsage });
         let fail = true;
@@ -1741,7 +1679,6 @@ else
           gateway,
           rig,
           failed,
-          /** Runs `interleave` after Retry's eligibility reads, before its run-start boundary. */
           whileClaiming(interleave: () => Promise<unknown>) {
             rig.runClaim.startExecution = (threadId, executionId, settle) =>
               start(threadId, executionId, async () => {
@@ -1749,7 +1686,6 @@ else
                 await interleave();
               });
           },
-          /** Runs `interleave` once, at the run claim: before the start selects anything. */
           beforeSwitchApplies(interleave: () => Promise<unknown>) {
             let armed = true;
             rig.runClaim.startExecution = (threadId, executionId, settle) =>
@@ -1760,10 +1696,6 @@ else
                 await interleave();
               });
           },
-          /**
-           * Runs `probe` once, in the preparation that follows the start's selection while the
-           * thread lock is held: the first history read under a granted advisory lock.
-           */
           duringPreparation(probe: () => Promise<unknown>) {
             const list = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
             let armed = true;
@@ -1795,7 +1727,6 @@ else
         const abort = () => aborted.abort();
         duringPreparation(async () => abort());
 
-        // A start discarded after it selected the due switch leaves the switch pending.
         await expect(
           rig.orchestrator.prepare({
             threadId: rig.threadId,
@@ -1812,11 +1743,8 @@ else
           "control",
         ]);
 
-        // The Retry that follows applies it with its own reservation: mid-preparation, no other
-        // connection sees the mode, the switch turn or the acknowledgement.
         const midway: { mode?: string; switches?: number; pending?: number } = {};
         duringPreparation(async () => {
-          // Plain queries on the pool: the start's own transaction is not this connection's.
           const [row] = await db.execute(sql`
             select
               (select ai_write_mode from threads where id = ${rig.threadId}) as mode,
@@ -1831,14 +1759,12 @@ else
         await processDetachedWork.drain();
         expect(midway).toEqual({ mode: "direct", switches: 0, pending: 1 });
 
-        // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
         const [switchTurn] = await switchTurns(rig);
         expect(switchTurn).toBeDefined();
         expect(started).toMatchObject({
           created: true,
           turn: { prevTurnId: switchTurn?.id },
         });
-        // The switch turn between them does not hide the failed reply's user turn.
         expect((await identity(replyTurnId)).reservedForUserTurnIds).toEqual([failed.prevTurnId]);
         expect(await rig.repos.turns.findById(replyTurnId as never)).toMatchObject({
           role: "assistant",
@@ -1853,8 +1779,6 @@ else
 
       it("refuses a Retry a newer message overtook and leaves the queued switch pending", async () => {
         const { rig, beforeSwitchApplies, retry } = await failedReplyRig();
-        // The switch is already queued when Retry starts; the message lands after Retry's
-        // eligibility reads and before the switch applies, so applying would bury it.
         await switchMode(rig, "draft");
         expect(await switchTurns(rig)).toEqual([]);
         beforeSwitchApplies(async () => {
@@ -1904,7 +1828,6 @@ else
           };
         });
         const rig = await fixture({ summarizer, gateway: scriptedGateway({ usage: lowUsage }) });
-        // An empty lease is never an observable execution.
         const empty = await rig.runClaim.startExecution(rig.threadId, crypto.randomUUID(), () =>
           rig.delivery.settleStaleExecution(rig.threadId),
         );
@@ -1924,9 +1847,6 @@ else
 
         const done = run.execute();
         await summaryStarted.promise;
-        // The turn cancel endpoint (`./mf thread cancel`, a handoff brief's Stop), not the chat's
-        // Stop: it ends the compaction and leaves the message for the next execution. The chat's
-        // Stop hands the message back instead (`stop-protocol.db.test.ts`).
         expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe("cancelled");
         summaryReleased.open();
         expect(await done).toMatchObject({ status: "cancelled" });
@@ -1938,7 +1858,6 @@ else
           await processDetachedWork.drain();
         }
 
-        // C's cancel ended E1 without delivering M1; the next execution did.
         expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
           status: "cancelled",
         });
@@ -1954,7 +1873,6 @@ else
         expect(await ended(e2.executionId)).toBe(true);
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
 
-        // E1's end precedes E2's first reserved turn.
         expect(reply?.position ?? 0).toBeGreaterThan(c?.position ?? 0);
       });
 
@@ -2003,7 +1921,6 @@ else
         expect(f1).toMatchObject({ role: "assistant", status: "error" });
         expect((await identity(f1?.id)).reservedForUserTurnIds).toEqual([m1.id]);
 
-        // A Retry of the failed reply fails too; its own Retry copies [M1] again.
         const r1 = await rig.orchestrator.retryReply({
           threadId: rig.threadId,
           failedTurnId: f1?.id as never,
@@ -2014,7 +1931,6 @@ else
         expect(failedRetry).toMatchObject({ status: "error", metadata: { retryOf: f1?.id } });
         expect((await identity(failedRetry?.id)).reservedForUserTurnIds).toEqual([m1.id]);
 
-        // The next Retry compacts at start. Hold its claim before it reserves.
         rig.setThreshold(2500);
         const claimed = gate();
         const proceed = gate();
@@ -2033,17 +1949,14 @@ else
         };
         const first = rig.orchestrator.retryReply(retry);
         await claimed.promise;
-        // Nothing is reserved yet: this replay can't know whose the claim is.
         await expect(rig.orchestrator.retryReply(retry)).rejects.toMatchObject({
           code: "retry_pending",
         });
-        // Another tab's Retry of the same reply is refused once one is under way.
         proceed.open();
         const accepted = await first;
         expect(accepted).toMatchObject({ created: true, executionId: expect.any(String) });
         rig.runClaim.startExecution = startExecution;
 
-        // C is reserved and summarizing; the reply is not: the replay finds C.
         const c = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId as never);
         expect(c).toMatchObject({
           role: "compaction",
@@ -2051,7 +1964,6 @@ else
           metadata: { retryOf: failedRetry?.id, retryReplyId: replyTurnId },
         });
         expect((await identity(c?.id)).reservedForUserTurnIds).toEqual([m1.id]);
-        // A replay answers the record as of the replay: the open execution is this Retry's.
         expect(await rig.orchestrator.retryReply(retry)).toMatchObject({
           created: false,
           turn: null,
@@ -2077,7 +1989,6 @@ else
           executionId: accepted.executionId,
         });
         expect(await ended(accepted.executionId)).toBe(true);
-        // M1 was delivered once, by the first reply that failed it.
         expect(await deliveredBy(m1.id)).toBe(f1?.id);
       });
 
@@ -2107,7 +2018,6 @@ else
           const failedTurnId = await failedReply(rig, `retry-describe-${first}`);
           rig.setThreshold(threshold);
           const replyTurnId = crypto.randomUUID() as never;
-          // The replay lookup reads the reply first; the next read describes the answer.
           const findById = rig.repos.turns.findById.bind(rig.repos.turns);
           let replyReads = 0;
           rig.repos.turns.findById = async (id) => {
@@ -2144,7 +2054,6 @@ else
           failedTurnId,
           replyTurnId: crypto.randomUUID() as never,
         };
-        // The winner holds the claim with no lease row and nothing reserved.
         const claimed = gate();
         const proceed = gate();
         const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
@@ -2160,8 +2069,6 @@ else
           code: "retry_pending",
         });
 
-        // The repeated replay reads status (asleep) before the winner reserves,
-        // and the leaf only after the winner's reply finished.
         const latestRead = gate();
         const latestReleased = gate();
         const graph = turnGraph(rig.repos.turns);
@@ -2187,7 +2094,6 @@ else
         const accepted = await winner;
         await processDetachedWork.drain();
         expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
-        // Shutdown stops new work; it never denies work already accepted.
         rig.deps.shutdown.started = true;
         latestReleased.open();
 
@@ -2196,7 +2102,6 @@ else
           turn: { id: retry.replyTurnId },
           executionId: accepted.executionId,
         });
-        // Another tab's request id is still refused.
         await expect(
           rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
         ).rejects.toMatchObject({ code: "runtime_shutting_down" });
@@ -2217,7 +2122,6 @@ else
         expect(await done).toMatchObject({ status: "failed" });
         rig.delivery.close = close;
 
-        // Abandoned: unlocked and asleep, but not ended, and still open.
         const abandoned = await leaseRow(rig.threadId);
         expect(abandoned?.executionId).toBe(e1.executionId);
         expect(abandoned?.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
@@ -2228,7 +2132,6 @@ else
         expect(await ended(e1.executionId)).toBe(false);
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBe(e1.executionId);
 
-        // The next holder repairs, ends E1 and deletes its row before its own lease exists.
         const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
         let rowAtInsert: Awaited<ReturnType<typeof leaseRow>> | "unseen" = "unseen";
         rig.runClaim.startExecution = async (threadId, executionId, settle) =>
@@ -2255,8 +2158,6 @@ else
 
       it("settles an expired lease with no unsettled turn from the repair lane", async () => {
         const rig = await manualFixture();
-        // A crash after repair committed the turn's error but before the end:
-        // the turn carries the execution, the expired row remains.
         const executionId = crypto.randomUUID();
         const leaf = await turnGraph(rig.repos.turns).latest(rig.threadId);
         const repaired = await rig.repos.turns.create({

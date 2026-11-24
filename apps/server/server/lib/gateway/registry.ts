@@ -1,13 +1,3 @@
-/**
- * Model/provider registry, built from `models-snapshot.json` (models.dev rows), `families.ts`
- * (which models Flow offers) and `model-data.json` (wire, key, and every fact models.dev lacks,
- * each with its source). Key decisions: provider enablement from each provider's apiKeyEnv. A
- * provider lists offerings: a model plus what that provider charges for it and how it caches it,
- * since the same model can cache and bill differently per provider. Adapter-specific wire checks
- * (cache lifetimes) live in the adapters (`assertModelsOnWire`) and run over every row when a
- * gateway is created from env.
- */
-
 import { effortLevels } from "@meridian-flow/mars-schema";
 import type {
   BuiltinAdapter,
@@ -39,27 +29,19 @@ import snapshotJson from "./models-snapshot.json" with { type: "json" };
 
 export interface RegisteredModel {
   id: string;
-  /** Who made the model, whoever serves it: `model-data.json`, else the models.dev provider the row comes from. */
   maker: string;
   tokenizer: TokenizerFamily;
-  /** The picker name: the family alias for its newest model, "alias version" for an older one. */
   displayName: string;
-  /** ISO date models.dev lists; the newest model of a family is the one its alias resolves to. */
   releaseDate?: string;
   contextWindow: number;
   maxOutputTokens: number;
-  /** Copied from models.dev `modalities.input`. */
   inputModalities: readonly InputModality[];
-  /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
   maxLinkBytes?: number;
-  /** Needs Anthropic's tool-schema projection. */
   projectToolSchema?: true;
-  /** Function calls carry ids their results pair with (Gemini 3 and later). */
   functionCallIds?: true;
   reasoning: ReasoningSupport;
 }
 
-/** A model as one provider serves it: the price and cache behavior belong to the provider. */
 export interface RegisteredOffering {
   model: RegisteredModel;
   pricing: ModelPricing;
@@ -68,28 +50,21 @@ export interface RegisteredOffering {
 
 export interface RegisteredProvider {
   id: string;
-  /** API wire format — maps to ProviderConfig.adapter at build time. */
   adapter: BuiltinAdapter;
-  /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: string;
   baseUrl?: string;
-  /** Kept for `LIVE_TEST_MODEL` runs; its models are hidden from the writer-facing model list. */
   testOnly?: true;
   offerings: readonly RegisteredOffering[];
 }
 
 export interface ModelRegistry {
   providers: readonly RegisteredProvider[];
-  /** Model ID used when callers omit a model. Must exist in at least one provider entry. */
   defaultModel: string;
-  /** The rolling summarizer's model unless the environment names another. Must exist too. */
   compactionSummarizerModel: string;
 }
 
-/** The slice of a models.dev model row that Flow reads, keyed in the snapshot by Flow's provider id then model id. */
 export interface SnapshotModel {
   name: string;
-  /** ISO date. */
   release_date?: string;
   tool_call: boolean;
   limit: { context: number; output: number };
@@ -99,7 +74,6 @@ export interface SnapshotModel {
     | { type: "effort"; values: readonly string[] }
     | { type: "budget_tokens"; min?: number }
   )[];
-  /** USD per million tokens. */
   cost: {
     input: number;
     output: number;
@@ -116,12 +90,11 @@ export interface SnapshotModel {
 }
 
 export interface ModelsSnapshot {
-  /** ISO date the snapshot was taken from models.dev. */
   takenAt: string;
   providers: Readonly<Record<string, Readonly<Record<string, SnapshotModel>>>>;
 }
 
-// Money stays decimal: nano-dollars as bigint, printed with at least two places.
+// keep: money stays decimal: nano-dollars as bigint, printed with at least two places
 function toNano(usd: number): bigint {
   return BigInt(Math.round(usd * 1e9));
 }
@@ -136,7 +109,6 @@ function usd(price: number, multiplier = 1): string {
   return formatUsd(toNano(price * multiplier));
 }
 
-/** The levels models.dev lists that are on Mars's ladder, in ladder order (lowest first), plus `none` when the model has a toggle. */
 function toReasoning(model: SnapshotModel, thinksByDefault: boolean): ReasoningSupport {
   const effort = model.reasoning_options.find((option) => option.type === "effort");
   const values = effort?.type === "effort" ? effort.values : [];
@@ -148,11 +120,6 @@ function toReasoning(model: SnapshotModel, thinksByDefault: boolean): ReasoningS
   };
 }
 
-/**
- * The single above-tier step as the multipliers `ModelPricing` carries, or why the row doesn't
- * fit: models.dev gives the tier's own prices, so this holds only when every input-side rate
- * scales by one factor.
- */
 function tierOf(
   cost: SnapshotModel["cost"],
 ): Pick<ModelPricing, "inputTierTokens" | "aboveTierMultipliers"> | string {
@@ -181,7 +148,6 @@ function tierOf(
   };
 }
 
-/** Why a models.dev row in a family can't be offered, or undefined when Flow can serve it. */
 export function unservableReason(model: Partial<SnapshotModel>): string | undefined {
   const { cost, limit, modalities } = model;
   if (!cost || typeof cost.input !== "number" || typeof cost.output !== "number") {
@@ -193,7 +159,6 @@ export function unservableReason(model: Partial<SnapshotModel>): string | undefi
   return typeof tier === "string" ? tier : undefined;
 }
 
-/** A fact keyed to a model id no snapshot row has: a typo or a retired model, whose facts would fall back to the provider's `"*"` row without a sound. */
 function strayFactKeys(snapshot: ModelsSnapshot): string[] {
   return PROVIDERS.flatMap((row) =>
     Object.keys(row.models)
@@ -205,11 +170,6 @@ function strayFactKeys(snapshot: ModelsSnapshot): string[] {
   );
 }
 
-/**
- * Where a provider's price overrides stop short: a model in a family that overrides another of
- * its models but has no override itself, and a rate models.dev lists that an override leaves
- * unset. Either would bill that rate at models.dev's number, not the one Flow pays.
- */
 function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
   return PROVIDERS.flatMap((row) => {
     const rows = snapshot.providers[row.id] ?? {};
@@ -245,7 +205,6 @@ function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
   });
 }
 
-/** Where `model-data.json` and the snapshot disagree. The registry refuses a snapshot with one; the refresh report lists them and builds anyway. */
 export function modelDataGaps(snapshot: ModelsSnapshot): string[] {
   return [...strayFactKeys(snapshot), ...priceOverrideGaps(snapshot)];
 }
@@ -255,7 +214,6 @@ function assertNoModelDataGaps(snapshot: ModelsSnapshot): void {
   if (gaps.length > 0) throw new Error(gaps.join("\n"));
 }
 
-/** What Flow charges for a row: the provider's override when it has one, else models.dev's cost. */
 export function billedCost(row: ProviderData, id: string, cost: SnapshotModel["cost"]) {
   const override = factsOf(row, id).price;
   if (!override) return { cost, override };
@@ -299,13 +257,6 @@ function toPricing(
   };
 }
 
-/**
- * Picker names for one family's models: the alias for the newest, "alias version" for the rest.
- * The version is the first number in models.dev's name ("5.1" from "Claude Fable 5.1"). Of
- * several older models with one version, the shortest id keeps "alias version" and each other
- * is marked with what its id adds to that one ("fable 5.1 20261201"), so a name once shown
- * never changes when a sibling arrives.
- */
 function pickerNames(
   family: ModelFamily,
   newest: string | null,
@@ -327,12 +278,9 @@ function pickerNames(
   return names;
 }
 
-/** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
 export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
   const providers = PROVIDERS.map((row): RegisteredProvider => {
     const rows = snapshot.providers[row.id] ?? {};
-    // A snapshot row the allowlist no longer admits stays in the file until the next refresh
-    // and gets no offering.
     const offerings = (MODEL_FAMILIES[row.id] ?? []).flatMap((family) => {
       const ids = Object.keys(rows).filter((id) => findFamily(row.id, id) === family);
       const newest = newestInFamily(
@@ -410,12 +358,6 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
 assertNoModelDataGaps(snapshotJson as ModelsSnapshot);
 export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
-/**
- * What an Agent file's `model` names: a picker name (a family alias is its newest model's name,
- * an older one is "fable 5.1") becomes that model's id, and anything else, an exact id included,
- * stays as written. Only models in `available` count, so a provider without a key resolves to
- * nothing and the Agent reports the model as unavailable.
- */
 export function resolveModelName(name: string, available: readonly { id: string }[]): string {
   const ids = new Set(available.map((model) => model.id));
   const found = MODEL_REGISTRY.providers
@@ -424,7 +366,6 @@ export function resolveModelName(name: string, available: readonly { id: string 
   return found?.model.id ?? name;
 }
 
-/** The one port that names a model: the gateway's default for no name, else `resolveModelName` over what it offers. */
 export function modelFor(gateway: {
   getDefaultModel(): string | undefined;
   listModels(): readonly { id: string }[];
@@ -439,7 +380,6 @@ export function modelFor(gateway: {
   return name;
 }
 
-/** Adapter-neutral registry checks, run as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
   for (const offering of registry.providers.flatMap((provider) => provider.offerings)) {
     const { model, pricing } = offering;
@@ -477,7 +417,6 @@ export function validateModelRegistry(registry: ModelRegistry): void {
 
 validateModelRegistry(MODEL_REGISTRY);
 
-/** Keys starting with "dev-" are mock/placeholder and do not enable live providers. */
 export function hasRealApiKey(key: string | undefined): boolean {
   return Boolean(key && key.length > 0 && !key.startsWith("dev-"));
 }
@@ -510,7 +449,6 @@ function toProviderConfig(entry: RegisteredProvider): ProviderConfig {
   };
 }
 
-/** Every registry provider as a keyless config, for checks that must not depend on which keys are set. */
 export function registryProviderConfigs(registry: ModelRegistry): ProviderConfig[] {
   return registry.providers.map(toProviderConfig);
 }
@@ -531,7 +469,6 @@ export function buildFromRegistry(
   const enabledModelIds = new Set(
     providers.flatMap((provider) => provider.models.map((model) => model.id)),
   );
-  // When the registry default is not enabled, defaultGatewayOptions falls back to the first model.
   const defaultModel = enabledModelIds.has(registry.defaultModel)
     ? registry.defaultModel
     : undefined;
@@ -539,7 +476,6 @@ export function buildFromRegistry(
   return { providers, defaultModel };
 }
 
-/** Pinned rate rows, shaped for billing's `ModelTokenRate`. */
 export function extractPinnedRates(registry: ModelRegistry): ModelTokenRate[] {
   return registry.providers.flatMap((provider) =>
     provider.offerings.map(({ model, pricing }) => ({
@@ -550,7 +486,6 @@ export function extractPinnedRates(registry: ModelRegistry): ModelTokenRate[] {
   );
 }
 
-/** The rates billing charges: the registry's pinned prices, plus zero rates for the mock model. */
 export function registryTokenRateSource(): ModelTokenRateSource {
   return createLayeredTokenRateSource({
     pinnedRates: extractPinnedRates(MODEL_REGISTRY),

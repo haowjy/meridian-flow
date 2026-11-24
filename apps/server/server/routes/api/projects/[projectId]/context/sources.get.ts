@@ -1,5 +1,3 @@
-/** GET /api/projects/[projectId]/context/sources: the sources the account can read in this project. */
-
 import type { ContextSourcesResult } from "@meridian/contracts/protocol";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";

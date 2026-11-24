@@ -1,5 +1,3 @@
-/** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
-
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
@@ -14,7 +12,6 @@ import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
 import { type ProjectedActiveHistory, projectCompactedHistory } from "./project.js";
 
-/** A boundary-owned forced preparation, never a replacement for its prepare callback. */
 export interface ForcedCompactionDecision {
   kind: "compact";
   trigger: "auto" | "manual";
@@ -62,7 +59,6 @@ export function compactionFailureDiagnosticMessage(reason: CompactionFailureReas
   }
 }
 
-/** Keep rejection reasons in details instead of expanding the system error-code family. */
 export function compactionFailureMeridianError(failure: CompactionFailureOutcome, message: string) {
   const code =
     failure.reason === "context_too_large" || failure.reason === "context_window_exceeded"
@@ -81,7 +77,6 @@ export function compactionFailureMeridianError(failure: CompactionFailureOutcome
   };
 }
 
-/** Preserve known outcomes across async preparation and the delivery transaction. */
 export function compactionFailureFrom(
   error: unknown,
   phase: CompactionFailurePhase,
@@ -118,7 +113,6 @@ export function decideCompaction(input: {
     turns: input.turns,
     blocks: input.blocks,
     fitLimitTokens,
-    // A forced summary may use the hard window without enlarging the preferred tail.
     tailBudgetBaseTokens: Math.min(
       input.thresholdTokens ?? fitLimitTokens,
       fitLimitTokens,

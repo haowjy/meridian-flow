@@ -1,14 +1,3 @@
-/**
- * Selects runnable work at run start and adoptable rows at a request boundary
- * (between two model requests inside one reply).
- *
- * The queued write-mode switch S is the one exception to "messages first": a
- * message behind S (higher seq) must be answered in S's mode, so a request
- * boundary ends the reply (`yield`) and run start applies S (`switch`) before
- * any message runs. A switch is pending until a run is about to start: with
- * nothing else to run, S stays queued and applies before the next run.
- */
-
 import type { ControlBody } from "@meridian/contracts/threads";
 import type { AskResolvedBody, InboxMessage } from "./ports.js";
 
@@ -29,7 +18,6 @@ export type InboxWorkSelection =
   | { kind: "yield" }
   | { kind: "none" };
 
-/** `retry`: a Retry starts a reply by itself, so a lone queued switch is due at run start. */
 export function next(
   pending: readonly InboxMessage[],
   at: "run_start" | "boundary",
@@ -58,7 +46,6 @@ export function next(
   if (at === "boundary") return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
 
   if (pending.some((row) => row.intent === "message")) return { kind: "batch", rows };
-  // Only a compaction runs by itself; a lone switch waits for the next run.
   const control = pending.find(isControl);
   if (!control || !pending.some((row) => isControl(row) && !isWriteModeSwitch(row)))
     return { kind: "none" };
@@ -67,7 +54,6 @@ export function next(
     : { kind: "control", control, rows: [] };
 }
 
-/** The chat's queued switch; enqueue cancel-out keeps at most one. */
 export function queuedWriteModeSwitch(
   pending: readonly InboxMessage[],
 ): WriteModeSwitchMessage | null {
@@ -78,11 +64,6 @@ function isControl(row: InboxMessage): row is ControlMessage {
   return row.intent === "control" && row.body.kind !== "ask_resolved";
 }
 
-/**
- * A resolved ask's continuation obligation. The row is pending exactly while the
- * obligation is outstanding: until its continuation is admitted, or until a
- * cancellation drops it.
- */
 export function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
   return row.intent === "control" && row.body.kind === "ask_resolved";
 }
@@ -91,7 +72,6 @@ function isWriteModeSwitch(row: InboxMessage): row is WriteModeSwitchMessage {
   return row.intent === "control" && row.body.kind === "write_mode";
 }
 
-/** Prefix materialization cannot move a row across the write-mode boundary that governs it. */
 export function prefixRows(eligible: readonly InboxMessage[]): InboxWorkSelection {
   const queuedSwitch = eligible.find(isWriteModeSwitch);
   const rows = eligible.filter(

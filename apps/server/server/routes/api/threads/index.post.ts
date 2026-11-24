@@ -1,4 +1,3 @@
-/** POST /api/threads: creates a thread (project resolved from the request) via the thread-creation helper. Depends on the auth gate. */
 import { type CreateThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../lib/auth-gate.js";

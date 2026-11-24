@@ -1,4 +1,3 @@
-/** The admitted assistant turn and invocation correlation must describe one real child execution. */
 import type { AdmitExecutionReportInput } from "../ports/repositories.js";
 import { sameLineage } from "./lineage.js";
 

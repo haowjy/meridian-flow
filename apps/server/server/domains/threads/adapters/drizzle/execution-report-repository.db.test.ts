@@ -113,7 +113,6 @@ else
           threadId: ids.otherProjectChild,
           position: 1,
           role: "user",
-          // The child's seed turn is the spawning caller's prompt, not a writer send.
           origin: "system",
           status: "complete",
         },

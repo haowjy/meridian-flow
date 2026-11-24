@@ -1,4 +1,3 @@
-/** Rejections shared by every owner of a conversation summary attempt. */
 import { z } from "zod";
 
 export const SummaryRejectionReasonCodec = z.enum([

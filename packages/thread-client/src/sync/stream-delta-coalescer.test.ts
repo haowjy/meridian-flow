@@ -1,4 +1,3 @@
-/** Ordering and coalescing laws for the per-frame stream delta coalescer. */
 import { type AGUIEvent, EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";

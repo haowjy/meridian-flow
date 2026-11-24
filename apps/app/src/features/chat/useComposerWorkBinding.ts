@@ -1,5 +1,3 @@
-/** Sole controller connecting the Work binding reducer to query and announcements. */
-
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useReducer, useRef } from "react";
@@ -46,7 +44,6 @@ export function useComposerWorkBinding({
     initialComposerWorkBindingState,
   );
   const worksQuery = useWorks(projectId);
-  // Read when a message is made, so a refetch never re-runs the binding's effects.
   const naming = useRef(worksQuery.nameOf);
   naming.current = worksQuery.nameOf;
   const mutation = useRebindThreadWork(projectId, threadId);

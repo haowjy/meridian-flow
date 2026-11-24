@@ -1,5 +1,3 @@
-/** Object verification and durable DOCX conversion before the import is planned. */
-
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION, importNodeId } from "@meridian/contracts";
 import {
@@ -17,15 +15,12 @@ export type PreparationPatch = { id: string; patch: ImportEntryPatch };
 export type PreparationResult = {
   patches: PreparationPatch[];
   createdKeys: string[];
-  /** Entries whose earlier image files are replaced by `images`. */
   reconverted: string[];
-  /** One binary entry per embedded DOCX image, linked to its document by `derivedFrom`. */
   images: ImportEntry[];
 };
 
 const MAX_FOLDER_ATTEMPTS = 20;
 
-/** Every key the import holds: one listing answers "is this object still there" for all entries. */
 async function storedKeys(objects: ObjectStorePort, importId: string): Promise<Set<string>> {
   const keys = new Set<string>();
   let cursor: string | undefined;
@@ -38,11 +33,6 @@ async function storedKeys(objects: ObjectStorePort, importId: string): Promise<S
   return keys;
 }
 
-/**
- * Converts a DOCX with its images in a folder named after it. When an image would land on a
- * path another entry already holds, the folder gets a numeric suffix: the links are written
- * with the folder, so the document and its images stay together.
- */
 async function convertBesideTaken(
   converter: DocumentConverterPort,
   bytes: Uint8Array,
@@ -86,8 +76,6 @@ export async function prepareImportEntries(
   }
   let total = input.entries.length;
 
-  // A lost image is rebuilt by converting its document again. Past that (the document is
-  // already seeded) the image is failed and its document is the one named for a look.
   const lostImageOf = new Set<string>();
   for (const entry of input.entries) {
     const parentId = entry.selection.derivedFrom;
@@ -108,7 +96,6 @@ export async function prepareImportEntries(
       continue;
     }
     if (entry.receipt.facts.kind !== "docx") continue;
-    // A conversion that failed is recorded as `kept_as_file`; it does not run again.
     const converted = entry.convertedKey
       ? stored.has(entry.convertedKey)
       : entry.reason === "kept_as_file";

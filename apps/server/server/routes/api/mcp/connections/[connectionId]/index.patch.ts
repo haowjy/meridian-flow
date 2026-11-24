@@ -1,4 +1,3 @@
-/** PATCH /api/mcp/connections/:connectionId: a new address or token. A new settings version, a new session, a new check. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

@@ -77,7 +77,6 @@ describe("source-authoritative transcript projection", () => {
     expect(render(source, [reference(1, source.length)])).toContain('data-link-chip="filled"');
     expect(render("Chapter", [reference(0, 7)])).not.toContain("data-link-chip");
     expect(render("[[Chapter]]", [reference(0, 11)])).not.toContain("data-link-chip");
-    // A literal URI has no parsed link run, and therefore no identity.
     expect(render("manuscript://chapter.md", [reference(0, 23)])).not.toContain("data-link-chip");
   });
   it("preserves syntax links without granting submitted identity", () => {

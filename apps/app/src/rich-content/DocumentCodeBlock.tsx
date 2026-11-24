@@ -1,4 +1,3 @@
-/** Shared transcript code highlighting, hover copy and the Editor's diagram render boundary. */
 import { t } from "@lingui/core/macro";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { common, createLowlight } from "lowlight";

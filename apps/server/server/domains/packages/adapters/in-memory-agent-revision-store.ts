@@ -1,5 +1,3 @@
-/** Hermetic revision storage with serialized, rollback-safe transactions for app composition. */
-
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -24,7 +22,6 @@ import type {
 type State = {
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
   revisions: Map<string, CatalogRevision>;
-  /** In insertion order, which is the Save order. */
   saves: Map<string, PackageSave & { owner: string }>;
   bindings: Map<
     string,

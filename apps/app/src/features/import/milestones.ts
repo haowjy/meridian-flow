@@ -1,5 +1,3 @@
-/** Announce only meaningful transitions, never individual upload or organize ticks. */
-
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores/thread-store/announcements";
 import type { ImportState } from "./import-presentation";

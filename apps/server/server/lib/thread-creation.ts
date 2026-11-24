@@ -1,8 +1,3 @@
-/**
- * Thread-creation orchestration helper: creates a thread for a project after
- * asserting ownership and resolving its work attachment. App-layer glue tying
- * the projects + threads + packages domains together.
- */
 import type { DraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
@@ -60,27 +55,15 @@ export interface CreateThreadForProjectDeps {
 export interface CreateThreadForProjectArgs {
   projectId: string;
   userId: string;
-  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
-  /** The lineage's draft, minted by the client beside `id`; the insert mints one if omitted. */
   draftId?: DraftId;
   title?: string | null;
   agentSelection: AgentSelection;
-  /** Explicit work assignment from the request, if any. */
   workId?: string | null;
-  /** The writer's explicit mode; it also becomes the Work's default. Omitted, the chat copies it. */
   aiWriteMode?: AiWriteMode;
   overrides: ThreadOverrides;
 }
 
-/**
- * Create a thread under a project — the single owner of thread-creation policy
- * shared by both the global (`/api/threads`) and project-scoped
- * (`/api/projects/:projectId/threads`) routes. Verifies ownership, persists the
- * thread row in the mode the request chose or its Work's default, then creates its primary Work
- * membership. Throws (404) if the caller
- * does not own the project.
- */
 export async function createThreadForProject(
   deps: CreateThreadForProjectDeps,
   args: CreateThreadForProjectArgs,
@@ -140,7 +123,6 @@ export async function createThreadForProject(
       },
       resolveWork: async (created) => {
         await deps.threadWorks.addMembership(created.id, work.id, true);
-        // An explicit choice becomes the Work's default; lock order is thread, then Work.
         if (args.aiWriteMode) await deps.workRepo.setDefaultAiWriteMode(work.id, args.aiWriteMode);
         return work.id;
       },

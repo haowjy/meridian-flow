@@ -1,26 +1,3 @@
-/**
- * The one look for links, keyed by rendered-only data attributes so every
- * surface (transcript, composer, Editor) draws the same thing by emitting the
- * same attributes and never restyles it locally.
- *
- * Internal links are a tag chip (`core/editor/links/link-chip.ts`): an element
- * carrying `data-link-chip` (filled or dashed) and `data-link-chip-icon` (the
- * document family). In the Editor that element is the link mark's `<a>`, one
- * element around the whole label, so a label with mixed formatting is one
- * chip. Each family's mask image arrives as
- * `--link-chip-icon` from `family-icons.ts`, injected once into the document
- * head, so the shapes are defined in one place.
- *
- * The fill is an ink overlay (a well at rest, the strong step on hover), so it
- * reads on every surface without a per-surface value.
- *
- * External links keep their underline and wear the outbound arrow, the one
- * thing that tells a writer a link leaves the app before they press it.
- *
- * Unlayered on purpose: it must beat `.prose-tokens a` (a utility) wherever a
- * chip is an anchor inside rendered prose.
- */
-
 [data-link-chip] {
   appearance: none;
   border: 1px solid transparent;
@@ -30,35 +7,22 @@
   font: inherit;
   padding: 0.0625em 0.375em;
   text-decoration: none;
-  /* A long name wraps as prose does, and every line fragment is a chip. */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
   transition: background-color var(--default-transition-duration) ease;
 }
 
-/* Drawn in the mask rather than as an element, so it is never in a copy, in
-   a screen reader's reading of the sentence, or in the Editor's document.
-
-   An empty INLINE box whose left padding is the icon's width, not an
-   inline-block: an atomic inline is a line-break opportunity, so the icon
-   could end one line and the name start the next. An inline box glued to the
-   first word cannot be separated from it. */
 [data-link-chip]::before {
   padding-left: 0.95em;
   margin-right: 0.25em;
   background-color: var(--color-muted-foreground);
   content: "";
-  /* A chip with no family image draws nothing rather than a solid block. */
   mask-image: var(--link-chip-icon, linear-gradient(transparent, transparent));
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: 0.95em 0.95em;
 }
 
-/* Nothing at that address yet. Not an error: serial writers link chapters
-   before they write them, so this is an outline, never a warning. The dashed
-   border carries the quietness; the name stays at reading contrast (muted ink
-   is at least 4.5:1 on every surface a chip sits on, hovered or not). */
 [data-link-chip="dashed"] {
   border-color: var(--color-border);
   border-style: dashed;
@@ -66,23 +30,15 @@
   color: var(--color-muted-foreground);
 }
 
-/* A document that exists only in a draft: reachable, but not live text yet.
-   A dotted outline at reading contrast sets it apart from a published target
-   (filled) and from nothing (dashed, muted). */
 [data-link-chip="draft"] {
   border-color: var(--color-muted-foreground);
   border-style: dotted;
 }
 
-/* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
 [data-link-chip="dashed"] strong {
   color: inherit;
 }
 
-/* Only a chip that goes somewhere answers the pointer. A transcript or
-   composer document chip is an enabled link; a folder chip is a menu button.
-   An Editor chip is its link mark's `<a>`, which goes somewhere unless its
-   document is gone, so it answers without needing a role. */
 :is([data-link-chip][role="link"], [data-link-chip][aria-haspopup="menu"], a[data-link-chip]):not(
   [aria-disabled="true"]
 ):hover {
@@ -97,8 +53,6 @@
   background-color: var(--color-ink-fill);
 }
 
-/* A stored file says its type and size after its name, and how its upload stands
-   while it travels. Only the Editor's chip carries these attributes. */
 [data-link-detail]::after {
   margin-left: 0.5em;
   color: var(--color-muted-foreground);
@@ -107,7 +61,6 @@
   white-space: nowrap;
 }
 
-/* The fill grows left to right with the bytes sent. */
 [data-link-upload="uploading"] {
   background-image: linear-gradient(
     to right,
@@ -129,7 +82,6 @@
   outline-offset: 2px;
 }
 
-/* The shared outbound arrow follows explicit external link marks. */
 a[data-link-kind="external"]::after {
   display: inline-block;
   width: 0.625em;

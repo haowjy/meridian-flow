@@ -1,5 +1,3 @@
-/** One runtime composition: resolve ports first, then derive delivery, producer and loop. */
-
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
 import type { Gateway, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { registryTokenRateSource } from "../../../../lib/gateway/registry.js";
@@ -64,13 +62,11 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     backgroundTasks?: DetachedWorkTracker;
-    /** In-memory repositories carry their transaction owner; the harness's journal and shown-link store join it. */
     repos?: ThreadRepositories | InMemoryRepositories;
     inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];
-    /** Delivery-only: `OrchestratorDeps` has no `notices` field of its own. */
     notices?: NoticePort;
     runStarter?: Parameters<typeof createInMemoryRuntimeDelivery>[0]["runStarter"];
     schedulePostCommit?: Parameters<typeof createInMemoryRuntimeDelivery>[0]["schedulePostCommit"];
@@ -89,9 +85,7 @@ export function createRuntimeHarness(
   } = overrides;
   const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
-  // Shown-link evidence commits through the repositories' transactions.
   const repos = overrides.repos ?? createInMemoryRepositories({ projects });
-  // Repositories that are not in-memory (Drizzle) commit through the database transaction, not an owner.
   const transactionOwner =
     "transactionOwner" in repos ? repos.transactionOwner : noTransactionOwner;
 
@@ -124,8 +118,6 @@ export function createRuntimeHarness(
       };
     },
   };
-  // The non-durable inbox fake has no transaction callbacks. Ordinary sends
-  // flush their wake only after the producer's repository transaction returns.
   const wakes: Array<() => Promise<void>> = [];
   const flushWakes = async () => {
     for (const wake of wakes.splice(0)) await wake();
@@ -174,7 +166,6 @@ export function createRuntimeHarness(
         return false;
       },
     },
-    // No subagent threads: nothing below a run to cancel or publish.
     lineage: {
       async cancel(_threadId, decide) {
         const { result, execution } = await decide();
@@ -324,7 +315,6 @@ export function createRuntimeHarness(
   };
 }
 
-/** Seed ownership and credits around the same composition, with optional real gateway. */
 export async function runtimeScenario(
   options: Omit<Partial<OrchestratorDeps>, "repos" | "eventWriter" | "headSeq"> & {
     gateway: Gateway;
@@ -334,7 +324,6 @@ export async function runtimeScenario(
     signalGatewayEvent?: (event: StreamEvent) => boolean;
     runStarter?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["runStarter"];
     notices?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["notices"];
-    /** Shared with a caller-built in-memory `documentEvidence`. */
     transactionOwner?: InMemoryTransactionOwner;
   },
 ) {

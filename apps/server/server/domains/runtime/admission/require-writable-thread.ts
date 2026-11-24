@@ -1,4 +1,3 @@
-/** Admits writer turns when the bound Work still exists; archive does not freeze its chats. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { ThreadWorkUnavailableAdmissionError } from "./user-turn-admission.js";
 

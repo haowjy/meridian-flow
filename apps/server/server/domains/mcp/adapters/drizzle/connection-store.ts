@@ -58,7 +58,6 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
     }));
   }
 
-  /** The names of the live connections at a row's level. */
   const liveNames = async (
     conn: DrizzleDb,
     row: { accountId: UserId; projectId: ProjectId | null },
@@ -78,7 +77,6 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
     return new Set(taken.map(({ name }) => name));
   };
 
-  /** One account lock orders the name choice and the write of concurrent adds and undos. */
   const lockAccount = (conn: DrizzleDb, accountId: UserId) =>
     conn.select({ id: users.id }).from(users).where(eq(users.id, accountId)).for("update");
 

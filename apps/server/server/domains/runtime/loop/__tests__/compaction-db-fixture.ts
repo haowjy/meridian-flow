@@ -1,5 +1,3 @@
-/** Shared PostgreSQL composition for compaction and control boundary contracts. */
-
 import type { Database } from "@meridian/database";
 import { processDetachedWork } from "../../../../shared/detached-work.js";
 import { executionScenario } from "../../../../test-support/execution-scenario.js";
@@ -24,7 +22,6 @@ export function createCompactionFixture(db: Database) {
       summarizer?: ReturnType<typeof scriptedSummarizer>;
       gateway?: ReturnType<typeof scriptedGateway>;
       workContext?: WorkContextReader;
-      /** Nothing starts the next run after a release: the test starts each one itself. */
       holdWakes?: boolean;
     } = {},
   ) {
@@ -43,9 +40,7 @@ export function createCompactionFixture(db: Database) {
         : ids.caller;
     const claim = createDrizzleRunClaim(db, { holderId: "fixture-owner" });
     const eventWriter = createQuietDrizzleJournalWriter(db);
-    // Compaction threshold in tokens; undefined leaves the model's default trigger.
     let threshold: number | undefined = 2500;
-    // A child reads its spawner's binding for the chain's permission.
     const boundThreadIds = new Set([threadId, ...(options.child ? [ids.caller] : [])]);
     const source = createTestAgentBinding("gpt-5.6-luna", "Write stories.", () => [
       ...boundThreadIds,

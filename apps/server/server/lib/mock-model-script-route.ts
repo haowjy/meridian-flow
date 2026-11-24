@@ -1,7 +1,3 @@
-/**
- * Route core for /api/debug/mock-model/script — dev-only scripted replies for the
- * in-process mock model. 404 whenever no scriptable mock is composed (real providers, production).
- */
 import {
   type MockModelScriptEnqueued,
   type MockModelScriptState,
@@ -34,7 +30,6 @@ export function readMockModelScripts(queue: MockScriptQueue | null): MockModelSc
   return requireQueue(queue).state();
 }
 
-/** Removes the script with `id`, or every script when `id` is absent. */
 export function clearMockModelScripts(
   queue: MockScriptQueue | null,
   id?: string,

@@ -1,4 +1,3 @@
-/** Validated on-disk launch identity and checkout-owned discovery of a running stack. */
 import fs from "node:fs";
 import path from "node:path";
 import type { DevMode } from "./dev-mode";
@@ -21,7 +20,6 @@ export interface DevSessionMetadata {
   clientBuild: ClientBuild;
   branch: string;
   worktreePrefix?: string;
-  /** The launch command holds no secrets: panes get their env from the dev-env loader. */
   command: string;
   createdAt: string;
   externalRoutes: ExternalDevRoute[];
@@ -111,7 +109,6 @@ export function readDevSessionState(repoRoot: string) {
   return { recorded, active };
 }
 
-/** Current Git identity plans new launches; active metadata locates an existing launch. */
 export function resolveCheckoutRouteUrls(
   repoRoot: string,
   output: string,

@@ -1,5 +1,3 @@
-/** `./mf api`: any authenticated request against this worktree's server (like `gh api`). */
-
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";

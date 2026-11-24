@@ -1,4 +1,3 @@
-/** Pure navigation state machine for the measured composer toolbar. */
 import type { ComposerToolbarLayout } from "./composer-toolbar-layout";
 import type { ComposerControlId, PanelSession, ToolbarNavigationInput } from "./types";
 
@@ -17,7 +16,6 @@ export type FocusTarget =
 export type NavigationState = {
   input: ToolbarNavigationInput;
   layout: ComposerToolbarLayout;
-  /** Latest measured topology held until a nondismissible panel settles. */
   deferredLayout: ComposerToolbarLayout | null;
   surface: NavigationSurface;
   focus: { token: number; target: FocusTarget } | null;

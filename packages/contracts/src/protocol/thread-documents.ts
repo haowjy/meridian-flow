@@ -1,72 +1,30 @@
-/**
- * Purpose: Defines JSON-natural thread-document and live-lineage DTOs.
- * Why independent: Chat rail data is shared by server routes and frontend query consumers.
- */
-
 import type { CommandId, DraftId } from "../ids.js";
 
 export type ThreadDocumentRelationship = "editing" | "reading" | "created";
 
-/**
- * What a turn did to where a document is, net of its own moves: deleted it, moved it, or
- * copied it there from another document. Locations are context URIs as they were when the
- * turn ran.
- */
 export type TurnTreeLine =
   | { op: "delete"; from: string }
   | { op: "move"; from: string; to: string }
-  /** `from` is the source document the copy read; `to` is where the copy landed. */
   | { op: "copy"; from: string; to: string };
 
 export type TurnLiveLineageDocumentItem = {
   documentId: string;
-  /** Where the document is now; where it was deleted from when it is deleted. */
   uri: string;
-  /** Slash-prefixed display path derived from the canonical context URI. */
   path: string;
-  /** Present when the turn moved or deleted the document. */
   tree?: TurnTreeLine;
-  /**
-   * The id of the first block the turn's first write to the document changed, where the card opens
-   * it (Review changes at the turn's edit, for a draft). Absent for a document it only moved,
-   * created empty or deleted.
-   */
   block?: string;
-  /** A folder the turn changed: `documentId` is its node id, and it has no document to open. */
   folder?: true;
-} & (
-  | { scope: "live" }
-  /** The edit landed in a draft. */
-  | { scope: "draft"; draft: DraftId }
-);
+} & ({ scope: "live" } | { scope: "draft"; draft: DraftId });
 
 export type TurnReceiptControl = "undo" | "view_change";
 
-/**
- * What became of a turn's drafted tree change to one document or folder: still waiting, applied,
- * taken back by the turn's restore in force, or discarded.
- */
 export type TurnDraftState = "pending" | "applied" | "undone" | "discarded";
 
 export interface TurnReceiptChip {
-  /** Each drafted document's change, by document or node id; absent for what the turn wrote live. */
   drafts?: Record<string, TurnDraftState>;
-  /** `undo`: the card's Undo would take something back. */
   control: TurnReceiptControl;
-  /** The card's Undo ran and nothing is left for it; the card says "Undone". */
   undone?: true;
-  /**
-   * The drafts the turn wrote in whose restore (`Undo turn`) the card offers, one press each (`PressAction`'s `restore`):
-   * those where pressing it would change something now (a write of the turn there would go back by design §2's Undo
-   * rule, or a tree change of it is pending there). Absent when none: a turn already restored or undone there is
-   * left out.
-   */
   restore?: DraftId[];
-  /**
-   * The restore in force for each draft the turn wrote in: the latest that changed something and has not
-   * been undone (its Undo is `PressUndoRequest` with this `press`). Absent when none, so every tab and a reload read
-   * the same state.
-   */
   restored?: { draft: DraftId; press: CommandId }[];
 }
 

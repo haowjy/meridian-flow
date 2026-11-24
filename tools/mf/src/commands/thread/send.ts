@@ -1,4 +1,3 @@
-/** Thread driving commands: create, send (wait by default), tail, and cancel. */
 import { randomUUID } from "node:crypto";
 import {
   type AdmissionLookup,
@@ -57,19 +56,15 @@ import {
 export type SendFields = {
   submissionId?: string;
   threadId: string;
-  /** The admitted message: the user turn the fate is proven for. */
   userTurnId?: string;
-  /** The reply that took the message; `turnId` is the last reply in its chain. */
   answeredBy?: string;
   turnId: string | null;
   status: Turn["status"] | "timeout" | "unknown" | "blocked" | "handed_back";
   finalText: string | null;
   error: string | null;
-  /** The end-of-turn check of this follower's client state against the next read (`live-view.ts`); absent when nothing was followed. */
   liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
   liveReason?: LiveReason;
-  /** Diagnostic observation stopped before all claimed terminal turns were checked. */
   observationIncomplete?: boolean;
 };
 
@@ -80,7 +75,6 @@ export type SendInput = {
   text: string;
   refs?: string[];
   skills?: string[];
-  /** Parsed mock script; scoped to this send's text unless it names its own `match`. */
   mock?: unknown;
   timeoutMs: number;
   full: boolean;
@@ -93,7 +87,6 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
   });
   const projectId = snapshot.thread.projectId;
   const references = [];
-  // One owned lookup at a time: a failure leaves no sibling request running after return.
   for (const raw of refs) {
     const target = await resolveUri(session, projectId, raw);
     const document = await resolveDocument(session, projectId, target);
@@ -124,7 +117,6 @@ async function resolveSkills(session: Session, threadId: string, slugs: string[]
   });
 }
 
-/** Admits one message through the real send route. */
 export async function admitMessage(session: Session, input: Omit<SendInput, "timeoutMs" | "full">) {
   const skills = await resolveSkills(session, input.threadId, input.skills ?? []);
   const references = await resolveReferences(session, input.threadId, input.refs ?? []);
@@ -185,7 +177,6 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
   }
 }
 
-/** Admission uncertainty is a claim result, not a successful send or an app failure. */
 function admissionFailure(error: unknown, threadId: string): SendOutcome {
   if (!(error instanceof CliError) || !["unproven", "http_error"].includes(error.code)) throw error;
   return terminalResult(
@@ -204,10 +195,6 @@ function admissionFailure(error: unknown, threadId: string): SendOutcome {
   );
 }
 
-/**
- * Send and wait: admit, follow from `resumeAfterSeq` until this send's run
- * finishes or fails, then read the durable outcome.
- */
 export async function sendMessage(
   session: Session,
   out: Output,
@@ -223,7 +210,6 @@ export async function sendMessage(
   try {
     return await followToOutcome(session, out, input, admitted);
   } finally {
-    // A scripted sticky error would otherwise keep failing later calls with the same text.
     if (mockScriptId) await removeMockScript(session, mockScriptId).catch(() => undefined);
   }
 }
@@ -235,12 +221,8 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
-  // The stream only decides when to look. Every claim comes from an applied read, through the
-  // shared `messageFate`; a frame is never an input to it.
   let lastAnswering: string | null = null;
   let proven: Proven | null = null;
-  // Once a read settles the claim, the stream gets a short bounded time to end the claimed turns
-  // and be checked, so the printed log and the live view are whole. It never changes the claim.
   const CATCH_UP_MS = 1500;
   const deadlineAt = Date.now() + input.timeoutMs;
   const observer: Observer = createObserver({
@@ -251,7 +233,6 @@ async function followToOutcome(
     textStream: "err",
     deadlineAt,
     cursor: admitted.resumeAfterSeq,
-    // The admission answer states the floor: no read older than the admitted message applies.
     cell: acknowledgeAdmission(
       EMPTY_SYNCED_THREAD,
       admitted.userTurnId,
@@ -311,8 +292,6 @@ async function followToOutcome(
         Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
       );
     } catch (error) {
-      // Expected read/transport failures end diagnostics, not a result already proved by a read.
-      // Unclassified exceptions are programming errors and must still escape.
       if (!(error instanceof CliError)) throw error;
       observationIncomplete = true;
     }
@@ -324,13 +303,8 @@ async function followToOutcome(
   }
 }
 
-/**
- * A result frozen with the read that proved it; `claimed` is the assistant turns of the message's
- * chain in that read, which `liveView` checks.
- */
 type Proven = { outcome: SendOutcome; turns: ReadonlyMap<string, Turn>; claimed: string[] };
 
-/** The CLI's final result for what `messageFate` proved, or null to keep following. */
 function finalResult(
   fate: MessageFate,
   snapshot: ThreadSnapshotResponse,
@@ -339,7 +313,6 @@ function finalResult(
 ): Proven | null {
   const base = { threadId, userTurnId };
   const none = { turnId: null, finalText: null, error: null };
-  // The assistant turns of the message's chain, in the proving read: what the check is asked about.
   const assistantTurns = (chain: readonly string[]) =>
     chain.filter((id) => {
       const role = snapshot.turns.find((turn) => turn.id === id)?.role;
@@ -423,12 +396,10 @@ function finalResult(
   }
 }
 
-/** The frozen result plus `liveView` from the checks, read after the bounded catch-up. */
 function withLiveView({ outcome, claimed }: Proven, observer: Observer): SendOutcome {
   return { ...outcome, result: { ...outcome.result, ...observer.liveView(claimed) } };
 }
 
-/** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */
 export const threadSendCommand: CommandSpec = {
   path: ["thread", "send"],
   summary:
@@ -484,7 +455,6 @@ export const threadSendCommand: CommandSpec = {
           submissionId,
           userTurnId: admitted.userTurnId,
           resumeAfterSeq: admitted.resumeAfterSeq,
-          // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
           mockScriptId,
         },
       );

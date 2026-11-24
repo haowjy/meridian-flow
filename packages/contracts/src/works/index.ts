@@ -11,23 +11,14 @@ export interface Work {
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
-  /** Permanent project-unique handle (`w3`), never reused. Null on the locked No Work row. */
   handle: WorkHandle | null;
   isNoWork: boolean;
-  /**
-   * The Work's default draft (a Work has several), minted with it: what a new chat of the Work
-   * writes into. Null on No Work, which owns nothing.
-   */
   draftId: DraftId | null;
   goal: string | null;
-  /** AI-owned one-to-three-word progress summary. */
   status: string | null;
   archivedAt: string | null;
-  /** What a new chat in this Work starts with. A chat owns its own mode afterwards. */
   defaultAiWriteMode: AiWriteMode;
-  /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents and folders this Work's draft changes (the Works badge is their sum), as the server stores them; never derive from visible rows. */
   pendingDocumentCount: number;
   pendingFolderCount: number;
   createdAt: string;
@@ -36,7 +27,6 @@ export interface Work {
   deletedAt: string | null;
 }
 
-/** Where a Work stands in its lifecycle. Deleted wins over archived. */
 export type WorkLifecycleState = "active" | "archived" | "deleted";
 
 export function workLifecycleState(
@@ -46,7 +36,6 @@ export function workLifecycleState(
   return work.archivedAt !== null ? "archived" : "active";
 }
 
-/** The one archived test. An archived Work's own content is read-only; its chats still accept messages. */
 export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
   return work.archivedAt !== null;
 }
@@ -54,16 +43,9 @@ export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
 export type NamedWorkCatalogEntry = Work & { isNoWork: false; handle: WorkHandle };
 export type NoWorkCatalogEntry = Work & { isNoWork: true; handle: null };
 
-/** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
   projectId: ProjectId;
-  /**
-   * The total order for complete snapshots: the sum of the project's Works' `entityRevision`s,
-   * which every Work change raises and no change lowers. A purge deletes a Work, so it raises
-   * the No Work row by that Work's revision plus one, so the sum rises by one.
-   */
   authorityRevision: string;
-  /** Correlates one acquisition response; it is not ordering authority. */
   requestId: string;
   works: readonly NamedWorkCatalogEntry[];
   noWork: NoWorkCatalogEntry;
@@ -74,7 +56,6 @@ const workHandleSchema = z
   .refine((value) => decodeWorkHandle(value) !== null)
   .transform((value) => value as WorkHandle);
 
-/** Complete Work/catalog responses, shared by browser state and CLI identity resolution. */
 export const workSchema = z.object({
   id: z.string().min(1),
   projectId: z.string().min(1),
@@ -96,7 +77,6 @@ export const workSchema = z.object({
   deletedAt: z.string().nullable(),
 }) satisfies z.ZodType<Work>;
 
-/** A Work route's body: the Work, plus what settled differently from the ask when anything did. */
 export const workAnswerSchema = workSchema.extend({
   settled: z
     .array(
@@ -123,7 +103,6 @@ export const worksSnapshotSchema = z.object({
 
 export interface CreateWorkRequest {
   id?: WorkId;
-  /** The Work's draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
   draftId?: DraftId;
   name: string;
   goal?: string;
@@ -134,18 +113,14 @@ export interface UpdateWorkRequest {
   goal?: string;
 }
 
-/** Resolved execution scope. Null handle is No Work. */
 export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 
-/** Resolved execution always has a Work id. Null handle is No Work. */
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  /** The draft this chat writes into, in either mode: its Work's, or its lineage's with no Work. */
   draftId: DraftId;
 };
 
-/** HTTP rebind body. Null workId falls back to the project's No Work row. */
 export interface RebindThreadWorkRequest {
   workId: WorkId | null;
 }
@@ -157,13 +132,11 @@ export type RebindThreadWorkError =
 
 export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 
-/** One side of a thread's Work rebind. */
 export type WorkBindingState = WorkReceiptState & {
   workId: WorkId;
   handle: WorkHandle | null;
 };
 
-/** Authoritative result shared by writer and model Work-rebind adapters. */
 export interface RebindThreadWorkResult {
   threadId: ThreadId;
   before: WorkBindingState;
@@ -175,7 +148,6 @@ export interface RebindThreadWorkResponse extends RebindThreadWorkResult {
   contextUpdate: WorkContextUpdateStatus;
 }
 
-/** Live AG-UI projection emitted after a durable Work-context update commits. */
 export const WORK_CONTEXT_PROJECTION_EVENT = "meridian.work_context.changed" as const;
 
 export interface WorkContextProjectionSignal {

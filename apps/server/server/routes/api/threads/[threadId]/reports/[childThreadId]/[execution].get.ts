@@ -1,4 +1,3 @@
-/** Read one exact saved child execution report for its authorized parent thread. */
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
 import { readThreadReport } from "../../../../../../domains/runtime/spawn/read-thread-report.js";
@@ -32,7 +31,6 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
     });
   if (readable.target.id !== child.id)
     throw createError({ statusCode: 404, message: "Thread not found" });
-  // The card names its exact execution; the shared reader addresses finished runs by position.
   const reports = await app.threadRepos.executionReports.listFinishedByChild(child.id);
   const run = reports.findIndex((report) => report.executionTurnId === execution) + 1;
   if (run === 0) return { childThreadId: child.id, ref: child.ref, status: "not_ready" };

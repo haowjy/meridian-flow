@@ -1,5 +1,3 @@
-/** Canonical translation from context-domain failures to HTTP errors. */
-
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { ContextError } from "../domains/context/index.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
@@ -72,7 +70,6 @@ export function contextErrorToHttp(error: ContextError): never {
           ...meridianErrorFromSystem("io_error", error.message, true),
           ...(error.reason ? { details: { reason: error.reason } } : {}),
         },
-        // A source that has not caught up is "not yet", not a fault: the driver resends.
         error.reason === "source_behind" ? 503 : 502,
       );
   }
@@ -84,7 +81,6 @@ const WORK_UNAVAILABLE = {
   work_missing: { message: "Work not found.", status: 404 },
 } as const;
 
-/** A write into a Work that takes no changes: archived, deleted, or one that names no Work. */
 export function throwContextWorkUnavailableHttpError(
   reason: Extract<ContextError, { code: "context_unavailable" }>["reason"],
 ): never {

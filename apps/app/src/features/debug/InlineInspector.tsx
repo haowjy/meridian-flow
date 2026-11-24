@@ -68,7 +68,7 @@ type ModelRequestsState =
   | { status: "disabled" }
   | { status: "error"; message: string };
 
-const PANEL_W = 384; // w-96
+const PANEL_W = 384;
 const PANEL_MAX_H = 320;
 const MARGIN = 12;
 
@@ -107,8 +107,6 @@ export function InlineInspector() {
   const [turnContextPreview, setTurnContextPreview] = useState<TurnContextPreviewState>({
     status: "idle",
   });
-  // Bumped on each new inspect target so in-flight model-request fetches cannot
-  // commit results for a superseded {threadId, turnId}.
   const modelRequestFetchGenRef = useRef(0);
   const turnContextPreviewFetchGenRef = useRef(0);
 
@@ -127,8 +125,6 @@ export function InlineInspector() {
     }
   };
 
-  // Capture-phase so the inspect gesture wins before the app's own handlers and
-  // can swallow the event. Stable listener (empty deps) reads store via ref.
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       if (!event.altKey) return;
@@ -153,7 +149,6 @@ export function InlineInspector() {
       const y = Math.min(event.clientY, window.innerHeight - PANEL_MAX_H - MARGIN);
       const tbt = turnsRef.current;
 
-      // Block wins when present — it's the more specific target.
       if (blockEl) {
         const blockId = blockEl.getAttribute("data-block-id") ?? "?";
         const found = findBlock(tbt, blockId);
@@ -218,7 +213,6 @@ export function InlineInspector() {
     return () => document.removeEventListener("click", onClick, true);
   }, []);
 
-  // Escape closes the popover.
   useEffect(() => {
     if (!hit) return;
     const onKey = (event: KeyboardEvent) => {
@@ -308,10 +302,6 @@ export function InlineInspector() {
     hit.kind !== "next-turn" && hit.threadId != null && hit.turnId != null;
 
   return (
-    // z above the pill. Backdrop and popover are SIBLINGS: clicking the popover
-    // never reaches the backdrop, so no stopPropagation needed and the backdrop
-    // is a real <button> (keyboard-dismissable, a11y-clean) rather than a
-    // click-wired <div>.
     <div className="fixed inset-0 z-[60]">
       <button
         type="button"

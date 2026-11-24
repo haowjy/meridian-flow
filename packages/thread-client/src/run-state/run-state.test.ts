@@ -6,7 +6,6 @@
  */
 
 import type { ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
-/** The message folds over the run-state view: busy, the tray, the Stop body, what a hand-back hides, Retry retirement. */
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
@@ -66,13 +65,11 @@ const viewOf = (state: RunState): RunStateView => receiveRecord(INITIAL_RUN_STAT
 
 describe("message folds", () => {
   it("is busy with an open execution, a waiting message or an admitted message, and idle otherwise", () => {
-    // Risk: `tail --until-idle` or the composer reading idle while work remains, or busy forever.
     expect(isBusy(INITIAL_RUN_STATE_VIEW)).toBe(false);
     expect(isBusy(viewOf(record("1999")))).toBe(false);
     const running = viewOf(record("2999", { execution: { executionId: "e", currentTurnId: "a" } }));
     expect(isBusy(running)).toBe(true);
     expect(isBusy(viewOf(record("3999", { items: [message("m1", 1)] })))).toBe(true);
-    // Before the first record only an admitted message says so; its record retires it.
     const admitted = addIntent(INITIAL_RUN_STATE_VIEW, {
       kind: "message",
       id: "m1",
@@ -83,7 +80,6 @@ describe("message folds", () => {
   });
 
   it("never counts a switch as a writer message", () => {
-    // Risk: a queued write-mode switch shown in the tray, counted by Stop, or holding the chat busy.
     const view = addIntent(viewOf(record("1999", { items: [control], sentThrough: 0 })), {
       kind: "switch",
       id: "sw2",
@@ -97,7 +93,6 @@ describe("message folds", () => {
   });
 
   it("shows awaiting messages in the tray only while the start is blocked", () => {
-    // Risk: a message owed under a usage block hidden from the tray, or shown when it is not stuck.
     const items = [message("m1", 1, "awaiting_run"), message("m2", 2, "waiting")];
     expect(waitingWriterMessages(viewOf(record("1999", { items })), []).map((i) => i.id)).toEqual([
       "m2",
@@ -105,14 +100,12 @@ describe("message folds", () => {
     const blocked = record("2999", { items, blocked: { reason: "credits_exhausted" } });
     expect(waitingWriterMessages(viewOf(blocked), []).map((i) => i.id)).toEqual(["m1", "m2"]);
 
-    // The same record answers the app's notice and `./mf`'s guards: blocked messages, and owed.
     expect(usageBlockedMessages(viewOf(blocked)).map((i) => i.id)).toEqual(["m1", "m2"]);
     expect(usageBlockedMessages(viewOf(record("1999", { items })))).toEqual([]);
     expect(isBlockedForUsage(viewOf(blocked), "m1")).toBe(true);
     expect(isBlockedForUsage(viewOf(blocked), "m9")).toBe(false);
     expect(isOwed(viewOf(blocked), "m2")).toBe(true);
     expect(isOwed(viewOf(blocked), "m9")).toBe(false);
-    // An admitted message no record covers yet is owed; a covering record without it is not.
     const admitted = addIntent(INITIAL_RUN_STATE_VIEW, {
       kind: "message",
       id: "m9",
@@ -123,7 +116,6 @@ describe("message folds", () => {
   });
 
   it("builds Stop from the record the writer saw, and from nothing before the first", () => {
-    // Risk: a Stop with no record claiming it saw an execution, or losing this device's messages.
     const bare = addIntent(INITIAL_RUN_STATE_VIEW, { kind: "message", id: "m9", answer: "5000" });
     expect(stopRequest(bare, "req")).toEqual({
       requestId: "req",
@@ -136,8 +128,6 @@ describe("message folds", () => {
     );
     expect(stopRequest(seen, "req2")).toMatchObject({ seenThrough: 4, seenExecutionId: "e1" });
 
-    // Stop's control: a request out or a failed Stop stands as it is; an answer that cancelled an
-    // execution reads Stopping while the record still shows it, and any other answer is idle.
     const idle = { request: "idle", cancelledExecutionId: null, failedStops: [] } as const;
     expect(stopStatus(seen, { ...idle, request: "pending" })).toBe("pending");
     expect(
@@ -151,7 +141,6 @@ describe("message folds", () => {
   });
 
   it("hides only the waiting messages its press covered, while it is unanswered and not failed", () => {
-    // Risk: a hand-back hiding delivered history under the watermark, or a message sent after the press.
     const before = viewOf(
       record("1999", { sentThrough: 3, items: [message("m2", 2), message("m3", 3)] }),
     );
@@ -166,7 +155,6 @@ describe("message folds", () => {
       answer: null,
     });
     expect([...hiddenWriterTurns(pressed)]).toEqual(["m2", "m1"]);
-    // A later send is not hidden, and the folds leave the hidden one out.
     const later = receiveRecord(
       pressed,
       record("2999", {
@@ -175,7 +163,6 @@ describe("message folds", () => {
       }),
     );
     expect(waitingWriterMessages(later, []).map((i) => i.id)).toEqual(["m3", "m4"]);
-    // A failed request shows them again, still queued.
     const failed = addIntent(later, {
       kind: "handBack",
       id: "req",
@@ -184,7 +171,6 @@ describe("message folds", () => {
       answer: null,
     });
     expect(waitingWriterMessages(failed, []).map((i) => i.id)).toEqual(["m2", "m3", "m4"]);
-    // The answer retires it once the record is at or past the answer.
     const answered = answerIntent(later, "handBack", "req", "3999");
     expect(hiddenWriterTurns(answered).size).toBe(2);
     expect(hiddenWriterTurns(receiveRecord(answered, record("3999"))).size).toBe(0);
@@ -234,7 +220,6 @@ describe("message folds", () => {
       ...reply(id, position, executionId, status),
       role: "compaction",
     }) as unknown as Turn;
-  // A write-mode switch turn carries no execution, so it can never be a reply's last turn.
   const switchTurn = (id: string, position: number) =>
     ({
       id,
@@ -259,7 +244,6 @@ describe("message folds", () => {
 
   describe("messageFate", () => {
     it("binds a steered message to the reply that took it, not the one it steered", () => {
-      // Risk: defect 1, M2 steered A, but B (a new execution) delivered it.
       const turns = [
         reply("a", 1, "e1", "complete"),
         user("m", 2, "b"),
@@ -270,7 +254,6 @@ describe("message folds", () => {
     });
 
     it("ends on a failed successor, not the earlier success", () => {
-      // Risk: defect 2, falling back to A's success after B errored in the same execution.
       const turns = [
         user("m", 1, "a"),
         reply("a", 2, "e1", "complete"),
@@ -285,8 +268,6 @@ describe("message folds", () => {
     });
 
     it("ends on a cancelled compaction after a continuation", () => {
-      // Risk: defect 3, waiting forever or reporting complete after the compaction was cancelled;
-      // a trailing switch turn must not become the last turn either.
       const turns = [
         user("m", 1, "a"),
         reply("a", 2, "e1", "complete"),
@@ -300,7 +281,6 @@ describe("message folds", () => {
     });
 
     it("follows a Retry of a Retry through its executions", () => {
-      // Risk: defect 4, a snapshot that cannot rebuild Retry chains.
       const base = [
         user("m", 1, "f"),
         reply("f", 2, "e1", "error"),
@@ -321,7 +301,6 @@ describe("message folds", () => {
     });
 
     it("keeps a forgotten deliverer findable so a successful Retry still proves the Retry", () => {
-      // Risk: filtering forgotten turns would lose the Retry chain after the failed reply was stamped.
       const turns = [
         user("m", 1, "f"),
         { ...reply("f", 2, "e1", "error"), forgottenBy: "r" } as Turn,
@@ -335,8 +314,6 @@ describe("message folds", () => {
     });
 
     it("reads a stamped writer message as forgotten, never answered by the reply that moved on", () => {
-      // Risk: after moving on, a later reply was attributed to the forgotten message (live shape in
-      // the FF2 verification's move-on snapshot: writer and failed reply stamped, then a later success).
       const turns = [
         { ...user("m", 1, "f"), forgottenBy: "n" } as Turn,
         { ...reply("f", 2, "e1", "error"), forgottenBy: "n" } as Turn,
@@ -347,13 +324,11 @@ describe("message folds", () => {
     });
 
     it("reads absence as a hand-back only at a record that covers the admission", () => {
-      // Risk: a stale record read as a hand-back.
       expect(fate([], record("5", null))).toEqual({ kind: "waiting", blocked: false });
       expect(fate([], record("10", null))).toEqual({ kind: "handedBack" });
     });
 
     it("refuses to claim an answer with no deliverer", () => {
-      // Risk: claiming an answer for a message delivered by no reserved turn.
       expect(fate([user("m", 1, null)], record("20", null))).toEqual({
         kind: "unproven",
         reason: "deliverer_unknown",
@@ -392,27 +367,21 @@ describe("message folds", () => {
   ) => reconcileRetries({ entries, storedTurns, view, supersedes });
 
   it("keeps a Retry until its turn is stored and named, or its reservation ended without one", () => {
-    // Risk: a stand-in that never leaves, one that leaves early, or the failed reply drawn twice.
     const open = reconcile([entry()], [turn("r1")]);
     expect(open.standIns).toHaveLength(1);
     expect([...open.hidden]).toEqual(["r1"]);
-    // The reply is stored but no turn names its target yet: only a hidden target, no stand-in.
     const stored = reconcile([entry()], [turn("r1"), turn("r2")]);
     expect(stored.remaining).toHaveLength(1);
     expect(stored.standIns).toHaveLength(0);
     expect([...stored.hidden]).toEqual(["r1"]);
-    // A stored compaction turn carries retryOf ahead of the reply: that settles it too.
     expect(reconcile([entry()], [turn("r1"), turn("c1", "r1"), turn("r2")]).remaining).toEqual([]);
-    // The record, at or after the answer, shows no execution or another: nothing will come.
     const ended = receiveRecord(INITIAL_RUN_STATE_VIEW, record("6999", null));
     expect(reconcile([entry()], [turn("r1")], ended).remaining).toEqual([]);
-    // An older record, or an answer that never arrived, retires nothing.
     const older = receiveRecord(INITIAL_RUN_STATE_VIEW, record("4999", null));
     expect(reconcile([entry()], [turn("r1")], older).remaining).toHaveLength(1);
     expect(reconcile([entry({ answerVersion: null })], [turn("r1")], ended).remaining).toHaveLength(
       1,
     );
-    // A handoff brief's Retry replaces nothing: the stored turn settles it and nothing is hidden.
     const brief = reconcile(
       [entry({ executionId: null, answerVersion: null })],
       [],

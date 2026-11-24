@@ -1,9 +1,3 @@
-/**
- * CopyTextButton — clipboard copy affordance with a transient "Copied"
- * confirmation. Owns only the copy behavior (clipboard write + reset timer)
- * so review surfaces share one implementation; callers own the visual skin
- * via the usual Button props and supply the at-rest label as children.
- */
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 
@@ -12,13 +6,9 @@ import { Button } from "@/components/ui/button";
 const COPIED_RESET_MS = 1500;
 
 type CopyTextButtonProps = React.ComponentProps<typeof Button> & {
-  /** Text placed on the clipboard when clicked. */
   text: string;
-  /** Optional rich representation; plain text remains the markdown source. */
   html?: string | (() => string);
-  /** Alternate visual for icon-only controls after a successful copy. */
   copiedContent?: React.ReactNode;
-  /** Accessible label while the copied confirmation is visible. */
   copiedLabel?: string;
   onCopiedChange?: (copied: boolean) => void;
 };

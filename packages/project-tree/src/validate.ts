@@ -7,9 +7,7 @@ const TYPE = /^[0-9a-zA-Z_.+-]{1,64}$/;
 const MAX_CASCADE = 100_000;
 const MAX_ALIASES = 1_000;
 const BASE = ["id", "node", "actor", "draft", "type", "undoes"];
-/** What only the server writes, on any kind: a copy's `carries`, an applied copy's other two fields, and a restored copy's source. */
 const SERVER_BASE = ["carries", "appliedBy", "fromDraft", "restores", "restoredBy"];
-/** The five kinds a client may write, with every field a client may set on each. */
 const FIELDS = new Map<string, readonly string[]>([
   ["create", [...BASE, "kind", "name", "parent", "source", "rank", "filetype", "provisional"]],
   ["move", [...BASE, "parent", "rank", "from"]],
@@ -17,7 +15,6 @@ const FIELDS = new Map<string, readonly string[]>([
   ["delete", [...BASE, "cascade"]],
   ["restore", BASE],
 ]);
-/** What the server adds: a file's blob, a document's aliases and properties mark, and `purge`, which names the Trash entry it empties. */
 const SERVER_FIELDS = new Map<string, readonly string[]>([
   ["create", ["aliases", "hasProperties", "blob"]],
   ["purge", [...BASE, "delete", "nodes"]],
@@ -31,13 +28,7 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
 const RANK = /^[A-Za-z][0-9A-Za-z]*$/;
 const SMALLEST_RANK = `A${"0".repeat(26)}`;
 
-/**
- * A rank is a key in the installed fractional-indexing format, exactly: base 62 digits, a head
- * letter whose case and place fix the integer part's length (`a` is 2 long up to `z` at 27, `Z` is
- * 2 up to `A` at 27), no trailing zero in the fraction, and not the smallest integer, which has
- * no key below it. The generator reads a character outside the alphabet as `0` instead of
- * refusing it, so a key can pass it and still not sort where it was made to.
- */
+// keep: Validate fractional-index ranks exactly; the generator accepts out-of-alphabet characters as zero
 function isRank(value: unknown): value is string {
   if (typeof value !== "string" || !RANK.test(value) || value === SMALLEST_RANK) return false;
   const head = value.charCodeAt(0);
@@ -45,12 +36,6 @@ function isRank(value: unknown): value is string {
   return value.length === integerLength || (value.length > integerLength && !value.endsWith("0"));
 }
 
-/**
- * Builds the record a decoded value stands for, or says why there is none. The copy is made
- * from the value's own fields, each checked, so nothing a prototype, a getter or a field this
- * function does not name could carry into the replay. One reader for every client and the
- * server.
- */
 function read(value: unknown): ReadRecord {
   const fail = (why: string): ReadRecord => ({ ok: false, why });
   if (!plainObject(value)) return fail("not a record");
@@ -59,7 +44,7 @@ function read(value: unknown): ReadRecord {
   const serverFields = kind === undefined ? undefined : SERVER_FIELDS.get(kind);
   if (!clientFields && !serverFields) return fail("unknown type");
   const allowed = [...(clientFields ?? []), ...SERVER_BASE, ...(serverFields ?? [])];
-  // Old moves may carry a retired arrival name; replay keeps the move, not that name.
+  // keep: Accept the retired arrival name on old moves but drop it from the replayed record
   for (const key of Object.keys(value))
     if (!allowed.includes(key) && !(kind === "move" && key === "name") && value[key] !== undefined)
       return fail(`field ${key}`);
@@ -72,7 +57,6 @@ function read(value: unknown): ReadRecord {
   const name = (v: unknown): v is string => typeof v === "string";
 
   const { node, actor, draft } = value;
-  // A node is never a source, but a record that names one is well formed and is refused later.
   if (!id(value.id) || !matches(node, kind === "create" ? ID : PLACE)) return fail("id");
   if (typeof actor !== "string" || actor.length === 0) return fail("actor");
   if (draft !== null && !id(draft)) return fail("draft");
@@ -105,7 +89,6 @@ function read(value: unknown): ReadRecord {
       const { aliases, hasProperties, blob } = value;
       if (nodeKind !== "folder" && nodeKind !== "document" && nodeKind !== "file")
         return fail("kind");
-      // A document states its type, which decides its editor; a file's is in its blob.
       if (nodeKind === "document" ? !matches(filetype, TYPE) : filetype !== undefined)
         return fail("filetype");
       if (provisional !== undefined && provisional !== true) return fail("provisional");
@@ -210,12 +193,6 @@ const isBlob = (v: unknown): v is BlobRef =>
 
 const stored = new WeakMap<object, ReadRecord>();
 
-/**
- * A value from the list, which the server wrote and the browser decoded (from the server, or
- * from its own storage), read as the server writes it. Every reader of the list goes through this
- * one: nobody reads a decoded object's fields directly. An object is read once, and the copy
- * built from it stands for it from then on (a decoded value is never changed).
- */
 export function readStored(value: unknown): ReadRecord {
   if (typeof value !== "object" || value === null) return read(value);
   const held = stored.get(value);
@@ -226,11 +203,6 @@ export function readStored(value: unknown): ReadRecord {
   return result;
 }
 
-/**
- * A record the package is about to write, through the same reader that will read it back, so
- * nothing is stored that no view would show. Throws, saying why, when the reader would drop it;
- * the copy it returns is what to store.
- */
 export function writable(record: TreeRecord): TreeRecord {
   const read = readStored(record);
   if (!read.ok)

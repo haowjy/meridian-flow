@@ -1,5 +1,3 @@
-/** Decides each durable Work receipt's fate, undoes the ones that act, and composes the reply's chip. */
-
 import type { CommandId, UserId } from "@meridian/contracts";
 import {
   isDoneWriteStatus,
@@ -50,10 +48,6 @@ type WorkReceiptReversalDeps = {
 export type WorkReceiptReversal = WorkReversalResult & { workId: WorkId };
 type ShadowWork = Work & { deleted: boolean };
 type ReversibleWorkReceipt = WorkReceipt & { inverse: WorkReceiptInverse };
-/**
- * What one Work receipt's Undo comes to: `acts` still has to run, `taken` already stands as
- * its inverse leaves it (the writer did it, or an earlier Undo), and `stayed` can't run.
- */
 type WorkFate = "acts" | "taken" | "stayed";
 type PlannedStep = {
   receipt: ReversibleWorkReceipt;
@@ -62,11 +56,7 @@ type PlannedStep = {
   message?: string;
 };
 
-/**
- * A chat card's Undo: the turn's documents, then its Work receipts, in one command.
- * The Works the receipts name are read first (a turn's blocks never change), so the command
- * locks them with the documents' before any document lock.
- */
+// keep: read and lock the Works the receipts name before any document lock, or the Undo inverts against a Work mutation
 export async function reverseTurnCard(
   app: Pick<
     AppServices,
@@ -93,7 +83,6 @@ export async function reverseTurnCard(
     },
     input,
   );
-  // The Work half is its own part: each receipt's fate decides it, whatever the documents did.
   const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> =>
     combineWorkReversalOutcome(
       outcome,
@@ -105,7 +94,6 @@ export async function reverseTurnCard(
           works: app.works,
           workContextNotices: app.workContextNotices,
           stopThreads: app.stopThreads,
-          // A step's savepoint: a Work that fails leaves the others and the stored answer.
           transaction: (operation) => runInDrizzleSavepoint(getDb(), operation),
         },
         input,
@@ -129,11 +117,6 @@ async function workReceiptWorkIds(
   return context ? [...new Set(context.receipts.map(({ workId }) => workId))] : [];
 }
 
-/**
- * The click's answer with its Work part. A Work taken back counts as reversed; a step that threw
- * is a failure. A documents' answer that took nothing back stands unless a Work was taken back
- * or failed.
- */
 export function combineWorkReversalOutcome(
   outcome: ReversalOutcome,
   workReceipts: WorkReceiptReversal[],
@@ -178,7 +161,6 @@ export async function reverseWorkReceipts(
       return applied;
     });
   } catch (error) {
-    // A deadlock or serialization failure is the server's to retry, never the click's answer.
     if (isRetryableTransactionError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
@@ -187,10 +169,6 @@ export async function reverseWorkReceipts(
   }
 }
 
-/**
- * The reply's chip, composed once from its parts: the documents' and tree's (`chip`) and its
- * Work receipts'. Undo while any part acts; Undone when every part is taken back.
- */
 export async function getTurnReceiptChip(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads"> & {
     documentSync: Pick<AppServices["documentSync"], "getDocumentAndTreeChip">;
@@ -243,11 +221,6 @@ async function lockReceiptState(
   for (const workId of [...ids].sort()) await deps.works.lockById(workId);
 }
 
-/**
- * Each receipt's step, in undo order. A Work's receipts share one fate, decided by where the
- * turn started and ended it: at its start the Undo is taken, at its end it acts, anywhere else
- * it stayed. A turn that set a Work back as it found it is taken, so its Undo never loops.
- */
 async function planReceipts(
   deps: Pick<WorkReceiptReversalDeps, "works">,
   receipts: ReversibleWorkReceipt[],
@@ -267,7 +240,6 @@ async function planReceipts(
     const first = turn.at(-1) ?? receipt;
     const work = works.get(receipt.workId);
     fates.set(receipt.workId, workFate(works, work, first, receipt));
-    // A Work this Undo restores or deletes frees or takes its handle for the Works after it.
     if (work && fates.get(receipt.workId)?.fate === "acts")
       work.deleted = first.operation === "create";
   }
@@ -278,7 +250,6 @@ async function planReceipts(
   }));
 }
 
-/** One Work's fate, from the turn's first and last receipt for it. */
 function workFate(
   works: Map<WorkId, ShadowWork>,
   work: ShadowWork | undefined,
@@ -287,7 +258,6 @@ function workFate(
 ): { fate: WorkFate; message?: string } {
   const startedDeleted = first.operation === "create";
   const endedDeleted = last.operation === "delete";
-  // A Work the turn deleted that stands again is taken back, whatever it is called now.
   const taken = startedDeleted
     ? !work || work.deleted
     : !!work && !work.deleted && (first.operation === "delete" || sameState(work, first.before));
@@ -308,7 +278,6 @@ async function applyStep(
   receipt: ReversibleWorkReceipt,
 ): Promise<void> {
   if (receipt.operation === "create") {
-    // The tree's runs and subagent lineages end in this transaction, before its rows lock.
     await deps.works.softDelete(receipt.workId, deps.stopThreads);
   } else if (receipt.operation === "update") {
     if (!receipt.before) throw new Error("Receipt state is incomplete");

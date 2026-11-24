@@ -1,7 +1,3 @@
-/**
- * Folds the thread socket's AG-UI stream into compact, dotted CLI events
- * (codex-exec style) and renders each as one text line.
- */
 import type { SequencedEvent } from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
@@ -13,7 +9,6 @@ export type CliEvent =
       seq: string;
       messageId: string;
       text: string;
-      /** The stream was joined mid-message (e.g. `--since`), so `text` is only the tail. */
       partial?: true;
     }
   | { type: "reasoning.completed"; seq: string; messageId: string; text: string }
@@ -39,7 +34,6 @@ export type CliEvent =
 
 type ToolCallState = { name: string; args: string; completed?: true };
 
-/** Stateful mapper: one instance per followed stream. */
 export class RunEventMapper {
   private readonly messages = new Map<
     string,
@@ -125,7 +119,6 @@ export class RunEventMapper {
         return [];
       case "TOOL_CALL_RESULT": {
         const toolCallId = String(e.toolCallId);
-        // The call stays known after its result: a settled receipt and an error mark follow it.
         const tool = this.tools.get(toolCallId) ?? { name: "tool", args: "" };
         const settled = tool.completed;
         this.tools.set(toolCallId, { ...tool, completed: true });
@@ -150,7 +143,6 @@ export class RunEventMapper {
   private mapCustom(seq: string, name: string, value: unknown): CliEvent[] {
     const record = (value ?? {}) as Record<string, unknown>;
     if (name === "meridian.tool.result_error") {
-      // Follows its TOOL_CALL_RESULT, so it marks the already-emitted completion.
       const toolCallId = String(record.toolCallId);
       const name = this.tools.get(toolCallId)?.name ?? "tool";
       return [{ type: "tool.errored", seq, toolCallId, name }];
@@ -159,7 +151,6 @@ export class RunEventMapper {
   }
 }
 
-/** One compact line per event; null means "not shown in text mode". */
 export function renderEventLine(event: CliEvent, full: boolean): string | null {
   const limit = full ? Number.POSITIVE_INFINITY : 240;
   switch (event.type) {

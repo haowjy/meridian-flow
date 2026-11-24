@@ -63,24 +63,14 @@ const found = (
 type Row = {
   rule: string;
   links: LinkKey[];
-  /** The server's answer per link (keyed by ref, else href); "fail" fails the request. */
   server?: Record<string, DocumentLinkAnswer | "fail">;
   complete?: boolean;
   scope?: Partial<LinkResolutionScope>;
-  /** Read right after asking, before the server has answered. */
   before: (string | null)[];
   after: (string | null)[];
-  /** What reached the server (ref, else href). */
   asked: string[];
-  /** A listener hears the server's answer land. */
   heard?: boolean;
-  /** What a click right after asking waits for, as `resolve()` answers it. */
   clicked?: string | null;
-  /**
-   * Later catalogs, each registered after the previous answers landed: what
-   * the same links read before and after the server answers (no `server`:
-   * unreachable).
-   */
   later?: {
     documents: LinkableDocument[];
     server?: Record<string, DocumentLinkAnswer>;
@@ -118,7 +108,6 @@ const ROWS: Row[] = [
     links: [
       linkKeyOfMark({ ref: "doc:kael", href: "manuscript://Kael.md" }),
       pictureKeyOfNode({ ref: "doc:kael", src: "Nine.md" }) ?? { ref: null, href: "" },
-      // Contextual image and figure sources keep their stored identity too.
       pictureKeyOfNode({ ref: "doc:kael", src: "uploads://seal.png" }) ?? { ref: null, href: "" },
       pictureKeyOfNode({ ref: "doc:kael", src: "scratch://notes.md" }) ?? { ref: null, href: "" },
     ],
@@ -277,7 +266,6 @@ it("routes each link to the local index or the server", async () => {
     server.mockReset();
     answering(row.server);
     const resolution = createLinkAnswerCache();
-    // Settlements are what the account learned; each row is its own account.
     const settlements = createLinkSettlements();
     const scope = { projectId: "p", workId: "w", baseUri: HOLDER, ...row.scope };
     resolution.registerResolver(
@@ -300,7 +288,6 @@ it("routes each link to the local index or the server", async () => {
         row.rule,
       )
       .toEqual(row.before);
-    // The mocked server answers in microtasks; one macrotask lets them all land.
     await new Promise((settled) => setTimeout(settled, 0));
     expect
       .soft(
@@ -320,7 +307,6 @@ it("routes each link to the local index or the server", async () => {
     if (row.heard) expect.soft(heard, row.rule).toBe(true);
     if (click) expect.soft(show(await click), row.rule).toBe(row.clicked);
 
-    // A gone stable document ref reaches navigation, which confirms whether it is in Trash.
     const [link] = row.links;
     const target = link && classifyLinkTarget(link.href);
     if (row.after[0] === "gone" && link && target) {
@@ -344,7 +330,6 @@ it("routes each link to the local index or the server", async () => {
         .toEqual(["clear", ...(parsed?.kind === "doc" ? [`open:${parsed.documentId}`] : [])]);
     }
 
-    // Later catalogs: the documents move, and the server answers again or cannot be reached.
     for (const [at, later] of (row.later ?? []).entries()) {
       if (later.server) answering(later.server);
       else server.mockRejectedValue(new Error("offline"));

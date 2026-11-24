@@ -1,4 +1,3 @@
-/** Mars's browser build, started once on first use. */
 let marsSchema: Promise<typeof import("@meridian-flow/mars-schema")> | undefined;
 export const loadMars = () =>
   (marsSchema ??= import("@meridian-flow/mars-schema").then(async (mars) => {

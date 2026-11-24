@@ -12,7 +12,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const serverDirectory = fileURLToPath(new URL("../../", import.meta.url));
-// Resolve the loader from this installed worktree, independent of the child's cwd.
 const loader = import.meta.resolve("tsx/esm");
 
 async function withChild(
@@ -73,8 +72,6 @@ async function withChild(
         cleanup();
         reject(error);
       };
-      // The signal fixture imports and boots the whole in-memory runtime: 20 s of transpiling on
-      // a machine at load 60. Stay under the signal test's 90 s timeout so cleanup still kills the child.
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error(`Shutdown fixture never reported ${message}\n${stderr}`));

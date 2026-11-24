@@ -1,4 +1,3 @@
-/** Atomic export inventory from persisted metadata and the canonical live document tree. */
 import { canonicalContextUri, type ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { linkAheadRefs, threads, works } from "@meridian/database/schema";

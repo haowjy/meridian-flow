@@ -1,12 +1,3 @@
-/*
- * The viewer: one page, one nav (System, Code, Journeys, State machines, Dependencies) and a
- * breadcrumb under it on every page below the top. The route is the URL hash:
- *   #<level>[/<box>]        a level page, as a Map or as Read (Markdown); the header toggles
- *   #flows/<flow>           #machines   #dependencies   #journeys[/<journey>[/<step>]]
- *   #doc/<path>[/<fragment>] any repo path (Markdown, a file, a directory), full window over whatever was open
- * Every route is a history entry except choosing a box or step, so the browser's Back and the
- * Back button walk the same trail.
- */
 import {
   DEPENDENCIES_PAGE,
   MAP_DIR,
@@ -39,7 +30,6 @@ const READ_PAGES = {
   ...(NAV.dependencies && { dependencies: DEPENDENCIES_PAGE }),
 };
 
-/** Level id → { id, title, path, page, trail }: every level page (see loadLevelPages). */
 let levels = new Map();
 let navLevels = [];
 let mode = "map";
@@ -48,8 +38,6 @@ try {
 } catch {
   // No storage: Map for this visit.
 }
-
-// ---- Routes and history ----
 
 function parseHash() {
   const [head, a, b] = location.hash.slice(1).split("/").map(decodeURIComponent);
@@ -71,7 +59,6 @@ function parseHash() {
   return { kind: "level", id, box: a ?? null };
 }
 
-/** The history state: how many doc entries sit on top of the page the reader came from; `direct` when the first doc was opened with no page under it. */
 const stateNow = () => history.state ?? { docs: 0, direct: location.hash.startsWith("#doc/") };
 
 function go(hash, { replace = false } = {}) {
@@ -86,9 +73,7 @@ function go(hash, { replace = false } = {}) {
 const nav = { go: (hash) => go(hash), replace: (hash) => go(hash, { replace: true }) };
 
 const home = () => `#${navLevels[0].id}`;
-/** Back: the previous doc, or the page the reader came from. */
 const back = () => (stateNow().docs > 0 ? history.back() : go(home(), { replace: true }));
-/** Close: the page the reader came from, past every doc opened since. */
 const close = () => {
   const { docs, direct } = stateNow();
   if (docs > 0 && !direct) history.go(-docs);
@@ -110,12 +95,10 @@ onThemeChange(() => {
   render();
 });
 
-// ---- The page under the nav ----
-
 let seq = 0;
 let baseKey = null;
 let baseHash = null;
-let base = null; // { update(route), dispose() }
+let base = null;
 let docView = null;
 let docKey = null;
 
@@ -131,7 +114,6 @@ async function render() {
   const key =
     r.kind === "level" ? `level:${r.id}:${mode}` : r.kind === "read" ? `read:${r.key}` : "journeys";
   if (key === baseKey) {
-    // Closing a doc returns to the same hash: leave the page as the reader left it.
     if (location.hash !== baseHash) base?.update(r);
     baseHash = location.hash;
     return;
@@ -177,7 +159,6 @@ async function mount(r) {
   return mountRead(r.path, r.fragment);
 }
 
-/** A page as Markdown, full width, diagrams inline; `target` is a heading id to scroll to. */
 async function mountRead(path, target) {
   const article = el("article", { class: "md" });
   host.className = "view";
@@ -198,7 +179,6 @@ async function mountRead(path, target) {
   return { update: (route) => scrollTo(route.box ?? route.fragment), dispose() {} };
 }
 
-/** A box in a Read diagram scrolls to its section; a participant in a flow opens its box on the map. */
 function wireDiagram(holder, source, scrollTo) {
   const click = (g, onclick, label) => {
     g.style.cursor = "pointer";
@@ -246,9 +226,6 @@ function saveMode() {
   }
 }
 
-// ---- The doc view: a repo path over the whole window ----
-
-/** "on GitHub" beside the path, under the title. */
 const pathLine = (path) =>
   el(
     "div",
@@ -318,8 +295,6 @@ function hideDoc() {
   docKey = null;
 }
 
-// ---- The chrome ----
-
 const chrome = {};
 
 function buildChrome() {
@@ -367,10 +342,8 @@ function setMode(next) {
   render();
 }
 
-/** The nav's current entry, and the Read | Map toggle on level pages. */
 function syncChrome(r) {
   const level = r.kind === "level" ? levels.get(r.id) : null;
-  // A level in the nav is its own entry (Server, even opened from System); a child is its nearest such ancestor's.
   const section = level
     ? [r.id, ...level.trail.map((t) => t.hash.slice(1)).reverse()].find((id) =>
         chrome.links.has(id),
@@ -388,7 +361,6 @@ function syncChrome(r) {
   syncCrumbs(r, level);
 }
 
-/** `System › Server › conversation` for a level below the top; `Journeys › <flow>` for a flow. */
 function syncCrumbs(r, level) {
   const mine = seq;
   const show = (trail, current) => {
@@ -407,8 +379,6 @@ function syncCrumbs(r, level) {
       )
       .catch(() => {});
 }
-
-// ---- Start ----
 
 async function main() {
   ({ roots: navLevels, levels } = await loadLevelPages(fetchRepoFile, MAP_DIR));

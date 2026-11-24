@@ -1,8 +1,3 @@
-/**
- * In-memory ThreadRepositories: Map-backed thread/turn/block/model-response
- * repositories implementing the full repository ports (incl. the transaction
- * aggregate). For tests/local dev; shares creation semantics via thread-create.
- */
 import { newDraftId } from "@meridian/contracts";
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
@@ -71,9 +66,6 @@ function hasMeteredUsage(response: { inputTokens: number; outputTokens: number }
   return response.inputTokens > 0 || response.outputTokens > 0;
 }
 
-// USD rollups are display-side only; integer millicredits in the billing
-// ledger are the money truth. Keep this local float helper out of billing
-// decisions.
 function addDecimal(a: string, b: string): string {
   return (parseFloat(a) + parseFloat(b)).toFixed(6);
 }
@@ -283,8 +275,6 @@ export function createInMemoryRepositories(
       thread: projected,
       workTitle: work && !work.deletedAt ? work.name : null,
       actionRequired: projectChatActionRequired(projected),
-      // Run liveness is the live lease, which this durable fake does not model;
-      // tests read it through the in-memory RunClaim instead.
       runningTurnId: null,
     });
   }
@@ -646,7 +636,6 @@ export function createInMemoryRepositories(
     },
   };
 
-  // The in-memory inbox never hands a message back, so the graph and the conversation are one list.
   const turnGraph: TurnGraph = {
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
@@ -658,7 +647,6 @@ export function createInMemoryRepositories(
       return (await turnGraph.listByThread(threadId)).at(-1) ?? null;
     },
   };
-  /** Whether the turn left the conversation by a stamp whose forgetting turn is inside the span (null: always). */
   const forgottenInSpan = (turn: Turn, throughPosition: number | null) => {
     if (!turn.forgottenBy) return false;
     const forgetter = turns.get(turn.forgottenBy);
@@ -916,11 +904,9 @@ export function createInMemoryRepositories(
         )[0] ?? null
       );
     },
-    // The in-memory inbox lives in the runtime adapter, which does not hand messages back.
     async listHandedBackIds() {
       return new Set<string>();
     },
-    // The in-memory inbox lives in the runtime adapter; deliveries read as unknown.
     async listMessageDeliveries() {
       return new Map();
     },
@@ -1605,5 +1591,4 @@ export function createInMemoryRepositories(
   };
 }
 
-/** The repositories plus the owner of their data, so a journal writer follows the same commits. */
 export type InMemoryRepositories = ReturnType<typeof createInMemoryRepositories>;

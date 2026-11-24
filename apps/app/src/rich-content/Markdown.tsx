@@ -1,4 +1,3 @@
-/** Canonical document rendering with app-owned static transcript presentation. */
 import { cn } from "@/lib/utils";
 import { DocumentMarkdown } from "./DocumentMarkdown";
 import type { MarkdownReferenceOccurrence, MarkdownSkillOccurrence } from "./reference-occurrences";
@@ -9,7 +8,6 @@ import {
 
 type MarkdownBaseProps = {
   children: string;
-  /** Dense meta voice for tool output and helper summaries. */
   variant?: "compact";
   className?: string;
   breaks?: boolean;

@@ -1,4 +1,3 @@
-/** DELETE /api/works/:workId/drafts/:draftId: `Delete draft`, as a command; `restore` is its Undo. */
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { draftIdParam, runDraftCommand } from "../../../../../../lib/work-drafts-route.js";

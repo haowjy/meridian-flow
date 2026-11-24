@@ -1,4 +1,3 @@
-/** Account settings route core: validates partial absolute-set patches. */
 import { ACCOUNT_LANGUAGES, ACCOUNT_THEMES } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";

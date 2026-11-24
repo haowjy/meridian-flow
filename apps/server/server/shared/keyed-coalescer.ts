@@ -1,38 +1,20 @@
-/**
- * Per-key trailing debounce with a maximum wait: many `schedule(key)` calls become one `run(key)`,
- * never two at once for a key. A schedule that fires while its key runs makes one more run
- * right after. Timers are hints: what a restart or a stop drops is recovered by the caller's sweep or
- * its next read, or is lossy by design.
- */
-
-/** What a run asks for next: `again` runs at once, `retry` runs after a backoff (see `backoff`). */
 export type CoalescedRun = void | "again" | "retry";
 
 export type KeyedCoalescer<K> = {
-  /** Restarts the key's debounce; the first schedule since its last run also starts the maximum wait. */
   schedule(key: K): void;
-  /** The key is scheduled, queued, running or backing off. */
   has(key: K): boolean;
-  /** Runs every scheduled key now, and resolves once none is scheduled or running. */
   flush(): Promise<void>;
-  /** Drops what hasn't started; runs in flight finish. */
   cancel(): void;
-  /** Cancels, ignores later schedules, and joins runs in flight. */
   stop(): Promise<void>;
 };
 
 export function createKeyedCoalescer<K>(options: {
   debounceMs: number;
-  /** Continuous scheduling starts a run within this long of the first unserved schedule. */
   maxMs?: number;
-  /** At most this many keys run at once; later ones queue in arrival order. */
   maxConcurrent?: number;
-  /** After a throw or a `retry`, run again after `baseMs * 2 ** (failures - 1)`, capped at `maxMs`. */
   backoff?: { baseMs: number; maxMs: number };
-  /** Timers inherit the caller's async context, so a schedule made inside a transaction escapes it here. */
   outsideTransaction?<T>(operation: () => T): T;
   run(key: K): Promise<CoalescedRun>;
-  /** Reports a throw from `run`. Must not throw: it runs before the key's slot is released. */
   onError(key: K, cause: unknown): void;
 }): KeyedCoalescer<K> {
   type Entry = {
@@ -40,7 +22,6 @@ export function createKeyedCoalescer<K>(options: {
     max?: NodeJS.Timeout;
     running?: Promise<void>;
     queued: boolean;
-    /** A timer fired while running. */
     again: boolean;
     failures: number;
   };

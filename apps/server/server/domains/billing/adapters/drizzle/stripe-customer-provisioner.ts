@@ -1,7 +1,3 @@
-/**
- * Stripe customer provisioning with compare-and-set persistence so concurrent
- * checkout starts converge on the one customer id that wins the user row race.
- */
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";

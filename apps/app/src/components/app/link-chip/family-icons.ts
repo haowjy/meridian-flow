@@ -1,28 +1,6 @@
-/**
- * The document family icons, held once as lucide `IconNode` data: the React
- * components every scheme surface renders (`schemeIcon()`), and the CSS mask
- * images the link chip draws with, both come from here.
- *
- * Masks rather than React icons in the chip because the Editor cannot mount a
- * React icon inside marked prose, and an inline widget there risks caret and
- * selection behaviour. One image per family, in every surface, keeps the chip
- * pixel-identical wherever it appears.
- *
- * The lucide shapes are copied from lucide-react 1.21.0 because lucide-react
- * publishes components, not their node data; `createLucideIcon` is its public
- * way to build one from data, so both consumers read the same paths.
- */
-
 import { createLucideIcon, type IconNode, type LucideIcon } from "lucide-react";
 import { LINK_CHIP_ICONS, type LinkChipIcon } from "@/core/editor/links";
 
-/**
- * ScrollQuill, the manuscript's own icon: lucide's `scroll` frame plus its
- * `feather` scaled 0.55 (barb line dropped; it clogs at 14px tree size). The
- * quill overhangs the scroll's top-right, so the page outline is trimmed where
- * the blade sits (lucide's own combo convention, cf. `file-pen`) instead of
- * letting strokes cross.
- */
 const SCROLL_QUILL: IconNode = [
   ["path", { d: "M19 17v-5.5", key: "scroll-page-edge" }],
   ["path", { d: "M14.5 3H4", key: "scroll-page-top" }],
@@ -117,7 +95,6 @@ const FOLDER: IconNode = [
   ],
 ];
 
-/** Scratch is NotebookPen (loose writing); Unfiled is Inbox (not filed yet). */
 const FAMILY_ICON_NODES: Record<LinkChipIcon, { name: string; node: IconNode }> = {
   manuscript: { name: "ScrollQuill", node: SCROLL_QUILL },
   kb: { name: "Library", node: LIBRARY },
@@ -132,7 +109,6 @@ const FAMILY_ICON_NODES: Record<LinkChipIcon, { name: string; node: IconNode }> 
 
 const components = new Map<IconNode, LucideIcon>();
 
-/** The React icon for a document family, one component per shape. */
 export function familyIcon(family: LinkChipIcon): LucideIcon {
   const { name, node } = FAMILY_ICON_NODES[family];
   let component = components.get(node);
@@ -143,15 +119,8 @@ export function familyIcon(family: LinkChipIcon): LucideIcon {
   return component;
 }
 
-/**
- * One rule per chip icon, setting `--link-chip-icon` to that family's mask
- * image on the element carrying the icon attribute (see `link-chip.css`). The
- * chip stylesheet draws the icon from the custom property, so the
- * family-to-image map lives only here.
- */
 export const LINK_CHIP_ICON_CSS = [
-  // First, so every family rule below wins over it: a chip whose family has
-  // no rule still draws the generic document.
+  // keep: The generic rule must come first so family rules win the cascade
   `[data-link-chip]{--link-chip-icon:${maskImage(FILE)}}`,
   ...LINK_CHIP_ICONS.map(
     (icon) =>
@@ -159,7 +128,6 @@ export const LINK_CHIP_ICON_CSS = [
   ),
 ].join("\n");
 
-/** lucide's own stroke defaults; the mask paints whatever colour the chip gives it. */
 function maskImage(node: IconNode): string {
   const shapes = node
     .map(([tag, attributes]) => {

@@ -1,22 +1,3 @@
-/**
- * useSwitchView — the chat's write-mode switch display, as a pure view over server facts.
- *
- * Every server fact about a switch is a whole `RunState`, and the chat's mounted subscriber
- * (`useThreadSnapshotSync`) takes them into the chat's run-state slice: the accepted snapshot's,
- * each `meridian.run_state` frame, the `switched` frame. This hook reads that slice and folds
- * it for the toolbar's mode and the queued rows. It carries the journal's switches and the
- * writer's Withdraw into the slice, speaks a switch when it becomes pending (the one announcer
- * for pending switches; failures are facts for chatCards), and marks the
- * Works and project thread lists stale when a switch applies.
- *
- * An applied switch is silent and has no row here: it was spoken when it became pending, and its
- * notice is the switch turn the `switched` frame inserts into the transcript at the anchor the
- * frame names. What has been spoken is the slice's, so a remount repeats no announcement.
- *
- * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
- * main and the side, so a chat has one mounted `ChatView` and so one view. Two would
- * each announce. A dev-only registry warns when a second mounts for a chat that has one.
- */
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type JournalSwitch, queuedSwitchKey, switchDisplay } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,19 +13,13 @@ import { announce, useRunStateSlice, useThreadActions } from "@/client/stores";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
-/** What the chat's submission journal offers the view: its switches, stamped once answered. */
 export type SwitchJournal = {
   pending: readonly JournalSwitch[];
   submit(id: string, mode: AiWriteMode): boolean;
   retry(id: string): void;
-  /**
-   * `removed`: the server can't have it (never posted, or refused). `admitted`: the server
-   * has it, so the server's Withdraw is the way. `kept`: it may have it and hasn't said.
-   */
   withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
 };
 
-/** Dev-only: the chats whose view is mounted in this tab, to catch a second host. */
 const mountedViews = new Map<string, number>();
 
 function useSingleHostWarning(threadId: string) {
@@ -66,9 +41,7 @@ function useSingleHostWarning(threadId: string) {
 
 export type SwitchView = {
   rows: readonly QueuedControl[];
-  /** The chat's mode as the writer should see it. */
   writeMode: AiWriteMode;
-  /** Switch the chat's write mode; the row shows at once and the journal posts it in order. */
   switchWriteMode(mode: AiWriteMode): void;
   retry(id: string): void;
   withdraw(row: QueuedControl): void;
@@ -77,10 +50,8 @@ export type SwitchView = {
 export function useSwitchView(input: {
   threadId: string;
   projectId: string;
-  /** The mode to show before the server has sent a record. */
   writeMode: AiWriteMode;
   journal: SwitchJournal;
-  /** A reply or compaction holds the chat: a pending switch waits for it, and says so. */
   replyRunning: boolean;
 }): SwitchView {
   const { threadId, projectId, journal, replyRunning } = input;
@@ -99,14 +70,11 @@ export function useSwitchView(input: {
     [dispatch, threadId, journal.pending],
   );
 
-  // The slice decides what is news and how much of it was told (`spoken`, which outlives this
-  // mount); this speaks the rest and records that it did.
   useEffect(() => {
     const queued = news.filter((entry) => entry.n > spoken.queued);
     const appliedNow = applied.filter((entry) => entry.n > spoken.applied);
     if (queued.length === 0 && appliedNow.length === 0) return;
     for (const entry of queued) announce(controlStatusCopy(entry.control, "queued", entry.waiting));
-    // An applied switch is silent: it was spoken when it became pending.
     if (appliedNow.length > 0)
       void invalidateProjectThreadData(queryClient, latest.current.projectId);
     dispatch(threadId, {
@@ -116,8 +84,6 @@ export function useSwitchView(input: {
     });
   }, [news, applied, spoken, dispatch, queryClient, threadId]);
 
-  // Another tab's queue, cancel or withdrawal changes the Work default and the list's mode: the
-  // record's switch ids are the key. The first record is the baseline, not a change.
   const queuedKey = useRef<string | null>(null);
   const record = view.record;
   useEffect(() => {
@@ -143,7 +109,6 @@ export function useSwitchView(input: {
   const withdraw = useCallback(
     (row: QueuedControl) => {
       const { id } = row;
-      // The row goes at once, whichever side owns it.
       const requestId = crypto.randomUUID();
       dispatch(threadId, { type: "withdraw", id, requestId });
       const onServer = async () => {
@@ -152,21 +117,15 @@ export function useSwitchView(input: {
           const { outcome } = answer;
           dispatch(threadId, { type: "withdrawn", id, runState: answer.runState });
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
-          // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
-          // Withdrawing restores the Work default.
           void invalidateWriteModeReads(queryClient, latest.current.projectId);
           revalidate();
         } catch (error) {
-          // The server never had it: nothing to withdraw.
           if (httpErrorStatus(error) === 404)
             return dispatch(threadId, { type: "dropWithdraw", id });
           dispatch(threadId, { type: "withdraw", id, requestId, failed: true });
         }
       };
-      // A switch the journal holds that the server can't have (never posted, or refused):
-      // taking it out of the journal is the withdrawal, and releases what waited behind it.
-      // One the server may hold stays, and offers Retry only.
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
         dispatch(threadId, { type: "dropWithdraw", id });
@@ -186,8 +145,6 @@ export function useSwitchView(input: {
           ? { status: row.status, failure: row.failure }
           : { status: row.status }),
         ...(row.awaitingServer ? { awaitingServer: true } : {}),
-        // The server's `deliveryState` decides "queued": a switch waits only for a reply that
-        // already held the chat. Before it lists the switch, a running reply is the only fact.
         waiting: row.status === "sending" ? replyRunning : !row.awaitsRun,
         ...(row.awaitsRun ? { awaitsRun: true } : {}),
       })),

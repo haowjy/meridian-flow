@@ -1,4 +1,3 @@
-/** Name-keyed tool registrations; duplicate names are rejected and only advertised server tools are published. */
 import type { Tool } from "@meridian-flow/runtime/gateway";
 
 import type { ToolRegistration, ToolRegistry } from "./types.js";
@@ -12,7 +11,6 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}): Too
 
   function addRegistration(registration: ToolRegistration): void {
     const name = registration.definition.name;
-    // Core publication supports object roots and command unions, not intersections.
     if ("allOf" in registration.definition.inputSchema) {
       throw new Error(
         `Tool ${name}: root allOf is unsupported at registration; use an object or command union`,

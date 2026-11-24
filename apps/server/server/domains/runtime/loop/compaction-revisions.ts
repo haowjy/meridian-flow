@@ -1,4 +1,3 @@
-/** One settled-authority query per compaction phase; lookup failures mean unknown tokens. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
 import type { DocumentRevisions } from "../../context/index.js";
@@ -14,7 +13,6 @@ export async function queryCompactionRevisions(input: {
   recorded: RecordedDocuments;
   revisions: DocumentRevisions;
 }): Promise<Map<string, string | null>> {
-  // Null revisions are already stale, including edit records for discarded or rejected paths.
   const documentIds = [
     ...new Set(
       [...input.recorded.values()].flatMap(
@@ -29,7 +27,6 @@ export async function queryCompactionRevisions(input: {
   }
 }
 
-/** Collects changed document URIs from the exact model-visible source projection. */
 export async function changedDocumentUris(input: {
   threadId: ThreadId;
   projection: { turns: readonly Turn[]; blocks: readonly Block[] };

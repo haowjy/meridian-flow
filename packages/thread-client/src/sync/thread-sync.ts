@@ -1,14 +1,3 @@
-/**
- * `createThreadSync`: the one framework-free object that keeps a chat's client state in step with
- * the server, for the app and for `./mf`. It owns the chat's transcript handler on the transport,
- * the rules for when to ask for a read, what counts as missing, how a read applies and joins
- * replay, the order frames reach the turns, and the end-of-turn checks.
- *
- * It holds no state a screen reads: the chat's `SyncedThread` lives in the host's `state` port,
- * changed only by the package's pure transitions. It never fetches: it asks the host for a read
- * (`requestSnapshot`), and every completed read comes back through `receive`. Effects, printing
- * and claims are the host's, told through `observe` after the write they follow.
- */
 import {
   type AGUIEvent,
   compareSeq,
@@ -48,31 +37,22 @@ import {
   syncedTurnStore,
 } from "./synced-thread";
 
-/** The refresh timer's debounce: requests inside one window share a read. */
 export const REFRESH_DEBOUNCE_MS = 250;
-/** How long a host waits before asking again after `receive` said `stale`. */
 export const SNAPSHOT_RETRY_MS = 250;
 
-/** One way a stream-ended turn differed from the read that checked it. */
 export type Diff = {
   turnId: string;
   field: "status" | "finalText";
-  /** What the sync's turns showed when the stream ended the turn. */
   live: string | null;
-  /** What the read stored. */
   server: string | null;
 };
 
 export type SyncObservation =
-  /** Every frame as received, with its seq and error. */
   | { kind: "event"; event: SequencedEvent }
-  /** The `subscribed` state, after catch-up. */
   | { kind: "live"; state: ThreadLiveState }
   | { kind: "gap"; gap: ThreadGapEvent }
-  /** `cached`: the host already held this read and projected it when it arrived; the copy is no newer than that. */
   | { kind: "read"; read: ThreadSnapshotResponse; applied: boolean; cached: boolean }
   | { kind: "check"; turnId: string; rewritten: boolean; diffs: readonly Diff[] }
-  /** A stream write that started a turn or changed its status. */
   | { kind: "turn"; turnId: string; status: TurnStatus }
   | { kind: "error"; error: Error };
 
@@ -80,40 +60,20 @@ export type ThreadSyncPorts = {
   threadId: string;
   transport: ThreadTransport;
   state: { get(): SyncedThread; set(next: SyncedThread): void };
-  /**
-   * Start a read; the result comes back through `receive`.
-   * "fresh": deliver a read that starts after this call (cancel the one in flight, or follow it with another).
-   * "any": a read already in flight will do.
-   */
   requestSnapshot(kind: "fresh" | "any"): void;
-  /** The host's effects, printing and checks. Called after the write each follows. */
   observe(observation: SyncObservation): void;
-  /** The account epoch; `./mf` passes its command's. */
   signal: AbortSignal;
-  /** ISO time for reducer-created rows. */
   now?: () => string;
-  /** Default `frameScheduler`. */
   scheduleFlush?: ScheduleFlush;
 };
 
 export type ThreadSync = {
-  /**
-   * Begin a generation. With `held` (a read the host already has), join from it when `receive` takes it and
-   * ask for nothing; otherwise ask for the read to join from. Returns whether `held` applied. Idempotent.
-   */
   start(held?: ThreadSnapshotResponse): boolean;
-  /** End it: flush, cancel timers, remove the handler. */
   stop(): void;
-  /**
-   * Take a completed read. Works started or not. While a started generation has no handler, a read
-   * applies only if it was taken after every frame the value holds, and then joins the stream.
-   */
   receive(read: ThreadSnapshotResponse): "applied" | "stale";
-  /** An unconditional, debounced "fresh" read. */
   refresh(): void;
 };
 
-/** The turn's own text: the text items of its view, in order. It reads the turn alone. */
 function ownText(turn: Pick<Turn, "blocks" | "status">): string {
   return viewAssistantTurn(turn)
     .items.map((item) => (item.kind === "text" ? item.text : ""))
@@ -124,35 +84,25 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
   const { threadId, transport, state, requestSnapshot, observe, signal } = ports;
   const now = ports.now ?? (() => new Date().toISOString());
 
-  // The end-of-turn check's facts: sets of turn ids, for the life of the sync.
-  /** Turns this sync's reducer has changed. */
   const written = new Set<string>();
-  /** Turns whose first not-terminal to terminal move the stream made. */
   const endedOnce = new Set<string>();
-  /** Stream-ended turns still waiting for the next applied read. */
   const unchecked = new Set<string>();
-  /** Turns a read put in the cell before the stream ended them. Never cleared. */
   const rewritten = new Set<string>();
 
   let started = false;
   let generation = 0;
   let unsubscribe: (() => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  /** A pending refresh that must run whatever the transcript holds. */
   let unconditional = false;
-  /** The newest record seen, to tell a frame whose execution changed. */
   let seen: { version: string; executionId: string | null } | null = null;
 
   const current = (expected: number) => started && !signal.aborted && generation === expected;
 
-  // The reducer writes through the host's cell. Each operation reads the current value and writes
-  // the next before returning; observations go out after the write.
   const base = syncedTurnStore({
     cell: { get: () => state.get(), set: (_id, next) => state.set(next) },
     now,
     onTurnEnsured: (_id, turnId) => observe({ kind: "turn", turnId, status: "streaming" }),
     onStatusPatched(_id, turnId, status, before) {
-      // An unadmitted writer row carries local knowledge, never a server lifecycle event.
       if (before.role === "user" && isOptimisticTurnId(turnId)) return;
       if (
         before.role === "assistant" &&
@@ -170,7 +120,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
     invalidateThreadSnapshot: () => requestSnapshot("any"),
   });
   const turnOf = (turnId: string) => state.get().turns.find((turn) => turn.id === turnId);
-  /** Run a write to one turn and remember that the reducer changed it. */
   const tracked = (turnId: string, write: () => void) => {
     const before = turnOf(turnId);
     write();
@@ -187,14 +136,11 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
   };
   const reducer = createTurnReducer({ now, store });
 
-  // One frame boundary for the stream: append-only deltas coalesce into a single write, and
-  // everything else flushes first.
   const coalescer = new StreamDeltaCoalescer((event, seq) => {
     if (!started || signal.aborted) return;
     reducer.applyEvent(threadId, event);
     delivered(seq);
   }, ports.scheduleFlush);
-  /** The stream wrote the frame at `seq`: a later join starts above it. */
   function delivered(seq: string | undefined) {
     if (seq === undefined) return;
     const next = raiseDeliveryCursor(state.get(), seq);
@@ -249,10 +195,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
             if (runState && parseSeq(seq) !== null) {
               dispatchRunState({ type: "record", runState });
               delivered(seq);
-              // A cancelled compaction ends with no RUN_FINISHED, and a divider reserves or
-              // settles with the execution: a record whose execution changed revalidates.
               if (noteRecord(runState)) schedule(expected);
-              // Another client's waiting message: its turn is not on the stream.
               else schedule(expected, true);
             }
             return;
@@ -260,18 +203,14 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
           if (event.type === EventType.CUSTOM && event.name === WRITE_MODE_SWITCHED_EVENT) {
             const switched = readWriteModeSwitched(event.value);
             if (switched && parseSeq(seq) !== null) {
-              // The divider turn is the transcript's, whatever the record says; the same
-              // frame answers the writer's control in the run-state slice.
               flush();
               reducer.applyEvent(threadId, event, seq);
               dispatchRunState({ type: "switched", seq, ...switched });
               delivered(seq);
-              // The turn it follows is not in the transcript: the gap check asks for a read.
               if (missing(state.get())) schedule(expected, true);
             }
             return;
           }
-          // Waiting messages that left the chat leave this transcript at the frame's seq.
           if (event.type === EventType.CUSTOM && event.name === MESSAGES_HANDED_BACK_EVENT) {
             flush();
             if (parseSeq(seq) !== null) {
@@ -280,15 +219,12 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
             }
             return;
           }
-          // Failed turns the chat left behind are stamped wherever they are held.
           if (event.type === EventType.CUSTOM && event.name === TURNS_FORGOTTEN_EVENT) {
             flush();
             reducer.applyEvent(threadId, event, seq);
             delivered(seq);
             return;
           }
-          // A handoff brief holds the chat with no lease or run, so its start and end reach
-          // the chat only as a status frame.
           if (event.type === EventType.CUSTOM && event.name === "meridian.thread.status")
             schedule(expected);
           if (isDurableBlockEvent(event)) {
@@ -302,8 +238,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
             delivered(seq);
             return;
           }
-          // The stream: every other event belongs to the turn it names, or to the one
-          // streaming, which the reducer resolves for events that name none.
           const effective: AGUIEvent =
             event.type === EventType.RUN_ERROR && error
               ? { ...event, message: error.message }
@@ -312,7 +246,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
             store.ensureAssistantTurn(threadId, effective.runId);
           coalescer.push(effective, seq);
         },
-        // The `subscribed` state is a whole record, read after catch-up.
         onLiveState: (live) => {
           if (!current(expected)) return;
           dispatchRunState({ type: "snapshot", runState: live.runState });
@@ -332,7 +265,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
           if (!current(expected)) return;
           flush();
           observe({ kind: "gap", gap });
-          // The window is unreplayable: a later join must not ask for it again.
           delivered(gap.toSeq);
           schedule(expected);
         },
@@ -340,7 +272,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       { after },
     );
 
-  /** Turns the cell already holds with text of their own, or ended: this sync's reducer wrote none of it. */
   const markHeldTurnsRewritten = () => {
     for (const turn of state.get().turns) {
       if (turn.role !== "assistant" || endedOnce.has(turn.id) || written.has(turn.id)) continue;
@@ -349,10 +280,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
     }
   };
 
-  /**
-   * Before a read applies: check each stream-ended turn against the read's, then mark the turns
-   * the read writes ahead of the stream. Returns the checks to announce once the read is written.
-   */
   const checkRead = (read: ThreadSnapshotResponse): SyncObservation[] => {
     const held = new Map(state.get().turns.map((turn) => [turn.id, turn]));
     const incoming = new Map(read.turns.map((turn) => [turn.id, turn]));
@@ -390,10 +317,8 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
 
   const accept = (read: ThreadSnapshotResponse, cached: boolean): "applied" | "stale" => {
     if (signal.aborted) return "stale";
-    // Fix 1: a delta buffered before this read belongs before it, not appended to its text.
     flush();
-    // A generation with no handler joins on this read, so it must be newer than every frame the
-    // value holds: its turns become the spine, and a turn the stream created would be dropped.
+    // keep: A joining read must be newer than every frame the held value reflects or stream-built turns are dropped
     const joining = started && unsubscribe === null;
     const held = state.get().deliveryCursor;
     if (
@@ -403,7 +328,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       observe({ kind: "read", read, applied: false, cached });
       return "stale";
     }
-    // The checks compare the cell as the stream left it, so they run before the read lands.
+    // keep: Run end-of-turn checks against the cell as the stream left it before the read lands
     const checks = checkRead(read);
     const runState = read.liveState.runState;
     const next = applyRead(state.get(), {
@@ -419,8 +344,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
     observe({ kind: "read", read, applied: true, cached });
     noteRecord(runState);
     if (joining) {
-      // Every frame the value reflects is at or below the later of the read's position and the
-      // cursor; every frame above it is delivered once.
       const resume = read.liveState.resumeAfterSeq;
       const expected = generation;
       const after = held !== null && compareSeq(held, resume) > 0 ? held : resume;
@@ -436,8 +359,6 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       if (started || signal.aborted) return false;
       started = true;
       markHeldTurnsRewritten();
-      // No handler yet: the first read applied after this joins the stream (see `receive`). A held read
-      // that joins is caught up by the stream's replay, so it needs no new read.
       if (held && accept(held, true) === "applied") return true;
       requestSnapshot("any");
       return false;

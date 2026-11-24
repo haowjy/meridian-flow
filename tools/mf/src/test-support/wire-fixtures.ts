@@ -1,8 +1,3 @@
-/**
- * Typed contract fixtures for the wire harness: threads, turns, run-state records, snapshots and
- * frames built from `@meridian/contracts`, and `replyScenario`, which states the facts of a
- * writer message and the reply that answers it.
- */
 import type { AGUIEvent, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import type { Block, PendingInboxItem, RunState, Thread, Turn } from "@meridian/contracts/threads";
 import type { Wire } from "./wire";
@@ -11,7 +6,6 @@ export const COOKIE = "wos-session=test";
 export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 export const DOCUMENT_ID = "44444444-4444-4444-8444-444444444444";
-/** Longer than the text-mode diff clip, so `--full` is observable. */
 export const DIVERGED_STORED_TEXT = `Stored answer ${"x".repeat(200)}`;
 
 export function thread(): Thread {
@@ -111,7 +105,6 @@ function turnOf(over: TurnOver): Turn {
   };
 }
 
-/** A writer message; `deliveredBy` undefined means nobody has taken it (no delivery at all). */
 export function userTurn(
   id: string,
   position: number,
@@ -128,7 +121,6 @@ export function userTurn(
   });
 }
 
-/** A reply turn; its text is stored as one text block, as the server's projection does. */
 export function replyTurn(
   id: string,
   position: number,
@@ -144,7 +136,6 @@ export function replyTurn(
   });
 }
 
-/** One snapshot read. `seq` is the journal head the read was made at. */
 export function snapshotOf(
   o: { turns?: Turn[]; record?: Partial<RunState>; seq?: number; awake?: boolean } = {},
 ): ThreadSnapshotResponse {
@@ -178,7 +169,6 @@ export function snapshotOf(
   };
 }
 
-/** A snapshot where reply `id` holds the chat's execution open. */
 export const openReply = (id: string, seq = 0) =>
   snapshotOf({
     seq,
@@ -186,7 +176,6 @@ export const openReply = (id: string, seq = 0) =>
     record: { execution: { executionId: `exec-${id}`, currentTurnId: id } },
   });
 
-/** Frames are built loosely typed: the union's variants carry fields the CLI never reads. */
 const frame = (value: Record<string, unknown>) => value as unknown as AGUIEvent;
 
 export const frames = {
@@ -196,7 +185,6 @@ export const frames = {
   failed: (message: string) => frame({ type: "RUN_ERROR", message }),
   record: (record: RunState) =>
     frame({ type: "CUSTOM", name: "meridian.run_state", value: record }),
-  /** One streamed assistant message, delta by delta. */
   text: (runId: string, ...deltas: string[]): AGUIEvent[] => {
     const messageId = `${runId}::0`;
     return [
@@ -215,31 +203,19 @@ export const frames = {
     frame({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}-result`, content }),
 };
 
-/** Publishes a run-state record at the next journal position, as the server does at a boundary. */
 export function publishRecord(wire: Wire, over: Partial<RunState> = {}) {
   wire.publish(frames.record(recordOf({ version: String(wire.head + 1), ...over })));
 }
 
-/** The facts of one answered message: what streamed, what the server stored, and how it ended. */
 export type ReplySpec = {
   status?: "complete" | "error" | "cancelled";
-  /** Text deltas on the stream. Default `["Hello there"]`; none for a failed or cancelled run. */
   streamed?: string[];
-  /** The reply's stored text. Default: the streamed text joined. */
   stored?: string;
   error?: string;
-  /** Frames between the run's start and its text, such as tool calls. */
   extra?: AGUIEvent[];
-  /** Runs after the admission's cursor is taken and before the run's frames: journal the test needs the stream to replay. */
   lead?: () => void;
 };
 
-/**
- * Each admission publishes the frames of a run that took the message. The first read after it is
- * taken at the admission's cursor, with the reply still running, so the sync joins below the run's
- * frames and replays them; every later read shows the run's turns as the spec ended them. The nth
- * admission uses the nth spec (the last repeats).
- */
 export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
   const list = [specs].flat();
   let n = 0;
@@ -296,7 +272,6 @@ export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
   };
 }
 
-/** The records of a `--json` run, one per line. */
 // biome-ignore lint/suspicious/noExplicitAny: assertions read fields the envelopes vary on
 export const ndjson = (stdout: string): Record<string, any>[] =>
   stdout

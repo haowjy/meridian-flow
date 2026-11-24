@@ -1,10 +1,3 @@
-/**
- * The AI's tree commands (`move`, `delete`, `restore`, folders) through the production-composed
- * `write` tool: a path resolves through the names the model was shown, each call is its own
- * command, and the receipt it keeps is what `undo` names, live, drafted, applied or discarded.
- * In a draft-mode chat they are records of the Work's draft and live is untouched.
- */
-
 import { randomUUID } from "node:crypto";
 import { draftItemKey, type ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
@@ -60,7 +53,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SCRATCH_SOURCE = "00000000-0000-4000-8000-000000000d0d";
     const SCRATCH_NOTE = "00000000-0000-4000-8000-000000000d0e";
     const NEXT_TURN = "00000000-0000-4000-8000-000000000d0c";
-    // Moves and deletes refresh the catalog after commit: real commits, no rollback suite.
     const db = createDb(DATABASE_URL, { max: 6 });
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
@@ -224,7 +216,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             draft: await draftOf(OTHER_WORK_ID),
           } as never)
         ).items.find((row) => row.documentId === documentId);
-      // The writer's press on one document, its text and its tree change.
       const press = async (verdict: "apply" | "discard", documentId: string) =>
         handlePressRequest(routes, {
           ...scope,
@@ -301,8 +292,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const writer = review(script);
 
-      // Deleted live, another document at its old path: Apply leaves the move waiting, and once
-      // the document is restored the move lands at the Work's place.
       await draft({ command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch1" });
@@ -320,7 +309,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
-      // A drafted delete of a document live deleted too is no change to review: nothing to apply.
       await draft({ command: "delete", path: "ch2" });
       expect(await writer.item(CH2)).toMatchObject({ tree: expect.anything() });
       await script.reply(async (edit) => {
@@ -329,7 +317,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await writer.item(CH2)).toBeUndefined();
       expect((await placement(CH2))?.deletedAt).not.toBeNull();
 
-      // Discard of a document takes its move and its text change;
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
@@ -346,7 +333,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     const store = () => createDrizzleTreeListStore({ db });
-    /** The writer's own change to the project's list, as their browser's record would be admitted. */
     const asWriter = async (make: (writer: TreeWriter) => void) =>
       store().submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
@@ -417,7 +403,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(restored.isError, text(restored)).toBeFalsy();
       expect(await documentTrash.list(PROJECT_ID as ProjectId)).toEqual([]);
       expect((await placement(CH2))?.deletedAt).toBeNull();
-      // An undo of a delete names the path the model deleted.
       await call("write", { command: "delete", path: "Arc 2/" });
       const undone = await call("write", { command: "undo", path: "Arc 2/" });
       expect(text(undone), text(undone)).toContain("status: reversed");
@@ -528,7 +513,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    /** What the reviewers' reproductions guard: each failed before the fixes, as written here. */
     describe("one Undo history, and a name that means the node it was shown as", () => {
       const asNewDoc = (name: string) =>
         treeSeeder(db).document(SOURCE_ID, name, { actor: WRITER });
@@ -541,7 +525,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         let { call } = await script.begin();
         await call("write", { command: "move", from: { paths: ["ch1", "ch2"] }, path: "part1/" });
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "ONE" });
-        // The text edit is the newest: it goes first, then the move is next, by a moved document's path.
         ({ call } = await script.begin());
         const first = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(first), text(first)).toContain("undone: e");
@@ -549,14 +532,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(second.isError, text(second)).toBeFalsy();
         expect(text(second)).toContain("status: reversed; path: manuscript://ch2");
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // count 2 takes a text edit and the move before it, in one call.
         await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "1" });
         ({ call } = await script.begin());
         const both = await call("write", { command: "undo", path: "part1/ch1", count: 2 });
         expect(both.isError, text(both)).toBeFalsy();
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // A create with content is one command: one undo takes the node and its text.
         call = await live(await start());
         await call("write", { command: "create", path: "born", content: "Fresh." });
         const gone = await call("write", { command: "undo", path: "born" });
@@ -632,7 +613,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             parent: `source:${SOURCE_ID}`,
           }),
         );
-        // The chat now writes live: the name it was shown in its draft means a different folder here.
         await db
           .update(schema.threads)
           .set({ aiWriteMode: "direct" })
@@ -672,7 +652,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const refused = await call("write", { command: "restore", path: "sect-notes" });
         expect((await placement(SCRATCH_NOTE))?.deletedAt).not.toBeNull();
         expect(text(refused)).not.toContain("status: success");
-        // Two deletes at one path: the newer first, then the older.
         const second = await asNewDoc("ch1");
         await asWriter((writer) => writer.delete(LIVE, WRITER, second));
         const first = await call("write", { command: "restore", path: "ch1" });
@@ -721,7 +700,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(undone.status, JSON.stringify(undone)).toBe("reversed");
         const receipts = async () => (await db.select().from(schema.treeEditReceipts)).length;
         const stored = await receipts();
-        // The same click again answers its stored outcome and appends nothing.
         expect(await card(clicked)).toEqual(undone);
         expect(await receipts()).toBe(stored);
         const { call: after } = await script.begin();
@@ -799,7 +777,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const NEW_WORK_ID = "00000000-0000-4000-8000-000000000d20";
       const NEW_WORK_THREAD = "00000000-0000-4000-8000-000000000d21";
 
-      /** The turn made Work "Fresh" (its receipt) and replaced the text of ch1. */
       async function madeWorkAndEdited() {
         const script = await start();
         await db.insert(schema.works).values({
@@ -890,7 +867,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
         expect(await claims()).toBe(1);
-        // The same click again: the stored answer, nothing done twice.
         expect(await card(script, id)).toEqual(undone);
         expect(await claims()).toBe(1);
       });
@@ -909,7 +885,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await workDeleted()).toBe(false);
         expect(await ch1(script)).toContain("ONE");
         expect(await claims()).toBe(0);
-        // The id is free: the same click, sent again, takes effect once.
         const undone = await card(script, id);
         expect(undone.workReceipts?.[0]?.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);

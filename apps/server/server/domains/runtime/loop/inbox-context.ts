@@ -1,28 +1,3 @@
-/**
- * The inbox drain seam: materializes a claimed batch as durable history. A text
- * `message` becomes a persisted turn. Child-provenance messages become
- * structured subagent-update system turns; Work refreshes and every other
- * request-only notice (the delivery boundary's peeked `NoticePort` rows plus
- * non-message inbox
- * entries) become one durable `system_update` turn, so a rebuilt request always
- * reproduces exactly what an earlier request saw -- required for the frozen
- * prefix's Anthropic cache breakpoints (thread AGENTS.md / runtime CONTEXT.md).
- *
- * The persisted message turn reuses the durable inbox message id as its turn and
- * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
- * redelivered message reuses the same id and the append is idempotent: turn
- * creation returns the existing row and the block projects through an id-keyed
- * upsert. The loop selects the batch under its thread lock and owns the
- * assistant split and lease receipt around this message materialization.
- *
- * A message whose turn is already durable (a writer send persisted at enqueue,
- * then claimed mid-run) is adopted, not re-persisted. `prepareAdoptedTurn`
- * loads missing text-reference reads and activated skill bodies outside the
- * thread lock, returning their events for the adoption transaction.
- * The shared context assembler owns all rendering, including image projection
- * across the complete request's occurrence budget.
- */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
@@ -47,67 +22,33 @@ import {
 } from "./reference-context.js";
 import type { RenderedWorkContext } from "./work-context.js";
 
-/** The rich blocks (and any hidden sibling turns) an adopted turn's preparation resolved. */
 export interface AdoptedTurnPreparation {
   blocks: Block[];
   events?: OrchestratorEvent[];
-  /**
-   * Hidden turns (with their own blocks) to render immediately after the
-   * adopted turn -- for example, a skill-body turn. Never a block on the
-   * adopted turn itself: anything that projects a user turn's text (chat
-   * previews, `UserTurn.tsx`) concatenates every text block on it, so
-   * model-only content must live on its own turn.
-   */
   extraTurns?: readonly { turn: Turn; blocks: readonly Block[] }[];
-  /** Host-only reference-read evidence, recorded only by the commit that persists `events`. */
   evidence?: ReferenceEvidence;
 }
 
-/** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
 export interface InboxDrain {
-  /** Persisted message/notice/subagent-update turns, in batch order plus a trailing notices turn. */
   turns: Turn[];
   blocks: Block[];
-  /** Prepared durable changes; callers commit these after all context reads finish. */
   events: OrchestratorEvent[];
-  /** Ids of the whole claimed batch, acked with the response that carries it. */
   ackIds: string[];
-  /** Host-only evidence from adopted turns' reference reads, recorded with `events`. */
   evidence?: ReferenceEvidence;
 }
 
-/**
- * Materializes the caller's locked pending batch. Work refresh notices and every
- * other request-only notice become one durable `system_update` turn; messages
- * already in `knownTurnIds` are redeliveries and are not appended again. The
- * whole fresh message batch (plus the notices turn) persists in one turn-start
- * transition.
- */
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
   batch: InboxMessage[];
   workContext?: RenderedWorkContext;
-  /**
-   * Peeked `NoticePort` notices for this thread. The prepare/commit boundary
-   * consumes their selected IDs on commit, even when their content cancels out.
-   */
   notices: readonly Notice[];
   threadId: ThreadId;
   knownTurnIds: ReadonlySet<TurnId>;
   expectedLeafTurnId: TurnId | null;
-  /**
-   * Resolves an adopted turn's rich model-facing blocks before it renders (for
-   * example, reads text-reference occurrences that lack a persisted result, or
-   * loads a mid-run steer's activated skill bodies), returning the updated
-   * blocks. A writer send persisted at enqueue has no run yet to resolve these
-   * at first iteration, so adoption is where they land.
-   */
   prepareAdoptedTurn?: (turn: Turn, blocks: Block[]) => Promise<AdoptedTurnPreparation>;
 }): Promise<InboxDrain> {
   const batch = input.batch;
   const fresh: InboxMessage[] = [];
-  // Keyed by message id, in final render order per message: the adopted turn
-  // itself plus any hidden sibling turns prepared for it.
   const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
   const adoptedEventsByMessageId = new Map<string, OrchestratorEvent[]>();
@@ -118,12 +59,6 @@ export async function drainInbox(input: {
       continue;
     }
     if (input.knownTurnIds.has(message.id)) continue;
-    // A message whose turn is already durable was persisted by the writer
-    // producer at enqueue. The drain start sees it through `knownTurnIds`; a
-    // mid-run drain does not, so it recognizes the existing turn here, skips the
-    // second append, and carries the turn into the run's accumulator. The
-    // adopted blocks render the request, not the plain inbox body: rich content
-    // (images, reference reads, skill anchors) lives on the persisted turn.
     const existing = await turnGraph(input.persistence.repos.turns).findById(message.id as TurnId);
     if (existing) {
       let blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
@@ -159,8 +94,6 @@ export async function drainInbox(input: {
     }
     fresh.push(message);
   }
-  // Chain fresh messages (and the notices turn) from the durable leaf so a
-  // pre-persisted writer turn (adopted above) is not forked past.
   const needsAppend =
     fresh.some(
       (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
@@ -220,8 +153,6 @@ export async function drainInbox(input: {
     events.push(...(planEventsByTurnId.get(noticesTurn.id) ?? []));
   }
   const plannedBlocks = plan.blocks.map(localBlockFromEvent);
-  // Each fresh message maps to exactly the one turn built for it; notices have
-  // no owning message and are appended after the batch.
   return {
     turns: orderedTurns,
     blocks: [...adoptedBlocks, ...plannedBlocks],
@@ -231,14 +162,6 @@ export async function drainInbox(input: {
   };
 }
 
-/**
- * The one planner for "an inbox batch (plus its notices) becomes durable
- * turns": filters `knownTurnIds`, chains each fresh `message` from the previous
- * turn, appends a trailing `system_update` turn for `notices` when present, and
- * emits the `turn.created` + `block.upserted` pairs that advance the leaf. Pure,
- * so run-start and mid-run preparation share one home for chain and idempotency
- * semantics before the delivery boundary opens its transaction.
- */
 export function planMessageTurns(input: {
   threadId: ThreadId;
   batch: readonly InboxMessage[];
@@ -252,7 +175,6 @@ export function planMessageTurns(input: {
   blocks: BlockUpsertedRow[];
   events: OrchestratorEvent[];
   leafTurnId: TurnId | null;
-  /** The trailing notices turn's id, when the batch rendered notice content. */
   noticesTurnId: TurnId | null;
 } {
   const turns: Turn[] = [];
@@ -317,11 +239,6 @@ export function planMessageTurns(input: {
   return { turns, blocks, events, leafTurnId, noticesTurnId };
 }
 
-/**
- * Builds the durable user turn and text block for one drained `message`. The
- * inbox message id is reused as the turn/block id so a redelivery is idempotent;
- * the repository assigns its position when the drain is serialized.
- */
 export function messageTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
@@ -329,17 +246,12 @@ export function messageTurnFor(
   workContext?: RenderedWorkContext,
 ): { turn: Turn; block: BlockUpsertedRow } {
   const isChildNotification = message.provenance.kind === "child";
-  // Production writer sends are persisted and adopted by id at enqueue; keep
-  // this fallback's writer metadata aligned if an inbox writer turn is ever
-  // materialized without that normal path.
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,
     position,
     prevTurnId,
     role: isChildNotification ? "system" : "user",
-    // Writer provenance is the only human send; every other provenance
-    // (agent/child/system) is a machine injection.
     origin: message.provenance.kind === "writer" ? "writer" : "system",
     status: "complete",
     metadata:
@@ -381,14 +293,6 @@ export function messageTurnFor(
   return { turn, block };
 }
 
-/**
- * Builds the durable system turn and text block carrying every request-only
- * notice for one delivery boundary: peeked `NoticePort` notices (`undo`,
- * `awareness_degraded`, writer `work_switched`) and non-message inbox entries,
- * formatted exactly like the request-only rendering they replace. Persisting
- * this once makes the notice reproduce identically on every later request
- * instead of vanishing once the drain that carried it ends.
- */
 function noticesTurnFor(
   threadId: ThreadId,
   text: string,
@@ -400,7 +304,6 @@ function noticesTurnFor(
     position,
     prevTurnId,
     role: "system",
-    // The platform injects this, never the writer.
     origin: "system",
     status: "complete",
     metadata: noticesMetadata(),

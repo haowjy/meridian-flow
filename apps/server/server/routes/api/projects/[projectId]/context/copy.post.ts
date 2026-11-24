@@ -1,5 +1,3 @@
-/** HTTP edge for one Copy: many sources, one destination, one receipt. */
-
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { handleContextCopyRequest } from "../../../../../lib/context-copy-route.js";

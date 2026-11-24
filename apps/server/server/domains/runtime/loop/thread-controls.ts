@@ -1,8 +1,3 @@
-/**
- * Thread control commands serialize idempotency, cancel-out and withdrawal
- * with boundary reservation. Every request writes its own row, so a replay
- * always finds it and answers that row's state.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ControlBody,
@@ -28,25 +23,17 @@ export class ThreadControlError extends Error {
 export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
   findMessage(id: string): Promise<InboxMessage | null>;
-  /** Enqueue and wake the thread. */
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   enqueueWithoutWake(draft: MessageDraft): Promise<InboxMessage>;
-  /**
-   * Writes the row already acknowledged, with the rows it cancels, then
-   * publishes the final queue once: no snapshot ever shows the settled row.
-   */
   enqueueSettled(draft: MessageDraft, cancelledIds: readonly string[]): Promise<void>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
-  /** The Work's default follows the writer's latest choice, applied or not. */
   setWorkDefault(threadId: ThreadId, mode: AiWriteMode): Promise<void>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
-  /** The run-state record an answer carries, read under the thread lock (publishes first if needed). */
   answerRunState(threadId: ThreadId): Promise<RunState>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
   hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
-  /** Writes the control's row; false when the id was already seen (a replay). */
   async function enqueueRow(
     input: { threadId: ThreadId; id: string; control: ControlBody },
     draft: MessageDraft,
@@ -72,9 +59,6 @@ export function createThreadControls(deps: {
       ? queued.body.mode === input.control.mode
       : (await deps.threadWriteMode(input.threadId)) === input.control.mode;
     if (queued || unchanged) {
-      // A switch back cancels the queued switch; a same-mode request leaves
-      // things alone. Either way the row is written already acknowledged,
-      // so nothing shows in the chat and a replay finds it settled.
       await deps.enqueueSettled(draft, queued && !unchanged ? [queued.id] : []);
       return true;
     }
@@ -91,13 +75,8 @@ export function createThreadControls(deps: {
         provenance: input.provenance,
         idempotencyKey: input.id,
       };
-      // One read under the lock: every switch transition commits under it, so the control's turn
-      // and the record read here are the server's state at the record's version.
       return deps.withThreadLock(input.threadId, async () => {
         const created = await enqueueRow(input, draft);
-        // Queue collapse and Work-default propagation are separate decisions. A fresh
-        // writer choice owns the default even when an Agent already queued that mode;
-        // replay of the writer's row remains idempotent.
         if (created && input.control.kind === "write_mode" && input.provenance.kind === "writer")
           await deps.setWorkDefault(input.threadId, input.control.mode);
         const turn = await deps.findControlTurn(input.threadId, input.id);
@@ -118,11 +97,9 @@ export function createThreadControls(deps: {
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
         else if (!row.deliveredAt) {
           await deps.acknowledge(threadId, [controlId]);
-          // Withdrawing a pending switch is the writer's latest choice: the chat's own mode.
           if (row.body.kind === "write_mode")
             await deps.setWorkDefault(threadId, await deps.threadWriteMode(threadId));
         }
-        // The record read here includes the withdrawal's own transaction.
         return { outcome, runState: await deps.answerRunState(threadId) };
       }),
   };

@@ -1,8 +1,3 @@
-/**
- * Sheet — shadcn/Radix dialog-based slide-over primitive (used for mobile
- * drawers via the Sidebar). Upstream-managed wrapper; customize at call sites.
- */
-
 import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
@@ -35,13 +30,6 @@ function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
-      // Scrim fade must run in lockstep with SheetContent's slide (500ms open /
-      // 300ms close below) — the tailwindcss-animate default is 150ms, which
-      // un-dims the page while the panel is still moving. On iOS Safari the
-      // mismatch is glaring: the page snaps back to full color while the
-      // status-bar/URL-bar tint is still playing the scrim out. Local deviation
-      // from the upstream-managed rule: the overlay is rendered internally by
-      // SheetContent, so call sites can't reach it.
       className={cn(
         "fixed inset-0 z-50 bg-black/50 ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-(--motion-duration-panel) data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-(--motion-duration-panel) data-[state=open]:fade-in-0",
         className,

@@ -1,4 +1,3 @@
-/** Selection identity without reading bytes or creating Context nodes. */
 import {
   EXPORT_WORKS_FOLDER,
   IMPORT_ADMISSION,

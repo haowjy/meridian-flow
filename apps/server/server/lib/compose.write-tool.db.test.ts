@@ -47,8 +47,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     };
     const DOC_ID = "00000000-0000-4000-8000-000000000e07";
     const CHAPTER = "manuscript://chapter";
-    // Copies create documents, which repair the project catalog after commit:
-    // that background work needs real commits, so this suite doesn't roll back.
     const db = createDb(DATABASE_URL, { max: 6 });
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
@@ -105,7 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    /** A composed runtime with the writer's chapter already live. */
     async function startWithChapter(markdown: string) {
       const runtime = await runtimes.compose();
       await writeMarkdown(runtime.ports.documentSync, {
@@ -145,7 +142,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Drafted lore needle.",
       });
       expect(lore.result).toMatchObject({ destination: "draft" });
-      // Scratch is live in every Work.
       const notes = await call("write", {
         command: "create",
         path: "scratch://notes",
@@ -161,7 +157,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(toolContentText(liveRead.content)).toContain("Writer live content.");
       expect(toolContentText(liveRead.content)).not.toContain("Model draft content.");
 
-      // The last read was the draft, so the stale live hash reaches the resolver.
       await call("read", { path: CHAPTER });
       const stale = await call("write", {
         command: "replace",
@@ -178,7 +173,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("lore");
     });
 
-    // auto-apply writes live, but an explicit `draft` still reads what the Work kept.
     it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
       const script = await startWithChapter("Writer live content.");
       const first = await script.begin();
@@ -243,7 +237,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         call("write", { command: "create", path: `manuscript://${name}.md`, content: name });
 
       beforeEach(async () => {
-        // A switch turn chains after the chat's active leaf.
         await db
           .update(schema.threads)
           .set({ activeLeafTurnId: THREAD.turnId })
@@ -322,7 +315,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect(await switchTurns()).toEqual([]);
 
-        // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
         await releaseLeaseUnderLock(runtime.ports.db, runtime.ports.runClaim, lease);
         await runtime.app.runStarter.start(THREAD.threadId as never);
         await processDetachedWork.drain();
@@ -373,11 +365,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect(await switchTurns()).toEqual([]);
         expect(await modeOf(THREAD.threadId)).toBe("draft");
-        // The Work's default follows the writer's choice at once, so a new chat starts in it.
         const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
         expect(after?.defaultAiWriteMode).toBe("direct");
         expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
-        // Stopping the pending switch is the writer's latest choice too.
         await runtime.app.delivery.withdrawControl(THREAD.threadId as never, switched.response.id);
         const [stopped] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
         expect(stopped?.defaultAiWriteMode).toBe("draft");
@@ -390,7 +380,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    // a create or copy would make its file in the archived Work's frozen drafts.
     it("refuses a draft-mode chat's create or copy into its archived Work with the frozen-drafts copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
@@ -435,7 +424,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(duel).not.toContain("Quiet.");
     });
 
-    // I1: imported frontmatter travels with a model copy, so the copy is not a lesser document.
     it("carries the source's properties and aliases to a text copy", async () => {
       const properties = {
         format: "yaml",
@@ -448,7 +436,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const script = await startWithChapter("Writer live content.");
       const { call } = await script.begin();
 
-      // v1: the model never sees properties; it only copies them along.
       for (const seen of [
         await call("read", { path: CHAPTER }),
         await call("ls", { path: "manuscript://" }),
@@ -465,7 +452,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       expect(copied.isError).toBeFalsy();
-      // A Draft chat's copy is a drafted create.
       const [copy] = await db
         .select({ metadata: schema.documents.metadata })
         .from(schema.draftTreeNodes)
@@ -500,7 +486,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    // A binary copy duplicates the stored object, so the copy and its source never share one.
     it("copies a binary file as its own stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);

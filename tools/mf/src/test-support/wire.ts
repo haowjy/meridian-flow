@@ -1,11 +1,3 @@
-/**
- * A thin HTTP and WebSocket harness for ./mf command tests. It decides nothing about the chat.
- * A test states the contract facts it needs (what admission answers, which snapshot each read
- * gets, what Stop answers, which frames the journal holds and when), and the harness serves
- * them over a real server so the CLI, client code, serializer and socket all run. It records
- * what ./mf posted and can break a transport after the fact. Server policy (Stop's scope,
- * adoption, settlement) is proven in the server's own protocol tests and real-stack probes.
- */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
   type AdmissionLookup,
@@ -39,13 +31,10 @@ import {
   thread,
 } from "./wire-fixtures";
 
-/** How one answer fails. With no `status`, `body`, `text` or `drop`, the normal answer follows the delay. */
 export type Reply = {
   status?: number;
   body?: unknown;
-  /** A raw body that is not JSON. */
   text?: string;
-  /** Destroy the connection without answering. */
   drop?: true;
   delayMs?: number;
 };
@@ -64,7 +53,6 @@ type Recorded = { kind: RouteKind; method: string; path: string; body: unknown }
 type Cursor = { requestId: string; threadId: string; lastSeq: string };
 
 export class Wire {
-  /** What the next snapshot read returns; a function sees the 1-based read number. */
   snapshot: ThreadSnapshotResponse | ((read: number) => ThreadSnapshotResponse) = snapshotOf();
   admit: (body: SendMessageRequest) => SendMessageResponse = () => ({
     threadId: THREAD_ID,
@@ -102,17 +90,13 @@ export class Wire {
     turnId,
     status: "not_found",
   });
-  /** Sees every client frame on the socket, to publish or answer as the scenario says. */
   onClient?: (message: Record<string, unknown>, ws: WebSocket) => void;
-  /** Overrides the answer to one subscription cursor: a frame to send instead, or a close code. */
   onSubscribe?: (cursor: Cursor) => WsServerMessage | { close: number } | undefined;
 
   readonly journal: SequencedEvent[] = [];
   readonly requests: Recorded[] = [];
-  /** Requests the client closed before this server answered them. */
   readonly aborted: Recorded[] = [];
   readonly clientMessages: Record<string, unknown>[] = [];
-  /** Sockets ever accepted, and subscription cursors ever answered. */
   connections = 0;
   subscriptions = 0;
   reads = 0;
@@ -152,14 +136,12 @@ export class Wire {
     return this.requestsOf(kind).map((request) => request.body);
   }
 
-  /** Appends one frame to the journal and sends it to every open socket. */
   publish(event: AGUIEvent) {
     const seq = String(this.journal.length + 1);
     this.journal.push({ seq, event });
     this.broadcast({ type: "event", threadId: THREAD_ID, seq, event });
   }
 
-  /** Replaces a route's next `times` answers with a transport failure; the route's handler still runs. */
   fail(kind: RouteKind, reply: Reply, times = 1) {
     this.faults.set(kind, [...(this.faults.get(kind) ?? []), { reply, times }]);
   }
@@ -168,7 +150,6 @@ export class Wire {
     for (const socket of this.sockets) socket.close(code, "scripted");
   }
 
-  /** Runs an async scenario step alongside the CLI; `close` rethrows its failure. */
   play(script: () => Promise<void> | void) {
     this.scripts.push(
       Promise.resolve()
@@ -208,7 +189,6 @@ export class Wire {
     if (this.scriptError) throw this.scriptError;
   }
 
-  /** What the next snapshot read would show, without counting a read. */
   private peek() {
     return typeof this.snapshot === "function" ? this.snapshot(this.reads + 1) : this.snapshot;
   }
@@ -358,7 +338,6 @@ function classify(method: string, path: string): RouteKind {
   return "other";
 }
 
-/** Routes whose answer is the same fixed fact in every scenario. */
 function staticRoute(route: string, path: string): [number, unknown, boolean?] {
   if (route === "GET /api/threads") return [200, { threads: [thread()] }, true];
   if (route === "GET /api/projects")

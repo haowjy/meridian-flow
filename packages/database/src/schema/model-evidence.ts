@@ -1,4 +1,3 @@
-// What the model was shown of documents: collab's tables, written at an edit and at a stored result.
 import type { DocumentId, ProjectId, ThreadId, TurnBlockId, TurnId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -14,26 +13,7 @@ import {
 import { byteaColumn } from "./_shared";
 import { documents, projects } from "./content";
 
-/**
- * Links shown to the model in a holder document, per thread (host-only
- * evidence for ref assignment). Independent of transcript blocks, so
- * compaction and restart keep it. One row per showing key per turn: a repeat
- * in a later turn adds a row rather than moving the earlier one, so a fork
- * whose cutoff precedes the repeat still reads the showing it saw. Within a
- * turn the row keeps the greatest `seq` from the global sequence, which orders
- * showings ("latest"). Readers select the lineage's eligible rows by cutoff
- * first and only then keep the latest per key; nothing is copied.
- *
- * Addresses and holder URIs have no byte bound, so the key stores
- * `showing_digest`, a SHA-256 of the exact (ref, address, holder, view) tuple,
- * beside the exact values. Distinct tuples sharing a digest are treated as
- * impossible; were one to occur, the writer's exact-equality guard leaves the
- * first showing untouched rather than merging the two.
- *
- * `thread_id` and `turn_id` name rows of the runtime's tables without a foreign key: the
- * document side deletes by thread (`forgetThreads`), and a deleted project removes the rows
- * through `project_id`.
- */
+// keep: Store a SHA-256 beside exact unbounded link values; exact-equality guard must not merge distinct tuples
 export const threadShownLinks = pgTable(
   "thread_shown_links",
   {
@@ -49,7 +29,6 @@ export const threadShownLinks = pgTable(
     ref: text("ref").notNull(),
     address: text("address").notNull(),
     holderUri: text("holder_uri").notNull(),
-    /** `live` or `draft:<draftId>`. */
     view: text("view").notNull(),
     showingDigest: text("showing_digest").notNull(),
     turnId: uuid("turn_id").$type<TurnId>().notNull(),
@@ -65,24 +44,6 @@ export const threadShownLinks = pgTable(
   ],
 );
 
-/**
- * Observation frontiers: the document state the model was shown by one
- * transcript block (a tool result, or a writer turn's reference block whose
- * materialized read it is sent), per room. `snapshot` holds the frontiers of the docs it
- * showed (agent-edit's `encodeFrontierMap`).
- * `room_key` is the Loro room name, `live:<documentId>` or `fork:<draftId>:<documentId>`; the
- * room `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map
- * of names shown, `domains/context/tree/names-shown.ts`). A document's purge deletes the rows of
- * its rooms, and an empty fork's deletion its room's (`ModelEvidence.forgetFrontiers`).
- *
- * Keyed by the block's own id and the room, so a fork that renders the inherited block
- * finds its rows with nothing copied. The key has no foreign key to the block: the
- * runtime stores the block, and a row left behind by a crash is never read, because every
- * lookup names the block ids it asks about. `thread_id` is plain; the document side deletes
- * by it (`forgetThreads`), and `project_id` cascades a deleted project.
- * `recorded_seq` is global recording order: the latest row among a
- * conversation's blocks is the model's frontier for a room.
- */
 export const observationFrontiers = pgTable(
   "observation_frontiers",
   {
@@ -97,9 +58,7 @@ export const observationFrontiers = pgTable(
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [
-    // A result records one row per room it showed: a document's, and the names it showed (`tree`).
     primaryKey({ columns: [table.sourceBlockId, table.roomKey] }),
-    // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
     index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
     index("observation_frontiers_thread").on(table.threadId),
     index("observation_frontiers_project").on(table.projectId),

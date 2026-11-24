@@ -1,18 +1,14 @@
-/** Normalized identity and lifecycle for every writer-facing subagent surface. */
-
 import type { Thread, Turn } from "@meridian/contracts/protocol";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { turnSubagentFacts } from "@meridian/thread-client";
 import { subagentCurrentToolLabel } from "./display";
 
-/** A finished run's outcome stays distinct: a failed run and a stopped one read differently. */
 export type SubagentRunStatus = "running" | "done" | "failed" | "cancelled" | "unknown";
 export type SubagentRun = {
   threadId: string | null;
   ref: string | null;
   execution: string | null;
   agentName: string;
-  /** The writer-visible task label (spawn `name`, the child thread title). */
   name: string | null;
   status: SubagentRunStatus;
   startedAt: string | null;
@@ -25,7 +21,6 @@ export type SubagentRun = {
 
 export type SubagentRunKey = { threadId: string } | { ref: string } | { execution: string };
 
-/** A terminal activity observation wins over a stale persisted running card. */
 export function statusFromSources(input: {
   savedRunning?: boolean;
   outcome?: unknown;
@@ -103,7 +98,6 @@ export function indexSubagentRuns(runs: Iterable<SubagentRun>) {
   return { byThreadId, byRef, byExecution };
 }
 
-/** Combines durable invocation/notice identity with activity, with terminal cards authoritative. */
 export function buildSubagentRuns(
   nodes: readonly ThreadActivityNode[],
   turns: readonly Turn[],
@@ -143,7 +137,6 @@ export function buildSubagentRuns(
     if (completion) {
       const update = completion.update;
       const live = byThread.get(update.childThreadId);
-      // The launch card came first; it keeps identity when activity is empty.
       const card = runs.get(`thread:${update.childThreadId}`);
       const run: SubagentRun = {
         threadId: update.childThreadId,

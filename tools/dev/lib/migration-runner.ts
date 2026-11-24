@@ -1,4 +1,3 @@
-/** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -129,7 +128,6 @@ export async function runMigrations(input: {
       disconnected = true;
     },
   });
-  // FATAL errors can arrive before postgres.js emits onclose.
   function observeFailure(error: unknown) {
     const details = error as { severity?: string; code?: string };
     if (
@@ -145,7 +143,6 @@ export async function runMigrations(input: {
       await action();
     } catch (error) {
       observeFailure(error);
-      // Cleanup is best effort; it must never replace the file-aware failure.
     }
   }
   try {
@@ -155,7 +152,6 @@ export async function runMigrations(input: {
       await session`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
       if ((await baselineStatus(session, baseline, input.databaseUrl)) === "current") return;
       const migrationPath = path.join(input.migrationsDirectory, "0000_baseline.sql");
-      // Reserved sessions need transaction control on the connection holding the lock.
       await session`BEGIN`;
       try {
         await session`CREATE SCHEMA IF NOT EXISTS drizzle`;
@@ -176,8 +172,6 @@ export async function runMigrations(input: {
       observeFailure(error);
       throw error;
     } finally {
-      // Backend termination releases its advisory lock. A dead reserved session
-      // cannot reconnect safely, so never submit cleanup SQL to it.
       if (!disconnected) {
         await cleanup(() => session`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`);
         if (!disconnected) await cleanup(() => session.release());

@@ -1,4 +1,3 @@
-/** Deterministic creation graph and placement derived only from durable import outcomes. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { shownName, suffixesInArrival } from "@meridian/project-tree";
@@ -11,7 +10,6 @@ export type DestinationSnapshot = {
   folderId: string | null;
   uri: string;
   fellBack: boolean;
-  /** What the destination holds, by the names it shows (a document's carries its extension). */
   children: readonly { id: string; kind: "folder" | "file"; name: string }[];
 };
 
@@ -34,13 +32,6 @@ function effectiveNode(node: PlannedNode, entries: ReadonlyMap<string, ImportEnt
   return { ...node, kind: "note", filetype: "markdown" };
 }
 
-/**
- * The creation graph and the plan. The first pass plans against the destinations as they are and
- * the plan is kept on the import (`imports.placement`); later passes pass it back as `fixed`, so
- * the paths the stored text spells its links with stay the ones planned. Every node keeps its
- * name; one that meets a name already in its folder lands as a twin, and its path spells the
- * `~id` the replay will give it (it arrives after what the folder holds, in plan order).
- */
 export async function buildOrganizedTree(input: {
   record: ImportRecord;
   entries: readonly ImportEntry[];
@@ -96,7 +87,6 @@ export async function buildOrganizedTree(input: {
     input.destinations.map((destination) => [destination.area, destination]),
   );
   const parentKey = (area: string, id: string | null) => JSON.stringify([area, id]);
-  // Each folder's children in the order they arrive: what it holds, then the plan's nodes.
   const arrivals = new Map<string, { id: string; name: string }[]>();
   for (const destination of input.destinations)
     arrivals.set(
@@ -118,9 +108,7 @@ export async function buildOrganizedTree(input: {
     }
     const siblings = arrivals.get(parentKey(node.area, node.parentId));
     if (!siblings) throw new Error(`Import tree has no sibling group for ${node.id}`);
-    // The name the node lands under: a converted document drops its source's extension.
     node.filename = renderFilename(node.name, node.kind === "folder" ? "" : node.extension);
-    // The name the tree will store, as the replay compares it.
     const kind = node.kind === "folder" ? "folder" : node.kind === "binary" ? "file" : "document";
     siblings.push({ id: node.id, name: shownName(kind, node.filename, node.filetype) });
   }

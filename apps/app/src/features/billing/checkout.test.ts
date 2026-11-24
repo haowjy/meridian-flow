@@ -98,8 +98,6 @@ describe("isCheckoutConfirmed", () => {
   });
 
   it("does not confirm a pre-existing purchase already in the baseline", () => {
-    // The fresh baseline captures every row on the server, so a purchase that
-    // predates this checkout is never a "new" delta.
     const baseline = checkoutBaselineFrom([existingPurchase], extraRequest, "checkout", "none");
     expect(isCheckoutConfirmed(baseline, balance("none"), transactions([existingPurchase]))).toBe(
       false,

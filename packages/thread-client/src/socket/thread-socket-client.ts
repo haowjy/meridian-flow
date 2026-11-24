@@ -1,11 +1,3 @@
-/**
- * ThreadSocketClient — the production `ThreadTransport` over `/api/threads/ws`.
- *
- * Routes thread-domain messages and connection notifications. Per-thread
- * replay requests, outcomes, retries and delivery belong to the subscription registry.
- * `SocketLifecycleController` owns handshake readiness, reconnect, ping timeout
- * and generation fencing; `dispatch-ws-server-message` owns message routing.
- */
 import {
   classifyUnavailable,
   type FailureLog,
@@ -38,7 +30,6 @@ import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
   failureLog?: FailureLog;
-  /** What the server's `connected` frame says it is: its release id and, from a server that sends one, its protocol. */
   onServer?: (seen: { release: string; protocol: ServerProtocol | undefined }) => void;
   toError: (error: MeridianError) => Error;
   cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
@@ -60,7 +51,6 @@ export class ThreadSocketClient implements ThreadTransport {
     string,
     Set<(hint: CatalogChannelMessage) => void>
   >();
-  /** Unanswered `ask.answer` frames by request id; a close settles every one as unconfirmed. */
   private readonly askAnswers = new Map<
     string,
     { resolve: (outcome: AskAnswerOutcome) => void; deadline: ReturnType<typeof setTimeout> }
@@ -75,9 +65,7 @@ export class ThreadSocketClient implements ThreadTransport {
         wantsConnection: () => this.wantsConnection,
         onMessage: (data) => this.handleMessage(data),
         onClose: (event) => {
-          // The generation that just closed is still `currentGeneration` here
-          // (it only advances on the next `startSocket`/`teardown`), so a send
-          // tagged with it can be recognized as unconfirmed.
+          // keep: The closing generation is still currentGeneration here so sends tagged with it settle unconfirmed
           this.subscriptions.connectionLost();
           this.settleAskAnswers();
           for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
@@ -168,7 +156,6 @@ export class ThreadSocketClient implements ThreadTransport {
     return this.socket.isServerConnected() && this.send({ type: "ask.presence", ...input });
   }
 
-  /** The one settlement for an answer request: its reply, a request error, a close, or its deadline. */
   private settleAskAnswer(requestId: string, outcome: AskAnswerOutcome): boolean {
     const pending = this.askAnswers.get(requestId);
     if (!pending) return false;
@@ -230,8 +217,7 @@ export class ThreadSocketClient implements ThreadTransport {
         this.subscriptions.connected();
         for (const [projectId, listeners] of this.catalogSubscriptions) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
-          // Hints sent while the socket was down are gone, deletions among them: tell the
-          // listeners to recheck their chat tabs.
+          // keep: Hints sent while the socket was down are lost; reconnect asks listeners to recheck chat tabs
           if (this.hasConnected)
             for (const listener of listeners)
               listener({ type: "project-chats-hint", projectId, recheckTabs: true });

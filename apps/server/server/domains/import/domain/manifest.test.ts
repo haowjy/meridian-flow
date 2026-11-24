@@ -1,4 +1,3 @@
-/** Manifest refusals: every bound is checked before a node is minted, and answers a stable code. */
 import { randomUUID } from "node:crypto";
 import { IMPORT_ADMISSION, type ImportSelection } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";

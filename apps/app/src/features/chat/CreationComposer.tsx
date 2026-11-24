@@ -1,5 +1,3 @@
-/** Shared pinned new-chat composer for the main, the side, and the phone. */
-
 import { t } from "@lingui/core/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
@@ -43,23 +41,13 @@ export function CreationComposer({
   onAboutChange,
 }: {
   projectId: string;
-  /** The document a new chat beside it is about: attached while the writer has written nothing. */
   about?: string | null;
-  /** What the new chat is about as its draft stands, for the side's name. */
   onAboutChange?: (about: NewChatAbout) => void;
-  /**
-   * A one-shot New chat focus intent for the pinned composer, supplied by the
-   * host (project routing owns the request; this composer stays unaware of
-   * project routing beyond this prop).
-   */
   newChatFocusRequestId?: number | null;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
   const composerRef = useRef<ComposerHandle>(null);
-  // An explicit New chat focuses the empty composer showing it. The frame lets a just-revealed side drop `inert` first. A composer that
-  // mounts fresh already sees the request id in this same render, so mount
-  // timing never races the host publishing it.
   useEffect(() => {
     if (newChatFocusRequestId == null) return;
     requestAnimationFrame(() => composerRef.current?.focus());
@@ -69,8 +57,6 @@ export function CreationComposer({
   const connectionMarks = useNewChatConnectionMarks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
-  // A new chat starts on the Agent of the project's newest chat (a send, handoff or fork shows
-  // in the list at once), on its own model.
   const pickable = pickableAgents(agents.agents ?? []);
   const { threads } = useProjectThreads(projectId);
   const newest = newestPrimaryThread(threads);
@@ -83,7 +69,6 @@ export function CreationComposer({
     pickable.find((agent) => agent.slug === DEFAULT_AGENT_SLUG);
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  // A new chat takes the Work scope unless the writer picked another Work for this draft.
   const scope = useWorkScope(projectId);
   const workId = choices?.workId ?? scope.workId;
   const selected = workId
@@ -92,7 +77,6 @@ export function CreationComposer({
         workId,
       )
     : null;
-  // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(
     projectId,
@@ -110,10 +94,7 @@ export function CreationComposer({
     }),
     [openDocument, projectId],
   );
-  // The Work's default shows until the writer picks a mode or another Work here, and
-  // only a picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
-  // A chat started while one of the Work's drafts is showing writes into that draft.
   const shell = useShellTreeVersion();
   const shownDraft = (work: Work) =>
     shell?.work?.id === work.id && shell.showing === "draft" ? shell.draftId : work.draftId;
@@ -204,8 +185,6 @@ export function CreationComposer({
             onAgentChange={(next) =>
               creation.updateChoices({ agent: next.agent, overrides: next.overrides })
             }
-            // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
-            // A Work's default shows only for the Work the composer opened with.
             onWorkChange={(selected) =>
               creation.updateChoices({ workId: selected.id, aiWriteMode: writeMode })
             }
@@ -226,19 +205,8 @@ export function CreationComposer({
   );
 }
 
-/**
- * What a new chat beside a document is about, as its draft stands: the side's name says it.
- * `follows`: the draft is empty or the chip this composer put there, untouched, so it moves with
- * the document beside. A label: the writer wrote around that chip. Null: the chip is gone.
- */
 export type NewChatAbout = "follows" | { label: string } | null;
 
-/**
- * A new chat beside a document starts with that document attached. The writer's own draft is
- * theirs: the chip replaces only an empty draft or the chip this hook put there last, never an
- * upload or a chip the writer picked. Which chip it put there is kept with the draft, so a
- * remounted or reloaded composer still knows. Nothing here takes focus.
- */
 function useAttachAbout(
   composerRef: RefObject<ComposerHandle | null>,
   draft: Pick<
@@ -281,7 +249,6 @@ function useAttachAbout(
   );
 }
 
-/** Whether the draft is the attached chip alone, holds it among the writer's words, or lost it. */
 function aboutOf(doc: JSONContent, chip: AttachedAbout | null): NewChatAbout {
   if (!chip) return null;
   const isChip = (node: JSONContent | undefined) =>

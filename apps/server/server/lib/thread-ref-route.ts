@@ -1,7 +1,3 @@
-/**
- * Route core for GET /api/projects/:projectId/threads/by-ref/:ref — resolves a live
- * `cN`/`pN` handle within a project the caller owns. Malformed and unknown refs are 404.
- */
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
 import { createError } from "nitro/h3";

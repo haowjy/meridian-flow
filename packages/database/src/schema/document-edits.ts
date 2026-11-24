@@ -1,4 +1,3 @@
-// Immutable document edit receipts, independent of compactable transport journals.
 import type {
   CommandId,
   DocumentId,
@@ -43,9 +42,7 @@ export const documentEdits = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
-    /** The command that made this edit; no foreign key: the receipt outlives the command row. */
     commandId: uuid("command_id").$type<CommandId>(),
-    /** The model tool call that made this edit; scoped by its response identity. */
     toolCallId: text("tool_call_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
     actorUserId: uuid("actor_user_id")
@@ -79,17 +76,8 @@ export const documentEditParts = pgTable(
       .$type<{ editId: string; ordinal: number }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    /**
-     * The blocks the part changed, before and after the write merged in, as ProseMirror JSON with
-     * one unchanged block either side. What the card and the model's Undo read the edit from; null
-     * for a part written before the column or one that no AI wrote.
-     */
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
-    /**
-     * An AI write as one edit of the Undo rule (`StoredEdit` in `@meridian/document-model`): what
-     * the turn Undo and the model's undo and revert take back. Null for a part no AI wrote.
-     */
     edit: jsonb("edit"),
   },
   (t) => [
@@ -102,13 +90,6 @@ export const documentEditParts = pgTable(
   ],
 );
 
-/**
- * What a tree command did, for the chat that made it: one row per tool call. `records` are the
- * records it admitted, which Undo names to the package one by one (`undoChange`, resolving
- * through copies). `node_id` is the subject the model's handle hangs on; every node the call
- * changed is in `tree_edit_receipt_nodes`. A row of kind `undo` or `redo` names the receipt it
- * reverses.
- */
 export const treeEditReceipts = pgTable(
   "tree_edit_receipts",
   {
@@ -123,19 +104,14 @@ export const treeEditReceipts = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
-    /** The command that made this change; no foreign key: the receipt outlives the command row. */
     commandId: uuid("command_id").$type<CommandId>(),
     toolCallId: text("tool_call_id"),
-    /** A document's or a folder's node id: a folder has no `documents` row. */
     nodeId: uuid("node_id").notNull(),
-    /** The records the call admitted, in the order it made them. */
     records: jsonb("records").$type<{ record: string; node: string }[]>().notNull(),
     op: text("op").$type<"create" | "move" | "delete" | "restore">().notNull(),
     kind: text("kind").$type<"write" | "undo" | "redo">().notNull().default("write"),
     reverses: uuid("reverses"),
-    /** The draft the record was drafted in; null when it is live. No FK: the receipt outlives it. */
     draftId: text("draft_id").$type<DraftId>(),
-    /** The path the model gave, for the turn's receipt lines and the Undo of a deleted node. */
     shownAt: text("shown_at"),
     createdAt: createdAt(),
   },
@@ -153,13 +129,7 @@ export const treeEditReceipts = pgTable(
   ],
 );
 
-/**
- * A node a tree receipt changed, in the chat's one history of that node: `w_id` is the write
- * ordinal reserved on the node's counter (`agentEditWidCounters`), the same sequence the node's
- * text edits take, so Undo, Redo and `revert` order text and tree changes by it. `before_at` and
- * `after_at` are the node's address before and after (null for a node the call created or
- * deleted), for the turn's change viewer. `copied_from` is the source address of a copy.
- */
+// keep: w_id is the shared write ordinal; Undo, Redo and revert order text and tree changes by it
 export const treeEditReceiptNodes = pgTable(
   "tree_edit_receipt_nodes",
   {

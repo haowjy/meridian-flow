@@ -1,12 +1,3 @@
-/**
- * spawn-transcript — persist writer-facing spawn status cards and return_result tool settlement.
- *
- * Tool dispatch runs handlers and durable tool_result rows. This module upserts
- * helper-result custom cards onto the active turn and owns return_result
- * settlement. The accepted capture and ordinary tool_result share one
- * persistence transaction; capture is candidate content, not a terminal card.
- */
-
 import {
   buildInvocationCardContent,
   type ComponentBlockContent,
@@ -28,7 +19,6 @@ export type SpawnTranscript = {
   turnId: string;
   blockSeqRef: { value: number };
   allBlocks: Block[];
-  /** Runs a write of the running run under its lease (`storeUnderLease`): a run another process took over stores nothing. */
   store<T>(persist: () => Promise<T>): Promise<T>;
 };
 
@@ -86,7 +76,6 @@ export async function persistInvocationCard(
   return persistCustomCard(transcript, buildInvocationCardContent(props), existing);
 }
 
-/** The parent lock serializes the admission replacement with publication B. */
 export async function bindAdmittedInvocationCard(input: {
   transcript: SpawnTranscript | undefined;
   card: Block | null;
@@ -194,7 +183,6 @@ export async function persistReturnResult(
         }
       }
       const isError = !output.ok;
-      // A refusal reaches the model as its message; `result` keeps the outcome.
       const content = jsonContent(output.ok ? output : output.message);
       const toolRow = contentForBlockInput({
         turnId: transcript.turnId,

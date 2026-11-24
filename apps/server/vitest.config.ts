@@ -6,11 +6,8 @@ export default defineConfig({
   test: {
     ...sharedTest,
     name: "@meridian/server",
-    // Reuse the module graph across files. mockedServerTests stay in
-    // vitest.isolated.config.ts; a shared worker would leak those mocks.
-    // tools/dev/vitest-isolate-boundary.test.ts rejects a new vi.mock here.
+    // keep: mocked server tests stay in the isolated config; a shared worker would leak their vi.mock
     isolate: false,
-    // .output is nitro's build artifact; its compiled *.test.mjs copies must not be collected.
     exclude: [
       ...configDefaults.exclude,
       "**/*.db.test.ts",

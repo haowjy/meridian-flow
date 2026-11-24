@@ -1,4 +1,3 @@
-/** Shared retry for Work lifecycle commands whose tree lock can report a changed tree. */
 import { WorkDeleteRetryError } from "./ports/work-repository.js";
 
 export async function runWorkLifecycleCommand<T>(

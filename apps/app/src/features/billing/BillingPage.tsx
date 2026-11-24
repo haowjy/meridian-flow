@@ -1,32 +1,3 @@
-/**
- * /billing — usage summary, catalog (subscription plans + extra usage), and
- * recent activity. The server emits USD strings + percentages; this page is
- * pure presentation over those values.
- *
- * Purchase actions go through Stripe Checkout / Customer Portal — the create
- * mutation returns a discriminated `{ kind: "checkout" | "portal", url }` and
- * the hook redirects. The server marks checkout availability per catalog entry
- * so one missing Stripe price does not disable unrelated purchases.
- *
- * Checkout is P0 server-confirmed: only the initiating control is pending, and
- * a failed session create shows an inline Retry on that control without locking
- * the rest of the catalog. A returned `?checkout=success` never confirms from
- * Stripe's redirect alone; `useCheckoutReturn` reconciles against the ledger.
- *
- * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
- * usage has `amountOptions` instead — the user picks an amount via
- * `ExtraUsagePicker` and that value becomes `amountUsd` in the request.
- *
- * Layout: single calm centered column (max-w-2xl) — Usage hero → Plans
- * section → Extra usage section → Recent activity. Plans and extra-usage
- * sit in their own labeled sections (not crammed into one mixed grid).
- *
- * Scroll: the route mounts inside a bounded, non-flex, overflow-hidden
- * wrapper in `_authenticated.tsx`, so this page owns its own scroll with
- * `h-full overflow-y-auto`. Using `app-scroll` (which assumes a flex parent)
- * here would clip content with no scrollbar.
- */
-
 import { Trans } from "@lingui/react/macro";
 import type {
   BillingCatalogEntry,
@@ -76,8 +47,6 @@ export function BillingPage() {
   const transactions = useBillingTransactions();
   const navigate = useNavigate();
 
-  // Drop `?checkout=` through the router (not raw history) so router state and
-  // the browser URL agree, and only once the return notice has settled.
   const clearReturnParam = useCallback(() => {
     void navigate({
       to: ".",
@@ -92,9 +61,7 @@ export function BillingPage() {
 
   const checkout = useCreateCheckoutSession({
     onHandoff: async ({ session, request }, isCurrent) => {
-      // Capture the ledger from a fresh read before handing off. A stale cache
-      // read could miss a purchase already on the server and fake a delta on
-      // return; a failed read must leave no baseline (fail closed).
+      // keep: Baseline needs a fresh ledger read (never cache) and must stay null if that read fails (fail closed), or a stale cache fakes a purchase delta.
       let baseline: CheckoutBaseline | null = null;
       if (session.kind === "checkout") {
         try {
@@ -112,7 +79,6 @@ export function BillingPage() {
           baseline = null;
         }
       } else {
-        // Record the portal handoff so its return is not read as a cancellation.
         baseline = checkoutBaselineFrom([], request, "portal");
       }
       if (!isCurrent()) return;
@@ -128,8 +94,6 @@ export function BillingPage() {
   const planEntries = entries.filter((entry) => entry.kind === "plan");
   const extraEntry = entries.find((entry) => entry.kind === "extra-usage");
 
-  // One mutation owns the live attempt: the click that started it is the only
-  // control rendered pending or failed. A new attempt replaces that control.
   const request = checkout.variables;
   const pendingEntryId = checkout.isPending ? request?.entryId : undefined;
   const failedEntryId = checkout.isError ? request?.entryId : undefined;

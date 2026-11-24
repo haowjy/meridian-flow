@@ -1,4 +1,3 @@
-/** One account-lifetime owner for settings. */
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { createContext, useContext, useLayoutEffect, useState } from "react";
 import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
@@ -19,10 +18,7 @@ export function AccountSettingsProvider({
   children: React.ReactNode;
 }) {
   const accountEpoch = useAccountEpochSignal();
-  // Remount the owner when the account epoch changes so a previous account's
-  // confirmed override can neither seed nor drive the next account. In
-  // production `AccountFeatureComposition` already unmounts this subtree on a
-  // transition; the generation keeps that guarantee explicit and testable.
+  // keep: Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
   const [epoch, setEpoch] = useState(accountEpoch);
   const [generation, setGeneration] = useState(0);
   if (epoch !== accountEpoch) {
@@ -52,7 +48,6 @@ function AccountSettingsOwner({
   const settings = useAccountSettings(serverValue, serverReadGeneration);
   useLayoutEffect(() => {
     changeUiTheme(settings.value.theme);
-    // A link can choose the initial language, but never veto the writer’s choice.
     changeLocale(
       (settings.hasLocalLanguageIntent ? null : resolveQueryLocale()) ?? settings.value.language,
     );

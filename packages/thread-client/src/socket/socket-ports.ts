@@ -1,4 +1,3 @@
-/** Platform-neutral socket, recovery, and observation boundaries. */
 export interface SocketClose {
   code: number;
   reason: string;

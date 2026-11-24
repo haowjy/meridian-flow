@@ -11,7 +11,6 @@ import { ensureFreeTier } from "./free-grants.js";
 import { resolveStripeWebhookGrant, type StripeWebhookEventLike } from "./stripe-webhook-grants.js";
 
 __mergedSuite("stripe-webhook-grants.test.ts", () => {
-  // Merged from apps/server/server/domains/billing/domain/stripe-webhook-grants.test.ts.
   function event(type: string, object: unknown): StripeWebhookEventLike {
     return { type, data: { object } };
   }
@@ -280,7 +279,6 @@ __mergedSuite("stripe-webhook-grants.test.ts", () => {
 });
 
 __mergedSuite("free-grants.test.ts", () => {
-  // Merged from apps/server/server/domains/billing/domain/free-grants.test.ts.
   const userId = "user-1";
 
   const clock = { now: () => new Date("2026-06-12T00:00:00.000Z") };

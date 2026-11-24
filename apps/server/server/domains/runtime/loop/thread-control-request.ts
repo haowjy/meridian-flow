@@ -1,8 +1,3 @@
-/**
- * HTTP-facing control validation: the contract's control vocabulary, made
- * strict and with compaction instructions normalized at admission.
- */
-
 import {
   type ControlBody,
   compactControlBodySchema,

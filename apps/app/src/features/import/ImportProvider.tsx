@@ -1,4 +1,3 @@
-/** Project-scoped picker and drop doors. Upload ownership lives above project navigation. */
 import { t } from "@lingui/core/macro";
 import type { ImportScheme } from "@meridian/contracts";
 import {
@@ -35,7 +34,6 @@ type Doors = {
   coordinator: NonNullable<ReturnType<typeof useImportCoordinator>>;
   projectId: string;
 };
-/** What one entry point stands for: an area's section header, or the phone's whole-project menu. */
 export type ImportPanelScope = ImportScheme | "project";
 type Panel = {
   scope: ImportPanelScope | null;
@@ -48,7 +46,6 @@ export const useOptionalImports = () => useContext(Context);
 const inScope = ({ summary }: TrackedImport, scope: ImportPanelScope) =>
   scope === "project" || importScheme(summary) === scope;
 
-/** The imports an entry point stands for, what its button shows, and its popup. */
 export function useImportPanel(scope: ImportPanelScope) {
   const doors = useOptionalImports();
   const panel = useContext(PanelContext);
@@ -73,10 +70,8 @@ export function useImportPanel(scope: ImportPanelScope) {
     (next: boolean) => setScope?.(next ? scope : null),
     [setScope, scope],
   );
-  // An open popup keeps a clean result on screen after the button has gone back to normal.
   return { items, status, open, setOpen, active: open || status !== null };
 }
-/** Opens the popup that carries an import; for a pending tree row. */
 export const useRevealImport = () => useContext(PanelContext)?.reveal;
 export function ImportProvider({
   projectId,
@@ -115,7 +110,6 @@ export function ImportProvider({
   );
   const [scope, setScope] = useState<ImportPanelScope | null>(null);
   const shown = (item: TrackedImport) => scope !== null && inScope(item, scope);
-  // A clean result needs no reading: it goes at once, unless an open popup is showing it.
   useEffect(() => {
     for (const item of own)
       if (importStatus(item) === null && !item.local.busy && !shown(item))

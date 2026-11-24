@@ -1,7 +1,3 @@
-/**
- * No-op EventSink: satisfies the port without recording or persisting. Useful
- * when a code path requires an EventSink but emission is intentionally disabled.
- */
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 
 export class NoopEventSink implements EventSink {

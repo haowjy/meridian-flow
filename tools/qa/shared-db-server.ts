@@ -1,25 +1,4 @@
-/**
- * A second `apps/server` process on a database another process already uses, for the lock-free
- * drafts two-process probe (P6): two servers, one database, one draft.
- *
- *   bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian
- *
- * `DATABASE_URL` is set verbatim. `applyDevEnvToProcess` is never called for it: the
- * loader pins a worktree's URL to that checkout's own database, which is how a "second worktree
- * with DATABASE_URL" would land on a different one. No server build config calls the loader either.
- * The rest of the environment is the dev stack's fill step (`fillDevEnv`).
- *
- * It refuses any target but the local dev Postgres and prints the database identity
- * (`current_database()`, `inet_server_addr()`, `inet_server_port()`) as one `db-identity` JSON
- * line before it boots; both processes must print the same line.
- *
- * It runs two Portless children: the server on `<prefix>.server.meridian`, and an app on
- * `<prefix>.app.meridian` (both run on Node by `shared-db-serve.mjs`: they host Nitro and Vite, which
- * production runs on Node and which fail on Bun) whose `MERIDIAN_API_ORIGIN` is that server. A tab needs its own app:
- * the app's Vite proxy sends every `/ws/loro` upgrade to its one `MERIDIAN_API_ORIGIN` whatever the
- * tab's host. Nitro and Vite build into directories of their own, so both share a checkout with a
- * running dev stack. Ctrl-C, SIGINT or SIGTERM stops both.
- */
+// keep: `DATABASE_URL` is set verbatim and `applyDevEnvToProcess` is never called for it, since the loader pins a worktree's URL to that checkout's database; no server build config calls the loader either
 import { type ChildProcess, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import postgres from "postgres";
@@ -89,14 +68,12 @@ async function launch(): Promise<void> {
     MERIDIAN_API_ORIGIN: serverOrigin,
     NODE_ENV: "development",
     APP_DEBUG: env.APP_DEBUG ?? "1",
-    // Its own event mirror, so each process's events stay attributable.
     LOG_DIR: resolve(resolveDevLogDir(repoRoot), "..", `events-${serverName}`),
   });
 
   const children: ChildProcess[] = [];
   const stopAll = (signal: NodeJS.Signals) => {
     for (const child of children) {
-      // Each child leads its own process group: pnpm does not forward signals.
       if (child.exitCode !== null || !child.pid) continue;
       try {
         process.kill(-child.pid, signal);

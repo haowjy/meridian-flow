@@ -1,4 +1,3 @@
-/** Small shared readers for the thread commands: record narrowing, the live status label, and the `thread list` rows. */
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import type { Thread } from "@meridian/contracts/threads";
 

@@ -1,10 +1,8 @@
-/** Quiet pending content for 500ms, then existing skeleton feedback until content is ready. */
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { usePaintPending } from "./PaintHold";
 
-/** Key by pending destination; remount feedback, never the retained content host. */
 export function DelayedContentSkeleton({ className }: { className?: string }) {
   usePaintPending();
   const [visible, setVisible] = useState(false);

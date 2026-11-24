@@ -59,13 +59,11 @@ const snapshot = (j: number, mode: Mode, ...queued: Queued[]): Event => ({
   mode,
   queued,
 });
-/** A `meridian.run_state` frame: the whole record at its stream version. */
 const record = (seq: string, mode: Mode, ...queued: Queued[]): Event => ({
   record: seq,
   mode,
   queued,
 });
-/** A `meridian.write_mode.switched` frame: the server's answer for its control, not a record. */
 const switched = (seq: string, id = "s1"): Event => ({ switched: seq, id });
 const choose = (id: string, mode: Mode, order: number): Event => ({ choose: id, mode, order });
 const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
@@ -83,7 +81,6 @@ const answerFacts = (j: number, mode: Mode, queued?: Queued) => ({
   at: 0,
 });
 
-/** One event through the reducer the hook runs, with the journal the hook would be handed. */
 function step({ state, journal }: Harness, event: Event): Harness {
   const dispatch = (action: RunStateAction, next = journal) => ({
     state: reduceRunState(state, action),
@@ -136,7 +133,6 @@ function step({ state, journal }: Harness, event: Event): Harness {
       } as JournalSwitch,
     });
   if ("stamp" in event)
-    // A passive tab: the stamp is in the journal, and this tab never chose the switch.
     return ingest({
       ...journal,
       [`stamp${event.stamp}`]: {
@@ -167,13 +163,10 @@ function step({ state, journal }: Harness, event: Event): Harness {
   });
 }
 
-/** Rows read `id:status`, with `:awaiting` for a switch the server may hold. */
 const SCENARIOS: {
   name: string;
   steps: [Event, mode: Mode, rows: string[]][];
-  /** The intents (`kind:id`) the view still holds after the last step, where lifecycle is the risk. */
   retained?: string[];
-  /** The queued switches announced as news, in order. */
   news?: string[];
 }[] = [
   {
@@ -182,8 +175,6 @@ const SCENARIOS: {
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [choose("s2", "direct", 2), "direct", []],
       [record(at(3), "direct"), "direct", []],
-      // Another device queues s3. Until s2's answer arrives its effect is unknown, so the
-      // fold still lays it over s3: the transient is bounded by the answer, not by a proof.
       [record(at(4), "direct", ["s3", "draft"]), "direct", []],
       [answer("s2", 3, "direct"), "draft", ["s3:queued"]],
     ],
@@ -224,7 +215,6 @@ const SCENARIOS: {
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [choose("s2", "direct", 2), "direct", []],
       [answer("s2", 3, "direct"), "direct", []],
-      // s1 applied before s2 cancelled nothing: its late frames are older than the answer.
       [switched(at(2)), "direct", []],
       [record(at(2, 1), "direct", ["s1", "draft"]), "direct", []],
     ],
@@ -242,8 +232,6 @@ const SCENARIOS: {
     name: "B1 (rp1): the reply-end apply never shows the old mode, or the applied row, between the divider and the inbox",
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
-      // The apply removed the queued row and set the mode in one transaction, and the record
-      // that follows holds both: no record shows the new mode beside the row that caused it.
       [switched(at(2)), "draft", ["s1:queued"]],
       [record(at(2, 1), "draft"), "draft", []],
     ],
@@ -315,7 +303,6 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [{ withdraw: "s1" }, "direct", []],
-      // The withdrawal's own frame is at J*1000; its answer is the head, J*1000+999.
       [record(at(2), "direct"), "direct", []],
       [{ withdrawn: "s1", j: 2, mode: "direct" }, "direct", []],
     ],
@@ -326,10 +313,8 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct"), "direct", []],
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
-      // The frame answers s1 at its seq; the record of the same commit follows and retires it.
       [switched(at(2)), "draft", ["s1:sending"]],
       [record(at(2, 1), "draft"), "draft", []],
-      // Another device switches back before s1's own answer arrives.
       [switched(at(3), "s9"), "draft", []],
       [record(at(3, 1), "direct"), "direct", []],
       [answer("s1", 2, "draft"), "direct", []],
@@ -353,13 +338,11 @@ const SCENARIOS: {
       [record(at(2, 1), "draft"), "draft", []],
       [switched(at(3), "s9"), "draft", []],
       [record(at(3, 1), "direct"), "direct", []],
-      // Another device applies 32 more switches: none may evict s1's evidence.
       ...Array.from({ length: 32 }, (_, i): [Event, Mode, string[]] => [
         switched(at(4 + i), `x${i}`),
         "direct",
         [],
       ]),
-      // The journal still holds s1 unstamped; adding s2 re-adds it.
       [choose("s2", "draft", 2), "draft", ["s2:sending"]],
     ],
     retained: ["switch:s2"],
@@ -416,7 +399,6 @@ const SCENARIOS: {
     name: "S1: a stamp left over from before a reload is evidence, never a record: it makes no row and no news",
     steps: [
       [{ stamp: 3, mode: "draft", queued: ["s1", "draft"] }, "direct", []],
-      // The first record is whatever carrier brings one first, and what it holds is not news.
       [record(at(4), "draft"), "draft", []],
       [snapshot(4, "draft"), "draft", []],
     ],
@@ -429,12 +411,10 @@ const SCENARIOS: {
       [snapshot(1, "direct"), "direct", []],
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
       [choose("s2", "direct", 2), "direct", []],
-      // The first switch enqueues, applies on the idle chat and answers, while s2 waits behind it.
       [record(at(2), "direct", ["s1", "draft"]), "direct", []],
       [switched(at(2, 1)), "direct", []],
       [record(at(2, 2), "draft"), "direct", ["s2:sending"]],
       [answer("s1", 2, "draft"), "direct", ["s2:sending"]],
-      // Then s2 enqueues, applies and answers.
       [record(at(3), "draft", ["s2", "direct"]), "direct", ["s2:queued"]],
       [switched(at(3, 1), "s2"), "direct", ["s2:queued"]],
       [record(at(3, 2), "direct"), "direct", []],
@@ -475,8 +455,6 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
         `${scenario.name} (retained)`,
       ).toEqual(scenario.retained);
   }
-  // Risk (F19): `history` is the accepted snapshot's alone, and never goes back. A queued row
-  // that a record dropped waits on it, so an answer's or frame's record must not move it.
   let state = reduceRunState(INITIAL_RUN_STATE_SLICE, {
     type: "history",
     runState: runState(at(5), "direct", []),

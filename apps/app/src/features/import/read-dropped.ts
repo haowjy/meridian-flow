@@ -1,4 +1,3 @@
-/** Selection from a drop: walks what `captureDrop` took inside the drop event. */
 import {
   EXPORT_MARKER_FILENAME,
   importPathDisposition,
@@ -16,12 +15,10 @@ type Walk = {
   signal?: AbortSignal;
 };
 
-/** What the drop has spent of the file budget so far, across roots. */
 type Seen = { count: number; unreadable: number };
 
 const FILE_BATCH = 24;
 
-/** Refusal is certain once the budget is spent: more reading cannot bring a selection back under it. */
 const spent = (seen: Seen) => overFileBudget(seen.count, seen.unreadable);
 
 export async function readDropped(
@@ -35,7 +32,6 @@ export async function readDropped(
   const seen: Seen = { count: 0, unreadable: 0 };
   const report = options.onProgress ?? (() => {});
   const entries = items.entries.filter((entry) => entry !== null);
-  // Browsers without entries (or items that were not files) still give loose files.
   const sources: (FileSystemEntry | File)[] = entries.length > 0 ? entries : items.files;
   for (const source of sources) {
     if (options.signal?.aborted || spent(seen)) break;
@@ -83,7 +79,6 @@ export async function readDropped(
     }
     selection.roots.push(root);
   }
-  // Roots are numbered after the unreadable ones leave, so ids stay dense.
   selection.roots.forEach((root, index) => {
     root.rootId = index;
   });
@@ -141,7 +136,6 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
       walk.root.folders.push(childPath);
       await walkDirectory(child, path ? `${path}/${child.name}` : child.name, walk);
     } catch {
-      // A folder that cannot be listed is left out whole; the rest carries on.
       const prefix = `${childPath}/`;
       walk.root.folders = walk.root.folders.filter(
         (folder) => folder !== childPath && !folder.startsWith(prefix),
@@ -155,7 +149,6 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
   }
 }
 
-/** `readEntries` hands out about 100 at a time; call it again until it returns an empty batch. */
 async function listDirectory(directory: FileSystemDirectoryEntry): Promise<FileSystemEntry[]> {
   const reader = directory.createReader();
   const all: FileSystemEntry[] = [];

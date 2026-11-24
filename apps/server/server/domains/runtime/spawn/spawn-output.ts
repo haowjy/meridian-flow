@@ -1,9 +1,3 @@
-/**
- * spawn-output — the writer-facing helper card for a spawn or a foreground
- * `thread_message`. It's a custom block in the same family as ask's
- * card; the tool_use and tool_result stay protocol-only, and the model's text
- * is rendered by `model-spawn-result.ts`. Cost never reaches the card.
- */
 import { GENERIC_SUBAGENT_NAME, GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { InvocationCardProps } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";

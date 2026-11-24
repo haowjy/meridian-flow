@@ -1,4 +1,3 @@
-/** Batched multipart receipts; the import domain bounds parts, bytes and concurrency. */
 import { defineEventHandler } from "nitro/h3";
 import { readImportParts } from "../../../../../../lib/import-body.js";
 import { resolveImportRoute } from "../../../../../../lib/import-route.js";

@@ -1,7 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolveAppUrl } from "./portless";
 
-// phase5/vertical-slice assert deterministic mock gateway text.
 process.env.MODEL_PROVIDER = "mock";
 
 const APP_URL = resolveAppUrl();

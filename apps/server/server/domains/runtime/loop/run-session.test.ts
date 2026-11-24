@@ -221,10 +221,8 @@ describe("RunSession", () => {
       "execution.failed",
       "terminal_fallback.failed",
     ]);
-    // The release's wake is detached; with no switch step ahead of it, it races this read.
     await f.backgroundTasks.drain();
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
-    // Unlocked and asleep, but the execution is still open: its turn never went terminal.
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
     const abandoned = await f.deps.runClaim.readOpenExecutionId(f.thread.id);
     expect(abandoned).toEqual(expect.any(String));
@@ -234,7 +232,6 @@ describe("RunSession", () => {
     await (await f.prepare()).execute();
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
     expect(await f.deps.runClaim.readOpenExecutionId(f.thread.id)).toBeNull();
-    // The failed turn's `turn.error` copy is the writer's, never the model's.
     const failed = await f.repos.turns.findById(run.executionTurnId);
     expect(failed?.error).toEqual(expect.any(String));
     expect(f.requests.length).toBeGreaterThan(0);

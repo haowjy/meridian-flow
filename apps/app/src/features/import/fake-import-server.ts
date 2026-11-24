@@ -1,9 +1,3 @@
-/**
- * Instance-owned durable fake, the presentation harness for organize states (see
- * `scripts/probe-import-states.js`). It holds receipts only as state changes: it does not hash,
- * keep bytes, or apply the server's `picked` and `skip` rules. Uploads complete into organize;
- * tests explicitly advance the build.
- */
 import {
   entryNeedsLook,
   IMPORT_ADMISSION,

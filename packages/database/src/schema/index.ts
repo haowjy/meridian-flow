@@ -35,7 +35,6 @@ import * as user from "./user";
 import { users } from "./users";
 import * as waitlist from "./waitlist";
 
-/** Runtime Drizzle client schema (public tables + views). */
 export const schema = {
   users,
   ...billing,

@@ -1,4 +1,3 @@
-/** A retired admission must refuse a late POST, never acknowledge an undefined turn. */
 import { H3 } from "nitro/h3";
 import { expect, it, vi } from "vitest";
 import handler from "./messages.post.js";

@@ -1,8 +1,3 @@
-/**
- * The applied write-mode switch: its model-facing notice and the Work-side
- * collaborators the switch commands need. The switch turn owns no document
- * edits, so it has no receipt or undo candidate.
- */
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { BlockUpsertedRow, Turn } from "@meridian/contracts/threads";
@@ -20,13 +15,10 @@ import { mayChangeWorks } from "./permissions/action-policy.js";
 import { describeWriteMode } from "./work-context.js";
 
 export interface WriteModeSwitchPort {
-  /** The notice body for the chat's new mode, rendered against its bound Work. */
   renderNotice(threadId: ThreadId, mode: AiWriteMode): Promise<string>;
-  /** Decision 3: the writer's latest choice becomes the Work's default for new chats. */
   setWorkDefault(workId: WorkId, mode: AiWriteMode): Promise<void>;
 }
 
-/** One sentence, then the same instructions the Work context gives for that mode. */
 export function writeModeSwitchNotice(
   work: Pick<Work, "archivedAt" | "isNoWork">,
   mode: AiWriteMode,
@@ -64,7 +56,6 @@ export function createWriteModeSwitchPort(deps: {
   };
 }
 
-/** The durable switch turn chained at the active leaf, with its notice block. */
 export function writeModeSwitchTurn(input: {
   threadId: ThreadId;
   prevTurnId: TurnId | null;

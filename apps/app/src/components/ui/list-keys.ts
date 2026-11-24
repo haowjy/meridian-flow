@@ -2,26 +2,8 @@ import type { KeyboardEvent } from "react";
 
 const TEXT_FIELD = "input, textarea, [contenteditable='true']";
 
-/**
- * The keyboard of every picker list, as one keydown handler for the element that
- * holds the list:
- *
- * - Up and Down move between the `[data-list-item]` stops and wrap at the ends.
- * - Home and End jump to the first and last stop, except in a text field, where they
- *   move the caret.
- * - Left and Right move between the buttons of one `[data-list-row]` (a row and the
- *   actions beside it), except in a text field. A list beside other focusable content
- *   can route keys by this attribute, so a row carries it even with no actions.
- * - Enter presses the focused stop.
- *
- * A search field can be a stop too, so Down leaves it for the first row. Escape
- * stays with the surface that owns closing. The rows' focus fill comes from
- * `focus-visible`, which only keyboard navigation turns on.
- */
 export function handleListKeys(event: KeyboardEvent<HTMLElement>): void {
   const target = event.target as HTMLElement;
-  // A menu portalled out of a row still bubbles its keys here through React, and
-  // a field that is not a stop (a rename) keeps its arrows.
   if (event.defaultPrevented || !event.currentTarget.contains(target)) return;
   const inField = target.matches(TEXT_FIELD);
   if (inField && !target.matches("[data-list-item]")) return;
@@ -50,7 +32,6 @@ export function handleListKeys(event: KeyboardEvent<HTMLElement>): void {
     (item) => !item.matches(":disabled"),
   );
   if (items.length === 0) return;
-  // A row's own action counts as its row.
   const current = items.findIndex((item) =>
     (item.closest("[data-list-row]") ?? item).contains(target),
   );

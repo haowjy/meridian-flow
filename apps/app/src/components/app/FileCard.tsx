@@ -1,11 +1,3 @@
-/**
- * FileCard — a saved file this browser can't draw, as a card: name, type, size and Download
- * (none for a file in Trash, which the server does not serve).
- *
- * Every surface that shows a stored file falls back to this one card: the context viewer's
- * body, and inline in a document where a picture would have been. It is spans throughout so it
- * can sit inside a paragraph; `className` places it.
- */
 import { Trans } from "@lingui/react/macro";
 import { Download, FileText } from "lucide-react";
 
@@ -17,7 +9,6 @@ export type FileCardProps = {
   name: string;
   mimeType: string;
   sizeBytes: number | null;
-  /** The stored file, which Download serves; absent when it can't be downloaded. */
   url?: string;
   className?: string;
 };

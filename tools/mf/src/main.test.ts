@@ -1,4 +1,3 @@
-/** ./mf top-level contract: usage errors and an unreachable stack. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "./core/cli-error";
 import { startWire, type Wire } from "./test-support/wire";
@@ -24,7 +23,6 @@ describe("./mf", () => {
   it("rejects unknown flags and commands with exit 2", async () => {
     expect((await mf(["thread", "view", THREAD_ID, "--bogus"])).code).toBe(EXIT.usage);
     expect((await mf(["nope"])).code).toBe(EXIT.usage);
-    // The follow joins from its own first read, so it takes no cursor.
     expect((await mf(["thread", "tail", THREAD_ID, "--until-idle", "--since", "0"])).code).toBe(
       EXIT.usage,
     );

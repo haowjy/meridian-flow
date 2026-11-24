@@ -1,4 +1,3 @@
-/** DELETE /api/mcp/connections/:connectionId: removes a connection softly; `undo` brings it back. */
 import { defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { connectionOperation } from "../../../../../lib/mcp-connections-route.js";

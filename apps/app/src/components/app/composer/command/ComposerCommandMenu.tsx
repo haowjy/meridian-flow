@@ -1,9 +1,3 @@
-/**
- * Composer `/` list. Group headings while the query is empty; Skills rows as
- * slug plus truncated description. Manuscript SlashMenu is a different host.
- * Opens above the composer so a phone keyboard does not cover it.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
 import { role } from "@/components/ui/roles";

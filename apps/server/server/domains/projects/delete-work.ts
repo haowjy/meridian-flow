@@ -1,4 +1,3 @@
-/** Soft-delete and restore commands for a Work-owned tree. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import type { WorkRepository, WorkRestoration } from "./ports/work-repository.js";
@@ -17,16 +16,10 @@ type DeleteDeps = {
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
 
-/**
- * One attempt, in the caller's transaction. `WorkDeleteRetryError` means the tree changed under
- * the lock: the attempt's transaction must roll back before the next one (`deleteWorkTransition`
- * for a caller that owns the transaction; a command wraps its own).
- */
 export async function softDeleteWork(
   deps: DeleteDeps,
   workId: WorkId,
 ): Promise<DeleteWorkTransition> {
-  // The tree's runs and subagent lineages end in this same transaction.
   const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
   return { before, after, changed: !!after?.deletedAt && !before?.deletedAt };
 }

@@ -19,11 +19,6 @@ import {
 } from "./story";
 import { LORE } from "./timeline";
 
-/**
- * A drawing of the real app, to be replaced by captured footage. The page only
- * calls `set` from `createProductSlot`; footage would seek there, and the box, the
- * night grade and the motion stay.
- */
 export function ProductPlaceholder() {
   return (
     <div className="slot" id="slot" data-state="start" data-view="chat">
@@ -222,7 +217,6 @@ const PLACES_PATH = `${WORLD_PATH} › ${PLACES_FOLDER}`;
 
 const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
 
-/** A page's text with the party's names linked to their pages, the way a wiki links them. */
 function Linked({ text }: { text: string }) {
   let offset = 0;
   return text.split(CHARACTER_NAME).map((part) => {
@@ -280,7 +274,6 @@ function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
   );
 }
 
-/** The app's tree indent: 16px per level below a section head. */
 const indent = (depth: number) => ({ paddingLeft: depth * 16 });
 
 function RailDocument({
@@ -311,7 +304,6 @@ function RailDocument({
   );
 }
 
-/** A tree section, drawn as the app's rail draws it: open, with its rows in a guided group. */
 function RailSection({
   label,
   icon,
@@ -333,7 +325,6 @@ function RailSection({
   );
 }
 
-/** A folder the visitor can open and close, as in the app. `closed` folders start shut. */
 function RailFolder({
   name,
   depth = 1,
@@ -360,7 +351,6 @@ function RailFolder({
   );
 }
 
-/** A lucide glyph at the tree's icon size, inlined because www imports no icon package. */
 function Glyph({
   paths,
   twistie,
@@ -368,7 +358,6 @@ function Glyph({
 }: {
   paths: readonly string[];
   twistie?: boolean;
-  /** The closed-folder icon; CSS shows it in place of the open one. */
   shut?: boolean;
 }) {
   return (
@@ -437,7 +426,6 @@ type ProductView = "project" | "page" | "chat";
 type ProductState = "start" | "team" | "lore" | "ask" | "hints";
 export type ProductSlot = ReturnType<typeof createProductSlot>;
 
-/** The product block's only interface. The film drives it; rail and tabs work under the visitor. */
 export function createProductSlot(root: HTMLElement, store: CardStore, signal: AbortSignal) {
   const slot = root.querySelector<HTMLElement>("#slot") as HTMLElement;
   const part = (selector: string) => slot.querySelector(selector) as HTMLElement;
@@ -449,7 +437,6 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const dragonRow = part("#s-beast-row");
   const dragonName = part("#s-beast-row .s-nm");
   let state: ProductState | null = null;
-  // Once the visitor picks a document or tab, autoplay leaves that view alone.
   let held = false;
 
   const open = (id: string) => {
@@ -532,7 +519,6 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
       }
       if (next === "lore" && !held) open(arrived ? "ddragon" : "dprologue");
       dragonRow.classList.toggle("s-landed", arrived && progress < 0.8);
-      // The view only exists on phones: on desktop every pane is on screen.
       if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");
       if (next !== "hints") return;
       const line = CHARACTERS.find(({ key }) => key === store.getAnswer())?.lastLine ?? "";

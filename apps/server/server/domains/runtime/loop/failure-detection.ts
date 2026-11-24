@@ -1,10 +1,3 @@
-/**
- * Where a failed turn becomes a `FailureRecord`. `projectAndAppendEvents` calls it for every live durable
- * event, inside the transaction that persists the event, so one seam covers every terminal writer (the
- * execution finalizer, compaction completion, handoff seeds, orphan repair) and every end
- * a boundary decides (`decideForgetting`'s `ends`: a Retry, a move-on, or a pass that keeps the attempt). Records ride the writer's `recordFailure`, which
- * emits after the outermost commit.
- */
 import {
   classifyReplyFailure,
   type Failure,
@@ -18,7 +11,6 @@ import type { PersistenceDeps } from "./persistence.js";
 
 type Detector = Pick<PersistenceDeps, "repos" | "eventWriter">;
 
-/** The failure a settled failed turn carries: its typed reason, the error code it settled with, and the provider's status. */
 export function failureOfTurn(turn: Turn, errorCode?: string): Failure {
   const metadata =
     turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
@@ -60,7 +52,6 @@ function ended(
   };
 }
 
-/** A turn settles as failed; if a closing row already follows it, no later walk reaches it, so it ends now, by the first one. */
 async function recordSettled(
   deps: Detector,
   threadId: ThreadId,
@@ -82,10 +73,6 @@ async function recordSettled(
   if (closing) deps.eventWriter.recordFailure(ended(turn, "moved_on", closing.id, code));
 }
 
-/**
- * Records that each failed turn in `turnIds` ended; ids of turns that did not fail (a forgotten message)
- * are skipped. The caller owns which failures end now: the recorder does not second-guess it.
- */
 export async function recordEnded(
   deps: Detector,
   turnIds: readonly string[],
@@ -100,13 +87,10 @@ export async function recordEnded(
   }
 }
 
-/** The detection for one durable event, run inside the transaction that projected it. */
 export async function detectFailures(
   deps: Detector,
   threadId: ThreadId,
   event: OrchestratorEvent,
 ): Promise<void> {
-  // Ends are not derived from `turns.forgotten`: forgetting content is not ending a failure. The boundary
-  // decision lists the ends (`decideForgetting`), and the append primitive records them.
   if (event.type === "turn.error") await recordSettled(deps, threadId, event);
 }

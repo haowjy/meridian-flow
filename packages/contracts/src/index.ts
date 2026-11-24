@@ -1,5 +1,3 @@
-// Shared types — branded IDs, enums, JSONB shapes, wire DTOs, WebSocket protocol, streaming events
-
 export * from "./context-entry-validation.js";
 export * from "./context-uri.js";
 export * from "./document-href.js";

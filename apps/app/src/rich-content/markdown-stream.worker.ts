@@ -1,5 +1,3 @@
-/** Canonical whole-source Markdown parsing off the browser main thread. */
-
 import { markdownCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { MarkdownParseSession } from "./markdown-parse-session";

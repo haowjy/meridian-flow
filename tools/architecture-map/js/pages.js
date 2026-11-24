@@ -1,8 +1,3 @@
-/*
- * Reads a map page (see README.md for the format). No DOM and no Node APIs, so the viewers and
- * check.mjs parse pages with the same code and cannot disagree about what a page says.
- */
-
 export const NODE_KINDS = [
   "person",
   "client",
@@ -19,7 +14,6 @@ export const NODE_KINDS = [
   "note",
 ];
 
-/** The section list items each kind of page may carry. */
 export const MAP_KEYS = [
   "Kind",
   "Paths",
@@ -34,7 +28,6 @@ export const MAP_KEYS = [
 export const JOURNEY_KEYS = ["Map", "Machines", "Shot"];
 
 const ID = "[A-Za-z][A-Za-z0-9_-]*";
-// A hyphen joins two parts of an id; one before an arrow's dashes ("a-->>b") is the arrow's.
 const SEQ_ID = "[A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*";
 const LINE = {
   header: /^flowchart (?:LR|RL|TB|TD|BT)$/,
@@ -48,28 +41,13 @@ const LINE = {
   activation: new RegExp(`^(?:activate|deactivate) (${SEQ_ID})$`),
   sequenceBlock: /^(?:loop|alt|opt|par|critical|break|rect|else|and|option)(?: .*)?$|^autonumber$/,
 };
-// A label may break lines and shrink a role line, nothing else.
 const LABEL_TAGS = /<br\/>|<\/?small>/g;
 
-/**
- * @typedef {{ line: number, message: string }} Problem
- * @returns {{
- *   title: string, intro: string,
- *   mermaid: null | {
- *     type: "flowchart" | "sequence" | null, source: string, line: number,
- *     nodes: {id, label, kind, line}[], edges: {from, to, both, label, step, line}[],
- *     noteLinks: {from, to, line}[],
- *     participants: {id, line}[],
- *   },
- *   sections: { id: string, line: number, paragraphs: string[], items: { key: string | null, value: string, line: number }[] }[],
- *   problems: Problem[],
- * }}
- */
 export function parsePage(text) {
   const lines = text.split("\n");
   const page = { title: "", intro: "", mermaid: null, sections: [], problems: [] };
   const fail = (line, message) => page.problems.push({ line, message });
-  let fence = null; // { length, kind: "mermaid" | "other" } inside a fenced block
+  let fence = null;
   let section = null;
   let paragraph = [];
   const introParts = [];
@@ -200,11 +178,6 @@ function parseSequenceLine(mermaid, line, n, fail) {
   else fail(n, `A sequenceDiagram line the format doesn't allow: ${line}`);
 }
 
-/**
- * The box a flow participant names: its id when one non-context box has it, else `<page>-<id>` (the
- * page file's name without .md, e.g. server-routes). `levels` is [{ id: page name, nodes }].
- * Returns { level, box } or { error }.
- */
 export function resolveParticipant(levels, name) {
   const hits = levels.flatMap((l) =>
     l.nodes
@@ -225,19 +198,15 @@ export function resolveParticipant(levels, name) {
   return hits[0];
 }
 
-/** The item of a section with this key, or undefined. */
 export const item = (section, key) => section.items.find((it) => it.key === key);
 
-/** Backtick-quoted repo paths in a list value. */
 export const pathsOf = (value) => [...value.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
-/** Markdown links in a list value: [{ label, href }]. */
 export const linksOf = (value) =>
   [...value.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)].map((m) => ({ label: m[1], href: m[2] }));
 
 const isUrl = (href) => /^[a-z][a-z0-9+.-]*:/i.test(href);
 
-/** A relative `href` from the page at repo path `from`: { path, fragment }, path null for a URL or one that climbs out of the repo. */
 export function resolveHref(from, href) {
   if (isUrl(href)) return { path: null, fragment: null, url: href };
   const [file, fragment = null] = href.split("#");
@@ -253,7 +222,6 @@ export function resolveHref(from, href) {
   return { path: out.join("/"), fragment };
 }
 
-/** GitHub-style heading ids, so `page.md#heading` links land. */
 export const slug = (text) =>
   text
     .toLowerCase()
@@ -262,7 +230,6 @@ export const slug = (text) =>
     .trim()
     .replace(/\s/g, "-");
 
-/** A glob as a RegExp over repo paths: `*` is part of one segment, `**` any depth (`**` + `/` also matches none). */
 export function globRegExp(glob) {
   const source = glob
     .split(/(\*\*\/|\*\*|\*)/)
@@ -279,14 +246,12 @@ export function globRegExp(glob) {
   return new RegExp(`^${source}$`);
 }
 
-/** The directory at the start of `path` that a segment glob (`apps/*`, only `*`) matches, or null: the "unit" a file belongs to. */
 export function unitOf(path, glob) {
   const depth = glob.split("/").length;
   const unit = path.split("/").slice(0, depth).join("/");
   return unit.split("/").length === depth && globRegExp(glob).test(unit) ? unit : null;
 }
 
-/** The text with the lines inside fenced code blocks blanked, so line numbers stay. */
 export function withoutFences(text) {
   let fence = 0;
   return text
@@ -306,7 +271,6 @@ export function withoutFences(text) {
     .join("\n");
 }
 
-/** The level pages README.md lists under "## The pages": [{ id, title, href }], in order. */
 export function levelLinks(readme) {
   const out = [];
   let inList = false;
@@ -318,16 +282,6 @@ export function levelLinks(readme) {
   return out;
 }
 
-/**
- * Every level page, the one set the viewer and check.mjs both use: the README's top levels, then
- * the page each box's `Opens` names, all in `mapDir`. `read(path)` returns a repo file's text. Each
- * top level is walked breadth-first before the next, so a page opened from two places keeps the
- * first parent found, System before Code, and a top level another one opens (Server, from System's
- * box) takes that parent too: its trail is where the reader drills in from.
- * Returns { roots: [{ id, title }], levels: Map id → { id, title, path, page, trail } } where
- * `title` is the name the nav and breadcrumb show (a top level's README label; a child's page title,
- * which loses its parent's "Server: " prefix here, as the heading the viewer shows does) and `trail` is the ancestors, root first: [{ title, hash }].
- */
 export async function loadLevelPages(read, mapDir) {
   const roots = levelLinks(await read(`${mapDir}/README.md`));
   const labels = new Map(roots.map((r) => [r.id, r.title]));
@@ -338,7 +292,6 @@ export async function loadLevelPages(read, mapDir) {
       const { id, path, trail } = queue.shift();
       if (levels.has(id)) continue;
       const page = parsePage(await read(path));
-      // The breadcrumb names the parent, so a child's shown title drops the "Server: " the .md heading keeps for GitHub readers.
       if (trail.length) page.title = page.title.replace(`${trail.at(-1).page}: `, "");
       const title = labels.get(id) ?? page.title;
       levels.set(id, { id, title, path, page, trail });

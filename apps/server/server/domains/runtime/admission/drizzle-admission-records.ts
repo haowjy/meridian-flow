@@ -1,4 +1,3 @@
-/** PostgreSQL admission ledger, enlisted in the ambient serialized turn transaction. */
 import type { AcceptedAdmission, RetireAdmissionResult } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { turns, userTurnAdmissions } from "@meridian/database/schema";

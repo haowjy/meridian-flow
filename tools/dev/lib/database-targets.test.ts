@@ -112,7 +112,7 @@ describe("resolveDatabaseAdminTarget", () => {
       git(root, "init", "-q", main);
       git(main, "config", "user.email", "t@example.com");
       git(main, "config", "user.name", "t");
-      git(main, "config", "core.abbrev", "9"); // longer than the old 7-char slice
+      git(main, "config", "core.abbrev", "9");
       git(main, "commit", "-q", "--allow-empty", "-m", "init");
       const detached = join(root, "probe");
       git(main, "worktree", "add", "-q", "--detach", detached);

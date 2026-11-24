@@ -1,8 +1,3 @@
-/**
- * Purpose: Defines and validates the thread WebSocket protocol messages, including subscription, replay, gap, ping, and error frames.
- * Why independent: WebSocket frames are a JSON-natural client/server wire contract, so schemas and codecs live in contracts rather than server handlers.
- * MULTIPLE PURPOSES: WebSocket message schemas/types and JSON encode/parse helpers.
- */
 import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
@@ -30,7 +25,6 @@ const wsEventSeqSchema = z.string().regex(/^(0|[1-9]\d*)$/);
 export type SequencedEvent = {
   seq: string;
   event: AGUIEvent;
-  /** Present when `event` is RUN_ERROR; mirrors the journal MeridianError envelope. */
   error?: MeridianError;
   sourceThreadId?: string;
 };
@@ -44,7 +38,6 @@ const sequencedEventObjectSchema = z.object({
 
 export const sequencedEventSchema: z.ZodType<SequencedEvent> = sequencedEventObjectSchema;
 
-/** A client-chosen id naming one request; the server echoes it in the answer. */
 const wsRequestIdSchema = z.string().min(1).max(64);
 
 const wsSubscribeMessageSchema = z.object({
@@ -85,11 +78,6 @@ const wsAskAnswerMessageSchema = z.object({
   answer: askAnswerSchema,
 });
 
-/**
- * The writer is interacting with an open question ask. No reply: the server moves the ask's
- * deadline out and publishes it when the deadline crosses a 30 s step or the draft changed. `answers`, when present, replace the
- * draft the server holds; a report without them (page activity) leaves that draft as it is.
- */
 const wsAskPresenceMessageSchema = z.object({
   type: z.literal("ask.presence"),
   threadId: z.string().min(1),
@@ -122,7 +110,6 @@ const wsAskAnswerErrorSchema = z.object({
   threadId: z.string().min(1),
   code: z.enum(["ask_not_open", "invalid_answer"]),
   ask: threadAskSchema.optional(),
-  /** The first question whose answer didn't fit, when one entry is at fault. */
   questionIndex: z.number().int().nonnegative().optional(),
 });
 
@@ -200,7 +187,6 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   enqueuedAt: z.string().min(1),
 });
 
-/** The canonical whole-record schema; `readRunState` and the command response schemas use it. */
 export const runStateSchema: z.ZodType<RunState> = z.object({
   version: wsEventSeqSchema,
   items: z.array(pendingInboxItemSchema),
@@ -212,7 +198,6 @@ export const runStateSchema: z.ZodType<RunState> = z.object({
   blocked: z.object({ reason: z.literal("credits_exhausted") }).nullable(),
 });
 
-/** Reads a whole `RunState` (a `meridian.run_state` frame's value, a stored answer); null when malformed. */
 export function readRunState(value: unknown): RunState | null {
   const parsed = runStateSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -225,25 +210,19 @@ export const threadLiveStateSchema = z.object({
   runState: runStateSchema,
 }) satisfies z.ZodType<ThreadLiveState>;
 
-// Deferred: directory, interaction, approval per design
-
 export type WsServerMessage =
   | {
       type: "connected";
       userId: string;
       scope: { type: "standalone" } | { type: "project"; projectId: string };
-      /** The server's release id (`x-meridian-release`). */
       serverVersion: string;
-      /** The server's protocol, as on every HTTP answer; absent from a server older than this field. */
       protocol?: ServerProtocol;
       connectionToken: string;
     }
   | {
       type: "subscribed";
-      /** The `subscribe` request this answers. */
       requestId: string;
       threadId: string;
-      /** The cursor the server's lease starts above: the request's `lastSeq`, or the current head when omitted. */
       after: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;
@@ -251,7 +230,6 @@ export type WsServerMessage =
   | (SequencedEvent & { type: "event"; threadId: string })
   | {
       type: "gap";
-      /** The `subscribe` request this answers in place of `subscribed`. */
       requestId: string;
       threadId: string;
       cause: WsGapCause;
@@ -270,7 +248,6 @@ export type WsServerMessage =
       type: "error";
       kind: "error";
       error: MeridianError;
-      /** The client message this answers; absent when none could be parsed. */
       requestId?: string;
       threadId?: string;
     };

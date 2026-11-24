@@ -1,8 +1,3 @@
-/**
- * POST /api/threads/[threadId]/turns/[turnId]/cancel: cancels an in-flight turn on an owned
- * thread, or the question it is parked on, with the subagents that turn spawned. Depends on the
- * auth gate, thread ownership, and the turn runner.
- */
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireThreadOwner } from "../../../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";

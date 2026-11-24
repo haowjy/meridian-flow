@@ -83,7 +83,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    // The run-state records the chat's journal holds, oldest first.
     const runStateJournal = async (threadId: ThreadId) =>
       (await journalEventsByThread(db, threadId)).filter(
         (event) => event.eventType === "run_state.changed",
@@ -203,7 +202,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: "system",
         status: "pending",
       });
-      // A sweep can capture C before its owner commits the failure landing.
       const candidates = (await repos.turns.listPendingPlaceholders(100)).filter(
         (turn) => turn.id === placeholder.id,
       );
@@ -276,7 +274,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(failed.next.status).toBe("error");
       expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
 
-      // No failure-close or run-session cleanup: the worker died after commit.
       await createOrphanReportRepair({
         recoverCommands: async () => {},
         repos: {
@@ -328,7 +325,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const authority = createDrizzleRunClaim(db);
       const published: unknown[] = [];
       const publishStatus = async (threadId: ThreadId) => {
-        // Read through the root connection, as a subscriber would after commit.
         published.push({
           status: await authority.read(threadId),
           turns: await db.select({ status: schema.turns.status }).from(schema.turns),
@@ -582,7 +578,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect((await runStateJournal(THREAD_A)).at(-1)?.payload).toMatchObject({
             runState: { blocked: null },
           });
-          // A refused wake with only notices cannot install a new orphan block.
           await delivery.blockForUsage(lease);
           const [empty] = await db
             .select()
@@ -681,7 +676,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await delivery.enqueue(message("atomic"))).id).toBe(accepted.id);
         expect(await db.select().from(schema.threadInboxMessages)).toHaveLength(1);
         expect(wakes).toBe(2);
-        // The record is journaled before the wake; the replay changes no row, so journals no second.
         expect(visible).toEqual([
           [1, 1],
           [1, 1],

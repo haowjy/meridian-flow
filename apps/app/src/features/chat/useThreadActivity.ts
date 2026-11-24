@@ -1,19 +1,3 @@
-/**
- * useThreadActivity — the live `ThreadActivity` + `ThreadStatus` for one viewed
- * thread's own direct activity.
- *
- * Sources, in precedence order: the HTTP snapshot seeds the first render; the
- * `subscribed` live state reconciles on every (re)subscribe after catch-up so a
- * replayed frame frozen at emit time cannot win; `meridian.subagent.activity`
- * frames replace the activity live. Liveness stays out of the turn store by
- * construction.
- *
- * Lease expiry (a dead process) emits no journal event, so a replayed frame can
- * name a node `awake` after its lease has expired. We accept the subscribe-time
- * reconciliation as the correction: `subscribed.state.activity` is recomputed
- * from the live leases and always wins after catch-up. No lease-expiry activity
- * signal is added.
- */
 import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
 import { useEffect, useSyncExternalStore } from "react";
@@ -82,7 +66,6 @@ export function useThreadActivity(input: {
           if (event.type !== EventType.CUSTOM) return;
           if (event.name !== "meridian.subagent.activity") return;
           if (!isThreadActivity(event.value)) return;
-          // The server scopes frames to this thread's direct children.
           state.seeded = true;
           publish(state, { ...state.view, activity: event.value });
         },

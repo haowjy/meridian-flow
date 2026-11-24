@@ -1,4 +1,3 @@
-/** Atomically establish usable conversation identity, retained execution configuration and Work membership. */
 import {
   GENERIC_SUBAGENT_NAME,
   type InvocationOverlay,

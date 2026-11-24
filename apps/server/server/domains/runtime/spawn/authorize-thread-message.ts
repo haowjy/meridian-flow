@@ -1,10 +1,3 @@
-/**
- * Authority for the model-callable `thread_message` tool. Background delivery is
- * authorized to any live chat owned by the caller in the same project; foreground
- * by subtree (the target is the caller or a descendant, walking `parentThreadId`),
- * which prevents a wait cycle on an ancestor. Resolves the model-facing `ref` inside
- * the caller's project; the internal id never crosses the tool boundary.
- */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
@@ -37,8 +30,6 @@ export async function authorizeThreadMessage(input: {
   mode: ThreadMessageMode;
   threads: Pick<ThreadRepository, "findLiveByProjectRef" | "findById">;
 }): Promise<ThreadMessageTargetOutcome> {
-  // Reject a malformed ref before the DB, so an unknown value stays a uniform
-  // not-found rather than a low-level lookup error.
   if (parseThreadRef(input.targetRef) === null) return notFound();
   const target = await input.threads.findLiveByProjectRef(
     input.callerThread.projectId,
@@ -55,11 +46,6 @@ export async function authorizeThreadMessage(input: {
   return { ok: true, target };
 }
 
-/**
- * Synchronously walks `parentThreadId` from the target, but the thread rows are
- * async to fetch. Populate the whole ancestor chain into a local cache first,
- * then run the shared `isInSubtree` predicate over it.
- */
 async function isInCallerSubtree(
   callerThreadId: ThreadId,
   target: Thread,

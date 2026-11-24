@@ -79,7 +79,6 @@ export const threadTailCommand: CommandSpec = {
         textStream: "out",
       });
     } catch (error) {
-      // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout") return undefined;
       throw error;
     }
@@ -87,7 +86,6 @@ export const threadTailCommand: CommandSpec = {
   },
 };
 
-/** Confirms the chat idle from an applied read, through the shared `ThreadSync` (`observe.ts`). */
 async function untilIdleTail(
   session: Session,
   ctx: CommandContext,
@@ -111,8 +109,6 @@ async function untilIdleTail(
     textStream: "out",
     deadlineAt,
     onFrame(event) {
-      // A turn event only precedes the closing record in the same commit; the record and the
-      // status frame are what can show the chat idle.
       if (event.type !== "event") return;
       if (event.name === STATUS_EVENT) return observer.refresh();
       const record = runStateOfEvent(event);
@@ -125,7 +121,6 @@ async function untilIdleTail(
       join ??= read;
       if (proof !== null || !isIdle(read.liveState)) return;
       const immediate = join === read;
-      // Read membership does not depend on replay arriving before the diagnostic deadline.
       const initial = new Map(join.turns.map((turn) => [turn.id, turn]));
       const claimed = immediate
         ? []
@@ -208,12 +203,10 @@ async function untilIdleTail(
   }
 }
 
-/** Asleep, with no open execution and no writer message in the record (`isBusy` on a view with no intents). */
 function isIdle(state: ThreadLiveState): boolean {
   return state.status.kind === "asleep" && recordIsIdle(state);
 }
 
-/** Known terminal outcomes survive gaps; missing replay cannot prove completion. */
 function tailResult(
   threadId: string,
   snapshot: ThreadSnapshotResponse,

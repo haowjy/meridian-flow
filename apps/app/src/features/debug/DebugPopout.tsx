@@ -1,4 +1,3 @@
-/** Shared popup-window chrome and portal lifecycle for debug viewers. */
 import { type ReactNode, useEffect } from "react";
 import { createPortal } from "react-dom";
 

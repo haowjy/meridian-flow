@@ -1,4 +1,3 @@
-/** Extract the small, top-level argument subset needed for live tool labels. */
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const ACTIVITY_FIELDS: Record<string, readonly string[]> = {
@@ -34,7 +33,6 @@ function readString(input: string, start: number): { value: string; end: number 
   return null;
 }
 
-/** Skip one complete JSON value without descending into its object members. */
 function skipValue(input: string, start: number): number | null {
   const first = input[start];
   if (first === '"') return readString(input, start)?.end ?? null;
@@ -62,11 +60,6 @@ function skipValue(input: string, start: number): number | null {
   return index > start ? index : null;
 }
 
-/**
- * Read only string fields used by live activity labels. Complete top-level
- * strings survive an unfinished object or later truncated value; nested keys,
- * non-string values, and an unfinished string are ignored.
- */
 export function parsePartialToolActivityInput(
   toolName: string,
   rawArguments: string,
@@ -110,7 +103,6 @@ export function parsePartialToolActivityInput(
   return Object.keys(result).length > 0 ? result : null;
 }
 
-/** Whether parsed input has the field that makes a live label name its target. */
 export function hasPartialToolActivityTarget(
   toolName: string,
   input: PartialToolActivityInput | null,
@@ -121,7 +113,6 @@ export function hasPartialToolActivityTarget(
 
   switch (toolName) {
     case "write":
-      // Every write changes a document; its verb (create, replace, remove…) comes from the command.
       return hasText("command") && hasText("path");
     case "read":
       return hasText("path");
@@ -134,11 +125,6 @@ export function hasPartialToolActivityTarget(
   }
 }
 
-/**
- * Whether a call's first streamed chunk may show before its target. A `write`
- * waits for its command instead, so a create doesn't flash as an edit. Its
- * command and path arrive in the first few dozen characters; `read` labels at once.
- */
 export function showsPartialToolActivityBeforeTarget(toolName: string): boolean {
   return toolName !== "write";
 }

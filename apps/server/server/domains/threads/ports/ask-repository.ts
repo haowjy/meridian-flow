@@ -1,5 +1,3 @@
-/** Persistence port for durable asks; lifecycle behavior is owned by the ask service in B2. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskContinuationState,
@@ -19,29 +17,20 @@ export type StoredAsk = {
   toolCallId: string;
   kind: AskKind;
   payload: AskPayload;
-  /**
-   * Raw stored JSON, unvalidated: a stored command is data an earlier release may have written
-   * in another shape, so the one reader that runs it parses it, and reading a thread never fails.
-   */
   permissionCommand: Record<string, unknown> | null;
-  /** Set when the ask opens; null while pending. */
   openedAt: Date | null;
   deadlineAt: Date | null;
-  /** The most a question waits from the moment it opens, fixed when it was requested: see `askHardLimitSeconds`. */
   hardLimitSeconds: number;
   draftAnswers: DraftAnswers | null;
   status: AskStatus;
   resolution: AskResolution | null;
   submissionId: string | null;
-  /** Null while live; see `AskContinuationState`. */
   continuation: AskContinuationState | null;
-  /** The latest turn admitted to continue this ask. */
   continuationTurnId: TurnId | null;
   createdAt: Date;
   resolvedAt: Date | null;
 };
 
-/** An ask a lineage cancellation claimed, and whether it was still live (its tool result is owed). */
 export type ClaimedAsk = { ask: StoredAsk; wasLive: boolean };
 
 export type CreateAskInput = Omit<
@@ -56,7 +45,6 @@ export type CreateAskInput = Omit<
   | "draftAnswers"
 > & {
   id?: string;
-  /** New requests are written in the current shape, even though reads do not check it. */
   permissionCommand: PermissionWorkCommand | null;
   resolvedAt?: Date | null;
 };
@@ -67,20 +55,10 @@ export interface AskRepository {
   findLiveByTurnForUpdate(turnId: TurnId): Promise<StoredAsk | null>;
   findOpenByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
-  /**
-   * One lineage cancellation's claim, in one statement: every live ask and owed continuation of
-   * `threadIds`, and of `owner` the open asks (only `turnId`'s, when given), the pending asks of
-   * `execution` (the owner's execution the decision cancelled; a run the decision spared keeps
-   * the question it is asking) and owed continuations. Live asks become cancelled; every claimed continuation becomes `cancelled`.
-   * Rows another transaction holds are skipped: it waits on a thread lock the command holds and
-   * then sees the cancellation (a flagged run cancels its own ask; a writer's answer wins, unless
-   * the command deleted its chat: then the answer's claim cancels it).
-   */
   claimLineage(input: {
     threadIds: readonly ThreadId[];
     owner: { threadId: ThreadId; turnId: TurnId | null; execution: string | null } | null;
   }): Promise<ClaimedAsk[]>;
-  /** Admits a resolved ask's owed continuation at `turnId` (`done`); null when nothing is owed. */
   admitContinuation(input: { id: string; turnId: TurnId }): Promise<StoredAsk | null>;
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
@@ -90,10 +68,6 @@ export interface AskRepository {
     turnId: TurnId,
     opening: { openedAt: Date; deadline: Date | null },
   ): Promise<StoredAsk | null>;
-  /**
-   * Moves an open ask's deadline out to `deadline` (never earlier) and, when `draftAnswers`
-   * is given, stores them as the writer's draft. Null when the ask is no longer open.
-   */
   recordPresence(input: {
     id: string;
     deadline: Date;
@@ -106,7 +80,6 @@ export interface AskRepository {
     resolution: AskResolution;
     submissionId?: string | null;
     resolvedAt: Date;
-    /** Resolves only while the deadline is still at or before this: a timeout loses to a presence that moved it. */
     dueBy?: Date;
   }): Promise<StoredAsk | null>;
   resolveLive(input: {

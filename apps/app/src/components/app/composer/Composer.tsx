@@ -1,5 +1,3 @@
-/** Shared TipTap draft owner for every message-authoring surface. */
-
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { readSegment, type UploadIntakeResult } from "@meridian/contracts/protocol";
@@ -81,7 +79,6 @@ export type {
 } from "./composer-document";
 export { serializeComposerDraft } from "./composer-document";
 
-/** Uploads belong to the chat; a New chat's id is minted before its row exists. */
 export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 
 function authorityForUpload(
@@ -106,7 +103,6 @@ function composerReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNod
   );
 }
 
-/** Every upload chip in the Composer's text, by intake id, at its position. */
 function uploadChips(editor: Editor): Map<string, number> {
   const chips = new Map<string, number>();
   editor.state.doc.descendants((node, pos) => {
@@ -116,7 +112,6 @@ function uploadChips(editor: Editor): Map<string, number> {
   return chips;
 }
 
-/** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
 function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
   const parsed = parseContextUri(uri);
   if (!parsed.ok) return fallback;
@@ -128,37 +123,20 @@ export type ComposerUploadPort = Readonly<{
     file: File;
     intakeId: string;
     scope: ComposerUploadScope;
-    /** Aborts when the writer takes the chip back, so a 200 MB PUT stops with it. */
     signal: AbortSignal;
   }) => Promise<UploadIntakeResult>;
 }>;
 
 export type ComposerProps = {
-  /** Hydrated before mounting; later prop changes never replace writer input. */
   initialDraft?: ComposerDraftSnapshot | null;
-  /**
-   * A write to the draft from outside the editor (a hand-back, an Edit, an Undo of a move): each
-   * new `seq` replaces the document in place, keeping the focus and what is being typed.
-   */
   externalChange?: { seq: number; draft: ComposerDraftSnapshot | null };
   onSubmit: (envelope: ComposerSubmitEnvelope) => Promise<boolean>;
   onOpenReference?: (reference: DocumentReference) => void;
   onDraftChange?: (change: ComposerDraftChange) => void;
   onStop?: () => void;
-  /**
-   * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * With the box empty the one button is Stop, and Escape presses it. With text it is Send
-   * (spinning ring), and a send queues behind the run.
-   */
   running?: boolean;
-  /**
-   * This tab's Stop request. Pending and stopping read Stopping and do nothing on a press;
-   * failed says so beside the control and keeps it, even after the chat goes idle, so the
-   * retry stays reachable. All of it shows only while the box is empty; text shows Send.
-   */
   stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
-  /** Focus the box when it mounts, at the restored selection. */
   autoFocus?: boolean;
   toolbarLeft?: ReactNode;
   submitDisabled?: boolean;
@@ -168,49 +146,25 @@ export type ComposerProps = {
   uploadPort?: ComposerUploadPort;
   referenceCatalog?: ReferenceBrowserCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
-  /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
-  /** The host's own cards (`FailureCard`s), the card stack, stacked above the box with the Composer's failure. */
   cards?: ReactNode;
-  /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
-  /** A desktop file drag is over another part of the chat that attaches here; the box lights as its target. */
   fileDropActive?: boolean;
-  /**
-   * Drawn in the box's place (an open ask). The editor stays mounted and hidden, so the draft,
-   * its atoms and its uploads come back as they were when this clears. A box that has the focus
-   * is only hidden from sight, so typing goes on into the draft until the takeover takes the
-   * focus; it sends nothing meanwhile.
-   */
   takeover?: ReactNode;
 };
 export type ComposerHandle = {
   focus: () => void;
-  /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
-  /**
-   * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
-   * when the draft is empty or exactly the chip of `replaces` (the one the caller put there last);
-   * anything else is the writer's and stays. Returns whether the draft is now that chip alone.
-   */
   startWith: (
     reference: DocumentReference,
     fileKind: "document" | "asset",
     replaces: string | null,
   ) => boolean;
-  /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
   attachFiles: (entries: readonly DroppedEntry[]) => void;
-  /** Drops every chip that references the document (a file the writer deleted elsewhere). */
   removeReferences: (documentId: string) => void;
   getDraft: () => string;
-  /**
-   * Whether the composer holds anything the writer authored, including a
-   * reference-only draft whose text projection may be empty. Edit uses this to
-   * avoid overwriting a live draft with a restored plain-text copy.
-   */
   hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
-  /** Adds plain text after the draft, as its own paragraph when the draft holds anything. */
   appendText: (text: string) => void;
 };
 
@@ -256,7 +210,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   commandsRef.current = commands;
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
-  /** This Composer, as the upload store's holder of its chips. */
   const [holder] = useState(() => crypto.randomUUID());
   const [submitFailure, setSubmitFailure] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
@@ -304,7 +257,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
-      // Rows and text only: desktop files are `useFileDrop`'s, below.
       LandingExtension.configure({
         entries: referenceDropDoor(
           referenceDropOptions({
@@ -340,7 +292,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     ],
     content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
-    // Tiptap focuses on mount unless told `false`; undefined keeps the restored selection.
+    // keep: autofocus must be false, not true; undefined keeps Tiptap's restored selection
     autofocus: autoFocus ? undefined : false,
     editorProps: {
       handleDOMEvents: {
@@ -352,7 +304,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             (event.key !== "Enter" && event.key !== " ")
           )
             return false;
-          // ProseMirror's Enter keymap otherwise consumes the native button action.
+          // keep: preventDefault on Enter so ProseMirror's keymap doesn't eat the failed-upload button's action
           event.preventDefault();
           target.click();
           return true;
@@ -390,7 +342,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     },
   });
   useLiveReferences(editor, initialDraft, referenceCatalog);
-  // Main's chat: its composer is main's place to type (`focusMain`).
   const inMain = useOptionalPanePlace() === "main";
   useEffect(() => {
     if (inMain && editor && !editor.isDestroyed) return joinMain(editor.view.dom, { text: true });
@@ -403,15 +354,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (!editor || !external || external.seq === appliedChange.current) return;
     appliedChange.current = external.seq;
     const { draft } = external;
-    // Tiptap `flushSync`es a chip's React node view, which React forbids inside a commit.
     queueMicrotask(() => {
       if (editor.isDestroyed) return;
       const { state } = editor;
       const next = editor.schema.nodeFromJSON(
         draft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
       );
-      // Words come back above what is typed: insert them there so the writer's caret and Undo
-      // history stay with their own words, instead of replacing the whole document under them.
       const grew = next.content.size - state.doc.content.size;
       const above = grew > 0 && next.content.cut(grew).eq(state.doc.content);
       const tr = state.tr.setMeta("addToHistory", false);
@@ -422,10 +370,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       suppressDraftChangeRef.current = true;
       editor.view.dispatch(tr);
       suppressDraftChangeRef.current = false;
-      // The editor now holds exactly the owner's document; the dispatch's own revision bump would make `holds()` fail.
       if (draft) revision.current = draft.revision;
-      // The control that caused this write (Stop, a queue's x, Edit, an Undo) is gone: the box takes
-      // focus with the caret after the words. Focus on a control elsewhere stays there.
       const active = document.activeElement;
       const focusFree =
         !active || active === document.body || !!regionRef.current?.contains(active);
@@ -466,8 +411,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       startWith: (reference, fileKind, replaces) => {
         if (!editor || editor.isDestroyed) return false;
-        // Empty, or holding only the chip this one replaces. Checked again when the insert runs,
-        // because the insert replaces the whole draft.
         const fits = () => {
           const doc = editor.state.doc;
           const only = doc.childCount === 1 ? doc.firstChild : null;
@@ -479,16 +422,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               : null;
           const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
           if (chipOf === reference.documentId) return "already";
-          // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
+          // keep: editor.isEmpty counts an upload-only paragraph as empty; check childCount instead
           const empty = only?.type.name === "paragraph" && only.childCount === 0;
           return empty || (chipOf !== null && chipOf === replaces) ? "fits" : "taken";
         };
         const now = fits();
         if (now !== "fits") return now === "already";
-        // The caller runs this from an effect, and Tiptap `flushSync`es the chip's React node
-        // view when it mounts, which React forbids inside a commit; a microtask is outside it.
-        // `setContent` leaves the whole draft selected, so the next keystroke would replace the
-        // chip; the caret goes after it instead.
+        // keep: Microtask keeps Tiptap's React node view out of a commit; setContent selects the draft, so place the caret after the chip
         queueMicrotask(() => {
           if (editor.isDestroyed || fits() !== "fits") return;
           editor
@@ -542,15 +482,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }),
     [editor, hasContent, snapshot],
   );
-  // The store takes back an upload whose chip has left the text, so an undo brings back one that
-  // is still sending or ready to retry. Send waits while any chip here is sending, and refuses
-  // while one has failed: a message would go without that file, and the chip says why.
   const [uploadsHeld, setUploadsHeld] = useState<"sending" | "failed" | null>(null);
   useEffect(() => {
     if (!editor) return;
     const watch = uploads.watch(holder, () => new Set(uploadChips(editor).keys()));
     const sync = () => {
-      // A chip nothing here is sending reads stopped (`chipState`), so it blocks as a failure does.
       const states = [...uploadChips(editor).keys()].map(
         (id) => uploads.read(id)?.kind ?? "failed",
       );
@@ -568,7 +504,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       editor.off("update", changed);
       unsubscribe();
       watch.release();
-      // Its chips go with it (a restored draft has none), so nothing could ever show these files.
       uploads.discardHeld(holder);
     };
   }, [editor, holder]);
@@ -587,8 +522,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       revision.current,
       composerSelection(editor.state.selection),
     );
-    // `/compact <instructions>` is a verb, not a message: it runs on the thread
-    // and its text leaves the composer at once, like choosing it from the menu.
     const verb = matchComposerChatCommand(envelope.text, commandsRef.current ?? []);
     if (verb) {
       setSubmitFailure(false);
@@ -615,8 +548,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const scope = scopeRef.current;
     if (!editor || !port || !scope) return;
     const intakeId = crypto.randomUUID();
-    // The chip becomes the reference when the file has arrived; one the writer took back meanwhile
-    // stays a stopped upload, and its retry resumes the finished one and lands at once.
     uploads.begin(intakeId, holder, async (signal) => {
       const ready = await port.intake({ file, intakeId, scope, signal });
       const position = editor.isDestroyed ? undefined : uploadChips(editor).get(intakeId);
@@ -645,14 +576,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   function insertChip(upload: ComposerPendingUploadAttrs) {
     editor?.chain().focus().insertContent({ type: "composerUpload", attrs: { upload } }).run();
   }
-  /** The intake takes files only, so a folder is a failed chip that says so, where the writer dropped it. */
   function refuseFolder(name: string) {
     const intakeId = crypto.randomUUID();
     uploads.refuse(intakeId, holder, t`Folders can't be attached`);
     insertChip({ intakeId, name });
   }
 
-  /** The one door for the paperclip and for drops: chips go in at the caret, in order, one space apart. */
   function attachFiles(entries: readonly DroppedEntry[]) {
     if (!editor || !resolvedUploadPort || !scopeRef.current) return;
     entries.forEach((entry, index) => {
@@ -686,9 +615,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
-  // One button, as on main: Stop while the box is empty and a reply runs or this tab's Stop is
-  // pending, stopping or failed; Send (with the running ring while a reply runs) once there is text.
-  // Escape is the Stop button: it stops only while Stop shows, so a draft is never a side effect.
   const showStop = (running || stopStatus !== "idle") && !hasContent;
   const stopInProgress = stopStatus === "pending" || stopStatus === "stopping";
   const keyDown = (event: React.KeyboardEvent) => {
@@ -718,8 +644,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   return (
     <div ref={regionRef} className="contents">
       {cards || failureCard ? (
-        // Above the box and its strips, as wide as the box: every note above the box is the
-        // same card in the same place, whoever raised it. Send is the failure's retry.
         <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
           {cards}
           {failureCard}
@@ -786,7 +710,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               size="sm"
               data-composer-stop=""
               onClick={() => {
-                // The button leaves with the click; the box takes the focus it held.
                 editor?.commands.focus("end", { scrollIntoView: false });
                 onStop?.();
               }}

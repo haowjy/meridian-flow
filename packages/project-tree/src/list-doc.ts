@@ -1,11 +1,6 @@
 import type { LoroDoc, LoroList } from "loro-crdt";
 import type { SettleRecord, TreeRecord } from "./record.js";
 
-/**
- * A copy of the list (the browser's, or the server's tree room): two append-only Loro lists,
- * `ops` and `settle`. Every reader here goes through `listOf`, so the records, the replay and the
- * rules are one for every copy.
- */
 export interface ListDoc {
   records(): unknown[];
   settles(): SettleRecord[];
@@ -13,7 +8,6 @@ export interface ListDoc {
   settleCount(): number;
   pushRecords(records: readonly TreeRecord[]): void;
   pushSettles(settles: readonly SettleRecord[]): void;
-  /** Runs `change` as one transaction, so what it appends travels as one update. */
   transact(change: () => void, origin: string): void;
 }
 
@@ -27,15 +21,13 @@ export function listOf(doc: LoroDoc): ListDoc {
   return list;
 }
 
-/** Loro stores JSON values: a field left `undefined` is left out, as a reader treats it anyway. */
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 function loroList(doc: LoroDoc): ListDoc {
   const ops: LoroList = doc.getList("ops");
   const settle: LoroList = doc.getList("settle");
   let depth = 0;
-  // Readers compare records by identity across reads: hold the values read until the list grows
-  // (the lists only append).
+  // keep: Cache decoded list values by identity between appends because readers compare records by identity
   let records: unknown[] = [];
   let settles: SettleRecord[] = [];
   return {
@@ -67,10 +59,6 @@ function loroList(doc: LoroDoc): ListDoc {
   };
 }
 
-/**
- * Whether a copy changed since `mark`: the lists never delete, so their lengths name a version of
- * the copy exactly, whoever appended.
- */
 export function listMark(doc: LoroDoc): string {
   const list = listOf(doc);
   return `${list.recordCount()}/${list.settleCount()}`;

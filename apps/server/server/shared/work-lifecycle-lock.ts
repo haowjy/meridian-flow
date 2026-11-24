@@ -1,4 +1,3 @@
-/** Shared row lock for serializing Work lifecycle changes with Work-owned mutations. */
 import { works } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
@@ -16,7 +15,6 @@ import {
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
-/** What `lockSeamWorks` locked: each Work's lifecycle and each lineage's liveness, read under the locks. */
 export type LockedOwners = {
   works: ReadonlyMap<string, LockedWork>;
   lineages: ReadonlyMap<string, "active" | "frozen">;
@@ -32,10 +30,6 @@ const lifecycleOf = (
 ): LockedWorkLifecycle =>
   !row ? "missing" : row.deletedAt ? "deleted" : row.archivedAt !== null ? "archived" : "active";
 
-/**
- * Each Work's lifecycle and each lineage's liveness as they stand, with no lock: for a reader
- * (admission, a chip). A writer reads them under the locks (`lockSeamWorks`).
- */
 export async function readOwners(
   db: DrizzleDb,
   workIds: readonly string[],
@@ -65,12 +59,6 @@ export async function readOwners(
   };
 }
 
-/**
- * Lock several Works in one global order, sorted by id, so writers spanning
- * Works never deadlock each other (file-access §5), and read each one's
- * lifecycle under the lock. `FOR NO KEY UPDATE` serializes lifecycle changes
- * without blocking foreign-key references to the row.
- */
 export async function lockWorksInIdOrder(
   db: DrizzleDb,
   workIds: readonly string[],
@@ -104,11 +92,6 @@ export async function lockWorkLifecycle(
   return (await lockWorksInIdOrder(db, [workId])).get(workId)?.state ?? "missing";
 }
 
-/**
- * A write seam's first locks (file-access §5): its own Works and the bound
- * edit grants' Works in one id order, then the lineages' draft-owner locks,
- * then the grants' confirmation. The seam takes its advisory locks after this.
- */
 export async function lockSeamWorks(
   db: DrizzleDb,
   workIds: readonly string[],
@@ -121,7 +104,6 @@ export async function lockSeamWorks(
   return locked;
 }
 
-/** Seam locks, then each of the seam's own Works and lineages must still be active. */
 export async function requireLockedActiveWorks(
   db: DrizzleDb,
   workIds: readonly string[],

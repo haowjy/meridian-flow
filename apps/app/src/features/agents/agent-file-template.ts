@@ -5,12 +5,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 import { roomContent, roomSchema } from "@/core/editor/room-content";
 import { loadMars } from "@/lib/mars-schema";
 
-/**
- * The text a new file at an Agent or skill path starts with: frontmatter Mars reads without a
- * finding, so the file is available the moment it is made. The name goes through Mars's own
- * emitter, so a name that reads as a number or a list (`123`, `[critic]`) is quoted. Null for any
- * other path.
- */
 export async function agentFileTemplate(levelPath: string): Promise<string | null> {
   const file = agentsFileOf(levelPath);
   if (!file) return null;
@@ -22,7 +16,6 @@ export async function agentFileTemplate(levelPath: string): Promise<string | nul
   const frontmatter = `---\n${rewriteBlock([
     ["name", file.slug],
     ["description", describe],
-    // Only `mode: primary` starts a chat; a new Agent is one the writer means to talk to.
     ...(file.kind === "agent" ? [["mode", "primary"] as [string, string]] : []),
   ])}---\n\n`;
   return file.kind === "agent"
@@ -30,10 +23,6 @@ export async function agentFileTemplate(levelPath: string): Promise<string | nul
     : `${frontmatter}Write the steps of ${file.slug} here.\n`;
 }
 
-/**
- * Writes a just-made document's first text into its local copy, as typing would: the room sends
- * it when the server has the create. A document that already holds text keeps it.
- */
 export async function writeFirstText(
   registry: Pick<LiveDocumentSessionRegistry, "admit" | "get" | "retain" | "release">,
   projectId: string,
@@ -58,7 +47,6 @@ export async function writeFirstText(
   }
 }
 
-/** Writes the template of the Agent or skill file at `levelPath` as a just-made document's first text. */
 export async function writeFirstAgentText(
   registry: Parameters<typeof writeFirstText>[0],
   projectId: string,

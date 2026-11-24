@@ -1,4 +1,3 @@
-/** POST /api/agents/save/undo: saves the version before a Save again, unless a later Save exists. */
 import { undoSaveRequestSchema } from "@meridian/contracts/agents";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";

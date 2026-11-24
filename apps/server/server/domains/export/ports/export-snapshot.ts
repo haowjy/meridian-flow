@@ -1,4 +1,3 @@
-/** Project export inventory, captured atomically before any content is streamed. */
 export type ExportDocument = {
   id: string;
   uri: string;

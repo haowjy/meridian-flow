@@ -19,16 +19,12 @@ type Fault = "drop_request" | "drop_response" | { status: number; code?: string 
 
 class Server {
   effects: string[] = [];
-  /** commandId -> stored outcome. */
   stored = new Map<string, { status: "done" | "refused" | "never"; result?: unknown }>();
   requests: { path: string; commandId?: string }[] = [];
   faults: Fault[] = [];
-  /** commands whose effect is refused by the domain (a stored `refused`). */
   refuse = new Set<string>();
-  /** commands refused the first time only. */
   refuseOnce = new Set<string>();
 
-  /** Commands of one lane being answered now: a lane must never have two different ones. */
   active = new Map<string, Map<string, number>>();
   overlaps: string[] = [];
   latency = 0;
@@ -39,7 +35,6 @@ class Server {
     const id = (request.body as { commandId?: string } | undefined)?.commandId ?? "";
     if (lane) {
       const running = this.active.get(lane) ?? new Map<string, number>();
-      // The same command sent again while an abandoned attempt is still being answered is fine.
       if ([...running.keys()].some((other) => other !== id)) this.overlaps.push(lane);
       running.set(id, (running.get(id) ?? 0) + 1);
       this.active.set(lane, running);
@@ -105,9 +100,7 @@ class Server {
 class World {
   server = new Server();
   private readonly store = createMemoryJournal();
-  /** Delays the n-th journal transaction (counted from `transactions`), as a slow disk would. */
   holdTransaction: { at: number; ms: number } | null = null;
-  /** Delays a random share of transactions, so the tabs' steps interleave. */
   jitter: (() => number) | null = null;
   transactions = 0;
   journal: Journal & { failNext(error: Error): void } = {
@@ -171,7 +164,6 @@ class World {
     next.grant(holder.release);
   }
 
-  /** `silent`: its writes reach no other tab, as when a message is late. */
   async tab({ silent = false } = {}): Promise<CommandDriver> {
     const listener = new Set<() => void>();
     const mine = {
@@ -214,7 +206,6 @@ class World {
 const submit = (driver: CommandDriver, label: string, lanes = ["a"]) =>
   driver.submit({ kind: "x", lanes, body: { label } });
 const settle = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
-/** Awaits a journal write while the clock runs, since a slow disk waits on a timer. */
 const through = async <T>(promise: Promise<T>): Promise<T> => {
   let done = false;
   const result = promise.finally(() => {
@@ -346,8 +337,6 @@ describe("one delivery, whatever goes wrong on the way", () => {
     world.server.refuseOnce.add("one");
     const one = await submit(tab, "one");
     await settle(0);
-    // The next submit's mark-sent is its third transaction; it is slow, and in that time the
-    // refused command is put back ahead of it.
     world.holdTransaction = { at: world.transactions + 2, ms: 500 };
     await submit(tab, "two");
     await other.retry(one.id);
@@ -449,7 +438,6 @@ describe("one delivery, whatever goes wrong on the way", () => {
     await a.observe(() => true);
     expect(a.getSnapshot().records[0]?.observed).toBe(true);
     expect(b.getSnapshot().records[0]).toMatchObject({ id, observed: false });
-    // The journal lets the record go a minute after some tab observed it; b keeps its own copy.
     await settle(61_000);
     expect(a.getSnapshot().records).toHaveLength(0);
     expect(b.getSnapshot().records).toMatchObject([{ id, state: "done", observed: false }]);
@@ -469,7 +457,6 @@ describe("one delivery, whatever goes wrong on the way", () => {
 });
 
 describe("schedules of tabs, outages and reloads", () => {
-  /** A small deterministic generator, so a failing schedule replays. */
   const random = (seed: number) => () => {
     seed = (seed * 1664525 + 1013904223) % 2 ** 32;
     return seed / 2 ** 32;
@@ -527,7 +514,6 @@ describe("schedules of tabs, outages and reloads", () => {
       expect(duplicated).toEqual([]);
       const records = tabs[0]?.getSnapshot().records ?? [];
       expect(records.every((r) => r.state === "done")).toBe(true);
-      // Every command was applied once, and each lane in the order of the journal's places.
       expect([...world.server.effects].sort()).toEqual(
         records.map((r) => (r.body as { label: string }).label).sort(),
       );

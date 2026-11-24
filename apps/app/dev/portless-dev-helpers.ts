@@ -1,4 +1,3 @@
-/** Portless dev helpers — server origin resolution and CA-aware HTTPS agent. */
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import https from "node:https";
@@ -6,11 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import tls from "node:tls";
 
-/**
- * Resolve the paired server origin via `portless get`. Portless is the
- * source of truth for worktree-prefixed hostnames — calling it directly
- * avoids reimplementing its branch → hostname logic.
- */
 export function resolvePortlessServerOrigin(repoRoot: string): string | undefined {
   try {
     return (

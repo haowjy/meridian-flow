@@ -1,8 +1,3 @@
-/**
- * Dialog — shadcn/Radix modal primitive. Upstream-managed wrapper; customize at
- * call sites. Added for proto command palette; promote via shadcn CLI for prod.
- */
-
 import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
@@ -89,11 +84,6 @@ function DialogContent({
 
 type AutoFocusHandler = (event: Event) => void;
 
-/**
- * Focus handlers for a dialog's content. Radix returns focus only to a `Dialog.Trigger`;
- * most dialogs here open from a menu or a command, so on close focus goes back to whatever
- * held it when the dialog opened, unless `onCloseAutoFocus` prevents it.
- */
 function useOpenerFocus(onOpenAutoFocus?: AutoFocusHandler, onCloseAutoFocus?: AutoFocusHandler) {
   const opener = useRef<HTMLElement | null>(null);
   return {
@@ -113,11 +103,6 @@ function useOpenerFocus(onOpenAutoFocus?: AutoFocusHandler, onCloseAutoFocus?: A
   };
 }
 
-/**
- * For a phone overlay whose picks hand the focus on (the drawer, the side sheet): the focus
- * goes back to the opener only after a dismissal (Escape, a tap outside, the returned
- * `onOpenChange(false)`) and only when nothing else has taken it.
- */
 function useDismissalFocus(
   onOpenChange: (open: boolean) => void,
   onOpenAutoFocus?: AutoFocusHandler,
@@ -141,11 +126,7 @@ function useDismissalFocus(
   };
 }
 
-/**
- * For `onOpenAutoFocus` on a phone overlay: Radix would focus the first control and paint
- * its ring, so the content takes focus instead. It must take it: without a focused element
- * inside, the focus trap never engages and Tab escapes behind the overlay.
- */
+// keep: Content must take focus on open or Radix's focus trap never engages and Tab escapes
 function focusContentOnOpen(event: Event) {
   event.preventDefault();
   (event.target as HTMLElement | null)?.focus({ preventScroll: true });
@@ -201,10 +182,6 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  // Exported (upstream shadcn exports it too) so call sites that need a
-  // non-centered content layout — e.g. the phone full-screen settings
-  // takeover — can compose Portal + Overlay + a raw Radix Content without
-  // fighting DialogContent's baked-in centered/zoom classes.
   DialogOverlay,
   DialogPortal,
   DialogTitle,

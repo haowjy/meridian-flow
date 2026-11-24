@@ -1,4 +1,3 @@
-/** Server-owned billing catalog: Stripe price bindings plus internal grant amounts. */
 import type {
   BillingCatalogEntry,
   BillingExtraUsageEntry,

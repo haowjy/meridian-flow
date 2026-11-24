@@ -1,7 +1,3 @@
-/**
- * The answer command both clients run: the attempt shows at once, the frame goes out, and the
- * reply settles it. Clients adapt the ports and never re-implement the settlement.
- */
 import type { AskAnswer } from "@meridian/contracts/threads";
 import type { ThreadTransport } from "../socket/thread-transport";
 import {
@@ -15,16 +11,13 @@ import {
 
 export type AnswerAskPorts = {
   transport: Pick<ThreadTransport, "answerAsk">;
-  /** Apply a change to the chat's asks; it runs synchronously against the current value. */
   update(change: (asks: ChatAsks) => ChatAsks): void;
-  /** Read the chat again and apply the read; rejects when the read fails. */
   refresh(): Promise<void>;
   newSubmissionId(): string;
 };
 
 export type AnswerAskResult =
   | { kind: "answered" | "not_open" | "failed" }
-  /** The server refused the answer; `questionIndex` names the question at fault, when one is. */
   | { kind: "invalid_answer"; questionIndex?: number };
 
 export async function answerAsk(
@@ -45,8 +38,6 @@ export async function answerAsk(
     return { kind: "answered" };
   }
   if (reply.type === "ask.answer.error" && reply.code === "ask_not_open") {
-    // Another tab, the parent or the deadline won. The reply names the resolution when it can;
-    // otherwise the attempt holds the ask closed here until a read says how it ended.
     const winner = reply.ask;
     if (winner) {
       ports.update((asks) => receiveAsks(asks, [winner]));
@@ -55,7 +46,6 @@ export async function answerAsk(
     return { kind: "not_open" };
   }
   if (reply.type === "ask.answer.error" && reply.code === "invalid_answer") {
-    // Not a transport failure: the same answer would be refused again, so no Retry waits for it.
     ports.update((asks) => clearAskAnswer(asks, askId, submissionId));
     return { kind: "invalid_answer", questionIndex: reply.questionIndex };
   }
@@ -63,10 +53,6 @@ export async function answerAsk(
   return { kind: "failed" };
 }
 
-/**
- * Read the chat until it says how the ask ended. The attempt stays `settling` meanwhile; a failed
- * read, or one that still shows it open, leaves it `unsettled` for the writer to read again.
- */
 export async function settleAsk(
   ports: Pick<AnswerAskPorts, "update" | "refresh">,
   askId: string,

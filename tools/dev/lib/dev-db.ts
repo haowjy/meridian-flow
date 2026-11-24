@@ -1,6 +1,5 @@
 import postgres from "postgres";
 
-/** Host port mapped in tools/dev/docker-compose.yml (tools/postgres image → 54422). */
 export const LOCAL_DEV_POSTGRES_PORT = 54422;
 
 const RESERVED_DATABASES = new Set(["postgres", "template0", "template1", "meridian"]);
@@ -50,7 +49,6 @@ function parsePostgresPort(databaseUrl: string): number {
   return port ? Number.parseInt(port, 10) : 5432;
 }
 
-/** True when DATABASE_URL targets the committed local dev Postgres endpoint. */
 export function isLocalDevPostgres(databaseUrl: string): boolean {
   try {
     const url = new URL(databaseUrl);
@@ -74,12 +72,6 @@ function assertLocalDevPostgresEndpoint(databaseUrl: string, action: string): vo
   );
 }
 
-/**
- * Read-only reachability probe: connect and `SELECT 1` without creating or
- * mutating anything. Surfaces the same Postgres error codes (`ECONNREFUSED`,
- * `3D000`, `28P01`) that `formatPgError` turns into actionable hints, so the
- * dev preflight can fail fast before launching the app servers.
- */
 export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
   try {
@@ -89,7 +81,6 @@ export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
   }
 }
 
-/** Databases something is connected to right now: a running stack, a psql, a test. */
 export async function listConnectedDatabasesForUrl(databaseUrl: string): Promise<Set<string>> {
   assertLocalDevPostgresEndpoint(databaseUrl, "list connected databases");
   const { adminConnString } = parseTargetDatabase(databaseUrl);
@@ -105,7 +96,6 @@ export async function listConnectedDatabasesForUrl(databaseUrl: string): Promise
   }
 }
 
-/** List local worktree-shaped databases for the registered dev DB base names. */
 export async function listWorktreeDatabasesForUrl(
   databaseUrl: string,
   baseDbNames: readonly string[],
@@ -130,7 +120,7 @@ export async function listWorktreeDatabasesForUrl(
   }
 }
 
-/** Names of the databases that start with `prefix` (a prefix match, not a LIKE pattern: `_` is literal). */
+// keep: a prefix match, not a LIKE pattern: `_` in a database name is literal
 export async function listDatabasesWithPrefixForUrl(
   databaseUrl: string,
   prefix: string,
@@ -147,7 +137,6 @@ export async function listDatabasesWithPrefixForUrl(
   }
 }
 
-/** Connect to target DB when present; auto-create only on the local dev endpoint or a CI runner's Postgres. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
 ): Promise<{ targetDb: string; created: boolean }> {
@@ -187,7 +176,6 @@ export async function ensureDatabaseForUrl(
   }
 }
 
-/** A CI runner's own loopback Postgres: discarded with the runner, so test databases may be made on it. */
 export function isCiRunnerPostgres(databaseUrl: string): boolean {
   if (process.env.CI !== "true") return false;
   try {
@@ -198,7 +186,6 @@ export function isCiRunnerPostgres(databaseUrl: string): boolean {
   }
 }
 
-/** Clone a migrated test database without replaying the baseline. */
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
@@ -249,7 +236,6 @@ export function formatPgError(error: unknown): string {
   return message;
 }
 
-/** Drop and recreate app schemas so migrations re-apply from scratch (keeps the database). */
 export async function resetSchemaForUrl(databaseUrl: string): Promise<{ targetDb: string }> {
   assertLocalDevPostgresEndpoint(databaseUrl, "reset schema");
   const { targetDb } = parseTargetDatabase(databaseUrl);

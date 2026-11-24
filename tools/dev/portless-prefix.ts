@@ -1,4 +1,3 @@
-/** Checkout-owned Portless prefixes shared by startup, CLI discovery and browser tests. */
 import { createHash } from "node:crypto";
 import { isMainCheckout, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 
@@ -31,7 +30,6 @@ function branchToPortlessPrefix(branchName: string): string | undefined {
   return sanitizeForHostname(lastSegment) || undefined;
 }
 
-/** Only the primary checkout owns bare routes, including when HEAD is detached. */
 export function resolveCheckoutPortlessPrefix(repoRoot: string): string | undefined {
   if (isMainCheckout(repoRoot)) return undefined;
   const identity = resolveCheckoutSessionIdentity(repoRoot);

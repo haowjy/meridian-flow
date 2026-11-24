@@ -1,7 +1,3 @@
-/**
- * `thread answer`: answer the chat's open question as the composer takeover does, through the
- * shared answer command over the socket. The ask defaults to the one the takeover would show.
- */
 import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
 import {
   type AskAnswer,
@@ -29,7 +25,6 @@ import { jsonResponse } from "../../core/session";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { connectThreadClient } from "./transport";
 
-/** The options both `answer` and `presence` take: the answers, one per question in order. */
 export const ANSWER_OPTIONS: Record<string, OptionSpec> = {
   answer: {
     type: "string",
@@ -44,7 +39,6 @@ export const ANSWER_OPTIONS: Record<string, OptionSpec> = {
   },
 };
 
-/** The answers from `--answer` (repeated) or `--answers` (JSON); `none` and null are unanswered. */
 export function answerArgs(ctx: CommandContext): (QuestionAnswer | null)[] {
   const repeated = listOption(ctx, "answer");
   const json = stringOption(ctx, "answers");
@@ -60,10 +54,6 @@ export function answerArgs(ctx: CommandContext): (QuestionAnswer | null)[] {
   });
 }
 
-/**
- * The session, chat and ask a command acts on: `--ask`, else the ask the takeover would show.
- * Null after reporting that the chat has none open.
- */
 export async function resolveOpenAsk(
   ctx: CommandContext,
   type: "thread.answer" | "thread.presence",

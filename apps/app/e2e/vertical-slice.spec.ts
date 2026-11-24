@@ -20,7 +20,6 @@ test.describe("vertical slice", () => {
         userId: await findTestUserId(db),
         titlePrefix: "Auth invalidation",
       });
-      // Opening the chat makes it the project's current chat, which the Editor docks.
       await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
       await expect(
         page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
@@ -78,7 +77,6 @@ test.describe("vertical slice", () => {
         userId: await findTestUserId(db),
         titlePrefix: "Vertical slice",
       });
-      // Opening the chat makes it the project's current chat, which the Editor docks.
       await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
       await expect(
         page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
@@ -106,7 +104,6 @@ test.describe("vertical slice", () => {
 
       await expect(page.locator('[data-turn-role="user"]').last()).toContainText(uniqueMessage);
       const assistantTurn = page.locator('[data-turn-role="assistant"]').last();
-      // The mock provider's default reply is a canned scene, not an echo of the message.
       await expect(assistantTurn).toHaveAttribute("data-turn-status", "complete", {
         timeout: 30_000,
       });

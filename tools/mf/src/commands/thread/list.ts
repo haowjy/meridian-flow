@@ -1,4 +1,3 @@
-/** `thread list`: threads, newest activity first. */
 import {
   API_THREADS_PATH,
   apiProjectThreadsPath,

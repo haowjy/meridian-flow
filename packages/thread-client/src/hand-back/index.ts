@@ -1,4 +1,3 @@
-/** The hand-back operation and Send now: shared by the app and `./mf`. */
 export type { FrozenRequest, HttpPort, HttpResult, ResponseSchema, Verdict } from "./classify";
 export { classifyAnswer } from "./classify";
 export {

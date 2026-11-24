@@ -1,49 +1,3 @@
-/**
- * Ordered model/tool loop. Preparation commits initial turns and report admission;
- * execution publishes through the journal, never a caller-driven event generator.
- * A RunSession owns the lease, cancellation, terminal fallback, and cleanup.
- *
- * - **blockSeq allocation**: content blocks (text, reasoning, tool_use) are
- *   numbered sequentially from the count of blocks already stored for the
- *   current turn. This is the persisted order the client reloads as the
- *   "linear" block display. The order of `result.content[]` comes from the
- *   adapter's index-sorted output (Anthropic's content-block index or OpenAI
- *   Responses' output_index — see the facts sheet and adapter docs).
- *   `blockSeq` is a turn-scoped monotonic counter, not a thread-global one.
- *
- * - **Tool_use-only blocks**: some adapters report tool calls only via
- *   `result.toolCalls[]` and not in `result.content[]`. When that happens,
- *   the orchestrator synthesizes a `tool_use` block so the persistence model
- *   always has a durable tool_use block to pair with the eventual tool_result.
- *
- * - **Local state accumulation**: to avoid re-reading the entire thread from
- *   the DB on every tool-loop iteration, the orchestrator maintains an
- *   in-memory `allTurns[]` + `allBlocks[]` accumulator that grows across
- *   iterations and assistant segments during a single run.
- *
- * - **MAX_TURN_ITERATIONS (32)**: a safety valve to prevent infinite
- *   tool-calling loops. After 32 iterations the turn is finalized with an error.
- *
- * Categories of OrchestratorEvent emitted:
- *
- *   | Event type              | When emitted                                |
- *   |-------------------------|---------------------------------------------|
- *   | turn.created            | Start of a user or assistant turn           |
- *   | block.upserted          | A content or tool_result block is persisted |
- *   | stream.delta            | Live streaming text/reasoning/tool_call     |
- *   | tool.executing          | Tool dispatch begins                        |
- *   | tool.output_delta       | Best-effort live stdout/stderr chunk        |
- *   | tool.result             | Tool execution completes                    |
- *   | permission.denied       | Tool outside the agent's tool policy        |
- *   | model.response_received | A model response is recorded                |
- *   | usage                   | Cumulative token/cost tick                  |
- *   | turn.completed          | Turn finishes successfully                  |
- *   | turn.cancelled          | Turn aborted via AbortSignal                |
- *   | turn.error              | Turn failed with an error                   |
- *
- * Depends on: gateway, tool executor, thread repositories, event journal.
- */
-
 import { createReplyMutations } from "@meridian/agent-edit/integration";
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import {
@@ -245,9 +199,7 @@ export interface OrchestratorRepositories {
 }
 
 export interface OrchestratorDeps {
-  /** One app-owned lifecycle tracker shared by every detached runtime caller. */
   backgroundTasks: DetachedWorkTracker;
-  /** Shared app shutdown state read by run starts, wakes and handoff briefs. */
   shutdown: { started: boolean };
   summarizer: ConversationSummarizer;
   gateway: LlmGateway;
@@ -259,12 +211,9 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
-  /** Lineage cancellation across processes: turn cancel, delete, and a child's terminal run end a subtree; Stop and Send now end only the reply. */
   lineage: LineageCancellation;
   askRequests: Pick<AskService, "request">;
-  /** Runs after the ambient transaction commits, or at once outside one. */
   afterCommit(task: () => void): void;
-  /** Child invocation cards: the saved report when the run ends. */
   reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
@@ -277,7 +226,6 @@ export interface OrchestratorDeps {
   agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding" | "followRemovedModel">;
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
-  /** The writer's MCP connections: the prompt's catalogue and the tools' calls. Absent: none. */
   connections?: ConnectionsPort;
   billingUsage: BillingUsagePolicy;
   rateSource: ModelTokenRateSource;
@@ -285,15 +233,11 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
-  /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;
   handoffBriefs: HandoffBriefStopper;
-  /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
   mediaResolver: MediaResolverPort;
-  /** Test seam: the span a signed media link stays identical for, instead of the cache lifetime. */
   mediaLinkWindowSeconds?: number;
-  /** What each tool result, settled receipt and reference read showed of a document, per room. */
   documentEvidence: DocumentEvidence;
 }
 
@@ -343,9 +287,6 @@ export function createOrchestrator(deps: OrchestratorDeps) {
   });
 }
 
-// USD rollups are display-side estimates only; the authoritative ledger truth
-// is integer millicredits. Keep these strings stable for UI snapshots, but do
-// not use them for billing decisions.
 function addCostUsd(a: string, b: string): string {
   return (Number(a) + Number(b)).toFixed(6);
 }
@@ -396,7 +337,6 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
-/** Commit initial history before handing the session its lazy model loop. */
 async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
   const thread = await repos.threads.findById(input.threadId);
@@ -404,8 +344,6 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
-  // New turns require positive balance; the mid-stream gate in turn-accounting
-  // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
     if (isDrainRun(input)) await deps.delivery.blockForUsage(input.lease);
     throw meridianErrorFromSystem(
@@ -459,7 +397,6 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
           : { kind: "writer", actorId: thread.userId },
         body: { kind: "text", text: input.userText },
         idempotencyKey: userTurnId,
-        // A child's admission is its parent's machine wake: the enqueue checks the fence.
         ...(input.child
           ? {
               sender: {
@@ -484,15 +421,6 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   }
 }
 
-/**
- * Drain-only start: a wake begins with no new writer turn. In one transition it
- * claims the pending inbox batch, persists each fresh message as a user-role turn
- * chained from the thread leaf, then mints the assistant container chained from
- * the last message. The durable chain is `leaf → message(user) → assistant(streaming)`
- * and the first request is built over exactly the drained batch. A redelivered
- * message already persisted by a crashed run is not re-appended; its existing turn
- * rides in `priorTurns`. No durable pending message means no turn to generate.
- */
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
@@ -523,9 +451,6 @@ async function runDrainTurn(
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
-      // Decide what this boundary forgets before anything is built over the history: the request, the
-      // compaction plan and any summary leave those turns out. The append primitive decides again from the
-      // events it commits and asserts the two agree.
       const forgetting = decideForgetting(
         await loadForgettingFacts(deps.repos, input.threadId, selection.activeLeafTurnId),
         {
@@ -540,7 +465,6 @@ async function runDrainTurn(
         turns.filter((turn) => !forgotten.has(turn.id) && !deferred.has(turn.id));
       const staysBlocks = (blocks: readonly Block[]) =>
         blocks.filter((block) => !forgotten.has(block.turnId) && !deferred.has(block.turnId));
-      // `priorTurns` is the graph (the leaf, positions, known ids); `localTurns` the conversation.
       const { priorTurns, prevTurnId } = ctx;
       const localTurns = stays(ctx.localTurns);
       const inheritedTurns = stays(ctx.inheritedTurns);
@@ -553,8 +477,6 @@ async function runDrainTurn(
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );
-      // A Retry is reserved for its failed reply's messages. Those inbox rows
-      // were acknowledged by the failure, so the execution carries them itself.
       const retryReservedFor = input.retryOf
         ? (turnById.get(input.retryOf)?.reservedForUserTurnIds ?? [])
         : [];
@@ -617,7 +539,6 @@ async function runDrainTurn(
               MAX_TURN_ITERATIONS,
               treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
             ),
-            // A Retry-led compaction pins what it retries: those messages are not in the summary's words.
             pinnedRequestTurnIds: new Set([
               ...selection.outstanding.map((row) => row.id),
               ...retryReservedFor,
@@ -705,7 +626,6 @@ async function runDrainTurn(
         inheritedBlocks,
         executionAdmitted:
           selection.outstanding.length > 0 || !!input.replyTurnId || !!continuation,
-        // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
       };
       const events = [
@@ -738,7 +658,6 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-                // A rolled-back bake starts no check.
                 deps.afterCommit(() =>
                   deps.connections?.saved(
                     preflight.assembled.thread,
@@ -746,7 +665,6 @@ async function runDrainTurn(
                   ),
                 );
               }
-              // A reply holds the run claim, so the chat's mode can't change under it.
               reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
                 result: undefined,
@@ -756,8 +674,6 @@ async function runDrainTurn(
             {
               expectedForgetting: forgetting,
               afterEvents: async () => {
-                // The reference blocks in `events` are what this turn's request
-                // shows; a discarded or retried preparation never gets here.
                 if (preflight)
                   await recordReferenceEvidence(
                     deps,
@@ -834,21 +750,12 @@ async function runDrainTurn(
   };
 }
 
-/**
- * The shared run-start prelude: load the
- * thread's prior turns and inherited (fork) conversation, and resolve the turn
- * to chain from. Both writer and drain starts run this inside their run-start
- * transition; they differ only in the user-turn source they mint afterward.
- */
 async function loadRunStartContext(
   deps: OrchestratorDeps,
   thread: Thread,
 ): Promise<{
-  /** Every local turn: the graph, which owns the leaf, positions and known ids. */
   priorTurns: Turn[];
-  /** The local conversation: the graph minus handed-back writer messages. */
   localTurns: Turn[];
-  /** The conversation's own blocks, intersected with `localTurns`. */
   localBlocks: Block[];
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
@@ -888,7 +795,6 @@ async function loadRunStartContext(
   }
   const { inherited, local } = conversation;
   const sortedLeaf = priorTurns.at(-1) ?? inherited.turns.at(-1) ?? null;
-  // The durable leaf owns causal chaining; position owns transcript ordering.
   const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
   return {
     priorTurns,
@@ -912,7 +818,6 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
-  /** Ids of the inbox batch this response carries; acked in the persist transaction. */
   inboxAckIds: string[];
 }): Promise<{
   responseId: string;
@@ -1042,11 +947,6 @@ async function persistModelResponse(input: {
   };
 }
 
-/**
- * Persists partial usage before the terminal cancellation transaction. That
- * transaction retires the adopted lease receipt; unadopted follow-ups remain
- * pending for a later run.
- */
 async function settleCancelledResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
@@ -1073,7 +973,6 @@ async function settleCancelledResponse(input: {
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq: input.blockSeq,
-      // The terminal cancellation retires the lease receipt after settlement.
       inboxAckIds: [],
     });
     currentTurn = persistedResponse.updatedTurn;
@@ -1150,12 +1049,6 @@ async function persistToolOutcome(input: {
   };
 }
 
-/**
- * Loads text-reference reads for one user turn, returning prepared events and
- * blocks with read results applied. Used both
- * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
- * writer turn whose references were never read.
- */
 async function prepareReferenceReads(input: {
   deps: OrchestratorDeps;
   thread: Thread;
@@ -1163,7 +1056,6 @@ async function prepareReferenceReads(input: {
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
-  /** What the reads are shown beside: their frontiers chain from these and the turn's own blocks. */
   credited: CreditedBlocks;
   signal?: AbortSignal;
 }): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; evidence: ReferenceEvidence }> {
@@ -1210,31 +1102,11 @@ async function prepareReferenceReads(input: {
   };
 }
 
-/** Prepared body turns for one turn's activated skills. */
 type SkillBodyPreparation =
   | { kind: "none" }
   | { kind: "existing"; turn: Turn }
   | { kind: "created"; turn: Turn; block: Block };
 
-/**
- * Loads and prepares one hidden `system`-role turn carrying every activated
- * skill's body, chained immediately after the turn that invoked them. Never a
- * block on the invoking turn itself -- `UserTurn.tsx`'s `projectUserTurn` (and
- * chat previews, fork/handoff copies) concatenates every text block of a user
- * turn, so a body block placed there renders inside the writer's own bubble.
- * A separate `system`-role turn with `SKILL_BODY_METADATA` and no custom block
- * is already invisible everywhere `visible-conversation-policy.ts` and the
- * app's `visible-chat-turns.ts` hide a `system_update` turn, and is never
- * routed to `UserTurn` in the first place.
- *
- * Idempotent: `existingTurns` (the run's accumulated turn list, seeded from
- * durable history at run start) is searched for an already-persisted body
- * turn chained from `invokingTurnId` before preparing a new one, so a retried
- * drain (a crash between commit and ack) never double-persists. Persisting the
- * body once means a later request reproduces the exact bytes an earlier
- * request saw even if the skill's live content changes afterward -- unlike
- * the deleted request-only splice, which vanished on the very next request.
- */
 async function prepareSkillBodies(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -1260,7 +1132,6 @@ async function prepareSkillBodies(input: {
   return { kind: "created", turn: artifacts.turn, block: localBlockFromEvent(artifacts.block) };
 }
 
-/** Stage once per boundary attempt; only a committed body consumes the pending activations. */
 function createSkillBodyPreparation(slugs: readonly string[]) {
   let pending = slugs;
   let stagedTurnId: TurnId | undefined;
@@ -1371,7 +1242,6 @@ async function executeLoop({
   input: RunLoopInput;
   thread: Thread;
   reservedTurn: Turn;
-  /** Full ordered history before the assistant container, including drained messages. */
   initialTurns: Turn[];
   inheritedBlocks: Block[];
   initialContext: AssembledNextTurnContext | undefined;
@@ -1390,9 +1260,6 @@ async function executeLoop({
   });
   const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
 
-  // The loop is the only writer of the lease phase, so `authority.read` cannot
-  // split-brain. Publishing is observational: a failure must not fail the turn,
-  // it only leaves the phase briefly stale until the next boundary.
   async function publishPhase(phase: ThreadPhase): Promise<void> {
     const lease = input.lease;
     try {
@@ -1409,7 +1276,6 @@ async function executeLoop({
   }
 
   let currentTurn: Turn = reservedTurn;
-  // Carried until the execution reserves its first assistant.
   let carriedReservedFor = initialCarriedReservedFor;
   const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
   let preferredSuccessorTurnId =
@@ -1437,7 +1303,6 @@ async function executeLoop({
   }
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const credited = new CreditedBlocks(initialContext?.creditedBlockIds);
-  // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
   const requestTurnIds = new Set(allTurns.map((turn) => turn.id));
   const allBlocks: Block[] = [
     ...inheritedBlocks,
@@ -1445,8 +1310,6 @@ async function executeLoop({
       requestTurnIds.has(block.turnId),
     ),
   ];
-  // The reservation already prepared this request, so its first generation is
-  // not another boundary.
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
     turns: [],
     blocks: [],
@@ -1455,13 +1318,11 @@ async function executeLoop({
   };
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let terminalControl = false;
-  // A message waits behind a queued write-mode switch: end the reply here.
   let yieldRequested = false;
   let continuingTask = false;
   let iteration = 0;
   let pendingCompletion: TerminalCause | undefined;
   let forcedCompaction: ForcedCompactionDecision | undefined;
-  // One emergency retry per reply, even across tool iterations and compaction splits.
   let retriedContextOverflow = false;
 
   function boundaryInput(forcedDecision?: ForcedCompactionDecision): DeliveryBoundary {
@@ -1473,7 +1334,6 @@ async function executeLoop({
         ? { carriedReservedForUserTurnIds: carriedReservedFor }
         : {}),
       current: { kind: "assistant" },
-      // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
         continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
       admit: async (turn, adopted) => {
@@ -1533,9 +1393,6 @@ async function executeLoop({
         };
       },
       prepareNextContext: async (drain, _current, selection) => {
-        // Run-start preparation already froze the first request before its
-        // assistant turn was reserved. Do not resolve its assets a second
-        // time before that request is sent.
         if (
           !forcedDecision &&
           preparedContext &&
@@ -1603,8 +1460,6 @@ async function executeLoop({
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
     }
-    // A genuinely new input starts a new reply budget. Rebased context rows and
-    // the compaction successor itself do not grant another emergency retry.
     if (
       result.split &&
       result.drain.turns.some(
@@ -1625,8 +1480,6 @@ async function executeLoop({
     if (result.terminal) {
       currentTurn = result.next;
       terminalControl = true;
-      // A compaction successor that failed preparation landed terminal and
-      // ended the execution in the same commit; nothing is left to throw to.
       if (result.preparationFailure !== undefined)
         emitEvent(eventSink, {
           level: "error",
@@ -1717,10 +1570,6 @@ async function executeLoop({
     kind: "success",
     finishReason: result.finishReason,
   });
-  // The yield ends A exactly as a steer split would, but releases the claim
-  // instead of reserving a successor. Cancellation wins: the local signal is
-  // read after the asynchronous boundary read, and close rereads both it and
-  // the durable flag under the lock.
   const yieldExit = () =>
     input.signal?.aborted
       ? cancelExit()
@@ -1728,9 +1577,6 @@ async function executeLoop({
 
   const cancelExit = () => exitRun(false, abortTerminal());
 
-  // One loader for request-only skill bodies: a writer start passes its
-  // activated slugs on the input; a drained or mid-run adopted writer turn
-  // reads them back off its persisted metadata.
   const loadSkillBodies = (slugs: readonly string[]) =>
     Promise.all(
       slugs.map((slug) =>
@@ -1746,17 +1592,10 @@ async function executeLoop({
   for (;;) {
     try {
       if (terminalControl) return currentTurn;
-      // The in-process abort is the fast cancel path; the durable lease flag is the
-      // cross-process one, read at each iteration's safe boundary. Either set means
-      // the run exits, so no suppression state is needed.
       let leaseCancelled = false;
       const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
 
-      // Every cancellation/error path must persist terminal events, not just
-      // return/throw, so subscribers see the turn lifecycle closure.
       async function iterate(): Promise<boolean> {
-        // Before the budget and iteration checks, so a reply out of credits
-        // still yields to the switch instead of failing.
         if (
           yieldRequested ||
           (!queuedDrain &&
@@ -1765,17 +1604,12 @@ async function executeLoop({
         )
           return yieldExit();
 
-        // A cancel from another process has no local abort; the lease flag is the
-        // only signal. Read it before acting so the next admitted run starts
-        // from a clean, already-released lease.
         const status = await deps.runClaim.read(input.threadId);
         if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
         if (isCancelled()) {
           return cancelExit();
         }
 
-        // Closure only asks whether input needs another request. No pending input
-        // means a successful response stays successful, even after spending into debt.
         const completion = pendingCompletion;
         pendingCompletion = undefined;
         if (completion) {
@@ -1793,8 +1627,6 @@ async function executeLoop({
           }
         }
 
-        // All automatic continuations share this owner, including reply closure,
-        // initial compaction and a forced overflow retry. This check spends nothing.
         const eligibilityError = await turnAccounting.assertContinuationEligibility(
           MAX_TURN_ITERATIONS - iteration,
           treeBudget,
@@ -1830,7 +1662,6 @@ async function executeLoop({
         if (!drain) {
           const adopted = await deps.delivery.splitAndContinue(boundaryInput(forcedCompaction));
           forcedCompaction = undefined;
-          // Input may have been withdrawn since close requested continuation.
           if (completion && !adopted.split) return exitRun(false, completion);
           drain = await acceptBoundary(adopted);
         }
@@ -1842,8 +1673,6 @@ async function executeLoop({
         if (acceptedStatus.kind === "awake" && acceptedStatus.cancelRequested)
           leaseCancelled = true;
         if (isCancelled()) return cancelExit();
-        // A summary may spend credits while moving to its successor. Ordinary
-        // no-split boundaries have already checked eligibility above.
         if (currentTurn.id !== boundaryTurnId) {
           const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
           if (budgetError) return exitRun(false, errorTerminal(budgetError));
@@ -1859,8 +1688,6 @@ async function executeLoop({
         const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
         const requestCreditedIds = preparedContext.creditedBlockIds;
         preparedContext = undefined;
-        // What credits is what this request carries (C10), so a compaction restarts the chain here.
-        // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
         credited.reset(requestCreditedIds);
         const planningBlockIds = credited.ids();
         thread = built.thread;
@@ -1874,8 +1701,6 @@ async function executeLoop({
           ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
         };
 
-        // Notices, adopted-turn skill bodies, and image events are durable before
-        // their assistant turn is reserved; the context uses only that history.
         const inboxAckIds = drain.ackIds;
         let predictedCacheState: PrefixCacheState;
         try {
@@ -1927,11 +1752,6 @@ async function executeLoop({
           });
         }
 
-        // The gateway yields a self-terminating stream: a sequence of
-        // text/reasoning/tool_call deltas followed by exactly one 'end'
-        // (with the assembled GenerateResult) or one 'error'.
-        // On cancel, abort the gateway call and drain through 'end' so partial
-        // usage can be persisted before turn.cancelled.
         await publishPhase("generating");
         let result: GenerateResult | undefined;
         const partialToolCalls = new Map<
@@ -1960,8 +1780,6 @@ async function executeLoop({
                 partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
                 partialToolCalls.set(event.id, partialCall);
               } else if (event.name) {
-                // Some compatible providers split the tool name from the first
-                // arguments chunk; keep the newest nonempty canonical name.
                 partialCall.toolName = event.name;
               }
 
@@ -2020,8 +1838,6 @@ async function executeLoop({
                 break;
               }
               if (event.code === "context_overflow") {
-                // Partial output from the rejected request is not a completed tool group.
-                // Keep its paid usage, but only prior completed responses remain in A.
                 if (event.result) {
                   const paid = await persistModelResponse({
                     deps,
@@ -2073,8 +1889,6 @@ async function executeLoop({
           try {
             await deltaJournal.flush();
           } catch (flushError) {
-            // The flush is this stream scope's durable boundary. It replaces
-            // normal control flow, but never an error already in flight.
             // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence. slop-lint: allow suppression the reason is stated in this comment
             if (streamFailure === undefined) throw flushError;
             emitEvent(eventSink, {
@@ -2111,9 +1925,6 @@ async function executeLoop({
           return exitRun(false, errorTerminal("Stream ended without result"));
         }
 
-        // blockSeq is the turn-scoped display order. It starts at the blocks
-        // already stored for this assistant turn and is handed to persistence and
-        // tool collaborators so later blocks remain contiguous.
         let blockSeq = allBlocks.filter(
           (b) => (b.turnId as string) === (currentTurn.id as string),
         ).length;
@@ -2143,11 +1954,7 @@ async function executeLoop({
           return exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
         }
 
-        // blockSeq continues across tool_result blocks so all blocks for this
-        // turn are numbered contiguously regardless of which iteration
-        // created them.
         if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
-          // The reply owns its own-mutation sequence until here, whichever way it ends.
           const reply = createReplyMutations();
           try {
             if (isCancelled()) {
@@ -2156,8 +1963,6 @@ async function executeLoop({
 
             const batchOutcomes: ToolDispatchOutcome[] = [];
             const batch: RequestBatch = { deferred: null };
-            // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-            // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
               if (isCancelled()) {
                 return cancelExit();
@@ -2185,10 +1990,7 @@ async function executeLoop({
                 }
               }
 
-              // If denied, we still persist a tool_result block (with isError: true)
-              // so the model sees the rejection in the next turn's context build.
               if (!built.policy.has(call.name)) {
-                // A connection's tool called by its own name: say how to call it, not that it is missing.
                 const ownName = built.policy.has("mcp_call")
                   ? await deps.connections?.ownNameRefusal(thread, call.name)
                   : null;
@@ -2266,9 +2068,6 @@ async function executeLoop({
                   askId: batchDisposition.askId,
                 });
               }
-              // A child called return_result: the report is captured and persisted,
-              // so the turn ends here instead of looping into another model round.
-              // A message that landed in the exit window keeps the run going.
               return exitRun(true, completeTerminal(result));
             }
 
@@ -2289,11 +2088,9 @@ async function executeLoop({
       }
     } catch (err) {
       if (err instanceof LostRunError) {
-        // Another process took the run over and settled its turns: nothing here may write.
         currentTurn = (await deps.repos.turns.findById(currentTurn.id)) ?? currentTurn;
         return currentTurn;
       }
-      // The execution's own row, whatever its expiry: Stop cancels an expired lease that is still held.
       const owned = await deps.runClaim.readOwned(input.lease);
       if (
         input.signal?.aborted ||
@@ -2322,7 +2119,6 @@ async function executeLoop({
             settleResponses: () => settlePendingSummary(),
           });
         } catch (failure) {
-          // A failed status read must not replace the terminal-commit marker.
           const latest = await deps.runClaim.read(input.threadId).catch(() => null);
           if (input.signal?.aborted || (latest?.kind === "awake" && latest.cancelRequested)) {
             await exitRun(false, abortTerminal());

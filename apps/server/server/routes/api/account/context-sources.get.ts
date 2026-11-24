@@ -1,4 +1,3 @@
-/** GET /api/account/context-sources: the account's own sources (`user://`). */
 import type { ContextSourcesResult } from "@meridian/contracts/protocol";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler } from "nitro/h3";

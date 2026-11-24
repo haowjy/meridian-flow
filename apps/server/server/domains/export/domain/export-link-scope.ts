@@ -1,5 +1,3 @@
-/** Export-only spelling: identities, settlements and addresses use the frozen inventory. */
-
 import { posix } from "node:path";
 import {
   DEFAULT_EXPORT_AREA_NAMES,
@@ -93,7 +91,6 @@ export class ExportLinkScope implements DocumentLinkScope {
       );
     }
     if (attrs.ref) return this.spellLink({ href: attrs.src, ref: attrs.ref });
-    // Bare image sources follow the ordinary manuscript-root grammar, not the holder folder.
     const address = resolveDocumentHref(attrs.src, canonicalContextUri("manuscript", "_"));
     return this.spell(
       address ? this.addresses.get(address.uri) : undefined,

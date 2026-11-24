@@ -1,12 +1,9 @@
-/** The prologue on the page, and the choice that ends it. */
-
 export type CharacterKey = "tam" | "sigrun" | "oskar" | "maren";
 
 type Fact = readonly [label: string, value: string];
 type Part = readonly [label: string, text: string];
 type Section = readonly [heading: string, body: string | readonly Part[]];
 
-/** A Knowledge Base page in plain Markdown: a lead, a list of facts and sections, writer's notes last. */
 export type WikiPage = {
   lead: string;
   facts: readonly Fact[];
@@ -16,15 +13,11 @@ export type WikiPage = {
 type Character = WikiPage & {
   key: CharacterKey;
   name: string;
-  /** The line beside them when they join the party. */
   note: string;
-  /** Why the visitor might pick them. */
   pitch: string;
-  /** The prologue's last line once they are the one who lived. */
   lastLine: string;
 };
 
-/** Hidden until the reveal: these name the dragon and who survives. */
 export const NOTES = "Writer’s notes";
 
 export const CHARACTERS: readonly Character[] = [
@@ -302,7 +295,6 @@ export const DRAGON_PAGE: WikiPage = {
   ],
 };
 
-/** The Knowledge Base's World folder, after The Beast. */
 export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }[] = [
   {
     key: "coldfire",
@@ -398,7 +390,6 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
   },
 ];
 
-/** The Knowledge Base's Places folder, in the order the road north passes them. */
 export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }[] = [
   {
     key: "harl",
@@ -548,7 +539,6 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
   },
 ];
 
-/** The story's terms, at the Knowledge Base's root: one name for each thing. */
 export const VOCAB_PAGE: WikiPage = {
   lead: "The story’s terms, each spelled one way.",
   facts: [],
@@ -604,14 +594,12 @@ export const FELL = "Died in the prologue";
 export const museReply = (key: CharacterKey) =>
   `${characterName(key)} survives the prologue now, and all four pages are up to date.`;
 
-/** The end, after the Rekindle window. */
 export const END = {
   question: "What will you write?",
   placeholder: "A thief, a heist, and a god who owes her money…",
   start: "Start writing →",
 } as const;
 
-/** A System status window at the campfire. */
 export type Sheet = {
   name: string;
   kind: string;
@@ -620,7 +608,6 @@ export type Sheet = {
   does: string;
 };
 
-/** The System's status windows at the campfire, one over each of the four, before the turn. */
 export const SHEETS: Record<CharacterKey, Sheet> = {
   tam: {
     name: "Tam",
@@ -652,7 +639,6 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
   },
 };
 
-/** The System's windows: the death box, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
   death: "You died.",
   assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}]`,
@@ -660,7 +646,6 @@ export const SYSTEM = {
   rekindle: "Rekindle",
 } as const;
 
-/** A heading and one plain line for each nav section, written in the words writers search for. */
 export const SECTION_HEADS: Record<
   "world" | "team" | "knowledge" | "decisions" | "workspace",
   { heading: string; line: string }

@@ -1,4 +1,3 @@
-/** Defensive projection from untrusted gateway records into the LLM Calls dashboard model. */
 import type {
   EventCorrelation,
   EventLevel,
@@ -22,7 +21,6 @@ export type LlmCallSummary = {
   provider?: string;
   model?: string;
   outcome: LlmCallOutcome;
-  /** Gateway error code from the close record. */
   errorCode?: string;
   firstOutputMs?: number;
   durationMs?: number;
@@ -47,7 +45,6 @@ export type LlmCallCacheComparison = {
 
 export type LlmCallTurn = { status: TurnStatus; responses: readonly ModelResponse[] };
 
-/** Pair finished gateway calls with persisted responses and compare prediction to observation. */
 export function pairLlmCallResponses(
   calls: readonly LlmCallSummary[],
   turns: Readonly<Record<string, LlmCallTurn>>,
@@ -325,8 +322,6 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
     ...(typeof terminal?.payload.errorCode === "string"
       ? { errorCode: terminal.payload.errorCode }
       : {}),
-    // Close-record names are the gateway's: provider timing is null when no result arrived,
-    // while the observation duration is always present.
     firstOutputMs: optionalNumber(terminal?.payload.providerFirstOutputMs),
     durationMs: optionalNumber(terminal?.payload.gatewayObservationDurationMs),
     inputTokens: optionalNumber(terminal?.payload.inputTokens),
@@ -343,7 +338,6 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
   };
 }
 
-/** Group valid gateway records by call id and return newest calls first. */
 export function deriveLlmCalls(records: unknown): LlmCallSummary[] {
   const recordsByCall = new Map<string, EventRecord[]>();
 

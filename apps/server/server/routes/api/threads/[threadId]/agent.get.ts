@@ -1,4 +1,3 @@
-/** GET /api/threads/:threadId/agent: the Agent file the chat is bound to, and whether it is stale. */
 import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

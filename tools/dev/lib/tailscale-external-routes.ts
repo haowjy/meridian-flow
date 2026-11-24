@@ -29,7 +29,6 @@ function routeDescription(ports: SharedDevServicePorts): string {
   return `${ports.service} ${ports.externalMode} --https=${ports.externalHttpsPort} -> 127.0.0.1:${ports.appBackendPort}`;
 }
 
-/** Pure policy: external URLs are printable only after Tailscale reports the expected handler. */
 export function verifyTailscaleExternalRoutes({
   sharedPorts,
   bindings,

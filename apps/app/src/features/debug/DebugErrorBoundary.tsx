@@ -1,13 +1,7 @@
-/** Isolates development-only debug sections and logs their render failures. */
 import { Component, type ReactNode } from "react";
 
 type Props = {
-  /** Human-readable label used in the console warning and (optionally) above
-   *  the fallback message. */
   title: string;
-  /** When true, render the title above the fallback (used by StoresSection
-   *  rows). When false (the default for full-section wrappers in DebugOverlay),
-   *  the surrounding accordion already shows the title. */
   showTitle?: boolean;
   children: ReactNode;
 };
@@ -22,8 +16,6 @@ export class DebugErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: unknown): void {
-    // Surface to the dev console — overlay errors usually mean a hook moved
-    // under us and we should fix the read.
     // eslint-disable-next-line no-console
     console.warn(`[debug-overlay] "${this.props.title}" failed:`, error);
   }

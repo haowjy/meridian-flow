@@ -1,11 +1,3 @@
-/**
- * Subscribers for a device-local preference kept in localStorage.
- *
- * This tab's changes call `notify`. Another tab's change arrives as a window
- * `storage` event, heard by one listener attached with the first subscriber
- * and removed after the last: a preference read by every transcript row must
- * not attach a listener per row.
- */
 export function createPreferenceSubscribers(storageKey: string, onOtherTabChange: () => void) {
   const listeners = new Set<() => void>();
 

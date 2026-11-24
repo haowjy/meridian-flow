@@ -1,14 +1,3 @@
-/**
- * The draft-tree DB tests' world and seed verbs (contract §16.1): a project with its
- * sources, Works with their primary threads, rows written the way the product's creates
- * leave them, written through `treeListStore.submit` (`tree-seed.ts`). No composed runtime: command
- * verbs, the link resolve route's answer among them, live in `draft-tree-commands.ts`.
- *
- * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources, or `user://` for the account's home folder (its own source,
- * made with the account and shared by every world of the account).
- */
-
 import { randomUUID } from "node:crypto";
 import type {
   ContextSourceId,
@@ -53,39 +42,25 @@ export type ScenarioWork = {
 };
 
 export interface DraftTreeWorld {
-  /** The database the world lives in. */
   db: Database;
   project: {
     id: ProjectId;
     userId: UserId;
     sources: Record<ScenarioSource, ContextSourceId>;
   };
-  /** The production drafts resolver over this scenario's database. */
   drafts: Drafts;
-  /** Every Work this world made, in order. */
   works(): readonly WorkId[];
-  /** A Work and its primary thread, which writes in `mode`. */
   work(name: string, mode: "draft" | "direct"): Promise<ScenarioWork>;
-  /** Another thread whose primary Work is `work`, in that Work's mode. */
   thread(work: ScenarioWork): Promise<ScenarioWork>;
-  /** The draft the Work names. */
   draftOf(work: ScenarioWork): Promise<Draft>;
-  /** A live document, with live folders made as needed. */
   seedLive(path: string): Promise<DocumentId>;
-  /** A live folder chain; returns the leaf. */
   seedLiveFolder(path: string): Promise<string>;
-  /**
-   * A document the Work's draft created: a `create` record in its view (`{ draft: draftId }`)
-   * at the path.
-   */
   seedHidden(work: ScenarioWork, path: string): Promise<DocumentId>;
-  /** A registry row for an ahead ref at `path`, settled live to `settledTo` if given. */
   seedAhead(path: string, options?: { settledTo?: DocumentId }): Promise<string>;
 }
 
 const SOURCES = ["manuscript", "kb", "unfiled"] as const;
 
-/** A source-qualified scenario path's scheme and source-relative path. */
 export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } {
   const parsed = parseUnifiedContextUri(path);
   if (!parsed.ok)
@@ -93,7 +68,6 @@ export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } 
   return { scheme: parsed.value.scheme as ScenarioSource, rel: parsed.value.path };
 }
 
-/** The account's home folder (`user://`), which the account's insert made. */
 export async function accountUserSource(db: Database, userId: UserId): Promise<ContextSourceId> {
   const [source] = await db
     .select({ id: contextSources.id })
@@ -104,14 +78,12 @@ export async function accountUserSource(db: Database, userId: UserId): Promise<C
   return source.id;
 }
 
-/** A world in a new account, or another project of `options.account`'s. */
 export async function draftTreeWorld(
   db: Database,
   options: { account?: UserId } = {},
 ): Promise<DraftTreeWorld> {
   const userId = options.account ?? (randomUUID() as UserId);
   const projectId = randomUUID() as ProjectId;
-  // One user per scenario unless shared, so a case may build several.
   if (!options.account) {
     await db
       .insert(users)
@@ -152,10 +124,6 @@ export async function draftTreeWorld(
   });
 }
 
-/**
- * A world over a project that already exists (a populated upgrade's, say): its sources
- * and the Works the scenario names, which `works()` lists before any it makes.
- */
 export function draftTreeWorldOver(
   db: Database,
   project: DraftTreeWorld["project"],
@@ -175,7 +143,6 @@ export function draftTreeWorldOver(
 
   const seeds = treeSeeder(db);
 
-  /** A thread with one assistant turn, primary in `workId`. */
   async function insertThread(title: string, workId: WorkId, mode: ScenarioWork["mode"]) {
     const threadId = randomUUID() as ThreadId;
     const turnId = randomUUID();
@@ -218,7 +185,6 @@ export function draftTreeWorldOver(
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
       await provisionWorkScratch(db, work.id);
-      // As a chat made with an explicit mode: it writes that way and seeds the Work's default.
       const { threadId, turnId } = await insertThread(name, work.id, mode);
       madeWorks.push(work.id);
       return { id: work.id, handle, threadId, turnId, mode };

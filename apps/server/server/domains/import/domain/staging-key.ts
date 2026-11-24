@@ -1,4 +1,3 @@
-/** UUIDv7 per-put identity: receipt and sweep fences use the embedded millisecond time. */
 import { randomUUID } from "node:crypto";
 export function stagingKey(importId: string, entryId: number): string {
   const random = randomUUID();

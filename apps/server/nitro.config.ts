@@ -8,11 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 
 const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
 
-/**
- * Bundles worker entries the way Vite does for the app: `new URL("./x.ts", import.meta.url)` in a
- * source file becomes an emitted chunk (with its imports bundled) and a URL to it. Nitro leaves the
- * expression alone, so the built server would look for `x.ts` beside its chunks and not find it.
- */
+// keep: Nitro leaves `new URL("./x.ts", import.meta.url)` alone, so a worker entry would not resolve in a build; this rewrites it to an emitted chunk
 const WORKER_URL = /new URL\("(\.\/[^"]+\.ts)", import\.meta\.url\)/g;
 const bundleWorkerEntries = {
   name: "bundle-worker-entries",
@@ -41,14 +37,11 @@ export default defineConfig({
   rolldownConfig: {
     plugins: [bundleWorkerEntries],
     watch: {
-      // pnpm store files are hardlinked across worktrees, so an install in a
-      // sibling worktree changes their ctime (inotify IN_ATTRIB) and would
-      // rebuild this server mid-turn.
+      // keep: pnpm store files are hardlinked, so a sibling worktree's install changes their ctime and would rebuild this server mid-turn
       exclude: [repoLogsGlob, "**/node_modules/**"],
     },
   },
-  // Interrupt envelope handler runs before Nitro's built-in JSON wrapper so HTTP bodies
-  // match WS error frames for `throwHttpInterrupt*` failures.
+  // keep: this handler must run before Nitro's built-in JSON wrapper, or HTTP bodies stop matching the WS error frames
   errorHandler: ["./server/lib/interrupt-error-handler.ts"],
   serverAssets: [
     {
@@ -56,11 +49,7 @@ export default defineConfig({
       dir: path.join(repoRoot, "apps/server/server/domains/packages/builtin"),
     },
   ],
-  // CommonJS packages that read `__dirname` (libheif's WASM loader) break when inlined into
-  // the ESM worker chunk (the mars-schema WASM loader too), so they stay external and are traced into the output. The script runner's worker and `.wasm`
-  // are found beside the package, so all of `@meridian-flow/runtime` stays external too, and so
-  // does `loro-crdt`, traced whole (`*`) because its WASM glue requires a snippet by a
-  // `String.raw` path the tracer cannot follow.
+  // keep: these CommonJS packages break when inlined into the ESM worker chunk (`__dirname`), and loro-crdt's WASM glue needs a `String.raw` path the tracer cannot follow, so they stay external
   traceDeps: [
     "heic-decode",
     "libheif-js",

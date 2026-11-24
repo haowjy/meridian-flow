@@ -1,4 +1,3 @@
-/** Pane continuity: retain the last finished paint while visible content loads. */
 import type { ReactNode } from "react";
 import {
   Component,
@@ -29,7 +28,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private released: (() => void)[] = [];
 
-  /** The cover is an immutable capture. Its markup is set here, not by React, which would reset `innerHTML` on every render. */
   private mountCover = (node: HTMLDivElement | null) => {
     this.cover.current = node;
     const paint = this.state.paint;
@@ -40,10 +38,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
       editor.scrollTop = paint.scrolls[index] ?? 0;
   };
 
-  /**
-   * Run `work` once the cover is gone and the page is live again, in the same
-   * task as that release (before the browser paints). At once when nothing is covering.
-   */
   afterRelease = (work: () => void) => {
     if (this.state.paint) this.released.push(work);
     else work();
@@ -88,8 +82,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
       clearTimeout(this.timer);
       this.setState({ paint: null });
     } else if (!paint && this.lastPainted && !this.raf) {
-      // A synchronous layout dispatch must reuse the frame actually painted,
-      // not the intermediate DOM of a commit the browser has never shown.
+      // keep: Wait for the next frame before capturing a synchronous layout dispatch; reuse the painted frame
       this.raf = requestAnimationFrame(() => {
         this.raf = 0;
         this.capture(true);
@@ -98,8 +91,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
     if (paint && this.cover.current) {
       if (paint.focused && !previous.paint) this.status.current?.focus({ preventScroll: true });
     } else if (!paint) {
-      // First, whatever was waiting for the cover to lift (the content's place
-      // and focus); only focus still on the status line is then returned to the frame.
       if (previous.paint) {
         const work = this.released;
         this.released = [];
@@ -155,11 +146,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
   }
 }
 
-/**
- * The cover can be read: its editors scroll. Nothing else in it answers (it is a
- * copy; its buttons and prose are not the page's), so everything in it but those
- * scroll panes is inert.
- */
 function lockCover(node: Element): void {
   for (const child of Array.from(node.children)) {
     if (child.classList.contains("meridian-editor"))
@@ -208,7 +194,6 @@ export function PaintScope({ active, children }: { active: boolean; children: Re
     </ScopeContext.Provider>
   );
 }
-/** The page's cover, if one holds it: run `work` the moment it lifts (see `PaintHold.afterRelease`). */
 export function useAfterPaintRelease(): (work: () => void) => void {
   const frame = useContext(FrameContext);
   return useCallback((work) => (frame ? frame.afterRelease(work) : work()), [frame]);

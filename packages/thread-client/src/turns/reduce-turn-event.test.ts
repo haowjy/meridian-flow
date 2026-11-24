@@ -20,7 +20,6 @@ import { applySnapshotTo, dividersAwaitingAnchorIn } from "./turn-ops";
 
 const THREAD = TURN_FIXTURE_THREAD_ID;
 
-/** The reducer over `syncedTurnStore`, as the app and `./mf` run it, with a plain cell for the value. */
 function instance(now = () => TURN_FIXTURE_NOW) {
   let synced: SyncedThread = EMPTY_SYNCED_THREAD;
   const base = syncedTurnStore({
@@ -29,7 +28,6 @@ function instance(now = () => TURN_FIXTURE_NOW) {
   });
   const store = {
     ...base,
-    /** A snapshot read applies its turns and raises the floor; false when it is older than the floor. */
     hydrate(_threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
       if (synced.floor !== null && BigInt(nextSeq) < BigInt(synced.floor)) return false;
       const applied = applySnapshotTo(synced, turns, nextSeq);
@@ -87,38 +85,29 @@ describe("turn reducer", () => {
     const ids = (store: TestStore) => store.turns(THREAD)?.map((turn) => turn.id);
 
     it("stays gone against a snapshot read before the removal, until a snapshot covers it", () => {
-      // Risk: a hand-back frame undone by an older in-flight snapshot, or a tombstone that
-      // outlives the snapshot that no longer has the turn.
       const { store, reducer } = instance();
       store.hydrate(THREAD, [user("m1"), user("m2")], "5000");
       reducer.applyEvent(THREAD, handedBack("m2"), "7000");
       expect(ids(store)).toEqual(["m1"]);
-      // Read before the removal (covers up to seq 6999): still lists m2.
       store.hydrate(THREAD, [user("m1"), user("m2")], "6000");
       expect(ids(store)).toEqual(["m1"]);
-      // A snapshot at or past the removal lacks it; the tombstone is spent, so a later
-      // appearance of the id is real.
       store.hydrate(THREAD, [user("m1")], "7001");
       store.hydrate(THREAD, [user("m1"), user("m2")], "8000");
       expect(ids(store)).toEqual(["m1", "m2"]);
     });
 
     it("is a no-op when the hand-back answer removed the turns before the frame", () => {
-      // Risk: the answer and the frame each removing, or the second one failing or re-adding.
       const { store, reducer } = instance();
       store.hydrate(THREAD, [user("m1"), user("m2")], "5000");
       store.removeTurns(THREAD, ["m2", "gone-already"], "7999");
       const before = store.turns(THREAD);
       reducer.applyEvent(THREAD, handedBack("m2"), "7000");
       expect(store.turns(THREAD)).toBe(before);
-      // The later of two removals' seqs holds: a snapshot between them cannot revive m2.
       store.hydrate(THREAD, [user("m1"), user("m2")], "7500");
       expect(ids(store)).toEqual(["m1"]);
     });
   });
   it("stamps forgotten turns whether or not they are held yet, and no older snapshot clears the stamp", () => {
-    // Risk: a forgotten turn drawn again because its stamp arrived before its turn was hydrated (a user
-    // turn's creation gives the client no row), or because a snapshot read before the commit lacked it.
     const { store, reducer } = instance();
     const forgotten = (...turnIds: string[]) =>
       ({
@@ -135,14 +124,12 @@ describe("turn reducer", () => {
       ["u1", null],
       ["f1", "next"],
     ]);
-    // A snapshot read before the commit lacks the stamp; so does one that hydrates u0 for the first time.
     store.hydrate(THREAD, [turn("u0"), turn("u1"), turn("f1")], "6000");
     expect(stamps()).toEqual([
       ["u0", "next"],
       ["u1", null],
       ["f1", "next"],
     ]);
-    // Write-once: a second frame naming f1 keeps its first forgetting turn.
     reducer.applyEvent(
       THREAD,
       {
@@ -155,14 +142,10 @@ describe("turn reducer", () => {
     expect(stamps()?.[2]).toEqual(["f1", "next"]);
   });
   it("places a switch's divider by the anchor its frame names, and a stale snapshot keeps it there", () => {
-    // Risk (#760 review B1): a divider put at the tail lands after a reply that finished before
-    // the frame, a snapshot, or a second switch, and its notice then jumps. Also: an answered
-    // switch showing queued again when a snapshot read before the frame drops the divider.
     const { store, reducer } = instance();
     const ids = (of: TestStore) => of.turns(THREAD)?.map((turn) => turn.id);
     const t = (id: string, prevTurnId: string | null) =>
       ({ id, role: "assistant", prevTurnId, blocks: [] }) as unknown as Turn;
-    // r2a and r2b are one reply split by an autocompaction; r3 is a later reply.
     const replies = [t("r1", null), t("r2a", "r1"), t("r2b", "r2a"), t("r3", "r2b")];
     store.hydrate(THREAD, replies, "5000");
     const frame = (turnId: string, prevTurnId: string | null, position: number) =>
@@ -178,38 +161,27 @@ describe("turn reducer", () => {
           position,
         },
       }) as unknown as AGUIEvent;
-    // Two switches in the window, the first before the reply's first part.
     reducer.applyEvent(THREAD, frame("d1", "r1", 1), "7000");
     reducer.applyEvent(THREAD, frame("d1", "r1", 1), "7000");
     reducer.applyEvent(THREAD, frame("d2", "r2b", 4), "7100");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
     const turns = store.turns(THREAD) ?? [];
     expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c-d1" });
-    // Risk (F19): a queued switch's row retires on its control id in the store's turns, so the
-    // answered set holds a divider's id only once the divider is placed, never while it is held.
     expect([...answeredControlIds(turns)]).toEqual(["c-d1", "c-d2"]);
-    // A snapshot read before both frames keeps both where they were.
     store.hydrate(THREAD, replies, "6000");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
-    // An anchor the store lacks is no guess: the divider is held out, and placed once a snapshot
-    // brings the anchor.
     reducer.applyEvent(THREAD, frame("d3", "m9", 9), "7200");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
-    // The store says which held dividers still wait, with the frame's seq: the one rule hosts ask.
     expect(store.dividersAwaitingAnchor(THREAD)).toEqual([{ turnId: "d3", seq: "7200" }]);
     expect(answeredControlIds(store.turns(THREAD) ?? []).has("c-d3")).toBe(false);
     store.hydrate(THREAD, [...replies, t("m9", "r3")], "6500");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3", "m9", "d3"]);
     expect(answeredControlIds(store.turns(THREAD) ?? []).has("c-d3")).toBe(true);
     expect(store.dividersAwaitingAnchor(THREAD)).toEqual([]);
-    // The covering snapshot's stored turn replaces the divider by id; a later one without it drops it.
     const stored = { ...turns[1], position: 3 } as Turn;
     store.hydrate(THREAD, [turns[0] as Turn, stored, ...replies.slice(1)], "7001");
     expect(store.turns(THREAD)?.[1]).toBe(stored);
-    // Risk (review N2): a covering snapshot that excludes a waiting divider and never brings its
-    // anchor must release it, or a host asks for a refresh forever.
     reducer.applyEvent(THREAD, frame("d4", "m10", 10), "7300");
-    // (d3 waits again: the 7001 snapshot did not cover its frame and lacks m9.)
     expect(store.dividersAwaitingAnchor(THREAD)).toEqual([
       { turnId: "d3", seq: "7200" },
       { turnId: "d4", seq: "7300" },

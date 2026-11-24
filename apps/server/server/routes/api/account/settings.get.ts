@@ -1,4 +1,3 @@
-/** GET /api/account/settings: returns account-level preferences for the authenticated writer. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler } from "nitro/h3";
 import { handleGetAccountSettings } from "../../../lib/account-settings-route.js";

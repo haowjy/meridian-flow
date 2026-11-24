@@ -1,4 +1,3 @@
-/** Per-chat disclosure state survives transcript virtualization and reveals. */
 import {
   createContext,
   type ReactNode,

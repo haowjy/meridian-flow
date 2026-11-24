@@ -1,9 +1,3 @@
-/**
- * `./mf`'s adapter for the shared hand-back operation (`@meridian/thread-client`): the one
- * command lives in memory, the frozen request is printed to stderr before the post (even under
- * `--json`), and the outcome maps onto exit codes. The lifecycle (intent, post, classifying the
- * answer) is the package's; nothing here decides what a server answer means.
- */
 import type { FailureOccurrence } from "@meridian/contracts/failures";
 import {
   createHandBackOperation,
@@ -24,7 +18,6 @@ import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { unknownJsonResponse } from "../../core/session";
 
-/** The HTTP port over a session: a status and decoded body, or `status: null` for no answer. */
 export function sessionHttp(session: Session): HttpPort {
   return async (path, body) => {
     try {
@@ -41,7 +34,6 @@ export function sessionHttp(session: Session): HttpPort {
   };
 }
 
-/** Prints the frozen request and its exact replay command to stderr before anything is posted. */
 export function printFrozenRequest(
   out: Output,
   label: string,
@@ -58,7 +50,6 @@ export function printFrozenRequest(
   });
 }
 
-/** The error an ambiguous outcome exits with (4): the request and the replay command always ride along. */
 export function ambiguousError(
   label: string,
   threadId: string,
@@ -74,7 +65,6 @@ export function ambiguousError(
   });
 }
 
-/** The error a definite refusal exits with (1). */
 export function refusedError(
   label: string,
   status: number,
@@ -90,10 +80,6 @@ type Input =
   | { press: { kind: "stop"; view: RunStateView } | { kind: "queue"; ids: readonly string[] } }
   | { replay: HandBackReplay };
 
-/**
- * Runs one hand-back command (a fresh press or an exact replay) through the shared operation and
- * returns the confirmed outcome; refusal and ambiguity throw the errors above.
- */
 export async function runHandBack(options: {
   out: Output;
   session: Session;
@@ -104,7 +90,6 @@ export async function runHandBack(options: {
 }): Promise<Extract<HandBackOutcome, { kind: "confirmed" }>> {
   const { out, session, threadId, label, replayCommand, input } = options;
   let view = INITIAL_RUN_STATE_VIEW;
-  // CLI replay imports a wire request, not a saved client occurrence.
   let held: HandBackCommand | null =
     "replay" in input
       ? { ...input.replay, occurrence: nextOccurrence(0, crypto.randomUUID()) }

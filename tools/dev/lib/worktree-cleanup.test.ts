@@ -20,9 +20,6 @@ import {
 import type { CleanupEligibility } from "./worktree-cleanup-eligibility";
 import type { AutoCleanupReadinessDecision } from "./worktree-cleanup-readiness";
 
-// Two worktrees: primary on the base branch, one feature worktree. The feature
-// carries exact PR evidence by default, standing in for a squash-merged tip
-// that git ancestry cannot authorize.
 function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): CleanupContext {
   const baseBranch = overrides?.baseBranch ?? "main";
   const eligibilityByBranch = new Map<string, CleanupEligibility>();
@@ -60,7 +57,6 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
     autoReadinessByWorktree,
     baseBranch,
     meridianWorkItems: [],
-    // Run "from" the primary so the feature worktree is neither primary nor current.
     currentWorktreePath: "/repo/main",
   });
 }
@@ -256,7 +252,6 @@ describe("worktree cleanup resolver", () => {
     expect(() => resolveTarget(context, { kind: "direct", value: "trunk" })).toThrow(
       /Refusing to delete base branch 'trunk'/,
     );
-    // The base guard is now data-driven, so `trunk` is auto-skipped like `main` used to be.
     expect(resolveAutoTargets(context)).toEqual([]);
   });
 

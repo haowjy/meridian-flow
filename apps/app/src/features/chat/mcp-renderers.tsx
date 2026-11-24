@@ -1,8 +1,3 @@
-/**
- * Rows for the connection tools. `mcp_call` names the connection and its tool, and opens to what
- * was sent and what came back; a failure says why and, where the writer can fix it, how.
- * `mcp_describe` is the AI reading a tool's arguments: a step with nothing to open.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { McpCallResult } from "@meridian/contracts/mcp";
@@ -64,7 +59,6 @@ export const MCP_CALL_RENDERER: ToolRenderer = {
 };
 
 export const MCP_RUN_RENDERER: ToolRenderer = {
-  // Not `phrase`: a failed script says why it stopped, where a failed row says only what it couldn't do.
   title: (tool) => {
     const { verb, parameter } = scriptPhrase(tool);
     return (
@@ -96,13 +90,11 @@ export const MCP_DESCRIBE_RENDERER: ToolRenderer = {
   },
 };
 
-/** What the AI read: the tools' arguments, or a connection's tool list. */
 function describedText(result: JsonValue | null): string | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
   return typeof result.text === "string" && result.text ? result.text : null;
 }
 
-/** The script and, under it, one row per call: the same row an `mcp_call` has. */
 function McpRunDetail({
   tool,
   renderRow,
@@ -192,10 +184,6 @@ function McpCallDetail({ tool }: { tool: ToolView }) {
   );
 }
 
-/**
- * "PNG", "JPEG", "SVG": what a reply's picture is. The bytes live only in the chat's own copy, which
- * no route serves to the app, so the row names the picture rather than linking to it.
- */
 function mediaKind(mediaType: string): string {
   const subtype = mediaType.split("/")[1]?.split(/[+;]/)[0];
   return subtype ? subtype.toUpperCase() : mediaType;
@@ -224,10 +212,6 @@ function Data({ value }: { value: Record<string, JsonValue> }) {
   );
 }
 
-/**
- * Why the call failed. A connection that couldn't be reached or refused its token is the writer's
- * to fix: Try again runs a check, never the call, and the line then says how the connection stands.
- */
 function CallFailure({ tool, result }: { tool: ToolView; result: McpCallResult | null }) {
   const text = tool.result != null ? failureText(tool.result) : t`This call failed.`;
   const fixable = result?.outcome === "unreachable" || result?.outcome === "unauthorized";

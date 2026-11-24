@@ -1,4 +1,3 @@
-/** Identity-checked shutdown of a same-user process tree, including late forks. */
 import { execFileSync } from "node:child_process";
 
 interface ProcessIdentity {
@@ -78,8 +77,7 @@ function surviving(
   current: readonly ProcessIdentity[],
 ): ProcessIdentity[] {
   const inspection = inspectIdentities(owned, current);
-  // An exec or PID reuse is not evidence of exit, nor permission to signal
-  // the changed identity. Refuse rather than silently losing a live process.
+  // keep: an exec or PID reuse is neither evidence of exit nor permission to signal the changed identity: refuse rather than lose a live process
   if (inspection.changed.length > 0) {
     throw new Error(`Captured process identity changed: PID ${inspection.changed.join(", ")}`);
   }
@@ -115,8 +113,6 @@ function descendants(
 
 function refresh(owned: readonly ProcessIdentity[], cwd: string): ProcessIdentity[] {
   const current = snapshot(cwd);
-  // Previously captured children remain owned after reparenting. Only still-valid
-  // identities may grant ownership to newly observed descendants.
   return descendants(
     surviving(owned, current).map((entry) => entry.pid),
     current,
@@ -155,8 +151,6 @@ async function quiesce(
     }
     owned = refresh(owned, options.cwd);
     if (owned.every(stopped)) {
-      // A second census after every known ancestor is stopped catches a fork
-      // that raced the first ps enumeration. Require a stable, stopped tree.
       const stable = refresh(owned, options.cwd);
       const previous = new Map(owned.map((entry) => [entry.pid, entry]));
       if (
@@ -175,7 +169,6 @@ async function quiesce(
   return owned;
 }
 
-/** Track late descendants through TERM, then quiesce survivors after session teardown. */
 export async function stopOwnedProcessTree(options: ShutdownOptions): Promise<void> {
   let owned = descendants(options.roots, snapshot(options.cwd));
   const terminated = new Map<number, ProcessIdentity>();
@@ -199,13 +192,10 @@ export async function stopOwnedProcessTree(options: ShutdownOptions): Promise<vo
       owned = refresh(owned, options.cwd);
     }
 
-    // Deadline expiry during signaling must not skip the final identity census
-    // while the session still exists and can support a newly inspected plan.
     owned = refresh(owned, options.cwd);
     options.assertOwnership();
     options.teardown();
-    // tmux resumes stopped pane leaders. Remove the authorized session first,
-    // retaining captured identities so its surviving processes stay owned.
+    // keep: tmux resumes stopped pane leaders, so remove the authorized session first and keep the captured identities so survivors stay owned
     owned = await quiesce(refresh(owned, options.cwd), paused, options);
     options.assertOwnership();
     for (const entry of owned) {
@@ -228,9 +218,7 @@ export async function stopOwnedProcessTree(options: ShutdownOptions): Promise<vo
       );
     }
   } finally {
-    // An ownership refusal must not strand this invocation's paused processes.
     if (paused.size > 0) {
-      // Leave changed identities untouched without stranding other survivors.
       const inspection = inspectIdentities([...paused.values()], snapshot(options.cwd));
       for (const entry of inspection.remaining) signal(entry, "SIGCONT", options.log);
     }

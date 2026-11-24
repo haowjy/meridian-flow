@@ -1,9 +1,3 @@
-/**
- * Project authorization helper: requireProjectOwner loads a project and asserts
- * the caller owns it, throwing an h3 error otherwise. Owns the project ownership
- * gate shared by route handlers; depends inward on the ProjectRepository port.
- */
-
 import type {
   Project,
   ProjectAvailabilityCode,
@@ -15,7 +9,6 @@ import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
 import type { ProjectRepository } from "./ports/project-repository.js";
 
 export type RequireProjectOwnerOptions = {
-  /** When true, soft-deleted projects are returned (for idempotent DELETE). */
   includeSoftDeleted?: boolean;
 };
 
@@ -33,7 +26,6 @@ export async function requireProjectOwner(
     throwHttpInterrupt(
       {
         code: "project_deleted" satisfies ProjectAvailabilityCode,
-        // Keep the generic message: SSR and existing unavailable paths use it.
         message: "Project not found",
         retryable: false,
         source: "system",

@@ -1,10 +1,3 @@
-/**
- * Defensive client reads of durable turn metadata that the transcript shows: compaction dividers,
- * write-mode dividers, handoff seeds and the `from` sources a spawned child names. The server's codecs own each shape;
- * a reader picks only the fields the writer sees and never throws on a malformed record.
- * Subagent update metadata has its own parser in `../spawn`.
- */
-
 import type { AiWriteMode } from "../works/index.js";
 import type { Block, Turn } from "./index.js";
 
@@ -26,18 +19,14 @@ export type CompactionTrigger = "auto" | "manual";
 
 export type CompactionFacts = {
   trigger: CompactionTrigger;
-  /** The writer command this switch turn ran (`controlMessageId`); null for an automatic one. */
   controlId: string | null;
-  /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
   instructions: string | null;
   summary: string | null;
-  /** The model that wrote the summary: the summary block's, else the turn's. */
   model: string | null;
   tokensBefore: number | null;
   tokensAfter: number | null;
 };
 
-/** Writer instructions are shown verbatim; only whitespace-only text counts as none. */
 export function instructionsText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
@@ -64,10 +53,6 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   };
 }
 
-/**
- * Every writer command a divider (compaction or write-mode switch) already answers: a queued
- * item for one is no longer queued.
- */
 export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const turn of turns) {
@@ -80,10 +65,6 @@ export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> 
   return ids;
 }
 
-/**
- * R4: a context-window overflow completes the running assistant turn empty
- * before the compaction that recovers it. It says nothing to the writer.
- */
 export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
   return (
     next?.role === "compaction" &&
@@ -96,16 +77,10 @@ export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
 export type HandoffSeedFacts = {
   sourceThreadId: string;
   sourceRef: string | null;
-  /**
-   * The source's title when S was created, for display only: it names a
-   * source the writer can no longer read (in the trash). Null when the
-   * source was untitled.
-   */
   sourceTitle: string | null;
   cutoffTurnId: string | null;
 };
 
-/** The seed's facts, or null when the turn is not a handoff seed. */
 export function readHandoffSeed(turn: Turn): HandoffSeedFacts | null {
   if (turn.role !== "system") return null;
   const metadata = record(turn.metadata);
@@ -124,7 +99,6 @@ export function isHandoffSeed(turn: Turn): boolean {
   return readHandoffSeed(turn) !== null;
 }
 
-/** The brief text from the completed seed's `handoff-brief` block. */
 export function readHandoffBrief(turn: Turn): string | null {
   for (const block of turn.blocks ?? []) {
     if (block.blockType !== "custom") continue;
@@ -136,10 +110,8 @@ export function readHandoffBrief(turn: Turn): string | null {
   return null;
 }
 
-/** A source chat the child was pointed at. Its ref is a model handle, never writer copy. */
 export type ThreadReference = { threadId: string; title: string | null };
 
-/** The `thread-reference` blocks a spawned child's first message carries, in block order. */
 export function readThreadReferences(blocks: readonly Block[]): ThreadReference[] {
   return [...blocks]
     .sort((a, b) => a.sequence - b.sequence)
@@ -161,14 +133,9 @@ export function readThreadReferences(blocks: readonly Block[]): ThreadReference[
 
 export type WriteModeSwitchFacts = {
   mode: AiWriteMode;
-  /** The writer command this switch turn ran (`controlMessageId`). */
   controlId: string | null;
 };
 
-/**
- * A write-mode switch is a complete `system` turn with `metadata.kind === "write_mode_switch"`.
- * Metadata is read defensively: the server owns its shape.
- */
 export function readWriteModeSwitch(turn: Turn): WriteModeSwitchFacts | null {
   const metadata = record(turn.metadata);
   if (turn.role !== "system" || !metadata) return null;
@@ -177,20 +144,13 @@ export function readWriteModeSwitch(turn: Turn): WriteModeSwitchFacts | null {
   return { mode: metadata.mode, controlId: text(metadata.controlMessageId) };
 }
 
-/** The failed reply a turn is the Retry of, from its `metadata.retryOf` (a stored turn's or a stand-in's). */
 export function retryTargetOf(turn: Turn): string | null {
   const target = record(turn.metadata)?.retryOf;
   return typeof target === "string" ? target : null;
 }
 
-/** Metadata kinds that make a user or assistant turn a system message rather than conversation. */
 export const SYSTEM_TURN_KINDS = ["system_update", "derivation_seed", "subagent_update"] as const;
 
-/**
- * A conversation turn: a writer request, an agent request (`inbox_message`), or an assistant reply.
- * History numbers only these, and so does the client's "a closing turn follows". The rule reads role, origin
- * and `metadata.kind` alone so a repository can count it in one query.
- */
 export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
   const kind = record(turn.metadata)?.kind;
   if ((SYSTEM_TURN_KINDS as readonly unknown[]).includes(kind)) return false;
@@ -199,15 +159,10 @@ export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadat
   return turn.role === "assistant" && turn.origin === "assistant";
 }
 
-/**
- * A turn that ends the previous reply as the latest row: a conversation turn or a compaction. The server's
- * Retry and forgetting walk and the client's handoff-seed card share this one classification.
- */
 export function isClosingRow(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
   return turn.role === "compaction" || isConversationTurn(turn);
 }
 
-/** Whether a locally held turn is still part of the conversation: a stamped turn is forgotten and diagnostic only. */
 export function inConversation(turn: Pick<Turn, "forgottenBy">): boolean {
   return turn.forgottenBy == null;
 }

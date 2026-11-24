@@ -6,11 +6,6 @@ const MAX_BYTES = 64 * 1024 * 1024;
 const treeBytes = (tree: FetchedTree) =>
   Object.values(tree.files).reduce((sum, file) => sum + file.byteLength, 0);
 
-/**
- * Remembers recent trees by URL and commit so an import's second fetch, which names the commit
- * inspect returned, costs no download. A hit spends none of the caller's budget. Only a request
- * that carries a pin reads the cache. Trees are frozen, so a caller that edits one fails loudly.
- */
 export function createCachedPackageFetcher(inner: PackageFetcher): PackageFetcher {
   const trees = new Map<string, { tree: FetchedTree; bytes: number }>();
   let total = 0;

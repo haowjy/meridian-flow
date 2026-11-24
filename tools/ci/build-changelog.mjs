@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * Build a changelog from paged GitHub results or saved pull request bodies.
- * A malformed section fails the whole build and names its PR; consumers must
- * check the exit status rather than accept a silently incomplete changelog.
- * Interactive Markdown uses $PAGER or less -FRX; JSON and redirected output do not.
- */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -111,7 +105,6 @@ function writeOutput(output, { format, noPager }) {
         stdio: ["pipe", "inherit", "ignore"],
       });
 
-  // A missing or unstartable pager must not make changelog output unavailable.
   if (result.error?.code === "ENOENT" || result.status === 126 || result.status === 127) {
     process.stdout.write(output);
   }
@@ -265,8 +258,7 @@ function readChangelogEntriesFromGitHub(cutoff) {
       return Date.parse(pr.updatedAt);
     });
     const oldestUpdatedAt = Math.min(...updatedTimes);
-    // GitHub orders pages by updatedAt descending, and updatedAt is never earlier than
-    // mergedAt. Once a page crosses the cutoff, no later page can contain an in-range merge.
+    // keep: GitHub pages by updatedAt descending and updatedAt is never earlier than mergedAt, so no later page holds an in-range merge once one crosses the cutoff
     if (cutoff !== null && oldestUpdatedAt < cutoff.valueOf()) break;
     if (!page.pageInfo.hasNextPage) break;
     cursor = page.pageInfo.endCursor;

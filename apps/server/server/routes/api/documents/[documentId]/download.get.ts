@@ -1,4 +1,3 @@
-/** Owner-gated document file download with a filename derived from its persisted type. */
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import type { AppServices } from "../../../../lib/app.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";

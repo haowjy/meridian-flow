@@ -1,4 +1,3 @@
-/** Subagent directory action for the chat pane tab row: every helper this chat started. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";

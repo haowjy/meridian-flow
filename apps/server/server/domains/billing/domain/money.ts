@@ -1,4 +1,3 @@
-/** Canonical USD, Stripe cents, and millicredit conversion rules. */
 import { BillingRequestError } from "./errors.js";
 
 export const MILLICREDITS_PER_USD = 100_000n;

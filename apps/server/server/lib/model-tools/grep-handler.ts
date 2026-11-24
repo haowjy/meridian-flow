@@ -1,9 +1,3 @@
-/**
- * The `grep` tool (file-access §6): a regex search over document text, restricted to what the
- * agent may read. Access is applied before matching, so neither the files nor the total
- * reveal a document the agent can't see. Each file is marked read-only when the agent can't
- * edit it.
- */
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { compileAddressGlob, compileGrep, type GrepFile } from "../../domains/context/index.js";
@@ -25,7 +19,6 @@ import {
 } from "./tool-context.js";
 
 const DEFAULT_HEAD_LIMIT = 50;
-/** How long a scan may run before it returns what it has; under the tool timeout. */
 const SCAN_BUDGET_MS = 20_000;
 
 export function createGrepHandler(deps: ToolWiringDeps) {
@@ -76,7 +69,6 @@ export function createGrepHandler(deps: ToolWiringDeps) {
     });
     if (!result.ok) return contextToolError(result.error);
     const { files, totalFiles, exact, stopped } = result.value;
-    // Every path the matches print is a name the model was shown.
     const byArea = new Map<string, string[]>();
     for (const file of files) {
       const area = areaOfPath(file.uri)?.area;
@@ -90,7 +82,6 @@ export function createGrepHandler(deps: ToolWiringDeps) {
       names: shownNames.flatMap((delta) => delta?.names ?? []),
     };
     return {
-      // Host-only facts never reach the model.
       output: {
         files: files.map(
           ({ documentId: _id, revision: _revision, shown: _shown, ...file }) => file,
@@ -99,7 +90,6 @@ export function createGrepHandler(deps: ToolWiringDeps) {
         exact,
         ...(stopped ? { stopped } : {}),
       },
-      // Only returned, authorized files were shown, and only the passages their text shows whole.
       evidence: {
         shown: files.flatMap((file) => shownPassages(file, verbose)),
         ...namesEvidence(names),
@@ -115,11 +105,7 @@ export function createGrepHandler(deps: ToolWiringDeps) {
   };
 }
 
-/**
- * A file's showing as the model receives it: a passage whose window cut its
- * block claims none of its links, since the window may have left one out or
- * split it. Whole passages keep theirs.
- */
+// keep: a passage whose window cut a block claims none of its links, since the window may have left one out or split it
 function shownPassages(file: GrepFile, verbose: boolean): ShownLinkShowing[] {
   const shown = file.shown;
   if (!shown) return [];

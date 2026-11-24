@@ -1,9 +1,3 @@
-/**
- * component-block-content — shared parser for custom component block payloads.
- *
- * Purpose: Validates the render-facing shape for custom component blocks: a
- * payload must name a registered component `kind` and carry object `props`.
- */
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 

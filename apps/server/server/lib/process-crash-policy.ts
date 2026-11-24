@@ -1,8 +1,3 @@
-/**
- * Process crash policy: installs global unhandled-rejection (log + survive)
- * and uncaught-exception (log + delayed exit) handlers. Idempotent via a
- * global Symbol singleton guard — calling twice is harmless.
- */
 import {
   type EventSink,
   emitEvent,
@@ -27,10 +22,7 @@ function logProcessFault(
     name: event === "unhandledRejection" ? "unhandled_rejection" : "uncaught_exception",
     payload: {
       pid: process.pid,
-      // Read raw, NOT via the validated `env` module, on purpose: this runs on the
-      // crash path and must stay dependency-free. `env.ts` calls createEnv() which
-      // THROWS on invalid config — if a bad env caused the crash, importing it here
-      // would throw again and swallow the diagnostic. A best-effort annotation only.
+      // keep: read raw env here, never `env.ts`: createEnv() throws on bad config and would swallow the crash diagnostic
       nodeEnv: process.env.NODE_ENV,
       ...unknownToEventPayload(reason),
       ...context,
@@ -44,28 +36,12 @@ export function installApiProcessCrashPolicy(options: { eventSink: EventSink }):
   if (store[PROCESS_CRASH_POLICY_KEY]) return;
   store[PROCESS_CRASH_POLICY_KEY] = true;
 
-  /**
-   * Unhandled promise rejections are logged but do NOT crash the process.
-   *
-   * Node.js 15+ terminates on unhandled rejections by default. This handler
-   * overrides that — a solitary rejected promise (e.g., from a fire-and-
-   * forget touch record) should never bring the server down. The rejections
-   * are still logged as errors for debugging.
-   */
   process.on("unhandledRejection", (reason) => {
     logProcessFault(eventSink, "unhandledRejection", reason, {
       action: "logged_continue",
     });
   });
 
-  /**
-   * Uncaught exceptions are fatal — the process must restart.
-   *
-   * `setImmediate` defers `process.exit(1)` by one tick. This lets
-   * Node.js flush pending I/O (in-flight HTTP responses, DB queries)
-   * before the process terminates, so clients get proper error codes
-   * instead of connection resets.
-   */
   process.on("uncaughtException", (error, origin) => {
     logProcessFault(eventSink, "uncaughtException", error, {
       origin,

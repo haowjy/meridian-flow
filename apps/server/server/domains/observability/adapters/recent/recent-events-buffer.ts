@@ -1,4 +1,3 @@
-/** RecentEventsBuffer: bounded in-memory history and live query over safe event snapshots. */
 import {
   type EventQuery,
   type EventQueryFilter,

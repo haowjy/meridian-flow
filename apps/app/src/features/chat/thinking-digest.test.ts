@@ -41,7 +41,6 @@ it("omits successful writes and keeps reads without repeating the receipt", () =
   const create = tool("write", "create");
   expect(thinkingDigest(foldDigest([create, tool("write", "replace")]))).toBeNull();
   expect(thinkingDigest(foldDigest([tool("read"), create]))).toBe("Read 1 document");
-  // A section address and its whole file are one document; a different file is another.
   const read = (path: string) => ({ ...tool("read"), input: { path } });
   const sectionAndFile = [
     read("manuscript://chapter-11.md#the-pill-hall"),

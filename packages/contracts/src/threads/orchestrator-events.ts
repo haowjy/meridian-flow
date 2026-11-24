@@ -1,8 +1,3 @@
-/**
- * Purpose: Defines the produced orchestrator event payload union persisted in event_journal.payload and replayed to live projections.
- * Why independent: Durable thread events are a shared contract between the orchestrator, event journal, thread event hub, and AG-UI projector.
- */
-
 import type { MeridianError } from "../errors/index.js";
 import type { PromptBakeId, TurnId } from "../ids.js";
 import type { McpScriptCall } from "../mcp/tool-results.js";
@@ -65,7 +60,6 @@ export interface BlockUpsertedRow {
   status: BlockStatus;
 }
 
-/** Produced orchestrator events persisted as event_journal payloads and replayed to live projections. */
 export type WorkContextChangedEvent = {
   type: "work_context.changed";
   turnId: TurnId;
@@ -85,18 +79,13 @@ export type OrchestratorEvent =
   | { type: "tool.executing"; toolCallId: string; name: string }
   | { type: "ask.updated"; ask: ThreadAsk }
   | {
-      /** Best-effort live stdout/stderr; authoritative final output still arrives via tool.result. */
       type: "tool.output_delta";
       toolCallId: string;
       stream: "stdout" | "stderr";
-      /** Incremental chunk, not cumulative text. Consumers append chunks in event order. */
+      // keep: Output deltas are incremental chunks; consumers append them in event order
       text: string;
     }
   | {
-      /**
-       * A call a running `mcp_run` script made: sent when its record is written, then again with
-       * `call` when it completes. Live rows only; the final `tool.result` carries every call.
-       */
       type: "tool.connection_call";
       toolCallId: string;
       sequence: number;
@@ -107,12 +96,9 @@ export type OrchestratorEvent =
   | {
       type: "tool.result";
       toolCallId: string;
-      /** What the model saw, frozen when stored. Clients read `result`, never `content`. */
       content: ToolContentPart[];
-      /** The tool's typed result. */
       result?: JsonValue;
       isError?: boolean;
-      /** Host-only result metadata delivered beside, never inside, model-visible output. */
       metadata?: JsonValue;
     }
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
@@ -122,7 +108,6 @@ export type OrchestratorEvent =
       type: "media.inclusion_decided";
       threadId: string;
       blockId: string;
-      /** Which media part of the block: 0 for a picture, the index in `content` for a tool result's. */
       partIndex: number;
       decisionTurnId: TurnId;
       included: boolean;
@@ -160,7 +145,6 @@ export type OrchestratorEvent =
     }
   | {
       type: "agent.spawn";
-      /** Live UI hint. The durable provenance is the child's thread-reference seed block. */
       fromThreadId?: string;
       parentThreadId: string;
       parentTurnId: string;
@@ -179,37 +163,26 @@ export type OrchestratorEvent =
     }
   | {
       type: "subagent.activity";
-      /** The child whose create/terminal changed its parent's activity; the event lands on that parent's journal. */
       childThreadId: string;
-      /** Full recomputed direct-child activity, so the client replaces state with no refetch race. */
       activity: ThreadActivity;
     }
   | {
-      /** Waiting writer messages left the chat; their turns stay in the database but no conversation read returns them. */
       type: "messages.handed_back";
       userTurnIds: string[];
-      /** The hand-back request that took them out. */
       requestId: string;
     }
   | {
-      /**
-       * Failed turns left the conversation, stamped with the turn that retried them or moved the chat
-       * past them. Their rows, blocks and journal entries stay for diagnostics.
-       */
       type: "turns.forgotten";
       turnIds: string[];
-      /** The first closing row appended in the commit that forgot them. */
       byTurnId: string;
       reason: "retried" | "forgotten";
     }
   | {
       type: "run_state.changed";
       threadId: string;
-      /** The record without its version: the journal row's own seq is the version. */
       runState: Omit<RunState, "version">;
     }
   | {
-      /** Ephemeral full status refresh when non-lease background work starts or settles. */
       type: "thread.status";
       threadId: string;
       status: ThreadStatus;
@@ -232,11 +205,9 @@ export type OrchestratorEvent =
     }
   | {
       type: "agent.fork";
-      /** Thread the writer forked, which may differ from the cutoff's owner. */
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
-      /** Normalized settled cutoff retained by the fork. */
       originTurnId: string;
     }
   | { type: "turn.completed"; turn: Turn }

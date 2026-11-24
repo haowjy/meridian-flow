@@ -1,9 +1,3 @@
-/**
- * Safe-event helpers: event id stamping plus conservative envelope sanitization
- * used at an EventSink boundary before diagnostics leave process memory.
- * This is the boundary between ordinary searchable logs and protected replay
- * artifacts that may contain raw prompts, tool args, model text, or secrets.
- */
 import type { EventRecord } from "./ports/event-sink.js";
 
 const SENSITIVE_KEY_PATTERN =
@@ -12,12 +6,10 @@ const SENSITIVE_EXACT_KEYS = new Set(["body", "message", "messages", "response"]
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
-/** `errorMessage` is the one free-text payload key, already scrubbed by `errorMessageOf`. */
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
-/** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set([
   "contentBytes",
   "inputTokens",
@@ -62,11 +54,6 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "turnId",
   "workId",
 ]);
-/**
- * Finite diagnostic codes, allowed by key and by exactly these values (the
- * settlement, reply-pin, hidden-node repair and `image_preview.failed` events). Default-deny stays: any
- * other value under these keys is redacted.
- */
 const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
   effect: new Set(["warm_rooms", "apply_step"]),
@@ -463,9 +450,6 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
   });
   if (serializedEventBytes(truncated) <= MAX_EVENT_RECORD_BYTES) return truncated;
 
-  // Correlation and stream are structurally bounded, but retain a minimal
-  // envelope if an untyped caller supplies enough extra keys to exceed the
-  // byte ceiling. A hard storage bound is more important than hostile context.
   const minimal = Object.freeze({
     eventId: truncated.eventId,
     timestamp: truncated.timestamp,

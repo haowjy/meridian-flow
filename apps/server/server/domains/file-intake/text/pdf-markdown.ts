@@ -1,10 +1,3 @@
-/**
- * PDF to Markdown with pdf.js (through unpdf, its packaging for Node and serverless runtimes:
- * one dependency, no worker, no canvas, no native build). Layout becomes structure by type size: a
- * short line set larger than the body text is a heading; a gap taller than the line spacing is a
- * paragraph break. A PDF with no such headings gets a `Page N` heading per page, so its outline
- * can name pages.
- */
 import { getDocumentProxy } from "unpdf";
 import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
@@ -12,10 +5,8 @@ type Line = { text: string; size: number; y: number };
 type Page = { lines: Line[] };
 
 const MAX_HEADING_CHARS = 120;
-/** Heading levels by type size relative to the body text, largest first. */
 const HEADING_RATIOS = [1.6, 1.3, 1.12] as const;
 
-/** Page items in stream order, joined into lines wherever baselines agree. */
 async function readPage(
   page: Awaited<ReturnType<Awaited<ReturnType<typeof getDocumentProxy>>["getPage"]>>,
 ): Promise<Page> {
@@ -36,7 +27,6 @@ async function readPage(
   return { lines: lines.filter((line) => line.text.trim()) };
 }
 
-/** Characters a Markdown parser would take for syntax, so extracted text stays text. */
 function escapeMarkdown(text: string): string {
   return text.replace(/([\\`*_{}[\]<>#|~])/g, "\\$1").replace(/^([-+]|\d+[.)])(\s)/, "\\$1$2");
 }
@@ -83,7 +73,7 @@ type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
 
 async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
   try {
-    // A copy: pdf.js takes ownership of the buffer it is given.
+    // keep: Pass pdf.js a copy of the buffer; it takes ownership
     return await getDocumentProxy(new Uint8Array(bytes));
   } catch (error) {
     const name = error instanceof Error ? error.name : "";

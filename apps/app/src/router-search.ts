@@ -1,4 +1,3 @@
-/** Preserve original query grammar before TanStack's JSON-friendly parser normalizes it. */
 import { defaultParseSearch, defaultStringifySearch } from "@tanstack/react-router";
 
 const RAW_SEARCH = "__meridianRawSearch";

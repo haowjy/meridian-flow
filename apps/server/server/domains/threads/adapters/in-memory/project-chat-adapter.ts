@@ -1,4 +1,3 @@
-/** Focused in-memory adapter for Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
@@ -10,7 +9,6 @@ import type {
   ThreadUserStateRepository,
 } from "../../ports/repositories.js";
 
-// Match the database lineage cap and stop the nearest-assistant walk early.
 const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
 
 export type InMemoryThreadUserState = {

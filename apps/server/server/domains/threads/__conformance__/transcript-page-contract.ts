@@ -1,8 +1,6 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** Persisted transcript paging contracts for cutoff lineage, compaction barriers, and cursors. */
-
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { loadThreadConversationContext } from "../domain/thread-conversation-context.js";
 import {
@@ -232,7 +230,6 @@ export function defineTranscriptPageContract(
       expect([r1.id, r2.id, r3.id, f2.id]).toContain(expectedTurns.at(-1));
     });
 
-    /** Everything a reader may show of a chat: its pages, its conversation read and that read's blocks. */
     async function shown(
       repos: InternalThreadRepositories,
       thread: Thread,
@@ -271,8 +268,6 @@ export function defineTranscriptPageContract(
     }
 
     it("leaves a forgotten failure and its message out of pages, counts and ordinals", async () => {
-      // Risk (C2, the FX1 review): the page reader, counts and ordinals ignoring the stamp that the
-      // conversation read honors, so `thread_history`, the page route and a fork's pages show a forgotten turn.
       const { repos, root, turn, block, id } = await fixture();
       const u = await turn(root.id as ThreadId, "u");
       await block(u.id as TurnId, "u.0", 0, "FORGET-ME");
@@ -292,7 +287,6 @@ export function defineTranscriptPageContract(
       expect(await shown(repos, root, names)).toEqual(expected);
       expect(await countConversationTurnsBefore(repos, root, answer.position)).toBe(1);
       expect((await readTranscriptTurn(repos, root, 1))?.turn.id).toBe(next.id);
-      // The graph keeps them: the chain, the leaf and the stamp are still there.
       expect(
         (await turnGraph(repos.turns).listByThread(root.id as ThreadId)).map((t) => t.id),
       ).toEqual([u.id, f.id, next.id, answer.id]);
@@ -301,8 +295,6 @@ export function defineTranscriptPageContract(
     });
 
     it("keeps a failed reply in a fork cut at it after the source retries it", async () => {
-      // Risk (C8): a stamp applied to a fork whose cutoff precedes the forgetting turn would erase text the
-      // fork was cut with; position scoping must apply it only inside the span read.
       const { repos, root, turn, block, id } = await fixture();
       const u = await turn(root.id as ThreadId, "u");
       await block(u.id as TurnId, "u.0", 0);
@@ -318,7 +310,6 @@ export function defineTranscriptPageContract(
         status: "complete",
       });
       const names = new Map(["u", "f", "r", "g"].map((label) => [id(label), label]));
-      // The source retries f: the Retry forgets it.
       const r = await turn(root.id as ThreadId, "r", "assistant");
       await block(r.id as TurnId, "r.0", 0);
       await repos.turns.forgetTurns([f.id as TurnId], r.id as TurnId);
@@ -327,17 +318,13 @@ export function defineTranscriptPageContract(
         pages: ["u", "r"],
         context: ["u", "r"],
       });
-      // The fork was cut before the Retry: it still reads f, in its pages, its conversation and its blocks.
       expect(await shown(repos, fork, names)).toEqual({
         pages: ["u", "f", "g"],
         context: ["u", "f", "g"],
         blocks: ["u", "f"],
       });
-      // A fork of that fork inherits both spans the same way.
       const grandFork = await forkAt(repos, id, "grandfork", fork, g);
       expect((await shown(repos, grandFork, names)).pages).toEqual(["u", "f", "g"]);
-      // A fork cut at the Retry sees the forgetting inside its span. Derivation picks its cutoff from the full
-      // conversation read, which no longer lists f, so a fork created now cannot recover it.
       const afterRetry = await forkAt(repos, id, "after", root, r);
       expect((await shown(repos, afterRetry, names)).context).toEqual(["u", "r"]);
     });

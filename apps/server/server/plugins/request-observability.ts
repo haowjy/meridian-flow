@@ -1,7 +1,3 @@
-/**
- * Request observability plugin: mints per-request correlation and emits one safe
- * global event for unexpected route failures and handled error statuses.
- */
 import {
   emitEvent,
   enterEventCorrelation,

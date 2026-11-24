@@ -1,9 +1,3 @@
-/**
- * ChildRunCoordinator: owns subagent thread lifecycle policy — authorize,
- * resolve the invocation, create and bind the child, and persist writer-facing
- * cards — and delegates the run lifecycle to the ChildRunDriver. The sole
- * caller allowed through the thread-create spawn gate.
- */
 import { GENERIC_SUBAGENT_SLUG, type InvocationPatch } from "@meridian/contracts/agents";
 import type { InvocationCardProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
@@ -42,26 +36,19 @@ import {
 } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
-/** A run's result, or the spawn tool's `invalid_arguments` refusal of an override. */
 type ChildRunResult = SpawnResult | InvalidArgumentsResult;
 
 export interface SpawnChildInput extends ChildDriveInput {
-  /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
-  /** Task label the writer sees; becomes the child thread's title. */
   name?: string;
   from?: string;
-  /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
-  /** Per-invocation execution patch, applied over the resolved baseline. */
   overrides?: InvocationPatch;
   signal?: AbortSignal;
 }
 
 export interface ThreadMessageChildInput extends ChildDriveInput {
-  /** Model-facing thread handle (`pN`/`cN`). */
   ref: string;
-  /** Tool-call id; scopes the background enqueue's idempotency key. */
   toolCallId: string;
   signal?: AbortSignal;
 }
@@ -72,15 +59,10 @@ export type ChildRunRequest =
 
 export interface ChildRunOptions {
   mode: "foreground" | "background";
-  /**
-   * Parent-turn card writer. A foreground spawn/continue upserts the running
-   * card; report publication replaces that same card after terminal commit.
-   */
   transcript?: SpawnTranscript;
 }
 
 export interface ChildRunCoordinatorDeps {
-  /** Run lifecycle: claim, registry, stream, capture, terminal persistence. */
   driver: ChildRunDriver;
   repos: {
     threads: Pick<
@@ -97,11 +79,8 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: LiveEventWriter;
-  /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
-  /** A spawn's sender check: a stopped parent run starts no child. */
   wakes: Pick<RunClaim, "wakeRefusal">;
   agentRevisions: Pick<
     AgentRevisionStore,
@@ -109,7 +88,6 @@ export interface ChildRunCoordinatorDeps {
   >;
   modelFor: ModelFor;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
-  /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];
   eventSink: EventSink;
 }
@@ -170,13 +148,10 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
-      // Parent journal writes must precede child membership's Work locks in lock order.
+      // keep: Write parent journal rows before taking child membership's Work locks
       const lockedParent = await deps.repos.threads.lockByIdIncludingDeleted(
         input.parentThread.id as ThreadId,
       );
-      // Under the parent's row lock, which a lineage cancellation holds until it commits: a
-      // spawn either commits first, and the cancellation finds the child, or sees its sender
-      // stopped here.
       const refusal = await deps.wakes.wakeRefusal({
         sender: {
           threadId: input.parentThread.id as ThreadId,
@@ -196,7 +171,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             id: crypto.randomUUID() as ThreadId,
             userId: input.parentThread.userId,
             projectId: input.parentThread.projectId,
-            // A child works in its parent's mode, which is also the spawning reply's.
             aiWriteMode: (lockedParent ?? input.parentThread).aiWriteMode,
             parentThreadId: input.parentThread.id as ThreadId,
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
@@ -368,13 +342,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     });
   }
 
-  /**
-   * Background thread_message is a queue producer only: authorize, enqueue a
-   * durable message, return. The target's own run (woken by the inbox) drains it;
-   * nothing is driven in the caller's process. A parent re-tasking its own child
-   * stamps its invocation on the message, so the run that adopts it reports back
-   * with the same completion notice a background spawn gets.
-   */
   async function sendBackgroundMessage(
     request: {
       kind: "message";
@@ -419,10 +386,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
           GENERIC_SUBAGENT_SLUG)
         : target.kind;
-    // The target drives its own run in its own process, so no lease is held here
-    // and no activity frame fires from this call. The woken process emits the
-    // start and terminal frames when it acquires and releases its lease, so the
-    // strip shows the target `awake` for the whole run.
     return {
       status: "background",
       handle: target.ref ?? "",
@@ -485,7 +448,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     };
 
     if (background) {
-      // The original card survives parent continuation and B replaces only its status.
       runCard = await persistInvocationCard(options.transcript, cardProps);
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
@@ -503,7 +465,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           ...(prepared.name !== undefined ? { name: prepared.name } : {}),
         };
       } catch (error) {
-        // A refused admission is a lineage cancellation's, which already wrote `cancelled`.
         if (request.kind === "spawn" && !(error instanceof WakeRefusedError)) {
           await deps.repos.threads.updateSpawnLifecycle(prepared.child.id, {
             spawnStatus: "failed",
@@ -556,7 +517,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   return { runChild };
 }
 
-/** The tool result of a wake the fence refused: the model learns who was stopped. */
 function stoppedResult(refusal: WakeRefusal, handle: string | null): SpawnResult {
   return {
     status: "error",
@@ -571,7 +531,6 @@ function stoppedResult(refusal: WakeRefusal, handle: string | null): SpawnResult
 
 function readableFailureReason(error: unknown): string {
   if (error instanceof WakeRefusedError) return "Stopped before it started.";
-  // The conflict's own message names the child thread's id; the card already names the subagent.
   if (error instanceof TurnStartConflictError) {
     return error.reason === "already_running"
       ? "Still working on its last task, so this message wasn't sent."

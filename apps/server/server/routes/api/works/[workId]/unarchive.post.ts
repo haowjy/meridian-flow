@@ -1,4 +1,3 @@
-/** Restores an archived Work to active lists. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireWorkOwner, setWorkArchived } from "../../../../domains/projects/index.js";

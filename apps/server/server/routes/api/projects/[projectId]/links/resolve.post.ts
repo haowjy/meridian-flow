@@ -1,5 +1,3 @@
-/** POST batched stored-link resolution: `(ref, href)` pairs in, answers in request order. */
-
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";

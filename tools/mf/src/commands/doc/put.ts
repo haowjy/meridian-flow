@@ -15,11 +15,6 @@ import { deleteAt } from "./rm";
 import { lookupPath, Trees, uriIn } from "./tree-address";
 import { PROJECT_OPTION, resolveUri } from "./uri";
 
-/**
- * Creates a markdown document through the tree list, then writes its text through the document's
- * room; returns its id. With overwrite, an existing document is deleted first and a new one made
- * at the same URI (new id; the old drafts and history go).
- */
 export async function putDocument(
   session: Session,
   input: {
@@ -58,7 +53,6 @@ export async function putDocument(
       const { parent, missing } = lookupPath(opened.list.replay(), opened.source, target.path);
       created = (
         await opened.list.append((writer) => {
-          // A `~id` that reached no folder names none: it is made under its name.
           const made = missing.map((segment) => ({
             name: readSegment(segment).name,
             kind: "folder" as const,
@@ -95,7 +89,6 @@ export async function putDocument(
     }
     if (input.content.trim() !== "")
       await writeMarkdown(session, created.node, input.content, kept ? "source" : undefined);
-    // The path it landed at: a twin's segment carries its `~id`.
     const shown = opened.list.replay();
     const landed: string[] = [];
     for (let at = shown.nodes.get(created.node); at; ) {

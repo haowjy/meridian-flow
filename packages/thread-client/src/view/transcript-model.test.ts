@@ -23,7 +23,6 @@ function turn(id: string, role: Turn["role"], extra: Partial<Turn> = {}): Turn {
 it("never groups a reply across a write-mode divider, even after a steer", () => {
   const turns = [
     turn("a", "assistant"),
-    // Sent before the switch was queued, so the server stamped it a steer.
     turn("m", "user", { metadata: { delivery: "steer" } }),
     turn("sw", "system", { metadata: { kind: "write_mode_switch", mode: "direct" } }),
     turn("b", "assistant"),

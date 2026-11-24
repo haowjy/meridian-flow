@@ -298,9 +298,6 @@ async function collectMeridianWorkItems(cwd: string): Promise<MeridianWorkItem[]
   return workItems.filter((item): item is MeridianWorkItem => item !== undefined);
 }
 
-// The trunk this repo integrates into. Detected from the remote's default
-// branch (`origin/HEAD`) so cleanup tracks a renamed trunk instead of a
-// hardcoded name; falls back to `main` when the symbolic ref isn't set.
 function resolveBaseBranch(cwd: string): string {
   try {
     const ref = runText(
@@ -316,9 +313,6 @@ function resolveBaseBranch(cwd: string): string {
   return "main";
 }
 
-// Containment reads whatever refs exist locally, so a fresh origin/<baseBranch>
-// is what keeps the trunk's answer current. The fetch stays best-effort: a
-// stale remote-tracking ref still beats nothing when the network is down.
 function fetchBaseBranch(baseBranch: string, cwd: string): void {
   spawnSync("git", ["fetch", "origin", baseBranch, "--quiet"], {
     cwd,
@@ -327,17 +321,13 @@ function fetchBaseBranch(baseBranch: string, cwd: string): void {
   });
 }
 
-// Remote names may contain slashes, so own-ref detection needs the configured
-// names rather than a first-slash split of the ref path.
 function listRemotes(cwd: string): string[] {
   const output = runText("git", ["remote"], cwd);
   return output.split("\n").filter(Boolean);
 }
 
 interface UpstreamResolver {
-  /** The upstream branch's commit, or undefined when the branch is gone or the remote is unreachable. */
   upstreamOid(remote: string, branch: string): string | undefined;
-  /** Refreshes one remote-tracking branch once; false when the fetch fails. */
   refreshBranch(remote: string, branch: string): boolean;
 }
 
@@ -359,10 +349,6 @@ function readRemoteHeads(remote: string, cwd: string): ReadonlyMap<string, strin
   return heads;
 }
 
-// Remote-tracking refs are a local cache of the remote: one `ls-remote --heads`
-// per remote (cached for the run) says which branches still exist and at which
-// commit, and a branch whose upstream moved is fetched once before it can be
-// trusted. Nothing is pruned or deleted.
 function createUpstreamResolver(cwd: string): UpstreamResolver {
   const headsByRemote = new Map<string, ReadonlyMap<string, string>>();
   const refreshResults = new Map<string, boolean>();
@@ -379,10 +365,7 @@ function createUpstreamResolver(cwd: string): UpstreamResolver {
       const key = `${remote}\u0000${branch}`;
       const cached = refreshResults.get(key);
       if (cached !== undefined) return cached;
-      // The explicit destination refspec is what guarantees the tracking ref
-      // moves to what the fetch returned. `git fetch <remote> <branch>` alone
-      // updates only refs the remote's fetch mapping covers, so a single-branch
-      // remote would leave the tracking ref stale and still trusted.
+      // keep: fetch with an explicit destination refspec: `git fetch <remote> <branch>` updates only refs the fetch mapping covers, leaving a single-branch remote's tracking ref stale and trusted
       const result = spawnSync(
         "git",
         ["fetch", remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`, "--quiet"],
@@ -395,12 +378,6 @@ function createUpstreamResolver(cwd: string): UpstreamResolver {
   };
 }
 
-// Authorizes a targeted cleanup when the planned commit survives in a ref other
-// than the branch's own: a lane merged into a working or integration branch
-// keeps its commits reachable after its own refs are deleted. Symbolic refs are
-// dropped (an alias can point back at the deleted branch), a remote-tracking
-// candidate must still exist upstream (and contain the commit once refreshed),
-// and selecting the surviving ref is `selectContainedByRef`'s job.
 function findContainedByRef(
   oid: string,
   branch: string,
@@ -427,15 +404,10 @@ function findContainedByRef(
   }
   let candidates = parseNonSymbolicRefNames(refs).filter((ref) => {
     const remoteRef = splitRemoteTrackingRef(ref, remotes);
-    // Local branches count as-is; unresolved remote refs are rejected by the
-    // selection policy, not here.
     if (remoteRef === undefined) return true;
     return upstream.upstreamOid(remoteRef.remote, remoteRef.branch) !== undefined;
   });
 
-  // Only the selected ref pays for freshness verification: a stale upstream is
-  // refreshed once and must still contain the commit. When it does not, the
-  // next ranked candidate gets the chance instead.
   while (candidates.length > 0) {
     const chosen = selectContainedByRef(candidates, branch, baseBranch, remotes);
     if (chosen === undefined) break;
@@ -462,8 +434,6 @@ function checkAncestrySafely(oid: string, ref: string, cwd: string): boolean {
   }
 }
 
-// Shared by every worktree: refs are repository-wide state, so one lock file
-// under the common git dir covers the whole repository.
 function cleanupLockPath(cwd: string): string {
   const commonDir = runText(
     "git",
@@ -508,12 +478,6 @@ function parseMergedPullRequests(output: string): MergedPullRequest[] {
   });
 }
 
-// Merged PRs are discovered across every base: targeted cleanup accepts an
-// exact head commit merged into any branch, stacked PRs into integration
-// branches included, while batch cleanup filters to the trunk. The exact head
-// OID in the match keeps historical same-name PRs out. The window covers the
-// newest 5000 merged PRs of any base; older lanes fall back to containment or
-// the manual path.
 async function discoverMergedPullRequests(cwd: string): Promise<PullRequestDiscovery> {
   try {
     const output = await runTextAsync(
@@ -558,8 +522,7 @@ function checkAncestry(oid: string, ref: string, cwd: string): boolean {
   );
 }
 
-// A ref that became an alias between planning and execution must not keep
-// authorizing the deletion: the alias can point at the branch being deleted.
+// keep: a ref that became an alias between planning and execution must not keep authorizing the deletion, since the alias can point at the branch being deleted
 function isSymbolicRef(ref: string, cwd: string): boolean {
   const result = spawnSync("git", ["symbolic-ref", "-q", ref], {
     cwd,
@@ -823,8 +786,6 @@ function revalidateTarget(target: CleanupPlan["targets"][number]) {
         checkAncestry(target.eligibility.plannedOid, target.eligibility.containedBy, primaryCwd) &&
         !isSymbolicRef(target.eligibility.containedBy, primaryCwd);
     } catch {
-      // A containing ref that vanished or is unreadable is a refusal, not an
-      // error: the commit is no longer verifiably preserved.
       isContained = false;
     }
   }
@@ -970,10 +931,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // One cleanup executes at a time per repository: two overlapping runs could
-  // otherwise each cite the other's worktree branch as their surviving ref and
-  // delete both. Every action revalidates, so a run that starts after another
-  // finished refuses when its carrier is gone.
   let lock: CleanupLock | undefined;
   try {
     lock = acquireCleanupLock(cleanupLockPath(process.cwd()));

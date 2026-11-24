@@ -1,4 +1,3 @@
-/** Account-lifetime upload owner. Server summaries are truth; File handles stay private to this tab. */
 import type { ImportDetail, ImportSelection, ImportSummary } from "@meridian/contracts";
 import { importNodeId } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
@@ -24,7 +23,6 @@ export type LocalUpload = {
   stopAsked?: boolean;
   busy?: boolean;
   stopLost?: boolean;
-  /** Another tab holds this import's upload lock: it is sending the files this tab lacks. Set only by `publish`. */
   elsewhere?: boolean;
 };
 export type TrackedImport = {
@@ -44,10 +42,8 @@ type RecordState = {
   destination?: ImportDestination;
   revision: number;
   creation: "local" | "uncertain" | "created";
-  /** The tab's current work on this import; it holds the import's presence lock until it ends. */
   attempt?: UploadAttempt;
   retiredUntil?: number;
-  /** Re-picked received files still owed a hash report. Kept when the report fails, so Retry repeats it. */
   picked: PickedReceived[];
 };
 
@@ -58,7 +54,6 @@ export class ImportCoordinator {
   private timer?: ReturnType<typeof setTimeout>;
   private channel?: BroadcastChannel;
   private presence = new UploadPresence(() => this.channel?.postMessage(null));
-  /** Import ids whose upload lock another tab held at the last refresh. */
   private others = new Set<string>();
   private lifetime = new AbortController();
   private polling: AbortSignal | null = null;
@@ -77,7 +72,6 @@ export class ImportCoordinator {
   }
   constructor(
     private readonly api: ImportApi,
-    /** An import that never started: it is gone. `detail` is why, for the log. */
     private readonly onRefused: (detail: unknown) => void,
   ) {}
   subscribe = (listener: () => void) => {
@@ -107,14 +101,13 @@ export class ImportCoordinator {
   private live(record: RecordState, attempt: UploadAttempt) {
     return !attempt.ended && this.current(record);
   }
-  /** Start the record's next attempt. Its lease is requested before the one it replaces is released, so presence never lapses between them. */
+  // keep: Request the new attempt's presence lease before releasing the old one, or presence lapses between attempts.
   private open(record: RecordState) {
     const attempt = new UploadAttempt(this.presence.hold(record.view.importId));
     record.attempt?.end();
     record.attempt = attempt;
     return attempt;
   }
-  /** Run work as the record's next attempt; the attempt ends with the work unless it handed some off. */
   private async run(record: RecordState, body: (attempt: UploadAttempt) => Promise<void>) {
     const attempt = this.open(record);
     try {
@@ -129,8 +122,7 @@ export class ImportCoordinator {
   }
   private install(record: RecordState, summary: ImportSummary) {
     if (!this.current(record)) return;
-    // Concurrent answers can arrive out of order: an uploading summary never replaces a later
-    // state, and receipts only accumulate.
+    // keep: Concurrent answers arrive out of order; an uploading summary must never replace a later state, and receipts only accumulate.
     if (
       summary.state === "uploading" &&
       (record.view.summary.state !== "uploading" ||
@@ -174,7 +166,6 @@ export class ImportCoordinator {
   start() {
     this.lifetime = new AbortController();
     this.channel = new BroadcastChannel("meridian-imports");
-    // A message only says some tab's state changed; the lock table and server are the truth.
     this.channel.onmessage = () => {
       void this.refresh();
     };
@@ -264,7 +255,6 @@ export class ImportCoordinator {
       }
     }
   }
-  /** This tab is reading, creating, sending or hashing files of some import. */
   isWorking() {
     return this.presence.working;
   }
@@ -355,7 +345,6 @@ export class ImportCoordinator {
       if (this.live(record, attempt)) this.refuse(record, error);
     }
   }
-  /** Nothing of this import reached the server, so nothing is left to come back to. */
   private refuse(record: RecordState, detail: unknown) {
     this.retire(record);
     this.records.delete(record.view.importId);
@@ -377,7 +366,7 @@ export class ImportCoordinator {
       this.nudge();
     } catch (error) {
       if (this.live(record, attempt)) {
-        // A refused replay cannot disprove an earlier unanswered create.
+        // keep: A 4xx on a replayed create cannot disprove an earlier unanswered create; don't treat it as proof the create failed.
         if (
           previousCreation === "local" &&
           record.revision === revision &&
@@ -414,7 +403,6 @@ export class ImportCoordinator {
         record.controller.signal,
       );
       if (!this.current(record)) return null;
-      // Required reads retry if a newer authoritative answer won while they travelled.
       if (revision !== record.revision) continue;
       this.install(record, detail);
       record.view = { ...record.view, detail };
@@ -447,12 +435,6 @@ export class ImportCoordinator {
       if (this.current(record)) this.local(record, { busy: false });
     }
   }
-  /**
-   * Hash the re-picked received files and tell the server which receipts they match. The server
-   * takes the report only while the import is uploading, so whatever can end the upload waits for
-   * it. Resolves true once nothing is owed. A failure keeps the report owed and shows its error,
-   * for Retry to repeat; a refusal drops it, since the marks are advisory.
-   */
   private report(record: RecordState, attempt: UploadAttempt): Promise<boolean> {
     attempt.reporting ??= this.sendReport(record, attempt);
     return attempt.reporting;
@@ -507,8 +489,7 @@ export class ImportCoordinator {
       signal: attempt.signal,
       gate: reported,
       send: async (parts, signal) => {
-        // A one-byte read detects a file removed since picking, before the multipart request;
-        // the request then streams the file itself instead of a copy of the batch in memory.
+        // keep: Probe a one-byte read before the multipart request to detect a file removed since picking, and stream the file instead of buffering the batch in memory.
         const probes = await Promise.all(
           parts.map((part) =>
             probeReadable(part.file).then(
@@ -605,7 +586,7 @@ export class ImportCoordinator {
     const record = this.records.get(id);
     if (!record) return;
     await this.command(record, async () => {
-      // The skip can end the upload, so the hash report it would pre-empt goes first.
+      // keep: Let the hash report finish before the skip; the skip can end the upload and would pre-empt the report.
       await record.attempt?.reporting;
       await this.run(record, async (attempt) => {
         if (record.picked.length && !(await this.report(record, attempt))) return;
@@ -638,7 +619,6 @@ export class ImportCoordinator {
     await this.command(record, async () => {
       record.attempt?.end();
       if (record.command) {
-        // A lost create answer may already have created the import. Replay before stopping it.
         if (record.creation !== "created")
           await this.api.create(
             record.view.summary.projectId,

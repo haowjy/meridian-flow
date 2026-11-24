@@ -1,10 +1,5 @@
-/** Bounded candidates for the Work switcher's recent-summary query. */
 import { type SQL, sql } from "drizzle-orm";
 
-/**
- * `sortColumn` is the caller's ordering/cursor column, currently `t.updated_at`
- * for the Work switcher's recent-summary port.
- */
 export function workAssociationCandidatesSql(input: {
   projectId: string;
   workId: string;

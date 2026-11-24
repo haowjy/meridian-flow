@@ -1,5 +1,3 @@
-/** Durable ask serialization and model-result rendering. */
-
 import type {
   JsonObject,
   QuestionAskPayload,
@@ -25,7 +23,6 @@ export function threadAsk(ask: StoredAsk): ThreadAsk {
   } as ThreadAsk;
 }
 
-/** One entry per question, in order, with the question's text so the model needn't line answers up by position. */
 function questionResult(question: string, answer: ResolvedQuestionAnswer): JsonObject {
   switch (answer.kind) {
     case "option":

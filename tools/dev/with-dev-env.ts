@@ -1,10 +1,4 @@
 #!/usr/bin/env bun
-/**
- * `with-dev-env.ts -- <command…>`: run a command with this checkout's dev env
- * (`applyDevEnvToProcess`). The dev stack runs each service through it, so a
- * service gets every key from `.env.local` and the main `.env` without any
- * value appearing in the tmux command line.
- */
 import { spawn } from "node:child_process";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 

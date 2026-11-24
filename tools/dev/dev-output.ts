@@ -14,7 +14,6 @@ function tmuxAttachCommand(sessionName: string): string {
   return `tmux -L ${DEV_TMUX_SOCKET} attach -t ${sessionName}`;
 }
 
-/** The architecture map is served by the dev client from the app's origin; a built client has none. */
 function architectureLines(context: DevOutputContext): string[] {
   if (context.clientBuild !== "development") return [];
   return context.routeLines

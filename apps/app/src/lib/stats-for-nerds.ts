@@ -1,4 +1,3 @@
-/** Account preference projection for finished-turn usage details. */
 import { readAccountSettingsCache } from "./account-settings-cache";
 
 let current: boolean | null = null;

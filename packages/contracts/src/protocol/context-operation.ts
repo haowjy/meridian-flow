@@ -1,4 +1,3 @@
-/** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
   ContextDestinationParent,
@@ -8,11 +7,6 @@ import type {
   CopyContextEntryView,
 } from "./http-types.js";
 
-/**
- * Why an operation can't run, when a caller words it: a rename
- * whose extension would change how the document is stored (a binary file to a text one or
- * back), or which kind of text document it is.
- */
 export type InvalidOperationReason = "file_type_conversion" | "document_type_conversion";
 
 export type ContextError =
@@ -42,16 +36,11 @@ export type ContextError =
       code: "io_error";
       uri: string;
       message: string;
-      /**
-       * `source_behind`: a Copy's source room has not received the edits the writer's client
-       * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
-       */
       reason?: "source_behind";
     };
 
 export type ContextOperationCommand = {
   kind: "copy";
-  /** Ordered roots by canonical address; the read view travels with each. */
   sources: CopyContextEntryCommandSource[];
   destinationUri: string;
   destinationView?: CopyContextEntryView;
@@ -59,10 +48,6 @@ export type ContextOperationCommand = {
   position?: ContextSiblingPosition;
 };
 
-/**
- * One root as the receipt remembers it. The client's room version is deliberately absent:
- * a replay after more typing carries a newer version, and that is the same Copy.
- */
 export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" | "copyId"> & {
   uri: string;
   expected: CopyContextEntrySource["expected"];

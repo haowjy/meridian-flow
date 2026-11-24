@@ -1,12 +1,3 @@
-/**
- * useHandoffBrief — Retry and Stop for a handoff destination's brief.
- *
- * The brief is not a queued command: Retry and Stop act on the seed directly.
- * Retry shows the new seed's generating card at the leaf at once and asks the
- * server to write it (`useRetryStandIns` owns the stand-in, the refusal and lost-request facts,
- * and the re-send of a lost request). Stop marks the seed Stopping and cancels
- * it through the turn cancel route; a failed Stop is a fact for `chatCards`.
- */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
@@ -18,15 +9,10 @@ import { type TurnStop, useTurnStop } from "../useTurnStop";
 import { isOptimisticSeed, optimisticHandoffSeed } from "./handoff-seed";
 
 export type HandoffBrief = {
-  /** Retry seeds the store does not have yet, in the order they were asked for. */
   localSeeds: readonly Turn[];
-  /** Whether Stop can reach this seed: the server has it. */
   canStop: (turn: Turn) => boolean;
-  /** Retries that did not start a brief (refused or lost), for `chatCards`. */
   outcomes: readonly RetryOutcome[];
-  /** Stops that did not reach the server, for `chatCards`. */
   stopFailures: readonly BriefStopFailure[];
-  /** A new brief after `from`, or the same request again when `from` is a failed Retry. */
   retry: (from: Turn) => void;
   stop: (turnId: string) => void;
   stopping: TurnStop["stopping"];
@@ -41,7 +27,6 @@ export function useHandoffBrief(input: {
   const standIns = useRetryStandIns({
     threadId,
     storedTurns,
-    // A brief holds no execution: its seed's id is its only identity.
     post: async (id) => ({ turn: await retryHandoffBrief(threadId, { id }), executionId: null }),
   });
 
@@ -85,8 +70,6 @@ export function useHandoffBrief(input: {
     [turnStop.failed],
   );
 
-  // Only what the server has can be stopped: not the opening stand-in, and
-  // not a Retry whose request hasn't answered.
   const canStop = useCallback(
     (turn: Turn) => !isOptimisticSeed(turn) && (requestOf(turn.id) ?? "sent") === "sent",
     [requestOf],

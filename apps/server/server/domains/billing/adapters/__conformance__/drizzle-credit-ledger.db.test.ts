@@ -150,13 +150,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await debitFor(userId);
       const other = await debitFor(otherUserId);
 
-      // Different users sharing a usageEventId must both be charged, with distinct
-      // consumption groups — idempotency is (user_id, usage_event_id), not global.
       expect(other.transactionId).not.toBe(first.transactionId);
       expect(await ledger.getBalance({ userId })).toBe("875");
       expect(await ledger.getBalance({ userId: otherUserId })).toBe("875");
 
-      // ...and replay within a single user is still short-circuited.
       const replay = await debitFor(userId);
       expect(replay.transactionId).toBe(first.transactionId);
       expect(await ledger.getBalance({ userId })).toBe("875");

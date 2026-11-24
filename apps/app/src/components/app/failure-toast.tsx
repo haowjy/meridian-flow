@@ -1,13 +1,3 @@
-/**
- * Failure toasts: `notifyFailure` from anywhere, one `FailureToaster` at the app root. Only for a
- * failure that has no place of its own on a document or in the import popup; a success never
- * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
- * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
- * floating pill, drawn as the app's menus are: the failure's category ("Couldn't apply", "Sign-in
- * expired"), a short `reason` only where running it again would fail the same way, at most one
- * action, and a close. Cause and consequence go to the console (`detail`), never into the pill.
- * Closing only hides it.
- */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
 import type { ReactNode } from "react";
@@ -18,7 +8,7 @@ import { role } from "@/components/ui/roles";
 
 const BRIEF_MS = 5000;
 
-/** The open toast under each key. Each toast has its own Sonner id: reusing one races its exit. */
+// keep: Each toast needs its own Sonner id; reusing one races its exit
 const shown = new Map<string, string | number>();
 
 export function notifyFailure({
@@ -29,17 +19,11 @@ export function notifyFailure({
   brief,
   detail,
 }: {
-  /** This failure's own: a second toast under one key replaces the first. */
   key: string;
-  /** The failure's category: "Couldn't copy". A longer title is cut to one line. */
   title: ReactNode;
-  /** Why it failed, in two to four words, only where Retry would fail the same way: "Too many imports". */
   reason?: string;
-  /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
   action?: { label: string; run: () => void | Promise<void> };
-  /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
   brief?: true;
-  /** What went wrong, for whoever debugs it: logged, never shown. */
   detail?: unknown;
 }) {
   if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
@@ -70,7 +54,6 @@ export function notifyFailure({
   shown.set(key, id);
 }
 
-/** Closes a failure that no longer applies, without counting as the writer closing it. */
 export function dismissFailure(key: string) {
   const id = shown.get(key);
   if (id === undefined) return;
@@ -78,7 +61,6 @@ export function dismissFailure(key: string) {
   toast.dismiss(id);
 }
 
-/** Centred under the header on desktop, below the top bar on a phone. */
 const DESKTOP_OFFSET = { top: "3rem" };
 const PHONE_OFFSET = {
   top: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
@@ -86,9 +68,6 @@ const PHONE_OFFSET = {
   right: "0.5rem",
 };
 
-// `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
-// Sized to its words and centred (`inset-x-0 mx-auto w-fit`). The `!`s beat Sonner's phone rules, which
-// stretch each toast to the screen and give the list `width: 100%` on top of its side offsets.
 export function FailureToaster() {
   return (
     <Toaster

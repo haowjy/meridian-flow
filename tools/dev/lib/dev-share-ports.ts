@@ -1,4 +1,3 @@
-/** Deterministic local backend and Tailscale HTTPS ports for shared dev services. */
 import { createHash } from "node:crypto";
 import type { DevMode } from "../dev-mode";
 
@@ -12,8 +11,6 @@ export interface SharedDevServicePorts {
   externalHttpsPort: number;
 }
 
-// Below Linux's ephemeral range (32768-60999): the kernel never assigns these
-// ports as outgoing-connection source ports, so only a listener can hold one.
 const APP_BACKEND_PORT_RANGE = { start: 20_000, size: 8_000 } as const;
 const TAILSCALE_HTTPS_PORT_RANGE = { start: 47_000, size: 8_000 } as const;
 const FUNNEL_PORTS = [443, 8443, 10_000] as const;

@@ -1,4 +1,3 @@
-/** In-memory thread WebSocket boundary for real ThreadSocketClient tests. */
 import { encodeWsServerMessage, parseWsClientMessage } from "@meridian/contracts/protocol";
 
 import type { SocketEvents, SocketLike } from "../socket/socket-ports";

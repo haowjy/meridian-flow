@@ -2,7 +2,6 @@ import { type AgentsLevel, agentsRootOf } from "@meridian/contracts/agents";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
-/** A level's file's document by its level-relative path, once the trees list it. */
 export function useAgentFileDocument(projectId: string) {
   const trees = useProjectTreeViews(projectId, AGENTS_SCHEMES, {});
   return (level: AgentsLevel, path: string): string | null => {
@@ -13,7 +12,6 @@ export function useAgentFileDocument(projectId: string) {
   };
 }
 
-/** Opens a level's file by its level-relative path, once the trees list it. */
 export function useOpenAgentFile(projectId: string) {
   const documentOf = useAgentFileDocument(projectId);
   const open = useOpenProjectDocument(projectId);

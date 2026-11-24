@@ -1,4 +1,3 @@
-/** Test-environment repairs that must run before any suite touches the DOM. */
 import { createElement, Fragment, type ReactNode } from "react";
 import { vi } from "vitest";
 import { installJsdomLayoutFallbacks } from "./src/test-support/jsdom-layout";

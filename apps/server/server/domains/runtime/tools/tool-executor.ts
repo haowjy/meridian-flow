@@ -1,66 +1,3 @@
-/**
- * Tool executor: looks up a tool by name in the registry and runs its handler
- * with execution context, normalizing results/errors (incl. batch execution).
- * Owns tool-call dispatch; depends inward on the tool types/registry.
- *
- * ── Execution model ──
- *
- * A registration with an `input` schema has its arguments parsed first. A
- * failed parse returns one `invalid_arguments` result and the handler never
- * runs; a successful parse hands the handler the parsed value, defaults
- * applied.
- *
- * Every tool call is dispatched as a Promise that races three things:
- *
- *   1. The handler itself — `handler(input, context) => Promise<unknown>`
- *   2. A per-tool timeout timer (if the registration specifies `timeoutMs`)
- *   3. The caller's external abort signal (turn cancellation)
- *
- * The first to settle wins. If the timeout wins, the handler's AbortSignal
- * is aborted and the result is a timeout error. If the external abort wins,
- * the result is an abort error. If the handler wins, the return value is
- * normalized into a `ToolExecutionResult`.
- *
- * ── Error normalization ──
- *
- * Tool handlers can signal errors in two ways, both normalized by the executor:
- *   - Throwing an exception → caught, then formatted by the registration or
- *     normalized to MeridianError with `isError: true`
- *   - Returning `{ isError: true, output: JsonValue }` → recognized as a
- *     structured error, output extracted directly.
- *
- * A refusal (`MeridianError`) reaches the model as its message and code, never
- * as JSON; the typed error stays on `result`. Any other result is the
- * registration's `renderResult` parts, or the value itself as one text part.
- *
- * Either return shape may carry `shown`, the host-only shown-link candidates
- * of what the result renders. Only a handler result the executor accepts
- * forwards them; the timeout and abort arms drop a late handler's candidates
- * with its result.
- *
- * The second path exists so that handlers backed by structured error types
- * (e.g. `ContextError` from the context domain) can surface detailed error
- * information through the execution result without throwing.
- *
- * All successful return values pass through `JSON.parse(JSON.stringify(...))`
- * to guarantee JSON-serializability — the downstream journal event pipeline
- * requires `JsonValue`.
- *
- * ── Batch execution (parallel + sequential) ──
- *
- * `executeTools` receives an array of `ToolCallInput` and splits them into
- * two phases:
- *   1. Parallel: all tools without `sequential: true` run concurrently via
- *      `Promise.all`. Results are placed at their original array indices.
- *   2. Sequential: tools with `sequential: true` run one-at-a-time in array
- *      order, after all parallel tools have completed.
- *
- * This two-phase approach prevents document mutations (write) from
- * interleaving with other tool calls.
- * The original array index is preserved so the orchestrator can map results
- * back to the model's output item order.
- */
-
 import type { ModelEditKey } from "@meridian/contracts/drafts";
 import {
   type MeridianError,
@@ -102,20 +39,15 @@ export type ToolExecutorWithBatch = ToolExecutor & {
   executeTools(calls: ToolCallInput[], ctx: ToolExecutionContext): Promise<ToolExecutionResult[]>;
 };
 
-/** Adapt a domain refusal to the handler error envelope without losing its code. */
 export function toolFailureResult(result: { ok: false; error: MeridianError }) {
   return { isError: true, output: meridianErrorToJson(result.error) };
 }
 
-/**
- * Constructs the default MeridianError result for a tool call that failed.
- */
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
   const value = meridianErrorToJson(error);
   return { toolCallId, content: textContent(renderRefusal(value)), result: value, isError: true };
 }
 
-/** The result of a `documentCommand` call whose command was settled `never`: nothing changed. */
 export function didNotRunResult(toolCallId: string): ToolExecutionResult {
   return errorResult(
     toolCallId,
@@ -127,11 +59,6 @@ export function didNotRunResult(toolCallId: string): ToolExecutionResult {
   );
 }
 
-/**
- * Codes the app reads: a caught exception is redacted there, a timeout says it timed out, and
- * unparseable arguments read like a schema failure (the message is a retry instruction for the
- * model, with the raw fragment in it).
- */
 const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>> = {
   exception: TOOL_EXCEPTION_CODE,
   timeout: "tool_timeout",
@@ -143,7 +70,6 @@ function executionErrorResult(
   registration: ToolRegistration | undefined,
   error: ToolExecutionError,
 ): ToolExecutionResult {
-  // A call the run ended is not a failure the tool words: every tool reads it the same way.
   if (error.kind === "abort") {
     return errorResult(
       toolCallId,
@@ -171,28 +97,11 @@ function executionErrorResult(
   );
 }
 
-/**
- * Deep-serializes any value into `JsonValue` via round-trip through JSON.
- * This guarantees the output survives the journal event pipeline (which
- * writes to JSONB columns) and wire protocols (JSON.stringify).
- *
- * `undefined` maps to `null` because JSON has no undefined value — the
- * round-trip drops it, and we want a deterministic placeholder.
- */
 function toJsonValue(value: unknown): JsonValue {
   if (value === undefined) return null;
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-/**
- * Type guard that detects the structured error pattern:
- * `{ isError: true, output: JsonValue }`.
- *
- * Tool handlers backed by domain-layer error types (e.g. `ContextError`
- * from the context domain) can return this shape to signal a recoverable
- * error. The executor extracts the `output` field directly rather than
- * wrapping it in a generic error message.
- */
 function isHandlerErrorResult(value: unknown): value is {
   isError: true;
   output: unknown;
@@ -206,26 +115,12 @@ function isHandlerErrorResult(value: unknown): value is {
   );
 }
 
-/**
- * Type guard for handlers that return structured output with optional metadata.
- * Pattern: `{ output: unknown, metadata?: Record<string, unknown> }`.
- * Distinct from error results (which have `isError: true`).
- */
 function isStructuredHandlerResult(
   value: unknown,
 ): value is { output: unknown; metadata?: Record<string, unknown> } {
   return typeof value === "object" && value !== null && "output" in value && !("isError" in value);
 }
 
-/**
- * Normalizes a handler return value into a `ToolExecutionResult`.
- * Handler-owned errors keep their JSON value verbatim while the executor
- * forwards `isError`. Thrown and executor-owned failures use the registration's
- * formatter or the generic Meridian error protocol.
- *
- * Exported for a handler result produced outside a call, such as a permission
- * request's Allow running the tool's command, so it reads as the call would.
- */
 export function handlerToolResult(
   output: unknown,
   registration: ToolRegistration,
@@ -233,7 +128,6 @@ export function handlerToolResult(
 ): Omit<ToolExecutionResult, "toolCallId"> {
   const evidence = hostEvidence(output);
   if (isModelEditHandlerResult(output)) {
-    // The command's own outcome holds the stored result: nothing is rendered a second time.
     if (output.modelEdit.status === "never") {
       const { toolCallId: _, ...ranNot } = didNotRunResult("");
       return ranNot;
@@ -271,11 +165,6 @@ function isModelEditHandlerResult(value: unknown): value is ModelEditHandlerResu
 
 const HOST_ONLY = ["evidence", "showing", "frontier"] as const;
 
-/**
- * `value` without host-only evidence: the handler's `evidence` beside it, or
- * an agent-edit outcome's `showing` and `frontier` inside it. The persisted
- * result, history and the browser never carry them (contract §7.1).
- */
 function withoutHostOnly(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   if (!HOST_ONLY.some((key) => key in value)) return value;
@@ -284,7 +173,6 @@ function withoutHostOnly(value: unknown): unknown {
   return rest;
 }
 
-/** The handler's host-only evidence, kept out of every serialized field. */
 function hostEvidence(output: unknown): Pick<ToolExecutionResult, "evidence"> {
   if (typeof output !== "object" || output === null || !("evidence" in output)) return {};
   const evidence = (output as Pick<ToolExecutionResult, "evidence">).evidence;
@@ -293,11 +181,6 @@ function hostEvidence(output: unknown): Pick<ToolExecutionResult, "evidence"> {
     : {};
 }
 
-/**
- * The typed result and what the model reads of it: a refusal's message, the
- * registration's rendering, or the value itself for a tool with no renderer.
- * `result` is always set, so readers have one place to look.
- */
 function modelOutput(
   registration: ToolRegistration,
   value: JsonValue,
@@ -309,20 +192,11 @@ function modelOutput(
   return { content, result: value };
 }
 
-/** The call's input as a renderer reads it; `{}` when it isn't an object. */
 function inputObject(value: unknown): JsonObject {
   const json = toJsonValue(value);
   return typeof json === "object" && json !== null && !Array.isArray(json) ? json : {};
 }
 
-/**
- * Creates a Promise that resolves with `{ aborted: true }` when the given
- * signal fires. Returns `undefined` if no signal is provided, which the
- * caller uses to skip adding an abort arm to `Promise.race`.
- *
- * If the signal is already aborted at call time, returns a pre-resolved
- * Promise so the race completes synchronously (no microtask delay).
- */
 function abortOutcome(signal: AbortSignal | undefined): Promise<{ aborted: true }> | undefined {
   if (!signal) return undefined;
   if (signal.aborted) return Promise.resolve({ aborted: true });
@@ -331,7 +205,6 @@ function abortOutcome(signal: AbortSignal | undefined): Promise<{ aborted: true 
   });
 }
 
-/** Races a tool handler against its timeout and the caller's abort signal. */
 async function runWithTimeout(
   handler: (input: unknown, context: ToolHandlerContext) => Promise<unknown>,
   input: unknown,
@@ -373,7 +246,6 @@ async function runWithTimeout(
   }
 }
 
-/** Returns whether the registered tool must run alone. */
 function isSequentialTool(registry: ToolRegistry, name: string): boolean {
   return registry.getRegistration(name)?.sequential === true;
 }
@@ -424,18 +296,12 @@ function handlerContextForRegistration(
   }
 }
 
-/** A call that ended without a result: what stopped it, for the exit to settle. */
 type CallExit = { exit: ToolExecutionError };
 
-/**
- * `commands` settles a `documentCommand` call that ends without its handler's result (timeout,
- * cancel, a throw): the call's effect may still commit, so its outcome is asked for, never assumed.
- */
 export function createToolExecutor(
   registry: ToolRegistry,
   commands?: CommandResolver,
 ): ToolExecutorWithBatch {
-  /** The key of a `documentCommand` call: its response, its id and whose thread it ran in. */
   function commandKey(
     registration: ToolRegistration | undefined,
     call: ToolCallInput,
@@ -452,7 +318,6 @@ export function createToolExecutor(
     };
   }
 
-  /** A call whose handler may have started and did not return: its command answers for it. */
   async function settleExit(
     call: ToolCallInput,
     registration: ToolRegistration | undefined,
@@ -468,7 +333,6 @@ export function createToolExecutor(
       : { ...outcome.result.toolResult, blockId };
   }
 
-  /** Runs one call to a result, or to the exit that stopped it once its handler could have started. */
   async function attempt(
     call: ToolCallInput,
     ctx: ToolExecutionContext,
@@ -492,9 +356,6 @@ export function createToolExecutor(
 
       if (call.argumentsParseError) {
         const { raw, message } = call.argumentsParseError;
-        // Echo the offending fragment (truncated) so the model can see what it
-        // emitted and self-correct — a clear JSON-parse error, never a misleading
-        // downstream schema error like "path is required".
         const fragment = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
         return executionErrorResult(call.id, registration, {
           kind: "arguments_parse",
@@ -518,8 +379,6 @@ export function createToolExecutor(
       }
 
       if (ctx.signal?.aborted) {
-        // Early-exit: the turn was already cancelled before we started.
-        // This skips handler invocation entirely, avoiding wasted work.
         return executionErrorResult(call.id, registration, {
           kind: "abort",
           message: "Tool aborted",
@@ -527,9 +386,6 @@ export function createToolExecutor(
         });
       }
 
-      // Build the handler context. Use a dummy AbortController if no
-      // external signal is provided — every handler must receive a signal
-      // (the interface requires it), even if the caller doesn't supply one.
       const handlerContext: ToolHandlerContext = {
         signal: ctx.signal ?? new AbortController().signal,
         toolCallId: call.id,
@@ -612,7 +468,6 @@ export function createToolExecutor(
     }
   }
 
-  /** Dispatches one call and maps handler failures to tool results. */
   async function executeTool(
     call: ToolCallInput,
     ctx: ToolExecutionContext,
@@ -623,28 +478,6 @@ export function createToolExecutor(
     return "exit" in attempted ? settleExit(call, registration, key, attempted.exit) : attempted;
   }
 
-  /**
-   * Batch execution: splits calls into parallel and sequential phases.
-   *
-   * ── Why two phases ──
-   *
-   * Document mutations (`write`) are marked `sequential: true` because they
-   * must not interleave with concurrent tool calls against the same file.
-   *
-   * ── Index preservation ──
-   *
-   * Results are placed at the original array position via pre-allocated
-   * `new Array(calls.length)`. This preserves the model's output-item order
-   * so the orchestrator can pair results with the calls that produced them.
-   *
-   * ── Sequential execution order ──
-   *
-   * Sequential tools run in their original array order (left-to-right).
-   * If the model emits `[write("a"), write("b")]`, "a" is written first.
-   * This is a reasonable default — intra-batch tool ordering is not an
-   * explicit model-level guarantee, but preserving left-to-right order
-   * matches the model's own output sequence.
-   */
   async function executeTools(
     calls: ToolCallInput[],
     ctx: ToolExecutionContext,

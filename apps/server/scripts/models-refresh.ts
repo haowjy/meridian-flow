@@ -1,15 +1,3 @@
-/**
- * `pnpm models:refresh`: rewrites `models-snapshot.json` from https://models.dev/api.json and
- * prints what changed. Billing charges the committed snapshot, never live data, so a person
- * reviews this report and commits the snapshot in a PR. Needs the network, so it is outside
- * `pnpm check`; the daily `models-refresh` workflow runs it and files the report as an issue.
- *
- *   --api <url|path>      read the catalog from here instead of models.dev
- *   --dry-run             report mode: print the report and leave the snapshot as it is. A row
- *                         Flow cannot serve becomes a report section; without this flag it is
- *                         an error and nothing is written.
- *   --report-file <path>  also write the report there, only when something changed
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -28,7 +16,6 @@ const SNAPSHOT_PATH = fileURLToPath(
   new URL("../server/lib/gateway/models-snapshot.json", import.meta.url),
 );
 const RECHECK_AFTER_DAYS = 90;
-// GitHub rejects an issue body past 65,536 characters.
 const MAX_REPORT_CHARS = 60_000;
 
 const { values: args } = parseArgs({
@@ -51,7 +38,6 @@ async function loadCatalog(source: string): Promise<Catalog> {
   return (await response.json()) as Catalog;
 }
 
-/** Only the fields Flow reads, so an unrelated models.dev edit leaves the snapshot alone. */
 function pick(model: CatalogModel): SnapshotModel {
   const { cost } = model;
   return {
@@ -71,7 +57,6 @@ function pick(model: CatalogModel): SnapshotModel {
   };
 }
 
-/** The rows each family admits, and the family-matched rows Flow cannot serve (as report lines). */
 function offeredModels(catalog: Catalog): {
   providers: ModelsSnapshot["providers"];
   unservable: string[];
@@ -103,7 +88,6 @@ function offeredModels(catalog: Catalog): {
 
 type Fields = Map<string, string>;
 
-/** Every fact the registry holds about one offering, as `path → text`. */
 function offeringFields(registry: ModelRegistry): Map<string, Fields> {
   const offerings = new Map<string, Fields>();
   for (const provider of registry.providers) {
@@ -159,7 +143,6 @@ function notFromModelsDev(today: string): string[] {
 type CostField = "input" | "output" | "cache_read" | "cache_write";
 const COST_FIELDS: readonly CostField[] = ["input", "output", "cache_read", "cache_write"];
 
-/** Overridden prices with models.dev's number beside the billed one, and when an override can go. */
 function overrideLines(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
   return PROVIDERS.flatMap((row) =>
     Object.keys(after.providers[row.id] ?? {}).flatMap((id) => {
@@ -179,7 +162,6 @@ function overrideLines(before: ModelsSnapshot, after: ModelsSnapshot): string[] 
   );
 }
 
-/** Cache rates models.dev dropped: billing then charges those tokens at the input rate. */
 function droppedCacheRates(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
   return Object.entries(after.providers).flatMap(([providerId, models]) =>
     Object.entries(models).flatMap(([id, model]) => {
@@ -202,9 +184,7 @@ function buildReport(input: {
   today: string;
   unservable: readonly string[];
   buildError: string | undefined;
-  /** Where price overrides leave a model or a rate at models.dev's price. */
   dataGaps: readonly string[];
-  /** The snapshot differs from models.dev, or something can't be served. */
   changed: boolean;
 }): string {
   const {
@@ -294,8 +274,6 @@ if (unservable.length > 0 && !dryRun) {
 const snapshotChanged = JSON.stringify(providers) !== JSON.stringify(before.providers);
 const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenAt, providers };
 
-// Building the registry checks the new rows (default model present, tiers that fit) before anything is written.
-// Report mode lists the price-override gaps and builds the registry anyway, so every other change still shows.
 const oldRegistry = buildModelRegistry(before);
 let newRegistry = oldRegistry;
 let buildError: string | undefined;

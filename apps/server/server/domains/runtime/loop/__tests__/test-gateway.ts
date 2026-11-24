@@ -1,4 +1,3 @@
-/** Runtime-loop test gateway and port defaults. */
 import type {
   Gateway,
   GenerateRequest,
@@ -13,7 +12,6 @@ export const gatewayStubDefaults = {
   },
 } satisfies Pick<Gateway, "listModels" | "getDefaultModel">;
 
-/** Minimal Gateway satisfying the port with an inert stream. */
 export function createInertGateway(defaultModel?: string): Gateway {
   return {
     ...gatewayStubDefaults,
@@ -29,7 +27,6 @@ export function createInertGateway(defaultModel?: string): Gateway {
   };
 }
 
-/** Request-boundary gates are explicit; scripts cannot race the test's enqueue/cancel. */
 export function scriptedGateway(
   options: {
     results?: GenerateResult[];

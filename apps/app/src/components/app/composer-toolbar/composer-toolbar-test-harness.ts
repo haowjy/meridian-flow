@@ -1,4 +1,3 @@
-/** Shared controllable measurement seam for real toolbar adapter tests. */
 import { useLayoutEffect, useRef } from "react";
 import type { ComposerToolbarLayout } from "./composer-toolbar-layout";
 

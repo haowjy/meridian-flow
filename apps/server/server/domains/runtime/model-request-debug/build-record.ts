@@ -1,4 +1,3 @@
-/** Builds the complete provider-neutral request record captured before dispatch. */
 import { createHash } from "node:crypto";
 import type {
   ModelRequestDebugRecord,
@@ -7,7 +6,7 @@ import type {
 import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
 import type { ToolRegistry } from "../tools/index.js";
 
-/** A signed link is a credential and changes each window; the record keeps that it was a link. */
+// keep: Never capture signed media URLs; they are short-lived credentials
 const LINK_OMITTED = "[signed link omitted]";
 
 function omitLinks(_key: string, value: unknown): unknown {
@@ -19,8 +18,6 @@ function omitLinks(_key: string, value: unknown): unknown {
 }
 
 function serializeCanonicalRequest(request: GenerateRequest): string {
-  // Named fields, not the request minus a denylist: a field the gateway adds later (as it added
-  // `auth`, a credential) stays out of the capture until someone adds it here.
   const { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention } = request;
   const serialized = JSON.stringify(
     { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention },

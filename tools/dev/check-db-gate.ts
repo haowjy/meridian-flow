@@ -1,19 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Local DB gate — runs only the Postgres-backed test files related to changes
- * since origin/main, including staged, unstaged, and untracked files.
- *
- * Vitest resolves related tests through its module graph. Changes that the
- * graph cannot model safely (DB config, migrations, test support, DB-test
- * lifecycle helpers, and dependency resolution) run the full suite, as does
- * DB_GATE_FULL=1. A change with no related DB tests skips; a missing or
- * unreachable local database fails, so `pnpm check` cannot pass with related
- * tests unrun.
- * The manual CI db-tests job and `pnpm test:db` always run the full suite.
- *
- *   pnpm check:db
- *   DB_GATE_FULL=1 pnpm check:db
- */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { relative } from "node:path";
@@ -22,9 +7,6 @@ import { applyDevEnvToProcess, resolveCurrentRepoRoot } from "./lib/dev-env";
 
 const CHANGE_BASE = "origin/main";
 const DB_TEST_CONFIG = "apps/server/vitest.db.config.ts";
-// The DB config rejects ordinary dev databases at load time. `vitest list`
-// builds the module graph without connecting, so give it an unmistakably
-// disposable, unreachable URL and provision a real owned DB only after a match.
 const SELECTION_DATABASE_URL = "postgresql://db-gate-selection@127.0.0.1:1/db_gate_test_selection";
 
 const DB_TEST_INFRASTRUCTURE_FILES = new Set([
@@ -89,12 +71,6 @@ async function pings(url: string): Promise<boolean> {
   }
 }
 
-/**
- * Reachable means the Postgres *server* is up, not that this checkout's own
- * database exists: `pnpm test:db` creates its own managed test database. So try
- * the configured URL first (fast path), then fall back to the server-level
- * maintenance connection so a not-yet-bootstrapped worktree still runs the gate.
- */
 async function isReachable(databaseUrl: string): Promise<boolean> {
   if (await pings(databaseUrl)) return true;
   try {

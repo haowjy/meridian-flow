@@ -1,4 +1,3 @@
-/** Drizzle recents repository: owner-gated upsert, prune unlistable rows, list with identity. */
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -30,18 +29,6 @@ const folders = visibleFolders(LIVE_TREE);
 
 const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
 
-/**
- * Rows the list will return. Record, list, and prune share this so cap slots are
- * listable rows.
- *
- * The liveness facts here (live source, live owning project or the user's own home folder,
- * live-or-absent work)
- * are the same facts `context/adapters/document-address` resolves for a path and
- * `context/adapters/project-context-availability` reads for an id. They are
- * written out at each site rather than shared: this one filters by document id
- * for one user and address resolves one (project, scheme, path). The one fact
- * they could disagree about cannot drift: archive lifecycle is represented by archived_at, matching deleted_at.
- */
 function visibleIdentity(userId: UserId): SQL {
   const predicate = and(
     or(
@@ -58,13 +45,11 @@ function visibleIdentity(userId: UserId): SQL {
 
 type Db = ReturnType<typeof currentDrizzleDb>;
 
-/** The source's owning project; none for the home folder, which its account owns. */
 function projectIdentity() {
   return sql`${projects.id} = ${sourceOwnerProjectId}`;
 }
 
 async function prune(tx: Db, userId: UserId) {
-  // Delete unlistable rows first so a soft-deleted document cannot occupy a cap slot.
   const stale = await tx
     .select({ documentId: userRecentDocuments.documentId })
     .from(userRecentDocuments)
@@ -125,8 +110,6 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           .limit(1);
         if (!visible) throw new RecentDocumentUnavailableError(documentId);
         const now = new Date();
-        // An open inside the interval is the same open: the row is already stored
-        // and its rank has not moved, so the write is skipped and nothing returns.
         const touched = await tx
           .insert(userRecentDocuments)
           .values({ userId, documentId, openedAt: now })
@@ -140,8 +123,6 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           })
           .returning({ documentId: userRecentDocuments.documentId });
         if (touched.length === 0) return false;
-        // Pruning is cap hygiene, not list correctness: the list filters
-        // unlistable rows itself, so it only has to run when a row moved.
         await prune(tx, userId);
         return true;
       });
@@ -169,7 +150,6 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         .where(
           and(
             eq(userRecentDocuments.userId, userId),
-            // This project's documents, and the home folder's, which every project lists.
             or(eq(projects.id, projectId as ProjectId), eq(contextSources.userId, userId)),
             visibleIdentity(userId),
           ),
@@ -205,14 +185,12 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         }
         const workHandle = work && !work.isNoWork ? work.handle : null;
         const entry = mapAuthoritativeFile({
-          // Only the entry's path and name are read.
           document,
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,
           workId: work?.id ?? null,
           workHandle,
           parentPath: classification.identity.parentPath,
-          // A chat upload's address needs no handle here.
           chatOwned: source.scope === "chat",
         });
         documentsOut.push({

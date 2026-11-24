@@ -1,8 +1,3 @@
-/**
- * EventSink-backed lifecycle instrumentation around the provider-neutral Gateway port.
- * The decorator observes canonical events without buffering or changing gateway behavior.
- */
-
 import type {
   Gateway,
   GenerateRequest,
@@ -122,8 +117,6 @@ function streamClosePayload(input: {
   errorCode?: string;
 }): Record<string, unknown> {
   return {
-    // Observation duration includes downstream consumption; provider timing is
-    // carried by the attempt result and ends at provider-event arrival.
     gatewayObservationDurationMs: input.gatewayObservationDurationMs,
     providerLatencyMs: input.result?.timing?.latencyMs ?? null,
     providerFirstOutputMs: input.result?.timing?.timeToFirstTokenMs ?? null,
@@ -261,7 +254,6 @@ function createStreamObservation(input: {
   };
 }
 
-/** Adds fixed-cost lifecycle events and optional metadata-only chunk events to a Gateway. */
 export function createInstrumentedGateway(
   gateway: Gateway,
   deps: { sink: EventSink; verbose: ReadonlySet<string> },

@@ -1,4 +1,3 @@
-/** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
@@ -30,7 +29,6 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
   };
 }
 
-/** A row from raw SQL, which returns column names, not field names. */
 function storedAskFromColumns(row: Record<string, unknown>): StoredAsk {
   return {
     id: row.id as string,
@@ -115,9 +113,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
             OR ${owedSql}
           ))`
         : sql`false`;
-      // Rows this command already holds lock again at once. A row another transaction holds
-      // became held after the thread's lock took its asks (a new question), and its holder waits
-      // on a thread lock this command holds: waiting for it would deadlock.
+      // keep: Use FOR UPDATE SKIP LOCKED here; waiting on a newly held ask would deadlock
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH claimed AS (
           SELECT a.id, a.status AS prior FROM asks a

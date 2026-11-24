@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 
-/** The dialog a file opens in when it has no main address: a titled frame around its viewer. */
 export function ViewerDialog({
   open,
   onClose,
@@ -29,8 +28,6 @@ export function ViewerDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
-        // A viewer opened from a list row is portaled, but React still carries its clicks and keys
-        // up to the row, which would open or move in the list behind it.
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         showCloseButton={false}

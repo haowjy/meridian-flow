@@ -1,5 +1,3 @@
-/** Inline `/slug` atom: hover names the skill. No click-through. */
-
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { SkillToken } from "@/rich-content/SkillToken";
 import type { ComposerSkillAttrs } from "./composer-document";

@@ -1,4 +1,3 @@
-/** Claim handoff from derivation creation to the detached brief service. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 
 export interface HandoffBriefHold {
