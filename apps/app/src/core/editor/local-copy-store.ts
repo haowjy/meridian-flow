@@ -13,7 +13,7 @@ const UPDATES = "updates";
 const META = "meta";
 /** The room version the server is known to hold. */
 export const SERVER_META = "server";
-/** Set once a just-made document's first content is in the copy. */
+/** Set once the copy has held the server's content: its first sync. */
 export const INITIALIZED_META = "content-initialization";
 
 export type LoadedCopy = {

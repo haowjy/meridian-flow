@@ -27,8 +27,9 @@ bars cost writing space, and the shortcuts still work with the buttons gone. Clo
 holds the target picker, the layout toggle (a pane of 680px or more; a narrower one offers Inline
 only), the stepper, and the chapter's × and ✓. A bar too narrow gives up in steps (`fitReviewLine`
 in `features/draft-review/ReviewBar.tsx`, `review-line.css`): the short count and tighter gaps,
-then no count, then (a finger only) the stepper; a cut picker name counts as not fitting. The
-phone's review row uses the same bar. A page's notice (`PageNotice`) floats at the page's foot,
+then no count, then (a finger only) the stepper. A cut picker name counts as not fitting only
+until the count is gone: only an overflow hides the stepper. The phone's review row uses the same
+bar and the same labelled Close. A page's notice (`PageNotice`) floats at the page's foot,
 never in a row, so nothing moves when it comes or goes; on a narrow page it sits above the word
 count. Coarse pointers give each control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, the sidebar's sources, phone

@@ -217,11 +217,16 @@ export function createLoroRoomTransport({
     resolveSynced = resolve;
   });
   let synced = false;
-  /** The Join's version until the copy holds it, after the Join's catch-up batch: then synced. */
-  let catchUp: RoomVersion | null = null;
+  /**
+   * Until synced: the Join's version, and what the transport handed the copy (its version at the
+   * Join and each batch received since). Decided from what was handed, not `copy.version()`: the
+   * composition guard can hold a batch and import it later without the transport seeing it.
+   */
+  let catchUp: { want: RoomVersion; handed: Map<DocKey, DocVersion> } | null = null;
   const settleSynced = () => {
-    if (synced || !catchUp || !versionCovers(copy.version(), catchUp)) return;
+    if (synced || !catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
     synced = true;
+    catchUp = null;
     resolveSynced();
   };
 
@@ -303,7 +308,9 @@ export function createLoroRoomTransport({
 
   const receiveBatch = (bytes: Uint8Array) => {
     copy.importRemote(bytes);
-    mergeVersion(server, batchEnd(decodeEnvelope(bytes)));
+    const received = batchEnd(decodeEnvelope(bytes));
+    mergeVersion(server, received);
+    if (catchUp) mergeVersion(catchUp.handed, received);
     settleSynced();
     settleBarriers();
   };
@@ -342,7 +349,7 @@ export function createLoroRoomTransport({
         }
         const lacking = copy.exportSince(server);
         if (lacking) sendDoc(lacking);
-        if (!synced) catchUp = joinVersion;
+        if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
         settleSynced();
         settleBarriers();
         emitStatus({ kind: "connected" });

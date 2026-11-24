@@ -153,16 +153,18 @@ export function ReviewBar() {
  */
 function fitReviewLine(line: HTMLDivElement | null) {
   if (!line) return;
-  // The target picker's name shrinks before anything overflows: a cut name doesn't fit either.
-  const fits = () =>
+  // The target picker's name shrinks before anything overflows, so a cut name gives the count's
+  // room to the name; only an overflow hides the stepper, never a long name.
+  const fits = (level: number) =>
     line.scrollWidth <= line.clientWidth &&
-    [...line.querySelectorAll<HTMLElement>(".truncate")].every(
-      (label) => label.scrollWidth <= label.clientWidth,
-    );
+    (level >= 2 ||
+      [...line.querySelectorAll<HTMLElement>(".truncate")].every(
+        (label) => label.scrollWidth <= label.clientWidth,
+      ));
   const fit = () => {
     for (let level = 0; level <= 3; level++) {
       line.dataset.collapse = String(level);
-      if (fits()) break;
+      if (fits(level)) break;
     }
   };
   fit();

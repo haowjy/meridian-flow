@@ -1576,7 +1576,6 @@ msgstr "Clipboard unavailable"
 #: src/features/draft-review/ReviewChangesButton.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/mobile/MobileDocumentReview.tsx
 #: src/features/project/mobile/MobileSideSheetHeader.tsx
 msgid "Close"
 msgstr "Close"

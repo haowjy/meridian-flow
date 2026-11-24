@@ -523,7 +523,6 @@ function EditorCanvas({
       notices={notices}
       toolbar={toolbar}
       toolbarHeld={taken ? <DocumentToolbarSlotHost /> : null}
-      toolbarClassName={taken ? "bg-review" : undefined}
       toolbarTrailing={active ? <DocumentStateSlotHost /> : null}
       textCursor={editor !== null}
       scrollRef={scrollRef}

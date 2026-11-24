@@ -1,11 +1,11 @@
 /* The review line's give-up ladder for a line too narrow for its controls (levels 1 to 3, set by
    fitReviewLine in ReviewBar.tsx): the short count and tighter gaps, then no count, then (a
    finger only) no stepper. */
-[data-review-line]:not([data-collapse="0"]) .identity-count-short {
+[data-review-line]:not([data-collapse="0"]) .review-count-short {
   display: inline;
 }
-[data-review-line]:not([data-collapse="0"]) .identity-count-long,
-[data-review-line]:is([data-collapse="2"], [data-collapse="3"]) .identity-step-count {
+[data-review-line]:not([data-collapse="0"]) .review-count-long,
+[data-review-line]:is([data-collapse="2"], [data-collapse="3"]) .review-step-count {
   position: absolute;
   width: 1px;
   height: 1px;

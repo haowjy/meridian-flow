@@ -5,13 +5,11 @@
  * changes never remounts it.
  */
 
-import { t } from "@lingui/core/macro";
-import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { OpenDocument } from "@/client/stores";
-import { IconButton } from "@/components/ui/icon-button";
 import { PageNotice } from "@/features/draft-review/PageNotice";
 import { ReviewBar } from "@/features/draft-review/ReviewBar";
+import { ReviewChangesButton } from "@/features/draft-review/ReviewChangesButton";
 import { useReviewMode } from "@/features/draft-review/review-mode";
 import {
   type ManuscriptState,
@@ -44,9 +42,7 @@ export function MobileDocumentReview({
             }}
           >
             <ReviewBar />
-            <IconButton size="xs" variant="quiet" label={t`Close`} onClick={mode.close}>
-              <X aria-hidden />
-            </IconButton>
+            <ReviewChangesButton document={document} />
           </div>
         ) : (
           <ManuscriptStateRow state={manuscriptState} />

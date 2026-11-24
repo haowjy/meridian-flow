@@ -83,7 +83,7 @@ export function useWorkDraftMenu(
           notice = notices.showDiscard({
             projectId,
             draftId: deleteNoticeKey(projectId),
-            surface: main ? { kind: "band", documentId: main, draftId: null } : { kind: "landing" },
+            surface: main ? { kind: "page", documentId: main, draftId: null } : { kind: "landing" },
             parts: [
               {
                 documentId: main ?? shown.id,

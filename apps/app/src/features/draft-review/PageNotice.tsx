@@ -1,20 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useFocusSuccession } from "@/lib/focus-follow";
 import { DraftNoticeLine, useDocumentNotice } from "./CommandNotice";
-import type { DraftNotice } from "./draft-notices";
 import { useDraftPage } from "./review-mode";
 
 /**
  * A document page's notice (an Apply or Discard pressed on the page, or a delete that sent main
  * here), floating at the page's foot so it never moves the toolbar or the prose. A press's notice
- * belongs to the draft the page showed: it ends when the page leaves that draft or the document.
- * Its Undo or dismiss hands the focus back to the prose.
+ * shows only on the draft the page showed, and ends when no host shows that page
+ * (`DraftNotices.showPage`). Its Undo or dismiss hands the focus back to the prose.
  */
 export function PageNotice({ projectId, documentId }: { projectId: string; documentId: string }) {
   const page = useDraftPage();
   const draftId = page?.documentId === documentId ? page.draftId : null;
   const notice = useDocumentNotice(projectId, documentId, draftId);
-  useEndOnLeave(notice);
   const foot = useRef<HTMLDivElement>(null);
   useFocusSuccession(foot, true, pageProse);
   return (
@@ -37,20 +35,3 @@ export function PageNotice({ projectId, documentId }: { projectId: string; docum
 const pageProse = (foot: HTMLElement) =>
   foot.closest("[data-paint-frame]")?.querySelector<HTMLElement>('[contenteditable="true"]') ??
   null;
-
-/** Ends a press's notice once the page stops showing it: another draft, Live, or another document. */
-function useEndOnLeave(notice: DraftNotice | null) {
-  const shown = useRef<number | null>(null);
-  const ownsIt = notice?.surface.kind === "band" && notice.surface.draftId !== null;
-  useEffect(() => {
-    if (!notice || !ownsIt) return;
-    shown.current = notice.id;
-    return () => {
-      shown.current = null;
-      // Development's StrictMode replays the effect at once: a page that shows it again keeps it.
-      setTimeout(() => {
-        if (shown.current !== notice.id) notice.dismiss();
-      });
-    };
-  }, [notice, ownsIt]);
-}

@@ -1,7 +1,7 @@
 /**
  * One notice per draft (by its id): the draft's latest Discard with its
  * Undo, or the facts its latest Apply brought; and per project the writer's latest delete
- * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step, for main's band or Recently opened
+ * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step, for main's page or Recently opened
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
@@ -15,7 +15,7 @@ export type NoticeSurface =
    * when a press there made it, which alone shows it, and leaving it ends it; null for a delete,
    * which shows wherever main went.
    */
-  | { kind: "band"; documentId: string; draftId: string | null }
+  | { kind: "page"; documentId: string; draftId: string | null }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -106,6 +106,8 @@ export class DraftNotices {
   /** Notices whose Undo is in flight. */
   private readonly pressed = new Set<number>();
   private readonly listeners = new Set<() => void>();
+  /** The draft pages hosts show now, by document and draft, with how many hosts show each. */
+  private readonly shownPages = new Map<string, number>();
   private nextId = 1;
   private revision = 0;
   private closed = false;
@@ -138,7 +140,7 @@ export class DraftNotices {
       const { surface } = notice;
       const left = notice.kind === "discarded" ? notice.left : null;
       if (
-        surface.kind === "band"
+        surface.kind === "page"
           ? (left ? left.landed : surface.documentId) === documentId &&
             (surface.draftId === null || surface.draftId === draftId)
           : surface.kind === "landing" && documentId === null
@@ -153,6 +155,34 @@ export class DraftNotices {
     for (const notice of this.notices.values())
       if (notice.kind === "discarded" && notice.documentIds.includes(documentId)) return notice;
     return null;
+  }
+
+  /**
+   * A host shows a document's page on a draft. A press's notice belongs to that page: once no host
+   * shows it (the host moved to another draft, Live or another document), the notice ends.
+   */
+  showPage(documentId: string, draftId: string): () => void {
+    const key = `${documentId}\n${draftId}`;
+    this.shownPages.set(key, (this.shownPages.get(key) ?? 0) + 1);
+    return () => {
+      const hosts = (this.shownPages.get(key) ?? 1) - 1;
+      if (hosts > 0) {
+        this.shownPages.set(key, hosts);
+        return;
+      }
+      this.shownPages.delete(key);
+      // A page moving to another host is let go and taken up in one commit: decide after it.
+      queueMicrotask(() => {
+        if (this.shownPages.has(key)) return;
+        for (const notice of [...this.notices.values()])
+          if (
+            notice.surface.kind === "page" &&
+            notice.surface.documentId === documentId &&
+            notice.surface.draftId === draftId
+          )
+            this.end(notice.draftId);
+      });
+    };
   }
 
   /** Replaces the owner's notice: an Apply or a Discard with no Undo shows nothing in its place. */

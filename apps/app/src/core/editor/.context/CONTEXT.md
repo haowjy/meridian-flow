@@ -111,13 +111,15 @@ synchronously, then drains transports and leases.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
-orthogonal. `synced` means the transport's Join completed, not that all
+orthogonal. `synced` means the transport handed the copy what the server held at the first
+Join (the catch-up batch, which the composition guard may still be holding), not that all
 local edits are saved. `serverHasLocalChanges` is true only after that Join and every batch
 sent on the current connection is acknowledged (see
 [`../../transport/.context/CONTEXT.md`](../../transport/.context/CONTEXT.md)).
 
 Before binding, `EditorView` waits for local persistence. Verified detached
-content may bind without first server sync; other sessions use the existing
+content, and a copy that has held the server's content once (marked at its first sync,
+`hasInitializedLocalContent`), may bind without first server sync; other sessions use the existing
 overall timeout, whose expiry permits degraded evidence but not upload
 authorization.
 

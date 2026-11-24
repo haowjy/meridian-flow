@@ -156,8 +156,11 @@ surfaces, and outlives them:
   said on its rows (`useDraftNoticeWords`). A page has no rows: an Apply or Discard made on a
   document's page, per paragraph or the whole chapter, is a compact `ActionNotice` with Undo
   floating at that page's foot (`PageNotice`, `DraftNotices.forDocument`), so it never moves the
-  toolbar or the prose. It belongs to the draft the page showed: switching to another draft, to
-  Live or to another document ends it silently, and coming back doesn't bring it back.
+  toolbar or the prose. It belongs to the draft the page showed: once no host shows that document
+  on that draft (switching to another draft, to Live or to another document), it ends silently,
+  and coming back doesn't bring it back. Each host registers the page it shows
+  (`DraftNotices.showPage`, from `useDocumentReview`), so a side panel opening or the chapter
+  moving to the other pane keeps the notice; it never ends from a component's unmount.
 
 An Apply's Undo takes a created document out of Live too; if main shows it, main opens its plain
 draft (`openDraftFile`). After a reload nothing offers a press's Undo.

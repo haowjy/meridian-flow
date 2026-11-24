@@ -17,8 +17,9 @@
  * Status, derived from local persistence and the transport together:
  *   - `detached`  — no server transport attached yet.
  *   - `syncing`   — the local load or the first Join is not done, or the socket is reconnecting.
- *   - `synced`    — loaded, connected and joined. Not that the server holds the latest edits:
- *                   `serverHasLocalChanges` says that.
+ *   - `synced`    — loaded, connected, and the copy was handed what the server held at the first
+ *                   Join. Not that the server holds the latest edits: `serverHasLocalChanges`
+ *                   says that.
  *   - `offline`   — loaded, socket down; edits wait in IndexedDB and go with the next Join.
  *   - `access-lost` — the server ended this room for good; local edits will not upload.
  *   - `destroyed` — torn down.
@@ -148,7 +149,7 @@ export type DocumentSessionOptions = {
   /** A fork room's Live session, which outlives this one. */
   live?: DocumentSession;
   /** The copy's IndexedDB database, by its exact name. */
-  persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
+  persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
   transportFactory?: DocumentSessionTransportFactory;
   /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
@@ -549,6 +550,8 @@ export class DocumentSession {
     this.contentHeld = true;
     this.recomputeStatus();
     if (first) this.emit();
+    await this.whenLocalPersistenceSynced();
+    this.markContentInitialized();
   }
 
   /**
@@ -775,7 +778,7 @@ export class DocumentSession {
     return this.storeName;
   }
 
-  /** Whether this copy's first content was written here (a new document's template). */
+  /** Whether the copy has held the server's content: a reopen paints it without waiting for the room. */
   async hasInitializedLocalContent(): Promise<boolean> {
     await this.whenLocalPersistenceSynced();
     const store = this.store;
@@ -783,8 +786,7 @@ export class DocumentSession {
     return (await store.read()).meta.get(INITIALIZED_META) === true;
   }
 
-  /** Record that this copy's first content is written; `hasInitializedLocalContent` reads it. */
-  markContentInitialized(): void {
+  private markContentInitialized(): void {
     void this.store?.putMeta(INITIALIZED_META, true).catch(noop);
   }
 

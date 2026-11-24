@@ -48,12 +48,12 @@ export function ReviewStepper({
       </IconButton>
       <span
         className={cn(
-          "identity-step-count whitespace-nowrap px-1 text-center text-xs text-muted-foreground tabular-nums",
+          "review-step-count whitespace-nowrap px-1 text-center text-xs text-muted-foreground tabular-nums",
           touch && "text-sm",
         )}
         aria-live="polite"
       >
-        <span className="identity-count-long">
+        <span className="review-count-long">
           {focusedIndex >= 0 ? (
             <Trans>
               {position} of {count}
@@ -64,7 +64,7 @@ export function ReviewStepper({
             <Trans>{count} changes</Trans>
           )}
         </span>
-        <span aria-hidden className="identity-count-short hidden">
+        <span aria-hidden className="review-count-short hidden">
           {focusedIndex >= 0 ? `${position}/${count}` : count}
         </span>
       </span>

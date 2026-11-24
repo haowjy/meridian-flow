@@ -11,14 +11,12 @@ export type EditorSurfaceFrameProps = {
   /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
   /**
-   * What holds the toolbar's place instead (Review changes' bar), prose-aligned and never
+   * Review changes' bar, holding the toolbar's place in the review tint, prose-aligned and never
    * scrolled: it fits its own width.
    */
   toolbarHeld?: ReactNode;
   /** What follows the formatting controls on the toolbar row: the document's state. */
   toolbarTrailing?: ReactNode;
-  /** The row's own look, such as Review changes' band while its bar holds the toolbar's place. */
-  toolbarClassName?: string;
   children: ReactNode;
   /**
    * The whole scroll area is caret territory (the ProseMirror node spans it,
@@ -36,7 +34,6 @@ export function EditorSurfaceFrame({
   toolbar,
   toolbarHeld,
   toolbarTrailing,
-  toolbarClassName,
   children,
   textCursor,
   scrollClassName,
@@ -56,7 +53,9 @@ export function EditorSurfaceFrame({
       {toolbar || toolbarHeld ? (
         // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
         // edge, in the right gutter, and takes room from the column only when the pane is narrow.
-        <div className={cn("flex h-8 shrink-0 items-center coarse:h-11", toolbarClassName)}>
+        <div
+          className={cn("flex h-8 shrink-0 items-center coarse:h-11", toolbarHeld && "bg-review")}
+        >
           <div className="min-w-0 flex-1 basis-0" />
           {toolbarHeld ? (
             <div className={cn(editorColumnChrome, "flex h-full min-w-0")}>{toolbarHeld}</div>
