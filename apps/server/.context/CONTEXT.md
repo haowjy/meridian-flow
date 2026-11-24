@@ -46,10 +46,12 @@ shape for parity and lower merge risk.
 
 The shipped route surface covers:
 
-- Project CRUD, preferences, library, works list, work
-  threads, project thread list/create, and the flat project chat feed;
-  account settings carry language, theme and Stats for nerds.
-- Package export.
+- Project CRUD, the works list, the Work routes (archive, unarchive, delete, restore,
+  its drafts), work threads, project thread list/create, the flat project chat
+  feed, presses, imports, document-link resolution, and the context queries
+  (sources, trash, chat uploads, copy); account settings carry language, theme and
+  Stats for nerds.
+- Project export as a ZIP, with its advisory preview.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
 - Writer-message routes authenticate and delegate replay, exact block/reference
@@ -62,8 +64,9 @@ The shipped route surface covers:
   preflight remain concealed. A target lost under the lifecycle lock returns a
   refreshable conflict, while integrity and infrastructure failures stay
   distinct. The claim is released before ordinary post-commit context delivery.
-- Project document-link resolution for wikilinks, `manuscript://`/`work://`
-  scheme links, and paths relative to a containing document.
+- Project document-link resolution for wikilinks, the context URI schemes
+  (`manuscript://`, `scratch://`, `user://` and the rest), and paths relative to a
+  containing document.
 - Builtin agent catalog, readiness, and unknown
   route handling.
 
@@ -200,7 +203,8 @@ nitro 3.0.261103-rc, so the 18 MB stays until nitro can narrow a package's trace
 ### Request IDs
 
 Values backed by Postgres `uuid` columns use the request-ID grammar in
-`server/shared/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
+`packages/contracts/src/request-id.ts` (re-exported by `server/shared/uuid.ts`):
+canonical 36-character hyphenated hexadecimal, any UUID
 version/variant bits, case-insensitive on input and lowercase below the parsing
 boundary. Reject braces, omitted hyphens, `urn:uuid:` prefixes, surrounding
 whitespace, and non-hex input. Parsing is not generation policy: version and

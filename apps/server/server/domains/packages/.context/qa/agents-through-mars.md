@@ -17,7 +17,7 @@ and runs the real Drizzle store and catalog over it. It checks:
 
 - the built-in package: nine Agents, no diagnostics, `resolvePrimary` for the six primaries, and
   `permission: "read"` for Critic and for the two subagents Muse names;
-- 25 files: the errors in an Agent's file (Mars's, Flow's own block checks, a missing skill or
+- 24 files: the errors in an Agent's file (Mars's, Flow's own block checks, a missing skill or
   subagent) must leave it out (`leftOut`, an Error in its package's `files()` findings, unbindable); a missing or invalid
   manifest must fail the Save; the Mars warnings and infos must save, the warnings with a finding
   on the result;

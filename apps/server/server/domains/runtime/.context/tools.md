@@ -38,7 +38,8 @@ Three checks are independent: the agent must have the tool, the file policy must
 allow the target, and the action policy must allow the operation.
 
 - `projectToolPolicy` computes the per-turn tool set from the catalog, explicit
-  allow-list, denials, disabled tools, and `return_result` for subagents.
+  allow-list and denials, adding `return_result` and dropping `ask_user` for a
+  subagent (a turn also drops `skill` when the binding names no skills).
   Unknown allow-list names refuse; unknown deny-list names deny nothing. Child
   tools must be a subset of the parent.
 - Agent `permission` (`read` or `edit`) is monotone through the delegation
@@ -137,7 +138,8 @@ contract-shaped values with model-facing renderers that omit internal IDs and
 add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context.
 
-Document inverse commands use `write undo/redo` and `write revert`; model-only
+Document inverse commands use `write undo` and `write revert`; there is no `redo`
+command — to redo an edit, the model writes it again. Model-only
 handles select edits, and the command is all-or-nothing. The tree commands
 (`write move`, `delete`, `restore`, and `create` of a folder) are host commands
 (`lib/model-tools/tree-commands.ts`, the core in `domains/context/tree/tree-commands.ts`).
@@ -151,8 +153,8 @@ model), so a stale path reaches the node the model meant, wherever it is now (th
 A name shown in the other view and reused in this one names nothing. Every tool that prints a path
 records exactly the names it printed, from the nodes that produced them (`printedDelta`), and
 a name shown in the other view still means its node in this one. The call keeps a receipt
-(`tree_edit_receipts` and one row per node it changed, `collab/.context/reversal.md`); `undo`,
-`redo` and `revert` choose from the node's one history across text and tree edits, and a call
+(`tree_edit_receipts` and one row per node it changed, `collab/.context/reversal.md`); `undo`
+and `revert` choose from the node's one history across text and tree edits, and a call
 that takes both back is one command, so a refusal of its text half takes the tree half back
 with it. A command that refuses stores nothing (the effect's savepoint rolls back, and
 `SourceTree.run` drops what `make` wrote). In a draft-mode chat the
@@ -182,6 +184,7 @@ Command details the model sees:
   model lazily (`lazyThreadModel`), only when the file turns out to be binary.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses
-`CreditLedger` and `TreeBudget`; `costing/` resolves token rates and applies the
+`BillingUsagePolicy` (`canContinueModelCall`, `debit`) and `TreeBudget`; `costing/`
+resolves token rates and applies the
 fixed 1.15 multiplier before ledger debit. `Usage` is the shared runtime DTO,
 and pricing rejects a negative uncached remainder rather than clamping it.

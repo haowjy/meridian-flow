@@ -64,8 +64,7 @@ gets a browser-drawable WebP preview (longest side 2048 px) beside it at
 `previewObjectKey(key)`: the original's key plus `.preview`. The key is derived,
 so `ObjectRelease` deletes a preview with its original, the copy command copies
 it, and the import sweep protects it, all without a stored reference. Whether
-one exists is the document's `has_preview` (also on `context_staged_documents`
-and the import receipt).
+one exists is the document's `has_preview` (and the import receipt).
 
 `saveImagePreview` (`file-intake/image-preview.ts`) is the one function that
 makes and stores it; every save path calls it right after putting the original:

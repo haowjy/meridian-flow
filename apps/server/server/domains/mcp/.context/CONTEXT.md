@@ -55,7 +55,10 @@ connections are prompt text, not tool definitions.
 - **A thread's pins live in its prompt bake.** `prompt_bakes.baked_connections` holds, for each
   connection, the name the thread knows it by, the connection id, the pin id and how it was listed
   (`full` or `by_name`). It is in the bake's content hash, so a changed pin makes a new bake. The
-  catalogue is one section of `composedSystemPrompt` (`domain/connection-bake.ts`). It is written,
+  catalogue is one section of the composed system prompt: `connectionCatalogue`
+  (`domain/connection-bake.ts`) builds it into the bake, and
+  `assembleComposedSystemPrompt` (`domains/runtime/loop/composed-system-prompt.ts`) splices it
+  in between the named subagents and the document dialect. It is written,
   and `baked_connections` filled, only when the thread's tool policy includes `mcp_call`: an Agent
   that denies it never reads the writer's connections or their descriptions.
 - **Which bake reads what.** A new chat, a handoff that does not reuse its source's bake, and every

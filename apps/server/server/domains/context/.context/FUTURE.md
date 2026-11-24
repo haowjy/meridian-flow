@@ -3,12 +3,6 @@
 These are deferred domain improvements. Validate the existing URI and tree
 contracts before changing them.
 
-## Manuscript ordering and agent reorder
-
-Sibling order is currently derived from the existing name-based projection.
-Design an explicit manuscript binder order, then add its persistence, route,
-ContextPort seam, and agent move/reorder behavior as one coherent change.
-
 ## Batch revision availability
 
 `DocumentRevisions.current` reads each revision per document (the access decisions come

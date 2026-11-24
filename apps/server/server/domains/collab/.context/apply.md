@@ -18,7 +18,8 @@ the document left it, or after the record, stays pending. Earlier records on the
 too. The press carries `saw`: the cut the draft list read its rows at (each list's id and
 version vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
 (`after_press`); a cut naming another list (one rebuilt under a new id) is no cut, and a scope left
-out is the server's own cut. A cut ahead of the server is a 503 that stores nothing.
+out is the server's own cut. A record in the cut that the server's list does not hold yet stays
+pending too: no cut refuses the press.
 
 ## Owners
 
@@ -44,7 +45,7 @@ rows still exist, in one query, and answers per source:
 | Source | Judge | Apply's item | Undo |
 |---|---|---|---|
 | No row (a Work or chat purged) | `gone` | `left_out purged`, the record stays pending | `left_out purged` for the node |
-| Work archived or deleted; chat lineage with no live member | `closed` with `why`, `owner`, `ownerKey` | stays pending, out of the press's items | held |
+| Work archived or deleted; chat lineage with no live member | `closed` with `why` | stays pending, out of the press's items | held |
 | Anything else: an open Work or chat, a project source, the account's files | open | lands | taken back |
 
 Every source has a row while it exists, the account's files included, so "no row" is gone, not
