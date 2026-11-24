@@ -100,7 +100,7 @@ summarizer decision always stores one.
 
 The loop places no cache breakpoints. The Anthropic adapter marks the wire
 request itself (system, and the two latest user turns) for explicit-cache
-offerings; see the [gateway context](../gateway/.context/CONTEXT.md).
+offerings; see the [gateway context](../../../lib/gateway/.context/CONTEXT.md).
 
 No Work context explains bare Scratch as the chat lineage's notes, shared by
 forks/subagents at the first-chat handle. Named-Work Scratch remains the

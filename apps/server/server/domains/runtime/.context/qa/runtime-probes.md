@@ -8,15 +8,21 @@ document-link behaviour that a database test cannot show. Use an owned
 ## Setup
 
 Set `E` to a directory under the active work item's `evidence/` and use the
-same checkout for every command. Publish a private probe Agent and create a
-thread:
+same checkout for every command. Read the project's Agent catalog and create a
+thread on a primary Agent it offers:
 
 ```bash
-./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\n---\nFollow the writer."}' --json > "$E/agent.json"
-./mf thread create --agent runtime-probe --title 'Runtime probe' --json > "$E/thread.json"
+./mf api GET "/api/agents" --json > "$E/agents.json"
+SLUG=$(jq -r '[.agents[] | select(.primary and .selection)] | first | .slug' "$E/agents.json")
+./mf thread create --agent "$SLUG" --title 'Runtime probe' --json > "$E/thread.json"
 T=$(jq -r .threadId "$E/thread.json")
 compact() { K=$(node -p 'crypto.randomUUID()'); ./mf api POST "/api/threads/$T/controls" --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json; }
 ```
+
+An Agent is a document under the project's `.agents` folder or the account's, and a
+change to one is used only once its package is Saved (`POST /api/agents/save`); a
+probe that changes an Agent does that, then reads the new `selection` back from
+`GET /api/agents`.
 
 For compaction, send distinctive history and a short tail. Poll
 `thread view --json` until the intended turn is pending or streaming before a
@@ -121,12 +127,14 @@ repair. There are no stuck placeholders.
 
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
-Choose a settled source turn `CUT`, allocate a destination, and use the exact
-Agent selection returned by setup:
+Choose a settled source turn `CUT`, allocate a destination, and use the catalog
+entry's `selection`:
 
 ```bash
 DEST=$(node -p 'crypto.randomUUID()')
-jq --arg id "$DEST" --arg cut "$CUT" '{id:$id,originTurnId:$cut,agentSelection:.selection}' "$E/agent.json" > "$E/handoff-body.json"
+jq --arg id "$DEST" --arg cut "$CUT" --arg slug "$SLUG" \
+  '{id:$id,originTurnId:$cut,agentSelection:(.agents[] | select(.slug==$slug) | .selection)}' \
+  "$E/agents.json" > "$E/handoff-body.json"
 ./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
 ./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
 ./mf thread send "$DEST" hi --no-wait --json > "$E/queued-hi.ndjson" & SEND=$!
@@ -188,10 +196,8 @@ holder and target, read the holder through a model tool, then move the target:
 
 ```bash
 ./mf doc put manuscript://rp12-holder.md --text '[Target](rp12-target) waits.' --json
-./mf doc put manuscript://rp12-target.md --text 'Target.' --json > "$E/target.json"
-TARGET=$(jq -r .documentId "$E/target.json"); P=$(jq -r .projectId "$E/thread.json")
-./mf api POST "/api/projects/$P/context/manuscript/move" --data "{\"operationId\":\"$(node -p 'crypto.randomUUID()')\",\"path\":\"rp12-target.md\",\"expected\":{\"kind\":\"file\",\"nodeId\":\"$TARGET\"},\"destinationScheme\":\"manuscript\",\"destinationFolderPath\":\"\",\"newName\":\"rp12-renamed.md\"}" --json
-./mf thread send "$T" 'Read the holder and target' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp12-holder.md"}},{"name":"read","args":{"path":"manuscript://rp12-renamed.md"}}]},{"text":"Done."}]' --json
+./mf doc put manuscript://rp12-target.md --text 'Target.' --json
+./mf thread send "$T" 'Read the holder and move the target' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp12-holder.md"}},{"name":"write","args":{"command":"move","from":{"path":"manuscript://rp12-target.md"},"path":"manuscript://rp12-renamed.md"}}]},{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp12-holder.md"}},{"name":"read","args":{"path":"manuscript://rp12-renamed.md"}}]},{"text":"Done."}]' --json
 ```
 
 Repeat with a stale old path, a deleted target and a new document at the old
@@ -222,10 +228,10 @@ and does not claim the earlier reply's text.
 ## RP-16: Every failure is logged once where it is classified and ends
 
 Read `./mf log --thread "$T" --name failure. --full` after each case. Make
-fresh threads `A` through `F` with `./mf thread create --agent runtime-probe`.
+fresh threads `A` through `F` with `./mf thread create --agent "$SLUG"`.
 
 ```bash
-mk() { ./mf thread create --agent runtime-probe --title "$1" --json | jq -r .threadId; }
+mk() { ./mf thread create --agent "$SLUG" --title "$1" --json | jq -r .threadId; }
 A=$(mk RP16-A); B=$(mk RP16-B); D=$(mk RP16-D); E=$(mk RP16-E); F=$(mk RP16-F)
 FAIL='[{"error":{"status":500,"message":"RP16 failure"}}]'
 ./mf mock script "$FAIL"; A_SEND=$(./mf thread send "$A" a1 --json); ./mf mock clear
@@ -291,7 +297,7 @@ repeat the partial read. Dump the rows after each phase:
 tools/qa/probes/observation-frontiers.sh "$T"
 ```
 
-In a draft Work, the room key must be `draft:<work_draft.id>`, . Read then write and write then read; the read and the write record once,
+In a draft Work, the room key must be `fork:<draftId>:<documentId>`. Read then write and write then read; the read and the write record once,
 and an undo records a frontier in the room it
 changed. `recorded_seq` gaps are identity, not an error. The raw model request
 contains no frontier fields.

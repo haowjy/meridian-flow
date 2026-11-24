@@ -37,8 +37,11 @@ exit.
 The status reader projects pending S as `awake/generating` without a running
 turn id; this is an indicator, not a lease. Orphan repair writes an unavailable
 card, interrupted recovery metadata, and the history read line. A settled seed
-appends `threadReferenceText` only when its bake advertises `thread_history`;
-source history is never copied.
+appends `handoffSeedBlock`, whose source line says `continuesFromLine(sourceRef)`
+and adds "Read the full conversation with `thread_history({ref})`" only when the
+handoff's bake advertises `thread_history` (`historyReadableAt`); source history is
+never copied. A spawn's child seed is the other shape: it appends
+`threadReferenceBlock` (`thread-reference.ts`) unconditionally, with no bake gate.
 
 A handoff starts a new `rootThreadId` while retaining `originTurnId`. Its No Work
 Scratch starts empty; source lineage remains reachable through its first-chat

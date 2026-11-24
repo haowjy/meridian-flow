@@ -8,7 +8,7 @@ only that the value is one of the three; the order is enforced by the guards bel
 ```mermaid
 stateDiagram-v2
   [*] --> reserved: start reserves the address and idempotency key
-  reserved --> object_stored: finish validates the uploaded object, under the row lock
+  reserved --> object_stored: finish validates the uploaded object, under the intake's advisory lock
   object_stored --> finalized: placed in Context, then the row is updated
   reserved --> [*]: abandoned for 24 hours, row dropped by the sweep
   object_stored --> [*]: abandoned for 24 hours, row dropped by the sweep
@@ -18,7 +18,10 @@ stateDiagram-v2
   and the stored object stay, and the next `finish` continues from there. `start` and `finish`
   on a row already `object_stored` or `finalized` return what is there.
 - **Context first, state second.** `finalize` updates only a row that is `object_stored` or
-  already `finalized`, after the Context write, with the intake row locked.
+  already `finalized`, after the Context write. Both `claim` and `lockForFinalize` serialize on a
+  transaction-scoped advisory key (`upload-intake:<project>:<intake>`), and each step is a
+  conditional update guarded on the state it expects, so a late receipt or a second finish
+  changes nothing.
 - **A finalized upload is deleted as the document it became,** through the tree (Trash,
   Restore, purge). The row stays `finalized`; the node's identity is what keeps a settled
   reference from capturing a later upload at the same address.
