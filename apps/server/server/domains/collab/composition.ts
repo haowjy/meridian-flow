@@ -97,7 +97,7 @@ import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
-import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
+import { createModelEditWriter } from "./domain/model-edit-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
@@ -272,7 +272,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
-  const modelEditRead = createModelEditRead(agentEdit.read);
 
   const modelEditWrite = createModelEditWriter({
     core: runtime.core,
@@ -287,7 +286,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const modelEdits = createDrizzleModelEdits(
     deps.db,
-    { write: scopeModelEditWrite(modelEditWrite, deps.links), read: modelEditRead },
+    { write: scopeModelEditWrite(modelEditWrite, deps.links), read: agentEdit.read },
     modelEvidence,
   );
 

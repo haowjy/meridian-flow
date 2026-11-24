@@ -8,6 +8,7 @@ import type {
   DocumentId,
   DraftId,
   EditOrigin,
+  LinkView,
   ThreadId,
   TurnId,
   UserId,
@@ -68,6 +69,8 @@ export type TurnInverseQuery = {
   path?: string;
   /** Caller identity for destination admission; the incoming content grant never routes it. */
   principal?: Principal;
+  /** Where the model's chat writes the document now; a card's query has none (Live). */
+  view?: LinkView;
   /**
    * Documents the caller writes after the inverse, in the same transaction: a commit takes their
    * keys with its own, in one ID order after the list keys.

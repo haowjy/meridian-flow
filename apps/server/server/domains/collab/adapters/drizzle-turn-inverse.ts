@@ -44,7 +44,6 @@ import {
   runEditAdmission,
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { currentDestination } from "../domain/agent-destination.js";
 import { inverseSchema } from "../domain/edit-excerpt.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { type UndoablePart, undoable } from "../domain/model-reversal-planner.js";
@@ -116,9 +115,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * The room the chat writes `documentId` in now (`agentRoomFor`): the model's answer names it, and
    * its batches there join the reply's frontier. A card's query has no chat destination: Live.
    */
-  const currentRoomOf = (query: Pick<TurnInverseQuery, "model">, documentId: DocumentId) =>
-    query.model && currentDestination().kind === "draft"
-      ? agentRoomFor(db(), documentId)
+  const currentRoomOf = (query: TurnInverseQuery, documentId: DocumentId) =>
+    query.view?.kind === "draft"
+      ? agentRoomFor(db(), documentId, query.view)
       : Promise.resolve(liveRoomOf(documentId));
   /**
    * The documents' parts an inverse of `threadId` reads, in order, each in the room it was written

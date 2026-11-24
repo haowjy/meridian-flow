@@ -2,10 +2,11 @@ import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../to
 
 export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "revert" }>;
 
-export interface DocumentEditRequest {
+export interface DocumentEditRequest<C extends WriteContext = WriteContext> {
   documentId: string;
   threadId: string;
-  context: WriteContext;
+  /** The call's context as the host gave it to the core. */
+  context: C;
 }
 
 export type DocumentEditResult =
@@ -22,11 +23,11 @@ export type DocumentEditResult =
  * The host's record of a document's AI edits and their inverses, answered with a message (the
  * model's `undo`/`revert` echo is its message).
  */
-export interface DocumentEdits {
+export interface DocumentEdits<C extends WriteContext = WriteContext> {
   /** The model's list of its edits (`read` with `format: "edits"`). */
-  read(request: DocumentEditRequest & { command: ReadCommand }): Promise<DocumentEditResult>;
+  read(request: DocumentEditRequest<C> & { command: ReadCommand }): Promise<DocumentEditResult>;
   /** The model's `undo` or `revert`: the host writes the inverse and says what it did. */
   execute(
-    request: DocumentEditRequest & { command: ModelInverseCommand },
+    request: DocumentEditRequest<C> & { command: ModelInverseCommand },
   ): Promise<DocumentEditResult>;
 }

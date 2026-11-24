@@ -7,11 +7,13 @@ import {
   type AgentEditRooms,
   type AgentWriteRecord,
   agentEditRooms,
+  type WriteContext,
 } from "@meridian/agent-edit/integration";
 import type {
   DocumentId,
   DraftId,
   EditOrigin,
+  LinkView,
   ThreadId,
   TurnId,
   UserId,
@@ -21,7 +23,6 @@ import { type Database, threads, turns } from "@meridian/database";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDestination } from "../domain/agent-destination.js";
 import { agentRoomFor } from "./drizzle-agent-room.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
@@ -33,7 +34,7 @@ export function createAgentEditHost(input: { db: Database; rooms: DocumentRooms<
   const db = () => currentDrizzleDb(input.db);
   return {
     rooms: agentEditRooms(input.rooms, {
-      roomFor: (documentId) => agentRoomFor(db(), documentId),
+      roomFor: (documentId, context) => agentRoomFor(db(), documentId, viewOf(context)),
       transaction: db,
       origin: "server:agent",
       recordWrite,
@@ -49,20 +50,26 @@ export function createAgentEditHost(input: { db: Database; rooms: DocumentRooms<
   };
 }
 
+/** The call's destination; a call that names none (the writer's, the server's own) is Live's. */
+const viewOf = (context: WriteContext): LinkView => context.linkView ?? { kind: "live" };
+
 /**
- * The origin of a write into `room` at the call's destination: a Draft chat's write into the Live
- * room of a document only its draft holds names the draft.
+ * The origin of a write into `room` at `view`: a Draft chat's write into the Live room of a
+ * document only its draft holds names the draft.
  */
-const originOf = (room: DocumentRoom): EditOrigin => {
+const originOf = (room: DocumentRoom, view: LinkView): EditOrigin => {
   if (room.kind === "fork") return { kind: "fork", draftId: room.draftId };
-  const destination = currentDestination();
-  return destination.kind === "draft"
-    ? { kind: "live", draftId: destination.draftId as DraftId }
+  return view.kind === "draft"
+    ? { kind: "live", draftId: view.draftId as DraftId }
     : { kind: "live" };
 };
 
 /** One write's receipt: an edit of kind `write` and its one part, in the room it landed in. */
-async function recordWrite(tx: DrizzleDb, record: AgentWriteRecord): Promise<void> {
+async function recordWrite(
+  tx: DrizzleDb,
+  record: AgentWriteRecord,
+  context: WriteContext,
+): Promise<void> {
   const { actor } = record;
   await recordDocumentEdit(tx, {
     documentId: record.documentId as DocumentId,
@@ -75,7 +82,7 @@ async function recordWrite(tx: DrizzleDb, record: AgentWriteRecord): Promise<voi
     actorUserId: actor.kind === "human" ? (actor.userId as UserId) : null,
     receipts: [
       {
-        origin: originOf(record.room),
+        origin: originOf(record.room, viewOf(context)),
         delta: record.delta,
         write: { edit: record.edit },
       },

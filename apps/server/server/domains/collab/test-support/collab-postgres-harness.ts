@@ -42,7 +42,7 @@ import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
 import { createDraftReviewIdentity } from "../domain/draft-review-identity.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
-import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
+import { createModelEditWriter } from "../domain/model-edit-write.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { createPostgresDocumentRooms } from "../rooms/postgres-document-rooms.js";
 import { liveMarkdown, writeLiveMarkdown } from "./live-room-text.js";
@@ -307,7 +307,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
-  const modelEditRead = createModelEditRead(agentEdit.read);
   const modelEvidence = createDrizzleModelEvidence(db);
   const modelEdits = createDrizzleModelEdits(
     db,
@@ -323,7 +322,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         }),
         links,
       ),
-      read: modelEditRead,
+      read: agentEdit.read,
     },
     modelEvidence,
   );

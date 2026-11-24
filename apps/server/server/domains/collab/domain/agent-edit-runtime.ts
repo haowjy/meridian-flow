@@ -12,7 +12,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { AgentEditCore } from "./agent-edit-cores.js";
+import type { AgentCallContext, AgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
@@ -31,7 +31,7 @@ export function createAgentEditRuntime<Tx>(input: {
   loro: {
     rooms: AgentEditRooms;
     ordinals: WriteOrdinals;
-    documentEdits: DocumentEdits;
+    documentEdits: DocumentEdits<AgentCallContext>;
     authorOfTurn(turnId: string): Promise<string | null>;
   };
   lockDocument(documentId: DocumentId): Promise<void>;
@@ -59,7 +59,7 @@ export function createAgentEditRuntime<Tx>(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const core: AgentEditCore = createEditCore({
+  const core: AgentEditCore = createEditCore<AgentCallContext>({
     rooms: input.loro.rooms,
     ordinals: input.loro.ordinals,
     schema,

@@ -117,12 +117,6 @@ export type MutationActor =
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 
-export type ReadFunction = (command: ReadCommand, context?: WriteContext) => Promise<WriteOutcome>;
-export type WriteFunction = (
-  command: WriteCommand,
-  context?: WriteContext,
-) => Promise<WriteOutcome>;
-
 export interface LinkSpliceFallbackDetail {
   documentId: string;
   reason: SpliceFallback;

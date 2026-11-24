@@ -52,11 +52,9 @@ import type {
   MutationActor,
   ObservationFailedDetail,
   ReadCommand,
-  ReadFunction,
   UnexpectedWriteErrorDetail,
   WriteCommand,
   WriteContext,
-  WriteFunction,
   WriteOutcome,
 } from "./types.js";
 import {
@@ -69,7 +67,7 @@ import {
   writeSchemaError,
 } from "./write-helpers.js";
 
-export interface EditCoreOptions {
+export interface EditCoreOptions<C extends WriteContext = WriteContext> {
   rooms: AgentEditRooms;
   /** Mints the `e<N>` handle of each write. */
   ordinals: WriteOrdinals;
@@ -79,7 +77,7 @@ export interface EditCoreOptions {
   /** A document's own codec where it is not `codec`: a code document's text is not Markdown. */
   codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
   links: DocumentLinksPort;
-  documentEdits: DocumentEdits;
+  documentEdits: DocumentEdits<C>;
   /**
    * The chat a commit by a turn (`CommitAuthor`) names, as the model reads it (`agent (c15)`); null for a
    * turn the host can't trace.
@@ -90,22 +88,28 @@ export interface EditCoreOptions {
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
 }
 
-export interface EditCore {
-  read: ReadFunction;
-  write: WriteFunction;
+/**
+ * The model's `read` and `write`. `C` is the host's call context: the core reads `WriteContext`'s
+ * fields and hands the whole context to the host's ports, which read their own.
+ */
+export interface EditCore<C extends WriteContext = WriteContext> {
+  read(command: ReadCommand, context: C): Promise<WriteOutcome>;
+  write(command: WriteCommand, context: C): Promise<WriteOutcome>;
   model: DocumentModel;
 }
 
 type Address = Extract<ReturnType<typeof parseFileAddress>, { ok: true }>;
 
-export function createEditCore(options: EditCoreOptions): EditCore {
+export function createEditCore<C extends WriteContext = WriteContext>(
+  options: EditCoreOptions<C>,
+): EditCore<C> {
   const { schema, rooms } = options;
   const model = loroModel(schema);
   const renderer = createDocumentRenderer({ model });
   const autoTurnIdNonce = createAutoTurnIdNonce();
   let autoTurnCounter = 0;
 
-  const read: ReadFunction = async (command, context = {}) => {
+  const read: EditCore<C>["read"] = async (command, context) => {
     const parsed = ReadCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand("read", parsed.error);
     return execute("read", parsed.data, context, (valid, threadId) =>
@@ -115,7 +119,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
     );
   };
 
-  const write: WriteFunction = async (command, context = {}) => {
+  const write: EditCore<C>["write"] = async (command, context) => {
     const parsed = WriteCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand(fallbackCommandName(command), parsed.error);
     return execute(parsed.data.command, parsed.data, context, (valid, threadId) => {
@@ -179,9 +183,10 @@ export function createEditCore(options: EditCoreOptions): EditCore {
   /** The call's room copy, freed when `use` settles. */
   async function withRoom(
     documentId: string,
+    context: WriteContext,
     use: (read: AgentRoomRead, copy: LoroDocument) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    const read = await rooms.readRoom(documentId);
+    const read = await rooms.readRoom(documentId, context);
     try {
       return await use(read, new LoroDocument(read.docs, schema));
     } finally {
@@ -224,7 +229,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command) as Address;
-    return withRoom(address.documentId, async (room, copy) => {
+    return withRoom(address.documentId, context, async (room, copy) => {
       const commandLinks = await links(address.documentId, copy, context);
       if (command.format === "changes") {
         const lines = room.docs.draft
@@ -263,7 +268,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
     });
   }
 
-  async function readEdits(command: ReadCommand, threadId: string, context: WriteContext) {
+  async function readEdits(command: ReadCommand, threadId: string, context: C) {
     const address = parseFileAddress(command) as Address;
     const result = await options.documentEdits.read({
       documentId: address.documentId,
@@ -281,7 +286,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
   async function inverse(
     command: Extract<WriteCommand, { command: "undo" | "revert" }>,
     threadId: string,
-    context: WriteContext,
+    context: C,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command) as Address;
     const result = await options.documentEdits.execute({
@@ -360,7 +365,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
       ...status("invalid_write", `${address.filePath} holds text; nothing was written.`),
       occupied: true,
     };
-    return withRoom(address.documentId, async (read, copy) => {
+    return withRoom(address.documentId, context, async (read, copy) => {
       const existing = !isEmptyDocument(blocksOf(copy));
       if (existing && command.overwrite !== true) return occupied;
       const planned = existing
@@ -442,7 +447,7 @@ export function createEditCore(options: EditCoreOptions): EditCore {
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(threadId, address.documentId, context);
-    return withRoom(address.documentId, async (read, copy) => {
+    return withRoom(address.documentId, context, async (read, copy) => {
       const planned = await planningDoc(read, copy, address.documentId, context, actor);
       try {
         const shown = copiedNodes ? [] : ((await context.shownLinks?.(address.documentId)) ?? []);
@@ -705,20 +710,25 @@ export function createEditCore(options: EditCoreOptions): EditCore {
     copy.forget();
     const textAfter = blocksOf(copy);
     const written = [...decodeEnvelope(batch).keys()];
-    await rooms.save(read.room, batch, {
-      documentId: docId,
-      room: read.room,
-      edit: editSince(copy.docs, since, written),
-      wId: identity.ordinal,
-      ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
-      threadId,
-      turnId: actor.kind === "agent" ? actor.turnId : null,
-      ...(actor.kind === "agent" && actor.responseId
-        ? { authoringResponseId: actor.responseId }
-        : {}),
-      actor,
-      delta: captureDelta(textBefore, textAfter),
-    });
+    await rooms.save(
+      read.room,
+      batch,
+      {
+        documentId: docId,
+        room: read.room,
+        edit: editSince(copy.docs, since, written),
+        wId: identity.ordinal,
+        ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
+        threadId,
+        turnId: actor.kind === "agent" ? actor.turnId : null,
+        ...(actor.kind === "agent" && actor.responseId
+          ? { authoringResponseId: actor.responseId }
+          : {}),
+        actor,
+        delta: captureDelta(textBefore, textAfter),
+      },
+      context,
+    );
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(copy);
     const shown = new Set(echoProjected.map((block) => block.key));

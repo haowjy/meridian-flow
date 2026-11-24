@@ -3,7 +3,7 @@ import type { RoomDocs, StoredEdit } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
 import type { StoredDelta } from "../content-merge/delta.js";
-import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
+import type { MutationActor, WriteContext } from "../tool/types.js";
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
@@ -72,13 +72,18 @@ export interface AgentEditRooms {
    * with no state yet reads empty. Rejects with `DocumentNotFoundError` when the document is
    * missing.
    */
-  readRoom(documentId: string): Promise<AgentRoomRead>;
+  readRoom(documentId: string, context: WriteContext): Promise<AgentRoomRead>;
 
   /**
    * Store one write's batch, and its record, in the host's command: its docs' snapshots and the
    * record in the command's transaction, the import into the room after it commits.
    */
-  save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord): Promise<void>;
+  save(
+    room: DocumentRoom,
+    batch: Uint8Array,
+    record: AgentWriteRecord,
+    context: WriteContext,
+  ): Promise<void>;
 }
 
 /** What a host supplies to run agent-edit over its `DocumentRooms`. */
@@ -88,13 +93,13 @@ export interface AgentEditRoomsHost<Tx> {
    * Draft chat, whether or not the draft has written there, and the Live room for a Live chat or a
    * document only the draft holds. Never "does the fork exist".
    */
-  roomFor(documentId: string): Promise<DocumentRoom>;
+  roomFor(documentId: string, context: WriteContext): Promise<DocumentRoom>;
   /** The transaction of the command this call runs in. */
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
   /** Store a write's record in `tx`, beside its committed batch: the record says all an inverse needs. */
-  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
+  recordWrite(tx: Tx, record: AgentWriteRecord, context: WriteContext): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -102,14 +107,14 @@ export function agentEditRooms<Tx>(
   host: AgentEditRoomsHost<Tx>,
 ): AgentEditRooms {
   return {
-    async readRoom(documentId) {
-      const room = await host.roomFor(documentId);
+    async readRoom(documentId, context) {
+      const room = await host.roomFor(documentId, context);
       return { room, docs: await rooms.read(room) };
     },
-    async save(room, batch, record) {
+    async save(room, batch, record, context) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      await host.recordWrite(tx, record);
+      await host.recordWrite(tx, record, context);
     },
   };
 }
