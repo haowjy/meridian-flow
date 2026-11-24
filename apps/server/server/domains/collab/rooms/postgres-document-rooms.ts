@@ -409,7 +409,16 @@ export function createPostgresDocumentRooms(input: {
       const doc = version && loaded.docs.doc(key);
       return Boolean(doc && docCovers(version, docVersion(doc)));
     };
-    if (stored) for (const key of loaded.dirty) if (saved(key)) loaded.dirty.delete(key);
+    if (stored) {
+      for (const key of loaded.dirty) if (saved(key)) loaded.dirty.delete(key);
+      // A pending save timer means something is unsaved; unload counts on it.
+      if (loaded.dirty.size === 0 && loaded.saveTimer) {
+        clearTimeout(loaded.saveTimer);
+        loaded.saveTimer = null;
+        loaded.firstDirtyAt = 0;
+        settleIfIdle(loaded);
+      }
+    }
     if (changed.length === 0) {
       // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
       if (pending && batch) emitTo(loaded.room, batch, origin);
