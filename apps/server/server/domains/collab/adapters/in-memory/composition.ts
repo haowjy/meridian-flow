@@ -271,6 +271,7 @@ function memoryServerRooms(memory: MemoryDocumentRooms): ServerDocumentRooms {
     seed: (_tx, room, snapshots) => memory.transaction((tx) => memory.seed(tx, room, snapshots)),
     subscribe: memory.subscribe,
     flush: memory.flush,
+    loaded: memory.loaded,
     unload: memory.unload,
     close: memory.close,
   };

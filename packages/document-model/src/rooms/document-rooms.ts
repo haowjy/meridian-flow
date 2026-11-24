@@ -86,6 +86,9 @@ export interface DocumentRooms<Tx> {
   /** Save the room's unsaved docs now (an AI turn's end, a press). */
   flush(room: DocumentRoom): Promise<void>;
 
+  /** Room names loaded now. */
+  loaded(): string[];
+
   /**
    * Save and drop the room: every doc it holds is freed. Unloading a Live room unloads its loaded
    * forks first. The adapter also unloads idle rooms, and the least recently used above its bound.

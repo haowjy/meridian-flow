@@ -20,7 +20,11 @@ own press. Every Work and root chat has its draft from its creation, so a press
 never makes one.
 
 - **The text half** runs first, per document of the draft in scope that has a fork row (a
-  `draft` or `work` scope takes the forks flagged pending). It reads the fork room as a command
+  `draft` or `work` scope takes the forks flagged pending). A loaded fork writes its row and flag
+  only when it saves, on a 2 s debounce, so the press first saves its drafts' loaded forks
+  (`saveLoadedForks`, outside its transaction): a tab's first words in a draft, acknowledged just
+  before the press (always the case for a press made while away, whose typing arrives with the
+  Join), would otherwise have no row yet and be skipped. It reads the fork room as a command
   copy (its own peer, carrying its forwarded copy of Live), runs `applyBlocks` or
   `discardBlocks` (a `change` scope selects the change by any member id), commits Live's room
   then the fork's by the press (`commitMessage({ by: { press: <id> } })`), and stores each change's `PressedChange` in
