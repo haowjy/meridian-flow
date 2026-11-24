@@ -177,24 +177,16 @@ moment ago included. Nothing is read until a chip is pressed. A surface provides
 `FolderMenuContext` (project and how it opens a document); the Editor builds its
 host from the editor scope and link destination. Deleted, not visible or
 unreachable folders say "This folder is no longer available."
-`DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
-review controls drop to a second line when they don't fit beside them (flex-wrap,
-no breakpoint). The side header's trailing control is pinned to line one and precedes
-the controls in DOM order, so Tab goes line one, then line two. Only a line too
-narrow for the controls even alone gives up labels, in order (stepper count, then
-Apply label), and the path drops its parent crumbs only when the leaf would be
-cut. A link-update note is a direct sibling of the path, so an absent note
-occupies neither a flex item nor a gap. Under a coarse pointer every control
-owns a 44px box (the row grows to 44px; the paired collapse/expand toggles share
-one size), except the filename, whose width yields so line one fits the 280px
-side. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
+`DocumentIdentityBar` portals one non-wrapping line of chips into the toolbar row's
+state slot (`DocumentStatePortal`), and a review's `ReviewBar` takes the formatting
+toolbar's place through `DocumentToolbarPortal`. Only a line too narrow for the review
+controls even alone gives up, in order (`fitReviewLine`, `review-line.css`): the short
+count and tighter gaps, then the count, then (a finger only) the stepper. Under a coarse
+pointer every control in the identity row owns a 44px square (`document-identity-row.css`);
+horizontal hit areas are exactly the visible box, and gaps stay unclaimed.
 
-
-Link-update feedback derives its destination from the matched move receipt, not
-from a picker-provided label. The remount registry retains only operation
-selection until settlement plus the receipt note TTL; admission age never
-expires a pending/offline move. Same-folder renames without changed links do
-not claim a placement.
+A move or rename shows no link-update note: the browser's copy of a list has no move receipt
+to carry a link count ([tree-interactions](tree-interactions.md)).
 
 ## External-file drops and pending imports
 

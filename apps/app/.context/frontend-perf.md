@@ -22,6 +22,6 @@ Chapter-length streaming is O(n) per token if the whole answer re-parses and the
 transcript re-lays out on every chunk.
 
 - Text and reasoning deltas coalesce into one store update per animation frame
-  (`StreamDeltaCoalescer`). Any other event, or a delta for a different message,
-  flushes first.
+  (`StreamDeltaCoalescer`, `@meridian/thread-client/sync`). Any other event, or a
+  delta for a different message, flushes first.
 - Auto-follow pins from cached heights, not a layout read per revision.

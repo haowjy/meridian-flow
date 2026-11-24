@@ -41,9 +41,9 @@ alike.
 
 ## Fold labels name documents and outcomes, not step counts
 
-The process fold's digest (`thinking-digest.ts`) reads "Edited 1 document, 3
-steps" or just "2 steps": counts that hide which documents and what happened.
-The direction (from the subagent design
+The process fold's digest (`thinking-digest.ts`) reads "Invoked 'x', read 2
+documents, 3 steps": counts that hide which documents were read and never say what
+the reply wrote. The direction (from the subagent design
 [mockup](https://claude.ai/artifact/WVkaCxq7uvpvNFumvKDg6y)): name the
 documents and outcomes instead, writes first, then reads, then other tools, at
 most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure

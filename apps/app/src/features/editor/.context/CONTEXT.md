@@ -7,9 +7,11 @@ for the short operating rules; core editor contracts remain in `core/editor`.
 ## Boundary and geometry
 
 `SessionEditor` binds the document session and provides `EditorScopeProvider`.
-`EditorView` chooses live or review presentation and registers the app runtimes;
-`EditorChromeHost` mounts the surface registry once. The host renders no
-surface of its own. A runtime that needs project state returns `null`; visible
+`EditorView` mounts one `SessionEditor` over the room its host bound (Live, or a
+draft's fork) or `PendingEditorShell` while none is bound; there is no separate review
+presentation to choose. `SessionEditor` provides `EditorScopeProvider`, mounts
+`EditorChromeHost` (the surface registry, once), and mounts the link, image and file-drop
+runtimes. The host renders no surface of its own. A runtime that needs project state returns `null`; visible
 outcomes mount through the chrome registry.
 
 `editor-column.ts` is the only owner of prose, toolbar, and canvas geometry.
@@ -36,8 +38,9 @@ block, link, table, and object surfaces and must not become a second toolbar.
 Slash and link completion keep focus in prose and use moving `anchorRect`
 anchors. Their rows come from the shared completion/catalog seams.
 
-Word count reads the selection’s content, not its first `from..to` range: a cell rectangle
-has several ranges. Selected counts update when content changes even if the selection stays equal.
+Word count reads `selection.from..to` (a multi-range selection, such as a cell
+rectangle, counts only that span). Selected counts update when content changes even if the
+selection stays equal.
 
 ## Scope and catalogs
 
@@ -75,7 +78,8 @@ desktop and phone alike, beside "Review N changes" on a plain draft. Review chan
 editor (`core/editor/extensions/review-changes`, mounted by `surfaces/review`): Live's text of each
 changed paragraph above the draft's (Inline) or beside every paragraph (Side by side), with the
 change's pair in the right margin. Its controls take the formatting toolbar's place in the
-toolbar row (`ReviewBar` through `DocumentToolbarPortal`, `document-state-slot.tsx`), unscrolled
+toolbar row (`ReviewBar`, from `features/draft-review`, through `DocumentToolbarPortal`,
+`document-state-slot.tsx`), unscrolled
 since the bar fits itself. While a room opens, the editor area shows `DelayedContentSkeleton`
 after 500 ms, never a blank or an empty page. Commands and their Undo belong to
 [`draft-review`](../../draft-review/.context/draft-review.md).
@@ -90,21 +94,16 @@ A schema fence changes the mounted editor to read-only through its options seam;
 it does not rebuild the editor or undo manager. A schema-stale reset unmounts
 it and shows the unavailable state.
 
-Binding waits behind the bounded repair-evidence horizon, then always mounts
-(even when evidence timed out). `SchemaRepairNotice` reports witnessed repairs
-and never gates editing or offers reinsertion or approval. It reads session
-repair snapshots rather than inspecting the editor document.
+Binding waits behind the bounded bind horizon (`editor-bind-horizon.ts`, 5 s), then
+always mounts; when the evidence timed out, `evidenceDegraded` hides the word count.
+There is no repair notice: a schema verdict is a fence, never a report of removed
+text.
 
-Both notices live in `SchemaNotices.tsx` as one-line bars in
-`EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar; the slot
-collapses when neither has anything to say. The fence bar carries Refresh; the same refusal also makes the app reload by itself once the writer pauses (`client/release`). The
-repair bar says only that text was removed; its Details popover holds every
-recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
-push the manuscript down. The popover anchors to the whole bar and takes its
-width, so it fits a narrow side pane. Dismiss hides the bar until the session
-reports another repair and sends focus to the editor, or to Refresh while the
-fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
-and reports a refusal on that excerpt; a pending Copied reset never erases it.
+`SchemaNotices.tsx` renders the fence as one error bar in
+`EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar: "Editing paused"
+and Refresh, which reloads the page. The same refusal also makes the app reload by
+itself once the writer pauses (`client/release`). The slot collapses (`empty:hidden`)
+when there is no fence.
 
 ## Related contracts
 

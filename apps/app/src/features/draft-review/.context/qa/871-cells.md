@@ -57,8 +57,8 @@ chat switcher first.
 - Cell 1 keeps the writer paragraph between rewritten B and C.
 - Cell 2 keeps ` WRITER-W` as B's suffix.
 - Cell 3 loses D and ` WRITER-D`; the ancestor delete removed the block.
-- Cell 4 keeps `WRITER-OUT` outside the model's passage and lists it under
-  `concurrent edits by the user`.
+- Cell 4 keeps `WRITER-OUT` outside the model's passage and the write's result says
+  `the user changed <hash> after you last read it.`
 
 No concurrent writer edit refuses the model write, no text is duplicated, and
 Draft mode leaves the live document unchanged. Repeat cell 2 with a sentence

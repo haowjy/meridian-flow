@@ -18,8 +18,9 @@ Delete an entry when it ships.
   than import code; reproduce on `main` before fixing. Evidence:
   `evidence/d1-fix/run4-delete-timeline.txt`.
 
-- **Drop acceptance should say what a drop will do.** `tree-drop/` accepts
-  external files with a hard-coded copy effect and "Import here" label.
-  Internal row drags (the drag-anywhere lane) need the accepting route to
-  return its effect and label so targets render either without knowing which
-  route accepted. See `reviews/simplify-app.md` finding 7 in the work item.
+- **Drop acceptance should say what a drop will do.** `tree-drop/` takes the hint's
+  label from the accepting route's verdict (`EntriesVerdict`, shared by the entries
+  and files routes), while the drop effect still comes from the route kind
+  (`kind === "files" ? "copy" : "move"`). A route that could Copy or Move by place
+  should return its effect too, so a target renders it without knowing which route
+  accepted. See `reviews/simplify-app.md` finding 7 in the work item.

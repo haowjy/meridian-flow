@@ -72,7 +72,7 @@ unseen. The server answers `withdrawn`, `already_started` or 404.
 - A 404 only drops the local send: the enqueue may still have been committing, so
   if the record lists the id later the row shows again.
 
-A queued row leaves by one rule (`retainControls`): it stays until a transcript
+A queued row leaves by one rule (`reconcile` in `thread-controls.ts`): it stays until a transcript
 turn carries its control id, because the record drops the item as the command
 starts, before its divider reaches the transcript. Otherwise it leaves on proof
 that it won't run: this device's Stop, or an accepted snapshot at or after the

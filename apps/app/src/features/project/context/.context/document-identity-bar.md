@@ -5,16 +5,14 @@ for feature-level contracts first.
 
 ## Document identity bar
 
-`DocumentIdentityBar.tsx` is the one identity surface: a mono
-path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
-provisional, viewer. Every host draws it (`variant="state"`) at the top of
-its document's canvas, in main and in the side. The header above it
-(`MainHeader`, `SideDocumentHeader`) carries the document's name, so the bar shows
-the path and chips. Crumb/field text is `text-sm`
+`DocumentIdentityBar.tsx` is the one identity surface: state chips on every
+document — tracked, provisional, viewer — portalled into the toolbar row's state
+slot (`DocumentStatePortal`), in main and in the side. The header above it
+(`MainHeader`, `SideHeader`) carries the document's name. Chip and field text is `text-sm`
 to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
-constants (28px band, 22px child boxes) and the zero-layout-shift contract
-between rest and edit states. Provisional docs are a *state* of the bar (italic
-leaf + jade “Choose a home” chip), never separate chrome; the editor banner
+constant (`h-5.5`, 22px, borders included) and the zero-layout-shift contract
+between rest and edit states. Provisional docs are a *state* of the bar (the jade “Choose a home” chip),
+never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
@@ -38,8 +36,8 @@ browser); see the KB's path-navigates-lists-edit page.
 Contracts:
 
 - **Keystroke path**: at rest the bar renders from document metadata only. The
-  content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
-  only while the edit field is open on a provisional doc.
+  content-suggestion observer (300 ms debounce over the session's content,
+  `suggestionForSession`) runs only while the edit field is open on a provisional doc.
 - **Placement grammar** (any Unfiled document or provisional document): the jade chip opens
   an EMPTY field — the content-derived suggestion is ghost placeholder text
   (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
@@ -57,7 +55,8 @@ Contracts:
   at once, and the commit reports the name the writer typed (beside a sibling of that name it is a twin).
   A same-name explicit Save clears provisional presentation. Navigation additionally requires
   that the committed document is still active. The field does not blur-dismiss while a save is
-  pending. A move between a project and the account's files is a server route, not offered here.
+  pending. A move between a project and the account's files isn't offered here: the
+  browser's copy of a list can't append to two lists, so the drop offers Copy.
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.

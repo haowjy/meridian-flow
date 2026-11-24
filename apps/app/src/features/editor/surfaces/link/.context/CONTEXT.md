@@ -7,7 +7,7 @@ outcomes, create-on-miss and the document index.
 
 ## What `ProjectLinkRuntime` registers
 
-The Editor's adapter over `useLinkFollower`. `EditorView` finds the held document's URI by id in the
+The Editor's adapter over `useLinkFollower`. `SessionEditor` finds the held document's URI by id in the
 scope's index and hands the same value to the `@` catalog, so a relative link resolves against the
 holder it is spelled from. Project and link Work come from `useEditorScope()`; route Work is never
 read for links.
@@ -17,9 +17,9 @@ until something can follow.
 
 ## Completion
 
-Both `@` and LinkForm write a standard Markdown link, spelled with
-`spellDocumentHref(holderUri, uri)`: relative within the holder's area, a full Context URI across
-areas. The Editor's `@` catalog also passes `linkAhead`; its row inserts the link and creates nothing.
+Both `@` and LinkForm write a standard Markdown link through `storedHref(address, suffix)`
+(`@meridian/contracts`): the stored href is `spellDocumentHref(null, address)`, a full Context URI
+with no holder, plus the suffix. The Editor's `@` catalog also passes `linkAhead`; its row inserts the link and creates nothing.
 LinkForm keeps editable display text separate from the selected destination.
 
 ## Why the outcome is a chrome surface
