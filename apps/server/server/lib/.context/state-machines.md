@@ -95,10 +95,11 @@ stateDiagram-v2
 - **A caret is placed only after its write commits** (`loro-agent-edit-host.ts`, after the room's
   own after-commit import), so a tab has the batch before the caret that points into it; a
   rolled-back write places none. A write from a chat this process sent no request for places none.
-- **Every committed write places it** (`writeCaret` in agent-edit, which walks every block of the
-  document before and after the write): just after its last text change, or beside the blocks it
-  removed, moved or restyled when it changed no text. A write that leaves no block to hold it
-  clears the caret, so it never stays at an older edit.
+- **Every committed write places it** (`writeCaret` in agent-edit): after the replacement or
+  insertion the command wrote, or beside the blocks it removed, moved or restyled when it changed
+  no text. The plan's point is resolved and re-encoded on the room copy after its batch merges, so
+  concurrent text and a shared suffix cannot move it inside the write. A write that leaves no
+  block to hold it clears the caret, so it never stays at an older edit.
 - **One room at a time.** A write in another room clears the caret where it was.
 - **Stop is a settle.** Stop ends the reply, the run settles, and the caret stays while the cache
   is warm, as after any turn: the chat can still be asked to go on. Deleting the chat (or its Work)

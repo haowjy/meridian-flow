@@ -73,6 +73,8 @@ export type ResolveWriteResult =
   | {
       ok: true;
       edits: ResolvedEdit[];
+      /** The end of the final find splice in the resulting document. */
+      caret?: { block: number; offset: number };
     }
   | {
       ok: false;
@@ -174,6 +176,12 @@ function assignPlannedWrite(
   links: WriteLinks,
 ): ResolveWriteResult {
   const edits: ResolvedEdit[] = [];
+  const placements: {
+    start: number;
+    block: number;
+    offset: number;
+  }[] = [];
+  const replacements: { start: number; shift: number }[] = [];
   for (const step of steps) {
     switch (step.kind) {
       case "edits":
@@ -186,20 +194,49 @@ function assignPlannedWrite(
       }
       case "replace":
       case "spliced": {
+        const blocks = assignScope(ctx, step, links);
         edits.push(
           ...replaceScope(
             ctx,
             params,
             step.scope,
-            assignScope(ctx, step, links),
+            blocks,
             step.kind === "spliced" ? step.windows : null,
           ),
         );
+        replacements.push({
+          start: step.scope.startIndex,
+          shift: blocks.length - step.scope.blocks.length,
+        });
+        if (step.kind === "spliced" && step.windows) {
+          for (let block = step.windows.new.length - 1; block >= 0; block--) {
+            const window = step.windows.new[block]?.at(-1);
+            if (!window) continue;
+            placements.push({
+              start: step.scope.startIndex,
+              block,
+              offset: window.to,
+            });
+            break;
+          }
+        }
         break;
       }
     }
   }
-  return { ok: true, edits };
+  const placed = placements
+    .map((placement) => ({
+      block:
+        placement.start +
+        placement.block +
+        replacements
+          .filter((replacement) => replacement.start < placement.start)
+          .reduce((shift, replacement) => shift + replacement.shift, 0),
+      offset: placement.offset,
+    }))
+    .sort((a, b) => a.block - b.block)
+    .at(-1);
+  return { ok: true, edits, ...(placed ? { caret: placed } : {}) };
 }
 
 /** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */

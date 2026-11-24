@@ -8,7 +8,11 @@ must do that the types can't say.
 `save(room, batch, record, caret)` runs inside the host's command: `commit` the batch, then
 `recordWrite` the record in the same transaction, so a write and its Undo record land or fail
 together, then `wrote(record, caret)`, which the server's host turns into the chat's caret once
-the command commits. The caret is not part of the record: nothing stores it. The record's `delta` is the write's before and after text by block, which
+the command commits. The write plan names the end of the replacement or insertion before the
+block diff collapses a shared suffix. The core encodes that point on the planning copy, resolves
+it after the batch merges into the room copy, and re-encodes it there. A cursor made from the
+CRDT diff alone can stop before unchanged text at the end of a replacement. The caret is not part
+of the record: nothing stores it. The record's `delta` is the write's before and after text by block, which
 the card and the edits list show; its `edit` is what turn Undo and the model's `undo` and `revert`
 take back, whole or not at all, by design §2's Undo rule (`undoInRooms`) in the record's `room`, so
 the writer's later edits stay; a Draft turn's restore press takes the turn's edits back the same

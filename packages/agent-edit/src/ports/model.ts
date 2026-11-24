@@ -25,6 +25,12 @@ export interface FormatRange {
   attrs: Record<string, unknown> | null;
 }
 
+/** The shown-unit offset just after text an operation wrote or formatted. */
+export interface TextEnd {
+  block: string;
+  offset: number;
+}
+
 /**
  * The smallest changes to one top-level block, each addressed to a node the model saw.
  * `path` is child indexes from that block down to the node, in the model's view; a unit
@@ -49,7 +55,9 @@ export type EditOp =
       unit?: number;
     };
 
-type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
+type EditOpsResult =
+  | { ok: true; textEnds: TextEnd[] }
+  | { ok: false; code: "invalid_write"; message: string };
 
 /**
  * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.

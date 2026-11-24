@@ -192,7 +192,30 @@ export function loroModel(schema: Schema): LoroDocumentModel {
         lowered.push(shaped);
       }
       const result = document.apply(lowered);
-      return result.ok ? { ok: true } : result;
+      if (!result.ok) return result;
+      const textEnds = lowered.flatMap((op) => {
+        if (op.kind === "text") {
+          let shift = 0;
+          let offset: number | undefined;
+          for (const splice of op.splices) {
+            const size = splice.content.reduce(
+              (units, item) => units + (item.kind === "text" ? item.text.length : 1),
+              0,
+            );
+            offset = splice.from + shift + size;
+            shift += size - (splice.to - splice.from);
+          }
+          if (offset === undefined)
+            for (const format of op.formats) offset = Math.max(offset ?? 0, format.to);
+          return offset === undefined
+            ? []
+            : [{ block: result.renamed.get(op.block) ?? op.block, offset }];
+        }
+        if (op.kind === "attrs" && op.unit !== undefined)
+          return [{ block: result.renamed.get(op.block) ?? op.block, offset: op.unit + 1 }];
+        return [];
+      });
+      return { ok: true, textEnds };
     },
 
     unitEditors(ref, path) {

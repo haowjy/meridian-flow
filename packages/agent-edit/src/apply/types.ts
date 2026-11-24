@@ -1,6 +1,6 @@
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
-import type { EditOp } from "../ports/model.js";
+import type { EditOp, TextEnd } from "../ports/model.js";
 
 /**
  * Resolver → apply seam. Block references are live objects from one local document;
@@ -71,6 +71,8 @@ export type ApplyResult =
       changedBlocks: string[];
       deletedBlocks: string[];
       insertedBlocks: string[];
+      /** Semantic ends of text operations, before CRDT diffing can collapse shared suffixes. */
+      textEnds: TextEnd[];
     }
   | {
       ok: false;

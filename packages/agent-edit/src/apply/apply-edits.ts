@@ -2,7 +2,7 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, TextEnd } from "../ports/model.js";
 import { editSegments } from "./segments.js";
 import {
   type ApplyErrorCode,
@@ -36,6 +36,7 @@ interface ApplyAccumulator {
   insertedBlocks: string[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
+  textEnds: TextEnd[];
 }
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
@@ -61,6 +62,7 @@ export function applyEdits(
     insertedBlocks: [],
     touchedHashes: new Set(),
     deletedHashes: new Set(),
+    textEnds: [],
   };
 
   const segments = beforeSegment
@@ -107,6 +109,7 @@ export function applyEdits(
       .filter((hash) => accumulator.touchedHashes.has(hash)),
     deletedBlocks: [...accumulator.deletedHashes],
     insertedBlocks: accumulator.insertedBlocks,
+    textEnds: accumulator.textEnds,
   };
 }
 
@@ -192,6 +195,7 @@ function executePlan(
     case "ops": {
       const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
+      accumulator.textEnds.push(...applied.textEnds);
       for (const other of plan.edit.tookFrom ?? []) model.recordPieces(doc, plan.edit.block, other);
       // After the write: writing into an empty document's paragraph gives it a new id.
       accumulator.touchedHashes.add(model.getBlockId(plan.edit.block));

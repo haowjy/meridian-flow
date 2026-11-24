@@ -44,6 +44,7 @@ import type {
   LoroDocumentEdits,
 } from "../ports/document-rooms.js";
 import { isDocumentNotFoundError } from "../ports/document-rooms.js";
+import type { TextEnd } from "../ports/model.js";
 import { editHandle, type WriteOrdinals } from "../ports/write-ordinals.js";
 import { landCopies } from "../resolver/land-copies.js";
 import { planWrite, type ResolveWriteParams } from "../resolver/resolve.js";
@@ -69,7 +70,12 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
-import { writeCaret } from "./write-caret.js";
+import {
+  plannedBlockCaret,
+  plannedResolvedCaret,
+  plannedWriteCaret,
+  writeCaret,
+} from "./write-caret.js";
 import {
   createAutoTurnIdNonce,
   errorResponse,
@@ -595,7 +601,10 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
           links: commandLinks,
           actor,
           address,
-          plan: { edits: resolved.edits },
+          plan: {
+            edits: resolved.edits,
+            ...(resolved.caret ? { caret: resolved.caret } : {}),
+          },
           ...(from && copiedNodes ? { copied: { from: from.path, edges: true } } : {}),
         });
       } finally {
@@ -604,7 +613,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     });
   }
 
-  type Plan = { edits: readonly ResolvedEdit[] } | { blocks: readonly Block[] };
+  type Plan =
+    | { edits: readonly ResolvedEdit[]; caret?: { block: number; offset: number } }
+    | { blocks: readonly Block[] };
 
   /**
    * A whole-document replace's content that writes the model's command as a merge with what it
@@ -711,11 +722,17 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     let changed: string[] = [];
     let deleted: string[] = [];
     let inserted: string[] = [];
+    let textEnds: TextEnd[] = [];
     if ("edits" in plan) {
       const applied = applyEdits(toLoroHandle(planDoc), model, plan.edits, "agent-write");
       if (!applied.ok)
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
-      ({ changedBlocks: changed, deletedBlocks: deleted, insertedBlocks: inserted } = applied);
+      ({
+        changedBlocks: changed,
+        deletedBlocks: deleted,
+        insertedBlocks: inserted,
+        textEnds,
+      } = applied);
     } else {
       inserted = model
         .insertBlocks(toLoroHandle(planDoc), null, { blocks: [...plan.blocks] })
@@ -729,6 +746,16 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const removedKeys = planned
       .filter((block) => deleted.includes(block.hash))
       .map((block) => block.key);
+    const plannedBlocks = blocksOf(planDoc);
+    const touched = new Set(touchedKeys);
+    const plannedCaret =
+      command.command !== "remove" && "find" in command && command.find !== undefined
+        ? "edits" in plan && plan.caret
+          ? plannedResolvedCaret(planDoc.docs, plan.caret, textEnds, plannedBlocks)
+          : plannedWriteCaret(planDoc.docs, textEnds, plannedBlocks)
+        : command.command !== "remove"
+          ? plannedBlockCaret(planDoc.docs, touched, plannedBlocks)
+          : plannedWriteCaret(planDoc.docs, textEnds, plannedBlocks);
     const exported = (planDoc === copy ? copy.docs : planDoc.docs).exportSince(since);
     if (exported.size === 0)
       return withEvidence(edit.links, read, copy, docId, context, formatUnchangedSuccess());
@@ -757,7 +784,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       actor,
       delta: captureDelta(textBefore, textAfter),
     };
-    const caret = writeCaret(copy.docs, since, written, textBefore, textAfter);
+    const caret = writeCaret(copy.docs, since, written, plannedCaret, textBefore, textAfter);
     await rooms.save(read.room, batch, record, caret);
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(toLoroHandle(copy));
