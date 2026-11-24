@@ -24,6 +24,7 @@
  * the copy, its mark (`SERVER_META`): what it holds beyond its mark is what a room that ends for
  * good drops.
  */
+import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
@@ -89,11 +90,17 @@ async function withExisting<T>(
 
 export type CopyHold = { release(): void };
 
-/** The document a database name belongs to, for one account; null for another account's or another kind of database. */
-function documentOf(name: string, accountId: AccountId): DocumentId | null {
+/** The room a database name is a copy of, for one account; null for any other database. */
+function roomOf(name: string, accountId: AccountId): DocumentRoom | null {
   const head = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/`;
-  return name.startsWith(head)
-    ? (decodeURIComponent(name.slice(head.length).split("/")[0]?.split("#")[0] ?? "") as DocumentId)
+  const { key } = parseName(name);
+  if (!key.startsWith(head)) return null;
+  const [document, fork, draft, ...rest] = key.slice(head.length).split("/");
+  if (!document || rest.length > 0) return null;
+  const documentId = decodeURIComponent(document) as DocumentId;
+  if (fork === undefined) return { kind: "live", documentId };
+  return fork === "fork" && draft
+    ? { kind: "fork", draftId: decodeURIComponent(draft) as DraftId, documentId }
     : null;
 }
 
@@ -132,7 +139,7 @@ export class LocalDocumentCopies {
     private readonly pointers: RecordStorage = browserStorage("local") ?? memoryStorage(),
   ) {
     this.loading = this.names().then((names) => {
-      const found = new Set(names.flatMap((name) => documentOf(name, accountId) ?? []));
+      const found = new Set(names.flatMap((name) => roomOf(name, accountId)?.documentId ?? []));
       this.known = new Set([...found, ...(this.known ?? [])]);
       this.publish();
     });
@@ -208,9 +215,18 @@ export class LocalDocumentCopies {
     return () => this.observers.delete(observer);
   }
 
+  /** Each room's current copy here, by database name. */
+  async currentCopies(): Promise<{ name: string; room: DocumentRoom }[]> {
+    return (await this.names()).flatMap((name) => {
+      const room = roomOf(name, this.accountId);
+      const { key, incarnation } = parseName(name);
+      return room && incarnation === this.current(key) ? [{ name, room }] : [];
+    });
+  }
+
   /** Shared hold while a session has the database `name` open; release it once the session is destroyed. */
   async hold(name: string): Promise<CopyHold> {
-    const documentId = documentOf(name, this.accountId);
+    const documentId = roomOf(name, this.accountId)?.documentId;
     if (documentId) {
       this.known = new Set([...(this.known ?? []), documentId]);
       this.publish();
@@ -285,7 +301,7 @@ export class LocalDocumentCopies {
    */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
-      (await this.names()).flatMap((name) => documentOf(name, this.accountId) ?? []),
+      (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
     );
     const results = await Promise.all(
       [...documents].map(async (documentId) => {
@@ -321,7 +337,9 @@ export class LocalDocumentCopies {
   }
 
   private async namesOf(documentId: DocumentId): Promise<string[]> {
-    return (await this.names()).filter((name) => documentOf(name, this.accountId) === documentId);
+    return (await this.names()).filter(
+      (name) => roomOf(name, this.accountId)?.documentId === documentId,
+    );
   }
 
   /** No copy of the document is left, so its pointers and its place in `known` go too. */

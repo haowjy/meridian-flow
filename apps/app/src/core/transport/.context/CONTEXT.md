@@ -37,11 +37,23 @@ acks or through batches the server sent. Terminal ends reject current and future
 ordinary disconnects leave them pending.
 
 `whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
-every batch sent so far is acknowledged. A room that is not joined (offline, reconnecting) is
-waited for until it joins and the Join's own batch, which carries everything typed while away,
-is acknowledged; a socket that drops mid-wait moves the wait to the next Join. It resolves when
-the room ends or is destroyed. Resolving at once on a room that was not joined let a press made
-offline reach the server before the offline typing did, so it pressed an older fork.
+every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting) is
+waited for until it is connected again and the Join's own batch, which carries everything typed
+while away, is acknowledged; a socket that drops mid-wait moves the wait to the next Join. A
+waiter takes the batch ids it waits on only once the room reads as connected, which comes after
+the Join's batch is sent, so nothing emitted between the Join's answer and that batch can let it
+through early. It resolves when the room ends or is destroyed. Resolving at once on a room that
+was not joined let a press made offline reach the server before the offline typing did, so it
+pressed an older fork.
+
+The transport covers only a room that has one. The rest of the rule is above it:
+`DocumentSession.whenSentAcknowledged` waits while its copy is still loading and its transport is
+not attached yet, and the registry's `whenSentAcknowledged` names the press's rooms (the forks of
+its drafts, of its documents when it names them, and their Live rooms) and opens and retains the
+ones whose copy here holds unsent words but that the tab has no session for, which is how a reload
+or another tab's typing is covered. Not covered: an unsent deletion or format change with no
+words in it in a copy the tab has not opened, and, in a press of a whole draft or Work, the Live
+room of a document only the draft holds, which no fork names.
 
 ## Errors
 

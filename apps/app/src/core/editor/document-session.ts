@@ -586,7 +586,10 @@ export class DocumentSession {
   detachTransport(): Promise<void> {
     this.transportAttachmentPending = false;
     const previous = this.transportProvider;
-    if (this.destroyed || !previous) return this.detaching ?? Promise.resolve();
+    if (this.destroyed || !previous) {
+      this.recomputeStatus();
+      return this.detaching ?? Promise.resolve();
+    }
     this.noteServer();
     for (const stop of this.unsubscribers.splice(0)) stop();
     if (!this.presenceHeldForTransport) {
@@ -618,12 +621,21 @@ export class DocumentSession {
   }
 
   /**
-   * Settles once the server acknowledged every batch this session sent so far; a room that is
-   * reconnecting is waited for until its Join's batch is acknowledged. A fork's copy holds the Live ops it forwards, which its room never
-   * acknowledges, so a press waits on this (design §4).
+   * Settles once the server acknowledged every batch this session sent so far. A session still
+   * loading its copy is waited for until its transport attaches, and a room that is reconnecting
+   * until its Join's batch is acknowledged. A fork's copy holds the Live ops it forwards, which
+   * its room never acknowledges, so a press waits on this (design §4).
    */
-  whenSentAcknowledged(): Promise<void> {
-    return this.transportProvider?.whenSentAcknowledged() ?? Promise.resolve();
+  async whenSentAcknowledged(): Promise<void> {
+    if (this.transportAttachmentPending)
+      await new Promise<void>((resolve) => {
+        const stop = this.subscribe(() => {
+          if (this.transportAttachmentPending && !this.destroyed) return;
+          resolve();
+          queueMicrotask(() => stop());
+        });
+      });
+    await this.transportProvider?.whenSentAcknowledged();
   }
 
   /** Captured now; later typing does not move this barrier. */

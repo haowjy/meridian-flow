@@ -169,13 +169,14 @@ export function createLoroRoomTransport({
   const unacked = new Map<string, RoomVersion>();
   /**
    * `whenSentAcknowledged` callers, each with the batches it waits on: those unacked when it last
-   * saw the room joined, or null until the next Join (a dropped socket's batches go in its batch).
+   * saw the room connected, or null until it is again (a dropped socket's batches go in the next
+   * Join's batch, which is sent before the room reads as connected).
    */
   const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
   const settleSentWaiters = () => {
     for (const waiter of sentWaiters) {
       if (!destroyed && !ended()) {
-        if (!joined) {
+        if (!connected()) {
           waiter.ids = null;
           continue;
         }
@@ -200,7 +201,8 @@ export function createLoroRoomTransport({
     for (const listener of statusListeners) listener(state);
     emitAck();
   };
-  const acknowledged = () => state.kind === "connected" && joined && unacked.size === 0;
+  const connected = () => state.kind === "connected" && joined;
+  const acknowledged = () => connected() && unacked.size === 0;
   let lastAck: boolean | null = null;
   const emitAck = () => {
     settleSentWaiters();
@@ -465,7 +467,7 @@ export function createLoroRoomTransport({
     whenSentAcknowledged() {
       if (destroyed || ended() || acknowledged()) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        sentWaiters.add({ ids: joined ? new Set(unacked.keys()) : null, resolve });
+        sentWaiters.add({ ids: connected() ? new Set(unacked.keys()) : null, resolve });
       });
     },
     serverVersion: () => server,

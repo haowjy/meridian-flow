@@ -18,6 +18,7 @@ import {
 } from "./document-session";
 import type {
   DocumentSessionLease,
+  PressRooms,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
@@ -72,6 +73,8 @@ export class DocumentSessionRegistry {
   /** Sessions no host holds, kept while their history has something to undo or redo. */
   private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
+  /** Names each press's wait, which retains its rooms under its own owner. */
+  private pressWaits = 0;
   private liveDocCapWarningEmitted = false;
   private readonly droppedTypingObservers = new Set<() => void>();
   /** Each session's copy: the room's key and the incarnation it opened. */
@@ -181,11 +184,61 @@ export class DocumentSessionRegistry {
     return this.rooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  async whenSentAcknowledged(documentIds: readonly DocumentId[] | null): Promise<void> {
-    const keys = documentIds
-      ? documentIds.flatMap((id) => this.roomsOf(id))
-      : [...this.rooms.keys()];
-    await Promise.all(keys.map((key) => this.rooms.get(key)?.session?.whenSentAcknowledged()));
+  /**
+   * The press's rooms are the forks of its drafts (of its documents, when it names them) and
+   * those documents' Live rooms. One this tab has open is waited on; one it doesn't is opened
+   * when its copy here holds words beyond its mark (a reload, or another tab's typing), and the
+   * Join sends them. Each is retained while the press waits, so a detached one connects.
+   */
+  async whenSentAcknowledged(
+    projectId: ProjectId,
+    { drafts, documents }: PressRooms,
+  ): Promise<void> {
+    const copies = await this.copies.currentCopies();
+    const forks = new Map<string, DocumentRoom>();
+    for (const room of [
+      ...[...this.rooms.values()].map(({ lease }) => lease.room),
+      ...copies.map(({ room }) => room),
+    ])
+      if (
+        room.kind === "fork" &&
+        drafts.includes(room.draftId) &&
+        (!documents || documents.includes(room.documentId))
+      )
+        forks.set(sessionRoomKey(room), room);
+    const lives = new Set([...(documents ?? []), ...[...forks.values()].map((r) => r.documentId)]);
+    const rooms: DocumentRoom[] = [
+      ...forks.values(),
+      ...[...lives].map((documentId): DocumentRoom => ({ kind: "live", documentId })),
+    ];
+    const leases = (
+      await Promise.all(
+        rooms.map(async (room) => {
+          const key = sessionRoomKey(room);
+          const state = this.rooms.get(key);
+          if (state?.session) return state.lease;
+          const copy = copies.find((each) => sessionRoomKey(each.room) === key);
+          if (!copy || !(await this.copies.wordsBeyondMark(copy.name))) return null;
+          return this.admit(
+            projectId,
+            room.documentId,
+            room.kind === "fork" ? room.draftId : undefined,
+          );
+        }),
+      )
+    ).filter((lease) => lease !== null);
+    if (leases.length === 0) return;
+    const owner = `press:${++this.pressWaits}`;
+    this.retain(owner, leases);
+    try {
+      await Promise.all(
+        leases.map((lease) =>
+          this.rooms.get(sessionRoomKey(lease.room))?.session?.whenSentAcknowledged(),
+        ),
+      );
+    } finally {
+      this.release(owner);
+    }
   }
 
   async restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean> {
