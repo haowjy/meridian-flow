@@ -14,7 +14,7 @@ sequenceDiagram
   participant context
   participant collab
   participant postgres
-  client->>server-routes: 1. POST /projects/:id/imports
+  client->>server-routes: 1. POST /api/projects/:id/imports
   server-routes->>server-files-import: 2. create the import and its entries
   client->>server-routes: 3. POST .../files (batched multipart)
   server-routes->>server-files-import: 4. receive the parts

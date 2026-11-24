@@ -56,11 +56,8 @@ Does: picks the Work's draft in the sidebar's version chip beside Changes, which
 
 Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. The chip now reads "Draft"; picking Live in it brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with its chip neutral and a jade dot; the chip's menu lists the draft. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
 
-- Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
-- Machines: [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
-
-- Map: [project](../app.md#project), [core-tree-list](../app-core.md#core-tree-list)
-- Machines: [Sidebar version](../../../apps/app/src/features/project/.context/tree-version-state-machine.md)
+- Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [project](../app.md#project), [core-tree-list](../app-core.md#core-tree-list)
+- Machines: [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md), [Sidebar version](../../../apps/app/src/features/project/.context/tree-version-state-machine.md)
 
 ## Review a draft in the document
 
@@ -78,7 +75,7 @@ Does: presses Apply (the filled green button) or Discard (quiet text).
 Sees: after Apply, the Work's tree changes (a move, a rename, a new document) and its text changes are live. Apply or Discard takes one change, a document, a draft, or every draft of the Work. After Discard, they are gone and the project reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. Only a document or folder the Work created goes to Trash, where Restore brings it back into the project. The notice's Undo, the sidebar's Undo step or Ctrl+Z in the document takes an Apply or a Discard back while the tab is open, and puts the writer back where they were before it: a created document or folder is pending in the review again, out of Live and out of Trash. Trash's Restore brings a discarded created document into Live instead; after it, that Undo has nothing left to do.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
-- Machines: [An Apply's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)
+- Machines: [A press's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## Undo
 
@@ -92,7 +89,5 @@ Does: on a Draft chat's reply, presses "Undo turn" on its receipt (one per draft
 
 Sees: a chapter opens in Review changes at the reply's edit. Undo turn takes back what the reply did in the draft, by the one Undo rule: its text, and its renames, moves and deletes still waiting there; what the writer already applied stays in the manuscript, and a document the reply made in the draft goes to Trash. The button shows while the reply has something there to take back. The receipt then reads "Undone" with an Undo, in every tab and after a reload, and says nothing about what stayed; Ctrl+Z in the chapter or in the sidebar takes it back too, as for any press.
 
-- Map: [chat](../app-conversation.md#chat), [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
+- Map: [chat](../app-conversation.md#chat), [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
 - Machines: [A press's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md)
-
-- Map: [chat](../app-conversation.md#chat), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)

@@ -113,7 +113,8 @@ Plain Postgres with no business logic. Before the first deploy with retained dat
 
 The design tokens: the one place a raw colour may appear.
 
-The app and the landing site take their colours from it, and the architecture viewer mirrors the values it needs and checks the copy.
+The app and the landing site take their colours from it, and the architecture viewer reads the
+token files `map.config.mjs` names for its own colours.
 
 - Kind: package
 - Paths: `packages/design-tokens/src`
