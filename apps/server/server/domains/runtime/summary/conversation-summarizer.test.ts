@@ -214,7 +214,6 @@ describe("conversation summarizer", () => {
               schema: "meridian.agent-edit.v1",
               command: "read",
               status: "success",
-              phase: "committed",
               read: { format: "full" },
               blocks: [
                 {

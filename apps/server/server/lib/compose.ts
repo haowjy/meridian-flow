@@ -822,7 +822,10 @@ export async function createProductionAppPorts(input: {
       objectStore,
       eventSink,
       purges: documentSync.documentPurgeDisposal,
-      endRooms: documentSync.endDocumentRooms,
+      collab: {
+        endRooms: documentSync.endDocumentRooms,
+        evidence: documentSync.modelEvidence(),
+      },
       tree: treeLists,
     }),
     projectContextAvailability,
@@ -1111,10 +1114,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     drafts: ports.documentSync.workDraftDisposal,
-    endRooms: ports.documentSync.endDocumentRooms,
+    collab: {
+      endRooms: ports.documentSync.endDocumentRooms,
+      evidence: ports.documentSync.modelEvidence(),
+    },
     tree: ports.treeLists,
     works: ports.workProjectionMutation,
-    evidence: ports.documentSync.modelEvidence(),
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,

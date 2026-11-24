@@ -69,7 +69,7 @@ function killedAt(
 const neverRan = { doc: SEED, results: ["call-1:did_not_run"], edits: [], commands: ["never"] };
 const committed = {
   doc: ADDED,
-  results: ["call-1:committed"],
+  results: ["call-1:success"],
   edits: ["call-1"],
   commands: ["done"],
 };
@@ -183,7 +183,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(after, {
         doc: ADDED,
         turns: ["error"],
-        results: ["call-1:committed", "call-2:did_not_run"],
+        results: ["call-1:success", "call-2:did_not_run"],
         edits: ["call-1"],
         commands: ["done", "never"],
       });
@@ -194,7 +194,7 @@ const cases: ModelEditCase[] = [
     expected: "the later edit's own result is stored beside the first's: two results, two edits",
     after: {
       doc: ["Live seed.", "First.", "Second."],
-      results: ["call-1:committed", "call-1:committed"],
+      results: ["call-1:success", "call-1:success"],
       edits: ["call-1", "call-1"],
       commands: ["done", "done"],
     },
@@ -204,7 +204,7 @@ const cases: ModelEditCase[] = [
     expected: "the later call did not run; the earlier result is not taken for it",
     after: {
       doc: ["Live seed.", "First."],
-      results: ["call-1:committed", "call-1:did_not_run"],
+      results: ["call-1:success", "call-1:did_not_run"],
       edits: ["call-1"],
       commands: ["done", "never"],
     },
@@ -235,7 +235,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(after.turns, ["error"]);
       assert.equal(after.results.length, 1);
       console.log(`  (the held edit ended as ${after.results[0]})`);
-      if (after.results[0] === "call-1:committed")
+      if (after.results[0] === "call-1:success")
         assert.deepEqual(after, { ...committed, turns: ["error"] });
       else assert.deepEqual(after, { ...neverRan, turns: ["error"] });
     },

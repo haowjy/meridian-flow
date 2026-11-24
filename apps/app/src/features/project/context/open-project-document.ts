@@ -154,7 +154,6 @@ export class ProjectDocumentLiveOpener {
           const snapshot = session.getSnapshot();
           if (
             snapshot.status === "access-lost" ||
-            snapshot.connectionState?.kind === "unauthorized" ||
             snapshot.connectionState?.kind === "terminal" ||
             session.resetDisposition === "removed"
           ) {

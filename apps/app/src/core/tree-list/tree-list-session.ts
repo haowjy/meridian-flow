@@ -33,7 +33,8 @@ import { treeListCopyPrefix } from "./copy-names";
  *   records, which the next Join sends
  * - `broken`: the server ended the room for what the copy holds; the records stay in the copy and
  *   nothing connects again
- * - `unauthenticated`: the sign-in did not hold; the writer signs in again
+ * - `unauthenticated`: the sign-in lapsed; the copy takes records as offline, and the room rejoins
+ *   once the writer signs in again
  * - `denied`: this account has no access to the list
  */
 export type TreeListStatus =
@@ -73,10 +74,10 @@ function statusOf(state: RoomConnectionState, synced: boolean): TreeListStatus {
     case "connecting":
     case "disconnected":
       return synced ? "offline" : "waiting";
+    case "signed-out":
+      return "unauthenticated";
     case "unauthorized":
-      return state.reason === "permission-denied" || state.code === 4403
-        ? "denied"
-        : "unauthenticated";
+      return "denied";
     default:
       return "broken";
   }

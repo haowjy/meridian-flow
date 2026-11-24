@@ -34,19 +34,20 @@ again.
 `subscribeServerAcknowledgement` is true while the room is connected, joined, and every batch
 sent on this connection is acknowledged. `whenCurrentChangesAcknowledged()` captures the
 copy's version at the call and resolves once the server version covers it, whether through
-acks or through batches the server sent. A room's end rejects current and future barriers, except
-a sign-in lapse (close 4401), which leaves them pending like an ordinary disconnect until the
-transport is replaced ([state machine](state-machines.md#room-connection)).
+acks or through batches the server sent. A room's end rejects current and future barriers. A sign-in
+lapse (close 4401) is not an end: the room is `signed-out` and leaves them pending like an
+ordinary disconnect ([state machine](state-machines.md#room-connection)).
 
 `whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
-every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting) is
-waited for until it is connected again and the Join's own batch, which carries everything typed
+every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting, signed
+out) is waited for until it is connected again and the Join's own batch, which carries everything typed
 while away, is acknowledged; a socket that drops mid-wait moves the wait to the next Join. A
 waiter takes the batch ids it waits on only once the room reads as connected, which comes after
 the Join's batch is sent, so nothing emitted between the Join's answer and that batch can let it
 through early. It resolves when the room ends or is destroyed. Resolving at once on a room that
 was not joined let a press made offline reach the server before the offline typing did, so it
-pressed an older fork.
+pressed an older fork. A sign-in lapse used to end the room the same way: with the writer signed
+in again in another tab, the press went out over HTTP while the typing stayed in this tab's copy.
 
 The transport covers only a room that has one. The rest of the rule is above it:
 `DocumentSession.whenSentAcknowledged` waits while its copy is still loading and its transport is
@@ -60,14 +61,17 @@ room of a document only the draft holds, which no fork names.
 ## Errors
 
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
-  resets the room (`resetState`); `bad-auth` and `permission-denied` end it `unauthorized`;
+  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
+  Join this build formed wrong) ends it `terminal`;
   any other app code (the server hasn't seen this browser's `create` yet) closes and rejoins.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
   change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
   `JoinResponseOk` permission decides; for a server error the rejoin sends what the server lacks.
   Any other `RoomError` ends the room `terminal`. A read permission sends no `DocUpdate`.
-- Close codes `AUTH_FAILED` and `PERMISSION_DENIED` end the room `unauthorized`; any other
-  close retries with backoff (`RETRY_MS`), at once for a `rejoin` close.
+- Close code `PERMISSION_DENIED` ends the room `unauthorized`. `AUTH_FAILED` makes it
+  `signed-out`, which retries like any other close: with backoff (`RETRY_MS`), at once for a
+  `rejoin` close or a retry-now hint. It stays `signed-out` across the retries' other closes until
+  a Join is answered.
 
 ## Access scope
 

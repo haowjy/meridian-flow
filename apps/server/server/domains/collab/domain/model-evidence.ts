@@ -1,6 +1,10 @@
 import type { ObservationFrontier } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { FrontierRooms, ShownLink, StoredEvidence } from "../../../shared/model-evidence.js";
+
+export type ForgottenRooms =
+  | { room: string }
+  | { accountId: UserId; documentIds: readonly string[] };
 
 /**
  * What the model was shown of documents, kept for its next write: a frontier per result block
@@ -32,4 +36,10 @@ export interface ModelEvidence {
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
   /** Deletes what these threads were shown and the tool results their model edits stored, when the threads are deleted. */
   forgetThreads(threadIds: readonly ThreadId[]): Promise<void>;
+  /**
+   * Deletes the frontiers recorded of rooms: one fork room deleted for being empty, or every room
+   * of documents whose content was purged, which only the owning account's threads can have shown.
+   * Joins an ambient transaction.
+   */
+  forgetFrontiers(rooms: ForgottenRooms): Promise<void>;
 }

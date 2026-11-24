@@ -189,7 +189,6 @@ function result(file: FileFacts, given: Given, payload: { message?: string }): A
   return modelResult({
     command: "read",
     status: "success",
-    phase: "committed",
     payload: { path: file.uri, file: { ...file, given }, ...payload },
   });
 }

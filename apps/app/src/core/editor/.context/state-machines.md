@@ -35,17 +35,20 @@ stateDiagram-v2
 `deriveStatus` decides in this order:
 
 1. No transport: `syncing` while one is being attached, else `detached`.
-2. Local persistence not yet replayed: `syncing`.
-3. A sign-in lapse (`unauthorized` with the auth-failed close, `isSignInLapse`): `offline`.
-   Transport `unauthorized` or `reset`: `access-lost`. Transport `terminal`: `offline`.
-4. First server sync not complete: `syncing`.
-5. Transport `disconnected`: `offline`.
-6. Transport `connected`: `synced`.
-7. Otherwise (`connecting`): `syncing`.
+2. Transport `unauthorized` or `reset`: `access-lost`.
+3. Local persistence not yet replayed: `syncing`.
+4. Transport `terminal` or `signed-out` (a sign-in lapse): `offline`.
+5. First server sync not complete: `syncing`.
+6. Transport `disconnected`: `offline`.
+7. Transport `connected`: `synced`.
+8. Otherwise (`connecting`): `syncing`.
 
-- **The terminal checks come before the first-sync gate** (step 3 before 4). After a permanent
-  denial the first sync never completes, and with the order reversed the document would show
-  "syncing" forever.
+- **The terminal checks come before the first-sync gate** (steps 2 and 4 before 5). After a
+  permanent denial the first sync never completes, and with the order reversed the document would
+  show "syncing" forever.
+- **`access-lost` comes before the local-persistence gate** (step 2 before 3), so the status alone
+  says the room's access ended: callers read `status === "access-lost"`, never the transport's
+  `unauthorized`.
 - **`connecting` is `syncing`, not `offline`.** `offline` means edits are only being kept
   locally; the pill the writer sees is built on that difference
   ([sync status](../../../features/editor/.context/state-machines.md)).

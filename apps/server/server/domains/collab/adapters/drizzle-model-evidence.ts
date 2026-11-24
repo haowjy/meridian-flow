@@ -46,14 +46,19 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
     sql`${frontiers.sourceBlockId}::text = ANY(string_to_array(${blockIds.join(",")}, ','))`;
 
   /**
-   * The rows of one room, or of every room of a document: Live's, and its fork in any draft,
-   * matched by the document id a room key ends with. The blocks' primary key serves the lookup.
+   * The rows of every room of the documents: Live's, and their fork in any draft, matched by the
+   * document id a room key ends with. No index serves it: a caller bounds it by blocks or project.
    */
+  const ofDocuments = (documentIds: readonly string[]) => {
+    const ids = documentIds.join(",");
+    const lives = documentIds.map((documentId) => loroRoomName({ kind: "live", documentId }));
+    return sql`(${frontiers.roomKey} = ANY(string_to_array(${lives.join(",")}, ','))
+      OR (${frontiers.roomKey} LIKE 'fork:%'
+        AND split_part(${frontiers.roomKey}, ':', 3) = ANY(string_to_array(${ids}, ','))))`;
+  };
+  /** The rows of one room, or of every room of a document. */
   const inRooms = (rooms: FrontierRooms) =>
-    "room" in rooms
-      ? eq(frontiers.roomKey, rooms.room)
-      : sql`(${frontiers.roomKey} = ${loroRoomName({ kind: "live", documentId: rooms.documentId })}
-          OR (${frontiers.roomKey} LIKE 'fork:%' AND split_part(${frontiers.roomKey}, ':', 3) = ${rooms.documentId}))`;
+    "room" in rooms ? eq(frontiers.roomKey, rooms.room) : ofDocuments([rooms.documentId]);
 
   return {
     async resultStored(evidence) {
@@ -190,6 +195,21 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       await db_()
         .delete(schema.commands)
         .where(inArray(schema.commands.threadId, [...threadIds]));
+    },
+
+    async forgetFrontiers(rooms) {
+      if ("room" in rooms) {
+        await db_().delete(frontiers).where(inRooms(rooms));
+        return;
+      }
+      if (rooms.documentIds.length === 0) return;
+      const accountProjects = db_()
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.userId, rooms.accountId));
+      await db_()
+        .delete(frontiers)
+        .where(and(inArray(frontiers.projectId, accountProjects), ofDocuments(rooms.documentIds)));
     },
   };
 }

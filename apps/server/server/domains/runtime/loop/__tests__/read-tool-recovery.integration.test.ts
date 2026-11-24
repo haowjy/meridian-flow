@@ -45,7 +45,6 @@ function textResult(): GenerateResult {
 const CHAPTER_READ = modelResult({
   command: "read",
   status: "success",
-  phase: "committed",
   payload: {
     path: "manuscript://chapter.md",
     read: { format: "full" },

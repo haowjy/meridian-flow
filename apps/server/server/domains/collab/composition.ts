@@ -2,6 +2,7 @@
 
 import { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId } from "@meridian/contracts";
+import { loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents as documentsTable, draftTreeNodes } from "@meridian/database/schema";
 import { shapeSchemaOf } from "@meridian/loro-prosemirror";
@@ -155,6 +156,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivations.schedule(documentId);
     deps.liveTextHints?.hint(documentId);
   };
+  const modelEvidence = createDrizzleModelEvidence(deps.db);
   const schema = buildDocumentSchema();
   const rooms = createPostgresDocumentRooms({
     db: deps.db,
@@ -167,6 +169,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.workProjectionMutation.recountAfterCommit(
         await deps.workProjectionMutation.ownersOf({ drafts: [draftId] }),
       ),
+    onForkDeleted: (room) => modelEvidence.forgetFrontiers({ room: loroRoomName(room) }),
     bounds: deps.roomBounds,
   });
   const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>
@@ -271,7 +274,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
 
-  const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
     core: runtime.core,
     fileAccess: deps.fileAccess,
