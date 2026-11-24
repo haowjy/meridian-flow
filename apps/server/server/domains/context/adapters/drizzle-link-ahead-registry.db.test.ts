@@ -4,7 +4,7 @@
  * registered when the document's derivation runs (L-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)
+ * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/documents/links.md#what-a-link-shows)
  */
 
 import { createDb, type Database } from "@meridian/database";

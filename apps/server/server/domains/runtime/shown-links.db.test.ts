@@ -3,7 +3,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
  * E-1: shown-link evidence on PostgreSQL threads (contract §7.3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - latest-tuple shown-link arbitration across compaction, lineage cutoffs, rollback, and races (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
+ * - latest-tuple shown-link arbitration across compaction, lineage cutoffs, rollback, and races (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";

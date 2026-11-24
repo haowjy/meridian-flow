@@ -2,7 +2,7 @@
  * PostgreSQL publication B and orphan recovery after durable terminal A.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - parent-first locking, bounded report sweeps, placeholder repair, and deleted-caller parking (kb/wiki/architecture/agents/conversations.md)
+ * - parent-first locking, bounded report sweeps, placeholder repair, and deleted-caller parking (kb/wiki/agents/conversations.md)
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";

@@ -2,7 +2,7 @@
  * Real source/Work-authority integration for canonical document-link navigation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - source-backed canonical navigation under Work-specific readability (kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure)
+ * - source-backed canonical navigation under Work-specific readability (kb/wiki/documents/links.md#following-a-link-is-one-procedure)
  */
 
 import type { DraftOwner } from "@meridian/contracts";

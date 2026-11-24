@@ -2,7 +2,7 @@
  * Tests context uri behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Context URI canonicalization, titles, and draftable schemes (kb/wiki/architecture/documents/addresses.md#handles-name-owners-names-are-labels)
+ * - Context URI canonicalization, titles, and draftable schemes (kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels)
  */
 
 import { describe, expect, it } from "vitest";

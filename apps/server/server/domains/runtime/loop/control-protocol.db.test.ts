@@ -3,7 +3,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
  * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
+ * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { Turn } from "@meridian/contracts/threads";

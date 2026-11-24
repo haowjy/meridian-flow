@@ -3,7 +3,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
  * PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - settled-prefix cutoffs, retained binding snapshots, destination claims, and idempotent derivation (kb/wiki/architecture/agents/conversations.md)
+ * - settled-prefix cutoffs, retained binding snapshots, destination claims, and idempotent derivation (kb/wiki/agents/conversations.md)
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

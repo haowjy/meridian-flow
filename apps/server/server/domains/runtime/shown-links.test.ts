@@ -3,7 +3,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
  * In-memory shown-link storage matches the document side's contract.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - latest-tuple shown-link arbitration and lineage-cutoff inheritance (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
+ * - latest-tuple shown-link arbitration and lineage-cutoff inheritance (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";

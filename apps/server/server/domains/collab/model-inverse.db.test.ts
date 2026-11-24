@@ -2,7 +2,7 @@
  * Strict model stacks, immutable history and bounded receipts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
+ * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/collaboration/agent-editing-and-reversal.md#undo-of-a-reply)
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

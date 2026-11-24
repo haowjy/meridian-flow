@@ -2,7 +2,7 @@
  * Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - independent archive and deletion axes, serialized restore, retention, and database-first purge (kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material)
+ * - independent archive and deletion axes, serialized restore, retention, and database-first purge (kb/wiki/work/lifecycle.md#archive-stops-the-works-new-writes)
  */
 
 import { randomUUID } from "node:crypto";

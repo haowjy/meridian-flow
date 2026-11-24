@@ -2,7 +2,7 @@
  * Revision identity of the Live room across writer edits, tree moves, response settlement and deleted documents.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/wiki/architecture/collaboration/draft-store-concurrency.md)
+ * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (apps/server/server/domains/collab/.context/CONTEXT.md#revision-and-removal)
  */
 
 import { renderAgentEditResult } from "@meridian/agent-edit/integration";

@@ -1,7 +1,7 @@
 /** Pure fixtures for compaction classification, triggering, planning, and projection.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Token estimation, retention planning, and summary projection (kb/wiki/architecture/compaction-memory.md#two-summary-paths)
+ * - Token estimation, retention planning, and summary projection (kb/wiki/chat/compaction.md#two-summary-paths)
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";

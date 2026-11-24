@@ -2,7 +2,7 @@
  * PostgreSQL coverage for the run-state publication participant: lock tracking, savepoints and the flush.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - thread-lock-scoped run-state publication with savepoint and flush phase tracking (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
+ * - thread-lock-scoped run-state publication with savepoint and flush phase tracking (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
