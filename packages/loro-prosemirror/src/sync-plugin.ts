@@ -32,10 +32,10 @@ import {
   readProseMirror,
   writeProseMirror,
 } from "./codec.js";
-import { attachCompositionHold, listenToImports } from "./composition-hold.js";
 import { resolveCursor, type SelectionCursors, selectionCursors, textblockOf } from "./cursors.js";
 import { UNTRACKED_ORIGIN, type UndoHistory } from "./history.js";
 import { movedPieces } from "./pieces.js";
+import { attachCompositionHold, listenToImports } from "./room-imports.js";
 
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 

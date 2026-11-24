@@ -12,7 +12,7 @@
  * the room's ephemeral store, and the writer's Undo. Every local write reaches the copy through
  * one path, `publish`: stored, sent to the other tabs of this browser, then to the server.
  * Every peer's batch reaches it through `importRemote`, which goes through the binding's
- * composition guard.
+ * import door (`importRemoteUpdate`).
  *
  * Status, derived from local persistence and the transport together:
  *   - `detached`  — no server transport attached yet.
@@ -41,7 +41,6 @@ import {
   freshPeerId,
   mergeVersion,
   RoomDocs,
-  type RoomVersion,
   versionCovers,
 } from "@meridian/document-model";
 import {
@@ -59,6 +58,8 @@ import type {
   LoroRoomTransport,
   ResetDisposition,
   RoomConnectionState,
+  ServerBatch,
+  TransportedCopy,
 } from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
 import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
@@ -136,11 +137,7 @@ export type DocumentSessionTransportProvider = LoroRoomTransport;
 export type DocumentSessionTransportFactory = (opts: {
   room: DocumentRoom;
   peer: string;
-  copy: {
-    version(): RoomVersion;
-    exportSince(since: RoomVersion): Uint8Array | null;
-    importRemote(batch: Uint8Array, landing: boolean): void;
-  };
+  copy: TransportedCopy;
   presence: LocalPresence["store"];
 }) => DocumentSessionTransportProvider;
 
@@ -163,6 +160,9 @@ type Listener = (snapshot: DocumentSessionSnapshot) => void;
 
 /** A batch between this browser's tabs: the copy's name and the envelope. */
 type TabMessage = { batch: Uint8Array };
+
+/** Where a peer's batch comes from: this copy's store, another tab of this browser, or the server. */
+type BatchSource = "stored" | "tab" | ServerBatch;
 
 export class DocumentSession {
   readonly roomKey: string;
@@ -320,16 +320,17 @@ export class DocumentSession {
   }
 
   /**
-   * A peer's batch: imported through the composition guard, then stored. `landing`: a write the
-   * server pushed as it was made, not a catch-up (`importRemoteUpdate`).
+   * A peer's batch, imported through the binding's import door. A batch from the server is stored;
+   * the stored copy's own and another tab's are not. Only a write landing as it is made names its
+   * author to the editors (`importRemoteUpdate`).
    */
-  private importRemote(
-    batch: Uint8Array,
-    { store, landing }: { store: boolean; landing: boolean },
-  ): void {
+  private importRemote(batch: Uint8Array, source: BatchSource): void {
     if (this.destroyed || this.docs.isFreed) return;
+    // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
+    if (source === "tab") this.unsent = null;
     this.importing = true;
     try {
+      const landing = source === "landing";
       importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes), landing);
     } catch (error) {
       reportError(error);
@@ -337,7 +338,7 @@ export class DocumentSession {
     } finally {
       this.importing = false;
     }
-    if (store) this.append(batch);
+    if (source === "catch-up" || source === "landing") this.append(batch);
     this.contentChanged();
   }
 
@@ -387,9 +388,8 @@ export class DocumentSession {
       }
       // Through the binding like a peer's batch: past the bind horizon an editor may show the
       // copy already.
-      const stored = { store: false, landing: false };
-      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), stored);
-      for (const batch of loaded.updates) this.importRemote(batch, stored);
+      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), "stored");
+      for (const batch of loaded.updates) this.importRemote(batch, "stored");
       this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
@@ -433,9 +433,7 @@ export class DocumentSession {
     const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
       if (!(event.data?.batch instanceof Uint8Array)) return;
-      // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
-      this.unsent = null;
-      this.importRemote(event.data.batch, { store: false, landing: false });
+      this.importRemote(event.data.batch, "tab");
     };
     this.tabs = tabs;
   }
@@ -483,7 +481,7 @@ export class DocumentSession {
           const entries = this.docs.exportSince(since);
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
-        importRemote: (batch, landing) => this.importRemote(batch, { store: true, landing }),
+        importRemote: (batch, source) => this.importRemote(batch, source),
       },
       presence: this.localPresence.store,
     });

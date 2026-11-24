@@ -83,11 +83,14 @@ export type TransportedCopy = {
   /** What the copy holds beyond `since`, as an envelope; null when nothing. */
   exportSince(since: RoomVersion): Uint8Array | null;
   /**
-   * A peer's batch from the server: the session imports it through the composition guard.
-   * `landing` is false for what a Join catches the copy up with.
+   * A peer's batch from the server, imported through the room's import door: what a Join catches
+   * the copy up with, or a write landing as it is made.
    */
-  importRemote(batch: Uint8Array, landing: boolean): void;
+  importRemote(batch: Uint8Array, source: ServerBatch): void;
 };
+
+/** Where a batch from the server comes from: a Join's catch-up, or a write as it lands. */
+export type ServerBatch = "catch-up" | "landing";
 
 export type LoroRoomTransportOptions = {
   room: LoroRoom;
@@ -312,7 +315,7 @@ export function createLoroRoomTransport({
   };
 
   const receiveBatch = (bytes: Uint8Array) => {
-    copy.importRemote(bytes, catchUp === null);
+    copy.importRemote(bytes, catchUp === null ? "landing" : "catch-up");
     const received = batchEnd(decodeEnvelope(bytes));
     mergeVersion(server, received);
     if (catchUp) mergeVersion(catchUp.handed, received);

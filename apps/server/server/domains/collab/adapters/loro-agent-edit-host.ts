@@ -40,7 +40,7 @@ export type AgentCarets = {
 export function createLoroAgentEditHost(input: {
   db: Database;
   rooms: DocumentRooms<DrizzleDb>;
-  carets?: AgentCarets;
+  carets: AgentCarets;
 }): {
   rooms: AgentEditRooms;
   /** `agent (<chat ref>)` for the chat a turn belongs to; null for a turn the database lacks. */
@@ -52,12 +52,11 @@ export function createLoroAgentEditHost(input: {
       roomFor: (documentId) => agentRoomFor(db(), documentId),
       transaction: db,
       origin: "server:agent",
-      async recordWrite(tx, record) {
-        await recordWrite(tx, record);
-        const { caret, threadId, room, actor } = record;
+      recordWrite,
+      wrote({ threadId, room, actor }, caret) {
         // After the room's own after-commit import, so the batch reaches a tab before the caret.
-        if (actor.kind === "agent" && input.carets)
-          runAfterDrizzleCommit(() => input.carets?.place(threadId, room, caret));
+        if (actor.kind === "agent")
+          runAfterDrizzleCommit(() => input.carets.place(threadId, room, caret));
       },
     }),
     async authorOfTurn(turnId) {

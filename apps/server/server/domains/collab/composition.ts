@@ -146,7 +146,7 @@ type CollabDomainDeps = {
     stop(): void;
   };
   /** Shows each chat's caret where its last write ended. */
-  agentCarets?: AgentCarets;
+  agentCarets: AgentCarets;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -254,7 +254,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const loroHost = createLoroAgentEditHost({
     db: deps.db,
     rooms,
-    ...(deps.agentCarets ? { carets: deps.agentCarets } : {}),
+    carets: deps.agentCarets,
   });
   const runtime = createAgentEditRuntime({
     loro: {

@@ -37,7 +37,12 @@ import {
 } from "../model/loro-model.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
-import type { AgentEditRooms, AgentRoomRead, LoroDocumentEdits } from "../ports/document-rooms.js";
+import type {
+  AgentEditRooms,
+  AgentRoomRead,
+  AgentWriteRecord,
+  LoroDocumentEdits,
+} from "../ports/document-rooms.js";
 import { isDocumentNotFoundError } from "../ports/document-rooms.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle, type WriteOrdinals } from "../ports/write-ordinals.js";
@@ -738,7 +743,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     copy.forget();
     const textAfter = blocksOf(copy);
     const written = [...decodeEnvelope(batch).keys()];
-    await rooms.save(read.room, batch, {
+    const record: AgentWriteRecord = {
       documentId: docId,
       room: read.room,
       edit: editSince(copy.docs, since, written),
@@ -752,8 +757,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         : {}),
       actor,
       delta: captureDelta(textBefore, textAfter),
-      caret: writeCaret(copy.docs, since, written, textBefore, textAfter),
-    });
+    };
+    const caret = writeCaret(copy.docs, since, written, textBefore, textAfter);
+    await rooms.save(read.room, batch, record, caret);
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(toLoroHandle(copy));
     const shown = new Set(echoProjected.map((block) => block.key));

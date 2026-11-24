@@ -1,5 +1,5 @@
 import { decodeImportBlobMeta, type Frontiers, type ImportStatus, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, readCommitMessage } from "./commit-message.js";
+import { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
 import type { Envelope } from "./envelope.js";
 import { freshPeerId, freshServerPeerId, isServerPeer, type PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
@@ -228,6 +228,15 @@ export class RoomDocs {
 
   get draft(): boolean {
     return this.live !== null;
+  }
+
+  /**
+   * Commit `doc`, one of this copy's docs, as written by `by` (none is the writer's own), and in a
+   * draft's fork when this is one: every authored commit goes through here, so none can say the
+   * wrong copy.
+   */
+  commit(doc: LoroDoc, options: { by?: CommitAuthor; origin?: string }): void {
+    doc.commit({ message: commitMessage(options.by, this.draft), origin: options.origin });
   }
 
   get isFreed(): boolean {

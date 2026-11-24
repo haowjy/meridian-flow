@@ -39,51 +39,6 @@ msgstr "Waiting on {0}"
 msgid "Reporting back…"
 msgstr "Reporting back…"
 
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "Added a passage"
-#~ msgstr "Added a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "Replaced a passage"
-#~ msgstr "Replaced a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "Deleted a passage"
-#~ msgstr "Deleted a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "Collaborator edited text"
-#~ msgstr "Collaborator edited text"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "Show change details for {label}"
-#~ msgstr "Show change details for {label}"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "AI"
-#~ msgstr "AI"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "{agentName} added a passage"
-#~ msgstr "{agentName} added a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "{agentName} replaced a passage"
-#~ msgstr "{agentName} replaced a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-#~ msgid "{agentName} deleted a passage"
-#~ msgstr "{agentName} deleted a passage"
-
 #: src/features/chat/ask/AskReceipt.tsx
 msgid ", "
 msgstr ", "

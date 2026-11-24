@@ -29,7 +29,7 @@ design §1) and frees it at teardown; nothing else frees it. Every local write l
 `publish`: appended to the IndexedDB copy, posted to this browser's other tabs
 (`BroadcastChannel` named after the copy), then sent to the server. Every peer's batch, from the
 server or another tab, arrives by `importRemote`, which calls the binding's `importRemoteUpdate`
-and so goes through its composition guard: a batch is held, as bytes, while any editor on the
+and so goes through the room's import door (`room-imports.ts`): a batch is held, as bytes, while any editor on the
 room is composing.
 
 The browser's local copy of a room is the IndexedDB database
@@ -73,7 +73,8 @@ synchronously, then drains transports and leases.
   the batch brought into that doc (`RoomDocs.importBatch`'s `authors`, from the commits' messages).
   A doc that took anything else (the writer's own typing, a press, a second turn) is absent, and
   so is everything in a batch that is no write landing: a Join's catch-up, the stored copy, another
-  tab's batch (`importRemoteUpdate`'s `landing`). An Apply brings a draft's commits into Live as
+  tab's batch (`DocumentSession.importRemote`'s source, passed on as `importRemoteUpdate`'s
+  `landing`). An Apply brings a draft's commits into Live as
   they are; their messages say they were made in a draft, so a Live copy credits no turn for them.
 - `extensions/agent-edit-flash.ts` highlights, in the agent colour, the text of each block a
   turn's write landed in (the span that differs from before, or a block the batch made), and drops
@@ -126,7 +127,7 @@ synchronously, then drains transports and leases.
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
 orthogonal. `synced` means the transport handed the copy what the server held at the first
-Join (the catch-up batch, which the composition guard may still be holding), not that all
+Join (the catch-up batch, which the composition hold may still be holding), not that all
 local edits are saved. `serverHasLocalChanges` is true only after that Join and every batch
 sent on the current connection is acknowledged (see
 [`../../transport/.context/CONTEXT.md`](../../transport/.context/CONTEXT.md)).

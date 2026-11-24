@@ -1,7 +1,7 @@
 /**
  * What a commit's message says (design §5): who wrote it, for attribution, and whether it was
- * written in a draft. Every commit message is written by `commitMessage` and read by
- * `readCommitMessage`.
+ * written in a draft. Every commit message is written by `commitMessage`, through
+ * `RoomDocs.commit`, and read by `readCommitMessage`.
  */
 
 /** Who wrote a commit: a chat's turn, or a press. A commit with no author is the writer's own. */

@@ -20,6 +20,7 @@ import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createCollabDomain } from "./composition.js";
+import { NO_AGENT_CARETS } from "./test-support/agent-carets.js";
 import { testLinkDeps } from "./test-support/document-link-scopes.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -49,6 +50,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       ...createTestRemovalDeps(db),
       fileAccess: createAllowAllFileAccess(),
       workProjectionMutation: createTestWorkProjectionMutation(db),
+      agentCarets: NO_AGENT_CARETS,
     });
     const single = randomUUID() as DocumentId;
     const batch = [randomUUID(), randomUUID()] as DocumentId[];

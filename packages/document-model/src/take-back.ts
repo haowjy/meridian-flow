@@ -1,5 +1,5 @@
 import type { Delta, Frontiers, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
+import { type CommitAuthor, readCommitMessage } from "./commit-message.js";
 import { inMap, inText } from "./handles.js";
 import type { PeerId } from "./peer.js";
 import { answerRemovals } from "./removals.js";
@@ -327,7 +327,7 @@ export function takeBack(
       if (inverse.some((op) => op.insert != null)) inserted.add(key);
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(inverse));
-      doc.commit({ message: commitMessage(by, docs.draft) });
+      docs.commit(doc, { by });
       out.push({ key, doc, before, after: doc.frontiers() });
     }
     for (const [name, keys] of edit.values) {

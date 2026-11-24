@@ -13,17 +13,6 @@ export {
   writeProseMirror,
 } from "./codec.js";
 export {
-  attachCompositionHold,
-  type EditorListener,
-  forwardLocalWrite,
-  heldUpdateCount,
-  importRemoteUpdate,
-  listenToImports,
-  notifyChanged,
-  type PublishWrite,
-  registerDraft,
-} from "./composition-hold.js";
-export {
   cursorAt,
   type DocCursor,
   decodePoint,
@@ -40,6 +29,17 @@ export {
   UndoHistory,
 } from "./history.js";
 export { movedPieces } from "./pieces.js";
+export {
+  attachCompositionHold,
+  type EditorListener,
+  forwardLocalWrite,
+  heldUpdateCount,
+  importRemoteUpdate,
+  listenToImports,
+  notifyChanged,
+  type PublishWrite,
+  registerDraft,
+} from "./room-imports.js";
 export {
   type LoroSyncOptions,
   type LoroSyncState,

@@ -221,6 +221,7 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       recordWrite: async (_tx, record) => {
         pending.push(record);
       },
+      wrote: () => {},
     }),
     documentEdits,
   });
