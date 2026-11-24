@@ -15,10 +15,6 @@
   ([#91](https://github.com/haowjy/meridian-flow/issues/91)). Whether `figure`
   should exist at all, or caption and label should be attributes of `image` in a
   block context (`packages/prosemirror-schema`).
-- Primary buttons show their own drop shadow under keyboard focus instead of the
-  `focus-ring` box-shadow, so focus looks absent. The variant's `shadow-*` class
-  overrides the utility (`components/ui/button.tsx`). Make the focus ring win for
-  every variant.
 - Move the remaining lists onto the shared list components
   (`components/ui/list-row.tsx`, `picker.tsx`): `WorkspaceNavBody`'s rows are not
   `ListRow`s yet; `WorkScopePicker` is a `DropdownMenu`, not a `Picker`; and

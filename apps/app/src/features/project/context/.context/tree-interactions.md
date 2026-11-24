@@ -201,8 +201,8 @@ opens the places among its siblings in place of the tree (`DrillAction.choices`)
 sibling, the bottom, read from the tree's complete sibling order (`children`, not what a search
 shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
 siblings. The phone uses the same picker; it has no drag.
-A taken name never refuses: the row arrives under its own name, as a twin, through
-`setLocation` for files and `setFolderLocation` for folders. Either pick opens the destination
+A taken name never refuses: the row arrives under its own name, as a twin, as a `move` and a
+`rename` record the browser's copy of the list takes (`use-identity-commit.ts`). Either pick opens the destination
 folder.
 Trees span areas, so menu lookups check source identity as well as entry identity; equal paths in
 different areas remain distinct destinations.
@@ -268,9 +268,10 @@ reports `aria-pressed` (rows are buttons, not tree items, so that is the state
 they can carry).
 
 Dragging a selected row carries the selection in screen order, minus rows inside
-a selected folder; dragging an unselected row carries only it. Each row carries
-what its surface grants (`EntryGrant`: `move`, `copy`; an ended Work's Scratch
-grants Copy, not Move), and a drag starts when the row has either. A selection
+a selected folder; dragging an unselected row carries only it. Each row registers the actions
+its surface grants (`SelectionGrant`: `move`, `delete`, `restore`), and a drag starts when the
+row grants `move`: a row in an ended Work's Scratch can be copied from, not moved out of
+(`canMove` in `move-plan.ts`). A selection
 that holds a row without the grant an action needs, or one that lost a row (a peer
 deleted it, or its parent isn't known yet), does nothing for that action rather
 than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag

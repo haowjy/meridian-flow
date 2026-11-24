@@ -150,7 +150,7 @@ thread entities use string IDs and ISO timestamps. Both transports emit the same
 shape and the reducer consumes it.
 
 Snapshot application is data-sync/transport recovery work, never a view effect.
-`applyThreadSnapshot` applies the package's `applyRead` to the chat's `SyncedThread` (`syncedByThread`), reconciling server history with local optimistic rows.
+`useThreadSnapshotSync` binds the chat's `ThreadSync` (`@meridian/thread-client/sync`), whose read path applies `applyRead` to the chat's `SyncedThread` (`syncedByThread`), reconciling server history with local optimistic rows.
 HTTP sync runs on route activation, new run, and gap; WebSocket recovery applies
 snapshots on reconnect/gap. A mounted snapshot hook owns addressed block-upsert
 projection and refetches missing targets instead of creating synthetic turns.
@@ -189,11 +189,13 @@ account is not decided here.
 
 The project address is `/p/<project-id>`, where the UUID is stable across title
 and slug edits. After it the path names the kind of main's item: `chats` (bare is
-the new-chat composer, `chats/<chat-id>` a chat) or `editor` (bare, or
-`editor/<scheme>/<path>` for a document). The bare project route is the new-chat
-composer. The Work scope is never in the address: it is a stored per-project
-choice (`use-work-scope.ts`). Recognized query keys are `owner`, `item`, `change`,
-`trash` and `settings`. `owner` (`work:<id>` or `lineage:<root-chat-id>`) appears
+the new-chat composer, `chats/recent` the chat lane's Recent chats page,
+`chats/<chat-id>` a chat), `editor` (bare, or `editor/<scheme>/<path>` for a
+document) or `trash` (bare, or `trash/<document-id>`). The bare project route is
+the new-chat composer. The Work scope is never in the address: it is a stored
+per-project choice (`use-work-scope.ts`). Recognized query keys are `owner`,
+`item`, `review`, `change` and `settings`; `review` is legal only with `item`,
+and `change` only with `review`. `owner` (`work:<id>` or `lineage:<root-chat-id>`) appears
 only on a Scratch document, whose path alone does not name its owner; a stray one is
 dropped from the canonical href. `item` (`<draft-id>:<document-id>`) names the draft
 item under review. Duplicate keys and

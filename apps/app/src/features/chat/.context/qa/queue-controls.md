@@ -93,8 +93,8 @@ Open the chat in `qc` and `qc2`, with a message queued and words typed in `qc2`.
 ## QC-05: reload after a lost answer
 
 Install the lost-response wrapper for `hand-back`, press Cancel queue. The server committed, the
-`messages.handed_back` frame removes the rows, and the card "Couldn't move your queued messages to
-the message box." with Try again sits above the box. Reload: the draft's stored command replays,
+`messages.handed_back` frame removes the rows, and the card "Couldn't move your queued messages."
+with Try again sits above the box. Reload: the draft's stored command replays,
 the words arrive in the box exactly once, and the card is gone.
 
 ## QC-06: Send now

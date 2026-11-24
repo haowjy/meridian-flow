@@ -2,10 +2,13 @@
 
 ## Binding
 
-`ProjectView` resolves the displayed thread's Work once and passes that identity to
-`DraftReviewProvider` and `ChatView`, so the dock and composer control share one
-binding. Project chat always has a Work, named or No Work, looked up from
-`snapshot.noWork` rather than `works.find`. There is no first/default-Work fallback.
+`ProjectView` resolves the displayed thread's Work once and passes it to `ChatScreen`,
+which hands it to `ChatView` and the chat's navigation provider, so the dock and the
+composer controls share one binding. The review surface is document-host scoped, not
+chat-wide (`DraftReviewBoundary` in `features/draft-review/DraftReviewProvider.tsx`,
+mounted by `features/project/DocumentReview.tsx`). Project chat always has a Work, named or No Work,
+looked up from `snapshot.noWork` rather than `works.find`. There is no
+first/default-Work fallback.
 
 Only the writer rebinds, through `ComposerWorkControl`; Work management, navigation
 and the model's `work switch` never call this path
@@ -58,8 +61,9 @@ does the same when another tab changes the record's `write_mode` item ids.
 
 The mode chip says the mode ("Draft" or "Auto-apply") and nothing else, on every
 composer. It once read "Drafts (3)" when drafts waited, and writers read the count as
-the mode. What waits is shown by the draft dock (this chat's draft) and the Work
-picker's badge (the Work's). The chip is the last control to fold into the toolbar's
+the mode. What waits is shown by the draft dock (this chat's draft) and, in draft mode
+with two or more drafts, the toolbar's "Writes into" control naming the draft this chat
+writes into (`ChatDraftControl`). The chip is the last control to fold into the toolbar's
 overflow, because the writer must see how the AI will write before sending. The dock
 shows nothing until its draft's list is read, so loading never reads as nothing pending.
 

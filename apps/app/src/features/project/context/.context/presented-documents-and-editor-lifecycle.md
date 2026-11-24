@@ -39,8 +39,8 @@ route continuity is the route's (the history entry's remembered id, `ReadablePro
 own content durability. Neither owns the other's state.
 
 New appends a provisional `create` in Unfiled and opens the node by the name the replay gives
-it, before the server has heard of it; its text room connects once the create is admitted and is
-retried while it is not (`4211`). On Draft a create (New, a tree's New file, a link's Create) makes
+it, before the server has heard of it; its text room connects once the create is admitted, and
+until then the Join is answered `document-unknown`, which the transport retries as a rejoin. On Draft a create (New, a tree's New file, a link's Create) makes
 the Work's text draft at its admission, which only the server can name, so the page opens on that
 draft once the Work's list has the item (`useOpenCreatedDocument` in `review-launch.tsx`) and the
 new row shows in the tree meanwhile. Leaving main removes only browser-local presentation. It never
@@ -55,12 +55,13 @@ Returning to an empty Editor does not restore a closed document.
 bind, explicit retry). `ProjectDocumentLiveOpener.open` asks the list's standing for the document
 (`ProjectStandings`), so a document made here, before the server has heard of it, opens at once:
 the session paints from the browser's local copy and its room connects when the server has the
-`create` (the room closes non-terminally, `4211`, until then). The binding presents the live
+`create` (a Join the server answers `document-unknown` is retried, never terminal). The binding presents the live
 session in place of the cached one, and shows the session's own connection state. A failed binding
 offers Retry; the phone's document host (`DocumentHost`, phone presentation) uses the same binding.
 
 A document that exists only in a Work (a new document the Work created) opens in its Live room
-like any other: its text is plain Live text, and the project's list doesn't have it, so the host
+like any other: its text is plain Live text. A page that shows a draft opens that draft's fork
+room instead (`draftId`). The project's list doesn't have a Work-only document, so the host
 admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the room gateway
 admits the room for that Work. Both shells find the document through `route-document-owner.ts`:
 the bound identity in the live tree, then the document the answered address names
@@ -76,8 +77,8 @@ links and from a chat's Files menu, owned by their Work or, for a No Work chat,
 by their lineage; a Scratch crumb links nowhere. Uploads remain storage and
 reference/tool resources; their direct URLs show the viewing-not-available state.
 
-Eligibility is enforced at live transitions, including bootstrap,
-adoption and availability updates. Hiding a row alone must not leave an
+Eligibility is enforced at live transitions, including bootstrap and a standing
+change. Hiding a row alone must not leave an
 ineligible document available.
 
 A removed document empties its view and nothing else moves. Neither the
@@ -154,7 +155,8 @@ link) shows "Only in draft" with `Open draft` when the scope's draft list, which
 holds, has it (`draftOnlyAt`); otherwise "This destination is unavailable".
 
 A document in Trash still takes text: the live room admits it until its node is purged and
-closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
+closes (`4208`) at the purge. Only the Trash view opens one (`trashed` on the open); every other
+door reports it as deleted. Typing into a document someone else deleted is saved into it, and a
 restore brings it back. A host still open on a purged room says nothing (`SyncStatus`).
 
 Reopening a review address whose document was removed shows what the removal left: a Discard's

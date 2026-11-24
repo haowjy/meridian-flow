@@ -1,6 +1,6 @@
 # TODO
 
-- `EditorView.tsx` (`data-document-schema-stale`): the only surface where a writer
+- `SessionEditor.tsx` (`data-document-schema-stale`): the only surface where a writer
   faces a document they can't read or edit, a state the
   [repair-first rule](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/index.md#document-schema)
   rules out as a product state. It stands only as an assertion screen for major schema
@@ -9,9 +9,9 @@
   read-only state.
 
 - `EditorSurfaceFrame.tsx` toolbar row in the side: at the narrowest width (280px) the
-  last control starts off-screen, nothing shows the row scrolls, and a vertical wheel
-  doesn't move it. Give the clipped edge a visible cue (a fade, or wheel-to-horizontal
-  scrolling) without moving controls into a menu.
+  last control starts off-screen, and a vertical wheel doesn't scroll the row. The
+  clipped edge fades already (`ToolbarScroller`, `scroll-fade-x`); add wheel-to-horizontal
+  scrolling without moving controls into a menu.
 
 - `DocumentVersionMenu.tsx`: a document a draft created, shown on another owner's screen
   (opened from Changes, then a chat switch), reads "Draft: Unnamed draft". The menu turns

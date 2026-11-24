@@ -305,7 +305,8 @@ A bound document with no source is pending, never a path's occupant. An unsynced
 doesn't prove absence.
 
 The opening record is taken from main's host, not an intent or create path. It updates
-locally before a server POST, and the POST waits for `whenOnServer`. The side and the kept host
+the device's recents first, and the POST waits until the project's list has synced
+(`whenListSynced`); a list that will not sync means no POST. The side and the kept host
 record no open.
 
 `ProjectAddressDocument` only canonicalizes the address and publishes its admission issue; it
