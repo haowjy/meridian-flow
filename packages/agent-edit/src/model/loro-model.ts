@@ -10,6 +10,7 @@ import {
   readDocument,
   type ShapeBlock,
   type ShapeOp,
+  unitEditors,
   type WriteOptions,
 } from "@meridian/document-model";
 import { blocksOf, inlineOf, nodeOf } from "@meridian/loro-prosemirror";
@@ -192,6 +193,16 @@ export function loroModel(schema: Schema): LoroDocumentModel {
       }
       const result = document.apply(lowered);
       return result.ok ? { ok: true } : result;
+    },
+
+    unitAuthors(ref, path) {
+      const { document, id } = blockOf(ref);
+      const shape = document.shape(id);
+      const node = shape && shapeAt(shape, path);
+      const rule = node?.kind === "text" ? document.docs.shape.node(node.node) : undefined;
+      if (!node || !rule) return () => undefined;
+      const editors = unitEditors(document.docs.textOf(node.id), rule, document.docs.shape);
+      return (unit) => editors[unit];
     },
 
     projectBlocks(doc) {

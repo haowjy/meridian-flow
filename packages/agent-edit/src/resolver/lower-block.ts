@@ -1,5 +1,5 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
-import type { Mark } from "prosemirror-model";
+import { Fragment, type Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -33,8 +33,12 @@ export interface ShownBy {
   place: () => Where;
 }
 
+/** Who typed each unit of the textblock at `path`, in the model's view: an opaque author key. */
+export type AuthorsOf = (path: readonly number[]) => (unit: number) => string | undefined;
+
 interface Walk {
   shownBy?: ShownBy;
+  authors?: AuthorsOf;
   /** What the codec shows of the block: the attributes the model could have seen. */
   shown?: Block;
   /** A find's windows as units, by the path of the textblock that holds them. */
@@ -45,7 +49,8 @@ interface Walk {
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
  * nodes, units and attributes the model saw. Inside a text block only the words that changed are written.
- * Every node at any depth is lowered by the same code, and the room is never read. The two
+ * Every node at any depth is lowered by the same code, and the room is never read; `authors`
+ * says who typed the view's units, which picks the space a change that deletes words keeps. The two
  * blocks have one type; any other difference lowers: children that pair are edited in place,
  * the rest are deleted or inserted, and an inline atom may go into the middle of a run of text.
  * `placed` is a find's windows in the two blocks' text. With `shownBy`, an attribute counts as
@@ -59,11 +64,13 @@ export function lowerBlock(
   options: {
     placed?: [TextWindow[] | undefined, TextWindow[] | undefined] | null;
     shownBy?: ShownBy;
+    authors?: AuthorsOf;
   } = {},
 ): EditOp[] {
-  const { placed, shownBy } = options;
+  const { placed, shownBy, authors } = options;
   const walk: Walk = {
     shownBy,
+    authors,
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
   };
@@ -178,16 +185,14 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
   return atoms[ordinal] ?? null;
 }
 
-function lowerTextblock(
-  walk: Walk,
-  before: Block,
-  after: Block,
-  path: readonly number[],
-  hunks?: Hunk[],
-): void {
-  const text = hunks
-    ? textOps(before, after, hunks)
-    : lowerText(before, after, walk.windows?.get(path.join("/")));
+function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
+  let authors: ((unit: number) => string | undefined) | undefined;
+  const text = lowerText(
+    before,
+    after,
+    walk.windows?.get(path.join("/")),
+    () => (authors ??= walk.authors?.(path) ?? (() => undefined)),
+  );
   if (text.splices.length + text.formats.length > 0)
     walk.ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
   // An atom the model kept is one the room may have changed: only the model's attributes go.
@@ -242,8 +247,10 @@ function lowerText(
   before: Block,
   after: Block,
   placed: [TextWindow[], TextWindow[]] | undefined,
+  authorOf: () => (unit: number) => string | undefined,
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
+  const marks = unitMarks(before);
 
   // A find's window is placed by the model and word-diffed on its own, so a word outside the
   // match anchors nothing and a word inside it that the model kept is not written. Without
@@ -257,32 +264,40 @@ function lowerText(
       ? [placed[0], placed[1]]
       : whole;
   let hunks: Hunk[] = [];
+  const carried: Carried[] = [];
   for (const [index, old] of olds.entries()) {
     const next = news[index];
     if (old.from === old.to) {
       hunks.push({ from: old.from, to: old.to, at: next.from, end: next.to, anchored: true });
       continue;
     }
-    for (const hunk of wordHunks(a.slice(old.from, old.to), b.slice(next.from, next.to), isAtom))
-      hunks.push({
-        from: hunk.from + old.from,
-        to: hunk.to + old.from,
-        at: hunk.at + next.from,
-        end: hunk.end + next.from,
-      });
+    const words = wordHunks(a.slice(old.from, old.to), b.slice(next.from, next.to)).map((hunk) => ({
+      from: hunk.from + old.from,
+      to: hunk.to + old.from,
+      at: hunk.at + next.from,
+      end: hunk.end + next.from,
+    }));
+    carried.push(...carriedMarks(a, b, marks, words));
+    for (const hunk of keepOneSpace(a, b, words, old, authorOf))
+      hunks.push(...retainShared(a, b, hunk, isAtom));
   }
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
   slideAtomInserts(hunks, a, b, isAtom);
-  return textOps(before, after, hunks);
+  return textOps(before, after, hunks, carried);
 }
 
 /** The splices that make `after` from `before` at `hunks`, and the formatting between them. */
-function textOps(before: Block, after: Block, hunks: readonly Hunk[]): LoweredText {
+function textOps(
+  before: Block,
+  after: Block,
+  hunks: readonly Hunk[],
+  carried: readonly Carried[],
+): LoweredText {
   const splices: TextSplice[] = hunks.map((hunk) => ({
     from: hunk.from,
     to: hunk.to,
-    content: after.content.cut(hunk.at, hunk.end),
+    content: withCarried(after.content.cut(hunk.at, hunk.end), hunk.at, carried),
   }));
   const { formats, kept } = keptUnits(before, after, hunks);
   return { splices, formats, kept };
@@ -327,8 +342,116 @@ function slideAtomInserts(
   }
 }
 
+const isSpace = (unit: string | undefined) => unit !== undefined && /\s/.test(unit);
+
+/**
+ * A change that deletes words takes one of the spaces around them and keeps the other: the one
+ * whose author also typed the kept word beyond it, else the one after. The word diff would keep
+ * either equal space, and a kept space the writer typed beside words the model deleted is one
+ * Undo takes out, gluing the model's words (`before wecan go`). Changes that only whitespace
+ * separates are one change, so no lone space is left between them. `window` bounds the change.
+ */
+function keepOneSpace(
+  a: string,
+  b: string,
+  hunks: readonly Hunk[],
+  window: TextWindow,
+  authorOf: () => (unit: number) => string | undefined,
+): Hunk[] {
+  const merged: Hunk[] = [];
+  for (const hunk of hunks) {
+    const last = merged.at(-1);
+    if (last && /^\s*$/.test(a.slice(last.to, hunk.from))) {
+      last.to = hunk.to;
+      last.end = hunk.end;
+    } else merged.push({ ...hunk });
+  }
+  return merged.map((hunk, index) => {
+    if (!/\S/.test(a.slice(hunk.from, hunk.to))) return hunk;
+    const floor = merged[index - 1]?.to ?? window.from;
+    const ceiling = merged[index + 1]?.from ?? window.to;
+    let { from, to, at, end } = hunk;
+    // Take in the spaces on both sides, then give back the side that stays: the text is the same.
+    while (from > floor && isSpace(a[from - 1])) [from, at] = [from - 1, at - 1];
+    while (to < ceiling && isSpace(a[to])) [to, end] = [to + 1, end + 1];
+    const author = authorOf();
+    const keepsBefore = !isSpace(a[from]) || (from > 0 && author(from - 1) === author(from));
+    const keepsAfter = !isSpace(a[to - 1]) || (to < a.length && author(to - 1) === author(to));
+    if (keepsBefore && !keepsAfter)
+      while (from < to && at < end && isSpace(a[from]) && b[at] === a[from])
+        [from, at] = [from + 1, at + 1];
+    else
+      while (to > from && end > at && isSpace(a[to - 1]) && b[end - 1] === a[to - 1])
+        [to, end] = [to - 1, end - 1];
+    return { from, to, at, end };
+  });
+}
+
+/** Marks the model cannot write (a comment) and the model's units [at, end) they move onto. */
+interface Carried {
+  at: number;
+  end: number;
+  marks: readonly Mark[];
+}
+
+/**
+ * A mark Markdown cannot write sits on words the model never saw it on: where the model replaces
+ * them, it moves onto the replacement's words, as the model would carry bold it could see. Where
+ * the model only deletes them, it goes with them.
+ */
+function carriedMarks(
+  a: string,
+  b: string,
+  marks: ReadonlyArray<readonly Mark[] | null>,
+  hunks: readonly Hunk[],
+): Carried[] {
+  const out: Carried[] = [];
+  for (const hunk of hunks) {
+    let at = hunk.at;
+    let end = hunk.end;
+    while (at < end && isSpace(b[at])) at += 1;
+    while (end > at && isSpace(b[end - 1])) end -= 1;
+    if (at === end) continue;
+    let found: readonly Mark[] = [];
+    for (let unit = hunk.from; unit < hunk.to; unit += 1)
+      if (!isSpace(a[unit]))
+        for (const mark of marks[unit] ?? [])
+          if (mark.type.spec.markdown === false) found = mark.addToSet(found);
+    if (found.length > 0) out.push({ at, end, marks: found });
+  }
+  return out;
+}
+
+/** `content`, the model's units from `at`, with the marks carried onto its text. */
+function withCarried(content: Fragment, at: number, carried: readonly Carried[]): Fragment {
+  const nodes: Block[] = [];
+  let unit = at;
+  content.forEach((node) => {
+    const size = node.isText ? (node.text?.length ?? 0) : 1;
+    const start = unit;
+    unit += size;
+    const over = carried.filter((carry) => carry.at < unit && carry.end > start);
+    if (!node.isText || over.length === 0) {
+      nodes.push(node);
+      return;
+    }
+    const cuts = new Set([start, unit]);
+    for (const carry of over)
+      for (const edge of [carry.at, carry.end]) if (edge > start && edge < unit) cuts.add(edge);
+    const edges = [...cuts].sort((x, y) => x - y);
+    for (let k = 0; k + 1 < edges.length; k += 1) {
+      let piece = node.cut(edges[k] - start, edges[k + 1] - start);
+      for (const carry of over)
+        if (carry.at < edges[k + 1] && carry.end > edges[k])
+          for (const mark of carry.marks) piece = piece.mark(mark.addToSet(piece.marks));
+      nodes.push(piece);
+    }
+  });
+  return Fragment.fromArray(nodes);
+}
+
 /** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
-function wordHunks(a: string, b: string, isAtom: (units: string, at: number) => boolean): Hunk[] {
+function wordHunks(a: string, b: string): Hunk[] {
   const hunks: Hunk[] = [];
   let base = 0;
   let model = 0;
@@ -350,7 +473,7 @@ function wordHunks(a: string, b: string, isAtom: (units: string, at: number) => 
       open.end = model;
     }
   }
-  return hunks.flatMap((hunk) => retainShared(a, b, hunk, isAtom));
+  return hunks;
 }
 
 /**

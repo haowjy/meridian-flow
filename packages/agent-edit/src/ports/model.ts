@@ -112,6 +112,12 @@ export interface AgentEditModel extends DocumentModel {
   applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
 
   /**
+   * Who typed each unit of the textblock at `path` (child indexes) under a top-level block, as
+   * its document holds it now: an opaque key per author, equal for one author's units.
+   */
+  unitAuthors(block: BlockRef, path: readonly number[]): (unit: number) => string | undefined;
+
+  /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so
    * `ref`, `id`, `hash` and `node` always describe the same block.
    *
