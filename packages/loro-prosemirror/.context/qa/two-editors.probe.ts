@@ -380,14 +380,30 @@ function run(seed: number): string | null {
         return `${id} with an order key, node ${view.value("node", id)}, parent ${view.value("parent", id)}`;
     return null;
   };
+  const typeWord = (name: string) => {
+    const word = `q${name}${n++}`;
+    typed[name as "A" | "B"].add(word);
+    const reader = name === "A" ? b : a;
+    if (reader.history.canRedo()) sinceRedo[reader.name as "A" | "B"].add(word);
+    return word;
+  };
   const edits: Record<string, (e: Editor) => Transaction | null> = {
     type: ({ name, view: { state: s } }) => {
-      const word = `q${name}${n++}`;
-      typed[name as "A" | "B"].add(word);
-      const reader = name === "A" ? b : a;
-      if (reader.history.canRedo()) sinceRedo[reader.name as "A" | "B"].add(word);
       // Between words, as Enter and paste cut: typing inside a word would read as deleting it.
-      return s.tr.insertText(` ${word} `, between(pick(textblocks(s.doc))));
+      return s.tr.insertText(` ${typeWord(name)} `, between(pick(textblocks(s.doc))));
+    },
+    // A paragraph of the editor's words in a container, which the other may just have made: its
+    // Undo of that container must leave these words on screen.
+    nest: ({ name, view: { state: s } }) => {
+      const boxes: Place[] = [];
+      s.doc.descendants((node, pos) => {
+        if (node.type.name === "jsx_container" || node.type.name === "table_cell") boxes.push({ node, pos });
+        return !node.isTextblock;
+      });
+      if (boxes.length === 0) return null;
+      const box = pick(boxes);
+      const block = schema.nodes.paragraph.create({ id: id() }, schema.text(typeWord(name)));
+      return s.tr.insert(box.pos + box.node.nodeSize - 1, block);
     },
     split: ({ view: { state: s } }) => {
       const t = pick(textblocks(s.doc));

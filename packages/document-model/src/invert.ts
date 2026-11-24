@@ -3,7 +3,7 @@ import type { CommitAuthor } from "./commit-message.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type DocKey, STRUCTURE_KEY } from "./shape.js";
 import { StructureView } from "./structure.js";
-import { type Edit, type SetValue, takeBack, valuesOf } from "./take-back.js";
+import { type Edit, readOf, type SetValue, takeBack, valuesOf } from "./take-back.js";
 import {
   type DocVersion,
   docCovers,
@@ -29,6 +29,8 @@ type VersionJson = Record<string, number>;
 export interface StoredEdit {
   values: [string, [string, SetValue][]][];
   texts: [DocKey, { before: VersionJson; after: VersionJson }][];
+  /** `Edit.read`. A row an older build stored lacks it: its Undo counts every doc unread. */
+  read?: [DocKey, VersionJson][];
 }
 
 /** `edit`, made on `docs`, as stored. */
@@ -43,7 +45,11 @@ export function storeEdit(docs: RoomDocs, edit: Edit): StoredEdit {
         { before: json(versionOf(doc, before)), after: json(versionOf(doc, after)) },
       ]);
   }
-  return { values: [...edit.values].map(([name, keys]) => [name, [...keys]]), texts };
+  return {
+    values: [...edit.values].map(([name, keys]) => [name, [...keys]]),
+    texts,
+    read: [...edit.read].map(([key, version]) => [key, json(version)]),
+  };
 }
 
 /** A stored edit back on `docs`, which hold every op it names (`holdsEdit`). */
@@ -58,7 +64,11 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
       after: frontiersOf(doc, version(after)),
     });
   }
-  return { values: new Map(stored.values.map(([name, keys]) => [name, new Map(keys)])), texts };
+  return {
+    values: new Map(stored.values.map(([name, keys]) => [name, new Map(keys)])),
+    texts,
+    read: new Map((stored.read ?? []).map(([key, json]) => [key, version(json)])),
+  };
 }
 
 /**
@@ -67,7 +77,7 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
  * nothing else in since. A doc `since` lacks is one the write made.
  */
 export function editSince(docs: RoomDocs, since: RoomVersion, keys: Iterable<DocKey>): StoredEdit {
-  const edit: Edit = { values: new Map(), texts: new Map() };
+  const edit: Edit = { values: new Map(), texts: new Map(), read: new Map() };
   for (const key of keys) {
     const doc = docs.doc(key);
     if (!doc) continue;
@@ -77,6 +87,7 @@ export function editSince(docs: RoomDocs, since: RoomVersion, keys: Iterable<Doc
     if (key === STRUCTURE_KEY) valuesOf(doc, before, after, edit.values);
     else edit.texts.set(key, { before, after });
   }
+  readOf(docs, edit, edit.read);
   return storeEdit(docs, edit);
 }
 

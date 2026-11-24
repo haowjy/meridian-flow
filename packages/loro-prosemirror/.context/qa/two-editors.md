@@ -128,7 +128,9 @@ every step.
 The edits: typing, Enter (`split`), joining two blocks, pasting three paragraphs mid-block, bold
 and italic on and off, a heading level, a delete across two blocks, moving a block (the same node
 object at another place), wrapping two paragraphs in a `jsx_container` and unwrapping it,
-inserting a table, emptying a cell to its `<cell>/empty` paragraph, removing a block, a comment
+inserting a table, a paragraph of the editor's own words added inside a container or table cell
+(`nest`: the other editor's Ctrl+Z of that container must leave the words on screen, review
+p19063), emptying a cell to its `<cell>/empty` paragraph, removing a block, a comment
 mark, and a comment's body set or deleted outside the editor (`setCommentBody` under
 `UNTRACKED_ORIGIN`, then `notifyChanged`).
 

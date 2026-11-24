@@ -32,6 +32,7 @@ import {
   encodeChanges,
   isDerivedEmpty,
   takeBack,
+  readOf,
   textUnits,
   undoEdits,
   undoPress,
@@ -627,10 +628,11 @@ export function runScript(seed, { verbose = false } = {}) {
     stats.edits++;
     if (r?.changed.length && g.chance(0.18)) {
       // The writer's Ctrl+Z of the edit just made, as one edit through the shared rule and the server's text inverse.
-      const ctrlz = { values: new Map(), texts: new Map() };
+      const ctrlz = { values: new Map(), texts: new Map(), read: new Map() };
       for (const rec of r.changed)
         if (rec.id === null) valuesOf(rec.doc, rec.before, rec.after, ctrlz.values);
         else ctrlz.texts.set(rec.id, { before: rec.before, after: rec.after });
+      readOf(tab, ctrlz, ctrlz.read);
       const undone = textWrites(takeBack(tab, [ctrlz], new StructureView(tab)));
       for (const rec of r.changed) if (rec.id !== null) putBackWhole(rec.id, textWrite(rec.doc, rec.before, rec.after), undone.get(rec.id), "Ctrl+Z");
       recordOrigins(tab);
@@ -645,6 +647,7 @@ export function runScript(seed, { verbose = false } = {}) {
     syncTab();
     const work = fork.fork(next());
     const edits = [];
+    const had = new Set(new StructureView(fork).ids);
     try {
       for (let i = 0; i < n; i++) {
         const since = work.shownVersion();
@@ -653,12 +656,40 @@ export function runScript(seed, { verbose = false } = {}) {
         if (!r) continue;
         edits.push(editSince(work, since, new Set(r.changed.map((rec) => rec.id ?? STRUCTURE_KEY))));
       }
+      // Sometimes the turn also adds a container, for the writer to add a block inside (`nestIn`).
+      if (g.chance(0.3)) {
+        const since = work.shownVersion();
+        const box = g.block("a", g.pick(["jsx", "table"]));
+        const r = userEdit(work, "a", { by: { turn: "turn" }, edit: { kind: "insertBlock", build: (tr, doc) => tr.insert(doc.content.size, box) } });
+        if (r) edits.push(editSince(work, since, new Set(r.changed.map((rec) => rec.id ?? STRUCTURE_KEY))));
+      }
       send(work, fork);
     } finally {
       work.free();
     }
     toTab();
-    return { edits };
+    return { edits, made: new Set([...new StructureView(fork).ids].filter((id) => !had.has(id))) };
+  }
+  /**
+   * The writer adds a paragraph of their own words inside a container the turn made: the turn's
+   * `Restore before` must leave the words on screen. Returns the word, or null.
+   */
+  function nestIn(turn) {
+    syncTab();
+    const boxes = [];
+    read(tab).descendants((node, pos) => {
+      if (turn.made.has(node.attrs.id) && [schema.nodes.jsx_container, schema.nodes.table_cell, schema.nodes.table_header].includes(node.type))
+        boxes.push({ node, pos });
+      return !node.isTextblock;
+    });
+    if (!boxes.length) return null;
+    const box = g.pick(boxes);
+    const word = g.tok("f");
+    const block = schema.nodes.paragraph.create(null, schema.text(word));
+    if (!userEdit(tab, "f", { edit: { kind: "nestIn", build: (tr) => tr.insert(box.pos + box.node.nodeSize - 1, block) } })) return null;
+    syncTab();
+    stats.nestIn = (stats.nestIn ?? 0) + 1;
+    return word;
   }
   /** `Restore before` the turn: its writes taken back by the Undo rule, newest first (design §2). */
   function restore(turn) {
@@ -666,7 +697,11 @@ export function runScript(seed, { verbose = false } = {}) {
     fwdLive();
     const prior = textValues(fork);
     const before = snapshotIds(fork);
+    const old = blockValues(fork);
     markCopies(undoEdits(fork, [...turn.edits].reverse(), { press: "restore" }).changes);
+    // A block the restore wrote is touched like any edited one: rule 1 can bring back a container
+    // Live removed since, when the restore puts text back inside it.
+    for (const [id, value] of blockValues(fork)) if (old.get(id) !== value) touched.add(id);
     recordOrigins(fork);
     rememberAll(fork, before);
     toTab();
@@ -1189,9 +1224,10 @@ export function runScript(seed, { verbose = false } = {}) {
     const [first, node, pos] = paragraphs[at];
     const [second, next, nextPos] = alone ? [] : paragraphs[at + 1];
     const idsBefore = new Set(textblocks(tab).keys());
-    // Words the draft already shows twice (a `Restore before` over a split leaves such a copy).
-    const drafted = tokens(tab);
-    const already = new Set(drafted.filter((t) => drafted.indexOf(t) !== drafted.lastIndexOf(t)));
+    // Words the draft or Live already shows twice (a `Restore before` over a split leaves such a
+    // copy, and so can two writes clashing earlier): only a copy this solo sequence makes fails.
+    const twiceIn = (shown) => shown.filter((t) => shown.indexOf(t) !== shown.lastIndexOf(t));
+    const already = new Set([...twiceIn(tokens(tab)), ...twiceIn(tokens(live))]);
     const moved = [...tokensOf(node.textContent), ...(next ? tokensOf(next.textContent) : [])];
     // A place inside each paragraph, before a space, so no word is cut.
     const inFirst = pos + 1 + node.textContent.indexOf(" ", 1);
@@ -1302,7 +1338,11 @@ export function runScript(seed, { verbose = false } = {}) {
       }
     }
     if (g.chance(0.4)) liveEdit();
-    if (turn && g.chance(0.6)) restore(turn);
+    if (turn && g.chance(0.6)) {
+      const nested = turn.made.size && g.chance(0.5) ? nestIn(turn) : null;
+      restore(turn);
+      if (nested) check(tokens(fork).includes(nested), "lost-word", () => `Restore before took the writer's ${nested} off the screen:\n${render(fork)}`);
+    }
 
     for (let a = 0, n = 2 + g.int(3); a < n; a++) {
       const k = g.r();

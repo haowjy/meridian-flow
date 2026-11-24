@@ -1,11 +1,19 @@
 import type { Delta, Frontiers, LoroDoc } from "loro-crdt";
-import { type CommitAuthor, commitMessage } from "./commit-message.js";
+import { type CommitAuthor, commitMessage, readCommitMessage } from "./commit-message.js";
 import { inMap, inText } from "./handles.js";
-import { answerRemovals, answerText, removedOnPath, restore } from "./removals.js";
+import type { PeerId } from "./peer.js";
+import { answerRemovals } from "./removals.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, type DocKey, mapKind, membersOf, overrideMap, sameValue } from "./shape.js";
 import { isOrderKey, removalOf, StructureView } from "./structure.js";
-import { type DocVersion, docVersion, plainVersion } from "./version.js";
+import {
+  type DocVersion,
+  docCovers,
+  docVersion,
+  mergeVersion,
+  plainVersion,
+  withVector,
+} from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
 /**
@@ -14,10 +22,11 @@ import { commitStructure, type DocChange, StructureWriter } from "./write.js";
  * written since. Text goes back by its inverse, which deletes the characters the edit put in that
  * still stand and puts back the ones it deleted (Loro's `UndoManager` in the editor,
  * `textInverse` here). Structure goes back key by key, each to the value it held before the edit,
- * last writer wins. A block the Undo takes away is removed with a record of the text its edit
- * left, and rule 1 (`answerRemovals`) runs over the Undo's own write, so a block anyone typed into
- * since comes back: no one's words leave the screen. Rarely the text then shows twice, which the
- * writer deletes.
+ * last writer wins. A block the Undo takes away is removed with a record that counts as read only
+ * what the edit's copy showed of the text under the blocks it touched (`Edit.read`), and rule 1
+ * (`answerRemovals`) runs over the Undo's own write, so a block anyone typed into since comes
+ * back: no one's words leave the screen. Rarely the text then shows twice, which the writer
+ * deletes.
  */
 
 /** A structure value an edit set: what the key held before the edit, and what the edit left. */
@@ -39,6 +48,37 @@ export interface TextSpan {
 export interface Edit {
   values: EditValues;
   texts: Map<DocKey, TextSpan>;
+  /**
+   * What the edit's copy showed, just after it, of every text doc under a block it touched and of
+   * every doc it wrote (`readOf`). A removal its Undo writes counts these as read; a doc outside
+   * them counts as unread.
+   */
+  read: Map<DocKey, DocVersion>;
+}
+
+/**
+ * Add to `into` what `docs` show now of the text docs `edit` wrote and of those under every block
+ * its structure values name, keeping a doc's first reading: call it just after the edit.
+ */
+export function readOf(
+  docs: RoomDocs,
+  edit: Pick<Edit, "values" | "texts">,
+  into: Map<DocKey, DocVersion> = new Map(),
+): Map<DocKey, DocVersion> {
+  const keys = new Set<DocKey>(edit.texts.keys());
+  if (edit.values.size > 0) {
+    const view = new StructureView(docs);
+    for (const [name, values] of edit.values)
+      for (const key of values.keys())
+        for (const id of membersOf(name, key))
+          for (const under of view.textKeysUnder(id)) keys.add(under);
+  }
+  for (const key of keys) {
+    if (into.has(key)) continue;
+    const doc = docs.textOf(key);
+    if (doc) into.set(key, plainVersion(doc.version()));
+  }
+  return into;
 }
 
 /**
@@ -71,11 +111,9 @@ export function valuesOf(
 
 /** What an Undo's put-back of structure knows of the text. */
 export interface PutBackText {
-  /** A stored edit's spans: what it left in each text doc it wrote. */
-  left?: ReadonlyMap<DocKey, TextSpan>;
-  /** The text docs the Undo wrote, just before. */
-  wrote: ReadonlySet<DocKey>;
-  /** Of those, the ones it put text into. */
+  /** What the edit's copy showed (`Edit.read`). */
+  read: ReadonlyMap<DocKey, DocVersion>;
+  /** The text docs the Undo put text into, just before. */
   inserted: ReadonlySet<DocKey>;
 }
 
@@ -83,11 +121,12 @@ export interface PutBackText {
  * Write every structure value of an edit back, in one commit by `by`: each key gets the value it
  * held before the edit. A block the edit made goes as a removal through `StructureWriter.remove`,
  * and keeps its other keys to come back with; a removal record the edit replaced is written anew
- * the same way. Each removal reads what its record had read, what the edit left (`text.left`) and
- * the Undo's own ops; then rule 1 runs over the commit and over the text the Undo put in: a block
- * someone else typed into since comes back, and so does a removed block the Undo put text into.
- * Returns the changes, the restores included, and the values of the way back. `view`, if given,
- * reads the structure as it is.
+ * the same way. Each removal counts as read what the edit's copy showed (`text.read`), what its
+ * record had read, what a removal under it read, and the Undo's own ops; any other op is unread.
+ * Then rule 1 runs over the commit, the text the Undo put in and the shown blocks it moved
+ * (`answerRemovals`): a removed block someone else typed into since comes back. Returns the
+ * changes, the restores included, and the values of the way back. `view`, if given, reads the
+ * structure as it is.
  */
 export function putBackValues(
   docs: RoomDocs,
@@ -96,9 +135,10 @@ export function putBackValues(
   options: { view?: StructureView; by?: CommitAuthor } = {},
 ): { changes: DocChange[]; values: EditValues } {
   const back: EditValues = new Map();
-  if (values.size === 0) return { changes: answerText(docs, text.inserted), values: back };
   const { structure } = docs;
   const before = structure.frontiers();
+  if (values.size === 0)
+    return { changes: answerRemovals(docs, before, { typed: text.inserted }), values: back };
   const read = options.view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
   // A removal record put back goes in as it was first, so the removals written below read the
@@ -118,63 +158,98 @@ export function putBackValues(
     const wrote = puts.some(({ value, at }) => at === undefined || value !== undefined);
     const writer = new StructureWriter(docs, wrote ? new StructureView(docs) : read);
     for (const { key, at, seen } of removals)
-      writer.remove(key, at ?? undefined, sawOf(docs, text, seen));
+      writer.remove(key, at ?? undefined, sawOf(docs, writer.view, key, text.read, seen));
   }
   const change = commitStructure(docs, before, { by: options.by });
   for (const [name, keys] of back)
     inMap(structure, name, (map) => {
       for (const [key, value] of keys) value.left = map.get(key);
     });
-  const changes = change
-    ? [change, ...answerRemovals(docs, before), ...movedIn(docs, read, puts)]
-    : [];
-  return { changes: [...changes, ...answerText(docs, text.inserted)], values: back };
+  const moved = puts
+    .filter(
+      ({ name, key, value }) =>
+        mapKind(name).map === "parent" && typeof value === "string" && read.shown.has(key),
+    )
+    .map(({ key }) => key);
+  return {
+    changes: [
+      ...(change ? [change] : []),
+      ...answerRemovals(docs, before, { typed: text.inserted, moved }),
+    ],
+    values: back,
+  };
 }
 
 /**
- * A shown block the put-back moved under a removed one brings it back, as a move into a removed
- * container does anywhere (design §1): the removed blocks on its new path are restored. `read`
- * is the structure before the put-back.
- */
-function movedIn(docs: RoomDocs, read: StructureView, puts: readonly Put[]): DocChange[] {
-  const moved = puts.filter(
-    ({ name, key, value }) =>
-      mapKind(name).map === "parent" && typeof value === "string" && read.shown.has(key),
-  );
-  if (moved.length === 0) return [];
-  const view = new StructureView(docs);
-  const ids = new Set<BlockId>();
-  for (const { key } of moved)
-    if (!view.shown.has(key) && isOrderKey(view.order(key)))
-      for (const id of removedOnPath(docs, key)) ids.add(id);
-  return ids.size > 0 ? restore(docs, ids) : [];
-}
-
-/**
- * What a removal the run writes counts as read, per text doc: the Undo's own ops; of a doc a
- * stored edit wrote, what it left too; of a removal record put back, what it had read too. A doc
- * neither the edit nor the Undo wrote counts as read whole (`StructureWriter.remove`).
+ * What the removal of `id` an Undo writes counts as read of each text doc under it. Of a block the
+ * edit made (no `record`), a doc where no character shows that the edit's copy did not (`read`)
+ * and the undoing side did not put in counts as read whole: no one's words leave with it, ops
+ * whose text an Undo since took out included. A record put back keeps what it did not read.
+ * Otherwise it counts what the edit's copy showed, what the record put back had read
+ * (`record`), what a removal on the doc's path below `id` read (a block that stays removed shows
+ * none of its text) and the Undo's own ops, so rule 1 brings `id` back with those words.
  */
 function sawOf(
   docs: RoomDocs,
-  { left, wrote }: PutBackText,
+  view: StructureView,
+  id: BlockId,
+  read: ReadonlyMap<DocKey, DocVersion>,
   record?: ReadonlyMap<DocKey, DocVersion>,
 ): (key: DocKey) => DocVersion | undefined {
+  const own = [docs.peer, docs.live?.peer].filter((peer) => peer !== undefined) as string[];
   return (key) => {
     const doc = docs.textOf(key);
-    const span = left?.get(key);
-    const had = record?.get(key);
-    if (!doc || (!span && !had && !wrote.has(key))) return undefined;
-    const seen = new Map(span ? plainVersion(doc.frontiersToVV(span.after)) : []);
-    for (const [peer, counter] of had ?? [])
-      if (counter > (seen.get(peer) ?? 0)) seen.set(peer, counter);
+    if (!doc) return undefined;
+    if (!record && !showsUnread(docs, doc, read.get(key), own)) return plainVersion(doc.version());
+    const seen = new Map<string, number>();
+    const add = (version: DocVersion | undefined) => {
+      for (const [peer, counter] of version ?? [])
+        if (counter > (seen.get(peer) ?? 0)) seen.set(peer, counter);
+    };
+    add(read.get(key));
+    add(record?.get(key));
+    for (let at: BlockId | null | undefined = key; at && at !== id; at = view.parent(at))
+      add(view.removal(at)?.seen.get(key));
     // The Undo's own ops: this copy's, and in a draft its Live copy's (a press Undo's Live side).
-    for (const peer of [docs.peer, docs.live?.peer]) {
-      const own = peer && docVersion(doc).get(peer);
-      if (own) seen.set(peer, own);
+    for (const peer of own) {
+      const counter = docVersion(doc).get(peer as PeerId);
+      if (counter) seen.set(peer, counter);
     }
     return seen as DocVersion;
   };
+}
+
+/**
+ * Whether `doc` shows a character put in since `read` by a peer not in `own`, past text the
+ * undoing side put back where it stood (`unchanged`). A doc cut at its history cutoff since `read`
+ * can't say, and counts as showing one.
+ */
+function showsUnread(
+  docs: RoomDocs,
+  doc: LoroDoc,
+  read: DocVersion | undefined,
+  own: readonly string[],
+): boolean {
+  if (doc.isShallow() && !docCovers(read, plainVersion(doc.shallowSinceVV()))) return true;
+  const from = read ? withVector(read, (vector) => doc.vvToFrontiers(vector)) : [];
+  const since = unchanged(
+    textDiff(doc, from, doc.frontiers()),
+    textDiff(doc, [], from),
+    putBackBy(docs, doc, new Set()),
+  );
+  return inText(doc, (text) => {
+    let at = 0;
+    for (const op of since) {
+      if (op.delete != null) continue;
+      if (op.insert != null)
+        for (let k = at; k < at + length(op); k++) {
+          const peer = text.getEditorOf(k);
+          if (peer !== undefined && !own.includes(peer)) return true;
+        }
+      at += length(op);
+    }
+    return false;
+  });
 }
 
 /**
@@ -238,18 +313,15 @@ export function takeBack(
 ): DocChange[] {
   const out: DocChange[] = [];
   const values: EditValues = new Map();
-  const texts = new Map<DocKey, TextSpan>();
-  const wrote = new Set<DocKey>();
+  const read = new Map<DocKey, DocVersion>();
   const inserted = new Set<DocKey>();
   for (const edit of edits) {
     for (const [key, span] of edit.texts) {
-      if (!texts.has(key)) texts.set(key, span);
       // A draft's span of a doc it reads through Live: the text stays Live's.
       const doc = docs.doc(key);
       if (!doc) continue;
-      const inverse = textInverse(doc, span.before, span.after);
+      const inverse = textInverse(docs, doc, span);
       if (inverse.length === 0) continue;
-      wrote.add(key);
       if (inverse.some((op) => op.insert != null)) inserted.add(key);
       const before = doc.frontiers();
       inText(doc, (text) => text.applyDelta(inverse));
@@ -261,8 +333,9 @@ export function takeBack(
       for (const [key, value] of keys) into.set(key, value);
       values.set(name, into);
     }
+    mergeVersion(read, edit.read);
   }
-  out.push(...putBackValues(docs, values, { left: texts, wrote, inserted }, { view, by }).changes);
+  out.push(...putBackValues(docs, values, { read, inserted }, { view, by }).changes);
   return out;
 }
 
@@ -271,14 +344,18 @@ export type TextOp = Delta<string>;
 const length = (op: TextOp) => op.retain ?? op.delete ?? (op.insert as string).length;
 
 /**
- * The text Undo of a write made between `before` and `after`, for the text as it is now: the
- * inverse `diff(after, before)` moved through what happened since, so it deletes only the write's
+ * The text Undo of a write (`span`) in `doc`, for the text as it is now: the inverse
+ * `diff(after, before)` moved through what happened since, so it deletes only the write's
  * characters that still stand, puts back what it deleted, and keeps whatever anyone wrote since.
  */
-function textInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): TextOp[] {
+function textInverse(docs: RoomDocs, doc: LoroDoc, { before, after }: TextSpan): TextOp[] {
   const inverse = textDiff(doc, after, before);
   if (inverse.length === 0) return [];
-  const since = unchanged(textDiff(doc, after, doc.frontiers()), textDiff(doc, [], after));
+  const since = unchanged(
+    textDiff(doc, after, doc.frontiers()),
+    textDiff(doc, [], after),
+    putBackBy(docs, doc, spanPeers(doc, before, after)),
+  );
   const out: TextOp[] = [];
   const a = inverse.map((op) => ({ ...op }));
   const b = since.map((op) => ({ ...op }));
@@ -324,13 +401,65 @@ function textInverse(doc: LoroDoc, before: Frontiers, after: Frontiers): TextOp[
   return out;
 }
 
+/** The peers of the ops from `before` to `after` in `doc`. */
+function spanPeers(doc: LoroDoc, before: Frontiers, after: Frontiers): Set<string> {
+  const was = plainVersion(doc.frontiersToVV(before));
+  const peers = new Set<string>();
+  for (const [peer, counter] of plainVersion(doc.frontiersToVV(after)))
+    if (counter > (was.get(peer) ?? 0)) peers.add(peer);
+  return peers;
+}
+
 /**
- * `since` with every delete beside an insert of the same text, styles included, read as no change.
- * An Undo puts deleted text back as new characters (Loro has no undelete), so the Undo of a later
- * edit leaves the text an earlier edit wrote looking deleted and retyped; the earlier edit's
- * Undo must still take it out. `base` is the text at `since`'s start, as one insert delta.
+ * Whether the characters now at `[from, to)` of `doc`'s text were put in by the undoing side:
+ * `peers` (a write's own), this copy, or a peer whose commits name an author (`by`: a chat's turn
+ * or a press, such as an earlier Undo's copy). A writer's typing names none, so it never counts.
  */
-function unchanged(since: TextOp[], base: TextOp[]): TextOp[] {
+function putBackBy(
+  docs: RoomDocs,
+  doc: LoroDoc,
+  peers: Set<string>,
+): (from: number, to: number) => boolean {
+  const own = new Set<string>(peers);
+  for (const peer of [docs.peer, docs.live?.peer]) if (peer !== undefined) own.add(peer);
+  const now = docVersion(doc);
+  const side = (peer: string) => {
+    if (!own.has(peer)) {
+      const last = now.get(peer as PeerId);
+      if (
+        !last ||
+        !readCommitMessage(doc.getChangeAt({ peer: peer as PeerId, counter: last - 1 }).message).by
+      )
+        return false;
+      own.add(peer);
+    }
+    return true;
+  };
+  return (from, to) =>
+    inText(doc, (text) => {
+      for (let at = from; at < to; at++) {
+        // Loro reads no editor at the second half of a surrogate pair.
+        const peer = text.getEditorOf(at);
+        if (peer !== undefined && !side(peer)) return false;
+      }
+      return true;
+    });
+}
+
+/**
+ * `since` with every delete beside an insert of the same text, styles included, that the undoing
+ * side put in (`putBack`) read as no change. An Undo puts deleted text back as new characters
+ * (Loro has no undelete), so the Undo of a later edit leaves the text an earlier edit wrote
+ * looking deleted and retyped; the earlier edit's Undo must still take it out. A writer who
+ * retypes the same word keeps it. The one case left: an AI write of another turn that deletes the
+ * edit's text and types the same text in its place, which the edit's Undo takes out with it.
+ * `base` is the text at `since`'s start, as one insert delta.
+ */
+function unchanged(
+  since: TextOp[],
+  base: TextOp[],
+  putBack: (from: number, to: number) => boolean,
+): TextOp[] {
   const chars = base.flatMap((op) =>
     [...(op.insert as string)].map((char) => char + JSON.stringify(op.attributes ?? {})),
   );
@@ -338,6 +467,7 @@ function unchanged(since: TextOp[], base: TextOp[]): TextOp[] {
     [...(op.insert as string)].map((char) => char + JSON.stringify(op.attributes ?? {})).join("");
   const out: TextOp[] = [];
   let at = 0;
+  let now = 0;
   for (let i = 0; i < since.length; i++) {
     const op = since[i] as TextOp;
     const next = since[i + 1];
@@ -347,14 +477,21 @@ function unchanged(since: TextOp[], base: TextOp[]): TextOp[] {
         : op.insert != null && next?.delete != null
           ? [next, op]
           : [];
-    if (del && ins && chars.slice(at, at + (del.delete as number)).join("") === spelled(ins)) {
+    if (
+      del &&
+      ins &&
+      chars.slice(at, at + (del.delete as number)).join("") === spelled(ins) &&
+      putBack(now, now + length(ins))
+    ) {
       out.push({ retain: del.delete as number });
       at += del.delete as number;
+      now += length(ins);
       i++;
       continue;
     }
     out.push(op);
     if (op.insert == null) at += length(op);
+    if (op.delete == null) now += length(op);
   }
   return out;
 }

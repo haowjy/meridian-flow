@@ -37,7 +37,9 @@ stored as JSON and read back.
 - Writer edits in Draft (text, marks, comments, inline nodes, block inserts, deletes, moves,
   splits, joins, type changes, table rows), Ctrl+Z of the edit just made through `takeBack`, AI
   turns on a copy of
-  the fork, and `Restore before` of a turn (`undoEdits` over the turn's edits, newest first).
+  the fork (sometimes adding a container), and `Restore before` of a turn (`undoEdits` over the
+  turn's edits, newest first), half the time after the writer adds a paragraph of their own words
+  inside a container the turn made (`nestIn`).
 - A press of random changes (`applyBlocks`), carrying as the Live version the writer was shown the
   Live tab's (half the time) or the Changes list's (the server copy's, just read), with Live typing
   the tab never saw and Draft typing landing after it.
@@ -86,13 +88,18 @@ stored as JSON and read back.
 - **Blocks a write moved text between are one change, and independent rewrites are two** (design
   §2, "Which paragraphs go together"): the changed blocks of each way above are in one change, a
   press naming either acts on both, Live shows none of the moved words twice, and after the
-  press's Undo they are one change again. Two rewritten neighbours are two changes, and applying the first leaves
+  press's Undo they are one change again. A word Live or the draft already showed twice before
+  the step (an earlier clash's copy) is left out of that count. Two rewritten neighbours are two changes, and applying the first leaves
   the second pending.
 - After a writer edit: no override this write set equals Live's (including an order override that
   puts the block where Live's key would).
 - After the two drafts' Undo: Live's text is back (or holds the typing between), each draft has
   only that paragraph pending, and no character of either draft's text is lost.
-- After `Restore before`: each of the turn's edits went back.
+- After `Restore before`: each of the turn's edits went back, and a paragraph the writer added
+  inside a container the turn made still shows its words (`lost-word`): the Undo's removal counts
+  only what the turn's copy showed as read (`Edit.read`). A block the restore wrote counts as
+  touched: rule 1 can bring back a container Live removed since, when the restore puts text back
+  inside it.
 - At the end, after `Apply all`: Live, the fork and both tabs converge; nothing is pending; every
   comment mark has its body; no token is duplicated; block ids are unique; no block is pending that
   no write touched, except the accepted copies (below).
@@ -122,12 +129,18 @@ it (a split, Live's or the draft's, carries it on). Text shown twice (`duplicate
 not failed: the owner accepted it as the cost of an Undo that always runs (design §2), and a
 restore no longer takes a split's or a join's copy out. A chain undone in turn is checked exactly:
 a later press's Undo puts its text back as new characters, and the earlier press's inverse reads a
-delete beside an insert of the same text as no change (`unchanged` in `take-back.ts`). At 12,010
-seeds (2026-11-23, the always-runs rule) 12,009 pass, with no word lost; 112 seeds show text
-twice. The one failure is open, and fails the same on `feat/loro` before the rule:
-- `stale-discarded-back` 6611: a stale Draft tab's insert anchored inside text a Discard deleted
-  lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k f22k"); no
-  character comes back. Two inserts at one gap, open in the gate.
+delete beside an insert of the same text, put in by the undoing side, as no change (`unchanged`
+in `take-back.ts`). At 17,010 seeds (2026-11-23,
+review round p19064) 17,005 pass, with no word lost; 133 seeds show text twice. The five failures
+are open, lose no word, and fail the same on the PR's head before this round (the first two on
+`feat/loro` before the always-runs rule too):
+- `stale-discarded-back` 6611, 15900: a stale Draft tab's insert anchored inside text a Discard
+  deleted lands inside Live's put-back text and spells a discarded word ("s2k" read as "s4k
+  f22k"); no character comes back. Two inserts at one gap, open in the gate.
+- `press-undo` 6130, 10960 and `discard-undo` 9429: two or three presses over one block undone in
+  turn, or a Discard's Undo, leave Live or the fork not exactly as before: a block a press made
+  stays, or put-back text reads in another order with a mark missing. Reached since the AI turns
+  add containers.
 
 Pins implementation decisions: design §2's grouping (ancestor, `pieces` records per pair, deleted
 by the press that presses them, comment bodies), the apply record's `seen` from the Live version

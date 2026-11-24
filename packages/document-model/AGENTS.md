@@ -72,12 +72,20 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   Ctrl+Z and Redo, a press's Undo, `Restore before` and agent-edit's undo. It runs whatever was
   written since. Text goes back by its inverse, which deletes the edit's characters that still
   stand and puts back the ones it deleted (Loro's `UndoManager` in the editor, `textInverse`
-  here). Structure goes back key by key to the value before the edit, last writer wins. A removal
-  the Undo writes reads what its record had read, what a stored edit left and the Undo's own ops;
-  then rule 1 runs over the Undo's commit, over the text it put in (`answerText`) and over a shown
-  block it moved under a removed one (`movedIn`), so no one's words leave the screen. Text can
-  show twice, and a later write over the edit's characters can lose letters with them: the owner
-  accepted both (design §2). Don't add a test that leaves an Undo out; the one case an Undo
+  here). Structure goes back key by key to the value before the edit, last writer wins. Every
+  edit, stored or an editor step, keeps what its copy showed of the text docs under the blocks it
+  touched (`Edit.read`, `readOf`, taken just after the edit). A removal the Undo writes counts as
+  read only those versions, what its record had read, what a removal below it read and the Undo's
+  own ops; a doc outside them is unread. Under a block the edit made, a doc that shows no character the edit's
+  copy didn't and the undoing side didn't put back counts as read whole (`showsUnread`): ops whose text an Undo
+  since took out bring nothing back. Rule 1 (`answerRemovals`) then runs
+  over the Undo's commit, the text it put in and the shown blocks it moved, so a block anyone typed
+  into comes back and no one's words leave the screen. Text can show twice, and a later write over
+  the edit's characters can lose letters with them: the owner accepted both (design §2). The text
+  inverse reads a delete beside an equal insert as no change only when the insert's characters
+  are the undoing side's (`unchanged`, `putBackBy`): the edit's own peers, the Undo's copy, or a
+  copy whose commits name an author (an earlier Undo's or press's); a writer's retype is a real
+  change. Don't add a test that leaves an Undo out; the one case an Undo
   can't run is history cut away (`holdsEdit`). Every commit message is `commit-message.ts`'s:
   who wrote it (`by`: a turn or a press; none is the writer).
 - Each writer takes a fresh peer id (`freshPeerId`, `freshServerPeerId`); a copy uses its one

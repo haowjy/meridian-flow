@@ -8,7 +8,6 @@ import type { Imported, RoomDocs } from "./room-docs.js";
 import {
   type BlockId,
   type DocKey,
-  mapKind,
   membersOf,
   overrideMap,
   STRUCTURE_KEY,
@@ -17,7 +16,7 @@ import {
 } from "./shape.js";
 import { blockDiffers, Side } from "./side.js";
 import { encodeRemoval, isOrderKey, removalOf, StructureView } from "./structure.js";
-import { type Edit, type TextSpan, takeBack, valuesOf } from "./take-back.js";
+import { type Edit, readOf, type TextSpan, takeBack, valuesOf } from "./take-back.js";
 import { type DocVersion, docVersion, type RoomVersion, withVector } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
@@ -331,7 +330,9 @@ function pressedOf(
   });
   const sides = rooms.map((wrote) => {
     if (!wrote) return null;
-    const edits: Edit[] = chosen.map(() => ({ values: new Map(), texts: new Map() }));
+    const edits = chosen.map(
+      (): Pick<Edit, "values" | "texts"> => ({ values: new Map(), texts: new Map() }),
+    );
     for (const [key, span] of wrote.texts) edits[index.get(key) as number].texts.set(key, span);
     if (wrote.structure) {
       const { doc, before, after } = wrote.structure;
@@ -340,22 +341,15 @@ function pressedOf(
           // A `pieces` record goes with the change that holds one of its blocks, or else with
           // the change its component connects to.
           const member = membersOf(name, key).find((id) => index.has(id)) ?? retired.get(key);
-          const { values, texts } = edits[index.get(member as string) as number];
+          const { values } = edits[index.get(member as string) as number];
           const into = values.get(name) ?? new Map();
           values.set(name, into.set(key, value));
-          // A removal the press took away counts, when its Undo puts it back, the text under it
-          // as the press left it: what anyone typed there since brings the block back.
-          const removal = mapKind(name).map === "order" ? removalOf(value.before) : null;
-          if (removal && !removalOf(value.left))
-            for (const under of removal.seen.keys()) {
-              const frontiers = wrote.docs.textOf(under)?.frontiers();
-              if (frontiers && !texts.has(under))
-                texts.set(under, { before: frontiers, after: frontiers });
-            }
         }
     }
     return edits.map((edit) =>
-      edit.texts.size === 0 && edit.values.size === 0 ? null : storeEdit(wrote.docs, edit),
+      edit.texts.size === 0 && edit.values.size === 0
+        ? null
+        : storeEdit(wrote.docs, { ...edit, read: readOf(wrote.docs, edit) }),
     );
   });
   return chosen.map((change, i) => ({

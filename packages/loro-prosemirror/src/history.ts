@@ -4,6 +4,7 @@ import {
   type Edit,
   putBackValues,
   type RoomDocs,
+  readOf,
   STRUCTURE_KEY,
   UNTRACKED_ORIGIN,
   valuesOf,
@@ -105,7 +106,7 @@ export class UndoHistory {
       this.endStep();
       step = {
         id: ++this.ids,
-        edit: { values: new Map(), texts: new Map() },
+        edit: { values: new Map(), texts: new Map(), read: new Map() },
         selection: selectionCursors(this.docs, state),
         at: now,
       };
@@ -123,7 +124,7 @@ export class UndoHistory {
     this.endStep();
     this.undoSteps.push({
       id: ++this.ids,
-      edit: { values: new Map(), texts: new Map() },
+      edit: { values: new Map(), texts: new Map(), read: new Map() },
       selection: { anchor: null, head: null },
       at: this.now(),
       outside,
@@ -173,6 +174,8 @@ export class UndoHistory {
         this.watched.get(key)?.manager.groupStart();
       }
     }
+    // The step's first reading of each doc: a peer's typing in a block the step made is unread.
+    readOf(this.docs, edit, edit.read);
     step.at = this.now();
     if (edit.values.size > 0 && !this.joining) this.endStep();
   }
@@ -250,11 +253,9 @@ export class UndoHistory {
         if (diff?.type === "text" && diff.diff.some((op) => op.insert != null)) inserted.add(key);
       }
       this.tag = null;
-      const back = putBackValues(this.docs, step.edit.values, {
-        wrote: new Set(step.edit.texts.keys()),
-        inserted,
-      });
+      const back = putBackValues(this.docs, step.edit.values, { read: step.edit.read, inserted });
       step.edit.values = back.values;
+      step.edit.read = readOf(this.docs, step.edit);
       changes.push(...back.changes);
       if (changes.length === 0) continue;
       const selection = this.restored(step.selection);

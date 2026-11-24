@@ -96,6 +96,7 @@ export {
   type Edit,
   type EditValues,
   putBackValues,
+  readOf,
   type SetValue,
   type TextOp,
   type TextSpan,

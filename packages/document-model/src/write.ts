@@ -119,8 +119,8 @@ export class StructureWriter {
    * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
    * and what this copy read of every text doc under it, so a write the removal did not read can
    * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
-   * they remove. An Undo gives `at`, the key it puts back, and `saw`, what its edit left of the
-   * text docs it wrote (`putBackValues`): typing since, by anyone, brings the block back.
+   * they remove. An Undo gives `at`, the key it puts back, and `saw`, what its edit's copy showed
+   * (`putBackValues`): typing since, by anyone, brings the block back.
    */
   remove(
     id: BlockId,
