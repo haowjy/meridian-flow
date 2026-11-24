@@ -31,7 +31,6 @@ const IDLE = {
 
 afterEach(() => vi.useRealTimers());
 
-/** `join: false` leaves the sync waiting for its first read, as `start()` does. */
 function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD, { join = true } = {}) {
   let synced = initial;
   const subscriptions: Array<{
@@ -58,12 +57,10 @@ function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD, { join = true } = 
     observe: (observation) => observations.push(observation),
     signal: new AbortController().signal,
     now: () => "2026-01-01T00:00:00.000Z",
-    // Buffered deltas flush when the next frame, a read or a stop asks, never on a timer.
     scheduleFlush: () => () => undefined,
   });
   sync.start();
   if (join) {
-    // Read first: no handler exists until a read applies. An empty read joins at once.
     requests.length = 0;
     sync.receive(read([], "0"));
   }
@@ -180,12 +177,10 @@ describe.each([EventType.RUN_FINISHED, EventType.RUN_ERROR])(
 
 describe("the join", () => {
   it("subscribes only from a read, above every frame the cell holds", () => {
-    // A host that never delivers a read has subscribed nothing and asked for one.
     const idle = harness(EMPTY_SYNCED_THREAD, { join: false });
     expect(idle.subscriptions).toHaveLength(0);
     expect(idle.requests).toEqual(["any"]);
 
-    // Sync A streams part of a message, then its last handler goes. The cell holds a stream-built block.
     const a = harness();
     a.emit(runStarted("turn-1"), "1000");
     a.emit(textStart("m1"), "1001");
@@ -194,7 +189,6 @@ describe("the join", () => {
     a.sync.stop();
     expect(a.synced().deliveryCursor).toBe("1003");
 
-    // Sync B on that cell joins on a read that lacks the block: above A's frames, one block kept.
     const b = harness(a.synced(), { join: false });
     expect(b.sync.receive(read([reply("turn-1", "streaming", "")], "1000"))).toBe("stale");
     expect(b.subscriptions).toHaveLength(0);
@@ -203,7 +197,6 @@ describe("the join", () => {
     expect(b.turn("turn-1")?.blocks).toHaveLength(1);
     expect(b.turn("turn-1")?.blocks[0]?.textContent).toBe("Hello world");
 
-    // A read with the same position as the cursor is stale; the host's next read, above it, joins.
     const c = harness(a.synced(), { join: false });
     const behind = read([], "1003");
     behind.liveState.resumeAfterSeq = "1000";
@@ -212,13 +205,11 @@ describe("the join", () => {
     const ahead = read([reply("turn-1", "streaming", "Hello")], "1004");
     ahead.liveState.resumeAfterSeq = "1000";
     expect(c.sync.receive(ahead)).toBe("applied");
-    // The handler starts at the later of the read's position and the cursor.
     expect(c.subscriptions.map((entry) => entry.after)).toEqual(["1003"]);
     c.emit(textDelta("m1", "!"), "1004");
     c.sync.stop();
     expect(c.turn("turn-1")?.blocks.map((block) => block.textContent)).toEqual(["Hello!"]);
 
-    // A same-instance restart joins again, above its frames.
     a.sync.start();
     expect(a.requests).toEqual(["any"]);
     const restart = read([], "1500");
@@ -247,7 +238,6 @@ describe("frame order", () => {
       toolName: "doc_write",
       input: '{"uri":"kb://notes.md"}',
     });
-    // A real applied read lands between the two results; no reducer reset may lose the call.
     expect(h.sync.receive(read([structuredClone(staged) as Turn], "1500"))).toBe("applied");
     h.emit(
       { type: EventType.TOOL_CALL_RESULT, toolCallId: "write-1", content: "committed" },
@@ -288,7 +278,6 @@ describe("frame order", () => {
     });
     expect(h.synced().eventsApplied).toBe(3);
 
-    // Fix 1: a delta buffered before a read belongs before it, not appended to the read's text.
     h.emit(textDelta("text-1", " world"), "1400");
     h.sync.receive(read([reply("turn-1", "streaming", "hello world")], "1500"));
     const text = h.turn("turn-1")?.blocks.find((block) => block.id === "m1")?.textContent;
@@ -305,22 +294,17 @@ describe("when the sync asks for a read", () => {
     const h = harness();
     h.sync.receive(read([], "1000"));
     const settle = () => vi.advanceTimersByTimeAsync(300);
-    // A divider reserves: the record's execution changed.
     h.emit(record("1000", "e1"), "1000");
     await settle();
     expect(h.requests).toEqual(["fresh"]);
-    // The same execution, and an older record, change nothing.
     h.emit(record("1500", "e1"), "1500");
     h.emit(record("900", null), "1501");
     await settle();
     expect(h.requests).toHaveLength(1);
-    // Frames inside one debounce window share a single refresh.
     h.emit(record("2000", null), "2000");
     h.emit(record("2001", "e2"), "2001");
     await settle();
     expect(h.requests).toHaveLength(2);
-    // A record naming another client's waiting message revalidates once: the stream does not
-    // carry that user turn.
     const waiting = [
       {
         id: "foreign-1",
@@ -336,12 +320,10 @@ describe("when the sync asks for a read", () => {
     h.emit(record("2501", "e2", waiting), "2501");
     await settle();
     expect(h.requests).toHaveLength(3);
-    // The run's end revalidates too (the turn's own terminal write may add one more).
     h.emit(runFinished("a"), "3000");
     await settle();
     const afterRun = h.requests.length;
     expect(afterRun).toBeGreaterThan(3);
-    // A handoff brief starts and ends with no run: only its status frame says so.
     h.emit(
       custom("meridian.thread.status", {
         threadId: THREAD,
@@ -355,8 +337,6 @@ describe("when the sync asks for a read", () => {
   });
 
   it("settles a stopped autocompaction from the record its lease release sends", async () => {
-    // A cancelled autocompaction projects no RUN_FINISHED; the record whose execution closed
-    // is its only signal.
     vi.useFakeTimers();
     const compaction = (status: string) =>
       ({
@@ -387,7 +367,6 @@ describe("when the sync asks for a read", () => {
 
 describe("the end-of-turn check", () => {
   it("compares a stream-ended turn with the read, and never trusts a turn a read wrote first", () => {
-    // A stream that ends a turn with text the read doesn't hold is a difference.
     const differs = harness();
     differs.emit(runStarted("turn-a"), "1000");
     differs.emit(textStart("m1"), "1100");
@@ -403,7 +382,6 @@ describe("the end-of-turn check", () => {
       },
     ]);
 
-    // A read that changes a running turn marks it rewritten, and its later clean check says so.
     const changed = harness();
     changed.emit(runStarted("turn-b"), "1000");
     changed.emit(textStart("m1"), "1100");
@@ -415,8 +393,6 @@ describe("the end-of-turn check", () => {
       { kind: "check", turnId: "turn-b", rewritten: true, diffs: [] },
     ]);
 
-    // A first read that installs the turn streaming with text, followed only by its end, stays
-    // rewritten: no frame delivered that text.
     const seeded = harness();
     seeded.sync.receive(read([reply("turn-e", "streaming", "Part")], "2000"));
     seeded.emit(runFinished("turn-e"), "2100");
@@ -425,7 +401,6 @@ describe("the end-of-turn check", () => {
       ["turn-e", true],
     ]);
 
-    // So does a kept cell that already holds the turn's text when a new sync starts.
     const kept = harness({
       ...EMPTY_SYNCED_THREAD,
       turns: [reply("turn-f", "streaming", "Part")],
@@ -436,7 +411,6 @@ describe("the end-of-turn check", () => {
       ["turn-f", true],
     ]);
 
-    // Forgetting is not compared: a read that stamps a stream-ended turn checks clean.
     const forgotten = harness();
     forgotten.emit(runStarted("turn-g"), "1000");
     forgotten.emit(textStart("m1"), "1100");

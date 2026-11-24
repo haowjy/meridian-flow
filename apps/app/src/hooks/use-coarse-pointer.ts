@@ -1,11 +1,3 @@
-/**
- * useCoarsePointer — true while the primary pointer is a finger, at any width.
- *
- * The phone shell is chosen by `usePhoneShell`; a touch tablet or a touch
- * laptop at desktop width keeps the desktop shell but still needs the phone's
- * 44px targets. Components that take the phone's `touch` prop read this too, so
- * one sizing rule serves both. Pure-CSS sites use `coarse:`.
- */
 import { useSyncExternalStore } from "react";
 
 const COARSE_POINTER_QUERY = "(pointer: coarse)";

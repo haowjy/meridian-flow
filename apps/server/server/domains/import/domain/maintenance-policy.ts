@@ -1,4 +1,3 @@
-/** One database-time policy for candidate discovery and locked sweep decisions. */
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 export const IMPORT_MAINTENANCE = {

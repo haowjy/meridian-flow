@@ -1,4 +1,3 @@
-/** Durable Agent revision/catalog storage participating in the app's ambient transaction. */
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "@meridian/database";
 import {
@@ -72,11 +71,6 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
     savedBy: row.savedBy,
     hasPrevious,
   });
-  /**
-   * The one ordering of a package's Saves and Undos: whoever holds this lock reads the latest row
-   * and appends the next, so an Undo's stale check cannot be overtaken by a Save. Held to the end
-   * of the transaction, including the first Save and a removal, which have no row to lock.
-   */
   const lockPackage = (owner: SaveOwner, folder: string) =>
     db().execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`${"userId" in owner ? `user:${owner.userId}` : `project:${owner.projectId}`} ${folder}`}, 0))`,

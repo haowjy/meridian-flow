@@ -1,5 +1,3 @@
-/** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
-
 import type { ThreadId, Usage } from "@meridian/contracts/runtime";
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import type {
@@ -150,7 +148,6 @@ export function createConversationSummarizer(
       const modelResponses: SummaryResponse[] = [];
       const summarizer: SummaryOutcome["summarizer"] = { path: "rolling", segments: 0 };
       const outcome = { modelResponses, summarizer };
-      // The one catch spans every path/segment so a later failure cannot lose a paid row.
       try {
         input.signal.throwIfAborted();
         const models = gateway.listModels();
@@ -222,7 +219,7 @@ export function createConversationSummarizer(
             finishReason: "error",
             usage,
           };
-          // Reserve the row before entering the gateway. Even a throwing/aborted stream is an attempt.
+          // keep: Record a paid summary attempt before the gateway call; even aborted streams count
           modelResponses.push(row);
           try {
             const gatewayCallId = crypto.randomUUID();
@@ -364,7 +361,6 @@ export function createConversationSummarizer(
         const requestFor = (segment: string[]): GenerateRequest => ({
           model: model.id,
           reasoning: "none",
-          // A rolling summary is a one-shot call: a cache write would never be read.
           promptCacheRetention: "none",
           messages: [
             { role: "system", content: [{ type: "text", text: prompt }] },
@@ -383,14 +379,12 @@ export function createConversationSummarizer(
             },
           ],
         });
-        // Leave input-estimate headroom for the running summary before any paid segment.
-        // Recheck each assembled call against the actual running summary as it arrives.
         const overhead = estimateRequestTokens({
           request: requestFor([]),
           baseline: null,
           tokenizer: model.tokenizer,
         });
-        // The reserve is in provider token units, regardless of language.
+        // keep: The running-summary reserve is in provider tokens, not characters
         const runningReserve =
           estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
           outputReserveTokens(model);

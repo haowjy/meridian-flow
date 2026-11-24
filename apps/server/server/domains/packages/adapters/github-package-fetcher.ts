@@ -15,9 +15,7 @@ const API_HOST = "api.github.com";
 const ALLOWED_HOSTS = new Set(["github.com", API_HOST, "codeload.github.com"]);
 const MAX_REDIRECTS = 5;
 const MAX_TAG_HOPS = 5;
-/** Ref and tag API bodies are small; a body past this is refused. */
 const MAX_API_BYTES = 8 * 1024 * 1024;
-/** A file over this is left out with a warning (foreign-import §1, stored package). */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", ".git", "dist", "build"]);
 const ARCHIVE_NAME = /\.(zip|tar(\.[a-z0-9]+)?|tgz)$/i;
@@ -58,7 +56,6 @@ function parseGithubUrl(raw: string): ParsedUrl {
   return { owner, repo, segments };
 }
 
-/** Splits an archive or URL path into segments. Absolute paths and `..` are refused; `.` and empty segments vanish. */
 function normalizeSegments(raw: string, what: string): string[] {
   if (raw.startsWith("/") || raw.includes("\0")) {
     throw new PackageFetchError("path-refused", `${what} is not a relative path: ${raw}`);
@@ -73,7 +70,6 @@ function normalizeSegments(raw: string, what: string): string[] {
   return segments;
 }
 
-/** A skipped name matches a directory, so only the segments above the file count. */
 const isSkipped = (segments: readonly string[]) =>
   segments.slice(0, -1).some((segment) => SKIPPED_DIRECTORIES.has(segment)) ||
   ARCHIVE_NAME.test(segments.at(-1) ?? "");
@@ -82,7 +78,7 @@ export function createGithubPackageFetcher(
   options: { token?: string; fetch?: typeof fetch } = {},
 ): PackageFetcher {
   const send = options.fetch ?? fetch;
-  /** Follows redirects by hand so every hop is checked against the host list, and the token reaches only the API host. */
+  // keep: Follow redirects manually so every host is checked and the API token stays on api.github.com
   async function request(url: string, budget: FetchBudget, accept: string): Promise<Response> {
     let target = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -141,7 +137,6 @@ export function createGithubPackageFetcher(
     return JSON.parse(await readCapped(response, budget)) as T;
   }
 
-  /** Reads an API body, counting it toward the download budget and refusing one past `MAX_API_BYTES`. */
   async function readCapped(response: Response, budget: FetchBudget): Promise<string> {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -163,7 +158,6 @@ export function createGithubPackageFetcher(
     return Buffer.concat(chunks).toString("utf8");
   }
 
-  /** Every branch and tag whose name starts with `prefix`, by full name (`heads/x/y`). */
   async function matchingRefs(
     { owner, repo }: ParsedUrl,
     kind: "heads" | "tags",
@@ -179,7 +173,6 @@ export function createGithubPackageFetcher(
     return found;
   }
 
-  /** A tag ref can name a tag object, which can name another: follow them to a commit. */
   async function peel(parsed: ParsedUrl, object: GitObject, budget: FetchBudget): Promise<string> {
     let current = object;
     for (let hop = 0; hop < MAX_TAG_HOPS && current.type === "tag"; hop += 1) {
@@ -198,7 +191,6 @@ export function createGithubPackageFetcher(
     return current.sha;
   }
 
-  /** The longest leading run of segments that names a branch or tag is the ref; the rest is the path. */
   async function resolve(
     parsed: ParsedUrl,
     budget: FetchBudget,
@@ -247,7 +239,6 @@ export function createGithubPackageFetcher(
     let sawFile = false;
     const seen = new Set<string>();
 
-    // An abort of the request's signal surfaces mid-stream as an AbortError; the budget names it.
     try {
       await pipeline(
         Readable.fromWeb(response.body as never),
@@ -268,7 +259,7 @@ export function createGithubPackageFetcher(
         (chunks: AsyncIterable<Buffer>) =>
           readTar(chunks, async (entry) => {
             budget.entry();
-            // GitHub wraps every entry in `<owner>-<repo>-<shortsha>/`.
+            // keep: GitHub tarballs wrap entries in <owner>-<repo>-<shortsha>/; strip that first segment
             const [, ...inRepo] = normalizeSegments(entry.name, "An archive entry");
             const key = inRepo.join("/");
             if (entry.type === "directory" || inRepo.length === 0) {
@@ -319,7 +310,6 @@ export function createGithubPackageFetcher(
   return {
     async fetchTree({ url, pin }: FetchRequest, budget: FetchBudget): Promise<FetchedTree> {
       const parsed = parseGithubUrl(url);
-      // A pin already holds the split, so no ref call is made and a deleted branch can't fail it.
       const resolved = pin
         ? { ref: pin.ref, commit: pin.commit, path: pin.path.split("/") }
         : await resolve(parsed, budget);

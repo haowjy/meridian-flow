@@ -1,4 +1,3 @@
-/** Visible ellipsis menu for row-contained secondary actions. */
 import { Ellipsis } from "lucide-react";
 import * as React from "react";
 
@@ -20,12 +19,10 @@ type OverflowMenuTriggerAttributes = Omit<
 export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "onOpenChange"> & {
   children: React.ReactNode;
   label: string;
-  /** In a row that must not grow for it: the small button, with its touch area past its box. */
   dense?: boolean;
   align?: DropdownContentProps["align"];
   sideOffset?: DropdownContentProps["sideOffset"];
   onCloseAutoFocus?: DropdownContentProps["onCloseAutoFocus"];
-  /** Layout-only visibility and hit-area adjustments; visual chrome stays canonical. */
   triggerClassName?: string;
   triggerProps?: OverflowMenuTriggerAttributes;
 };
@@ -45,7 +42,6 @@ export const OverflowMenuTrigger = React.forwardRef<HTMLButtonElement, OverflowM
         onClick?.(event);
       }}
       onKeyDown={(event) => {
-        // Left and Right still reach the list's keys (`handleListKeys`), back to the row.
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") event.stopPropagation();
         onKeyDown?.(event);
       }}

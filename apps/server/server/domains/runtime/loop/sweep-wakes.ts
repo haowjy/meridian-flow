@@ -1,4 +1,3 @@
-/** Fair, bounded recovery of pending messages. The caller retains the returned keyset cursor. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";

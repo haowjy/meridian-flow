@@ -1,8 +1,3 @@
-/**
- * assistant-view — what one assistant turn shows: its blocks folded into the ordered items the
- * writer sees (process folds, prose, reports, artifacts), with the fold's visible tools, digest
- * counts, the hidden protocol halves and the turn's Work receipts decided here once.
- */
 import type { SaveOutcome } from "@meridian/contracts/agents";
 import {
   type Block,
@@ -28,16 +23,13 @@ import { agentsSaved, workReceipt } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ViewRun =
-  /** `texts[i]` is the visible thought of `blocks[i]`: what the writer reads, wherever the block keeps it. */
   | { kind: "reasoning"; blocks: Block[]; texts: string[] }
-  /** The fold's visible tool calls, paired and in order. Hidden halves are not here. */
   | { kind: "activity"; blocks: Block[]; tools: ToolView[] };
 
 export type ViewItem =
   | {
       kind: "process";
       runs: ViewRun[];
-      /** A fold earns its disclosure only when it holds reasoning or a visible tool. */
       visible: boolean;
       digest: FoldDigest;
     }
@@ -47,31 +39,23 @@ export type ViewItem =
       kind: "artifact";
       block: Block;
       direct: DirectInvocationResult | null;
-      /** A custom card's kind; null for other blocks. The card draws its own words from `block.content`. */
       cardKind: string | null;
-      /** What a block without a card or image draws as a plain row; null when it draws nothing. */
       text: string | null;
     };
 
 export type AssistantView = {
-  /** The turn's blocks in sequence order. */
   blocks: Block[];
   items: ViewItem[];
-  /** Where the writer-facing answer starts: the item after the final process fold. */
   finalFrom: number;
-  /** Tool calls the writer sees elsewhere (a card, or the per-tool policy), so they have no row. */
   hiddenToolCallIds: string[];
   workReceipts: WorkReceipt[];
-  /** Whether the turn called `write`: only then can it have edited documents a receipt would list. */
   wroteDocuments: boolean;
-  /** What the turn's `save_agents` calls did, one outcome per package, in call order. */
   agentsSaved: SaveOutcome[];
 };
 
 const cache = new WeakMap<readonly Block[], { status: Turn["status"]; view: AssistantView }>();
 const itemCache = new WeakMap<Block, ViewItem>();
 
-/** Memoized by the turn's `blocks` array and status: an unchanged turn keeps its view, so React rows stay still. */
 export function viewAssistantTurn(turn: Pick<Turn, "blocks" | "status">): AssistantView {
   const cached = cache.get(turn.blocks);
   if (cached?.status === turn.status) return cached.view;
@@ -100,11 +84,6 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks" | "status">): Assist
   return view;
 }
 
-/**
- * A stopped or failed reply has no running call. One whose input never finished streaming was
- * never sent: it did not run. One that was sent and has no result may have run (a connection call
- * can finish on the far side), so it only reads as stopped.
- */
 function settleUnanswered(tool: ToolView): void {
   if (tool.result !== null || tool.isError) return;
   tool.result =
@@ -301,7 +280,6 @@ function artifactItem(block: Block, direct: DirectInvocationResult | null): View
   };
 }
 
-/** The body of a block drawn as a plain activity row. */
 function plainRowText(block: Block): string | null {
   const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
   if (raw) return raw;

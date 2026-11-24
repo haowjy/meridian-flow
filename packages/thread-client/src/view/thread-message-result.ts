@@ -1,20 +1,9 @@
-/**
- * Reads a `thread_message` call's typed `result` into its fold row.
- * A queued message (background mode) has no card, so its row is the writer's
- * only sign of it. A foreground re-task that ran is shown by its helper card.
- * A failed call gets a row; when the turn holds its helper card (a busy
- * target), `partitionTurn` hides the row and the card stands alone.
- *
- * `tool.content` is what the model saw and is never parsed here.
- */
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
 import { stringInput, toolInputObject } from "./tool-command";
 
 type QueuedThreadMessage = {
-  /** The model-facing ref the message was sent to (`pN`). */
   handle: string;
-  /** Writer-visible destination title, when the target has one. */
   name: string | null;
 };
 
@@ -22,7 +11,6 @@ type ThreadMessageRow =
   | { kind: "queued"; message: QueuedThreadMessage }
   | { kind: "failed"; handle: string | null };
 
-/** The writer-facing row for a queued or failed `thread_message`, or null when it ran in the foreground or is still running. */
 export function threadMessageRow(tool: ToolView): ThreadMessageRow | null {
   if (tool.toolName !== "thread_message" || tool.status === "partial") return null;
   const queued = parseQueuedThreadMessage(tool.result);
@@ -36,7 +24,6 @@ export function threadMessageRow(tool: ToolView): ThreadMessageRow | null {
 function parseQueuedThreadMessage(value: JsonValue | null): QueuedThreadMessage | null {
   if (!isRecord(value) || value.status !== "background") return null;
   if (typeof value.handle !== "string" || value.handle.length === 0) return null;
-  // A spawned background run carries `execution` and its own card.
   if ("execution" in value) return null;
   return { handle: value.handle, name: typeof value.name === "string" ? value.name : null };
 }

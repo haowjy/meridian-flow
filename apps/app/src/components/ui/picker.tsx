@@ -12,17 +12,13 @@ export function Picker({
   ref,
   children,
 }: {
-  /** Names the list as a group. Leave it out where the surface around it already has the name. */
   label?: string;
   busy?: boolean;
-  /** For a list no popover closes on Escape, because its host holds the popover open. */
   onEscape?: () => void;
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // A portalled row menu's Escape bubbles here through React; it closes the menu only.
-    // Not `defaultPrevented`: the enclosing popover's layer prevents every Escape first.
     if (onEscape && event.key === "Escape" && event.currentTarget.contains(event.target as Node)) {
       event.preventDefault();
       event.stopPropagation();
@@ -46,7 +42,6 @@ export function Picker({
   );
 }
 
-/** The picker's search, above its results. */
 export function PickerSearch(
   props: Omit<Parameters<typeof SearchField>[0], "listItem" | "className">,
 ) {
@@ -57,7 +52,6 @@ export function PickerResults({
   bound = "popover",
   children,
 }: {
-  /** `popover` caps the list's height; `fill` takes the height its container gives it. */
   bound?: "popover" | "fill";
   children: ReactNode;
 }) {
@@ -73,14 +67,12 @@ export function PickerResults({
   );
 }
 
-/** A run of rows. Without a label it is a plain list; state lines go above the rows. */
 export function PickerSection({
   label,
   state,
   children,
 }: {
   label?: string;
-  /** A `ListLine` or an error row for this section alone. */
   state?: ReactNode;
   children?: ReactNode;
 }) {

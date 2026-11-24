@@ -1,5 +1,3 @@
-/** One process-local owner for prepared runs, cancellation, and terminal cleanup. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   type HandBackRequest,
@@ -39,67 +37,39 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
-  /** The execution this session holds, once it has the lease. */
   executionId: string | null;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
 };
 
-/**
- * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): no descendant;
- * it ends the owner's reply and what that execution itself owes. Background subagents keep
- * running; a foreground child ends with the reply that was waiting on it, and takes its own
- * background children with it, as does a subagent's own spawn run when it ends. Whether the owner is fenced is not the reach's business: see
- * `LineageDecision.fenceOwner`.
- * `turn`: the turn's own question and the subtrees that turn's execution spawned.
- * `terminal`: a child run that ended takes its whole subtree.
- * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
- */
 export type LineageReach =
   | { kind: "thread" }
   | { kind: "turn"; turnId: TurnId }
   | { kind: "terminal" }
   | { kind: "deleted" };
 
-/**
- * The owner's own decision, made under its thread lock inside the command's transaction:
- * how far the cancellation reaches (none, when the decision cancels nothing), and the
- * owner's execution it cancelled.
- */
 export type LineageDecision<T> = {
   result: T;
   reach: LineageReach | null;
   execution: string | null;
-  /**
-   * Fence the owner: it drops its queued `agent` messages and refuses a wake from any sender
-   * admitted before now (a surviving child's report carries no sender, so it still lands). Only
-   * Stop on a subagent sets it, so a parent's queued retasks don't restart the stopped child; a
-   * stopped primary chat is not fenced, and Send now never is. A `deleted` reach fences regardless.
-   */
   fenceOwner?: boolean;
 };
 
 export type LineageCancelled<T> = {
   result: T;
-  /** The owner's execution the decision cancelled. */
   execution: string | null;
-  /** Subagent threads cancelled, parents first; never the owner. */
   targets: ThreadId[];
 };
 
-/** Lineage cancellation, one durable command (`spawn/lineage-cancellation.ts`). */
 export type LineageCancellation = {
-  /** Joins the caller's transaction when there is one. */
   cancel<T>(
     threadId: ThreadId,
     decide: () => Promise<LineageDecision<T>>,
   ): Promise<LineageCancelled<T>>;
-  /** A child run that ended (`terminal`): free when it has no subtree, as most don't. */
   endSubtree(threadId: ThreadId): Promise<ThreadId[]>;
 };
 
-/** Child invocation cards: every run publishes its saved report when it ends. */
 export type RunSessionReports = {
   publish(threadId: ThreadId, executionTurnId: TurnId): Promise<unknown>;
 };
@@ -138,7 +108,6 @@ export function createRunSessions(deps: {
   onRunSettled?: (threadId: ThreadId) => void;
   lineage: LineageCancellation;
   reports: RunSessionReports;
-  /** Runs after the ambient transaction commits, or at once outside one. */
   afterCommit(task: () => void): void;
 }) {
   const running = new Map<ThreadId, RunSession>();
@@ -154,7 +123,6 @@ export function createRunSessions(deps: {
       payload: unknownToEventPayload(error),
     });
   }
-  /** A root run's foreground children, which die with the call that drives them. */
   function abortChildrenOf(parentThreadId: ThreadId) {
     for (const [id, session] of running) {
       if (session.child?.parentThreadId !== parentThreadId || session.child.background) continue;
@@ -163,11 +131,6 @@ export function createRunSessions(deps: {
     }
   }
 
-  /**
-   * This session, when it holds the execution a command's durable answer cancelled (Stop, Send
-   * now, turn cancel). A replayed answer names an execution that may be long over, so it never
-   * matches a newer one.
-   */
   function confirmedSession(threadId: ThreadId, cancelledExecutionId: string | null) {
     const active = running.get(threadId);
     return active && cancelledExecutionId !== null && cancelledExecutionId === active.executionId
@@ -175,12 +138,6 @@ export function createRunSessions(deps: {
       : null;
   }
 
-  /**
-   * Ends a lineage through the one durable command, then aborts this process's runs it reached:
-   * the owner's execution the decision cancelled, and every target. The aborts only make them stop
-   * sooner; the committed flags stop runs in any process at their next heartbeat, and nothing a
-   * cancelled run writes afterwards wakes a parent.
-   */
   async function cancelLineage<T>(
     threadId: ThreadId,
     decide: () => Promise<LineageDecision<T>>,
@@ -222,7 +179,6 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
-    // Holding its claim, a terminal child ends its subtree before anything can wake it.
     const cancelOwnLineage = () =>
       deps.lineage
         .endSubtree(threadId)
@@ -232,15 +188,11 @@ export function createRunSessions(deps: {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
-      // A child's subtree is ended by lineage cancellation before cleanup; a root
-      // run's background children outlive it.
       if (!input.child) abortChildrenOf(threadId);
       let claimReleased = !lease;
       let wakeAfterRelease = false;
       try {
         if (lease) {
-          // Ends the execution when its turns are terminal, else abandons it to
-          // the next claim holder's settlement; either way the claim unlocks.
           await deps.delivery.releaseExecution(lease);
           claimReleased = true;
           wakeAfterRelease =
@@ -340,7 +292,6 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        // Every run publishes its own report; the sweep only repairs a failure here.
         await deps.reports
           .publish(threadId, executionTurnId)
           .catch((error) => observe(threadId, "report.publish_failed", error));
@@ -382,7 +333,6 @@ export function createRunSessions(deps: {
       const run = await prepare({ threadId, drain: true });
       backgroundTasks.track(run.execute(), "detached run execution");
     } catch (error) {
-      // A lineage cancel aborts a target's wake that a cancelled run's notice started.
       if (
         !(error instanceof NoPendingWakeError) &&
         !(error instanceof RuntimeShuttingDownError) &&
@@ -393,16 +343,7 @@ export function createRunSessions(deps: {
   }
   return {
     prepare,
-    /**
-     * Retry a latest failed reply under the client-minted `replyTurnId`. A
-     * replay is answered from durable facts: the reply by id, else the first
-     * turn that request's execution reserved (`metadata.retryReplyId`), which
-     * may be a start-time compaction. While the claim is held by an execution
-     * that has reserved nothing, a replay can't tell whose it is:
-     * `retry_pending`.
-     */
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
-      // Every answer carries the record read at answer time, under the thread lock.
       const answered = async <T extends object>(result: T) => ({
         ...result,
         runState: await deps.delivery.answerRunState(input.threadId),
@@ -414,7 +355,6 @@ export function createRunSessions(deps: {
             throw new ReplyRetryUnavailableError(input.threadId);
           return { created: false as const, turn: existing, executionId: existing.executionId };
         }
-        // Matched by request id: another tab's Retry of the same reply is not this one.
         const retrying = await deps.repos.turns.findRetryReservation(
           input.threadId,
           input.replyTurnId,
@@ -425,10 +365,6 @@ export function createRunSessions(deps: {
       };
       const replay = await accepted();
       if (replay) return answered(replay);
-      // A refusal can rest on reads that raced this request's own reservation
-      // elsewhere; that reservation commits with the leaf it moves, so a later
-      // acceptance read sees it. Another tab's request id never matches.
-      // Shutdown refuses too, but only new work: never an accepted request.
       const refuse = async (refusal: Error = new ReplyRetryUnavailableError(input.threadId)) => {
         const raced = await accepted();
         if (raced) return answered(raced);
@@ -445,7 +381,6 @@ export function createRunSessions(deps: {
       if (running.has(input.threadId) || runState.kind === "awake") {
         if ((await authority.readOpenExecutionId(input.threadId)) === null)
           throw new ReplyRetryPendingError(input.threadId);
-        // The holder reserved: it is this request's only if it recorded its id.
         return refuse();
       }
       if (
@@ -470,22 +405,17 @@ export function createRunSessions(deps: {
       } catch (error) {
         const raced = await accepted();
         if (raced) return answered(raced);
-        // Another holder took the claim before its lease row was visible.
         if (error instanceof TurnStartConflictError)
           throw new ReplyRetryPendingError(input.threadId);
         if (error instanceof NoPendingWakeError)
           throw new ReplyRetryUnavailableError(input.threadId);
         throw error;
       }
-      // This call owns the prepared execution: it runs before any read that
-      // only describes the answer, so a failing read can't strand it. The
-      // execution is the answer; the reply is best-effort decoration.
       backgroundTasks.track(run.execute(), "detached reply retry");
       const describe = async (prepared: PreparedRun): Promise<Turn> => {
         const [persisted, firstTurn, thread] = await Promise.all([
           deps.repos.turns.findById(input.replyTurnId),
           deps.repos.turns.findById(prepared.executionTurnId),
-          // A Retry is a new reply, so it runs in the chat's current mode.
           deps.repos.threads.findById(input.threadId),
         ]);
         return (
@@ -527,17 +457,9 @@ export function createRunSessions(deps: {
       shutdown.started = true;
       for (const session of running.values()) session.controller.abort("shutdown");
     },
-    /**
-     * Chat Stop: the delivery decides and flags under the thread lock; this session then aborts its
-     * own run at once when it holds the flagged execution (any other holder sees the flag at its next
-     * check). A replayed press names an execution that may be long over, so it never aborts a newer one.
-     */
     stop: (threadId: ThreadId, request: StopRequest): Promise<StopResponse> =>
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.stop(threadId, request);
-        // Stop is "this reply" and nothing below it: children keep running and their reports
-        // still wake this chat (the fence only refuses senders admitted before the stop).
-        // Explicit cancellations (`cancel`, `stopThreads`) keep their reach: they cancel work.
         const thread = await deps.repos.threads.findById(threadId);
         return {
           result: response,
@@ -546,26 +468,18 @@ export function createRunSessions(deps: {
           fenceOwner: thread?.parentThreadId != null,
         };
       }),
-    /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
     handBack: (threadId: ThreadId, request: HandBackRequest) =>
       deps.delivery.handBack(threadId, request),
-    /** Send now: as Stop aborts the run it flagged, and nothing is handed back. */
     sendNow: (threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> =>
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.sendNow(threadId, request);
         const execution = response.cancelledExecutionId;
-        // Cancels the reply so the queue runs. Never fences the owner: the queue, retasks included, runs next.
         return {
           result: response,
           reach: execution ? { kind: "thread" } : null,
           execution,
         };
       }),
-    /**
-     * Cancels a turn: its live execution, or the question it is parked on, and the subagents
-     * that turn's execution spawned. An explicit cancellation of that work, so unlike the composer's
-     * Stop (this reply only) it reaches what the turn started.
-     */
     async cancel(
       threadId: ThreadId,
       turnId: TurnId,
@@ -592,13 +506,6 @@ export function createRunSessions(deps: {
         };
       });
     },
-    /**
-     * Ends deleted threads' work inside the caller's transaction: each one's live execution and
-     * whole subagent subtree, one lineage per topmost thread (a deleted Work lists its threads'
-     * descendants too). `threadIds` must be parents first by `(spawn_depth, id)`, the order lineage
-     * cancellation locks owners in; another order deadlocks against a Stop. Deleting is an explicit
-     * cancellation of the work, so it takes the whole subtree; Stop takes only the reply.
-     */
     async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
       for (const threadId of await lineageOwners(threadIds))
         await cancelLineage(threadId, async () => ({
@@ -609,11 +516,6 @@ export function createRunSessions(deps: {
     },
   };
 
-  /**
-   * The topmost threads of a set, in the caller's order (parents first; see `stopThreads`). A Work's
-   * roots need not have depth 0: a subagent whose parent was rebound elsewhere stays a root of the
-   * old Work.
-   */
   async function lineageOwners(threadIds: readonly ThreadId[]): Promise<ThreadId[]> {
     const subtrees = await Promise.all(
       threadIds.map((threadId) => deps.repos.threads.listSubtreeIds(threadId)),

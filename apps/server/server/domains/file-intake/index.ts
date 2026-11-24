@@ -1,10 +1,3 @@
-/**
- * Shared upload/import byte classification and document filename codec.
- *
- * Classification is layered: `file-type` binary signatures first, then the declared MIME and
- * extension table for text-like formats. A signature that names a binary format (RTF, archives,
- * office, media) wins over the extension and never classifies as text.
- */
 import type { Filetype } from "@meridian/contracts/protocol";
 import {
   classifyFiletype,
@@ -27,7 +20,7 @@ const TEXT_MIMES = new Set([
   "application/xml",
 ]);
 
-// type/subtype tokens only: the signed PUT echoes the type back as a header.
+// keep: Accept only bare MIME type/subtype; parameters would break the signed PUT header
 const MIME_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 
 export function normalizeMime(mimeType: string): string {
@@ -57,14 +50,8 @@ function isTextLikeMime(mime: string): boolean {
   );
 }
 
-/**
- * Binary format named by the leading bytes, or null. Import classifies from the manifest's
- * 512-byte sniff, which bounds detection to signatures inside that window: a ZIP-based office file
- * reads as a plain archive there, and the DOCX extension is handled before this runs.
- */
 export async function sniffMime(bytes: Uint8Array): Promise<string | null> {
   const detected = await fileTypeFromBuffer(bytes);
-  // file-type also names XML, which is text.
   return detected && !isTextLikeMime(detected.mime) ? detected.mime : null;
 }
 
@@ -96,13 +83,8 @@ export async function classifyUpload(input: {
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
 }
 
-/** Text above this size is kept as a binary file: the document pipeline binds it whole. */
 export const TRACKED_TEXT_MAX_BYTES = 5 * 1024 * 1024;
 
-/**
- * The name of a text file kept as a binary row. It keeps its whole name, extension included, so
- * Download gives back what was picked; a suffix with whitespace (`Vol. 2`) is part of the name.
- */
 export function keptFileName(filename: string): { name: string; extension: string } {
   const dot = filename.lastIndexOf(".");
   return dot > 0 && !/\s/.test(filename.slice(dot + 1))

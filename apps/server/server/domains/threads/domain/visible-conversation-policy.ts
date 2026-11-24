@@ -1,4 +1,3 @@
-/** Canonical visible-conversational-head and action-required policy. */
 import type { JsonValue, Turn, TurnRole } from "@meridian/contracts/threads";
 import {
   ChildCompletionMetadataTagCodec,

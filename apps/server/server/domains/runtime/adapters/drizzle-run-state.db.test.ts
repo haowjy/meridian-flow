@@ -118,7 +118,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("refuses an input write that lands after the flush", async () => {
       await expect(
         lock.withThreadLock(THREAD_A, async () => {
-          // Enlisted after the publication participant, so it flushes after it.
           enlistDrizzleTransactionParticipant({
             key: {},
             create: () => ({}),
@@ -136,7 +135,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return runInDrizzleSavepoint(db, () => answerRunState(THREAD_A));
       });
       const rows = await records(THREAD_A);
-      // Published by the answer itself, not re-read at the old head, and not published twice at commit.
       expect(rows).toHaveLength(1);
       expect(answer.version).toBe(eventSeqForJournalEvent(rows[0]?.seq as bigint, 0).toString());
       expect(answer.items).toHaveLength(1);

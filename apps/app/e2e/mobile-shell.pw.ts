@@ -77,7 +77,6 @@ test.describe("project shell selection", () => {
       await page.goto(`/p/${fixture.projectId}`, { waitUntil: "domcontentloaded" });
       await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/chats$`));
 
-      // The replace adds no history entry, so Back leaves the project.
       await page.goBack();
       await expect(page).toHaveURL(/\/projects$/);
     } finally {
@@ -97,7 +96,6 @@ test.describe("project shell selection", () => {
         userId: await findTestUserId(db),
         titlePrefix: "Invalid address",
       });
-      // A pre-grammar document shape: no alias, no redirect.
       const invalid = `/p/${fixture.projectId}/kb/alpha.md`;
       await page.goto(invalid, { waitUntil: "domcontentloaded" });
 

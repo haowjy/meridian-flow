@@ -118,7 +118,6 @@ else
           resolution: null,
           submissionId: null,
         });
-        // Stop on the chat reaches its ask whatever already resolved it.
         const [answer, expired] = await Promise.all([
           asks.answer({
             userId: ids.user,
@@ -231,7 +230,6 @@ else
         ]);
         const settled = await repos.asks.findById(ask.id);
         if (settled?.status === "open") {
-          // The bump won: the deadline moved out and the sweep left the ask alone.
           expect(settled.deadlineAt?.getTime()).toBeGreaterThan(now.getTime());
           expect(settled.draftAnswers).toEqual(held);
           const expired = await asks.expireDue(new Date(now.getTime() + 10 * 60_000));
@@ -247,10 +245,7 @@ else
             },
           });
         } else {
-          // The sweep won: it resolved before the bump, or the bump found the ask closed.
           expect(settled?.status).toBe("expired");
-          // The bump found the ask closed and wrote nothing; without `dueBy` it would have stored
-          // its answers and the sweep, from its stale listing, would have resolved over them.
           expect(settled?.draftAnswers).toBeNull();
         }
         expect(
@@ -271,7 +266,6 @@ else
         status: "awaiting_answer",
         executionId,
       });
-      // The older server writes status and resolution only, so `continuation` stays NULL.
       const ask = await repos.asks.create({
         threadId: ids.caller,
         askingTurnId: turn.id,
@@ -343,7 +337,6 @@ else
         body: { kind: "text", text: "queued for the child" },
         idempotencyKey: "queued-for-child",
       });
-      // A finished child's report already waiting in the parent's queue when Stop lands.
       const queuedReport = await delivery.enqueue({
         threadId: ids.caller,
         intent: "message",
@@ -384,8 +377,6 @@ else
       expect(await delivery.selectPending(ids.child)).toContainEqual(
         expect.objectContaining({ id: toChild.id }),
       );
-      // The primary caller is not fenced: the queued report survives, and so does what the
-      // child's execution sent from before the Stop.
       expect(await delivery.selectPending(ids.caller)).toContainEqual(
         expect.objectContaining({ id: queuedReport.id }),
       );
@@ -416,7 +407,6 @@ else
         });
       const queued = await message("before-stop", sender);
 
-      // Send now has the same reach but never fences: the parent's retask stays queued and sends go on.
       await lineage.cancel(ids.child, async () => ({
         result: null,
         reach: { kind: "thread" as const },
@@ -429,7 +419,6 @@ else
         threadId: ids.child,
       });
 
-      // The writer stops the child: the caller is outside the lineage.
       await lineage.cancel(ids.child, async () => ({
         result: null,
         reach: { kind: "thread" as const },
@@ -441,7 +430,6 @@ else
       );
       await expect(message("after-stop", sender)).rejects.toBeInstanceOf(WakeRefusedError);
 
-      // An execution admitted after the Stop messages the child as usual.
       await delivery.withThreadLock(ids.caller, () => runClaim.release(caller));
       const later = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
       if (!later) throw new Error("caller claim was not taken again");

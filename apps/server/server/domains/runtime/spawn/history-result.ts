@@ -1,7 +1,3 @@
-/**
- * `thread_history`'s structured result and the pure text rendering the
- * model reads, each tool call written as the call itself. Code mode would return `HistoryResult` itself.
- */
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -14,17 +10,10 @@ export interface SavedReportView {
   source: ExecutionReportSource;
   reason: string | null;
   partial: boolean;
-  /** The saved summary, then any payload; never the `return_result` arguments. */
   content: string;
-  /** Lines were cut from `content` in this view; expanding the turn shows them. */
   truncated?: true;
 }
 
-/**
- * One display item. `index` is the item's number inside its turn, from 1 in
- * display order; it's present wherever the item has a handle in this view.
- * `text` absent means the item is listed on one line with its size only.
- */
 export type HistoryItem =
   | { kind: "message"; index?: number; text?: string; tokens: number; truncated?: true }
   | { kind: "thinking"; index?: number; text?: string; tokens: number; truncated?: true }
@@ -40,56 +29,34 @@ export type HistoryItem =
       kind: "tool";
       index?: number;
       tool: string;
-      /**
-       * The arguments as the model sent them, long strings shortened;
-       * null when history withholds them (`return_result`) or the call is missing.
-       */
       args: JsonObject | null;
-      /** `running` only in the live tail; a settled call with no result was cancelled. */
       state: "done" | "error" | "cancelled" | "running";
-      /** After the arrow: a finished call's result in brief, a failed call's status or code. */
       summary?: string;
       resultTokens?: number;
-      /** One item in full: the whole arguments, or a write's edit record. */
       fullArgs?: string;
       result?: string;
       truncated?: true;
     };
 
 export interface HistoryTurn {
-  /**
-   * The turn's ordinal among the thread's conversation turns (requests and
-   * replies), with no gaps; stable across pages, order and compaction. System
-   * turns, shown only with `system_messages`, have none and can't be expanded.
-   */
   number?: number;
   role: "user" | "assistant" | "system";
-  /** Heading word: user, "user, steer", agent, assistant, "system: Work update" and the like. */
   label: string;
-  /** Owning conversation of an inherited (forked) turn. */
   from?: string;
-  /** "YYYY-MM-DD HH:MM", with the `timestamps` include. */
   at?: string;
   items: HistoryItem[];
-  /** Routine calls left out of this view. */
   hiddenCount: number;
   report?: SavedReportView;
-  /** Earlier turns were compacted; the marker renders above this turn. */
   summarizedBefore?: boolean;
-  /** The writer stopped this turn. A failed turn carries nothing here: the model never reads a failure. */
   cancelled?: true;
 }
 
 export interface HistoryResult {
   ref: string;
-  /** `page`: the default walk. `turn`: one expanded turn. `item`: one item in full. */
   view: "page" | "turn" | "item";
   systemPrompt?: string;
-  /** Finished turns, chronological. */
   turns: HistoryTurn[];
-  /** The live tail, never part of the cursor. */
   inProgress: HistoryTurn[];
-  /** Present only when more pages exist. */
   next?: { call: ThreadHistoryInput };
 }
 
@@ -150,7 +117,6 @@ function singleItem(turn: HistoryTurn, item: HistoryItem) {
   return `${key} ${itemLabel(item)}\n${item.text ?? ""}${truncated}`;
 }
 
-/** A saved report's body: the summary, then any payload and artifacts. */
 export function reportContent(
   summary: string,
   payload?: JsonValue | null,
@@ -168,7 +134,6 @@ export function reportContent(
     .join("\n");
 }
 
-/** `Report (<outcome>)`, a reason line when there is one, then the body: shared by history and `thread_report`. */
 export function renderReportBlock(report: SavedReportView, truncated?: string): string {
   const outcome = report.outcome === "succeeded" ? "completed" : report.outcome;
   const source = report.source === "return_result" ? "" : `, ${report.source}`;
@@ -194,7 +159,6 @@ function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedRepo
 }
 
 function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): string {
-  // A live turn that so far only calls tools reads as its running calls.
   if (
     live &&
     turn.number !== undefined &&
@@ -245,7 +209,6 @@ export function renderHistoryResult(result: HistoryResult): string {
   return blocks.join("\n\n");
 }
 
-/** The tool-result boundary: a history result or a refusal, rendered as text. */
 export function renderThreadHistoryOutput(value: JsonValue): string {
   const isResult =
     typeof value === "object" &&

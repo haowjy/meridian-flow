@@ -1,4 +1,3 @@
-/** The thread sync's pure pieces: the per-chat value, its transitions, and the stream's frame coalescing. */
 export {
   frameScheduler,
   type ScheduleFlush,

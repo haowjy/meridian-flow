@@ -73,19 +73,16 @@ it("keys every row but names a server identity only for turns the server stated,
     "a2",
     local,
   ]);
-  // The opening seed, a Retry stand-in and a local writer turn have no server identity.
   expect(view.rows.map((row) => row.identity.turnId)).toEqual([null, "u1", "a1", "c1", null, null]);
   expect(view.rows.map((row) => row.queued)).toEqual([false, false, false, false, false, true]);
   expect([...view.writer.keys()]).toEqual(["u1", local]);
   expect(view.items.get("a1")?.items.map((item) => item.kind)).toEqual(["text"]);
-  // A system card is its own single response part, so it keeps the settled action row.
   expect(view.rows[3]?.response?.parts.map((part) => part.id)).toEqual(["c1"]);
 });
 
 const ids = (view: ReturnType<typeof viewTranscript>) => view.rows.map((row) => row.turn.id);
 
 it("draws a pending Retry in the failed reply's place, even with a message sent after it", () => {
-  // Risk: the stand-in drifting below a later message, or the failed reply drawn beside its Retry.
   const failed = turn("f", "assistant", "u1", { status: "error" });
   const base = [turn("u1", "user", null), failed, turn("u2", "user", "f")];
   const standIn = turn("r1", "assistant", "f", {
@@ -99,9 +96,6 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
     activity: { awaitingSubagents: false },
   });
   expect(ids(pending)).toEqual(["u1", "r1", "u2"]);
-  // Risk: a pending switch's notice at the tail while its turn lands before the Retry's reply,
-  // so it jumps when the frame arrives. `awaiting_run` sits before the stand-in from the press
-  // until the stored turn replaces it; `waiting` (a reply holds the chat) stays at the tail.
   const slot = (switchAwaitsRun: boolean) =>
     viewTranscript({
       turns: base,
@@ -110,8 +104,6 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
       activity: { awaitingSubagents: false },
     }).controlSlot;
   expect([slot(true), slot(false)]).toEqual([1, 3]);
-  // Risk (review S1): a lost Retry R1 of an earlier failure survives while newer replies pile
-  // up; the switch's notice must follow the Retry R2 of the current leaf, not jump above R1.
   const lost = turn("r0", "assistant", "f", {
     status: "pending",
     blocks: [],
@@ -130,17 +122,13 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
     blocks: [],
     metadata: { retryOf: "f2" },
   });
-  // Only the old one survives: no stand-in qualifies, the notice is at the tail (after u1, r0, u2, f2).
   expect(slotAmong([lost])).toBe(4);
-  // With the current leaf's Retry (rows u1, r0, u2, r2) the notice sits at it, below the old one.
   expect(slotAmong([lost, next])).toBe(3);
-  // Refused: the stand-in goes, and nothing supersedes the failed reply.
   expect(ids(viewTranscript({ turns: base, activity: { awaitingSubagents: false } }))).toEqual([
     "u1",
     "f",
     "u2",
   ]);
-  // Accepted, and the store has no turn that names it yet: the explicit target holds F out.
   expect(
     ids(
       viewTranscript({
@@ -153,12 +141,10 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
 });
 
 it("draws one failure for a chain of failed retries, the newest, and none for a past failure", () => {
-  // Risk: every failed attempt stacking up as "This response failed." lines.
   const view = viewTranscript({
     turns: [
       turn("u1", "user", null),
       turn("f", "assistant", "u1", { status: "error" }),
-      // The Retry's first reserved turn can be a compaction, not the reply: it carries retryOf.
       turn("c1", "compaction", "f", { metadata: { retryOf: "f" } }),
       turn("r1", "assistant", "c1", { status: "error" }),
       turn("r2", "assistant", "r1", { status: "error", metadata: { retryOf: "r1" } }),
@@ -169,8 +155,6 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     "r2",
   ]);
   expect(ids(view)).toEqual(["u1", "c1", "r2"]);
-  // Also: a failed reply the chat moved past leaves no row (`./mf thread view` prints what the app draws),
-  // unless its refused Retry shows a card there, or it has text.
   const emptyFailed = turn("f", "assistant", "u1", { status: "error", blocks: [] });
   const partial = turn("p", "assistant", "u2", { status: "error" });
   const turns = [
@@ -187,13 +171,10 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     );
   expect(rowsOf()).toEqual(["u1", "u2", "p", "u3", "a3"]);
   expect(rowsOf(new Set(["f"]))).toEqual(["u1", "f", "u2", "p", "u3", "a3"]);
-  // Still the latest reply: it stays, empty or not, for its Retry.
   expect(
     ids(viewTranscript({ turns: turns.slice(0, 2), activity: { awaitingSubagents: false } })),
   ).toEqual(["u1", "f"]);
 
-  // Risk (F1): a forgotten turn drawn again, or a refused Retry's card losing the reply it sits on. The
-  // stamp hides a local row; an anchored (refused) one keeps it; a fork's inherited rows are never filtered.
   const forgotten = turns.map((held) =>
     held.id === "u1" || held.id === "f" ? { ...held, forgottenBy: "u2" } : held,
   );
@@ -207,8 +188,6 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     );
   expect(rowsAmong()).toEqual(["u2", "p", "u3", "a3"]);
   expect(rowsAmong(new Set(["f"]))).toEqual(["f", "u2", "p", "u3", "a3"]);
-  // The anchor also outranks Retry suppression: the Retry that won stamps and supersedes the reply the
-  // refused Retry was aimed at, and the refusal's card still needs that reply's row.
   const competing = turn("r2", "assistant", "f", { status: "error", metadata: { retryOf: "f" } });
   const raced = viewTranscript({
     turns: [turn("u1", "user", null), { ...emptyFailed, forgottenBy: "r2" }, competing],
@@ -229,9 +208,6 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
   });
   expect(ids(inheritedRows)).toEqual(["u1", "p", "l1"]);
 
-  // Risk (F1): the three ways a failure stops being the latest reply must all hide it. An optimistic send
-  // closes it at once, a carried failure had a message admitted while it ran, and a continuation is a
-  // failed compaction the same execution carried on past. Each draws nothing, so each has no row.
   const failedCompaction = turn("c", "compaction", "u1", { status: "error", blocks: [] });
   const continued = viewTranscript({
     turns: [turn("u1", "user", null), failedCompaction, turn("r", "assistant", "c")],
@@ -248,7 +224,6 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
   });
   expect(ids(optimistic)).toEqual(["u1", `${OPTIMISTIC_TURN_ID_PREFIX}9`]);
 
-  // Risk (F1): a failed handoff brief keeps its failure and Retry only while no closing row follows it.
   const seed = turn("s", "system", null, {
     status: "error",
     blocks: [],
@@ -265,15 +240,12 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     );
   expect(seedLatest([])).toMatchObject({ latest: true });
   expect(seedLatest([turn("w", "user", "s")])).toMatchObject({ latest: false });
-  // An agent's message closes on the server but draws no row, so the rows alone would keep the Retry alive.
   const agentMessage = turn("m", "user", "s", {
     origin: "system",
     metadata: { kind: "inbox_message" },
   });
   expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
 
-  // Risk (F1): an agent message closes the chat and ends the failed reply, while its delivery row
-  // remains visible even when the reply itself had no content.
   const afterAgent = (reply: Turn) =>
     viewTranscript({
       turns: [turn("u", "user", null), reply, { ...agentMessage, prevTurnId: reply.id }],
@@ -289,7 +261,6 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {
-  // Risk: a hand-back hiding delivered history or a message sent after the press.
   const view = viewTranscript({
     turns: [
       turn("m1", "user", null),
@@ -388,7 +359,6 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
   expect(renamed.rows[0]).not.toBe(first.rows[0]);
   expect(renamed.rows[0]?.deliveries[0]?.events[0]?.title).toBe("Changed title");
 
-  // A directed message with no earlier assistant row still has a writer-visible place.
   const leadingMessage = turn("m1", "user", null, {
     origin: "system",
     metadata: {
@@ -425,8 +395,6 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
     sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
   });
 
-  // Membership comes from causal placement, not sender attribution. A foreground delivery after a
-  // compaction gets its own row, while the initial child seed remains hidden.
   const compact = turn("compact", "compaction", reply.id, { blocks: [] });
   const unattributedForeground = turn("m2", "user", compact.id, {
     origin: "system",

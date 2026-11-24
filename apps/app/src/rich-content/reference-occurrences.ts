@@ -1,7 +1,5 @@
-/** Exact source authority for static user-turn references and skill presentation. */
 import { type PresentationSourceRun, presentationTextRange } from "@meridian/markup";
 
-/** An exact reference's range in the source: a document or a folder, by identity. */
 export type MarkdownReferenceOccurrence = (
   | { kind: "document"; documentId: string }
   | { kind: "folder"; folderId: string }

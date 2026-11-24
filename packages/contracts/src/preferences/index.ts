@@ -1,4 +1,3 @@
-/** Shared account appearance settings and project runtime preferences. */
 export const ACCOUNT_LANGUAGES = ["en", "zh"] as const;
 export type AccountLanguage = (typeof ACCOUNT_LANGUAGES)[number];
 export const ACCOUNT_THEMES = ["ink-jade", "dark"] as const;

@@ -112,8 +112,6 @@ describe("run identity", () => {
     expect(start).toMatchObject({
       rawEvent: { writeMode: null },
     });
-    // Risk: a stateful projector reusing the first segment's identity. A split reply's second
-    // segment names its own run, execution, reservation and position.
     const second = {
       id: "b",
       position: 4,

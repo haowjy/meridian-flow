@@ -1,10 +1,4 @@
-/**
- * api-route-ownership — the dev composition root's backend route-owner inventory.
- * Exact app routes run in TanStack Start; server route families are proxied to
- * `apps/server`. Rules are ordered so an exact app route may live inside a
- * server-owned family without broadening app ownership to sibling routes.
- * New server API families must be listed here; unlisted paths stay with the app in dev.
- */
+// keep: Route-owner rules are ordered; exact app routes precede server families and every new server family must be listed
 
 export type ApiRouteOwner = "app" | "server";
 

@@ -1,4 +1,3 @@
-/** Drizzle persistence for thread-local image inclusion decisions. */
 import * as schema from "@meridian/database/schema";
 import { asc, eq } from "drizzle-orm";
 import type { ThreadMediaInclusionRepository } from "../../ports/repositories.js";

@@ -3,7 +3,6 @@ import { generateKeyBetween } from "fractional-indexing";
 import { isSourceRoot } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
 
-/** Children in display order (rank, then id). Trashed ones only when asked. */
 export function childrenOf(
   projection: TreeProjection,
   parent: string,
@@ -13,7 +12,6 @@ export function childrenOf(
   return includeTrashed ? kids : kids.filter((node) => !node.trashed);
 }
 
-/** Every node below `node`, trashed ones included: depth first, each folder's children in `children` order. */
 export function descendantsOf(
   projection: { children: { get(parent: string): readonly { id: string }[] | undefined } },
   node: string,
@@ -29,12 +27,10 @@ export function descendantsOf(
   return out;
 }
 
-/** A node's path segment: its name, and a later twin's `~` suffix (rule 14). */
 export function segmentOf(node: Pick<TreeNode, "name" | "suffix">): string {
   return entrySegment(node.name, node.suffix);
 }
 
-/** A node's path in its source (`/Arc/Kael~460c`), from its segments and its folders'. */
 export function pathOf(projection: TreeProjection, node: TreeNode): string {
   const segments: string[] = [];
   for (let at: TreeNode | undefined = node; at; ) {
@@ -44,19 +40,17 @@ export function pathOf(projection: TreeProjection, node: TreeNode): string {
   return `/${segments.join("/")}`;
 }
 
-/** A rank that sorts at `index` among sibling `ranks` (in display order). */
 export function rankAmong(ranks: readonly string[], index: number): string {
   const at = Math.max(0, Math.min(index, ranks.length));
   const before = at > 0 ? (ranks[at - 1] ?? null) : null;
   let after: string | null = ranks[at] ?? null;
-  // Concurrent inserts can leave equal ranks; place after the run of equal ranks.
+  // keep: Place after the whole run of equal ranks left by concurrent inserts
   if (before !== null && after !== null && after <= before) {
     after = ranks.slice(at).find((rank) => rank > before) ?? null;
   }
   return generateKeyBetween(before, after);
 }
 
-/** A rank that sorts at `index` among the parent's shown children. */
 export function rankAt(
   projection: TreeProjection,
   parent: string,
@@ -71,10 +65,6 @@ export function rankAt(
   );
 }
 
-/**
- * A canonical string of the tree, for comparing replicas. Without `marks` it leaves out why a
- * deleted node still stands (kept by a child): what a writer reads as the tree's shape.
- */
 export function fingerprint(projection: TreeProjection, marks = true): string {
   const lines: string[] = [];
   const walk = (parent: string, depth: number) => {
@@ -92,7 +82,6 @@ export function fingerprint(projection: TreeProjection, marks = true): string {
   return lines.join("\n");
 }
 
-/** What breaks a tree; empty when the projection is a valid tree. */
 export function treeViolations(
   projection: TreeProjection,
   expectedNodes?: Iterable<string>,

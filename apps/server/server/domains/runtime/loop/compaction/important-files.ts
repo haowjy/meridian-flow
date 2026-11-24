@@ -1,4 +1,3 @@
-/** Model-ranked document selections a compaction re-shows, within its token budget. */
 import {
   type ReadToolInput,
   ReadToolInputSchema,
@@ -30,7 +29,6 @@ export const KEEP_OPEN_INSTRUCTION_LINES = [
   '{"path":"manuscript://Chapter 3","in":[40,95]}',
 ];
 
-/** Remove both server-directed sections, even when followed by another summary section. */
 export function parseImportantFiles(text: string): { summary: string; listedLines: string[] } {
   const summary: string[] = [];
   const listedLines: string[] = [];
@@ -55,14 +53,13 @@ export function parseImportantFiles(text: string): { summary: string; listedLine
   return { summary: summary.join("\n").trim(), listedLines };
 }
 
-/** A validated read, pinned to the shown document rather than just its current path. */
 interface ImportantFileCandidate {
   documentId: string;
   uri: string;
   input: ReadToolInput;
 }
 
-/** JSONB reorders object keys; pricing and replay must label the same input byte-for-byte. */
+// keep: Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
 export function readInputLabel(input: JsonObject): string {
   return JSON.stringify(
     Object.fromEntries(
@@ -71,18 +68,12 @@ export function readInputLabel(input: JsonObject): string {
   );
 }
 
-/** Exact projected text, shared with budget estimation. Saved input is display-only on replay. */
 export function importantFileText(input: JsonObject, text: string): string {
   return `Read result for ${readInputLabel(input)}, re-shown after the summary:\n${text}`;
 }
 
-/** Estimator slack only; the written list is priced and reserved separately. */
 const TRIGGER_MARGIN_TOKENS = 1_000;
 
-/**
- * Re-shown text and its list may use half the trigger headroom, less estimator slack.
- * The list can still exceed the budget on its own; it is then the only thing written.
- */
 export function reshowBudgetTokens(input: {
   triggerTokens: number | null;
   baseTokens: number;
@@ -94,7 +85,6 @@ export function reshowBudgetTokens(input: {
   );
 }
 
-/** Model-listed shown URIs first, then the three most recent documents, deduplicated by id. */
 export function importantFileCandidates(
   recorded: RecordedDocuments,
   listedLines: readonly string[],
@@ -136,7 +126,6 @@ export function importantFileCandidates(
       unknownUriCount++;
       continue;
     }
-    // An identifiable invalid request must not return as a recent whole read either.
     const duplicate = seen.has(ref.documentId);
     seen.add(ref.documentId);
     const parsed = ReadToolInputSchema.safeParse(value);
@@ -159,21 +148,11 @@ export function importantFileCandidates(
   return { candidates, unknownUriCount };
 }
 
-/**
- * The documents the successor now holds, written back into the summary. Built
- * from the reads that were admitted, so the list and the blocks cannot disagree.
- */
 export function documentsSection(labels: readonly string[]): string {
   if (!labels.length) return "";
   return [KEEP_OPEN_HEADING, ...labels.map((label) => `- ${label}`)].join("\n");
 }
 
-/**
- * Reads candidates in priority order until the budget is spent. A document
- * whose selected text does not fit the remaining budget is skipped, never
- * truncated: a truncated copy would be a partial read with its own listing.
- * `read` answers null for a document that cannot be read.
- */
 export async function chooseImportantFiles<T extends { text: string }>(input: {
   candidates: readonly ImportantFileCandidate[];
   budgetTokens: number;
@@ -189,7 +168,6 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
     read: T;
   }[]
 > {
-  // The rewritten list is part of the summary: reserve the longest one it can become.
   const listTokens = estimateModelPartTokens(
     {
       type: "text",
@@ -204,7 +182,6 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
     read: T;
   }[] = [];
   for (const candidate of input.candidates) {
-    // Nothing more can fit; the list stops where the reads stopped.
     if (remaining <= 0) break;
     const uri = candidate.uri;
     const reference: Extract<ReferenceOccurrence, { kind: "document" }> = {

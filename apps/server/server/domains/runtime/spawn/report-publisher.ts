@@ -1,9 +1,3 @@
-/**
- * Parent-first publication B for immutable child execution reports. A run a lineage
- * cancellation ended still projects its card, but its notice is withdrawn, so nothing it
- * publishes wakes a parent.
- */
-
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import { buildInvocationCardContent, parseInvocationCard } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -37,14 +31,11 @@ export function createReportPublisher(deps: {
       executionTurnId,
     );
     if (selected?.publication !== "pending") return "already";
-    // A pending publication can only be admitted for an invocation with a caller.
     const callerThreadId = selected.callerThreadId;
     if (!callerThreadId) {
       throw new Error("Pending publication violates caller-thread invariant");
     }
 
-    // DeliveryProducer owns the parent lock, and its scoped producer never takes it
-    // again. No child lock or lease wait is reachable from this callback.
     return deps.delivery.withThreadLock(callerThreadId, async (producer) =>
       deps.repos.transaction(async (): Promise<PublicationOutcome> => {
         const callerRow = await deps.repos.threads.lockByIdIncludingDeleted(callerThreadId);
@@ -56,8 +47,6 @@ export function createReportPublisher(deps: {
           executionTurnId,
         );
         if (!report) return "already";
-        // Soft deletion of the caller or its project parks the obligation.
-        // Restoration will make it eligible to the bounded sweep again.
         if (callerRow.deletedAt || !(await deps.repos.threads.findById(callerThreadId))) {
           return "parked";
         }

@@ -144,8 +144,6 @@ describe("authorizeThreadMessage", () => {
   });
 
   it("allows background thread_message between a fork and its source", async () => {
-    // Mirrors buildDerivedPrimaryThreadRow: a fork of a root shares its root
-    // and has no parent (fork.parentThreadId = source.parentThreadId = null).
     const source = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary", ref: "c1" });
     const fork = thread({ id: SIBLING, rootThreadId: CALLER, kind: "primary", ref: "c2" });
 

@@ -1,9 +1,3 @@
-/**
- * `mcp_run`: the model's script on the script runner, each of its `call`s going through
- * `callConnectionTool`, the function `mcp_call` uses, so a script's call has the same pin, rule,
- * record and outcome. This file owns the limits on the MCP side (calls in flight, scripts per
- * account, what may enter a script) and the words the model reads when the script ends.
- */
 import type { UserId } from "@meridian/contracts";
 import type { McpBakedConnection, McpRunResult, McpScriptCall } from "@meridian/contracts/mcp";
 import type { JsonObject } from "@meridian/contracts/threads";
@@ -20,7 +14,6 @@ import { type ConnectionCall, type ConnectionTools, DO_NOT_REPEAT } from "./conn
 import { createLimiter, type Limiter } from "./limiter.js";
 import { prepareScript } from "./script-code.js";
 
-/** What the tool description tells the model, and what the runner and the host enforce. */
 export const SCRIPT_LIMITS = {
   wallMs: 60_000,
   cpuMs: 2_000,
@@ -28,21 +21,16 @@ export const SCRIPT_LIMITS = {
   maxCallBytes: 1_000_000,
   maxValueBytes: 64_000,
   maxLogBytes: 8_000,
-  /** One script's calls in flight at once; the rest wait. */
   inFlight: 8,
-  /** What may enter a script: one reply, and all of a script's replies. */
   replyBytes: 2_000_000,
   totalReplyBytes: 8_000_000,
   scriptsPerAccount: 2,
 };
 export type ScriptLimits = typeof SCRIPT_LIMITS;
 
-/** A rejection's message, as the server wrote it. */
 const REJECTION_CHARS = 8_192;
-/** What a call's row keeps of its arguments and its reply (the record holds both whole). */
 const ROW_ARGUMENT_BYTES = 2_000;
 const ROW_REPLY_CHARS = 1_000;
-/** What the model reads of each call in a failed script's list, and of the list. */
 
 const MEDIA_LEFT_OUT = (count: number) =>
   `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. Call this tool with mcp_call to see ${count === 1 ? "it" : "them"}.]`;
@@ -53,14 +41,12 @@ export interface ScriptRunRequest {
   code: string;
   signal: AbortSignal;
   origin: { turnId: string; modelResponseId: string; toolCallId: string };
-  /** A call was sent (no `call`) or finished (`call`): the writer's live rows. */
   emit(event: { sequence: number; id: string; arguments: JsonObject; call?: McpScriptCall }): void;
 }
 
 const mediaCount = (reply: JsonObject) =>
   toContent(reply).filter((part) => part.type === "media").length;
 
-/** What an answered reply is inside a script: structured content, parsed JSON text, or the text. */
 function scriptValue(reply: JsonObject): Json {
   const media = mediaCount(reply);
   if (media) return `${textOf(reply)}\n${MEDIA_LEFT_OUT(media)}`.trim();
@@ -94,7 +80,6 @@ export function createScriptRuns(deps: {
     try {
       return await gate.run(() => runScript(request, prepared.code), request.signal);
     } catch (cause) {
-      // The writer stopped the run while this script waited for its account's turn: nothing ran.
       if (request.signal.aborted) return finish({ ended: "aborted", calls: [] });
       throw cause;
     } finally {
@@ -143,7 +128,6 @@ export function createScriptRuns(deps: {
       return settled;
     };
 
-    /** The call's row, and what the script's `call` resolves or rejects with. */
     async function conclude(call: ConnectionCall, mine: number, id: string, sent: JsonObject) {
       const shaped = await deps.tools.shapeCall({ id, arguments: sent, bake: request.bake }, call, {
         schema: false,
@@ -201,8 +185,6 @@ export function createScriptRuns(deps: {
       },
       request.signal,
     );
-    // The runner has fired the signal of each call still in flight; its record is completed
-    // (as aborted, it may have run) before the result lists the calls.
     await Promise.allSettled([...pending]);
     return finish(
       resultOf(
@@ -214,7 +196,6 @@ export function createScriptRuns(deps: {
     );
   }
 
-  /** The runner's result and the calls, as the typed result. */
   function resultOf(
     ran: ScriptResult,
     calls: McpScriptCall[],
@@ -224,7 +205,6 @@ export function createScriptRuns(deps: {
     const base = { calls, ...logs };
     switch (ran.kind) {
       case "returned":
-        // A script that never says `return` gives the runner `null`: say so instead of "null".
         return ran.value === null && !/\breturn\b/.test(code)
           ? { ended: "returned", ...base }
           : { ended: "returned", value: ran.value, ...base };
@@ -303,10 +283,6 @@ export function createScriptRuns(deps: {
     }
   }
 
-  /**
-   * A returned script lists its calls by name; any other end lists what each was sent and
-   * answered. A call refused before it was sent did not run, so it is listed apart.
-   */
   function callList(typed: Omit<McpRunResult, "text">): string {
     const ran = typed.calls.filter((call) => call.recordId !== null);
     const refused = typed.calls.filter((call) => call.recordId === null);
@@ -343,7 +319,6 @@ export function createScriptRuns(deps: {
   return { run };
 }
 
-/** A call's arguments as its row keeps them: whole, or a note when they are large (the record has them whole). */
 function rowArguments(sent: JsonObject): JsonObject {
   return JSON.stringify(sent).length > ROW_ARGUMENT_BYTES
     ? { note: "Arguments over 2 KB; the call's record has them whole." }

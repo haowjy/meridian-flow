@@ -1,9 +1,3 @@
-/**
- * Drizzle row->domain mappers: convert thread/turn/block/model-response DB rows
- * into their @meridian/contracts shapes (decimal/date/seq coercions). Shared by
- * the drizzle repositories so row translation lives in one place.
- */
-
 import type {
   Block,
   ModelResponse,
@@ -88,7 +82,6 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     status: row.status as Turn["status"],
     executionId: row.executionId,
     reservedForUserTurnIds: row.reservedForUserTurnIds ?? [],
-    // Delivery is joined from the inbox by the reads that expose it (the snapshot).
     delivery: null,
     forgottenBy: row.forgottenByTurnId,
     promptBakeId: row.promptBakeId,

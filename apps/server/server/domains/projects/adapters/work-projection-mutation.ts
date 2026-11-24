@@ -1,15 +1,3 @@
-/**
- * The application mutation boundary for Works: the one owner of Work-first lock order for
- * every lifecycle or structural write that holds a Work's draft row, draft-tree row or document row, which
- * is how those writes order themselves against the Work's lifecycle transitions, and the
- * canonical transaction participant for every mutation visible in a Works snapshot. It owns
- * the Work's stored pending count (the badge): every Work a transaction locks through it is
- * recounted at commit, and a moved count bumps the Work's revision and sends a notice. A live
- * change under a draft's rows (`liveChangedUnder`) only wakes the owner: the list reads live
- * where it has rows. Every owner a commit wakes gets one hint, in one publish. A keystroke never
- * enters it: a fork save whose pending flag changed recounts its draft's owners after it commits
- * (`recountAfterCommit`).
- */
 import type { DraftId } from "@meridian/contracts";
 import type { DraftHint } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -42,10 +30,6 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
 
-/**
- * The owners a write names: directly, or through the drafts it changes. A lineage is named by
- * its root thread id.
- */
 export type WorkWriteSet = {
   works?: readonly WorkId[];
   lineages?: readonly string[];
@@ -53,86 +37,43 @@ export type WorkWriteSet = {
 };
 
 export type WorkWriteOptions = {
-  /** With the bound edit grants' Works, then the grants' confirmation (file-access §5). */
   seam?: boolean;
-  /** Refuses unless every Work and lineage of the set is active. */
   requireActive?: boolean;
 };
 
 export type LockedWorkWriteSet = {
-  /** Every locked Work's lifecycle, read under its lock. */
   works: ReadonlyMap<string, LockedWork>;
-  /** Every locked lineage's liveness, read under its lock. */
   lineages: ReadonlyMap<string, "active" | "frozen">;
 };
 
 export type WorkProjectionMutation = {
-  /** Activity on the Works (`lastActivityAt`): a revision and a notice, count or not. */
   touchWorks(workIds: readonly WorkId[], activityAt: Date): Promise<void>;
-  /**
-   * Owner-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, then its
-   * lineages' draft-owner locks in root order, in the caller's transaction, before it takes any
-   * draft row, draft-tree row or document row. At commit each locked owner's drafts are recounted and
-   * stored; a Work whose total moved gets a revision, and it and every draft whose count moved
-   * wake their owner with a `draft-hint`; unmoved counts get neither. Apart from the owners'
-   * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
-   */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
-  /**
-   * The Works and lineages `lockWorks` would lock for the set, read with no lock: what a caller
-   * that must hold them earlier (in the order of another lock family) declares.
-   */
   ownersOf(set: WorkWriteSet): Promise<OwnerLocks>;
-  /**
-   * `lockWorks`, then `operation` (given what the locks read), in one transaction (its own when
-   * the caller has none).
-   */
   mutate<T>(
     set: WorkWriteSet,
     operation: (locked: LockedWorkWriteSet) => Promise<T>,
     options?: WorkWriteOptions,
   ): Promise<T>;
-  /**
-   * Works whose pending count the caller's transaction changed without holding them (it is
-   * past Work-first order): each is recounted in a root transaction of its own once the caller
-   * commits, unless the caller already locked it through this boundary.
-   */
   recountAfterCommit(owners: OwnerLocks): void;
-  /**
-   * The Work was archived, unarchived, deleted, restored or purged: once the caller commits, the
-   * Work's `draft-hint` goes out, as for a count that moved, so the Works list and the
-   * Work's drafts list are read again.
-   */
   lifecycleChanged(work: { id: WorkId; projectId: string; draftId: string | null }): void;
-  /**
-   * A tree commit changed live rows that these drafts have rows on, their rows' parents, or a
-   * document they have pending text in: once it commits, each
-   * draft's owner gets its `draft-hint`, since its list reads live there (a move's
-   * place) and neither its count nor its membership need have moved. No lock, no revision.
-   */
   liveChangedUnder(draftIds: readonly string[]): void;
 };
 
 const WORKS_NOTICE_STATE = {};
 type WorksNoticeState = {
   touchedWorkIds: Set<WorkId>;
-  /** Works locked through the boundary: their pending count is reconciled once, at commit. */
   reconcileWorkIds: Set<WorkId>;
-  /** Lineages locked through the boundary: their drafts' counts are reconciled at commit. */
   reconcileRootIds: Set<string>;
-  /** Owners changed but not locked: recounted after commit unless locked by then. */
   recountWorkIds: Set<WorkId>;
   recountRootIds: Set<string>;
-  /** Owners woken whatever their count did, by a live change under their draft's rows. */
   wakeDraftIds: Set<string>;
-  /** Their hints, resolved at commit and sent with the commit's one publish. */
   wake: Map<string, DraftHint>;
 };
 
 export function createWorkProjectionMutation(input: {
   db: Database;
   draftOwnerHints: Pick<ProjectHintPort, "publishDraftHints">;
-  /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkDraftPendingCounts;
   eventSink?: EventSink;
 }): WorkProjectionMutation {
@@ -173,7 +114,6 @@ export function createWorkProjectionMutation(input: {
       );
       await resolveWakes(state);
       if (unlocked.length || unlockedRoots.length) {
-        // The recount publishes once for its owners: these wakes go out with it.
         const wake = new Map(state.wake);
         state.wake.clear();
         runAfterDrizzleCommit(() => recountInRoot(unlocked.sort(), unlockedRoots.sort(), wake));
@@ -182,7 +122,6 @@ export function createWorkProjectionMutation(input: {
     },
   };
 
-  /** The drafts marked to wake, as hints on the state. */
   async function resolveWakes(state: WorksNoticeState): Promise<void> {
     const draftIds = [...state.wakeDraftIds];
     state.wakeDraftIds.clear();
@@ -206,7 +145,6 @@ export function createWorkProjectionMutation(input: {
         return mutation.mutate({ works: workIds, lineages }, async () => undefined);
       });
     } catch (error) {
-      // The next mutation of these Works reconciles their counts again.
       if (input.eventSink)
         emitEvent(input.eventSink, {
           level: "error",
@@ -221,13 +159,6 @@ export function createWorkProjectionMutation(input: {
     return enlistDrizzleTransactionParticipant(worksNoticeParticipant);
   }
 
-  /**
-   * Under the owner locks `lockWriteSet` took, which serialize reconciles of one owner: counts
-   * once per transaction, however many writes it made, and writes only a count that moved. A
-   * text write that commits after the count is not lost: the document's derivation runs after it
-   * and its `mutate` reconciles again; the stored value, not a count taken before this
-   * transaction's own writes, is what that compares against.
-   */
   async function reconcilePendingCounts(state: WorksNoticeState): Promise<void> {
     const woken = new Map(state.wake);
     state.wake.clear();
@@ -241,13 +172,9 @@ export function createWorkProjectionMutation(input: {
     state.reconcileRootIds.clear();
     const tx = currentDrizzleDb(input.db);
     const draftCounts = await input.pendingCounts.countPendingByOwners({ workIds, rootThreadIds });
-    // Each owner whose list gained or lost a document is woken once: a draft whose count moved,
-    // and a Work whose total moved (a whole Discard closes the draft, which then counts nowhere).
     const hints = woken;
     const wake = (projectId: string, draft: string) =>
       hints.set(draft, draftHint(projectId, draft));
-    // One CASE per column: each draft's or Work's documents and folders changed, stored side by
-    // side so a surface can name each (a Work moves when either does).
     const perKey = (column: AnyColumn, keys: readonly string[], value: (key: string) => number) =>
       sql`(case ${column} ${sql.join(
         keys.map((key) =>
@@ -283,7 +210,6 @@ export function createWorkProjectionMutation(input: {
         if (movedDrafts.has(row.draftId)) wake(row.projectId, row.draftId);
     }
     if (workIds.length > 0) {
-      // A Work's totals are its draft's.
       const totals = new Map<string, { documents: number; folders: number }>();
       for (const row of draftCounts)
         if (row.workId) {
@@ -314,10 +240,8 @@ export function createWorkProjectionMutation(input: {
     input.draftOwnerHints.publishDraftHints([...hints.values()]);
   }
 
-  /** The owners a set names. */
   async function resolveOwners(set: WorkWriteSet) {
     const draftIds = [...new Set(set.drafts ?? [])];
-    // A draft's owner is whoever names it: its Work, or its lineage's root chat.
     const named = draftOwnerSql();
     const owned =
       draftIds.length === 0
@@ -369,7 +293,6 @@ export function createWorkProjectionMutation(input: {
         }
       }
     }
-    // Whatever the caller changes under these locks, the counts follow at commit.
     const state = worksNoticeState();
     for (const workId of workIds) state.reconcileWorkIds.add(workId);
     for (const root of rootIds) state.reconcileRootIds.add(root);
@@ -410,10 +333,6 @@ export function createWorkProjectionMutation(input: {
       if (work.draftId)
         input.draftOwnerHints.publishDraftHints([draftHint(work.projectId, work.draftId)]);
     },
-    /**
-     * The set's Works locked before `operation` takes any draft or draft-tree row, so every
-     * structural draft write enters Work, then draft row, then draft-tree rows, the order Archive takes.
-     */
     mutate(set, operation, options) {
       return runInDrizzleTransaction(input.db, async () =>
         operation(await lockWriteSet(set, options)),
@@ -423,7 +342,6 @@ export function createWorkProjectionMutation(input: {
   return mutation;
 }
 
-/** A draft's list is stale; the Work naming it shows its count, so its Works row is too. */
 function draftHint(projectId: string, draft: string): DraftHint {
   return { type: "draft-hint", projectId, draft };
 }

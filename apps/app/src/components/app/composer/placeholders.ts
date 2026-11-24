@@ -1,9 +1,3 @@
-/**
- * Page-stable rotating prompts for the chat composer.
- *
- * Each pool advances once when the browser loads this module. Components can
- * render repeatedly without consuming more entries.
- */
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";

@@ -1,16 +1,3 @@
-/**
- * SegmentedTabs — a contained segmented switch between sibling views of one
- * surface: the sidebar's Write | Chat and the Work page's views.
- *
- * Deliberately not underline tabs: the recessed track gives the control a
- * complete boundary, so it reads as a switch inside chrome or a heading row
- * rather than a tab strip with its base cut off. The active segment surfaces
- * the paper tone inside the track; selection is tonal, never an outline. In dark the
- * paper tone is within a few points of the track, so it takes the selected overlay.
- *
- * A tablist (ARIA tabs pattern): Tab enters on the selected segment, Left/Right
- * and Home/End move and select.
- */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -33,12 +20,10 @@ export function SegmentedTabs<T extends string>({
   fill = false,
   className,
 }: {
-  /** Accessible name of the tablist. */
   label: string;
   value: T;
   options: readonly SegmentedTabOption<T>[];
   onChange: (value: T) => void;
-  /** Segments share the full width (the sidebar's Write | Chat switch). */
   fill?: boolean;
   className?: string;
 }) {

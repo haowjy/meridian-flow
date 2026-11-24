@@ -1,15 +1,3 @@
-/**
- * Who holds a Work-capable document: exclusive by type.
- *
- * A document is held by a Work (its row id, No Work's included) or, for
- * Scratch, by a No Work chat's lineage (the first chat's id). Never both. The
- * handle (`c12`) is what a lineage's URI spells; a query needs only the id, so
- * the handle is optional on a `ContextOwner` (a tab or placement carries it,
- * as `OpenDocumentOwner` requires). Flatten to `workId` / `rootThreadId` only at the
- * HTTP and storage edges.
- */
-
-/** A Work-scoped document's Work. `null` is for a project scheme, which has no owner. */
 export type WorkOwnerRef = {
   workId?: string | null;
   rootThreadId?: undefined;
@@ -17,7 +5,6 @@ export type WorkOwnerRef = {
   chatThreadId?: undefined;
 };
 
-/** A chat's Scratch, by the first chat's id and, when known, the handle its URI spells. */
 export type LineageOwnerRef = {
   workId?: undefined;
   rootThreadId: string;
@@ -25,7 +12,6 @@ export type LineageOwnerRef = {
   chatThreadId?: undefined;
 };
 
-/** A chat's uploads, by the chat's thread id (a primary thread) and, once it has one, its handle. */
 export type ChatOwnerRef = {
   workId?: undefined;
   rootThreadId?: undefined;
@@ -34,16 +20,13 @@ export type ChatOwnerRef = {
   chatRef?: string;
 };
 
-/** Enough to ask for a catalog, a document or a request. */
 export type ContextOwner = WorkOwnerRef | LineageOwnerRef | ChatOwnerRef;
 
-/** Complete owner of a resolved document (No Work's persisted id included). */
 export type ResolvedContextOwner =
   | (WorkOwnerRef & { workId: string | null })
   | LineageOwnerRef
   | ChatOwnerRef;
 
-/** The owner separate nullable pieces name: the chat, else the lineage, else the Work. */
 export function contextOwner(
   workId: string | null | undefined,
   rootThreadId?: string | null,
@@ -53,7 +36,6 @@ export function contextOwner(
   return rootThreadId ? { rootThreadId } : { workId: workId ?? null };
 }
 
-/** A lineage as the writer names it: the first chat's handle and title, which survive its trash. */
 export type LineageInfo = {
   rootThreadId: string;
   rootThreadRef: string;

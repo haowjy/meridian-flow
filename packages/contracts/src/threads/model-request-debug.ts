@@ -1,8 +1,3 @@
-/**
- * Purpose: shared dev-only model-request inspection contract and readable lens.
- * The canonical request is captured once by the server; UI and CLI project it
- * through the same pure functions so diagnostic evidence cannot drift.
- */
 import type { JsonObject, JsonValue } from "./index.js";
 
 const MAX_READABLE_PART_BYTES = 32 * 1024;
@@ -14,7 +9,6 @@ export type ModelRequestDebugMessage = {
   providerOptions?: JsonObject;
 };
 
-/** Provider-neutral GenerateRequest as sent, with signals and diagnostic correlation removed. Records are in-memory only, so old shapes never need parsing. */
 export type ModelRequestDebugRequest = {
   model?: string;
   messages: ModelRequestDebugMessage[];
@@ -28,20 +22,14 @@ export type ModelRequestDebugCapture =
   | { status: "complete" }
   | { status: "omitted"; reason: "request_too_large"; maxRequestBytes: number };
 
-/** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
   schema: "meridian.model-request-debug.v2";
   gatewayCallId: string;
   threadId: string;
-  /** Assistant turn the request belongs to. */
   turnId: string;
-  /** 0-based tool-loop iteration within the turn. */
   iteration: number;
-  /** ISO 8601 */
   requestedAt: string;
-  /** Bound revision slug at request time. */
   agentSlug: string | null;
-  /** SHA-256 of the complete canonical request, even when its body is omitted. */
   requestDigest: string;
   requestBytes: number;
   capture: ModelRequestDebugCapture;
@@ -265,7 +253,6 @@ function omittedData(data: string): string {
   return `[${data.length} characters omitted from readable view; use the raw view for exact data]`;
 }
 
-/** A media part with long base64 `source.data` elided; a tool result's media parts likewise. */
 function readableMediaPart(part: JsonObject): JsonObject {
   const source = part.source;
   if (source === null || typeof source !== "object" || Array.isArray(source)) return part;
@@ -372,10 +359,6 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
   return lines.join("\n");
 }
 
-/**
- * Derive cache-prefix evidence from ordered records.
- * Prefix comparison resets at each assistant turn.
- */
 export function deriveModelRequestDebugViews(
   records: readonly ModelRequestDebugRecord[],
 ): ModelRequestDebugView[] {

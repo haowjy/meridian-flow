@@ -1,5 +1,4 @@
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** PostgreSQL coverage for direct-child activity and fork history through trashed sources. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { loadThreadConversationContext } from "../../index.js";
 import {

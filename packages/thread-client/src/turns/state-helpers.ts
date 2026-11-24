@@ -1,7 +1,3 @@
-/**
- * state-helpers — small pure utilities shared by the session reducer and store.
- *
- */
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 
 export function toBlockContent(value: JsonValue): JsonValue {

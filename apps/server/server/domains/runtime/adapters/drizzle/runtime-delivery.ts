@@ -1,4 +1,3 @@
-/** PostgreSQL delivery boundary: inbox, guarded receipt, turn graph and journal share one ambient transaction. */
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
@@ -27,7 +26,6 @@ export function createDrizzleRuntimeDelivery(
       eq(schema.threadRunLeases.holderId, lease.holderId),
     );
   const leaseStore: DeliveryLeaseStore = {
-    // Role guard mirrors currentTurnKind; compaction additionally requires a pending placeholder.
     async bindTurn(lease, turnId, messageIds, kind) {
       const [bound] = await db_()
         .update(schema.threadRunLeases)

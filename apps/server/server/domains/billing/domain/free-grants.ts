@@ -1,4 +1,3 @@
-/** Free-tier grant helper for provisioning the monthly $0 plan lot. */
 import { FREE_TIER } from "./catalog.js";
 import type { CreditLedger } from "./credit-ledger.js";
 

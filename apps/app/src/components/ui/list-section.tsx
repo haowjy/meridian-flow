@@ -5,10 +5,6 @@ import { role } from "./roles";
 
 export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
 
-/**
- * The name above a list or a group of its rows, the one heading every sidebar list uses, as tall
- * as a row. A plain heading's text, and a fold's leading chevron, sit on the rows' text edge.
- */
 export function ListSectionHeader({
   label,
   level = 3,
@@ -20,13 +16,10 @@ export function ListSectionHeader({
 }: {
   label: string;
   level?: 2 | 3;
-  /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   fold?: SectionFold;
-  /** Shown after a folded heading's label: what its hidden rows would say. */
   foldedMark?: ReactNode;
   actions?: ReactNode;
-  /** Drop handlers when the heading is a drop target. */
   headerProps?: HTMLAttributes<HTMLElement>;
 }) {
   const Heading = level === 2 ? "h2" : "h3";
@@ -44,8 +37,6 @@ export function ListSectionHeader({
         )}
       >
         {fold ? (
-          // The whole heading row folds, its box the rows' box, so its focus ring lines up with
-          // theirs.
           <FoldToggle
             open={fold.open}
             onToggle={() => fold.onToggle(!fold.open)}
@@ -54,7 +45,6 @@ export function ListSectionHeader({
               if (event.key === "ArrowLeft") fold.onToggle(false);
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
-            // Preflight resets a button's text-transform; the label's case needs restating.
             className={cn("flex-1 self-stretch px-1.5", look)}
           >
             {name}
@@ -69,7 +59,6 @@ export function ListSectionHeader({
   );
 }
 
-/** A heading and its rows, inset like every list's rows; a folded section shows its heading alone. */
 export function ListSection({
   children,
   ...header

@@ -1,5 +1,3 @@
-/** PostgreSQL proof that trashing a chat cancels its live lineage and removes its Work feed row. */
-
 import * as schema from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

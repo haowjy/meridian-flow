@@ -1,10 +1,3 @@
-/**
- * One atomic occurrence owns its context actions; TipTap supplies its live
- * position. It draws as the shared link chip: a composer reference is exact,
- * so its family is its URI's, or a folder's. Pressing a document chip opens
- * the document; pressing a folder chip opens the menu inside the folder.
- */
-
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { closeHistory } from "@tiptap/pm/history";
@@ -55,10 +48,8 @@ export function ComposerReferenceMenu({
   const reference = node.attrs.reference as ComposerReferenceAttrs;
   const trigger = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<"destination" | "label" | null>(null);
-  // Opening before the menu releases its focus scope immediately dismisses the picker.
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
   const label = reference.displayText ?? reference.label;
-  // Words the writer gave the chip are theirs; its own label is the name, which a twin's `~id` ends.
   const parsed = parseContextUri(reference.uri);
   const suffix =
     reference.displayText === undefined && parsed.ok ? twinSuffix(parsed.value.path) : undefined;
@@ -69,8 +60,6 @@ export function ComposerReferenceMenu({
       ? () => readRuntime().onOpen?.(reference)
       : undefined;
   const folderHost = useFolderMenuHost();
-  // The chip is the entry it names, draggable as one. TipTap's node view tells ProseMirror to leave a
-  // drag that starts inside it alone, so the atom is never moved: dragging a chip outward leaves it here.
   const drag = useReferenceDrag({
     ref:
       reference.kind === "folder"
@@ -132,8 +121,6 @@ export function ComposerReferenceMenu({
         aria-disabled={!follow}
         aria-label={spoken}
         {...drag}
-        // A click on the chip follows it and leaves the caret beside it, never on it: a chip the
-        // click selected (or a focused chip holding the DOM selection) is replaced by the next keystroke.
         onClick={(event) => {
           event.preventDefault();
           follow?.();

@@ -1,4 +1,3 @@
-/** Instance-owned detached document sessions. Production owns snapshots and lifecycle. */
 import { DocumentSession } from "@/core/editor/document-session";
 
 export function createEditorSessions() {

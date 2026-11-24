@@ -10,7 +10,6 @@ import { CorrelatingEventSink } from "./causal-context.js";
 import type { EventRecord } from "./ports/event-sink.js";
 
 __mergedSuite("causal-context.test.ts", () => {
-  // Merged from apps/server/server/domains/observability/causal-context.test.ts.
   function event(eventId: string, traceId?: string): EventRecord {
     return {
       eventId,
@@ -43,7 +42,6 @@ __mergedSuite("causal-context.test.ts", () => {
 });
 
 __mergedSuite("local-event-sink.test.ts", () => {
-  // Merged from apps/server/server/domains/observability/adapters/local/local-event-sink.test.ts.
   function event(sequence: number): EventRecord {
     return {
       eventId: `event-${sequence}`,

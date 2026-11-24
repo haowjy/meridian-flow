@@ -61,7 +61,6 @@ else
     const { assertPublicationHooks, openAuditedDatabase } = await import(
       "../../../test-support/run-state-publication.js"
     );
-    // Publication pins run in a database this suite owns and drops.
     const audited = await openAuditedDatabase(databaseUrl, { max: 6 });
     const db = audited.db;
     const repos = createDrizzleRepositoriesForTest(db);
@@ -78,7 +77,6 @@ else
       await scenario.admit();
     });
     afterAll(() => audited.close());
-    // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
 
     async function terminal() {
@@ -99,7 +97,6 @@ else
     it.each(["child-report", "child-placeholder"] as const)(
       "preserves a newer orphan receipt after a stale %s candidate",
       async (lane) => {
-        // Capture A before another worker finishes it and admits B.
         const staleReports = (await repos.executionReports.listUnfinalized(100)).filter(
           (candidate) => candidate.childThreadId === ids.child,
         );
@@ -545,7 +542,6 @@ else
             await db.$client`select 1 from pg_locks where locktype='advisory' and not granted and database=(select oid from pg_database where datname=current_database())`;
           return rows.length > 0;
         });
-        // A publisher that locked the report before waiting on its parent would make NOWAIT fail.
         await db.transaction((tx) =>
           tx.execute(
             sql`select execution_turn_id from thread_execution_reports where execution_turn_id=${ids.execution} for update nowait`,
@@ -668,8 +664,6 @@ else
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.child));
-      // The unsettled turn and the expired lease are both candidates; neither is
-      // settled while the claim is held.
       expect(await repair.sweep(1)).toBe(2);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.outcome,
@@ -735,7 +729,6 @@ else
         },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
-      // The repair lane settles the expired row too: a lease no turn carries is deleted.
       expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       expect(
         (await journalEventsByThread(db, ids.caller)).filter(

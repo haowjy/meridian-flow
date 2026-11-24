@@ -1,5 +1,3 @@
-/** Domain conflict raised when a thread cannot accept another turn transition. */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 
 export type TurnStartConflictReason = "already_exists" | "already_running";

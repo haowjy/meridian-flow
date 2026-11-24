@@ -1,5 +1,3 @@
-/** Owns handoff seed generation, Stop, Retry, accounting, and destination wake-up. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { Thread, Turn } from "@meridian/contracts/threads";
@@ -471,7 +469,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           leafId,
           async () => ({ result: seed, events: [{ type: "turn.created", turn: seed }] }),
         );
-        // The Retry seed's `turn.created` names no seed, so the failed seed's end is recorded here.
         await recordEnded(persistence, [latest.id], "retried", seed.id);
         return { turn: saved.createdTurns[0] ?? seed, created: true };
       });

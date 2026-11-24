@@ -1,19 +1,3 @@
-/**
- * Chip — every small tag beside a name: a state, a count or a quiet word.
- *
- * - `state` (default): a 22px `rounded-md` box with a border, so it sits in the
- *   identity row's 22px grid beside crumbs and edit fields. Draft, File it, device only,
- *   removed documents.
- * - `count`: a pill holding a number, tabular, no border.
- * - `label`: a pill holding a read-only word (a Work's status, Recommended). It
- *   truncates when its parent caps its width.
- * - `badge`: a solid jade count pinned to an icon (a tab's "waiting on you"). Its
- *   fill is fixed; it takes no tone.
- *
- * Tones colour state chips and counts; a label is always neutral. All text is
- * `text-xs`. Call sites add layout (margins, max width), never type or colour; a
- * clickable chip renders its button through `asChild`.
- */
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import type * as React from "react";

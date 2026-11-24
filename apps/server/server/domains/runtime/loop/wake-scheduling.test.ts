@@ -16,7 +16,6 @@ import { sweepWakes } from "./sweep-wakes.js";
 import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 __mergedSuite("wake-run.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/__tests__/wake-run.test.ts.
   const USER_ID = "user-1";
 
   function textResult() {
@@ -88,7 +87,6 @@ __mergedSuite("wake-run.test.ts", () => {
 });
 
 __mergedSuite("wake-if-runnable.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/wake-if-runnable.test.ts.
   __mergedSuite("wakeIfRunnable", () => {
     it("does not start if shutdown begins while the queue is read", async () => {
       const shutdown = { started: false };
@@ -117,7 +115,6 @@ __mergedSuite("wake-if-runnable.test.ts", () => {
 });
 
 __mergedSuite("sweep-wakes.test.ts", () => {
-  // Merged from apps/server/server/domains/runtime/loop/sweep-wakes.test.ts.
   const THREAD_A = "thread-a" as ThreadId;
 
   const THREAD_B = "thread-b" as ThreadId;

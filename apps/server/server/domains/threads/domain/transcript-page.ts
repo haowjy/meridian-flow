@@ -1,5 +1,3 @@
-/** Resolve and page the immutable settled prefix of an effective transcript. */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type {
@@ -44,13 +42,10 @@ export interface TranscriptPage {
   unsettledTail?: { turn: Turn; blocks: Block[] }[];
 }
 
-/** Internal model-projection bookkeeping, never returned by the writer read. */
 export interface TranscriptProjectionPage extends TranscriptPage {
   opensSegment: boolean;
   segmentCount: number;
-  /** Anchored end key even on a final page, for projections that trim it. */
   endCursor?: string;
-  /** Start of the pinned prefix when the live preview consumes the output budget. */
   restartCursor?: string;
 }
 
@@ -126,7 +121,6 @@ function clippedSpans(spans: readonly TranscriptSpan[], throughPosition: number)
   });
 }
 
-/** Resolve fork prefixes without scanning any transcript rows. */
 export async function resolveTranscriptSpans(
   deps: TranscriptReadDeps,
   thread: Thread,
@@ -178,8 +172,6 @@ function compareKey(left: TranscriptKey, right: TranscriptKey): number {
 
 function isCursorPositionConsistent(cursor: TranscriptCursor): boolean {
   if (compareKey(cursor.k, cursor.a) <= 0) return true;
-  // Newest-first previews can fill a page before the settled chain starts.
-  // This sentinel restarts before the anchor and is the only key above it.
   return (
     cursor.o === "newest_first" &&
     cursor.k.position === cursor.a.position + 1 &&
@@ -258,7 +250,6 @@ function encodeCursor(cursor: TranscriptCursor): string {
   ).toString("base64url");
 }
 
-/** Re-encode a validated cursor after a consumer trims a fetched page. */
 export function cursorAfter(cursor: string, key: TranscriptKey): string {
   const decoded = decodeCursor(cursor);
   if (!isTranscriptKey(key)) throw new InvalidTranscriptCursorError();
@@ -371,7 +362,6 @@ async function firstPromptBakeId(
     : ((await repos.threads.findByIdIncludingDeleted(owner.threadId))?.initialPromptBakeId ?? null);
 }
 
-/** Writer-facing page shape; projection bookkeeping stays behind this boundary. */
 export async function readTranscriptPage(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,
@@ -387,7 +377,6 @@ export async function readTranscriptPage(
   return page;
 }
 
-/** Reads one bounded page and, only on the first newest-first call, a marked live tail. */
 export async function readTranscriptPageForProjection(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,
@@ -566,7 +555,6 @@ export async function readTranscriptPageForProjection(
   });
 }
 
-/** How many conversation turns precede `position`: the next conversation turn's number minus one. */
 export async function countConversationTurnsBefore(
   repos: Pick<ThreadRepositories, "threads" | "turns">,
   thread: Thread,
@@ -576,7 +564,6 @@ export async function countConversationTurnsBefore(
   return repos.turns.countConversationTurns(resolution.spans, position);
 }
 
-/** The Nth conversation turn (from 1) with all its blocks, including the live tail. */
 export async function readTranscriptTurn(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,

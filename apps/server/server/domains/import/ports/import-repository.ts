@@ -1,4 +1,3 @@
-/** Durable selection and receipt storage. Mutations join the caller's import-row transaction. */
 import type { AheadMint } from "@meridian/agent-edit/integration";
 import type {
   ImportCounts,
@@ -38,11 +37,6 @@ export interface ImportRecord {
   objectsSweptAt: Date | null;
   finalSweepAt: Date | null;
 }
-/**
- * What a batch worked out for a file's document and cannot work out twice: its properties and
- * aliases, and the links it made to documents that do not exist yet (their random ids are
- * inside the text its room's rows hold). The import's last step reads it.
- */
 export interface EntryAhead {
   properties?: StoredDocumentProperties;
   aliases?: string[];
@@ -53,7 +47,6 @@ export interface ImportEntrySelection {
   path: string;
   size: number;
   modifiedAt: number;
-  /** Set on a file organize extracted from another entry (a DOCX's embedded image). */
   derivedFrom?: string;
   reasonParams?: { readReason: ImportUnreadableReason };
 }
@@ -97,7 +90,6 @@ export interface ImportRepository {
     importId: string,
     entryIds: number[],
   ): Promise<Extract<ImportEntry, { kind: "file" }>[]>;
-  /** Adds organize-derived entries; `replaceDerived` first drops those derived from the listed entries. */
   addDerivedEntries(
     importId: string,
     replaceDerived: string[],
@@ -113,7 +105,6 @@ export interface ImportRepository {
     patch: Pick<ImportEntryPatch, "state"> & Partial<Pick<ImportEntryPatch, "reason">>,
     ids?: string[],
   ): Promise<void>;
-  /** Keeps what a batch worked out for these entries' documents (`import_entries.ahead`). */
   writeAhead(importId: string, rows: { id: string; ahead: EntryAhead }[]): Promise<void>;
   readAhead(importId: string): Promise<Map<string, EntryAhead>>;
   refreshCounts(id: string): Promise<ImportCounts>;

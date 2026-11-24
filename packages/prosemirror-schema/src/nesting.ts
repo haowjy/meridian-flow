@@ -1,11 +1,3 @@
-/**
- * Where a block sits: the quotes and list levels around it, read from five attributes
- * (`path`, `kind`, `marker`, `start`, `loose`) on the block itself. `nest` is the one
- * reader of a block sequence; the serializer, the editor's numbering and the read-only
- * renderer all take their grouping from it. It is total: every value of every attribute
- * has one reading, and nothing here writes an attribute to repair a document.
- */
-
 export const MAX_ORDERED_NUMBER = 999_999_999;
 
 export type StepType = "quote" | "list";
@@ -14,31 +6,23 @@ export type ListKind = "bullet" | "ordered";
 
 export type Step = { type: StepType; fresh: boolean };
 
-/** A list as `nest` reads it. Shared by every block that touches the list. */
 export type ListFacts = {
   kind: ListKind;
-  /** The first number, 1 when the opening block stores none that Markdown can write. */
   start: number;
-  /** True when any item's block says `loose`. Complete once `nest` returns. */
   loose: boolean;
-  /** Item count. Complete once `nest` returns. */
   items: number;
 };
 
 export type StepFacts = {
   type: StepType;
-  /** The block opens this container. */
   opens: boolean;
-  /** List steps only: the block starts an item here, which is also true when it opens the list. */
   startsItem: boolean;
   list: ListFacts | null;
-  /** List steps only: the number of the item the block is in, null in a bullet list. */
   number: number | null;
 };
 
 export type BlockFacts = {
   steps: StepFacts[];
-  /** What the block's own item is, at its innermost list step. Null for a block that starts no item. */
   marker: ItemMarker | null;
 };
 
@@ -70,22 +54,18 @@ export function pathOf(steps: readonly Step[]): string | null {
     .join("");
 }
 
-/** True when the block sits in a quote or a list. */
 export function isNested(path: unknown): boolean {
   return readPath(path).length > 0;
 }
 
-/** True when the block sits in a list, however deep and whatever quotes are around it. */
 export function isListed(path: unknown): boolean {
   return innermostListStep(readPath(path)) >= 0;
 }
 
-/** A paragraph with no level and no place in a quote or list: a heading or an item is the same node with one. */
 export function isBodyText(node: { type: { name: string }; attrs: NestingAttrs }): boolean {
   return node.type.name === "paragraph" && node.attrs.level == null && !isNested(node.attrs.path);
 }
 
-/** The index of the last list step, -1 when there is none. */
 export function innermostListStep(steps: ReadonlyArray<{ type: StepType }>): number {
   for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === "list") return i;
   return -1;
@@ -106,7 +86,6 @@ function readStart(value: unknown): number {
 
 type Open = { type: "quote" } | { type: "list"; list: ListFacts };
 
-/** Reads blocks in document order into the containers they sit in. Never throws. */
 export function nest(blocks: Iterable<NestInput>): BlockFacts[] {
   const open: Open[] = [];
   const result: BlockFacts[] = [];
@@ -204,7 +183,6 @@ function continued(list: ListFacts): StepFacts {
   };
 }
 
-/** `nest` over ProseMirror nodes (or anything shaped like them). */
 export function nestNodes(
   nodes: Iterable<{ type: { name: string }; attrs: NestingAttrs }>,
 ): BlockFacts[] {
@@ -229,7 +207,6 @@ export type NestedNode =
   | { type: "quote"; children: NestedNode[] }
   | { type: "list"; list: ListFacts; items: NestedItem[] };
 
-/** The same facts folded into quotes, lists, items and blocks, for callers that build nested output. */
 export function nestTree(facts: readonly BlockFacts[]): NestedNode[] {
   const root: NestedNode[] = [];
   const stack: Array<{ node: NestedNode; into: () => NestedNode[] }> = [];
@@ -273,12 +250,6 @@ export function nestTree(facts: readonly BlockFacts[]): NestedNode[] {
   return root;
 }
 
-/**
- * The paths of a run of copied or moved blocks without the steps outside them: each loses the
- * levels around the shallowest block's own list level, so the run keeps its shape relative to
- * itself and can land under any path. The first block starts no fresh container: where it lands
- * decides that.
- */
 export function detach(paths: readonly (readonly Step[])[]): Step[][] {
   let cut = Number.POSITIVE_INFINITY;
   for (const steps of paths) cut = Math.min(cut, Math.max(0, innermostListStep(steps)));
@@ -287,10 +258,6 @@ export function detach(paths: readonly (readonly Step[])[]): Step[][] {
   return detached;
 }
 
-/**
- * The steps a moved block lands under, below the block `above` (null at the start of its
- * sequence): it keeps its own list depth, `depth`, but sits at most one level under `above`.
- */
 export function landingBase(above: readonly Step[] | null, depth: number): Step[] {
   const aboveSteps = above ?? [];
   const aboveDepth = aboveSteps.filter((step) => step.type === "list").length;
@@ -303,10 +270,6 @@ export function landingBase(above: readonly Step[] | null, depth: number): Step[
   return base;
 }
 
-/**
- * How many leading steps the blocks `from` to `to` (exclusive) sit in together: the same quote,
- * or at a list step the same item. Two items of one list share nothing at that step.
- */
 export function sharedSteps(facts: readonly BlockFacts[], from: number, to: number): number {
   let shared = facts[from]?.steps.length ?? 0;
   for (let i = from + 1; i < to; i++) {
@@ -318,7 +281,6 @@ export function sharedSteps(facts: readonly BlockFacts[], from: number, to: numb
   return shared;
 }
 
-/** Where the item that block `index` belongs to starts, at that block's innermost list level. */
 export function itemStart(facts: readonly BlockFacts[], index: number): number {
   const level = innermostListStep(facts[index].steps);
   let start = index;
@@ -330,10 +292,6 @@ export function itemStart(facts: readonly BlockFacts[], index: number): number {
   return start;
 }
 
-/**
- * The block range of the item a block starts: the block plus every following block that is
- * deeper or continues it. A block that starts no item is its own range.
- */
 export function extentOf(facts: readonly BlockFacts[], index: number): [number, number] {
   const level = innermostListStep(facts[index].steps);
   if (level < 0 || !facts[index].steps[level].startsItem) return [index, index + 1];

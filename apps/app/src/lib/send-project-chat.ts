@@ -1,4 +1,3 @@
-/** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import { newDraftId } from "@meridian/contracts";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
@@ -14,7 +13,6 @@ import { deriveTitleFromMessage } from "./thread-title";
 export type SendProjectChatArgs = {
   accountId: string;
   projectId: string;
-  /** The composer's message as submitted; `text` is its blocks' text, not trimmed. */
   text: string;
   blocks: readonly UserMessageBlock[];
   references: readonly SubmittedReference[];
@@ -22,18 +20,12 @@ export type SendProjectChatArgs = {
   draft?: ComposerDraftSnapshot;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
-  /** What this chat runs on instead of the Agent's, if the writer picked any. */
   overrides: ThreadOverrides;
   workId: string;
-  /** The selected Work's default: the new chat's mode unless the writer chose one. */
   workAiWriteMode: AiWriteMode;
-  /** The named Work's default draft, which the chat writes into; null under No Work, where it gets its own. */
   workDraftId: string | null;
-  /** The writer's explicit choice in this composer; it becomes the Work's default too. */
   aiWriteMode?: AiWriteMode;
-  /** The thread id minted before the first attach, which owns any uploads already attached. */
   threadId?: string;
-  /** The draft the message was written in, handed to the journal once recorded. */
   draftScope: ComposerDraftScope;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
@@ -70,9 +62,7 @@ export function sendProjectChat({
   const title = deriveTitleFromMessage(text.trim());
 
   {
-    // Durable witness before any display or navigation: if the intent cannot be
-    // persisted, do not show a destination or dispatch it. Keep the draft so
-    // the composer can report the local failure.
+    // keep: Record the durable submission before showing or navigating to the destination
     const submission: NewChatSubmission = {
       recordId: submissionId,
       submissionId,
@@ -103,6 +93,5 @@ export function sendProjectChat({
   } catch (error) {
     reportError(error);
   }
-  // Mounting the selected destination wakes its submission driver.
   return { threadId };
 }

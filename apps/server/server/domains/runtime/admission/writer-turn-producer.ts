@@ -1,16 +1,3 @@
-/**
- * The writer producer: admission's `enqueue` step. It persists the writer's user
- * turn at enqueue (so the client's optimistic ack and the send's durability hold
- * before any run exists), appends a writer-provenance `message` to the durable
- * inbox under the same id, settles admission plus attachments, and wakes the
- * thread — all in one turn-start transaction. A message that joins the live
- * reply (a steer) returns that reply's assistant turn id; one answered by a new
- * reply (idle, or behind a queued write-mode switch) returns null and the
- * client learns the assistant turn from `RUN_STARTED`.
- *
- * No run is started here: the wake is best-effort latency, the sweep is the
- * durable guarantee, and the drain owns the assistant container.
- */
 import type {
   AcceptedAdmission,
   AdmissionFingerprint,
@@ -60,14 +47,11 @@ function winnerProjection(
 export function createWriterTurnProducer(deps: {
   persistence: PersistenceDeps;
   hub: { headSeq(threadId: ThreadId): Promise<bigint> };
-  /** Liveness authority: the runner owns which threads have a live run. */
   runner: { getRunningTurn(threadId: ThreadId): RunningTurnView | null };
-  /** Setup-window fallback only; consulted while the runner owns the thread. */
   turns: Pick<TurnRepository, "findRunningAssistantId">;
   delivery: DeliveryProducer;
   inbox: Pick<InboxReader, "selectPending">;
   records: AdmissionPersistencePort;
-  /** Runs inside the turn-start transaction before any writer content is persisted. */
   requireWritableThread(threadId: ThreadId): Promise<void>;
   attachDocument(
     threadId: string,
@@ -85,11 +69,6 @@ export function createWriterTurnProducer(deps: {
     }) {
       const threadId = input.admission.threadId;
       const userTurnId = crypto.randomUUID() as TurnId;
-      // Liveness comes from the runner map, never durable turn status: a
-      // crash-orphaned `streaming` and settled `awaiting_answer` turns are not
-      // live runs. Only once the runner owns the thread do we look at durable
-      // rows, and only for the setup window where the runner has not published
-      // the assistant id yet. `createdAfter` keeps an older orphan out.
       const liveReplyId = async () => {
         const live = deps.runner.getRunningTurn(threadId);
         if (!live || live.kind === "compaction") return null;
@@ -110,10 +89,6 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          // A message sent behind a queued switch ends the live reply instead of
-          // joining it, so it is answered by the next reply in the new mode.
-          // Both reads happen under the lock on every attempt: a reply that
-          // ended, or a switch committed, before it is visible here.
           joinedReply: async () => {
             const replyId = await liveReplyId();
             if (!replyId) return null;
@@ -151,9 +126,6 @@ export function createWriterTurnProducer(deps: {
               fingerprint: input.fingerprint,
             });
             if (accepted.kind === "winner") {
-              // A concurrent settlement won: the turn and inbox append already
-              // staged in this transaction must not commit. Throwing rolls the
-              // whole transition back and carries the winner projection out.
               throw new WriterEnqueueRollback(
                 winnerProjection(accepted.record, input.fingerprint, input.admission.submissionId),
               );
@@ -168,9 +140,6 @@ export function createWriterTurnProducer(deps: {
           },
         });
       } catch (error) {
-        // The retry budget for the thread's turn-start transition is exhausted: a
-        // concurrent turn start kept winning. Report the reservation as pending so
-        // the route maps it to 409 and the client reconciles, not a 500.
         if (error instanceof TurnStartConflictError) {
           return { kind: "pending", submissionId: input.admission.submissionId };
         }

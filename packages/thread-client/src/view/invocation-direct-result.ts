@@ -1,5 +1,3 @@
-/** Turn-scoped protocol lookup for settled foreground invocation cards. */
-
 import { type ArtifactRef, isArtifactRef } from "@meridian/contracts/artifacts";
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
@@ -7,7 +5,6 @@ import { componentBlockContent } from "./component-block-content";
 
 export type DirectInvocationResult = {
   execution: string;
-  /** Null means the direct tool settled without saved terminal evidence. */
   outcome: "succeeded" | "failed" | "cancelled" | null;
   summary: string;
   payload?: JsonValue;
@@ -17,10 +14,8 @@ export type DirectInvocationResult = {
   reason: string | null;
 };
 
-/** The tool's typed `result`; `content` is what the model saw and is never parsed. */
 type SettledResult = { result: JsonValue | null; isError: boolean; message: string | null };
 
-/** The complete parent turn is one identity scope; presentation runs are not protocol boundaries. */
 export function directResultsForTurn(
   blocks: readonly Block[],
 ): Map<string, DirectInvocationResult> {
@@ -35,7 +30,6 @@ export function directResultsForTurn(
     if (block.blockType === "tool_use") {
       const name = stringField(content, "toolName");
       if (name) names.set(key, name);
-      // Live reduction merges the settled result onto the use; durable history has a separate result.
       if (block.status === "complete" && Object.hasOwn(content, "result")) {
         settled.set(key, resultFields(content));
       }
@@ -63,9 +57,6 @@ export function directResultsForTurn(
     const result = settled.get(key);
     if (!result) continue;
     const envelope = resultEnvelope(result.result, result.isError, result.message);
-    // Persisted direct results are already scoped by parent turn + tool call.
-    // Some valid spawn results omit their execution ID, but may not contradict
-    // the invocation when the ID is present.
     if (
       envelope &&
       (envelope.execution === undefined || envelope.execution === invocation.execution)

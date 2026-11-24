@@ -1,34 +1,21 @@
-/**
- * Combines what the levels hold by name. Pure: no files, no store.
- *
- * A level owns every name it contains, readable or not, so an item that is broken or ambiguous
- * stays in its level, unavailable, and still hides the same name below it.
- */
 import type { AgentLevel } from "@meridian/contracts/agents";
 
 export interface LevelItems<T> {
   level: AgentLevel;
-  /** The level's own items: they win their names over every import, silently. */
   root: Array<{ name: string; value: T }>;
-  /** Imported packages by name; two that bring one name clash. */
   imports: Array<{ package: string; items: Array<{ name: string; value: T }> }>;
 }
 
 export interface Combined<T> {
-  /** The name the writer picks by: the file's name, or `name__package` after a clash. */
   slug: string;
   level: AgentLevel;
-  /** Lower levels that have the same name, now hidden. */
   shadows: AgentLevel[];
-  /** Null when the name is held but unusable: two packages bring it, or a renamed name collides. */
   value: T | null;
-  /** Why `value` is null. */
   clash?: string;
 }
 
 type Entry<T> = { value: T | null; clash?: string };
 
-/** Within a level: the root wins its names; among packages, a shared name renames both. */
 function withinLevel<T>(level: LevelItems<T>): Map<string, Entry<T>> {
   const names = new Map<string, Entry<T>>();
   for (const { name, value } of level.root) names.set(name, { value });
@@ -67,13 +54,10 @@ function withinLevel<T>(level: LevelItems<T>): Map<string, Entry<T>> {
   return names;
 }
 
-/** Every level's item of each name, with what it hides and what hides it. */
 export interface Layered<T> extends Combined<T> {
-  /** The nearest level above that has the same name, which hides this one. */
   hiddenBy: AgentLevel | null;
 }
 
-/** `levels` run from lowest to highest priority. */
 export function layerByName<T>(levels: LevelItems<T>[]): Layered<T>[] {
   const all: Layered<T>[] = [];
   const top = new Map<string, Layered<T>>();
@@ -96,7 +80,6 @@ export function layerByName<T>(levels: LevelItems<T>[]): Layered<T>[] {
   return all;
 }
 
-/** The item each name resolves to: its highest level's. */
 export function combineByName<T>(levels: LevelItems<T>[]): Combined<T>[] {
   return layerByName(levels).filter((item) => item.hiddenBy === null);
 }

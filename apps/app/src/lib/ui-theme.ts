@@ -1,4 +1,3 @@
-/** Palette projection with an account-stamped, pre-paint cache. */
 import {
   ACCOUNT_LANGUAGES,
   ACCOUNT_THEMES,

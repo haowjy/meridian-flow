@@ -42,10 +42,8 @@ function randomBlocks(random: () => number, junk: boolean): NestInput[] {
   });
 }
 
-/** Writes a tree back as attributes: the inverse of `nestTree`. */
 function flatten(tree: NestedNode[]): NestInput[] {
   const out: NestInput[] = [];
-  // `|` goes before the step that starts a new container, on the container's first block.
   const markFresh = (at: number, depth: number) => {
     const attrs = out[at].attrs as Record<string, unknown>;
     const path = String(attrs.path);
@@ -71,8 +69,6 @@ function flatten(tree: NestedNode[]): NestInput[] {
             start: i === 0 && node.list.start !== 1 ? node.list.start : null,
             loose: node.list.loose ? true : null,
           };
-          // The marker speaks for the innermost list only, so an item whose first block is in a
-          // deeper list gets an empty block to carry its own.
           const first = out[start];
           if (first && String(first.attrs.path).slice(step.length).includes("-")) {
             out.splice(start, 0, { attrs: { path: step, ...itemAttrs }, plainParagraph: true });
@@ -116,8 +112,6 @@ describe("nest", () => {
     }
   });
 
-  // A block that opens two lists at once has an item with no block of its own, which written
-  // out gets an empty paragraph (`- - x`); from there on the reading is a fixed point.
   it("reads back to the same tree after the tree is written as attributes", () => {
     const random = rng(2);
     for (let n = 0; n < 20_000; n++) {

@@ -39,7 +39,6 @@ describe("contextRouteTargetFromUri", () => {
     };
     const route = (uri: string, active: { id: string; handle: string | null } = NO_WORK) =>
       contextRouteTargetFromUri(uri, active, [ACTIVE_WORK], NO_WORK.id, lineages);
-    // Bare means the chat's own lineage; there is no No Work Scratch to stand in for one.
     expect(route("scratch://probe-cycle-3.mdx")).toEqual({
       scheme: "scratch",
       path: "/probe-cycle-3.mdx",
@@ -49,14 +48,12 @@ describe("contextRouteTargetFromUri", () => {
     expect(
       contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", NO_WORK, [ACTIVE_WORK], NO_WORK.id),
     ).toBeNull();
-    // A canonical handle names another chat's lineage from any chat; an unknown handle routes nowhere.
     for (const active of [NO_WORK, ACTIVE_WORK])
       expect(route("scratch://@c40/duel/beats.md", active)).toMatchObject({
         workId: null,
         rootThreadId: "root-c40",
       });
     expect(route("scratch://@c99/x.md")).toBeNull();
-    // A named-Work chat's bare Scratch stays in its Work.
     expect(route("scratch://x.md", ACTIVE_WORK)).toEqual({
       scheme: "scratch",
       path: "/x.md",

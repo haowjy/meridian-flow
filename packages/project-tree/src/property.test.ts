@@ -1,10 +1,3 @@
-/**
- * Proof-of-concept property test for the file-tree log. Several replicas edit the live tree
- * and two drafts at once, apply and discard drafts whole or in part, undo, and exchange Loro
- * updates in random orders (including out of causal order). After every action the acting
- * replica's views must be valid trees; at the end every replica must show the same tree in
- * every view, and no created node may be missing or wrongly in the trash.
- */
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { admit, type Connection, changedSources } from "./admission.js";
@@ -30,12 +23,6 @@ import {
 } from "./index.js";
 import { undoChange } from "./undo-open.js";
 
-// What admission promises, checked on its answer. It keeps the update in runs, each changing no
-// closed source on top of what was kept before it, and drops the record after each run, which
-// would change one there. A run may hold records that cancel out (a move into a folder a held
-// record later moves into a closed Work, then a move back out), so which record of such a stretch
-// is dropped is the search's choice, not a promise: a walk judging one record at a time can drop
-// another (seed 104039).
 function admissionProblems(
   doc: LoroDoc,
   added: readonly TreeRecord[],
@@ -52,8 +39,6 @@ function admissionProblems(
     (record.draft !== null && !connection.drafts.has(record.draft)) ||
     droppedNodes.has(record.node) ||
     (record.type === "create" && droppedNodes.has(record.parent));
-  // Whether `these`, on top of the held records and the update's records kept before `from`,
-  // change a closed source.
   const changesClosed = (from: number, these: readonly TreeRecord[]) => {
     const kept = new Set(
       added.slice(0, from).flatMap((record) => (out.has(record.id) ? [] : [record.id])),
@@ -71,8 +56,6 @@ function admissionProblems(
       return [...changedSources(before, replay(records, view))].some(connection.closed);
     });
   };
-  // Its first gate: an update whose records' own changes stay out of closed sources and which
-  // together changes none is kept whole, even when one of them alone would change one.
   const reportsClosed = added.some((record) =>
     replayView(doc, { draft: record.draft })
       .changes.get(record.id)
@@ -100,11 +83,6 @@ function admissionProblems(
 
 const ROOT = sourceRoot("manuscript");
 
-/**
- * The tree as it stands: what a writer sees, leaving out what is in Trash, the numbers on names
- * and twins' suffixes (a node an Undo puts back can arrive again, so which of two same-named
- * siblings carries one can change).
- */
 const standing = (projection: TreeProjection) =>
   fingerprint(projection, false)
     .replaceAll(/( \(\d+\))*(~[0-9a-f]{4,})?(?=#)/g, "")
@@ -115,7 +93,6 @@ const standing = (projection: TreeProjection) =>
 const cmd = () => crypto.randomUUID();
 
 const SEEDS = Number(process.env.TREE_SEEDS ?? 40);
-// Each run starts at a new seed so repeated runs cover new orderings; a failure names its seed.
 const FIRST_SEED = Number(process.env.TREE_FIRST_SEED ?? 1 + Math.floor(Math.random() * 1_000_000));
 const STEPS = Number(process.env.TREE_STEPS ?? 160);
 const REPLICAS = 4;
@@ -133,7 +110,6 @@ function rng(seed: number) {
   };
 }
 
-/** A server copy of the list holding `records`, as peer `peer`. */
 function listCopy(peer: number, records: readonly TreeRecord[]): LoroDoc {
   const doc = new LoroDoc();
   doc.setPeerId(peer);
@@ -143,7 +119,6 @@ function listCopy(peer: number, records: readonly TreeRecord[]): LoroDoc {
   return doc;
 }
 
-/** A client copy of `server` that inserted `records` at `index`, and the update it sends. */
 function sentAfter(server: LoroDoc, index: number, records: readonly TreeRecord[]) {
   const copy = new LoroDoc();
   copy.setPeerId(2000);
@@ -175,14 +150,10 @@ function makeReplicas(): Replica[] {
   });
 }
 
-/** Every view's tree is valid, holds every node its replay created, and trashes only what a delete named. */
 function viewProblems(doc: LoroDoc, view: View): string[] {
   const projection = replayView(doc, view);
   const ops = viewRecords(doc, view);
-  // Rule 15: a node may leave the view only while a withdrawal in force names it. That another
-  // delete keeps it in Trash is the casebook's rule 15 case.
   const byRoot = new Map(ops.map((op) => [op.carries ?? op.id, op]));
-  // A withdrawal, or the Undo of a restore that took one back, which puts it back.
   const withdraws = (op: TreeRecord): boolean => {
     if (op.type !== "delete" || op.draft !== null || op.undoes === undefined) return false;
     if (op.fromDraft !== undefined && op.carries === undefined) return true;
@@ -203,7 +174,6 @@ function viewProblems(doc: LoroDoc, view: View): string[] {
   for (const node of projection.nodes.values()) {
     if (!node.trashed) continue;
     if (!named.has(node.id)) problems.push(`trashed ${node.id} that no delete named`);
-    // A delete takes only what is still inside the deleted node: some node at or above it was deleted.
     let at: string | null = node.id;
     let steps = 0;
     while (at !== null && !deletedTops.has(at) && steps++ <= projection.nodes.size)
@@ -235,7 +205,6 @@ function runSeed(seed: number): {
     to.delivered.set(fromIndex, seen);
     const waiting = from.outbox.map((_, index) => index).filter((index) => !seen.has(index));
     if (waiting.length === 0) return;
-    // Out of order on purpose: Loro must hold an update whose dependencies haven't arrived.
     const index = pick(waiting);
     seen.add(index);
     to.writer.doc.import(from.outbox[index] as Uint8Array);
@@ -295,7 +264,6 @@ function runSeed(seed: number): {
     } else if (action < 0.64) {
       writer.rename(view, actor, pick(shown).id, pick(NAMES));
     } else if (action < 0.68) {
-      // Undo of an earlier op of any kind, which others may have changed since.
       const earlier = viewRecords(writer.doc, view);
       if (earlier.length > 0) {
         const result = undoChange(writer, view, actor, pick(earlier).id);
@@ -304,7 +272,6 @@ function runSeed(seed: number): {
     } else if (action < 0.8) {
       const target = pick(shown).id;
       writer.delete(view, actor, target);
-      // A delete does its job where it was made: the node and everything shown inside it go.
       const after = replayView(writer.doc, view);
       for (const id of [target, ...descendantsOf(after, target)])
         expect(after.nodes.get(id)?.trashed, `seed ${seed} step ${step} delete took ${id}`).toBe(
@@ -328,12 +295,8 @@ function runSeed(seed: number): {
         const shownBefore = standing(replayView(writer.doc, view));
         const shownTree = replayView(writer.doc, view);
         const liveBefore = standing(replayView(writer.doc, LIVE));
-        // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);
-        // A drafted record the view skips cannot land, chosen or not.
         const skippedBefore = replayView(writer.doc, view).skipped.map(({ record }) => record);
-        // Records of which a live copy is in force: an earlier Apply's, back by an Undo of its
-        // Un-Apply's Undo. One Undo takes out every copy, so Un-Apply of this Apply takes it too.
         const liveInForce = replayView(writer.doc, LIVE).inForce;
         const inLive = new Set(
           viewRecords(writer.doc, LIVE).flatMap((op) =>
@@ -341,16 +304,12 @@ function runSeed(seed: number): {
           ),
         );
         const landed = applyDraft(writer, view.draft, "user:w", cmd(), some);
-        // The tree the Apply keeps: the Work's view.
         const shapeBefore = fingerprint(shownTree, false);
         const landing = landed.left.length > 0;
         if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
-          // Undo of an Apply at once: live and the draft both read as before it.
           const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
-          // No writer path doubles a live copy (it takes a live Undo of an Un-Apply's Undo record):
-          // seed 400084 fails without this exemption. Keep it (#1610).
           const doubled = landed.copies.some((op) => inLive.has(op.carries as string));
           if (result.left.length === 0 && !doubled) {
             expect(standing(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(
@@ -365,11 +324,6 @@ function runSeed(seed: number): {
             expect(viewProblems(writer.doc, each), `seed ${seed} step ${step}`).toEqual([]);
           continue;
         }
-        // An Apply leaves the draft reading as it did. A record that cannot land may start
-        // to take effect once the rest has landed (a skipped move whose cycle a landed move
-        // ended), so with such records the views are compared without them.
-        // (Why a deleted folder still stands may change: a pending change kept it, and now
-        // what landed inside it does. The shape is what must not change.)
         const cannotLand = landed.left.length > 0 || skippedBefore.length > 0;
         if (!cannotLand && landed.superseded.length === 0)
           expect(
@@ -377,8 +331,6 @@ function runSeed(seed: number): {
             `seed ${seed} partial apply`,
           ).toBe(shapeBefore);
         else {
-          // A record settled as superseded was already overridden in the draft, so the whole
-          // view must read the same once the rest that could land has landed.
           if (!cannotLand)
             expect(
               fingerprint(replayView(writer.doc, view), false),
@@ -398,15 +350,11 @@ function runSeed(seed: number): {
               ),
               false,
             );
-          // A view that reads as before passes as is: without a record that could not land, a
-          // node only it brought back from Trash reads trashed before and lifted after.
           if (fingerprint(replayView(writer.doc, view), false) !== shapeBefore)
             expect(without(viewRecords(writer.doc, view)), `seed ${seed} landing apply`).toBe(
               without(viewBefore),
             );
         }
-        // What the writer saw lands; a record on a node in Trash in both waits, so the nodes in
-        // Trash are left out.
         const shown = (shape: string) =>
           shape
             .split("\n")
@@ -430,7 +378,6 @@ function runSeed(seed: number): {
       expect(viewProblems(writer.doc, each), `seed ${seed} step ${step}`).toEqual([]);
   }
 
-  // Settle: every replica gets everything, in a shuffled order of whole outboxes.
   for (let round = 0; round < 2; round += 1)
     for (const to of replicas)
       for (const from of [...replicas].sort(() => random() - 0.5))
@@ -561,8 +508,6 @@ describe("file tree log under random concurrent edits", () => {
       undoneAny += result.undoneAny;
       leftPending += result.leftPending;
     }
-    // A full sweep must reach the hard cases, or it proves nothing about them. A short run from a
-    // random seed can miss a rare one (cycle skips are 0 to 5 per 40 seeds), so it is not asked to.
     if (SEEDS >= 300) {
       expect(skipped).toBeGreaterThan(0);
       expect(kept).toBeGreaterThan(0);

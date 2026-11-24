@@ -1,4 +1,3 @@
-/** A response timeout must not free capacity while an uncancellable object put still runs. */
 import { afterEach, expect, it, vi } from "vitest";
 import { createImportAdmission, inReceiveScope } from "./receive-admission.js";
 

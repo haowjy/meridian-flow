@@ -1,5 +1,3 @@
-/** Durable vocabulary for the cache prediction recorded with a model response. */
-
 import { z } from "zod";
 
 export const prefixCachePredictionStateSchema = z.enum(["warm", "cold"]);

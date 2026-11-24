@@ -1,13 +1,7 @@
-/**
- * Purpose: Builds minimal JSON-natural assistant turns for golden protocol fixtures.
- * Why independent: The helper owns reusable contract-shaped fixture data shared by projection tests, not application turn creation logic.
- */
 import type { Turn } from "../index.js";
 
-/** The execution that reserves every golden reply. */
 export const GOLDEN_EXECUTION_ID = "execution_golden";
 
-/** Minimal JSON-natural assistant turn for golden orchestrator fixtures. */
 export function goldenAssistantTurn(
   id: string,
   threadId: string,

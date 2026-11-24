@@ -37,7 +37,6 @@ export const projects = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
-    /** The id of this project's tree list, its own and never a node's or document's id. */
     treeListId: uuid("tree_list_id")
       .$type<DocumentId>()
       .notNull()
@@ -71,21 +70,16 @@ export const works = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    // Permanent `w<n>`, minted from project_handle_counters and never reused. Null only on No Work.
     handle: text("handle"),
     isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
     status: text("status"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    // What a new chat in this Work starts with; each chat owns its own mode afterwards.
     defaultAiWriteMode: text("default_ai_write_mode")
       .$type<AiWriteMode>()
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    // The Works badge: documents the Work's drafts change, as the collab pending
-    // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
-    // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     pendingFolderCount: integer("pending_folder_count").notNull().default(0),
     createdAt: createdAt(),
@@ -112,7 +106,7 @@ export const works = pgTable(
     ),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
-    // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
+    // keep: Schema SQL needs a literal because interpolating a number creates an unbound $1 in migrations
     check(
       "works_status_length",
       sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
@@ -125,10 +119,6 @@ export const works = pgTable(
   ],
 );
 
-/**
- * A source is owned by a project (its own, a Work's, a lineage's or a chat's) or by an account:
- * the home folder (`user`, scope `account`) is the account's, made with it by a trigger.
- */
 export const contextSources = pgTable(
   "context_sources",
   {
@@ -142,9 +132,9 @@ export const contextSources = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
-    // Lineage identity is not a thread-row FK: trashing/purging the first chat must not cascade.
+    // keep: rootThreadId has no thread FK; purging the first chat must not cascade its Scratch
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
-    // A chat (primary thread) owns its uploads source; same no-FK rule as `root_thread_id`.
+    // keep: chatThreadId has no thread FK; purging the chat must not cascade its uploads source
     chatThreadId: uuid("chat_thread_id").$type<ThreadId>(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -179,12 +169,10 @@ export const contextSources = pgTable(
       "context_sources_exactly_one_scope",
       sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.userId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads') OR (${table.scope} = 'account' AND ${table.userId} IS NOT NULL AND ${table.projectId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'user')`,
     ),
-    // An uploads source belongs to a chat; the other scopes never carry that slug.
     check(
       "context_sources_uploads_chat_only",
       sql`${table.slug} <> 'uploads' OR ${table.scope} = 'chat'`,
     ),
-    // The home folder belongs to the account; no project holds one.
     check(
       "context_sources_user_account_only",
       sql`${table.slug} <> 'user' OR ${table.scope} = 'account'`,
@@ -204,12 +192,6 @@ export const contextSources = pgTable(
   ],
 );
 
-/**
- * What a document is apart from its name and place: its stored bytes and facts, and its owner: a
- * project, or the account for a home document (the owner of the list its create is in). Its name, type and place are `tree_nodes` / `draft_tree_nodes` rows, written only
- * by the replay of the project's tree list; a document in no view has a row here and none there.
- * Written only by the transaction that admits the document's `create`.
- */
 export const documents = pgTable(
   "documents",
   {
@@ -223,30 +205,15 @@ export const documents = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
-    /** A browser-drawable preview sits beside the original object (`previewObjectKey`). */
     hasPreview: boolean("has_preview").notNull().default(false),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
-    /** Content was permanently released after the trash retention window; the row remains a tombstone. */
     contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
-    /**
-     * Null while a `tree_nodes` or `draft_tree_nodes` row shows the document; otherwise when the
-     * last row went (a discarded or refused-and-not-kept create). Written only by the row sync;
-     * retention purges it on the Trash window.
-     */
     inNoViewSince: timestamp("in_no_view_since", { withTimezone: true, mode: "date" }),
-    /**
-     * The newest collab schema (packed `major.minor.patch`) that wrote the document's text: a
-     * room save raises it to the server's. A client below its major.minor is refused at Join.
-     */
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    /**
-     * Counts the saves of the document's Live room (its `document_snapshots` rows): a derivation
-     * certifies the count it read, and is stale once a save moves it.
-     */
     contentSeq: bigint("content_seq", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
@@ -279,10 +246,7 @@ export const uploadIntakes = pgTable(
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
-    // trashing or purging it must not cascade (the same as lineage Scratch's root id).
-    // Null with `contextSourceId` for a source upload (a file dropped into a document): it
-    // belongs to no chat and takes its name in `assets/` when it finalizes.
+    // keep: ownerThreadId has no thread FK; the chat row may not exist at attach and its purge must not cascade
     ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
@@ -290,11 +254,9 @@ export const uploadIntakes = pgTable(
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
-    // The name and type are chosen when the stored bytes are read, at finish: null while reserved.
     finalPath: text("final_path"),
     objectKey: text("object_key").notNull(),
     fileType: text("file_type"),
-    // The length the writer declared; finish refuses an object of any other.
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     state: text("state").notNull().default("reserved"),
     createdAt: createdAt(),
@@ -310,14 +272,12 @@ export const uploadIntakes = pgTable(
     index("upload_intakes_owner_thread")
       .on(table.ownerThreadId)
       .where(sql`${table.ownerThreadId} IS NOT NULL`),
-    // The sweep of abandoned uploads reads only rows that never finalized.
     index("upload_intakes_open_updated")
       .on(table.updatedAt)
       .where(sql`${table.state} IN ('reserved', 'object_stored')`),
   ],
 );
 
-/** Vacated document locations point directly to identity, never another path. */
 export const documentPreviousLocations = pgTable(
   "document_previous_locations",
   {
@@ -333,18 +293,13 @@ export const documentPreviousLocations = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    // Full paths can exceed PostgreSQL B-tree tuple limits. Exact equality is
-    // rechecked by the hash index; namespace locks own replacement uniqueness.
+    // keep: Hash-index unbounded paths and recheck exact equality; namespace locks own replacement uniqueness
     index("document_previous_locations_path").using("hash", table.path),
     index("document_previous_locations_source").on(table.contextSourceId),
     index("document_previous_locations_document").on(table.documentId),
   ],
 );
 
-/**
- * Outgoing links of a holder, one row per link key, from the same durable cut as the projection.
- * A hint from a certified cut, not link authority: target and ahead columns carry no FKs.
- */
 export const documentLinks = pgTable(
   "document_links",
   {
@@ -352,12 +307,9 @@ export const documentLinks = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */
     linkKey: text("link_key").notNull(),
-    /** `doc:` and `asset:` keys. */
     targetDocumentId: uuid("target_document_id").$type<DocumentId>(),
     aheadId: uuid("ahead_id"),
-    /** Decoded canonical address for ref keys (registration recovery); null for contextual. */
     address: text("address"),
     occurrences: integer("occurrences").notNull(),
   },
@@ -368,20 +320,10 @@ export const documentLinks = pgTable(
   ],
 );
 
-/**
- * Durable identity for a link written before its target document arrived.
- * Settlement is permanent: every document that arrived, finalized uploads
- * included, leaves through the soft-delete lifecycle and keeps its row, so a
- * settled ref answers gone and never captures a later occupant. No product
- * path hard-deletes a document (an upload reservation that never finalized
- * has no document row); SET NULL only lets an out-of-band row removal unsettle
- * a ref instead of failing.
- */
 export const linkAheadRefs = pgTable(
   "link_ahead_refs",
   {
     aheadId: uuid("ahead_id").primaryKey(),
-    /** The holder: a project, or the account for a `user://` link ahead. */
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -392,9 +334,7 @@ export const linkAheadRefs = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
-    /** Lineage Scratch's first chat. */
     rootThreadId: uuid("root_thread_id"),
-    /** A chat's uploads' chat. */
     chatThreadId: uuid("chat_thread_id"),
     path: text("path").notNull(),
     settledDocumentId: uuid("settled_document_id")
@@ -404,8 +344,7 @@ export const linkAheadRefs = pgTable(
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (table) => [
-    // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
-    // exact path (Postgres B-tree tuples cap near 2.7 kB).
+    // keep: Index md5 of unbounded paths and recheck exact equality; Postgres B-tree tuples cap near 2.7 kB
     index("link_ahead_refs_owner_unsettled")
       .on(
         table.projectId,

@@ -624,8 +624,6 @@ else
       ).rejects.toMatchObject({ code: "seed_id_conflict" });
     });
     it("ends a failed brief's failure at the writer's first message and forgets nothing (C13)", async () => {
-      // Risk: a first-brief failure has no earlier closing row, so it could neither be forgotten nor end;
-      // and forgetting it would drop the model text ("handed off with no brief") the model can act on.
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "failed-brief" });
       const service = serviceFor(fixture.repos, runClaim, {

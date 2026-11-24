@@ -1,12 +1,3 @@
-/**
- * Internal primary-thread derivation for handoff and fork agent swaps. A
- * derivation is a SIBLING of its source, never the source's child: it takes
- * the source's `parentThreadId` and `spawnDepth` as its own. Forks keep
- * the source lineage; handoffs start a fresh lineage,
- * while preserving their source provenance. The fork-source
- * relationship itself is carried by `originTurnId` (the anchor turn lives on
- * the source thread), never by `parentThreadId`.
- */
 import { type DraftId, newDraftId } from "@meridian/contracts";
 import type {
   ProjectId,
@@ -25,15 +16,11 @@ export interface CreateDerivedPrimaryThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId: WorkId | null;
-  /** The mode the writer sees on the source chat (a pending switch's): a fork or handoff starts in it. */
   aiWriteMode: AiWriteMode;
-  /** The source thread's own lineage, inherited byte-for-byte (see file header). */
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth" | "draftId">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
-  /** A handoff's new lineage draft, minted by the client; omitted, one is minted here. */
   draftId?: DraftId;
   originTurnId?: TurnId | null;
-  /** A fork copies its source's; a handoff takes the writer's pick. */
   overrides: ThreadOverrides;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
@@ -61,7 +48,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,
     rootThreadId: input.originType === "handoff" ? input.id : input.source.rootThreadId,
-    // A handoff starts a fresh lineage, so a fresh draft, as it gets fresh Scratch.
     draftId:
       input.originType === "handoff" ? (input.draftId ?? newDraftId()) : input.source.draftId,
     spawnDepth: input.source.spawnDepth,

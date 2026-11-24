@@ -1,13 +1,3 @@
-/**
- * Barrel: re-exports the tool registry, executor, core tool catalogue, and
- * tool execution types.
- *
- * Note: `ToolExecutorWithBatch` is exported here but is not part of the
- * `ToolExecutor` interface — it is the concrete return type of
- * `createToolExecutor` and includes the `executeTools` batch method that
- * the orchestrator relies on for parallel+sequential dispatch.
- */
-
 export {
   type AgentThreadTurnContext,
   agentGatewayMetaToGenerateParams,

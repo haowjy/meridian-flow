@@ -1,10 +1,3 @@
-/**
- * The app-wide state words: "Not sent" while something the writer did has gone unanswered for a
- * while or the browser is offline with something waiting (signed out, it opens the login screen), and the update word once the app was
- * deployed under this tab. The shell places them in the trailing area of the band it already has
- * (main's header on desktop, the phone top bar), so they take room the band already has, change the
- * height of nothing and cover no control; both can show together.
- */
 import { t } from "@lingui/core/macro";
 import { CloudOff } from "lucide-react";
 import { useSyncExternalStore } from "react";
@@ -42,7 +35,6 @@ function UpdateWord() {
   );
 }
 
-/** The update word's text, wherever a reload of the tab is the only way on. */
 export function ReloadWords() {
   return (
     <>
@@ -52,7 +44,6 @@ export function ReloadWords() {
   );
 }
 
-/** Signed out (`paused`), the edits wait for a sign-in, so the word is the way to it. */
 function NotSentWord() {
   const { notSent, paused } = useDriverSnapshot();
   if (!notSent) return null;
@@ -80,10 +71,6 @@ function NotSentWord() {
   );
 }
 
-/**
- * The login screen, back to this page after: a full load, so the app starts on the new sign-in
- * and the edits this device kept go out then.
- */
 export function logInAgain() {
   const here = `${window.location.pathname}${window.location.search}`;
   window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);

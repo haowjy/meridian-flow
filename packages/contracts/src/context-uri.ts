@@ -1,5 +1,3 @@
-/** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
-
 import { validateContextEntryName } from "./context-entry-validation.js";
 import { classifyHandleToken, decodeWorkHandle, parseHandle, type WorkHandle } from "./handles.js";
 import { canonicalLeaf } from "./protocol/document-filename.js";
@@ -17,10 +15,6 @@ export const CONTEXT_URI_SCHEMES = [
 ] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
-/**
- * The English name of each area, as the sidebar shows it. The server's copy, the model's text and
- * exports read this; the app translates its own labels and a test keeps them matching.
- */
 export const CONTEXT_URI_SCHEME_NAMES = {
   manuscript: "Manuscript",
   kb: "Knowledge",
@@ -31,7 +25,6 @@ export const CONTEXT_URI_SCHEME_NAMES = {
   agents: ".agents",
 } as const satisfies Record<(typeof CONTEXT_URI_SCHEMES)[number], string>;
 
-/** Sources whose documents receive drafts in a draft-mode Work's draft. */
 export function isDraftedScheme(scheme: ContextUriScheme): boolean {
   return (
     scheme === "manuscript" ||
@@ -51,38 +44,26 @@ export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = [
 ] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
-/** Schemes whose address takes an owner authority (`@w3`, `@c12`): Scratch and chat uploads. */
 export const OWNED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
 export type OwnedContextUriScheme = (typeof OWNED_CONTEXT_URI_SCHEMES)[number];
 
-/** The one scheme a Work owns. Uploads belong to a chat, never to a Work. */
 export type WorkScopedContextUriScheme = "scratch";
 
-/** A URI already serialized with stable authority rather than contextual shorthand. */
 export type CanonicalContextUri = string;
 
-/** Server-declared operations available through a context scheme. */
 export interface ContextSchemeCapabilities {
   readonly writable: boolean;
   readonly searchable: boolean;
-  /**
-   * Whether context clients may create entries or directories. Binary upload
-   * intake is governed separately and may remain available when this is false.
-   */
   readonly creatable: boolean;
 }
 
-/** Syntax-only authority carried by a parsed Work-capable context URI. */
 export type ParsedContextAuthority =
   | { kind: "contextual" }
-  /** `@` alone: a request to list the scheme's owners. */
   | { kind: "owners" }
   | { kind: "lineage"; rootThreadRef: string }
-  /** The chat (a primary thread) that received the files; only `uploads://` takes it. */
   | { kind: "chat"; chatRef: string }
   | { kind: "work"; workHandle: WorkHandle };
 
-/** The owners a holder's authority supplies, independently for each owned scheme. */
 export function holderAuthorities(
   authority: ParsedContextAuthority,
 ): Record<OwnedContextUriScheme, ParsedContextAuthority | null> {
@@ -99,7 +80,6 @@ export function holderAuthorities(
   }
 }
 
-/** Qualify a contextual address only when its holder supplies that scheme's owner. */
 export function qualifyContextUriByHolder(uri: string, holderUri: string | null): string {
   const target = parseContextUri(uri);
   const holder = holderUri ? parseContextUri(holderUri) : null;
@@ -111,7 +91,6 @@ export function qualifyContextUriByHolder(uri: string, holderUri: string | null)
     : uri;
 }
 
-/** Authority accepted by stable URI serialization. */
 export type CanonicalContextAuthority =
   | { kind: "contextual" }
   | { kind: "owners" }
@@ -122,29 +101,18 @@ export type CanonicalContextAuthority =
 export interface ParsedContextUri {
   scheme: ContextUriScheme;
   authority: ParsedContextAuthority;
-  /** Normalized path: no edge slash, empty or `.` segments, or repeated slashes. */
   path: string;
-  /** Grammar-normalized syntax. Real-Work identity is not resolved yet. */
   normalized: string;
 }
 
-/**
- * A near-miss owner spelling that only the server can fully answer (it knows which Works and chats
- * exist). `reason` already holds the answer the contracts can give alone.
- */
 export type OwnerSlip =
-  /** `@tea-notes`: a name where a handle belongs. */
   | { kind: "name"; scheme: OwnedContextUriScheme; token: string }
-  /** `@p3`: a subagent's handle where its chat's belongs. */
   | { kind: "subagent"; scheme: OwnedContextUriScheme; token: string }
-  /** `@W3`: handles are lowercase. */
   | { kind: "uppercase"; scheme: OwnedContextUriScheme; token: string }
-  /** `@x` or `@/x` with no usable handle. */
   | { kind: "no-handle"; scheme: OwnedContextUriScheme };
 
 type ContextUriParseError = {
   ok: false;
-  /** `unknownScheme` marks a URI that names no context scheme, so it addresses no document. */
   error: { uri: string; reason: string; unknownScheme?: string; slip?: OwnerSlip };
 };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
@@ -157,7 +125,6 @@ export interface ParseContextUriOptions {
   schemes?: readonly ContextUriScheme[];
 }
 
-/** Canonical string form of a parsed scheme + optional authority + path. */
 export function canonicalContextUri(
   scheme: ProjectScopedContextUriScheme,
   path: string,
@@ -211,10 +178,6 @@ function toParsedAuthority(authority: CanonicalContextAuthority): ParsedContextA
   return { kind: "work", workHandle };
 }
 
-/**
- * The addresses models are trained on, read as the canonical one: `~/x` is `user://x` and a bare
- * `.agents/x` is the project's `agents://x`. Both are read only when the parse accepts the scheme.
- */
 const HOME_ALIAS = /^~(?:\/(.*))?$/;
 const PROJECT_AGENTS_ALIAS = /^\.agents(?:\/(.*))?$/;
 
@@ -231,11 +194,6 @@ function aliasedScheme(
   return null;
 }
 
-/**
- * Strict serializer, lenient parser; bare paths resolve to `manuscript://`, bar the aliases above.
- * A scheme is `name://`, in any letter case: `Prologue: Dawn` is a chapter name, not a malformed
- * address.
- */
 export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
@@ -314,10 +272,6 @@ export const UNIFIED_CONTEXT_SCHEMES = CONTEXT_URI_SCHEMES;
 
 const SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):(\/+)/i;
 
-/**
- * How a written address begins: `name://`, lowercased, and its length. A context scheme may take
- * any number of slashes (`kb:/Lore`); another name needs `//`, so `Note: x` is a path.
- */
 function schemePrefix(raw: string): { name: string; length: number } | null {
   const match = SCHEME_PREFIX.exec(raw);
   const name = (match?.[1] ?? "").toLowerCase();
@@ -325,22 +279,16 @@ function schemePrefix(raw: string): { name: string; length: number } | null {
   return { name, length: match[0].length };
 }
 
-/** The area `raw` addresses, as the parser reads it (a bare path is the manuscript); null when it does not parse. */
 export function addressScheme(raw: string): ContextUriScheme | null {
   const parsed = parseUnifiedContextUri(raw);
   return parsed.ok ? parsed.value.scheme : null;
 }
 
-/** Whether `raw` is already the serializer's spelling of the address it parses to. */
 export function isCanonicalAddress(raw: string): boolean {
   const parsed = parseUnifiedContextUri(raw);
   return parsed.ok && parsed.value.normalized === raw;
 }
 
-/**
- * How a writer wrote `raw`: as a context address, as another scheme's (`https://`, `mailto:`),
- * or as a path with no scheme.
- */
 export function writtenForm(raw: string): "address" | "foreign" | "path" {
   const trimmed = raw.trim();
   const prefix = schemePrefix(trimmed);
@@ -348,7 +296,6 @@ export function writtenForm(raw: string): "address" | "foreign" | "path" {
   return /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? "foreign" : "path";
 }
 
-/** `base` (a folder address, with or without its trailing slash) with `rest` beneath it. */
 export function joinContextUri(base: string, rest: string): string {
   const parsed = parseUnifiedContextUri(base);
   if (!parsed.ok) throw new RangeError(`Not a context address: ${base}`);
@@ -356,7 +303,6 @@ export function joinContextUri(base: string, rest: string): string {
   return formatParsedContextUri(scheme, [path, rest].filter(Boolean).join("/"), authority);
 }
 
-/** The root address of a scheme (`kb://`): where its documents begin. */
 export function contextRootUri(scheme: ContextUriScheme): string {
   return formatParsedContextUri(scheme, "", { kind: "contextual" });
 }
@@ -399,7 +345,7 @@ function parseAuthorityPrefix(
   }
   const token = (qualifiers[0] ?? "").slice(OWNER_SIGIL.length);
   if (token === "") {
-    // `@/` (the retired empty-owner spelling) differs from the listing token `@` only by its slash.
+    // keep: Retired @/ empty-owner spelling must stay distinct from the bare @ listing token
     if (segments.length === 0 && rawPath.replace(/^\/+/, "").startsWith("@/")) {
       return invalidContextUri(rawUri, retiredEmptyOwner(scheme));
     }
@@ -408,7 +354,6 @@ function parseAuthorityPrefix(
   return parseOwnerToken(scheme, token, segments, rawUri);
 }
 
-/** `@` with no handle after it: a listing request, or the #875 spelling `@/c12/`, which is refused. */
 function parseBareSigil(
   scheme: OwnedContextUriScheme,
   segments: string[],
@@ -479,7 +424,6 @@ function parseOwnerToken(
   }
 }
 
-/** The authority a handle names under a scheme, or null when the scheme takes no such owner. */
 function ownerAuthority(
   scheme: OwnedContextUriScheme,
   handle: string,
@@ -509,26 +453,21 @@ function unknownOwnerHandle(scheme: OwnedContextUriScheme): string {
     : "Chats with files are listed by ls uploads://@.";
 }
 
-/** Schemes whose address takes an owner authority; the complement of the project-scoped ones. */
 export function isOwnedContextScheme(scheme: ContextUriScheme): scheme is OwnedContextUriScheme {
   return (OWNED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
-/** Whether a Work (not a chat) may own documents in this scheme: Scratch only. */
 export function isWorkScopedScheme(scheme: ContextUriScheme): scheme is WorkScopedContextUriScheme {
   return scheme === "scratch";
 }
 
-/** Schemes whose documents belong to the project (or, for `user://`, the user), never to a Work. */
 export function isProjectScopedScheme(
   scheme: ContextUriScheme,
 ): scheme is ProjectScopedContextUriScheme {
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
-/** The sigil before an owner's handle. */
 export const OWNER_SIGIL = "@";
-/** Reserved for draft qualifiers (#699); refused until draft routing exists. */
 export const DRAFT_SIGIL = "~";
 const DRAFT_NAME_RULE = 'Names cannot start with "~".';
 
@@ -555,7 +494,6 @@ function draftNameRefusal(
   return `${DRAFT_NAME_RULE} Without it: ${repairedUri}.`;
 }
 
-/** The one serializer for addresses: the canonical identity. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
@@ -567,18 +505,12 @@ export function formatParsedContextUri(
   return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
 }
 
-/**
- * The outward spelling of the Agents addresses in a text, `.agents/…` and `~/.agents/…`: what the
- * model and the writer read. Identity stays `agents://` and `user://.agents/`, and the parser
- * reads the outward spelling back.
- */
 export function displayContextUri(text: string): string {
   return text
     .replace(/(?<![\w/])agents:\/\//g, ".agents/")
     .replace(/(?<![\w/])user:\/\/\.agents(?![\w.-])/g, "~/.agents");
 }
 
-/** One owner segment of an address, `@w3/`: the text a typed address completes with. */
 export function ownerSegment(authority: ParsedContextAuthority): string | null {
   const qualifier = ownerQualifier(authority);
   return qualifier === null ? null : `${qualifier}/`;
@@ -611,7 +543,6 @@ function invalidContextUri(uri: string, reason: string, slip?: OwnerSlip): Conte
   return { ok: false, error: slip ? { uri, reason, slip } : { uri, reason } };
 }
 
-/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
 export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
   const index = value.search(/[?#]/);
   return index < 0
@@ -619,19 +550,6 @@ export function splitDocumentHrefSuffix(value: string): { path: string; suffix: 
     : { path: value.slice(0, index), suffix: value.slice(index) };
 }
 
-/**
- * The name a writer sees for the document at the final URI/path segment: the
- * stored name as the codec spells it. A stored segment is already canonical
- * (`Chapter 13`, `outline.json`, `Vol. 2`); a segment someone typed is
- * canonicalized (`ch12.md` and `notes.txt` read `ch12` and `notes`). No
- * extension is stripped on its own.
- *
- * This accepts decoded addresses, not hrefs. Href/tool callers split suffixes
- * before decoding at their boundary.
- *
- * Callers own the fallback because some server notices prefer a document id
- * while writer-facing surfaces use "Untitled document".
- */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
   const parsed = parseUnifiedContextUri(uri);

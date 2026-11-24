@@ -1,12 +1,3 @@
-/**
- * Composed system prompt assembly and prompt-bake detection.
- *
- * Key decisions:
- * - The initial bake pointer is the freeze sentinel. Prompt text is never
- *   sniffed for markers.
- * - Frozen at first context assembly, even if the gateway send fails or is cancelled.
- */
-
 import { type ActivatedSkillBody, formatInvokedSkills } from "./activated-skills.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-uris.js";
@@ -18,16 +9,13 @@ export interface AssembleComposedSystemPromptInput {
   appendPrompt?: string | null;
   workContext?: string;
   availableSkills?: readonly PromptInventoryListing[];
-  /** Preloaded (`skills.load`) bodies, frozen with the first bake. */
   preloadedSkills?: readonly ActivatedSkillBody[];
   namedSubagents?: readonly PromptInventoryListing[];
-  /** The connections' catalogue, written by `mcp/domain/connection-bake.ts`. */
   connectionCatalogue?: string | null;
   subagentGuidance?: string | null;
   permissionGuidance?: string | null;
 }
 
-/** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
 export function assembleComposedSystemPrompt(input: AssembleComposedSystemPromptInput): string {
   return [
     input.basePrompt,
@@ -65,7 +53,6 @@ function inventorySection(
   ].join("\n\n");
 }
 
-/** Frozen threads have an immutable first-bake pointer. */
 export function isThreadPromptFrozen(thread: { initialPromptBakeId?: string | null }): boolean {
   return thread.initialPromptBakeId != null;
 }

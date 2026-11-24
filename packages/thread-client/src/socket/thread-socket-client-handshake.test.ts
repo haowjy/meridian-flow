@@ -48,7 +48,6 @@ function delta(seq: string, text: string) {
     sourceThreadId: "thread-1",
   };
 }
-/** The `subscribe` requests a socket was sent, in order. */
 function requests(
   socket: FakeThreadSocket,
 ): Array<{ requestId: string; threadId: string; lastSeq?: string }> {
@@ -227,7 +226,6 @@ it("retires a silent connected socket without waiting for native close and resum
   }
 });
 
-// Replay requests: each `subscribe` has an id, and each ends in an outcome the client attributes to it.
 function replayHarness() {
   const sockets: FakeThreadSocket[] = [];
   const transport = new ThreadSocketClient({
@@ -385,7 +383,6 @@ it("applies a superseded request's acknowledgement as frames, so no handler miss
     h.answer("thread-1", "100", []);
     const b = h.join("thread-1", "50");
     const c = h.join("thread-1", "25");
-    // r2's `subscribed` arrives after r3 was sent: the socket's order puts it before r2's live frames.
     h.answer("thread-1", "50", ["75", "150"], -2);
     h.live("thread-1", "200");
     h.answer("thread-1", "25", ["40", "75", "150"]);
@@ -406,7 +403,6 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
     const a2 = h.join("thread-1", "50");
     h.fail("thread-1", true);
 
-    // Both of thread-1's handlers hear it once; thread-2 still awaits its own replay.
     expect(a1.errors).toHaveLength(1);
     expect(a2.errors).toHaveLength(1);
     expect(b1.errors).toHaveLength(0);
@@ -423,7 +419,6 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
       expect(h.asks("thread-1").at(-1)?.lastSeq).toBe("50");
       if (delay < 1_000) h.fail("thread-1", true);
       if (delay === 250) {
-        // A sibling acknowledgement and an unrelated catalog failure must not reset this retry.
         h.transport.subscribeCatalog("project-1", () => {});
         const catalog = h
           .socket()

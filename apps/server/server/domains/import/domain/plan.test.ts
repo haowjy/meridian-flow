@@ -1,4 +1,3 @@
-/** Receipt-driven graph identity, folder-note relocation, and export routing. */
 import { randomUUID } from "node:crypto";
 import { importNodeId } from "@meridian/contracts";
 import { expect, it } from "vitest";

@@ -1,5 +1,3 @@
-/** Barrel: model-request debug capture port, adapters, and record builder. */
-
 export {
   createInMemoryModelRequestDebugStore,
   InMemoryModelRequestDebugStore,

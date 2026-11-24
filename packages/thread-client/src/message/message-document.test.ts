@@ -83,7 +83,6 @@ describe("serializeMessageDoc reference occurrences", () => {
     expect(envelope.text).toBe(
       "[Issue #3.md](<kb://notes/Issue %233.md>) and [100% Done.md](<kb://notes/100%25 Done.md>)",
     );
-    // The model and a paste read each destination back as the referenced document.
     const destinations = [...envelope.text.matchAll(/\]\(<([^>]+)>\)/g)].map((match) => match[1]);
     expect(destinations.map((href) => resolveDocumentHref(href as string, null))).toEqual(
       uris.map((uri) => ({ kind: "document", uri, suffix: "" })),

@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import type { WorkRef } from "@/lib/work-name";
 import { WorkName } from "./WorkName";
 
-/** How a Work reads wherever one is named as a value: the Work glyph, then its `WorkName`. */
 export function WorkIdentity({
   work,
   unavailableLabel,

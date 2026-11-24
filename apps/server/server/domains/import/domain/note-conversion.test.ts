@@ -1,4 +1,3 @@
-/** Conversion contracts without storage, using the main vault and adversarial syntax. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mdxCodec } from "@meridian/markup";
@@ -63,7 +62,6 @@ function convert(
   });
 }
 const codec = mdxCodec({ schema: buildDocumentSchema() });
-/** The template's link occurrences, each converted one with the href it is written with. */
 function links(note: ConvertedNote, uris: ReadonlyMap<string, string> = new Map()) {
   const hrefs = respell(note, uris);
   return walkLinkOccurrences(codec.parse(note.template).blocks).map((link, index) => ({
@@ -176,7 +174,6 @@ describe("note conversion", () => {
   it("edits only destinations: a picture inside a link and a code-span label stay intact", () => {
     const image = convert("[![cover](../attachments/map.png)](../Lore/Sects.md) after");
     expect(image.template.replace(/mfimport-\d+-z/g, "@")).toBe("[![cover](@)](@) after");
-    // The schema has no linked pictures, so the picture is the only occurrence.
     expect(links(image).map((link) => [link.kind, link.href])).toEqual([
       ["image", "kb://vault/attachments/map.png"],
     ]);
@@ -194,7 +191,6 @@ describe("note conversion", () => {
       [0, "A/map.png"],
       [1, "B/map.png"],
     ]);
-    // A link already spelled at the converted address is not the converted occurrence.
     const manual = convert("[manual](kb://vault/Lore/Sects) [[Sects]]");
     expect([...manual.targets]).toEqual([[1, "Lore/Sects.md"]]);
   });

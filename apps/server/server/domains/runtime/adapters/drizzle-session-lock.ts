@@ -1,4 +1,3 @@
-/** PostgreSQL session advisory locks with process-local ownership and loss notification. */
 import type { Database } from "@meridian/database";
 
 export interface SessionLockClaim {
@@ -10,12 +9,6 @@ export interface SessionLock {
   tryAcquire(key: string): Promise<SessionLockClaim | null>;
 }
 
-/**
- * A single reserved session can own many independent advisory locks without
- * consuming one pool connection per active operation. Any session error drops
- * all local ownership and notifies holders: a lock tied to a dead session is
- * no longer a valid claim.
- */
 export function createDrizzleSessionLock(db: Database, seed: bigint): SessionLock {
   type Connection = Awaited<ReturnType<Database["$client"]["reserve"]>>;
   type Holder = {
@@ -110,8 +103,7 @@ export function createDrizzleSessionLock(db: Database, seed: bigint): SessionLoc
                   claims.delete(key);
                   releaseIfIdle(connection);
                 } catch {
-                  // The connection is not trustworthy after a failed unlock.
-                  // Dropping it releases every server-side lock it held.
+                  // keep: After a failed unlock, drop the DB connection to release all its server-side locks
                   drop(connection);
                 }
               });

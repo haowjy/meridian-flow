@@ -1,6 +1,5 @@
 import type { CommandRecord, Journal, JournalChange } from "./types.js";
 
-/** A journal in memory, with the same one-transaction-at-a-time rule as the browser's. */
 export function createMemoryJournal(): Journal & { failNext(error: Error): void } {
   const records = new Map<string, CommandRecord>();
   let nextSeq = 1;

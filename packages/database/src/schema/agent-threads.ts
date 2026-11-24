@@ -67,11 +67,6 @@ export const threads = pgTable(
       .references((): PgColumn => promptBakes.id),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull(),
-    /**
-     * The draft a root chat's lineage writes into: in a named Work one of its drafts (a new chat
-     * names the Work's default), with No Work the lineage's own, minted with the chat. Set exactly
-     * on root chats (`threads_draft_on_root`); forks and subagents write their root's.
-     */
     draftId: text("draft_id")
       .$type<DraftId>()
       .references((): PgColumn => drafts.id),
@@ -87,17 +82,10 @@ export const threads = pgTable(
     turnCount: integer("turn_count").notNull().default(0),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     inboxBlockedReason: text("inbox_blocked_reason").$type<"credits_exhausted">(),
-    /**
-     * Set when a lineage cancellation stopped this thread: a machine wake (agent message,
-     * spawn admission) from an execution admitted before it is refused. Writer actions pass.
-     */
     wakeFenceAt: timestamp("wake_fence_at", { withTimezone: true }),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
-    // The chat's write mode: copied at creation, changed only by an applied switch.
     aiWriteMode: text("ai_write_mode").$type<AiWriteMode>().notNull().default("direct"),
-    /** The model this chat runs on instead of its Agent's; survives binding refreshes. Not checked against the gateway: an unlisted id falls back at turn time. */
     modelOverride: text("model_override"),
-    /** The reasoning setting this chat runs at instead of its Agent's, as a `ReasoningLevel`. A level the model doesn't list runs at the nearest one it does, at turn time. */
     effortOverride: text("effort_override").$type<ReasoningLevel>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -164,10 +152,6 @@ export const threads = pgTable(
       "threads_handoff_fork_primary",
       sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
     ),
-    // A fork/handoff is a SIBLING of its source (shares its parentThreadId,
-    // which is null when the source is itself a root), never the source's
-    // child, so `parentThreadId` is not required here. `threads_handoff_fork_primary`
-    // requires kind='primary' for both; each derivation requires its cutoff.
     check(
       "threads_fork_origin_required_fields",
       sql`${table.originType} != 'fork' OR ${table.originTurnId} IS NOT NULL`,
@@ -187,7 +171,6 @@ export const threads = pgTable(
   ],
 );
 
-/** Per-project, per-kind handle counters. `thread` is shared by chats and subagents (`c12`, `p3`). */
 export const projectHandleCounters = pgTable(
   "project_handle_counters",
   {
@@ -204,7 +187,6 @@ export const projectHandleCounters = pgTable(
   ],
 );
 
-/** M:N thread↔Work history; every live thread has one primary row. */
 export const threadWorks = pgTable(
   "thread_works",
   {
@@ -236,35 +218,21 @@ export const threadWorks = pgTable(
   ],
 );
 
-/**
- * One row per hand-back request (Stop, the queue's x, Cancel queue): its decision, stored in the
- * request's own transaction and replayed by request id, so a replay answers what the first call did
- * even after the chat's state moved on.
- */
 export const threadHandBacks = pgTable("thread_hand_backs", {
   requestId: uuid("request_id").primaryKey(),
   threadId: uuid("thread_id")
     .$type<ThreadId>()
     .notNull()
     .references(() => threads.id, { onDelete: "cascade" }),
-  /** Hash of the request body: the same id with another body is refused. */
   fingerprint: text("fingerprint").notNull(),
   handedBack: uuid("handed_back").array().notNull(),
   answered: uuid("answered").array().notNull(),
   gone: uuid("gone").array().notNull(),
-  /** The execution a Stop press cancelled; null for a hand-back and for a press that cancelled none. */
   cancelledExecutionId: text("cancelled_execution_id"),
   createdAt: createdAt(),
 });
 
-/**
- * Durable per-thread message queue drained in a batch at the next delivery
- * boundary. Rows are marked delivered rather than deleted so the idempotency
- * key and replay facts survive. `seq` is a global bigserial; sequences order
- * allocation, not commit, so FIFO within a thread rests on the domain `enqueue`
- * serializing per thread (it holds the per-thread lock): with commits serialized,
- * `seq` orders them within the thread without a per-thread counter row.
- */
+// keep: Bigserial seq orders allocation, not commit; per-thread lock serialization gives FIFO
 export const threadInboxMessages = pgTable(
   "thread_inbox_messages",
   {
@@ -280,17 +248,7 @@ export const threadInboxMessages = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    /**
-     * The turn current when the execution acknowledged this message, written with
-     * `delivered_at`. Null when unknown: delivered before run identity, by no
-     * reserved turn, or a non-message row.
-     */
     deliveredByTurnId: uuid("delivered_by_turn_id").$type<TurnId>(),
-    /**
-     * The hand-back request that took this waiting writer message out of the chat. Set with
-     * `delivered_at` and no deliverer; the message's turn and blocks stay for diagnostics, and no
-     * conversation read returns them.
-     */
     handedBackBy: uuid("handed_back_by"),
   },
   (table) => [
@@ -325,16 +283,7 @@ export const threadInboxMessages = pgTable(
   ],
 );
 
-/**
- * Queryable run lease paired with the cross-process advisory lock. The lock is
- * the atomic mutex (crash-safe because the DB session dies); this expiring row
- * is what `holder()`, derived status, and the running-turn read can observe from
- * another process. `turnId` is bound after the run's assistant turn commits, so
- * it may be null while a run is mid-setup. One row is one execution: its
- * `executionId` is what every turn it reserves records in `turns.execution_id`.
- * The row is deleted when the execution ends; an expired row is a repair
- * candidate, never proof of death on its own.
- */
+// keep: The advisory lock is the mutex; an expired lease row is only a repair candidate, never proof of death
 export const threadRunLeases = pgTable(
   "thread_run_leases",
   {
@@ -378,19 +327,11 @@ export const turns = pgTable(
       .references((): PgColumn => promptBakes.id),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
-    /** Who authored the turn; independent of `role`. No default: every insert states it. */
     origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
-    /** The execution that reserved this turn (write-once); null when none did. */
     executionId: uuid("execution_id"),
-    /** The messages this turn was reserved for (write-once); a hint, never delivery. */
     reservedForUserTurnIds: uuid("reserved_for_user_turn_ids").array(),
-    /**
-     * The turn that retried this failed attempt or moved the chat past it (write-once, same thread).
-     * The turn stays in the graph and the journal but has left the conversation; a reader applies the
-     * stamp only when the forgetting turn is inside the span it reads.
-     */
     forgottenByTurnId: uuid("forgotten_by_turn_id").$type<TurnId>(),
     finishReason: text("finish_reason"),
     error: text("error"),
@@ -575,7 +516,6 @@ export const turnBlocks = pgTable(
   ],
 );
 
-/** Per-thread decisions keep a fork's request history independent from its source. */
 export const threadMediaInclusions = pgTable(
   "thread_media_inclusions",
   {
@@ -642,7 +582,6 @@ export const threadExecutionReports = pgTable(
     costMillicredits: bigint("cost_millicredits", { mode: "number" }),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
     publication: text("publication").notNull().default("none"),
-    /** A lineage cancellation ended this run: publication projects the card but enqueues no notice. */
     noticeWithdrawn: boolean("notice_withdrawn").notNull().default(false),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -780,7 +719,6 @@ export const userTurnAdmissions = pgTable(
     state: text("state").notNull(),
     rejectionCode: text("rejection_code"),
     userTurnId: uuid("user_turn_id").$type<TurnId>(),
-    /** Stream version of the run-state record the admission's transaction published; null for rows from before it existed. */
     runStateVersion: text("run_state_version"),
     resumeAfterSeq: text("resume_after_seq"),
     snapshotFloorNextSeq: text("snapshot_floor_next_seq"),
@@ -797,5 +735,4 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
-// The origin-turn FK is NO ACTION DEFERRABLE INITIALLY IMMEDIATE in migration
-// 0006; deleting a referenced turn fails unless a coordinated delete defers it.
+// keep: The origin-turn FK is deferrable; deleting a referenced turn requires a coordinated deferred delete

@@ -1,8 +1,4 @@
-/**
- * A field that handles Escape itself (an inline edit cancels on it) marks itself
- * `data-handles-escape`. A dialog or takeover ignores Escape from inside such an element, because
- * Radix hears Escape on the document before the field's own handler could stop it.
- */
+// keep: Radix hears Escape on the document before a field's own handler can stop it
 export function ignoreFieldEscape(event: {
   target: EventTarget | null;
   preventDefault: () => void;

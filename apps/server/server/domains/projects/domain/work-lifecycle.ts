@@ -1,4 +1,3 @@
-/** Canonical identity for a Work that became unavailable under its lifecycle lock. */
 export type WorkLifecycleState = "missing" | "deleted" | "archived";
 
 export class WorkLifecycleUnavailableError extends Error {

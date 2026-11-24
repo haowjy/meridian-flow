@@ -13,7 +13,6 @@ import { resolveReadableThread } from "./resolve-readable-thread.js";
 const rows = [
   { id: "root", ref: "c1" },
   { id: "fork", ref: "c2", originType: "fork" },
-  // A handoff starts its own lineage; it reads only the thread its origin turn came from.
   {
     id: "handoff",
     ref: "c3",

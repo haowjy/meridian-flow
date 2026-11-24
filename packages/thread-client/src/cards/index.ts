@@ -1,4 +1,3 @@
-/** The chat's failure cards: one pure projection the app draws and `./mf` prints. */
 export {
   type CardControl,
   type ChatCardsInput,

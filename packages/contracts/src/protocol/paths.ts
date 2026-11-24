@@ -1,16 +1,9 @@
-/**
- * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread and context endpoints.
- * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
- */
-
 import { isOwnedContextScheme } from "../context-uri.js";
 import type { ContextOwner } from "./context-owner.js";
 import type { ProjectContextTreeScheme } from "./http-types.js";
 
-/** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
   query: URLSearchParams,
   scheme: ProjectContextTreeScheme,
@@ -29,7 +22,6 @@ export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
 export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
-/** The account's own sources (`user://`). */
 export const API_ACCOUNT_CONTEXT_SOURCES_PATH = "/api/account/context-sources";
 export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents";
 export const API_AUTH_ME_PATH = "/api/auth/me";
@@ -38,7 +30,6 @@ export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
 }
 
-/** Recents are read inside a project: the landing that renders them is one. */
 export function apiProjectRecentDocumentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/recent-documents`;
 }
@@ -58,7 +49,6 @@ export function apiProjectThreadsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/threads`;
 }
 
-/** Resolves a live `cN`/`pN` thread handle within one project. */
 export function apiProjectThreadByRefPath(projectId: string, ref: string): string {
   return `${apiProjectThreadsPath(projectId)}/by-ref/${encodeURIComponent(ref)}`;
 }
@@ -91,24 +81,18 @@ export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
 }
 
-/** The active drafts with changes to one document, from any view. */
 export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
   return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
 }
 
-/** One draft's reviewable items, by its id. */
 export function apiProjectDraftsPath(projectId: string, draft: string): string {
   return `${apiProjectPath(projectId)}/drafts?draft=${encodeURIComponent(draft)}`;
 }
 
-/** (user, project)-scoped UI preferences — user resolved from auth. */
-
-/** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
 export function apiProjectContextLineagePath(projectId: string, rootThreadId: string): string {
   return `${apiProjectPath(projectId)}/context/lineages/${encodeURIComponent(rootThreadId)}`;
 }
 
-/** The sources the account can read in one project. */
 export function apiProjectContextSourcesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/sources`;
 }
@@ -117,12 +101,10 @@ export function apiProjectDocumentReadPath(projectId: string, documentId: string
   return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
-/** One Copy command: many sources, one destination, one receipt. */
 export function apiProjectContextCopyPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/copy`;
 }
 
-/** Internal document-link resolution: three spellings in, one document or none. */
 export function apiProjectLinksResolvePath(projectId: string): string {
   return `${apiProjectPath(projectId)}/links/resolve`;
 }
@@ -161,14 +143,12 @@ export function apiThreadAgentPath(threadId: string): string {
 
 export const API_AVAILABLE_SKILLS_PATH = "/api/skills";
 
-/** The `/` menu of a chat not yet created: built-in, user and (with a project) project skills. */
 export function apiAvailableSkillsPath(input: { projectId?: string | null }): string {
   return input.projectId
     ? `${API_AVAILABLE_SKILLS_PATH}?${new URLSearchParams({ projectId: input.projectId })}`
     : API_AVAILABLE_SKILLS_PATH;
 }
 
-/** Durable identity used to reconcile or explicitly retire one message admission. */
 export function apiThreadAdmissionPath(threadId: string, submissionId: string): string {
   return `${API_THREADS_PATH}/${threadId}/admissions/${encodeURIComponent(submissionId)}`;
 }
@@ -177,22 +157,18 @@ export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
-/** Chat Stop: cancels the running reply and hands the waiting writer messages back. */
 export function apiThreadStopPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/stop`;
 }
 
-/** Hand back waiting writer messages by id (the queue's x and Cancel queue). Never cancels a reply. */
 export function apiThreadHandBackPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/hand-back`;
 }
 
-/** Send now: cancels the reply the writer saw so the waiting queue runs next. */
 export function apiThreadSendNowPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/send-now`;
 }
 
-/** Writer `/compact` commands queued on a thread's inbox. */
 export function apiThreadControlsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/controls`;
 }
@@ -213,7 +189,6 @@ export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): 
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
 }
 
-/** POST: retry a latest failed reply under a client-minted assistant-turn id. */
 export function apiThreadTurnRetryPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/retry`;
 }
@@ -257,17 +232,14 @@ export function apiThreadSnapshotPath(
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
 }
 
-/** POST: create-or-get a fork of the thread at a cutoff turn, under a client-minted id. */
 export function apiThreadForkPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/fork`;
 }
 
-/** POST: create-or-get a handoff from the thread at a cutoff turn, under a client-minted id. */
 export function apiThreadHandoffPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/handoff`;
 }
 
-/** POST: retry the pending brief for a handoff destination under a client-minted seed id. */
 export function apiThreadHandoffBriefPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/handoff/brief`;
 }
@@ -280,7 +252,6 @@ export type TranscriptPagePathOptions = {
   range?: "effective" | "inherited";
 };
 
-/** Builds a paged transcript read URL; omitted query values use the server defaults. */
 export function apiThreadTranscriptPath(
   threadId: string,
   opts?: TranscriptPagePathOptions,

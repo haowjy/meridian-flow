@@ -1,4 +1,3 @@
-/** Repairs dead run turns through C4's existing orphan-repair lane. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
@@ -39,15 +38,8 @@ async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<
 
 const isExecutionTurn = (turn: Turn) => turn.role === "assistant" || turn.role === "compaction";
 
-/**
- * What a repair may take. `sweep` is the primary lane: seeds, compaction placeholders and the
- * chat's own assistants, never a subagent's. `claimed` is for a caller that has just taken a
- * stale execution's claim, which proves every unsettled assistant or compaction turn is an
- * orphan: it adds a subagent's assistant and a compaction that is no longer a placeholder.
- */
 export type OrphanRepairScope = "sweep" | "claimed";
 
-/** Call under the thread lock and the caller's already-held session claim. */
 export async function finalizeOrphanedTurns(
   deps: OrphanRepairDeps,
   input: { threadId: ThreadId; roles?: readonly Turn["role"][]; scope?: OrphanRepairScope },

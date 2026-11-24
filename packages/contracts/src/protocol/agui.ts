@@ -1,8 +1,3 @@
-/**
- * Purpose: Re-exports AG-UI event types and schemas used as Meridian's streaming event wire vocabulary.
- * Why independent: AG-UI is the shared protocol primitive consumed by server projectors and clients, so the contract package owns the dependency boundary.
- * Barrel: re-exports AG-UI types, EventSchemas, and EventType.
- */
 export type {
   ActivityDeltaEvent,
   ActivitySnapshotEvent,

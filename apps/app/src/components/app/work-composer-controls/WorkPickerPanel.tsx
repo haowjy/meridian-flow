@@ -1,10 +1,3 @@
-/**
- * Work-specific searchable catalog panel shared by both composer surfaces.
- * It lists only Works a chat can be bound to: an archived Work refuses new
- * bindings, so it is not offered (a chat already in one still shows it as
- * its current Work on the trigger).
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
@@ -36,7 +29,6 @@ export type WorkPickerOperation = {
 
 type WorkPickerRows = {
   query: string;
-  /** Works the chat can be bound to that match the query. */
   works: Work[];
   enabled: boolean;
   enabledIds: string[];

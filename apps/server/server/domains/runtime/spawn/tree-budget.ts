@@ -1,17 +1,7 @@
-/**
- * Tree budget guards: pre-call checks for depth, turn count, and millicredit spend.
- * DEFERRED(parallel-spawns): reservation/hold semantics land with batched dispatch;
- * pre-call check suffices while spawns are serial.
- */
-
 import type { MeridianError } from "@meridian/contracts/errors";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import { DEFAULT_MAX_SPAWN_DEPTH, type TreeBudget } from "@meridian/contracts/spawn";
 
-/**
- * Operator-only depth override for a new spawn tree. The client cannot set
- * depth: it comes from host env at tree creation, never from spawn tool args.
- */
 export function resolveMaxSpawnDepth(env: {
   MERIDIAN_MAX_SPAWN_DEPTH?: string | undefined;
 }): number {

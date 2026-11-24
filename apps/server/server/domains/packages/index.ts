@@ -1,5 +1,3 @@
-// Public package reading, compilation, catalog, and persistence surface.
-
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
 export { createGithubPackageFetcher } from "./adapters/github-package-fetcher.js";
 export {

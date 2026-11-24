@@ -1,8 +1,3 @@
-/**
- * The built-in packages, read once at boot: the launch agents from disk (or the bundled Nitro
- * assets) and the General agent. The catalog compiles them like any level's files.
- */
-
 import { access, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -98,7 +93,6 @@ async function materializeLaunchAgentPackageFromNitroAssets(): Promise<string> {
   return packageDir;
 }
 
-/** General adds no persona to the shared host prompt and pins the configured default model. */
 export function generalAgentSource(model: string): AgentSourceSnapshot {
   const frontmatter = rewriteBlock([
     ["name", "General"],

@@ -1,8 +1,3 @@
-/**
- * Drizzle ModelResponseRepository: SQL for model response rows. Create is
- * replay-idempotent by producer-minted id: re-applying the same journal event
- * returns the existing row instead of clobbering or duplicating it.
- */
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type {
@@ -61,7 +56,6 @@ export async function writeModelResponse(
   return { row: mapModelResponse(row), inserted: true };
 }
 
-/** A response the provider metered. Rows from calls stopped before output record only that a call was made. */
 const hasMeteredUsage = or(
   gt(schema.modelResponses.inputTokens, 0),
   gt(schema.modelResponses.outputTokens, 0),

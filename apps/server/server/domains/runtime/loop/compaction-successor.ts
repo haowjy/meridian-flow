@@ -1,4 +1,3 @@
-/** Retry-local compaction values and the reusable placeholder completion transaction. */
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
@@ -57,10 +56,8 @@ export type PreparedCompaction =
       metadata: JsonObject;
       provisionalBakeId: string;
       composition: Awaited<ReturnType<typeof composeLivePromptBake>>;
-      /** The newest saved Agent's binding the bake was composed from; written with the boundary. */
       refreshedBinding: Awaited<ReturnType<OrchestratorDeps["agentCatalog"]["refreshBinding"]>>;
       summaryBlock: ReturnType<typeof contentForBlockInput>;
-      /** The documents the compaction re-shows after its summary, persisted on its turn. */
       reshown: ReshownDocuments;
       tokensAfter: number;
       model: string;
@@ -74,11 +71,8 @@ export type PreparedCompaction =
 
 interface ReshownDocuments {
   blocks: ReturnType<typeof contentForBlockInput>[];
-  /** Recorded with the blocks: a fresh frontier chain, like an @-mentioned document's. */
   evidence: ReferenceEvidence;
-  /** Documents whose whole text was re-shown: only their copies are elided from the tail. */
   fullyReshownDocumentIds: ReadonlySet<string>;
-  /** The admitted labels, in read order: the summary's list after the reads. */
   labels: string[];
 }
 
@@ -111,11 +105,6 @@ function fittingEstimate(context: AssembledNextTurnContext) {
   return { tokens, tokenizer };
 }
 
-/**
- * Reads the pre-compaction history's model-ranked selections and recent documents, through the
- * reference reader (the server's one read door), each as a block on the compaction turn with
- * evidence recorded like an @-mentioned document's: a frontier chained from nothing.
- */
 async function reshowImportantFiles(args: {
   deps: OrchestratorDeps;
   input: RunLoopInput;
@@ -168,7 +157,6 @@ async function reshowImportantFiles(args: {
         input.signal?.throwIfAborted();
         return read.evidence ? { ...read, text: referenceReadText(read.result) } : null;
       } catch (error) {
-        // A document that cannot be re-shown costs the compaction nothing but that document.
         if (input.signal?.aborted) throw error;
         emitEvent(deps.eventSink, {
           level: "warn",
@@ -270,9 +258,6 @@ export async function prepareCompactionSuccessor(args: {
       recorded,
       revisions: deps.documentRevisions,
     });
-    // The successor's bake and its first request read the newest save; the binding row itself is
-    // replaced in the boundary's transaction (`completeCompactionCurrent`), so a retry repeats both.
-    // A failed catalog read keeps the current binding: it never fails the compaction or the reply.
     const refreshedBinding = await deps.agentCatalog
       .refreshBinding(thread.userId, thread.projectId, thread)
       .catch((error: unknown) => {
@@ -331,12 +316,10 @@ export async function prepareCompactionSuccessor(args: {
       ).length,
       tokensBefore: decision.tokensBefore,
     };
-    // The request this compaction would hand the successor, including its final summary text.
     const stage = (reshown: ReshownDocuments) => {
       const summary = [parsed.summary, documentsSection(reshown.labels)]
         .filter(Boolean)
         .join("\n\n");
-      // Projection reads only the summary text; its provisional block is not persisted.
       const projectedSummary = localBlockFromEvent(
         contentForBlockInput({
           ...blockInput,
@@ -412,7 +395,6 @@ export async function prepareCompactionSuccessor(args: {
     const base = await staged.assemble([], []);
     const baseEstimate = fittingEstimate(base.assembled);
     let tokensAfter = baseEstimate.tokens;
-    // The picker reserves the written list before admitting document text.
     const reshown = await reshowImportantFiles({
       ...args,
       policies,
@@ -425,7 +407,6 @@ export async function prepareCompactionSuccessor(args: {
     });
     if (reshown.blocks.length > 0) {
       staged = stage(reshown);
-      // Measurement: the recorded `tokensAfter` is what the successor really carries.
       tokensAfter = fittingEstimate((await staged.assemble([], [])).assembled).tokens;
     }
     const summaryBlock = contentForBlockInput({
@@ -468,7 +449,6 @@ export async function prepareCompactionContext(
   };
 }
 
-/** Caller holds the delivery transaction. Failure and success settle the same paid rows. */
 export async function completeCompactionCurrent(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -563,7 +543,6 @@ export async function completeCompactionCurrent(input: {
   return { turn, blocks };
 }
 
-/** One live failure landing; caller can reuse it without running a summary phase. */
 export async function failCompactionSuccessor(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;

@@ -1,5 +1,3 @@
-/** Plans the pinned request and longest tool-group-aligned retained suffix. */
-
 import type { Block, Turn } from "@meridian/contracts/threads";
 import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 import {
@@ -18,7 +16,6 @@ export const DEFAULT_COMPACTION_TAIL_FRACTION = 0.25;
 export interface CompactedThrough extends CompactionCut {}
 
 export interface PlanCompactionInput {
-  /** Raw effective transcript, not a projected history containing a synthetic summary turn. */
   turns: readonly Turn[];
   blocks: readonly Block[];
   fitLimitTokens: number;
@@ -27,21 +24,16 @@ export interface PlanCompactionInput {
   fixedOverheadTokens: number;
   tokenizer: TokenizerFamily;
   tailBudgetFraction?: number;
-  /** Manual compaction fallback: summarize through the latest safe boundary and retain only pins. */
   minimalTail?: boolean;
-  /** Optional assembled-token estimate; otherwise a conservative JSON bytes/3 estimate is used. */
   estimateTurnTokens?: (turn: Turn, blocks: readonly Block[]) => number;
 }
 
 interface CompactionPlanBase {
-  /** Every outstanding directed request, plus the newest writer request. */
   pinnedRequests: Turn[];
-  /** The ordered retained tail after the summary; it contains the pin at its original or lifted place. */
   retainedSuffix: RetainedTurnSlice[];
   minimalTailFits: boolean;
   tailBudgetTokens: number;
   minimalTailTokens: number;
-  /** Retained-suffix estimate excludes the separately reserved pinned-request cost. */
   retainedSuffixTokens: number;
 }
 
@@ -171,7 +163,6 @@ function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | 
     },
   );
   if (!cut) throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);
-  // An empty cut covers nothing that is left, so every candidate is after it.
   return cut.turnId === null ? null : cut;
 }
 
@@ -362,7 +353,6 @@ function noCompactionPlan(input: {
   };
 }
 
-/** Plans one raw effective transcript's retained tail with fixed prompt/schema cost reserved. */
 export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   const turns = orderTurnsByPosition(input.turns);
   const classifiedTurns = classifyTurns(turns);
@@ -454,7 +444,6 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   const minimumRetainedTokens = retainedSlicesCost(minimumTail, costsById);
   const minimalTailTokens = fixedOverheadTokens + minimumRetainedTokens;
 
-  // Walk from the minimum safe suffix toward older candidates; suffix costs are precomputed once.
   let selectedIndex = minimumIndex;
   while (selectedIndex > 0) {
     const earlierIndex = selectedIndex - 1;

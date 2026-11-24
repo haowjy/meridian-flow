@@ -1,12 +1,3 @@
-/**
- * Save: the one path from a package's files to the version new chats use, for the writer's button
- * and the AI's tool. A package is checked on its own, from one cut of its files. An error in one
- * Agent's or skill's file stops that edit from being used and the rest saves: the item keeps the
- * files of its last saved version when that was usable, and is out of the package otherwise. Only
- * an error in `mars.toml`, which leaves nothing readable, fails the Save and keeps the previous
- * saved version. Also what the Agents tab says of each package (`statuses`), which is computed
- * from the files and the latest Save, never stored.
- */
 import {
   type AgentFileChange,
   type AgentFinding,
@@ -32,11 +23,6 @@ import {
 } from "./package-levels.js";
 
 export interface PackageSaver {
-  /**
-   * Saves each package on its own. `"all"` is every package with files or a saved version, in the
-   * user's level and, with `projectId`, the project's: a removed import included. The caller has
-   * authorized `projectId`.
-   */
   savePackages(
     userId: string,
     input: {
@@ -45,13 +31,6 @@ export interface PackageSaver {
       packages: "all" | Array<{ level: AgentsLevel; folder: string }>;
     },
   ): Promise<SaveOutcome[]>;
-  /**
-   * Saves the version before `saveId` again and brings the previous save's text into the
-   * package's files, each merged under its document's lock against what it holds then (base: that
-   * Save's text): an edit made since survives, and the writer's text wins where both changed the
-   * same text. A file the previous save lacked or the writer deleted stays as it is. The files and
-   * the new Save commit together or not at all. `undone` is false when a later Save exists: nothing changes.
-   */
   undoSave(
     userId: string,
     input: { projectId?: string; level: AgentsLevel; saveId: string },
@@ -60,7 +39,6 @@ export interface PackageSaver {
 
 const WRITER_LEVELS = ["user", "project"] as const;
 
-/** The files the writer has: the manifest `splitLevel` makes for a level's own files is not one. */
 function writtenFiles(
   files: Record<string, string> | undefined,
   level: AgentsLevel,
@@ -100,7 +78,6 @@ const findingOf = (item: AgentFinding): AgentFinding => ({
   message: item.message,
 });
 
-/** The packages the files hold at a level, by folder. */
 function packagesOf(level: PackageLevel | undefined): Map<string, CompiledPackage> {
   const packages = new Map<string, CompiledPackage>();
   if (level?.root) packages.set("", level.root);
@@ -128,13 +105,6 @@ export function createPackageSaver(input: {
   const savedFiles = async (save: PackageSave | null | undefined) =>
     (await savedPackageOf(save))?.files;
 
-  /**
-   * What a Save installs for `pkg`: its files, except that an Agent or skill with an error keeps
-   * the files of its last saved version when that was usable, so a typo does not take a working
-   * Agent away. Items with an error of their own go first: one that only names a broken
-   * subagent is usually fixed by that, and keeps the writer's good edit. `kept` are the
-   * package-relative paths of the items that kept their saved version.
-   */
   function keepLastGood(pkg: CompiledPackage, saved: CompiledPackage | undefined) {
     let effective = pkg;
     const kept: string[] = [];
@@ -177,7 +147,6 @@ export function createPackageSaver(input: {
     return { effective, kept };
   }
 
-  /** Each package's state, from the files `all` and the latest Saves. */
   async function statuses(all: PackageLevel[], saves: Saves): Promise<AgentPackageStatus[]> {
     const result: AgentPackageStatus[] = [];
     for (const level of WRITER_LEVELS) {
@@ -190,8 +159,6 @@ export function createPackageSaver(input: {
         const savedPackage = await savedPackageOf(saved);
         const check = pkg ? checkPackage(pkg) : undefined;
         const blocked = check !== undefined && check.blocking.length > 0;
-        // State and changes measure what a Save would install: an edit Save holds back at its last
-        // good version (an Agent with a new error) is not a change.
         const effective = pkg && !blocked ? keepLastGood(pkg, savedPackage).effective : pkg;
         const state: AgentPackageStatus["state"] = !effective
           ? saved
@@ -240,7 +207,6 @@ export function createPackageSaver(input: {
             })
           : packages;
 
-      /** Each saved Agent name and whether it is a usable Agent (false: a name two packages bring). */
       const namesOf = (all: PackageLevel[]) =>
         new Map(winners(agentsOf(all)).map((entry) => [entry.slug, entry.value !== null]));
 
@@ -250,8 +216,6 @@ export function createPackageSaver(input: {
         const owner = levels.ownerOf(level, userId, projectId);
         if (!owner) continue;
         const pkg = packagesOf(all.find((item) => item.level === level)).get(folder);
-        // The saved version a Save builds on is read, and the result published, under the package's
-        // one ordering, so a concurrent Save is never put back by a decision made on an older read.
         const { value: outcome, row } = await store.settleSave<SaveOutcome | undefined>(
           owner,
           folder,
@@ -266,7 +230,6 @@ export function createPackageSaver(input: {
                 ? keepLastGood(pkg, savedPackage)
                 : { effective: pkg, kept: [] as string[] };
             const leftOut = effective && !blocked ? checkPackage(effective).leftOut : [];
-            // An error on an item that now runs (one only a broken subagent held back) is no longer news.
             const shown = shownFindings(check?.findings ?? [])
               .filter(
                 (item) =>
@@ -321,7 +284,6 @@ export function createPackageSaver(input: {
           outcome: "saved",
           saveId: row.id,
           renamed: [...before].flatMap(([slug, usable]) => {
-            // A name two packages bring stays as an unavailable item; both Agents are renamed.
             const names = [...after.keys()].filter(
               (name) => name.startsWith(`${slug}__`) && !before.has(name),
             );
@@ -343,8 +305,6 @@ export function createPackageSaver(input: {
           const folder = undone.folder;
           const was = writtenFiles(await savedFiles(undone), level, folder);
           const to = writtenFiles(await savedFiles(target), level, folder);
-          // Only a file both versions have, and that the Save changed: one the Save added, or
-          // that the previous save lacked, stays, and so does one the writer deleted.
           const files = Object.fromEntries(
             Object.keys(was)
               .filter((path) => Object.hasOwn(to, path) && was[path] !== to[path])

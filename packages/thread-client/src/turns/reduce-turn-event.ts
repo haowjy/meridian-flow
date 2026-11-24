@@ -1,4 +1,3 @@
-/** Applies accepted stream events to a turn. */
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
 import {
   blockContentRecord,
@@ -49,10 +48,8 @@ export type TurnStore = {
     turnId: string,
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
-  /** Adds the write-mode divider a `meridian.write_mode.switched` frame names (see `ensureSwitchTurnIn`). */
   ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  /** Adapter hook: ask the host to refetch. Reduction never depends on it. */
   invalidateThreadSnapshot?(threadId: string): void;
   patchTurnStatus(
     threadId: string,
@@ -60,22 +57,12 @@ export type TurnStore = {
     status: Turn["status"],
     patch?: Partial<Pick<Turn, "completedAt" | "error" | "finishReason">>,
   ): void;
-  /**
-   * Removes turns that left the conversation (handed-back messages) and keeps a tombstone at
-   * `seq`, so a snapshot read before the removal cannot bring them back.
-   */
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
-  /**
-   * Stamps failed turns that left the conversation (`meridian.turns.forgotten`) and remembers every id, so
-   * a stamp that arrives before its turn is hydrated still applies, and an older snapshot can't clear it.
-   */
   markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void;
-  /** Takes a `meridian.ask` frame's ask; a status never moves back (see `asks/`). */
   receiveAsk(threadId: string, ask: ThreadAsk): void;
   bumpEventsApplied(threadId: string): number;
 };
 
-/** The addressed block vocabulary has one reducer owner, independent of a run. */
 export function isDurableBlockEvent(event: AGUIEvent): boolean {
   return event.type === EventType.CUSTOM && event.name === "meridian.block.upserted";
 }
@@ -112,19 +99,15 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
 }
 
 export type TurnReducer = {
-  /** `seq` is the event's stream seq; the frames that remove turns need it for their tombstones. */
   applyEvent(threadId: string, event: AGUIEvent, seq?: string): void;
-  /** False means the owned vocabulary was malformed or not for this thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
 };
 
 export type TurnReducerOptions = {
   store: TurnStore;
-  /** ISO-8601 timestamp source; the reducer never reads a clock itself. */
   now: () => string;
 };
 
-/** One reducer per store. */
 export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
   const { store, now } = options;
   function activeAssistantTurn(store: TurnStore, threadId: string): Turn | null {
@@ -144,10 +127,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     return turn.blocks.find((block) => block.id === blockId) ?? null;
   }
 
-  // Returns the LAST block matching blockId. Text segments are accumulated by
-  // messageId; if a turn ever surfaces two blocks with the same id (e.g. a
-  // resumed text segment), deltas must land on the most-recently-opened block,
-  // not the first. find() would mis-route to the stale first block.
   function lastBlockById(turn: Turn, blockId: string): Block | null {
     for (let i = turn.blocks.length - 1; i >= 0; i -= 1) {
       const block = turn.blocks[i];
@@ -222,21 +201,11 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     toolName: string;
     input?: JsonValue;
     status: "complete" | "partial";
-    // The tool's typed result; mirrors the durable block's `content.result`.
     result?: JsonValue;
     message?: string | null;
     isError?: boolean;
-    // Live, append-only interleaved stdout/stderr buffer streamed via the
-    // `meridian.tool.output_delta` CUSTOM event. Distinct from `result`, which is
-    // the authoritative final tool result. Kept past completion so the card can
-    // still show the streamed log alongside the structured result.
     streamedOutput?: string | null;
-    // The calls a running `mcp_run` script has made, from `meridian.tool.connection_call`:
-    // `{ sequence, id, arguments, call? }`, `call` set once the call finished.
     connectionCalls?: JsonValue[] | null;
-    // Server-authored result metadata (e.g. the work receipt). Mirrors the
-    // durable block's `content.metadata` so live and cold-loaded tool views
-    // read the same field.
     metadata?: Record<string, JsonValue> | null;
   }): Block {
     return baseBlock({
@@ -271,10 +240,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     result: JsonValue;
     message: string | null;
     isError: boolean;
-    // Carried across every tool-block upsert so TOOL_CALL_ARGS/END/RESULT and
-    // tool.progress activity events don't wipe the running stdout/stderr log.
-    // Intentionally kept past completion — the typed `result` is what the card's
-    // preview consumes, but the streamed buffer remains visible in details.
     streamedOutput: string | null;
     connectionCalls: JsonValue[] | null;
     metadata: Record<string, JsonValue> | null;
@@ -300,7 +265,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
       : null;
   }
 
-  /** The typed result the server sends beside the model-facing text, when the tool has one. */
   function toolResultEventResult(event: object): JsonValue {
     return ((event as Record<string, unknown>).result as JsonValue | undefined) ?? null;
   }
@@ -441,7 +405,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     return { toolCallId, stream, text };
   }
 
-  /** A call a running script made: `call` is set once it finished. */
   function parseConnectionCallPayload(value: unknown): {
     toolCallId: string;
     sequence: number;
@@ -518,7 +481,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     return readString(event.toolCallName) ?? readString(event.toolName) ?? "tool";
   }
 
-  /** False means the owned vocabulary was malformed, not an opaque CUSTOM event. */
   function applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean {
     if (!isDurableBlockEvent(event) || (eventH(event) && event.threadId !== threadId)) return false;
     if (event.type !== EventType.CUSTOM) return false;
@@ -528,7 +490,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     return true;
   }
 
-  /** Applies one live AG-UI event to the unified thread store. */
   function applyEvent(threadId: string, event: AGUIEvent, seq?: string): void {
     if (eventH(event) && event.threadId !== threadId) return;
 
@@ -717,8 +678,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             toolCallId: event.toolCallId,
             toolName: existingTool ? toolNameFromBlock(existingTool) : toolNameFromEvent(event),
             ...preservedToolFields(content),
-            // Gateway adapters emit `delta` as an incremental args-json fragment;
-            // replacing here drops prior fragments and corrupts the tool input.
+            // keep: Tool args deltas are incremental fragments; append them instead of replacing prior input
             input: `${existingInput}${event.delta}`,
             status: "partial",
           }),
@@ -763,9 +723,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
                 toolName: toolNameFromBlock(existingTool),
                 ...preservedToolFields(existingContent),
                 status: "partial",
-                // Override message from progress payload — preservedToolFields
-                // would otherwise carry the prior message, but progress *is* the
-                // message update channel for live tools.
                 message,
               }),
             );
@@ -886,17 +843,12 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           }
           const turn = activeAssistantTurn(store, threadId);
           if (!turn) return;
-          // Deltas can race ahead of TOOL_CALL_START; without a host block to
-          // append into we drop quietly — TOOL_CALL_START will create a fresh
-          // block and the next delta (or the final RESULT) lands correctly.
+          // keep: Output deltas can arrive before TOOL_CALL_START; drop them quietly until a host tool block exists
           const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
           if (existingTool?.blockType !== "tool_use") return;
           const content = blockContentRecord(existingTool);
           const prior = typeof content.streamedOutput === "string" ? content.streamedOutput : "";
-          // Single interleaved buffer (stdout + stderr in arrival order). This
-          // is the terminal-style view a user expects when watching a long
-          // streaming tool — distinguishing streams would force two columns or
-          // a markup pass for a marginal gain.
+          // keep: Keep one stdout and stderr buffer in arrival order
           const nextBuffer = `${prior}${payload.text}`;
           store.upsertAssistantBlock(
             threadId,
@@ -919,8 +871,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           if (!payload) return;
           const turn = activeAssistantTurn(store, threadId);
           if (!turn) return;
-          // A call row with no tool block to join is dropped; the final result carries every call.
-          // The server's own block replaces the live one (its id is not `tool-<call id>`), so the call id finds it.
           const existingTool = turn.blocks.find(
             (block) =>
               block.blockType === "tool_use" && toolCallIdFromBlock(block) === payload.toolCallId,
@@ -978,14 +928,8 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           return;
         }
         if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
-        // Subagent activity is live read-model state consumed via ThreadLiveState;
-        // it is not transcript content, so it never becomes a turn block. The
-        // spawn hint is not either: the invocation card carries its `from`
-        // source durably, and its value holds the child's whole prompt.
         if (event.name === "meridian.subagent.activity" || event.name === "meridian.agent.spawn")
           return;
-        // Waiting messages that left the chat: the turns go, and a tombstone at this frame's
-        // seq keeps an older snapshot from bringing them back.
         if (event.name === MESSAGES_HANDED_BACK_EVENT) {
           const handedBack = readMessagesHandedBack(event.value);
           if (handedBack) store.removeTurns(threadId, handedBack.userTurnIds, seq ?? "0");
@@ -999,7 +943,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           }
           const ask = parsed.data;
           store.receiveAsk(threadId, ask);
-          // Resolution finishes the asking turn; RUN_FINISHED owns awaiting_answer.
           const next = askingTurnStatus(ask);
           const turn = turnById(store, threadId, ask.turnId);
           if (next && turn && turn.status !== next.status && next.from.includes(turn.status))
@@ -1008,28 +951,18 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             });
           return;
         }
-        // Failed turns the chat left behind: stamped, never removed, so the graph still chains through them.
+        // keep: Forgotten turns are stamped, never removed, so retry chains still connect through them
         if (event.name === TURNS_FORGOTTEN_EVENT) {
           const forgotten = readTurnsForgotten(event.value);
           if (forgotten) store.markForgotten(threadId, forgotten.turnIds, forgotten.byTurnId);
           return;
         }
-        // The switch turn is not announced by a turn event, so its frame is how a follower gets
-        // the divider; the run-state slice answers the writer's control from the same frame.
         if (event.name === WRITE_MODE_SWITCHED_EVENT) {
           const switched = readWriteModeSwitched(event.value);
           if (switched) store.ensureSwitchTurn(threadId, switched, seq ?? "0");
           return;
         }
-        // Durable custom projections are consumed by live listeners — the
-        // useThreadWorkProjections Work-binding listener — so they are not transcript
-        // content. Falling through here rendered each one as an "Unknown
-        // component" note under the digest for the duration of the turn.
-        if (
-          event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-          // The run-state record is the chat's run-state slice's.
-          event.name === RUN_STATE_EVENT
-        ) {
+        if (event.name === WORK_CONTEXT_PROJECTION_EVENT || event.name === RUN_STATE_EVENT) {
           return;
         }
         const turn = activeAssistantTurn(store, threadId);

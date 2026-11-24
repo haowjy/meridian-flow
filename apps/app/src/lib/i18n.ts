@@ -31,7 +31,6 @@ function readNavigatorLocale(): SupportedLocale | null {
   return null;
 }
 
-/** Locale-resolution seam. */
 export function resolveLocale(_request?: unknown): SupportedLocale {
   if (typeof window !== "undefined") {
     return (

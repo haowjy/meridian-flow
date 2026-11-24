@@ -1,10 +1,7 @@
-/** Hash the exact serialized system, skill inventory, and advertised-tool bake. */
-
 import { createHash } from "node:crypto";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { JsonValue } from "@meridian/contracts/threads";
 
-/** Every field a bake holds goes in: a field left out would let two different bakes share a row. */
 export function hashPromptBakeContent(input: {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];

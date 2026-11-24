@@ -170,8 +170,6 @@ describe("projectMediaBlocksForModel", () => {
       },
     });
 
-    // The late image evicts a chunk, oldest first, down to half the budget, so the next arrivals
-    // fit without moving the cached prefix again. The candidate then fills the remaining budget.
     expect(imageIds(projection.blocks)).toEqual(["candidate", "late"]);
     expect(projection.decisions).toEqual([
       { blockId: "candidate", partIndex: 0, included: true, decidedByCompaction: true },

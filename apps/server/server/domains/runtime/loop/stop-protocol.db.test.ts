@@ -1,13 +1,7 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/**
- * Stop and hand-back against PostgreSQL: the design A section 3 rows whose risk is a commit order under
- * the thread lock, adoption refusal, expiry, a repair path or a conversation read. The rows whose risk
- * is the decision alone are `stop-rule.test.ts`. Every case also runs the publication parity check.
- */
-
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { effortLevels } from "@meridian-flow/mars-schema";
 import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { createGateway } from "@meridian-flow/runtime/gateway";
@@ -38,23 +32,19 @@ else
     const { assertPublicationHooks, openAuditedDatabase } = await import(
       "../../../test-support/run-state-publication.js"
     );
-    // Publication pins run in a database this suite owns and drops.
     const audited = await openAuditedDatabase(url, { max: 8 });
     const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(async () => {
-      // Background work a run detached (a wake, a renewal) must settle before its database goes.
       await processDetachedWork.drain(8_000);
       await audited.close();
     });
-    // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
     const lowUsage = { inputTokens: 100, outputTokens: 10 };
     type Rig = Awaited<ReturnType<typeof fixture>>;
 
-    /** No auto-compaction and no wake after a release: each test starts every run it wants. */
     async function rigWith(options: Parameters<typeof fixture>[0] = {}) {
       const rig = await fixture({
         gateway: scriptedGateway({ usage: lowUsage }),
@@ -67,8 +57,6 @@ else
     const pausedGateway = (pauseAt: number[] = [1]) =>
       scriptedGateway({ usage: lowUsage, pauseAt });
 
-    /** The press a tab sends from the record it holds: the current one, unless a field is overridden. */
-    /** `remote` presses through the delivery port: the holder gets no local abort, as on another server. */
     async function press(
       rig: Rig,
       override: Partial<{
@@ -126,10 +114,8 @@ else
     }
     const seqOf = async (rig: Rig, id: string) => (await rowOf(rig, id)).seq;
 
-    /** The request text of every model call so far. */
     const requestText = (rig: Rig) => JSON.stringify(rig.gateway.requests);
 
-    /** A reply held at its first model call: the execution is open and its receipt holds the message. */
     async function heldReply(rig: Rig, text: string) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: text });
       const done = run.execute();
@@ -159,7 +145,6 @@ else
       return { promise, open };
     }
 
-    /** A summarizer that holds at its first call until the test lets it finish. */
     function heldSummarizer() {
       const started = gate();
       const released = gate();
@@ -176,11 +161,6 @@ else
       return { summarizer, started: started.promise, release: released.open };
     }
 
-    /**
-     * An execution whose holder died: its lease row is expired and binds a pending reply or compaction
-     * placeholder with `receipt`, and nothing holds the claim. The record is published as production
-     * would have, so only repair and the press move it from here.
-     */
     async function deadExecution(rig: Rig, kind: "assistant" | "compaction", receipt: string[]) {
       const executionId = crypto.randomUUID();
       const lease = await rig.runClaim.startExecution(
@@ -209,14 +189,12 @@ else
       await rig.runClaim.abandon(lease);
       return { executionId, turn };
     }
-    /** The next claim holder's repair of whatever the dead holder left. */
     async function repair(rig: Rig) {
       await rig.runClaim.withExclusiveThread(rig.threadId as never, () =>
         rig.delivery.settleStaleExecution(rig.threadId as never),
       );
       await processDetachedWork.drain();
     }
-    /** Whether an execution that reserved a turn has ended: its lease row is gone. */
     async function ended(rig: Rig, executionId: string | null) {
       if (!executionId) return false;
       const carried = (await rig.repos.turns.listByExecution(rig.threadId as never, executionId))
@@ -265,7 +243,6 @@ else
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
       ).execute();
       await processDetachedWork.drain();
-      // E1 ended at the yield; the wake has not run. The switch waits for a run, then the press arrives.
       expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
 
       const response = await press(rig, { seenThrough: await seqOf(rig, m2) });
@@ -273,7 +250,6 @@ else
       expect(text(response)).toEqual(["M2 behind the switch"]);
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
       const turns = await rig.repos.turns.listByThread(rig.threadId);
-      // No run started, so the switch is still pending and the mode unchanged.
       expect(
         turns.some((turn) => (turn.metadata as { kind?: string })?.kind === "write_mode_switch"),
       ).toBe(false);
@@ -281,7 +257,6 @@ else
       expect(response.runState.items.map((item) => item.control)).toEqual([
         { kind: "write_mode", mode: "draft" },
       ]);
-      // No reply B: the wake finds nothing.
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
       expect(gateway.requests).toHaveLength(1);
@@ -293,7 +268,6 @@ else
       let m2 = "";
       let seenThrough = 0;
       let armed = false;
-      // The first peek once armed is the wake's unlocked preparation, after it read [M2, M3].
       const notices = {
         async peek() {
           if (armed) pressed ??= press(rig, { seenThrough });
@@ -325,8 +299,6 @@ else
       let injecting = false;
       let peeks = 0;
       const lockedAttempt = gate();
-      // Two stale preparations, then the final locked attempt: it holds the thread lock a moment so the
-      // press, sent from outside the attempt, queues behind it.
       const notices = {
         async peek() {
           if (!armed || injecting) return [];
@@ -359,7 +331,6 @@ else
       const adopted = (await leaseRow(rig))?.adoptedMessageIds ?? [];
       expect(adopted).toHaveLength(3);
       expect((await leaseRow(rig))?.cancelRequested).toBe(false);
-      // The alternative: the watermark covers the whole adopted batch, so E2 is cancelled and answers all three.
       const covering = await press(rig, { seenThrough: await seqOf(rig, adopted[2] as string) });
       expect(covering).toMatchObject({ handedBack: [], answered: expect.arrayContaining(adopted) });
       expect(covering.cancelledExecutionId).not.toBeNull();
@@ -403,9 +374,6 @@ else
       });
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([run.userTurnId]);
 
-      // The press commits after the reservation and before execute(): the run holds M1 in its
-      // prepared history and has no local abort. The heartbeat has also expired; Stop still cancels
-      // the held lease, and execute() must still see it.
       await db
         .update(schema.threadRunLeases)
         .set({ expiresAt: new Date(Date.now() - 60_000) })
@@ -449,7 +417,6 @@ else
       await done;
       await processDetachedWork.drain();
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
-      // The compact was acknowledged when its run started; Stop never touches a control.
       expect(await rig.delivery.selectPending(rig.threadId as never)).toEqual([]);
       expect((await rig.repos.turns.findById(run.executionTurnId))?.status).toBe("cancelled");
       expect(control.deliveredAt).toBeNull();
@@ -465,12 +432,10 @@ else
         .set({ expiresAt: new Date(Date.now() - 60_000) })
         .where(eq(schema.threadRunLeases.threadId, rig.threadId));
 
-      // From another server: the holder gets no local abort and can only see the durable flag.
       const response = await press(rig, {}, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
       expect((await leaseRow(rig))?.cancelRequested).toBe(true);
       expect((await rig.runClaim.read(rig.threadId as never)).kind).not.toBe("awake");
-      // The holder is alive: it renews after the expiry and reads the flag the press set.
       const held = await leaseRow(rig);
       expect(
         await rig.runClaim.renew({
@@ -498,7 +463,6 @@ else
       expect(text(response)).toEqual(["M2 waits"]);
       expect(response.answered).toEqual([m1]);
       expect((await leaseRow(rig))?.cancelRequested).toBe(true);
-      // The record shows the execution until repair settles it.
       expect(response.runState.execution?.executionId).toBe(dead.executionId);
 
       await repair(rig);
@@ -520,7 +484,6 @@ else
         role: "compaction",
       });
 
-      // The press lands on the live holder; then the holder dies before it closes.
       const response = await press(
         rig,
         { seenThrough: await seqOf(rig, m1), seenExecutionId: null },
@@ -536,7 +499,6 @@ else
         holderId: held?.holderId as never,
       });
       await repair(rig);
-      // The dead run's in-process handle must go before the next claim can start.
       await run.execute();
       await processDetachedWork.drain();
       expect((await rowOf(rig, m1)).by).toBeNull();
@@ -557,8 +519,6 @@ else
       let injecting = false;
       let peeks = 0;
       const lockedAttempt = gate();
-      // As in row 9: two stale preparations, then the final locked attempt, which holds the thread
-      // lock while the x queues behind it.
       const notices = {
         async peek() {
           if (!armed || injecting) return [];
@@ -636,7 +596,6 @@ else
       model: "gpt-5.6-luna",
       provider: "openai",
     };
-    /** A reply that reaches tool boundaries at calls 1 and 2, then holds at the given call. */
     const boundaryGateway = (holdAt: number) =>
       scriptedGateway({
         usage: lowUsage,
@@ -645,7 +604,6 @@ else
       });
 
     it("row 41: Send now with a frozen queue does not cancel the reply that adopted a later message after an x took M2 back", async () => {
-      // Risk: reading only the ids scope misses M3, which E adopted, and cancels the reply that answers it.
       const gateway = boundaryGateway(2);
       const rig = await rigWith({ gateway });
       const { run, done } = await heldReply(rig, "M1");
@@ -670,7 +628,6 @@ else
     });
 
     it("row 42: Send now is refused once the reply adopted a waiting message and its acknowledgement cleared the receipt", async () => {
-      // Risk: with the receipt empty, only the delivering turn's row proves the execution took W on.
       const gateway = boundaryGateway(3);
       const rig = await rigWith({ gateway });
       const { run, done } = await heldReply(rig, "M1");
@@ -709,7 +666,6 @@ else
       expect(replay2).toMatchObject({ answered: [], gone: [m2] });
       const replay1 = await handBack(rig, r1, [m2]);
       expect(content(replay1)).toEqual(content(first));
-      // Another body under a used id is a conflict, however it would have decided.
       await expect(handBack(rig, r1, [m3])).rejects.toBeInstanceOf(HandBackConflictError);
       expect((await rowOf(rig, m2)).handedBackBy).toBe(r1);
       expect((await rowOf(rig, m3)).handedBackBy).toBe(r2);
@@ -739,13 +695,10 @@ else
       ).thread;
       const graph = turnGraph(rig.repos.turns);
       const [turn2, turn3] = [await graph.findById(m2 as never), await graph.findById(m3 as never)];
-      // The graph keeps both turns: M3 chains after the hidden M2, at its own position.
       expect(turn3?.prevTurnId).toBe(m2);
       expect(turn3?.position).toBe((turn2?.position ?? 0) + 1);
       expect((await graph.listByThread(rig.threadId as never)).map(({ id }) => id)).toContain(m2);
 
-      // The port reads a later reader reaches without knowing about hand-back: all omit M2. Its blocks
-      // stay stored for diagnostics, so they are looked up by the table.
       const turns = rig.repos.turns;
       expect(await turns.findById(m2 as never)).toBeNull();
       expect((await turns.listByThread(rig.threadId as never)).map(({ id }) => id)).not.toContain(
@@ -762,7 +715,6 @@ else
         (await rig.repos.blocks.listByThread(rig.threadId as never)).map(({ turnId }) => turnId),
       ).not.toContain(m2);
 
-      // The snapshot.
       const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
       const hub = {
         headSeq: async () => 0n,
@@ -787,7 +739,6 @@ else
       expect(JSON.stringify(snapshot.turns)).not.toContain("M2 hidden words");
       expect(snapshot.turns.find(({ id }) => id === m3)?.siblingIds).toEqual([m3]);
 
-      // Deliveries and the latest requester text.
       expect((await rig.repos.turns.listMessageDeliveries(rig.threadId as never)).has(m2)).toBe(
         false,
       );
@@ -797,7 +748,6 @@ else
         ].join(""),
       ).toContain("M3 kept words");
 
-      // Both transcript page units, their counts and ordinals, on the chat and on the fork.
       const { readTranscriptPage, resolveTranscriptSpans } = await import("../../threads/index.js");
       for (const thread of [main, fork]) {
         for (const unit of ["item", "turn"] as const) {
@@ -823,7 +773,6 @@ else
         expect(walked).not.toContain("");
       }
 
-      // The derive source and the model: the loader's conversation, then a reply on each chat.
       const { loadThreadConversationContext } = await import("../../threads/index.js");
       for (const thread of [main, fork]) {
         const conversation = await loadThreadConversationContext(rig.repos, thread);
@@ -851,7 +800,6 @@ else
         expect(JSON.stringify(request)).toContain("M3 kept words");
       }
 
-      // The chat list: a handed-back message is neither the preview nor the activity head.
       const m5 = (await rig.send(rig.threadId, "M5 hidden preview")).userTurnId;
       await handBack(rig, crypto.randomUUID(), [m5]);
       const [head] = await db
@@ -865,7 +813,6 @@ else
         ].join(""),
       ).not.toContain("M5 hidden preview");
 
-      // A send after a handed-back leaf chains from the graph, and its reply never sees M5.
       const m6 = (await rig.send(rig.threadId, "M6 after the hidden leaf")).userTurnId;
       const last = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       await last.execute();
@@ -932,7 +879,6 @@ else
       });
       const done = run.execute();
       await held.started;
-      // A switch and a message behind it queue while C summarizes, so C yields at its boundary.
       await rig.delivery.enqueueControl({
         threadId: rig.threadId as never,
         provenance: { kind: "writer", actorId: rig.ids.user },
@@ -952,7 +898,6 @@ else
       expect((await rowOf(rig, run.userTurnId)).deliveredAt).toBeNull();
 
       await handBack(rig, crypto.randomUUID(), [run.userTurnId]);
-      // The next run builds its context over the pin and answers M2 without it.
       rig.setThreshold(100000);
       const next = await startDrain(rig);
       expect(await next.done).toMatchObject({ status: "complete" });
@@ -961,7 +906,6 @@ else
       const last = rig.gateway.requests.at(-1);
       expect(JSON.stringify(last)).not.toContain("M1 pinned words");
       expect(JSON.stringify(last)).toContain("M2 behind the switch");
-      // A cold summary over the same chat builds without the pin too.
       await rig.delivery.enqueue({
         id: crypto.randomUUID(),
         threadId: rig.threadId as never,
@@ -977,7 +921,6 @@ else
     });
 
     it("a stop before the provider output leaves a response row with no finish reason and missing usage", async () => {
-      // Risk: the stop stamp lives in the gateway's retry driver, so only a real gateway against an endpoint that never answers shows it.
       const arrived = gate();
       const model: ModelInfo = {
         id: "gpt-5.6-luna",
@@ -992,7 +935,6 @@ else
         inputModalities: ["text"],
       };
       const base = scriptedGateway({ usage: lowUsage });
-      // An endpoint that accepts the request and never answers: the provider output never starts.
       const silent = createServer(() => {});
       await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
       onTestFinished(() => {

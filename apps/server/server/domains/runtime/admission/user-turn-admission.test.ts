@@ -416,7 +416,6 @@ describe("UserTurnAdmission", () => {
   ])(
     "degrades %s identity in place without veto or retargeting",
     async (_label, resolutions, chatUploadMatches) => {
-      // A picture that can't be admitted fails the send, in the app's words for a failed upload.
       await expect(
         harness(null, resolutions, chatUploadMatches).service.admit(input()),
       ).rejects.toThrow("The upload failed.");
@@ -445,7 +444,6 @@ describe("UserTurnAdmission", () => {
   it("admits a New-chat upload by identity and records the address it now has, whatever its name", async () => {
     const h = harness(null, [availableResolution("uploads://@c1/moved.png")]);
     await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
-    // The stored message carries the same address as the metadata, with the label kept.
     const moved = "[map](uploads://@c1/moved.png)";
     expect(h.captured()?.blocks).toEqual([
       { type: "text", text: "see " },
@@ -478,7 +476,6 @@ describe("UserTurnAdmission", () => {
       },
     ]);
 
-    // Names the serializer escapes are re-spelled through it too, with the label kept.
     for (const name of ["my seal.png", "Issue #3.png", "100% Done.png", "a (b).png"]) {
       const chatUri = `uploads://@c1/${name}`;
       const spelled = (target: string) =>

@@ -1,4 +1,3 @@
-/** The queued controls in a durable run-state record, shared by every client before local overlays. */
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
 export function durableControls(items: readonly PendingInboxItem[]) {

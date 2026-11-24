@@ -16,15 +16,12 @@ import {
 } from "./tool-command";
 
 export type FoldToolCounts = {
-  /** Skill slugs the fold loaded, in call order. */
   invokedSkills: Set<string>;
   readDocuments: Set<string>;
   steps: number;
 };
 
-/** `FoldToolCounts` as plain numbers: what the view model carries and `./mf` prints. */
 export type FoldDigest = {
-  /** Skill slugs the fold loaded, in call order. */
   invokedSkills: string[];
   readDocuments: number;
   steps: number;
@@ -50,7 +47,6 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       continue;
     }
     const path = stringInput(toolInputObject(tool), "path");
-    // Successful writes belong to the turn receipt, not the process digest.
     const command = toolCommand(tool);
     const skill = stringInput(toolInputObject(tool), "name");
 
@@ -58,7 +54,6 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       invokedSkills.add(skill);
       continue;
     }
-    // A skill's own files are not the writer's documents; reading one is a step.
     if (!documentToolFailed(tool) && path && isReadCommand(command) && !skillFile(path)) {
       readDocuments.add(documentIdentity(path));
       continue;
@@ -66,20 +61,16 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     if (!documentToolFailed(tool) && path && isEditCommand(command)) {
       continue;
     }
-    // Failed, non-document (`grep`, `ls`, `work`, a `skills://` read) and
-    // pathless operations are uncountable: they contribute a step instead.
     steps += 1;
   }
 
   return { invokedSkills, readDocuments, steps };
 }
 
-/** A command that only looked at a document. */
 function isReadCommand(command: ToolCommand): boolean {
   return command === "read" || command === "skim";
 }
 
-/** A command that changed a document, including putting a change back, moving or deleting it. */
 function isEditCommand(command: ToolCommand): boolean {
   return (
     command === "create" ||
@@ -92,7 +83,6 @@ function isEditCommand(command: ToolCommand): boolean {
 }
 
 function documentIdentity(uriOrPath: string): string {
-  // A section address (`path#fragment`) names the same document as its path.
   const marker = uriOrPath.indexOf("#");
   const filePath = marker === -1 ? uriOrPath : uriOrPath.slice(0, marker);
   const parsed = parseContextUri(filePath);

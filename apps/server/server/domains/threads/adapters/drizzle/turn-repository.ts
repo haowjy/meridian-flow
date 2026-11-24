@@ -1,14 +1,3 @@
-/**
- * Drizzle TurnRepository: SQL for the turns table (idempotent create/list,
- * status updates, and model-response-derived usage rollup recomputation). The
- * projector can replay journal facts safely because rollups are aggregates, not deltas.
- *
- * The stored chat-activity projection (threads.last_activity_at,
- * threads.conversational_leaf_turn_id) is not maintained here: Postgres
- * triggers own it (see migration 0106 and
- * domains/threads/.context/CONTEXT.md), firing on the active-leaf update
- * below and on turn status/completion changes.
- */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
@@ -31,7 +20,6 @@ import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { createDrizzleTranscriptReader } from "./transcript-reader.js";
 
-/** One lateral latest-turn lookup per bounded thread_ls row, followed by its text blocks. */
 export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
   return sql`
     SELECT listed.id AS thread_id,
@@ -124,7 +112,6 @@ export function createDrizzleTurnRepository(
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
 ): TurnRepository {
   const active = () => currentDrizzleDb(db);
-  /** The graph: every turn, handed back or not. The conversation reads below add the predicate. */
   const graph: TurnGraph = {
     async listByThread(threadId) {
       const rows = await active()
@@ -280,7 +267,6 @@ export function createDrizzleTurnRepository(
       });
     },
     async listByExecution(threadId: ThreadId, executionId: string) {
-      // Lease ids are text; compare as text so a non-UUID id simply matches nothing.
       const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.turns)
@@ -347,7 +333,6 @@ export function createDrizzleTurnRepository(
             eq(schema.threadInboxMessages.threadId, threadId),
             eq(schema.threadInboxMessages.intent, "message"),
             sql`${schema.threadInboxMessages.deliveredAt} IS NOT NULL`,
-            // A handed-back message left the chat: it has no delivery to show.
             sql`${schema.threadInboxMessages.handedBackBy} IS NULL`,
           ),
         );

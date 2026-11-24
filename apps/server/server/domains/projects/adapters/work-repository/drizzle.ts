@@ -38,7 +38,6 @@ import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME } from "./shared.js";
 
-/** A Work's row and the draft a new chat of it names: its default (`drafts.is_default`). */
 const workColumns = {
   ...getTableColumns(works),
   draftId: workDefaultDraftSql(),
@@ -71,13 +70,8 @@ function mapWork(row: WorkRow): Work {
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
   projectionMutation: WorkProjectionMutation;
-  /**
-   * Each lifecycle change re-decides the Work's own files' access (file-access §7) and wakes
-   * the project's Works list (`projectionMutation.lifecycleChanged`).
-   */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
   lineageScratch: LineageScratchLifecycle;
-  /** Restored documents arrive at their addresses (contract §9.3). */
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   now?: () => Date;
 }
@@ -87,7 +81,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
 
-  /** The documents the list shows in the Work's own sources: they arrive again with the Work. */
   async function workSourceDocumentIds(workId: WorkId): Promise<DocumentId[]> {
     const rows = await currentDrizzleDb(db)
       .select({ id: treeNodes.id })
@@ -190,8 +183,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         );
         const createdBy =
           project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000";
-        // The Work's default draft, under the id the client may have minted; inserted first, so
-        // the Work's insert finds it (`mint_work_default_draft`).
+        // keep: Insert the default draft before the Work row for the mint_work_default_draft trigger
         const draftId = (input.draftId ?? newDraftId()) as DraftId;
         await activeDb.insert(drafts).values({
           id: draftId,
@@ -217,8 +209,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       });
     },
     async findById(id: WorkId): Promise<Work | null> {
-      // A non-UUID id would reach the `uuid` column and raise a Postgres parse
-      // error; treat it as not-found so callers get a clean 404, not a 500.
       return findWorkById(id);
     },
     async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
@@ -278,10 +268,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return rows.map(mapWork);
     },
     async snapshotIdentity(projectId: ProjectId) {
-      // Every Work change raises that Work's revision and none lowers it, so the sum orders
-      // snapshots of the project. A purge deletes a row, so it raises the No Work row by what
-      // the row held (`drizzle-work-purge.ts`) and this sum never falls. Read in the snapshot's
-      // own transaction, beside the Works.
       const [project] = await currentDrizzleDb(db)
         .select({ revision: sql<string>`coalesce(sum(${works.entityRevision}), 0)::text` })
         .from(works)
@@ -358,9 +344,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (decideWorkRestore(existing) === "unchanged") {
           return { before: existing, after: existing, changed: false };
         }
-        // Thread forest → Work above, then the project's tree list and the namespaces the
-        // restore re-occupies, before any row reappears (contract §9.3). Individually deleted
-        // rows stay deleted.
+        // keep: Restore locks thread forest, Work, tree list, then namespaces before any row reappears
         await lockProjectTreeList(db, existing.projectId);
         const arriving = deps.arrivals ? await workSourceDocumentIds(id) : [];
         if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
@@ -382,11 +366,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           liveThreadIds: lockedTree.liveThreadIds,
           at: restoredAt,
         });
-        // The Work's drafts and Scratch are in view again, so its pending count moved.
         projectionMutation.recountAfterCommit({ workIds: [id], lineageRootIds: [] });
         await lineageScratch.reconcile(lockedTree.threadIds);
         if (arriving.length > 0) await deps.arrivals?.settle(arriving);
-        // A restored Work that was archived stays closed: its rooms reopen read-only, so they say why.
         await lifecycleChanged(existing, existing.archivedAt ? "work_archived" : undefined);
         return { before: existing, after: mapWork(row), changed: true };
       });

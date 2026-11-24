@@ -1,4 +1,3 @@
-/** Live single-file and incremental ZIP export over a frozen project inventory. */
 import { Readable } from "node:stream";
 import {
   DEFAULT_EXPORT_AREA_NAMES,
@@ -37,9 +36,8 @@ export class ExportReadError extends Error {
   }
 }
 
-/** fflate writes 32-bit ZIP offsets and sizes (no ZIP64); past 4 GiB an archive is corrupt. */
+// keep: fflate has no ZIP64; refuse archives over 4 GiB
 const ZIP_LIMIT_BYTES = 4 * 1024 ** 3;
-/** Headroom under the limit for prose documents, headers and the marker. */
 const ZIP_HEADROOM_BYTES = 64 * 1024 ** 2;
 
 export function createProjectExport(deps: {
@@ -70,7 +68,6 @@ export function createProjectExport(deps: {
       if (!document) throw new ExportReadError("not_found", "Document is not available for export");
       return document;
     }
-    /** One link-spelling pass over live prose; the preview counts it without encoding bytes. */
     async function spell(document: ExportDocument) {
       let excludedLinks = 0;
       const outsideCounts = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
@@ -102,7 +99,6 @@ export function createProjectExport(deps: {
         throw new ExportReadError("document_unavailable", "Document could not be read for export");
       return { text: result.value, excludedLinks, outsideCounts };
     }
-    /** A document's bytes as chunks, so a large stored file is never held whole. */
     async function read(documentId: string): Promise<{
       chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>;
       filename: string;
@@ -153,8 +149,6 @@ export function createProjectExport(deps: {
           try {
             const missing: string[] = [];
             for (const [id, path] of paths) {
-              // Opened before the entry is added, so a file the store lost can be left out
-              // instead of cutting the whole export short at every attempt.
               let opened: Awaited<ReturnType<typeof read>>;
               try {
                 opened = await read(id);
@@ -168,8 +162,6 @@ export function createProjectExport(deps: {
               yield* drain();
               const { chunks: content, excludedLinks: excluded } = opened;
               excludedLinks += excluded;
-              // Leaving this loop early destroys a stored file's stream, so an abandoned
-              // export stops reading the object.
               for await (const chunk of content) {
                 for (let offset = 0; offset < chunk.length; offset += 65536) {
                   entry.push(chunk.subarray(offset, offset + 65536), false);
@@ -218,7 +210,6 @@ export function createProjectExport(deps: {
         { objectMode: false, highWaterMark: 65536 },
       );
     }
-    /** Stops between documents once the caller abandons the preview (closed dialog, newer options). */
     async function summarize(signal?: AbortSignal) {
       let count = 0;
       const byArea = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
@@ -235,7 +226,6 @@ export function createProjectExport(deps: {
     }
     let storedBytes = 0;
     for (const id of paths.keys()) storedBytes += byId.get(id)?.sizeBytes ?? 0;
-    /** The one definition of "too big for a ZIP": the preview shows it, the download enforces it. */
     function refusal() {
       return storedBytes > ZIP_LIMIT_BYTES - ZIP_HEADROOM_BYTES
         ? "This project's files add up to more than 4 GiB, which is more than one export can hold. Turn off scratch or uploads in the export options, or export in parts."

@@ -252,8 +252,6 @@ if (!RUN) {
       });
       const uri = await seedUpload(DOCUMENT, "commit");
       const rollbackUri = await seedUpload(ROLLBACK_DOCUMENT, "rollback");
-      // The composer spells a reference as a standard Markdown link to its
-      // canonical URI; that occurrence text is what the model reads.
       const spelled = (referenceUri: string) => `[Gate Map](${referenceUri})`;
       const admission = (threadId: typeof THREAD, documentId: string, referenceUri: string) => ({
         actorUserId: USER as never,
@@ -284,7 +282,6 @@ if (!RUN) {
           {
             documentId,
             uri: referenceUri,
-            // A picked file, not the attach door: consumption follows the admitted reference.
             kind: "document" as const,
             purpose: "reference" as const,
           },

@@ -1,4 +1,3 @@
-/** Snapshot read boundary shared by the app and CLI, before either invokes ThreadSync. */
 import { z } from "zod";
 import { threadAskSchema } from "../threads/asks.js";
 import { threadSchema } from "../threads/thread.js";
@@ -11,7 +10,6 @@ export const threadSnapshotSchema = z.object({
   turns: z.array(turnSchema),
   asks: z.array(threadAskSchema).default([]),
   liveState: threadLiveStateSchema.extend({
-    /** The last frame materialized by this snapshot; joins resume strictly after it. */
     resumeAfterSeq: z.string().regex(/^(0|[1-9]\d*)$/),
   }),
   nextSeq: z.string().regex(/^(0|[1-9]\d*)$/),

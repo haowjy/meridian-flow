@@ -1,4 +1,3 @@
-/** Per-response usage summary for the final turn info popover. */
 import type { Turn } from "@meridian/contracts/protocol";
 
 export type TurnStats = {
@@ -14,12 +13,10 @@ export type TurnStats = {
   outputTokensPerSecond: number | null;
 };
 
-/** Token-weighted prompt cache hit rate. Cache writes are already misses within input tokens. */
 export function cacheHitPercent(read: number, input: number): number | null {
   return input > 0 ? (read / input) * 100 : null;
 }
 
-/** Summary of the model calls that produced one or more assistant turns. */
 export function turnStats(turns: readonly Turn[]): TurnStats {
   const responses = turns.flatMap((turn) =>
     [...turn.responses].sort((a, b) => a.sequence - b.sequence),
@@ -36,8 +33,6 @@ export function turnStats(turns: readonly Turn[]): TurnStats {
     0,
   );
   const cacheResets = responses.filter((response) => response.cacheReset === true).length;
-  // Speed counts only calls whose generation window the server measured, so
-  // tokens and time come from the same set of calls.
   let generationMs = 0;
   let generationOutputTokens = 0;
   for (const response of responses) {

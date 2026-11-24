@@ -1,9 +1,3 @@
-/**
- * The runtime's side of what the model was shown: handing a stored result's evidence to the
- * document side, and the lookups a tool call reads. The document side owns the rows, so a failed
- * hand-over is logged and leaves the block with no frontier, and a failed lookup is logged and
- * answers the empty frontier: what records next is conservative, never missing.
- */
 import {
   type AgentEditResultV1,
   type FrontierLookup,
@@ -25,7 +19,6 @@ export interface FrontierRecordingDeps {
   eventSink: EventSink;
 }
 
-/** A read's evidence, handed over once the block that showed it is stored. */
 export async function recordStoredResult(
   deps: FrontierRecordingDeps,
   owner: { projectId: ProjectId; threadId: string; turnId: string },
@@ -49,11 +42,6 @@ export async function recordStoredResult(
   }
 }
 
-/**
- * The block ids whose frontier rows may credit the model: the blocks its request
- * carries (C10), not the whole effective conversation. The run reseeds it from
- * each request's projection and appends the results that persist after.
- */
 export class CreditedBlocks {
   #ids: Set<string>;
 
@@ -74,12 +62,6 @@ export class CreditedBlocks {
   }
 }
 
-/**
- * What the blocks the run carries showed of the tree: each row's added names, oldest first. Rows
- * are read once per block for the life of the lookup (a block's rows do not change while the run
- * carries it), so a call reads only the blocks added since the one before. A failed lookup is
- * logged and answers nothing shown, which guards nothing.
- */
 export function shownNamesLookup(
   deps: FrontierRecordingDeps,
   blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
@@ -115,10 +97,6 @@ export function shownNamesLookup(
   };
 }
 
-/**
- * The model's latest frontier for a document among `blockIds`, read when called: its latest read
- * in any of the document's rooms, Live's or a draft's fork, tagged with that room (design §5).
- */
 export function frontierLookup(
   deps: FrontierRecordingDeps,
   blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
@@ -140,13 +118,6 @@ export function frontierLookup(
   };
 }
 
-/**
- * What the blocks among `blockIds` that showed a document showed of it in full, oldest first: the
- * text a write plans on when its frontier's content was collected, from every room of the
- * document, as `frontierLookup` reads. Each block's result is read from the run's own blocks, a tool result's or a
- * reference read's. A failed lookup is logged and answers nothing shown, so the write plans on the
- * room.
- */
 export function shownLookup(
   deps: FrontierRecordingDeps,
   blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,

@@ -1,16 +1,7 @@
-/**
- * The id a planned import node gets, derived from where it sits in the selection.
- *
- * The server plan and the browser's predicted rows both call this, so a row has its
- * final id from the moment the writer picks. The server is authoritative: it derives
- * every id itself, so a client cannot name an existing document's id.
- */
-
 import { sha256 } from "@noble/hashes/sha2.js";
 
-/** NFC on every segment of a `/` path; no dot-segment folding or percent decoding. */
 export function normalizeNamePath(path: string): string {
-  // "/" never composes with its neighbours, so one pass equals segment-wise NFC.
+  // keep: Whole-path NFC is safe because / never composes with neighbours; segment-wise normalization must match
   return path.normalize("NFC");
 }
 
@@ -19,11 +10,9 @@ export interface ImportNodeIdInput {
   importId: string;
   rootId: number;
   kind: "folder" | "entry" | "unreadable" | "derived";
-  /** "/"-separated; "" for the root folder. */
   path: string;
 }
 
-/** Length-prefixed so no field can run into the next. */
 const encoder = new TextEncoder();
 
 function encode(input: ImportNodeIdInput): Uint8Array<ArrayBuffer> {
@@ -49,8 +38,8 @@ const HEX = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(
 
 export function importNodeId(input: ImportNodeIdInput): string {
   const bytes = sha256(encode(input)).slice(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x80; // UUIDv8
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  bytes[6] = (bytes[6] & 0x0f) | 0x80; // keep: Set UUIDv8 version bits so derived ids remain valid UUIDs
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // keep: Set RFC 4122 variant bits so derived ids remain valid UUIDs
   let hex = "";
   for (const byte of bytes) hex += HEX[byte];
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;

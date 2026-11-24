@@ -1,8 +1,3 @@
-/**
- * Local-filesystem implementation of the object-store port: stores objects under
- * a base dir and mints HMAC-signed local read tokens for signed URLs. Owns the
- * on-disk layout and token signing; depends inward on the port and URL helper.
- */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -58,24 +53,19 @@ export interface LocalSignedObject {
   key: string;
   mimeType: string;
   sizeBytes: number;
-  /** Sent as `Content-Disposition` when the URL was signed for a download. */
   contentDisposition?: string;
   stream: Readable;
 }
 
-/** A signed URL names one operation. A token with no `op` is a read. */
 interface SignedPayload {
   key: string;
   exp: number;
-  /** `Content-Disposition` signed with the URL, so a link can't be re-pointed at another name. */
   cd?: string;
   op?: "put";
-  /** The length and type a PUT must carry, as on an S3 signature. */
   size?: number;
   mime?: string;
 }
 
-/** Local stand-in for a bucket lifecycle rule: temp files older than this are crash leftovers. */
 const STALE_TEMP_MS = 24 * 60 * 60 * 1000;
 const TEMP_DIR = ".tmp";
 
@@ -95,14 +85,8 @@ function ioError(error: unknown, fallback: string): ObjectStoreResult<never> {
   return err("io_error", error instanceof Error ? error.message : fallback);
 }
 
-/**
- * An object is one file: its bytes, then its metadata as JSON, then the metadata's length as four
- * big-endian bytes. One rename publishes bytes and metadata together, so a crash leaves the old
- * object or the new one, never bytes without metadata.
- */
 const FOOTER_LENGTH_BYTES = 4;
 
-/** The metadata and the byte length of the content in an object file. */
 async function readFooter(
   file: FileHandle,
 ): Promise<{ metadata: LocalObjectMetadata; dataBytes: number }> {
@@ -317,11 +301,6 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     });
   }
 
-  /**
-   * Stores the body of a PUT to a `signPut` URL. The body is destroyed on every outcome, so the
-   * caller owes it nothing. A wrong length or type, an expired token or a token that is not a PUT
-   * stores nothing; a right one replaces any object at the key, as an S3 PUT does.
-   */
   async writeSignedToken(
     token: string,
     request: { body: Readable; contentLength: number | null; contentType: string | null },
@@ -498,7 +477,6 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return path.join(dir, `${crypto.randomUUID()}.part`);
   }
 
-  /** Seals a finished temp file with its metadata and publishes it at `target` in one rename. */
   private async commit(
     tempData: string,
     target: string,
@@ -509,14 +487,12 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     await rename(tempData, target);
   }
 
-  /** The object's content without its footer. An empty object is an empty stream. */
   private contentStream(target: string, dataBytes: number): Readable {
     return dataBytes === 0
       ? Readable.from([])
       : createReadStream(target, { start: 0, end: dataBytes - 1 });
   }
 
-  /** Crash leftovers, cleared once per process before the first write that makes a temp file. */
   private async clearStaleTemp(dir: string): Promise<void> {
     const cutoff = this.now().getTime() - STALE_TEMP_MS;
     for (const entry of await readdir(dir)) {
@@ -524,7 +500,6 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       try {
         if ((await stat(file)).mtimeMs < cutoff) await rm(file, { force: true });
       } catch (error) {
-        // Another process finished with the file between the listing and now.
         if (!isMissingFile(error)) throw error;
       }
     }

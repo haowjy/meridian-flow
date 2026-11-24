@@ -1,5 +1,3 @@
-/** Projects the latest complete compaction over the effective transcript. */
-
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, PromptBake, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -18,7 +16,6 @@ import { importantFileText } from "./important-files.js";
 import type { CompactionPlan } from "./plan.js";
 import { resolveCut, retainedTail } from "./tail.js";
 
-/** The durable model-visible summary block written by the compaction protocol. */
 export const CompactionPropsCodec = z
   .object({
     summary: z.string(),
@@ -30,7 +27,6 @@ export const CompactionPropsCodec = z
   .passthrough();
 export type CompactionProps = JsonObject & z.infer<typeof CompactionPropsCodec>;
 
-/** Typed read/write envelope for the custom block that carries a compaction summary. */
 export const CompactionBlockContentCodec = z
   .object({ kind: z.literal("compaction"), props: CompactionPropsCodec })
   .passthrough();
@@ -41,13 +37,6 @@ export interface ProjectedActiveHistory {
   blocks: Block[];
 }
 
-/**
- * The projection plus the ids whose observation frontiers may credit the model
- * (C10): the blocks after the latest complete compaction, or every effective
- * block when there is none. The retained tail before the compaction credits
- * nothing, though it is carried verbatim: its rows may fold credit from rows
- * the summary replaced.
- */
 export interface ActiveHistoryProjection extends ProjectedActiveHistory {
   creditedBlockIds: ReadonlySet<string>;
 }
@@ -122,7 +111,6 @@ function summaryTurn(
   };
 }
 
-/** Projects the latest complete compaction using the owning thread's model-visible handle. */
 function projectActiveHistory(
   effectiveTurns: readonly Turn[],
   effectiveBlocks: readonly Block[],
@@ -144,7 +132,6 @@ function projectActiveHistory(
     blocksByTurn.set(block.turnId, entries);
   }
 
-  // Decode every complete compaction before selecting one; malformed durable state is never absence.
   const completeCompactions = turns
     .filter((turn) => turn.role === "compaction" && turn.status === "complete")
     .map((turn) => ({
@@ -159,7 +146,6 @@ function projectActiveHistory(
 
   const { turn: compaction, metadata, props } = activeCompaction;
   const beforeCompaction = turns.filter((turn) => turn.position < compaction.position);
-  // A pin to a turn the conversation no longer has is a hand-back: the pinned request left the chat.
   const pinnedRequests = metadata.pinnedRequestTurnIds.flatMap((id) => {
     const turn = beforeCompaction.find(
       (turn) => turn.id === id && (turn.role === "user" || turn.role === "system"),
@@ -194,8 +180,6 @@ function projectActiveHistory(
   );
   const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
   const elisions = new Map(metadata.elisions?.map((elision) => [elision.blockId, elision.content]));
-  // The documents the compaction re-showed ride its summary turn, after the summary, as plain
-  // text blocks that keep their ids (frontier rows cite them).
   const reshown = (blocksByTurn.get(compaction.id) ?? [])
     .flatMap((block) => {
       const reference = referenceOccurrenceContent(block);
@@ -228,7 +212,6 @@ function projectActiveHistory(
   return { turns: projectedTurns, blocks: projectedBlocks, creditedBlockIds };
 }
 
-/** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */
 export function projectCompactedHistory(
   projection: ProjectedActiveHistory,
   plan: Extract<CompactionPlan, { outcome: "planned" }>,
@@ -246,7 +229,6 @@ export function projectCompactedHistory(
   return { turns: projection.turns.filter((turn) => included.has(turn.id)), blocks };
 }
 
-/** Resolve the summary's own bake, not today's tool registry. */
 export async function projectActiveHistoryWithBakes(
   turns: readonly Turn[],
   blocks: readonly Block[],

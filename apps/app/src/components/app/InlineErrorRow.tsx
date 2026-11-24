@@ -1,10 +1,3 @@
-/**
- * InlineErrorRow — the one error line: a red icon, the message in body ink, and at most
- * one text action. Rails, popovers, headers, lists, dialogs and fields all use it; a
- * caller sets only the inset (`className`). The message wraps: an error cut off with an
- * ellipsis can't be read. A `note` is the same line beside a result that landed: what of it
- * stayed out, in muted ink, announced politely rather than as an alert.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Info, X } from "lucide-react";
@@ -26,12 +19,9 @@ export function InlineErrorRow({
   onRetry?: () => void;
   actionLabel?: ReactNode;
   retryRef?: RefObject<HTMLButtonElement | null>;
-  /** A failed command the writer may leave as it is. */
   onDismiss?: () => void;
-  /** For a field's `aria-describedby`. */
   id?: string;
   note?: boolean;
-  /** The host's inset, replacing the default `px-2 py-1.5`. */
   className?: string;
 }) {
   return (
