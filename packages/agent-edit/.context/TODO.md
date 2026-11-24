@@ -3,9 +3,9 @@
 ## Blocks a write removes and adds
 
 A write that removes a block and adds another (merging or splitting top-level
-paragraphs) is rewritten whole:
-the writer's typing in the removed block goes, and text deleted from it can come back
-in the added one. Covering it means deciding the replaced scope as one sequence, block
+paragraphs) is rewritten whole, with no record of the move: typing the write didn't
+read brings the removed block back beside the added one, so those words show twice, and
+text deleted from it can come back in the added one. Covering it means deciding the replaced scope as one sequence, block
 edges included, in `replaceScope`'s alignment.
 
 ## The model's Undo echo
