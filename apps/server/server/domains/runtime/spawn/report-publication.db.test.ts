@@ -277,9 +277,10 @@ else
           agentName: "critic",
         },
       });
-      expect(JSON.stringify(messages)).toContain(
-        `Subagent p1 finished (succeeded). Read its report with thread_report({\\"ref\\":\\"p1\\"}).`,
-      );
+      expect(messages[0]?.body).toEqual({
+        kind: "text",
+        text: "Subagent p1 finished (succeeded). Its report is available through `thread_report` with ref p1.",
+      });
       expect(JSON.stringify(messages)).not.toContain("secret report body");
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,

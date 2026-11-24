@@ -31,7 +31,7 @@ export interface ConnectionsPort {
   bake(thread: Thread): Promise<ConnectionBake>;
   saved(thread: Thread, baked: readonly McpBakedConnection[]): void;
   ownNameRefusal(thread: Thread, name: string): Promise<string | null>;
-  doNotRepeat: string;
+  callsRan: string;
   recordedCalls(
     threadId: string,
     turnIds: readonly string[],

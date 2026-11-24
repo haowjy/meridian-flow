@@ -22,8 +22,7 @@ import { connectionCatalogue, toolId } from "./connection-bake.js";
 import type { McpConnections } from "./connection-service.js";
 
 export const REPLY_CHARACTER_LIMIT = 24_000;
-export const DO_NOT_REPEAT =
-  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
+export const CALLS_RAN = "These calls ran and are not undone.";
 const CALL_TIMEOUT_MS = 60_000;
 
 export interface ReplyStore {
@@ -216,7 +215,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
           code: `mcp_${call.code}`,
           message:
             call.code === "connection_removed"
-              ? `The connection ${call.connection} was removed, so ${request.id} cannot be called. Tell the writer.`
+              ? `The connection ${call.connection} was removed, so ${request.id} cannot be called.`
               : `This chat holds no tool ${JSON.stringify(request.id)}. ${await heldIds(request)}`,
         },
       };
@@ -261,7 +260,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
         return {
           isError: true,
           result: failure(
-            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept. Ask for less: a narrower query or fewer results.`,
+            `The reply was over ${outcome.limit} bytes (${outcome.bytes} read), so it was not kept.`,
           ),
         };
       case "aborted":
@@ -310,7 +309,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       });
     }
     const shown = cut
-      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown. Ask for less: a narrower query or fewer results.]`
+      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown.]`
       : text;
     return {
       text: lost
@@ -431,11 +430,11 @@ function unreachableMessage(
     case "start_failed":
     case "connect_timeout":
     case "disconnected":
-      return `${connection} could not be reached (${outcome.message}). Calling it again now will not help: tell the writer.${may}`;
+      return `${connection} could not be reached (${outcome.message}). Calling it again now will not help.${may}`;
     case "call_timeout":
       return `${connection} did not answer in time.${may}`;
     case "unauthorized":
-      return `${connection} refused its token (HTTP 401). The writer has to sign in to it again in Settings, under Connections.`;
+      return `${connection} refused its token (HTTP 401). The connection needs the writer to sign in again.`;
     case "forbidden":
       return `${connection} refused the request (HTTP 403).${may}`;
     case "rate_limited":
