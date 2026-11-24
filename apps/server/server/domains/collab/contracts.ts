@@ -452,8 +452,8 @@ export type EffectiveDocumentReader = {
    * One document's frozen cut for a copy: the blocks a whole-document write would see,
    * the revision a `read` of that version reports, the holder those links spell from, and
    * the room version of the cut (what a client's own version is compared against). A draft
-   * view reads Live content (phase 1 has no text drafts). Links still spell
-   * in the named Work's tree view.
+   * view reads the draft's fork room (Live where the draft wrote nothing), and its links spell
+   * in the draft's tree view.
    */
   readEffectiveBlocks(
     input: { documentId: DocumentId } & EffectiveReadVersion,

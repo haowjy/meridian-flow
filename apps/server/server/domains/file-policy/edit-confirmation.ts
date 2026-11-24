@@ -7,8 +7,6 @@ import { mergeOwnerLocks } from "../../shared/draft-owner.js";
 import { type EditConfirmation, runWithEditConfirmation } from "../../shared/edit-confirmation.js";
 import { TreeOwnersMoved, untilOwnersHold } from "../../shared/tree-owners.js";
 
-export { markReplyConfirmed } from "../../shared/edit-confirmation.js";
-
 import {
   type FileAccessDenied,
   type FileFacts,

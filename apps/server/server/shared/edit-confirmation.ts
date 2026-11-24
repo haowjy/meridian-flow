@@ -1,17 +1,14 @@
 /**
  * The edit grants one write call carries, confirmed inside each write seam's
  * own transaction (file-access §5). The caller binds them to the call's async
- * scope; a seam (journal append and reversal, draft commit and push, the
- * namespace transaction) locks their Works with its own in id order, then
- * confirms them before taking any advisory lock.
- *
- * A reply's save confirms its grants once, before any participant writes
- * (§5.2), and marks those documents confirmed for its transaction.
+ * scope; a seam (a model write's `enterSeam`, a tree list's write) locks their
+ * Works with its own in id order, then confirms them before taking any advisory
+ * lock.
  *
  * A seam reached with no scope is one of the writers §5.1 names (a replay of
  * an already confirmed write, a derived write, a lifecycle-owned write); it
  * keeps its own locked lifecycle check. An agent write is never one of them,
- * so an agent write with no scope and no confirmed reply is refused.
+ * so an agent write with no scope is refused.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -80,18 +77,6 @@ export async function confirmScopedEdits(locked: LockedOwners): Promise<void> {
   setDrizzleTransactionLocal(confirmation, true);
 }
 
-const replyConfirmed = { key: "reply-confirmed-documents" };
-
-/**
- * The reply's save confirmed these documents' grants in this transaction
- * (§5.2). Outside a transaction (the in-memory composition) no seam checks.
- */
-export function markReplyConfirmed(documentIds: Iterable<string>): void {
-  const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed) ?? new Set<string>();
-  for (const documentId of documentIds) confirmed.add(documentId);
-  setDrizzleTransactionLocal(replyConfirmed, confirmed);
-}
-
 /** An agent write reached a seam with no grant: an entry point skipped the file policy. */
 export class UngrantedAgentWriteError extends Error {
   constructor(readonly documentIds: readonly string[]) {
@@ -100,14 +85,8 @@ export class UngrantedAgentWriteError extends Error {
   }
 }
 
-/**
- * Refuses an agent write that carries no grant for its documents: the grants
- * bound to the call don't cover them, and the reply saving it didn't confirm
- * them.
- */
+/** Refuses an agent write whose bound grants don't cover its documents. */
 export async function requireAgentWriteGrant(documentIds: readonly string[]): Promise<void> {
-  const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed);
-  if (confirmed && documentIds.every((documentId) => confirmed.has(documentId))) return;
   if (await scope.getStore()?.covers(documentIds)) return;
   throw new UngrantedAgentWriteError(documentIds);
 }

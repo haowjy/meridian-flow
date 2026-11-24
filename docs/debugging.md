@@ -296,9 +296,10 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   Expected HTTP, transport or protocol failures during this diagnostic phase preserve the
   proven result and set `observationIncomplete: true`; existing checks still determine `liveView`.
   A later replay cannot restore a rewritten turn's standing as stream evidence.
-- Write tools emit `tool.completed` for the staged result, then `tool.settled`
-  for the committed receipt, in both JSON and text. There is no `settled` flag.
-  The staged result alone does not prove a committed write.
+- A tool call's first result prints as `tool.completed` and any later result for
+  the same call as `tool.settled`, in both JSON and text. There is no `settled`
+  flag. A write commits in its command before its result is sent, so its first
+  result is the committed outcome.
 - `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
   ID, summary and model, and token counts before and after; `--json` carries the
   same facts under `compaction`. It does not print a failed compaction's reason

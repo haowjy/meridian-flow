@@ -25,13 +25,6 @@ decoration (flat model design, section 7).
 - Both views share the session's one undo stack (`DocumentSession.history`), so Ctrl+Z in
   either view reverts the writer's last edit in the document, whichever view made it.
 
-## The tab's own draft changes in the Changes list
-
-`publishTabChangeCounts` (`client/query/tab-change-counts.ts`) has no caller, so an open draft's
-Changes row follows only the server's `pending` flag, which a fork room's save sets up to 10 s
-after the typing (or an Undo) that changed it. Publishing each open fork session's
-`changedBlocks` count from its editor would make the row follow the tab at once.
-
 ## What an Enter or a mark toggle costs outside the binding
 
 The binding's part of a structural edit no longer grows with the chapter (under 4 ms at 800

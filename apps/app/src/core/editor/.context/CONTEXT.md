@@ -105,7 +105,7 @@ synchronously, then drains transports and leases.
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
 - The editor binds one session's docs: a Live room's, or a draft's fork room's, which reads Live's
-  text for every block the draft has not written. No suggestion marks or attrs exist (schema 4.0.0).
+  text for every block the draft has not written.
 - Builds on Yjs kept document copies in IndexedDB; `core/stale-yjs-copies.ts` deletes them once
   per signed-in load (`routes/_authenticated.tsx`).
 

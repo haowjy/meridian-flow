@@ -9,6 +9,7 @@
  */
 
 import type { DocumentId } from "@meridian/contracts";
+import { loroRoomName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
@@ -27,7 +28,8 @@ import {
 import { and, inArray, isNull } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import { liveRoom } from "../../collab/index.js";
+
+const liveRoomKey = (documentId: DocumentId) => loroRoomName({ kind: "live", documentId });
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
@@ -49,13 +51,15 @@ export async function releaseDocumentContent(
   deferUntilDrizzleCommit(() => endRooms(list));
   // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
-  await tx.delete(documentSnapshots).where(inArray(documentSnapshots.roomKey, list.map(liveRoom)));
+  await tx
+    .delete(documentSnapshots)
+    .where(inArray(documentSnapshots.roomKey, list.map(liveRoomKey)));
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
   // Observation frontiers have no document foreign key; their room key is the only ownership.
   await tx
     .delete(observationFrontiers)
-    .where(inArray(observationFrontiers.roomKey, list.map(liveRoom)));
+    .where(inArray(observationFrontiers.roomKey, list.map(liveRoomKey)));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));

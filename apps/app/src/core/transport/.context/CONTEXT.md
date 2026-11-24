@@ -25,16 +25,18 @@ another list is replaced under the Join, so the Join's version must be taken aga
 Every client `DocUpdate` is acknowledged by one `Ack` naming its batch id; server
 `DocUpdate`s are not. The transport keeps, per unacknowledged batch, the room version the
 batch ends at (read from the update metadata), and merges it into the server version on its
-`Ack`. A dropped socket forgets unacknowledged batches: the next Join's `exportSince`
-covers them.
+`Ack`. A dropped socket forgets unacknowledged batches: the next Join sends what the version the
+server answers with lacks, so a batch the server imported before its `Ack` was lost is not sent
+again.
 
 ## Acknowledgement and barriers
 
 `subscribeServerAcknowledgement` is true while the room is connected, joined, and every batch
 sent on this connection is acknowledged. `whenCurrentChangesAcknowledged()` captures the
 copy's version at the call and resolves once the server version covers it, whether through
-acks or through batches the server sent. Terminal ends reject current and future barriers;
-ordinary disconnects leave them pending.
+acks or through batches the server sent. A room's end rejects current and future barriers, except
+a sign-in lapse (close 4401), which leaves them pending like an ordinary disconnect until the
+transport is replaced ([state machine](state-machines.md#room-connection)).
 
 `whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
 every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting) is
@@ -60,9 +62,10 @@ room of a document only the draft holds, which no fork names.
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
   resets the room (`resetState`); `bad-auth` and `permission-denied` end it `unauthorized`;
   any other app code (the server hasn't seen this browser's `create` yet) closes and rejoins.
-- `RoomError` `document-deleted` resets the room. `RejoinSuggested` is an access change: the
-  room shows read-only at once (`access-changed:<why>` names the cause), the socket rejoins,
-  and the new `JoinResponseOk` permission decides. A read permission sends no `DocUpdate`.
+- `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
+  change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
+  `JoinResponseOk` permission decides; for a server error the rejoin sends what the server lacks.
+  Any other `RoomError` ends the room `terminal`. A read permission sends no `DocUpdate`.
 - Close codes `AUTH_FAILED` and `PERMISSION_DENIED` end the room `unauthorized`; any other
   close retries with backoff (`RETRY_MS`), at once for a `rejoin` close.
 

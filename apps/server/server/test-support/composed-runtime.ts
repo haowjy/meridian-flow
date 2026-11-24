@@ -1,6 +1,6 @@
 /**
  * The production app composed over a test database, and a script that drives model replies
- * through the real tool executor and the reply's save.
+ * through the real tool executor.
  */
 
 import { randomUUID } from "node:crypto";
@@ -9,7 +9,6 @@ import type { Database } from "@meridian/database";
 import { modelResponses, observationFrontiers, threads } from "@meridian/database/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { afterEach } from "vitest";
-import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { TREE_NAMES_ROOM } from "../domains/runtime/index.js";
@@ -31,8 +30,6 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
     eventSink,
     environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });
-  // Review membership is projected after an append commits; review reads wait for it.
-  convergedReview(ports.documentSync);
   const app = composeAppServices(ports);
   return { ports, app };
 }

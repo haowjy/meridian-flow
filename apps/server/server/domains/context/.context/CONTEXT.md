@@ -62,7 +62,7 @@ literal name: a folder clashes with a document when the folder's name equals the
 document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
-while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
+while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it.
 No writer picks a free name: a name may repeat in a folder, and replay gives every later twin a
 `~` suffix from its id (rule 14 in `@meridian/project-tree`). A node's `name` in `tree_nodes` is its filename as
 shown, extension included; readers never render a filename from a name and an extension.
@@ -235,8 +235,8 @@ one source's tree contributes.
 
 - Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, by node id, in the source view) and each
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
-  document, or the Work's draft where it has one). A Draft view reads live content for
-  documents without a Work draft, while spelling links in the Draft tree. The listing is a
+  document, or the Work's draft fork where it has one). A Draft view reads live content for
+  documents the draft has no fork of, while spelling links in the Draft tree. The listing is a
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
@@ -314,8 +314,8 @@ one source's tree contributes.
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
   path or room version, and a version sent for a folder, which the route refuses before the domain
-  runs. A draft view names its Work and no chat: the server reads the document through that Work's
-  view of Live; a Work outside the project is refused
+  runs. A draft view names its Work and no chat: the server reads the document in that Work's draft
+  (its fork, or Live where the draft has none); a Work outside the project is refused
   as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
   documents the Work places in it, a document only the Work has included, and a node the Work
   does not place is left out as purged. The one name outcome left to the address-model

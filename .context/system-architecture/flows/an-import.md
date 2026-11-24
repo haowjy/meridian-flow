@@ -22,8 +22,8 @@ sequenceDiagram
   server-files-import->>postgres: 6. last file received: set organizing
   server-files-import->>server-files-import: 7. organizer wakes
   server-files-import->>file-intake: 8. classify, make previews
-  server-files-import->>context: 9. stage the tree
-  server-files-import->>collab: 10. stage the documents
+  server-files-import->>server-files-import: 9. plan the tree
+  server-files-import->>collab: 10. seed the texts in batches
   server-files-import->>postgres: 11. reveal the tree and mark done
   client->>server-routes: 12. poll GET .../imports/:id
 ```
@@ -36,9 +36,9 @@ sequenceDiagram
 6. **Complete.** When the last file is received the import moves to `organizing` in the same step; the client reports nothing. `receive` calls `complete()` in the same transaction (`domain/upload-service.ts`), which sets `organizing` once no entry is still awaiting bytes. (`picked.post.ts` is only for Continue, a re-pick of files already received.)
 7. **Wake.** A durable queue row wakes the organizer lane; the wake is only a latency hint and the rows are authoritative.
 8. **Classify.** The organizer calls [file-intake](../server-files.md#file-intake) to classify each file and make WebP previews for HEIC, BMP and TIFF.
-9. **Stage tree.** It stages bounded generations of the tree through [context](../server-documents.md#context).
-10. **Stage documents.** Document bodies go through [collab](../server-documents.md#collab) (`MarkdownDocumentStore`, link binding).
-11. **Reveal.** One transaction publishes the tree and the terminal import status in [postgres](../system.md#postgres), so the writer never sees a half-built tree.
+9. **Plan.** The organizer plans the whole tree once, with each node's id and address, and binds the texts' links to the planned ids.
+10. **Seed.** In batches of at most 500 nodes or 16 MiB, [collab](../server-documents.md#collab) encodes each text and seeds its document's Live room under the planned id (`encodeSeed`, `installSeeds`). Nothing reads these rows yet: no record names the documents.
+11. **Reveal.** One transaction submits a `create` record for every planned node to the project's tree list through [context](../server-documents.md#context) and sets the terminal import status in [postgres](../system.md#postgres), so the writer never sees a half-built tree.
 12. **Poll.** The coordinator polls the import's status until it is terminal.
 
 State machines: [import (server)](../../../apps/server/server/domains/import/.context/state-machines.md), [import (app)](../../../apps/app/src/features/import/.context/state-machines.md), [context uploads](../../../apps/server/server/domains/context/uploads/.context/state-machines.md).

@@ -78,7 +78,7 @@ that also holds some other stale document keeps its stale stub.
 
 Successor preparation queries current revisions from raw retained blocks once per
 attempt. Stale text in pinned unanswered messages is replaced while writer words and
-mentions stay verbatim. `DocumentRevisions.current` reads settled authority only: a
-response-staged overlay visible to it is a contract failure, not a lookup fallback.
+mentions stay verbatim. `DocumentRevisions.current` reads each document at the version this
+thread's writes to it land in (Live or its draft's fork), as file access decides.
 
 [kb-model-view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/model-view.md

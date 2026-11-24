@@ -15,7 +15,8 @@ into Live with its tree records ([the press](press.md)).
 
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
-(`domain/agent-edit-router.ts`), which routes every one to the Live core. A draft's owner is the
+(`domain/agent-edit-router.ts`), which runs each at the grant's destination (Live, or the chat's
+draft fork), or in Live for a `version: "live"` read. A draft's owner is the
 Work it belongs to (`drafts.work_id`; a Work has several and one default), or for a chat with no
 Work its lineage (the first chat, its forks and subagents; a handoff starts a new one). A chat
 writes into the draft its root names (`threads.draft_id`, read through `Thread.draftId`, which
@@ -63,7 +64,8 @@ A write into a room where the model has no frontier plans on the current room. A
 usable frontier plans on the room at that frontier and merges onto the current room. A write that
 changes nothing still reports the changes since the frontier and records its own. Every model call
 reads its room fresh through agent-edit's `readRoom`, a copy of the loaded room taken without the
-document's lock. A room is named `live:<documentId>` (`domain/observation-rooms.ts`).
+document's lock. A frontier is keyed by its room's name (`loroRoomName`: `live:<document>` or
+`fork:<draft>:<document>`).
 
 A call whose caller passes `frontiers` (the read and write tools, and reference reads, which
 pass `recording` only) records an observation frontier in the room its result rendered from. A
@@ -249,6 +251,11 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
+Planned import binding uses stable `doc:<id>` targets before those documents are visible; its
+ahead mints stay unregistered until reveal. Ordinary binding runs before the command transaction,
+uses the current `LinkView` and folder addresses, and registers through the ahead-ref registry
+(`AheadRefRegistrar`).
+
 A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view reads the draft's
 fork room (Live where the draft wrote nothing), with links spelled in the Draft tree. The cut holds
 its projected blocks, the
@@ -290,21 +297,8 @@ recorded frontier, while rendering uses the fresh room copy.
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
-[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/lifecycle.md#archive-freezes-the-works-own-material
-
 ## Producer shutdown
 
 Ahead-reference registration's `shutdown` stops scheduling and joins its running work. Callers await collaboration disposal before destroying
 warm documents or resetting fixture rows. The PostgreSQL collab harness
 owns that ordering in `dispose`. `flush` remains assertion-time convergence, not shutdown.
-
-## Import staging
-
-A first state is written one of two ways, by where its content comes from. Import stages it, because
-the import queue must keep the encoded states across generations and discard them when a
-generation is refused. A Copy encodes it in memory (`encodeSeed`) and installs it inside the
-transaction that inserts the documents (`installSeeds`), because it holds the bound content already
-and has nothing to resume. Both seed the document's Live room (`DocumentRooms.seed`); neither
-writes over a room that holds text.
-
-Planned import binding uses stable `doc:<id>` targets before those documents are visible. Its ahead mints remain unregistered until reveal. Ordinary binding still runs before the command transaction, uses the current `LinkView` and folder addresses, and registers through the durable refusal-preserving registry.

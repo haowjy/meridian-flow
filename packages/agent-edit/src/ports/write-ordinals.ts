@@ -1,6 +1,6 @@
 /** The host's per document and chat counter the model's edit handles (`e<N>`) are minted from. */
 export interface WriteOrdinals {
-  /** Reserve one durable ordinal for `documentId` in `threadId` before staging an edit. */
+  /** Reserve one durable ordinal for `documentId` in `threadId` before it writes an edit. */
   reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
 }
 

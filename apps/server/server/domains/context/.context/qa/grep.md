@@ -54,24 +54,23 @@ backreferences, an invalid pattern, a pattern over 512 characters, and
 
 ## State and access
 
-Script a `write` before `grep` in the same reply. Newly staged text is found.
+Script a `write` before `grep` in the same reply. The text just written is found.
 In a draft-mode Work, a draft-only token is found by the Work chat and omitted
-by a No Work chat or a `version: "live"` read. A later reply sees the same draft
-after derivation.
+by a No Work chat or a `version: "live"` read. A later reply sees the same draft.
 
 Restrict Agent document access and run the same query. Access is checked before
 matching or counting; unreadable documents do not affect results or totals.
 
-For staged visibility, script a write and grep in one model reply, then repeat
+For a write's visibility, script a write and grep in one model reply, then repeat
 from a draft-mode Work and a No Work chat:
 
 ```bash
-./mf thread send "$T" 'Stage then search' --mock '[{"toolCalls":[{"name":"write","args":{"command":"create","path":"manuscript://grep-staged.md","content":"GREPPABLE_STAGED_TOKEN"}},{"name":"grep","args":{"pattern":"GREPPABLE_STAGED_TOKEN"}}]},{"text":"done"}]' --json
-grep_case '{"pattern":"GREPPABLE_STAGED_TOKEN","version":"live"}'
+./mf thread send "$T" 'Write then search' --mock '[{"toolCalls":[{"name":"write","args":{"command":"create","path":"manuscript://grep-written.md","content":"GREPPABLE_WRITTEN_TOKEN"}},{"name":"grep","args":{"pattern":"GREPPABLE_WRITTEN_TOKEN"}}]},{"text":"done"}]' --json
+grep_case '{"pattern":"GREPPABLE_WRITTEN_TOKEN","version":"live"}'
 ```
 
 The Work chat finds a draft-only token, a No Work chat and a live-version query
-omit it, and a later reply sees it after derivation. For refusals, run one call
+omit it, and a later reply sees it. For refusals, run one call
 per reply and expect a tool error without partial matches:
 
 ```bash
