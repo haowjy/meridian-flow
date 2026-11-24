@@ -13,7 +13,6 @@ export {
   type AgentChain,
   type AgentLink,
   agentDraftOwner,
-  agentProject,
   type DraftOwnerRef,
   type FileAccessDenial,
   type FileAccessDenied,

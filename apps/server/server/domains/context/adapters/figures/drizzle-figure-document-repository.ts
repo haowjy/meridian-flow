@@ -36,7 +36,7 @@ function mapDocumentFile(
   };
 }
 
-export class DrizzleFigureDocumentRepository implements FigureDocumentRepository {
+class DrizzleFigureDocumentRepository implements FigureDocumentRepository {
   constructor(private readonly db: Database) {}
 
   async documentExistsForProject(projectId: string, documentId: string): Promise<boolean> {

@@ -71,36 +71,3 @@ export async function loadDocumentOwners(
   }
   return result;
 }
-
-export async function loadDocumentOwner(
-  db: DrizzleDb,
-  documentId: DocumentId,
-): Promise<SourceOwner | null> {
-  return (await loadDocumentOwners(db, [documentId])).get(documentId) ?? null;
-}
-
-export async function loadDraftHolder(
-  db: DrizzleDb,
-  draftId: DraftId,
-): Promise<DraftHolder | null> {
-  const [row] = await currentDrizzleDb(db)
-    .select({ projectId: drafts.projectId, accountId: projects.userId })
-    .from(drafts)
-    .innerJoin(projects, eq(projects.id, drafts.projectId))
-    .where(eq(drafts.id, draftId))
-    .limit(1);
-  return row ?? null;
-}
-
-/** A project's drafts as holders: the project and its owning account. */
-export async function loadProjectHolder(
-  db: DrizzleDb,
-  projectId: ProjectId,
-): Promise<DraftHolder | null> {
-  const [row] = await currentDrizzleDb(db)
-    .select({ projectId: projects.id, accountId: projects.userId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  return row ?? null;
-}

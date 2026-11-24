@@ -31,7 +31,7 @@ const schema = buildDocumentSchema();
 const shape = shapeSchemaOf(schema);
 const markup = mdxCodec({ schema });
 const codec = createAgentEditCodecFactory(markup).forScope(
-  createStaticDocumentLinks(undefined, { preloaded: true }),
+  createStaticDocumentLinks(),
 );
 const model = loroModel(schema);
 

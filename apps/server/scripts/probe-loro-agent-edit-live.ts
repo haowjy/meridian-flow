@@ -36,7 +36,7 @@ const coreFor = (draftId: string | null) => {
     ordinals: host.ordinals,
     schema,
     codec: createAgentEditCodecFactory(mdxCodec({ schema })),
-    links: createStaticDocumentLinks(undefined, { preloaded: true }),
+    links: createStaticDocumentLinks(),
     documentEdits: chat.documentEdits,
   });
 };

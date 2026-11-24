@@ -387,7 +387,6 @@ async function writeUnderGrant(
     written = await deps.documentSync
       .modelEdits()
       .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
-        sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
         responseIdentity: ctx.responseIdentity,

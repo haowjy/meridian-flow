@@ -22,13 +22,9 @@ export type { ShownLink } from "./links/correspondence.js";
 export type { OccurrenceAttrs } from "./links/occurrences.js";
 export { rebuildOccurrences, sameAttrs } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";
-export { decodeFrontierMap, encodeFrontierMap } from "./loro-frontier.js";
+export { encodeFrontierMap } from "./loro-frontier.js";
 export type { LoroDocumentModel } from "./model/loro-model.js";
 export { LoroDocument, loroModel, toLoroHandle } from "./model/loro-model.js";
-export type {
-  ActorSession,
-  ActorSessionStore,
-} from "./ports/actor-session-store.js";
 export type {
   DocumentEditRequest,
   DocumentEditResult,
@@ -57,13 +53,9 @@ export type {
   AgentEditModel,
   DocumentModel,
 } from "./ports/model.js";
-export type {
-  StaticCatalogDocument,
-  StaticDocumentCatalog,
-} from "./ports/static-document-links.js";
 export {
   createStaticDocumentLinks,
-  type StaticDocumentLinksOptions,
+  type StaticDocumentCatalog,
 } from "./ports/static-document-links.js";
 export type { WriteOrdinals } from "./ports/write-ordinals.js";
 export { editHandle, parseEditHandle } from "./ports/write-ordinals.js";
@@ -73,6 +65,5 @@ export {
   type LoroEditCoreOptions,
 } from "./tool/loro-write.js";
 export { returnedWriteResult } from "./tool/receipt.js";
-export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/types.js";
 export { type RoomPart, undoInRooms } from "./undo-in-rooms.js";

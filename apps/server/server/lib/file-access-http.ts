@@ -57,30 +57,6 @@ export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">):
   }
 }
 
-/**
- * Whether a thrown error is one of the policy refusals `throwFileAccessDenied` raises (not
- * found, archived, read-only) rather than a fault. A replay boundary may re-look-up its
- * command before keeping such a refusal; no other exception qualifies.
- */
-export function isFileAccessRefusal(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  const { statusCode, message } = cause as { statusCode?: unknown; message?: unknown };
-  if (statusCode === 404) return true;
-  if (statusCode !== 403) return false;
-  if (
-    message === "agent_read_only" ||
-    message === "uploads_read_only" ||
-    message === "ai_access_denied"
-  )
-    return true;
-  const data = (cause as { data?: Record<string, unknown> }).data;
-  const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
-  return (
-    isHttpInterruptEnvelope(envelope) &&
-    (envelope.error.code === "work_archived" || envelope.error.code === "chat_frozen")
-  );
-}
-
 /** The person's grant on a target, or the route's refusal. */
 export async function requireFileGrant<N extends FileNeed>(
   fileAccess: Pick<FileAccess, "authorize">,

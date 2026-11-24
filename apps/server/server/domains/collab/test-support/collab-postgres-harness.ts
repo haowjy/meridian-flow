@@ -409,7 +409,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         grant: testFileGrant({ kind: "live" }, ALPHA_ID),
-        sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseIdentity: { modelResponseId: responseId },

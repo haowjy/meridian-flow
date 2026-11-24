@@ -35,7 +35,6 @@ import {
   loroModel,
   toLoroHandle,
 } from "../model/loro-model.js";
-import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditRooms, AgentRoomRead, LoroDocumentEdits } from "../ports/document-rooms.js";
 import { isDocumentNotFoundError } from "../ports/document-rooms.js";
@@ -90,8 +89,6 @@ export interface LoroEditCoreOptions {
    * turn the host can't trace. Absent: every turn but the reader's own is `another agent`.
    */
   authorOfTurn?(turnId: string): Promise<string | null>;
-  defaultSessionId?: string;
-  defaultThreadId?: string;
   onLinkSpliceFallback?: (event: { documentId: string; reason: SpliceFallback }) => void;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
@@ -109,16 +106,15 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   const { schema, rooms } = options;
   const model = loroModel(schema);
   const renderer = createDocumentRenderer({ model });
-  const localSessions = new Map<string, ActorSession>();
   const autoTurnIdNonce = createAutoTurnIdNonce();
   let autoTurnCounter = 0;
 
   const read: ReadFunction = async (command, context = {}) => {
     const parsed = ReadCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand("read", parsed.error);
-    return execute("read", parsed.data, context, (valid, session) =>
+    return execute("read", parsed.data, context, (valid, threadId) =>
       valid.format === "edits"
-        ? readEdits(valid, session, context)
+        ? readEdits(valid, threadId, context)
         : readDocumentCommand(valid, context),
     );
   };
@@ -126,18 +122,18 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand(fallbackCommandName(command), parsed.error);
-    return execute(parsed.data.command, parsed.data, context, (valid, session) => {
+    return execute(parsed.data.command, parsed.data, context, (valid, threadId) => {
       switch (valid.command) {
         case "create":
         case "copy":
-          return create(valid, session, context);
+          return create(valid, threadId, context);
         case "insert":
         case "replace":
         case "remove":
-          return mutate(valid, session, context);
+          return mutate(valid, threadId, context);
         case "undo":
         case "revert":
-          return inverse(valid, session, context);
+          return inverse(valid, threadId, context);
       }
     });
   };
@@ -154,21 +150,20 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     commandName: DocumentCommandName,
     command: Command,
     context: WriteContext,
-    run: (command: Command, session: ActorSession) => Promise<InternalWriteResult>,
+    run: (command: Command, threadId: string) => Promise<InternalWriteResult>,
   ): Promise<WriteOutcome> {
-    const session = resolveSession(context);
+    const threadId = threadOf(context);
     let result: InternalWriteResult;
     try {
       const address = parseFileAddress(command);
-      result = address.ok ? await run(command, session) : status("invalid_write", address.message);
+      result = address.ok ? await run(command, threadId) : status("invalid_write", address.message);
     } catch (cause) {
       if (!isDocumentNotFoundError(cause))
         options.onUnexpectedWriteError?.({
           cause,
           command: commandName,
           ...(command.documentId ? { documentId: command.documentId } : {}),
-          sessionId: session.id,
-          threadId: session.threadId,
+          threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
         });
       result = writeError(cause, commandName);
@@ -176,19 +171,13 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     return toOutcome(commandName, result, command.file);
   }
 
-  function resolveSession(context: WriteContext): ActorSession {
-    if (context.session) return context.session;
-    const actorThreadId =
-      context.actor?.kind === "agent" || context.actor?.kind === "human"
-        ? context.actor.threadId
-        : undefined;
-    const id = context.sessionId ?? options.defaultSessionId ?? "default-session";
-    const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
-    const existing = localSessions.get(id);
-    if (existing) return existing;
-    const session: ActorSession = { id, threadId };
-    localSessions.set(id, session);
-    return session;
+  function threadOf(context: WriteContext): string {
+    const actor = context.actor;
+    return (
+      (actor?.kind === "agent" || actor?.kind === "human" ? actor.threadId : undefined) ??
+      context.threadId ??
+      "default-thread"
+    );
   }
 
   /** The call's room copy, freed when `use` settles; a missing document answers its result. */
@@ -285,13 +274,13 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     });
   }
 
-  async function readEdits(command: ReadCommand, session: ActorSession, context: WriteContext) {
+  async function readEdits(command: ReadCommand, threadId: string, context: WriteContext) {
     const port = options.documentEdits;
     if (!port) return status("invalid_write", "This host has no edit history.");
     const address = parseFileAddress(command) as Address;
     const result = await port.read({
       documentId: address.documentId,
-      threadId: session.threadId,
+      threadId,
       context,
       command,
     });
@@ -304,7 +293,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   async function inverse(
     command: Extract<WriteCommand, { command: "undo" | "revert" }>,
-    session: ActorSession,
+    threadId: string,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const port = options.documentEdits;
@@ -312,7 +301,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const address = parseFileAddress(command) as Address;
     const result = await port.execute({
       documentId: address.documentId,
-      threadId: session.threadId,
+      threadId,
       context,
       command,
     });
@@ -360,7 +349,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   async function create(
     command: Extract<WriteCommand, { command: "create" | "copy" }>,
-    session: ActorSession,
+    threadId: string,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command) as Address;
@@ -368,14 +357,13 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     if (command.command === "copy" && !context.copiedNodes)
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
-    const actor = mutationActor(session, address.documentId, context);
+    const actor = mutationActor(threadId, address.documentId, context);
     const copiedNodes =
       command.command === "copy" && context.copiedNodes
         ? landCopies(context.copiedNodes, null)
         : undefined;
     const content = command.command === "create" ? (command.content ?? "") : "";
-    const boundNodes = command.command === "create" ? context.boundNodes : undefined;
-    const given = copiedNodes ?? boundNodes;
+    const given = copiedNodes;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
       : renderer.parseForCommand(
@@ -407,7 +395,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
               doc: toLoroHandle(planned.doc),
               model,
               codec: commandLinks.codec,
-              links: boundNodes ? "preassigned" : assigner,
+              links: assigner,
             },
             address,
             copiedNodes ? { blocks: copiedNodes } : { content, parsedContent: parsed.parsed },
@@ -427,7 +415,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         }
         const result = await finish({
           command,
-          session,
+          threadId,
           context,
           read,
           copy,
@@ -458,7 +446,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   async function mutate(
     command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
-    session: ActorSession,
+    threadId: string,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command) as Address;
@@ -468,7 +456,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     if (copiedNodes?.length === 0)
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
-    const actor = mutationActor(session, address.documentId, context);
+    const actor = mutationActor(threadId, address.documentId, context);
     return withRoom(address.documentId, command.command, async (read, copy) => {
       const planned = await planningDoc(read, copy, address.documentId, context, actor);
       try {
@@ -580,7 +568,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         }
         return await finish({
           command,
-          session,
+          threadId,
           context,
           read,
           copy,
@@ -661,7 +649,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   /** One write landing: applied on its plan doc, exported as one batch, saved with its record. */
   async function finish(edit: {
     command: WriteCommand;
-    session: ActorSession;
+    threadId: string;
     context: WriteContext;
     read: AgentRoomRead;
     /** The call's room copy: the echo, the delta and the recorded frontier read it. */
@@ -675,7 +663,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     plan: Plan;
     copied?: { from: string; edges: boolean };
   }): Promise<InternalWriteResult> {
-    const { command, session, context, read, copy, planDoc, actor, address, plan } = edit;
+    const { command, threadId, context, read, copy, planDoc, actor, address, plan } = edit;
     const docId = address.documentId;
     // The writer removed what the model named since its read: its words would bring it back.
     if (planDoc !== copy && "edits" in plan && missingTarget(plan.edits, copy))
@@ -696,7 +684,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         context,
       });
     }
-    const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
+    const identity = await nextWriteIdentity(docId, threadId, context, command.tool_use_id);
     const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
     const textBefore = blocksOf(copy);
     const since = read.docs.shownVersion();
@@ -743,7 +731,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       writeId: identity.durableId,
       wId: identity.ordinal,
       ...(identity.toolCallId ? { toolCallId: identity.toolCallId } : {}),
-      threadId: session.threadId,
+      threadId,
       turnId: actor.kind === "agent" ? actor.turnId : null,
       ...(actor.kind === "agent" && actor.responseId
         ? { authoringResponseId: actor.responseId }
@@ -769,7 +757,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       {
         revision: revision(copy, edit.links.scope),
         writeId: editHandle(identity.ordinal),
-        awarenessDegraded: false,
       },
     );
     return withEvidence(edit.links, read, copy, docId, context, result, {
@@ -856,33 +843,29 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   async function nextWriteIdentity(
     docId: string,
-    session: ActorSession,
+    threadId: string,
     context: WriteContext,
     commandToolUseId?: string,
   ) {
-    const ordinal = await options.ordinals.reserveWriteOrdinal(docId, session.threadId);
+    const ordinal = await options.ordinals.reserveWriteOrdinal(docId, threadId);
     const toolCallId = commandToolUseId ?? context.tool_use_id;
     // Scoped to the turn so the same tool-call id in another turn is another write.
     const durableId =
       (toolCallId && context.turnId ? `turn:${context.turnId}:tool:${toolCallId}` : toolCallId) ??
       globalThis.crypto?.randomUUID?.() ??
-      `${session.threadId}:${docId}:write-${ordinal}`;
+      `${threadId}:${docId}:write-${ordinal}`;
     return { durableId, ordinal, ...(toolCallId ? { toolCallId } : {}) };
   }
 
-  function mutationActor(
-    session: ActorSession,
-    docId: string,
-    context: WriteContext,
-  ): MutationActor {
+  function mutationActor(threadId: string, docId: string, context: WriteContext): MutationActor {
     if (context.actor) return context.actor;
     const turnId =
       context.turnId ??
-      `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${(++autoTurnCounter).toString(36)}`;
+      `${threadId}:${docId}:turn-${autoTurnIdNonce}-${(++autoTurnCounter).toString(36)}`;
     return {
       kind: "agent",
       turnId,
-      threadId: session.threadId,
+      threadId,
       responseId: context.responseIdentity?.modelResponseId,
     };
   }

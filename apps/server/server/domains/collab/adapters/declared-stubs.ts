@@ -36,7 +36,3 @@ export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnosti
     return {};
   },
 };
-
-export const SILENT_REVERSAL_NOTICE_DIAGNOSTICS: ReversalNoticeDiagnostics = {
-  documentUriMissing() {},
-};

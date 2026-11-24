@@ -14,13 +14,6 @@ export function parseOptionalRequestId(value: unknown, field: string): ParsedReq
   return value === undefined ? undefined : requireRequestId(value, field);
 }
 
-export function parseNullableRequestId(
-  value: unknown,
-  field: string,
-): ParsedRequestId | null | undefined {
-  return value === null || value === undefined ? value : requireRequestId(value, field);
-}
-
 /** The selection is transport input; both opaque identities use the normal UUID grammar. */
 export function requireAgentSelection(value: unknown): AgentSelection {
   const parsed = agentSelectionSchema.safeParse(value);

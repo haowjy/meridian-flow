@@ -172,9 +172,6 @@ function notes(result: AgentEditResultV1): string[] {
   }
   if (result.documentEmpty) lines.push("document is now empty.");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.awarenessDegraded) {
-    lines.push("concurrent changes not reported.");
-  }
   return lines;
 }
 

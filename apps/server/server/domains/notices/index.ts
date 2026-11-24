@@ -11,7 +11,6 @@ type NoticeFields = {
 
 export type NoticeInput =
   | ({ kind: "undo" } & NoticeFields)
-  | ({ kind: "awareness_degraded" } & NoticeFields)
   | {
       kind: "work_switched";
       scope: { kind: "thread"; threadId: ThreadId };
@@ -52,20 +51,6 @@ export function parseNoticeInput(value: unknown): NoticeInput {
   }
   if (kind === "undo") {
     return { kind, scope: { kind: "thread", threadId: scope.threadId }, message, data };
-  }
-  if (
-    kind === "awareness_degraded" &&
-    Array.isArray(data.documentIds) &&
-    data.documentIds.every((id) => typeof id === "string") &&
-    Array.isArray(data.documentNames) &&
-    data.documentNames.every((name) => typeof name === "string")
-  ) {
-    return {
-      kind,
-      scope: { kind: "thread", threadId: scope.threadId },
-      message,
-      data,
-    };
   }
   if (
     kind === "work_switched" &&

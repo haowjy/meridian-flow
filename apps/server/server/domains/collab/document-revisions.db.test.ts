@@ -113,7 +113,6 @@ async function fixture(
   const core = f.collab.agentEdit();
   const context = {
     threadId: THREAD_ID,
-    sessionId: THREAD_ID,
     turnId: TURN_ID,
     grant: inProject(
       testFileGrant(

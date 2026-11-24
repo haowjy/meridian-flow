@@ -155,7 +155,6 @@ function unexpectedWriteErrorObserver(
       },
       payload: {
         command: event.command,
-        sessionId: event.sessionId,
         ...(event.responseId ? { responseId: event.responseId } : {}),
         ...(event.toolUseId ? { toolUseId: event.toolUseId } : {}),
         ...unknownToEventPayload(event.cause),

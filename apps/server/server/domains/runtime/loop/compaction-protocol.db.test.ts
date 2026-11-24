@@ -1899,7 +1899,7 @@ else
       let rig: Awaited<ReturnType<typeof fixture>>;
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         await port.record({
-          kind: "awareness_degraded",
+          kind: "undo",
           scope: { kind: "thread", threadId: rig.threadId },
           message: "Refresh context.",
           data: { documentIds: ["chapter-1"], documentNames: ["chapter-1"] },

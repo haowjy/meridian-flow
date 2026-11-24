@@ -148,7 +148,7 @@ export type {
   ProjectResultRecord,
   ResultRepository,
 } from "./promotion/ports/result-repository.js";
-export { evaluatePromotionPolicy, PROMOTION_POLICY_TABLE } from "./promotion/promotion-policy.js";
+export { evaluatePromotionPolicy } from "./promotion/promotion-policy.js";
 export {
   createPromotionService,
   type PromotedArtifact,

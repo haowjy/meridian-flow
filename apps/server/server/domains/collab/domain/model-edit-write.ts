@@ -14,7 +14,7 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { runAtDestination } from "./agent-destination.js";
-import type { AgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
+import type { AgentEditCore } from "./agent-edit-cores.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
@@ -48,7 +48,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     return deps.core.write(command, given);
   }
 
-  return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
+  return (command, routed: ModelEditWriteContext): Promise<WriteOutcome> => {
     const { grant, ...rest } = routed;
     const { destination } = grant;
     const given = {

@@ -18,10 +18,7 @@ export interface LinkPrepareRequest {
   documentId: string;
   /** Freshly parsed nodes whose written addresses ref assignment may resolve. */
   written?: readonly PMNode[];
-  /**
-   * Nodes that already carry stored attrs and will be spelled as stored:
-   * copies, and a host's bound write (`WriteContext.boundNodes`).
-   */
+  /** Copied nodes: they already carry stored attrs and are spelled as stored. */
   stored?: readonly PMNode[];
   /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
   refs?: readonly string[];

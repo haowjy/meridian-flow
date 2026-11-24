@@ -90,7 +90,7 @@ const coreFor = (draftId: string | null) => {
     ordinals: host.ordinals,
     schema,
     codec,
-    links: createStaticDocumentLinks(undefined, { preloaded: true }),
+    links: createStaticDocumentLinks(),
     documentEdits: chatRooms.documentEdits,
     authorOfTurn: async (turn) => (turn === "t-other" ? "agent (c7)" : null),
   });

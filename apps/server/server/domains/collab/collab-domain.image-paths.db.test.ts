@@ -80,7 +80,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             content: "![Pass](assets/map.png) The pass.",
           },
           {
-            sessionId: "session-map",
             threadId: THREAD_ID,
             turnId: TURN_ID,
             grant: grantInProject(grant, PROJECT_ID),
@@ -179,7 +178,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const read = await collab.agentEdit().read(
         { file: "chapter-two", documentId: secondDocumentId },
         {
-          sessionId: "session-read",
           threadId: THREAD_ID,
           turnId: TURN_ID,
           grant: grantInProject(grant, PROJECT_ID),

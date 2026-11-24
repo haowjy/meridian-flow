@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { WriteCommand } from "@meridian/agent-edit/integration";
-import type { RoutedWriteContext, RoutedWriteOutcome } from "../domain/agent-edit-cores.js";
+import type { WriteCommand, WriteOutcome } from "@meridian/agent-edit/integration";
+import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import type { ModelEdits } from "../domain/model-edit.js";
 
 /**
@@ -12,7 +12,7 @@ export async function modelWrite(
   command: WriteCommand,
   context: RoutedWriteContext,
   who: { accountId: string; projectId: string },
-): Promise<RoutedWriteOutcome> {
+): Promise<WriteOutcome> {
   const key = {
     threadId: context.threadId as never,
     responseId: context.responseIdentity?.modelResponseId ?? randomUUID(),
@@ -20,7 +20,7 @@ export async function modelWrite(
     accountId: who.accountId as never,
     projectId: who.projectId as never,
   };
-  let written: RoutedWriteOutcome | undefined;
+  let written: WriteOutcome | undefined;
   await modelEdits.run({
     key,
     owner: { threadId: context.threadId as string, turnId: context.turnId as string },

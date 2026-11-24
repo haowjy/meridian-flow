@@ -1,6 +1,6 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
-import type { LoroEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
-import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
+import type { LoroEditCore, WriteContext } from "@meridian/agent-edit/integration";
+import type { FileGrant } from "../../file-policy/index.js";
 
 /**
  * A write's context: the edit grant the caller got from the file policy. Its
@@ -15,18 +15,8 @@ export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
  */
 export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
 
-/** An inverse may reverse some writes and name the policy refusals for the rest. */
-export type RoutedWriteOutcome = WriteOutcome & {
-  refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
-};
-
 /**
  * The model's reads and writes: agent-edit's Loro core on the server's rooms, one for every chat.
  * The call's destination (`runAtDestination`) picks Live or the chat's draft fork.
  */
 export type AgentEditCore = Pick<LoroEditCore, "read" | "write">;
-
-export function sameDestination(left: FileDestination, right: FileDestination): boolean {
-  if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
-  return left.draftId === right.draftId;
-}

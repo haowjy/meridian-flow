@@ -12,11 +12,7 @@ import type {
   ModelEditToolResult,
 } from "@meridian/contracts/drafts";
 import type { ResultEvidence } from "../../../shared/model-evidence.js";
-import type {
-  RoutedReadContext,
-  RoutedWriteContext,
-  RoutedWriteOutcome,
-} from "./agent-edit-cores.js";
+import type { RoutedReadContext, RoutedWriteContext } from "./agent-edit-cores.js";
 
 /** An effect turned the call away: its savepoint rolls back and `toolResult` is the stored answer. */
 export class ModelEditRefusal extends Error {
@@ -66,7 +62,7 @@ export type ModelEdits = {
    * The call's write at its destination, read, planned and appended under the lock the append
    * takes. Valid only inside a `run` effect: it joins that transaction.
    */
-  write(command: WriteCommand, context: ModelEditWriteContext): Promise<RoutedWriteOutcome>;
+  write(command: WriteCommand, context: ModelEditWriteContext): Promise<WriteOutcome>;
   /**
    * A read inside a `run` effect: it joins the command's transaction and pulls nothing from live
    * (the document was caught up before `run`). A returned edit shows the document with it.

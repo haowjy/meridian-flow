@@ -52,7 +52,6 @@ export async function readDocument(
       documentId: address.documentId,
     },
     {
-      sessionId: ctx.threadId,
       threadId: ctx.threadId,
       turnId: ctx.turnId,
       grant,

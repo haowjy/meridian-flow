@@ -7,7 +7,6 @@ import type { Block } from "../codec-types.js";
 import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
-import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type { AgentEditResultCommand, AgentEditResultV1, WriteStatus } from "./model-result.js";
 
@@ -22,7 +21,6 @@ export type {
   WriteErrorStatus,
   WriteStatus,
 } from "./model-result.js";
-export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase & { status: WriteStatus };
 
@@ -65,7 +63,6 @@ export interface UnexpectedWriteErrorDetail {
   cause: unknown;
   command: DocumentCommandName;
   documentId?: string;
-  sessionId: string;
   threadId: string;
   turnId?: string;
   responseId?: string;
@@ -76,13 +73,7 @@ export interface UnexpectedWriteErrorDetail {
 export interface WriteContext {
   /** Attribution and safety policy for mutating commands. */
   actor?: MutationActor;
-  /** Stable session supplied directly by embedded callers. */
-  session?: ActorSession;
-  /** External identity resolved through ActorSessionStore when configured. */
-  externalId?: string;
-  /** Convenience identity for server-local callers that do not need an ActorSessionStore. */
-  sessionId?: string;
-  /** Convenience thread override for server-local callers. */
+  /** The writing thread, where `actor` names none: its writes' handles and edit list are its own. */
   threadId?: string;
   /** Host turn id for undo metadata; cross-call turn grouping is completed above this API later. */
   turnId?: string;
@@ -99,13 +90,6 @@ export interface WriteContext {
    * source. They become the command's content as nodes.
    */
   copiedNodes?: readonly Block[];
-  /**
-   * A host's whole-document write, bound outside its transaction (§6.2): the
-   * `create` command's content as nodes whose refs are assigned and whose
-   * ahead refs are registered. Nothing is parsed or assigned again; an
-   * overwrite aligns them against the document as it is when applied.
-   */
-  boundNodes?: readonly Block[];
   /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;

@@ -1,12 +1,4 @@
-export {
-  createDrizzleFigureDocumentRepository,
-  DrizzleFigureDocumentRepository,
-} from "../adapters/figures/drizzle-figure-document-repository.js";
-export {
-  createInMemoryFigureDocumentRepository,
-  InMemoryFigureDocumentRepository,
-  type InMemoryFigureDocumentRepositoryOptions,
-} from "../adapters/figures/in-memory-figure-document-repository.js";
+export { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 export type {
   DocumentFileRecord,
   FigureDocumentRepository,
