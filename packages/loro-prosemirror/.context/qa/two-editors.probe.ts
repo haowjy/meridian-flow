@@ -163,6 +163,11 @@ function differs(e: Editor, when: string): string | null {
 let wroteText = false;
 /** Undo chains a peer's write since made come back different, with no word lost. */
 let chainsOverPeers = 0;
+/**
+ * Undo chains whose Redo deleted again words its step had deleted, after a peer's move brought
+ * them back (seeds 23, 236): the Ctrl+Z wrote over the move, and the Redo over it.
+ */
+let redeleted = 0;
 /** Undos and Redos that brought back a word a peer deleted, or a mark a peer changed. */
 let overPeers = 0;
 /** Undos and Redos that showed a word more times than it had shown. */
@@ -555,6 +560,26 @@ function run(seed: number): string | null {
     observe(e, "peer", e === a ? b : a);
     return keptOf(e).size === 0;
   };
+  /** The typed words `e` shows. */
+  const shownWords = (e: Editor) => {
+    const { doc } = e.view.state;
+    return new Set([...doc.textBetween(0, doc.content.size, "|").matchAll(/q[AB]\d+/g)].map(([word]) => word));
+  };
+  /** The id of `e`'s newest Undo step: the probe reads the history's own steps to tell them apart. */
+  const newestStep = (e: Editor) =>
+    `${e.name}${(e.history as unknown as { undoSteps: { id: number }[] }).undoSteps.at(-1)?.id}`;
+  /** Per step, the typed words its own edits took off its editor's screen. */
+  const stepDeleted = new Map<string, Set<string>>();
+  /** A local edit, noting the words it took off the screen under its step. */
+  const write = (e: Editor, tr: Transaction) => {
+    const saw = shownWords(e);
+    e.view.dispatch(fixIds(tr));
+    const after = shownWords(e);
+    const step = newestStep(e);
+    const deleted = stepDeleted.get(step) ?? new Set<string>();
+    for (const word of saw) if (!after.has(word)) deleted.add(word);
+    stepDeleted.set(step, deleted);
+  };
   // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
   // same document. A Redo can take two steps when one of them now changes nothing (a peer deleted
   // the text it puts back), so the Redos are not counted.
@@ -568,8 +593,15 @@ function run(seed: number): string | null {
       if (bad) return bad;
       if (stepHistory(e, "undo")) ran++;
     }
+    // Words a Redo took off the screen that its step took off when it was written: the Redo
+    // deletes them again.
+    const redone = new Set<string>();
     for (let i = 0; e.history.canRedo(); i++) {
+      const before = shownWords(e);
       if (!stepHistory(e, "redo") && i === 0 && ran > 0) return `${when}: no Redo after ${ran} Undos`;
+      const deleted = stepDeleted.get(newestStep(e)) ?? new Set();
+      const after = shownWords(e);
+      for (const word of before) if (!after.has(word) && deleted.has(word)) redone.add(word);
       const bad = differs(e, `${when}, Redo ${i}`);
       if (bad) return bad;
     }
@@ -587,10 +619,12 @@ function run(seed: number): string | null {
     const was = blocks(start);
     const now = blocks(e.view.state.doc);
     const all = (map: Map<string, string>) => [...map.values()].join("|");
-    const lost = [...all(was).matchAll(/q[AB]\d+/g)].map(([word]) => word).filter((word) => !all(now).includes(word));
+    const gone = [...all(was).matchAll(/q[AB]\d+/g)].map(([word]) => word).filter((word) => !all(now).includes(word));
+    const lost = gone.filter((word) => !redone.has(word));
     const changed = [...was].filter(([id, text]) => now.has(id) && now.get(id) !== text);
     if (lost.length === 0 && changed.length === 0) {
-      chainsOverPeers++;
+      if (gone.length > 0) redeleted++;
+      else chainsOverPeers++;
       return null;
     }
     if (lost.length > 0) return `${when}: ${ran} Undos and Redos lost ${lost.join(" ")}`;
@@ -625,7 +659,7 @@ function run(seed: number): string | null {
       }
       if (!tr?.docChanged) continue;
       const version = encodeRoomVersion(e.docs.version()).join();
-      e.view.dispatch(fixIds(tr));
+      write(e, tr);
       // An edit that empties the Redo ends what a Redo could take off the screen since.
       if (!e.history.canRedo()) sinceRedo[e.name as "A" | "B"].clear();
       observe(e, "own");
@@ -698,7 +732,7 @@ function run(seed: number): string | null {
           continue; // an edit that does not fit this document
         }
         if (!tr?.docChanged) continue;
-        who.view.dispatch(fixIds(tr));
+        write(who, tr);
         observe(who, "own");
         // Most edits are a step of their own; the rest join the next, as a quick burst does.
         if (rand() < 0.7) who.history.endStep();
@@ -1003,6 +1037,90 @@ function racedRemovals(): string[] {
         r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "y") + 1));
         r.a.history.endStep();
         return settle(r, "two joins, unread typing", showsAll("Pre.Mid word.Tail text.|qA9 Tail text."), once("qA9"));
+      },
+    },
+    // Seed 35: as above, and B's Ctrl+Z and Redo of the join. The Redo's removal counts what the
+    // join read, not what the Ctrl+Z left on screen: the join's copy has none of A's typing, so x
+    // comes back again beside it.
+    "a Redo of a join that did not read A's typing gives the block back": {
+      room: () => room([p("p", "Pre."), p("x", "Mid word.")]),
+      run: (r) => {
+        r.b.view.dispatch(r.b.view.state.tr.join(posOf(r.b, "x")));
+        r.b.history.endStep();
+        r.a.view.dispatch(r.a.view.state.tr.insertText("qA9 ", posOf(r.a, "x") + 1));
+        r.a.history.endStep();
+        syncAll(r);
+        if (!runHistory(r.b, "undo")) return "join Redo: B's Ctrl+Z did not run";
+        const undone = settle(r, "join Redo, B's Ctrl+Z", showsAll("Pre.|qA9 Mid word."), once("qA9"));
+        if (undone) return undone;
+        if (!runHistory(r.b, "redo")) return "join Redo: B's Redo did not run";
+        return settle(r, "join Redo, B's Redo", showsAll("Pre.Mid word.|qA9 Mid word."), once("qA9"));
+      },
+    },
+    // Seed 247: B adds a paragraph of its words in a cell of the table A inserted. A's Ctrl+Z,
+    // Redo and Ctrl+Z again of the table keep B's words: each removal counts what the insert read,
+    // not what the Redo showed.
+    "a Ctrl+Z after a Redo of a table keeps the peer's paragraph in it": {
+      room: () => room([p("a", "First."), p("z", "Last.")]),
+      run: (r) => {
+        const cell = (id: string) => schema.nodes.table_cell.create({ id }, [p(`${id}p`, "Cell.")]);
+        const grid = schema.nodes.table.create({ id: "t" }, [schema.nodes.table_row.create({ id: "r" }, [cell("c1"), cell("c2")])]);
+        r.a.view.dispatch(r.a.view.state.tr.insert(posOf(r.a, "z"), grid));
+        r.a.history.endStep();
+        syncAll(r);
+        const c2 = posOf(r.b, "c2");
+        const box = r.b.view.state.doc.nodeAt(c2) as Node;
+        r.b.view.dispatch(r.b.view.state.tr.insert(c2 + box.nodeSize - 1, p("n", "qB1")));
+        r.b.history.endStep();
+        syncAll(r);
+        for (const direction of ["undo", "redo", "undo"] as const) {
+          if (!runHistory(r.a, direction)) return `table ${direction}: did not run`;
+          const bad = settle(r, `table, A's ${direction}`, showsAll("qB1"), once("qB1"));
+          if (bad) return bad;
+        }
+        return null;
+      },
+    },
+    // Seed 221: B typed in i2; A deletes across i1 and i2, so i1 holds a copy of B's words and i2
+    // is removed; B unwraps the panel, moving i1 out and removing c. A's Ctrl+Z takes its copy out
+    // and puts i2 back under c: c comes back with it, so B's words stay on screen.
+    "a Ctrl+Z that puts a block back under a container a peer removed brings the container back": {
+      room: () => room(),
+      run: (r) => {
+        caret(r.b, "i2", 0);
+        type(r.b, "qB1 ");
+        away(r.b);
+        syncAll(r);
+        r.a.view.dispatch(r.a.view.state.tr.delete(posOf(r.a, "i1") + 1, posOf(r.a, "i2") + 1));
+        r.a.history.endStep();
+        syncAll(r);
+        unwrap(r.b, "c");
+        syncAll(r);
+        if (!runHistory(r.a, "undo")) return "unwrapped panel: A's Ctrl+Z did not run";
+        return settle(r, "unwrapped panel, A's Ctrl+Z", showsAll("qB1 Inner two."));
+      },
+    },
+    // Seed 23: A removes the table with its own words in a cell, and B, not having seen it, moves
+    // the table, which brings it back (B's peer id is the higher, so its key wins). A's Ctrl+Z
+    // puts the table back where it was, over B's move, and Redo removes it again, A's words with
+    // it: A deleted them.
+    "A's Redo of a delete goes over a peer's move that brought the block back": {
+      room: () => room(start(), [1n, 2n]),
+      run: (r) => {
+        caret(r.a, "c1p", 0);
+        type(r.a, "qA1 ");
+        syncAll(r);
+        remove(r.a, "t");
+        move(r.b, "t", "a");
+        syncAll(r);
+        if (!shown(r.a).startsWith("qA1 Cell one.")) return `moved-back table: A shows "${shown(r.a)}"`;
+        runHistory(r.a, "undo");
+        const undone = settle(r, "moved-back table, A's Ctrl+Z", (t) =>
+          t.startsWith("First.|Delete-target before after.|qA1 Cell one.") ? null : `shows "${t}"`,
+        );
+        if (undone) return undone;
+        if (!runHistory(r.a, "redo")) return "moved-back table: A's Redo did not run";
+        return settle(r, "moved-back table, A's Redo", showsNone("Cell one."));
       },
     },
     // Review p19017 (#1851): a draft, forked before A's Ctrl+Z step, rewrites "First.", so it too
@@ -1419,7 +1537,7 @@ function racedRemovals(): string[] {
       if (!runHistory(r.a, "redo")) return "Redo case: the Redo did not run";
       return settle(r, "Redo of a delete after the peer typed", showsAll("Delete-target  morebefore after."));
     },
-    // A Redo of a delete with nothing typed since still lands, with a record of what A reads now.
+    // A Redo of a delete with nothing typed since still lands, with a record of what the delete read.
     "Redo of a delete stands when nothing was typed since": (r) => {
       remove(r.a, "x");
       syncAll(r);
@@ -2078,6 +2196,6 @@ if (process.env.HANDLES && unfreed.size > 0) {
   for (const [where, n] of groups) process.stderr.write(`FAIL unfreed handles: ${n} × ${where}\n`);
 }
 process.stdout.write(
-  `${failed ? `${failed} failed` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}`}; ${chainsOverPeers} Undo chains and ${overPeers} words or marks put back over a peer's write, ${shownTwice} words shown twice\n`,
+  `${failed ? `${failed} failed` : `ok: raced removals, ${seeds} seeds × ${steps} steps from ${first}`}; ${chainsOverPeers} Undo chains and ${overPeers} words or marks put back over a peer's write, ${redeleted} chains whose Redo deleted words again, ${shownTwice} words shown twice\n`,
 );
 process.exitCode = failed ? 1 : 0;

@@ -33,7 +33,7 @@ paste, a Backspace or an Enter brings it back (also when the removal read B's fi
 of a removed table, and under two removals on the caret's path, a paragraph by A and its table by
 a third editor); the caret leaving takes it off the screen; an untracked write elsewhere (an
 attribute and a move of a sibling, as an upload or a chip respelled does) leaves it removed in the
-docs and kept on B's screen. Undo: a Redo of a delete lands with a record of what it reads now, so a peer's later typing
+docs and kept on B's screen. Undo: a Redo of a delete lands with a record of what the delete read, so a peer's typing since
 brings the block back; its Undo brings the block back; two levels of Undo and Redo around deletes
 give back each document; B's Ctrl+Z in a block a removal read, followed by a batch removing
 something else, leaves the block removed; and an agent's text op or delete op (`applyOps` on a
@@ -49,8 +49,9 @@ back. After A's Enter, A's Ctrl+Z runs over a peer that moves, wraps, types in o
 half, deletes the first half or joins the halves back: the tail goes back into the first half, a
 half a peer typed in comes back with those words alone (rule 1 over the Undo's own write), a
 peer's join leaves the tail beside its copy (text twice), and a bold is lost (a hole). A join a
-peer retyped goes back, as does a wrap a peer moved a block out of; a move whose Undo puts a block
-under a container a peer removed brings the container back with it. From review p18993: a peer's
+peer retyped goes back, as does a wrap a peer moved a block out of. Any Ctrl+Z or Redo that puts a
+block back under a container a peer removed brings the whole container back, with the words the
+peer saw and removed in it. From review p18993: a peer's
 deletion still in flight when A's Ctrl+Z puts the tail back finds nothing (a hole) and the words
 stay (C2); the steps either side of a split a peer typed in go back and come again (C3); with
 nobody else writing, Ctrl+Z takes back a picture whose upload landed as an untracked write (C4).
@@ -71,7 +72,14 @@ again (seed 953); typing into the placeholder after a peer emptied the container
 paragraph without the removed one's words, and one Ctrl+Z brings the placeholder back. A join that
 did not read a peer's typing gives the block back beside its copy, whether the typing arrives
 after the join (rule 1) or the typer's caret kept the block (the caret rule), and so does a join
-followed by a split of its copy, or two joins in a row (reviews p19056, p19057). From review
+followed by a split of its copy, or two joins in a row (reviews p19056, p19057), and the join's
+Redo after its Ctrl+Z (seed 35: the Redo's removal counts what the join read, not what the Ctrl+Z
+left on screen). A peer's paragraph in a cell of A's table stays through A's Ctrl+Z, Redo and
+Ctrl+Z of the table (seed 247: the same, after a Redo). A's Ctrl+Z that puts a block back under a
+container a peer removed (an unwrap) brings the container back with it (seed 221). A removal a
+peer's move brought back is written over by A's Ctrl+Z, which puts the block back where it was,
+and again by its Redo, which removes it with the words A saw in it (seed 23's shape, with fixed
+peer ids because which concurrent write wins depends on them). From review
 p18996: one edit judged on its author's copy and on a fresh copy gives one answer. From review
 p18998: B's batch between each of A's 1,001 keys splits A's one typing step into an item per key,
 and its Undo takes back every key.
@@ -118,7 +126,12 @@ have re-read (`readDocument`'s `since`). For Undo it checks more:
 - from an empty Redo, up to six Ctrl+Z then Redo until none is left give back the document. When
   a peer wrote over one of the steps since, the steps go back over the peer's write and come again
   over it, so the document can differ: the chain then passes when no word either editor typed is
-  lost and every block both reads show has the same text (`chainsOverPeers`).
+  lost and every block both reads show has the same text (`chainsOverPeers`). A word a Redo took
+  off the screen that its step's own edits took off the screen when they were written is not lost:
+  the step deleted it, and a peer's move had brought it back (seed 236). The probe notes, by the
+  history's step id, the words each local edit took off its editor's screen. Such a chain is
+  counted apart (`redeleted`), and any other word gone fails, so a Redo taking words its step
+  never deleted (seed 35) still fails.
 
 The histories' clock stands still, so typing joins a step until the probe ends it on any machine
 (the clock once made seeds flake under load); any other write starts a step, and one that sets

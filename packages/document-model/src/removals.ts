@@ -36,9 +36,9 @@ export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
  * Rule 1 of "Removed blocks" (design §1): restore each removed block whose record did not count
  * an op, by any peer, that this copy holds in a text doc under it, of the removals the ops since
  * `before` brought (an import's, `before` taken just ahead of it) and of the removed blocks on the
- * path of each doc in `typed` (text an Undo put in), for that doc. A shown block in `moved` (one
- * an Undo moved) brings back every removed block on its path, as a move into a removed container
- * does anywhere. `RoomDocs.importBatch` and `forward` run it on every import, before anything
+ * path of each doc in `typed` (text an Undo put in), for that doc. A block in `moved` (one an
+ * Undo moved or brought back) brings back every removed block on its path, as a move into a
+ * removed container does anywhere. `RoomDocs.importBatch` and `forward` run it on every import, before anything
  * reads the copy, and an Undo over its own write (`putBackValues`). A draft's fork answers only
  * the removals in its own overrides. Returns the changes to publish.
  */

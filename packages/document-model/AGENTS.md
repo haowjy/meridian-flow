@@ -74,13 +74,16 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   stand and puts back the ones it deleted (Loro's `UndoManager` in the editor, `textInverse`
   here). Structure goes back key by key to the value before the edit, last writer wins. Every
   edit, stored or an editor step, keeps what its copy showed of the text docs under the blocks it
-  touched (`Edit.read`, `readOf`, taken just after the edit). A removal the Undo writes counts as
+  touched (`Edit.read`, `readOf`, taken just after the edit and never again: an editor step's
+  Undo and Redo count what the step read, not what a run since showed, or a Redo of a join, or a
+  Ctrl+Z after a Redo, takes a peer's words the step never read). A removal the Undo writes counts as
   read only those versions, what its record had read, what a removal below it read and the Undo's
   own ops; a doc outside them is unread. Under a block the edit made, a doc that shows no character the edit's
   copy didn't and the undoing side didn't put back counts as read whole (`showsUnread`): ops whose text an Undo
   since took out bring nothing back. Rule 1 (`answerRemovals`) then runs
-  over the Undo's commit, the text it put in and the shown blocks it moved, so a block anyone typed
-  into comes back and no one's words leave the screen. Text can show twice, and a later write over
+  over the Undo's commit, the text it put in, the shown blocks it moved and the blocks it brought
+  back (a container a peer removed around one comes back too), so a block anyone typed into comes
+  back and no one's words leave the screen. Text can show twice, and a later write over
   the edit's characters can lose letters with them: the owner accepted both (design §2). The text
   inverse reads a delete beside an equal insert as no change only when the insert's characters
   are the undoing side's (`unchanged`, `putBackBy`): the edit's own peers, the Undo's copy, or a

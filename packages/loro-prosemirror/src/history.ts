@@ -174,7 +174,8 @@ export class UndoHistory {
         this.watched.get(key)?.manager.groupStart();
       }
     }
-    // The step's first reading of each doc: a peer's typing in a block the step made is unread.
+    // The step's first reading of each doc, which no Undo or Redo reads again: a peer's typing in
+    // a block the step made, or one it joined away, stays unread.
     readOf(this.docs, edit, edit.read);
     step.at = this.now();
     if (edit.values.size > 0 && !this.joining) this.endStep();
@@ -255,7 +256,6 @@ export class UndoHistory {
       this.tag = null;
       const back = putBackValues(this.docs, step.edit.values, { read: step.edit.read, inserted });
       step.edit.values = back.values;
-      step.edit.read = readOf(this.docs, step.edit);
       changes.push(...back.changes);
       if (changes.length === 0) continue;
       const selection = this.restored(step.selection);

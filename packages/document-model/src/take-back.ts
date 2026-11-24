@@ -123,8 +123,9 @@ export interface PutBackText {
  * and keeps its other keys to come back with; a removal record the edit replaced is written anew
  * the same way. Each removal counts as read what the edit's copy showed (`text.read`), what its
  * record had read, what a removal under it read, and the Undo's own ops; any other op is unread.
- * Then rule 1 runs over the commit, the text the Undo put in and the shown blocks it moved
- * (`answerRemovals`): a removed block someone else typed into since comes back. Returns the
+ * Then rule 1 runs over the commit, the text the Undo put in, the shown blocks it moved and the
+ * blocks it brought back (`answerRemovals`): a removed block someone else typed into since comes
+ * back, and so does a container a peer removed around a block the Undo puts back. Returns the
  * changes, the restores included, and the values of the way back. `view`, if given, reads the
  * structure as it is.
  */
@@ -166,10 +167,11 @@ export function putBackValues(
       for (const [key, value] of keys) value.left = map.get(key);
     });
   const moved = puts
-    .filter(
-      ({ name, key, value }) =>
-        mapKind(name).map === "parent" && typeof value === "string" && read.shown.has(key),
-    )
+    .filter(({ name, key, value }) => {
+      const { map } = mapKind(name);
+      if (map === "parent") return typeof value === "string" && read.shown.has(key);
+      return map === "order" && isOrderKey(value) && removalOf(read.value("order", key)) !== null;
+    })
     .map(({ key }) => key);
   return {
     changes: [
