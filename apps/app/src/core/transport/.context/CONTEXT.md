@@ -61,7 +61,8 @@ room of a document only the draft holds, which no fork names.
 ## Errors
 
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
-  resets the room (`resetState`); `bad-auth` and `permission-denied` end it `unauthorized`;
+  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
+  Join this build formed wrong) ends it `terminal`;
   any other app code (the server hasn't seen this browser's `create` yet) closes and rejoins.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
   change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
@@ -69,7 +70,8 @@ room of a document only the draft holds, which no fork names.
   Any other `RoomError` ends the room `terminal`. A read permission sends no `DocUpdate`.
 - Close code `PERMISSION_DENIED` ends the room `unauthorized`. `AUTH_FAILED` makes it
   `signed-out`, which retries like any other close: with backoff (`RETRY_MS`), at once for a
-  `rejoin` close or a retry-now hint.
+  `rejoin` close or a retry-now hint. It stays `signed-out` across the retries' other closes until
+  a Join is answered.
 
 ## Access scope
 

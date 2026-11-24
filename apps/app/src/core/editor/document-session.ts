@@ -655,13 +655,8 @@ export class DocumentSession {
 
   /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
   isRoomEnded(): boolean {
-    const state = this.transportState;
     return (
-      this.destroyed ||
-      this.status === "access-lost" ||
-      state?.kind === "reset" ||
-      state?.kind === "unauthorized" ||
-      state?.kind === "terminal"
+      this.destroyed || this.status === "access-lost" || this.transportState?.kind === "terminal"
     );
   }
 
@@ -870,10 +865,9 @@ export class DocumentSession {
 
   private deriveStatus(): DocumentSessionStatus {
     if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";
-    if (!this.localPersistenceSynced) return "syncing";
     const state = this.transportState;
-    if (state?.kind === "unauthorized") return "access-lost";
-    if (state?.kind === "reset") return "access-lost";
+    if (state?.kind === "unauthorized" || state?.kind === "reset") return "access-lost";
+    if (!this.localPersistenceSynced) return "syncing";
     // A lapsed sign-in keeps the text and takes edits like offline; the account's list asks the
     // writer to sign in again.
     if (state?.kind === "terminal" || state?.kind === "signed-out") return "offline";

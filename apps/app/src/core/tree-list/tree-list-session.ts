@@ -77,7 +77,7 @@ function statusOf(state: RoomConnectionState, synced: boolean): TreeListStatus {
     case "signed-out":
       return "unauthenticated";
     case "unauthorized":
-      return state.reason === "permission-denied" || state.code === 4403 ? "denied" : "broken";
+      return "denied";
     default:
       return "broken";
   }

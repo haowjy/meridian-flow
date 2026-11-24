@@ -72,6 +72,7 @@ export type RoomConnectionState =
   /** A close with 4401: the sign-in lapsed. The room retries like a disconnected one. */
   | { kind: "signed-out" }
   | { kind: "reset"; reason: RoomResetReason; disposition: ResetDisposition }
+  /** Access ended: a Join refused with `permission-denied`, or a close with 4403. */
   | { kind: "unauthorized"; reason: string; code?: number }
   | { kind: "terminal"; reason: string };
 
@@ -342,11 +343,11 @@ export function createLoroRoomTransport({
       case MessageType.JoinError: {
         const reset = message.appCode ? RESET_REASONS[message.appCode] : undefined;
         if (reset) return end(resetState(reset));
-        if (
-          message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode ||
-          message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode
-        )
+        if (message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
+        // A Join this build could not form: retrying sends the same one.
+        if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
+          return end({ kind: "terminal", reason: message.appCode });
         // `document-unknown`: the server has not seen this browser's `create` yet.
         socket?.close(1000, "rejoin");
         return;
@@ -446,8 +447,10 @@ export function createLoroRoomTransport({
         connectivityHints?.reportDisconnected(source);
         return;
       }
+      // Signed out lasts until a Join is answered: a retry that never reached the server (the
+      // network dropped too) says nothing about the sign-in.
       emitStatus(
-        event.code === WS_CLOSE.AUTH_FAILED.code
+        event.code === WS_CLOSE.AUTH_FAILED.code || state.kind === "signed-out"
           ? { kind: "signed-out" }
           : { kind: "disconnected" },
       );
