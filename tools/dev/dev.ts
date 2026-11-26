@@ -6,7 +6,13 @@ import { checkDevReadiness } from "./dev-readiness";
 import { resolveStackEnv } from "./dev-stack-env";
 import { listCheckoutPaths } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import { browserUrl, loopbackOrigin, pinWorktreePortBase } from "./lib/dev-ports";
+import {
+  browserUrl,
+  type DevPorts,
+  loopbackOrigin,
+  pinWorktreePortBase,
+  resolveDevPorts,
+} from "./lib/dev-ports";
 import {
   acquireStartLock,
   browserPorts,
@@ -17,7 +23,6 @@ import {
   processStart,
   readIdleStopRecord,
   runningStack,
-  stackPorts,
   stopStack,
   waitForFreePorts,
 } from "./lib/dev-stack";
@@ -44,10 +49,7 @@ const has = (flag: string) => argv.includes(flag);
 const clientBuild: ClientBuild = has("--production-client") ? "production" : "development";
 // keep: taken before `.env` is loaded, so the stack receives only what this shell set
 const callerEnv = { ...process.env };
-if (!has("--print") && !callerEnv.DEV_PORT_BASE) {
-  pinWorktreePortBase(repoRoot, listCheckoutPaths(repoRoot));
-}
-const ports = stackPorts(repoRoot, callerEnv);
+let ports: DevPorts;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -172,14 +174,20 @@ async function launch(www: boolean): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // keep: stopping reads only the stack's record, so a bad DEV_PORT_BASE in `.env.local` can't keep a stack from being stopped
+  if (has("--stop")) {
+    console.log((await stopStack(repoRoot)) ? "stopped" : "not running");
+    return;
+  }
   const running = runningStack(repoRoot);
+  if (!running && !has("--print") && !callerEnv.DEV_PORT_BASE) {
+    pinWorktreePortBase(repoRoot, listCheckoutPaths(repoRoot));
+  }
+  // A running stack's ports come from its record: DEV_PORT_BASE set only in the shell that started it is not visible here.
+  ports = running?.ports ?? resolveDevPorts(repoRoot, callerEnv);
 
   if (has("--urls")) {
     report(running ? "running" : "not running", running ?? { clientBuild, www: has("--www") });
-    return;
-  }
-  if (has("--stop")) {
-    console.log((await stopStack(repoRoot)) ? "stopped" : "not running");
     return;
   }
   if (has("--restart") && running) {

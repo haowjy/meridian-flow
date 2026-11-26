@@ -56,11 +56,15 @@ export function unpublishFromTailnet(host: string, ports: readonly number[]): vo
   }
 }
 
-// keep: every port is checked before any is published; a route to anything but this stack's own address is someone else's and is never replaced
-export function publishOnTailnet(ports: readonly number[]): string {
+export function readTailnetHost(): string {
   const status = JSON.parse(tailscale(["status", "--json"])) as { Self?: { DNSName?: string } };
   const host = status.Self?.DNSName?.replace(/\.$/, "");
   if (!host) throw new Error("this machine has no tailnet name: `tailscale status` says why");
+  return host;
+}
+
+// keep: every port is checked before any is published; a route to anything but this stack's own address is someone else's and is never replaced
+export function publishOnTailnet(host: string, ports: readonly number[]): void {
   const config = serveConfig();
   for (const port of ports) {
     if (routeOn(config, host, port) === "other") {
@@ -69,11 +73,5 @@ export function publishOnTailnet(ports: readonly number[]): string {
       );
     }
   }
-  try {
-    for (const port of ports) tailscale(["serve", "--bg", `--https=${port}`, loopbackOrigin(port)]);
-  } catch (error) {
-    unpublishFromTailnet(host, ports);
-    throw error;
-  }
-  return host;
+  for (const port of ports) tailscale(["serve", "--bg", `--https=${port}`, loopbackOrigin(port)]);
 }

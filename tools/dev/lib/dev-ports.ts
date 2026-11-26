@@ -57,7 +57,14 @@ export function resolveDevPorts(
 export function pinWorktreePortBase(checkoutPath: string, otherCheckouts: readonly string[]): void {
   const checkout = fs.realpathSync(checkoutPath);
   if (isMain(checkout) || parseBase(envLocalBase(checkout)) !== undefined) return;
-  const taken = otherCheckouts.map((other) => Number(envLocalBase(other)));
+  const taken = otherCheckouts.map((other) => {
+    try {
+      return Number(envLocalBase(other));
+    } catch {
+      // Another checkout's unreadable `.env.local` must not stop this one from starting.
+      return Number.NaN;
+    }
+  });
   let block = hashedBlock(checkout);
   while (taken.some((base) => Math.abs(base - blockBase(block)) < BLOCK_SIZE)) {
     block = (block + 1) % WORKTREE_BLOCKS;

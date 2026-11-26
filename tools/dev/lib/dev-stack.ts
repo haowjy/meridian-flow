@@ -235,10 +235,18 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
+  // keep: routes go before the record, which is the only thing that names them. A supervisor that stopped cleanly has removed both; a record still here belongs to one that was killed or could not reach Tailscale
+  if (state.tailnetHost && readStackState(checkout)?.pid === state.pid) {
+    try {
+      unpublishFromTailnet(state.tailnetHost, browserPorts(state));
+    } catch (error) {
+      throw new Error(
+        `this stack's processes are stopped, but its tailnet routes are still published: ${error instanceof Error ? error.message : String(error)}\nRun \`pnpm dev --stop\` again once Tailscale answers.`,
+      );
+    }
+  }
   // Only this stack's record: a start that overlapped this stop has written its own.
   clearStackState(checkout, state.pid);
-  // The supervisor removes its own tailnet routes as it stops; this covers one that was killed.
-  if (state.tailnetHost) unpublishFromTailnet(state.tailnetHost, browserPorts(state));
   return stack.size > 0;
 }
 

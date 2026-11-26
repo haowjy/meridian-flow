@@ -17,7 +17,12 @@ import {
   waitForFreePorts,
   writeStackState,
 } from "./lib/dev-stack";
-import { publishOnTailnet, tailnetUrl, unpublishFromTailnet } from "./lib/dev-tailscale";
+import {
+  publishOnTailnet,
+  readTailnetHost,
+  tailnetUrl,
+  unpublishFromTailnet,
+} from "./lib/dev-tailscale";
 
 const POLL_MS = 15_000;
 const ACTIVE_CENTISECONDS_PER_POLL = 30;
@@ -50,6 +55,10 @@ let restartInFlight: Promise<void> | null = null;
 
 function log(message: string): void {
   console.log(`[dev] ${message}`);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function publish(): void {
@@ -121,13 +130,16 @@ async function shutdown(reason: string, code = 0): Promise<void> {
   // keep: wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
   await restartInFlight;
   await stopServices();
-  try {
-    if (tailnetHost) unpublishFromTailnet(tailnetHost, browserPorts({ ports, www }));
-    clearStackState(repoRoot, process.pid);
-  } catch (error) {
-    // keep: the record stays, so the next `pnpm dev` or `pnpm dev --stop` removes the routes
-    log(`tailnet routes left in place: ${error instanceof Error ? error.message : String(error)}`);
+  if (tailnetHost) {
+    try {
+      unpublishFromTailnet(tailnetHost, browserPorts({ ports, www }));
+    } catch (error) {
+      // keep: the record stays, so the next `pnpm dev` or `pnpm dev --stop` removes the routes
+      log(`tailnet routes left in place: ${errorText(error)}`);
+      process.exit(1);
+    }
   }
+  clearStackState(repoRoot, process.pid);
   process.exit(code);
 }
 
@@ -179,17 +191,19 @@ process.on("SIGUSR2", () => {
     },
     (error: unknown) => {
       restartInFlight = null;
-      void shutdown(`restart failed: ${error instanceof Error ? error.message : String(error)}`, 1);
+      void shutdown(`restart failed: ${errorText(error)}`, 1);
     },
   );
 });
 
 if (process.argv.includes("--tailscale")) {
   try {
-    tailnetHost = publishOnTailnet(browserPorts({ ports, www }));
+    tailnetHost = readTailnetHost();
+    // keep: the record names the tailnet host before any route exists, so a stack that dies at any later point still has its routes removed by `pnpm dev --stop`
+    publish();
+    publishOnTailnet(tailnetHost, browserPorts({ ports, www }));
   } catch (error) {
-    log(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    await shutdown(errorText(error), 1);
   }
   log(`published on the tailnet as ${tailnetHost}`);
 }

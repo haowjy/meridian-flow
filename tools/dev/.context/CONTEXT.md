@@ -88,7 +88,9 @@ from the shell, else from the checkout's `.env.local`, else 20000 for the main c
 worktree.
 
 A worktree's base is chosen once. `pnpm dev` and `pnpm dev:urls` call
-`pinWorktreePortBase`, which does nothing when `.env.local` already has a base.
+`pinWorktreePortBase` when no stack is running; it does nothing when `.env.local`
+already has a base. `pnpm dev --stop` reads only the record, so a mistyped base can't
+keep a stack from being stopped.
 Otherwise it starts at the hashed block, skips any block within ten ports of a base in
 another checkout's `.env.local`, and appends `DEV_PORT_BASE` to the worktree's
 `.env.local`. The file is the only record, so moving a stack is editing that number,
@@ -141,9 +143,17 @@ the app and the marketing site work from the other device.
 A route belongs to the stack only when it is the single `/` handler on that port,
 proxies to the stack's own `127.0.0.1:<port>`, and is not a Funnel. Publishing checks
 every port first and fails on any other route; stopping removes only the stack's own.
-The supervisor removes them as it stops. If that fails it leaves the record in place,
-and `stopStack` removes the routes of any record that names a `tailnetHost`, which also
-covers a supervisor that was killed.
+
+A route never exists without a record that names it. The supervisor writes the record
+with `tailnetHost` before it publishes the first route, and deletes the record only
+after it has removed the routes. If the removal fails it exits and leaves the record.
+`stopStack` does the same for a record that is still there once the processes are gone,
+which is a supervisor that was killed or could not reach Tailscale: it removes the
+routes, then the record, and fails with the record kept when Tailscale doesn't answer.
+The next `pnpm dev` runs `stopStack` first, so it can't start a stack on a port that an
+old route still publishes. One case is not covered: a removed checkout takes its record
+with it, so if Tailscale fails at that moment the route stays until someone removes it
+with `tailscale serve --https=<port> off`.
 
 ## Stopping and cleanup
 
