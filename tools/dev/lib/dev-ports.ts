@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { isMainCheckout, listCheckoutPaths } from "./checkout";
 
 export type DevService = "app" | "server" | "www";
 export type DevPorts = Record<DevService, number>;
@@ -28,55 +29,33 @@ function envLocalBase(checkout: string): string | undefined {
   }
 }
 
-// A linked worktree's `.git` is a file; only the main checkout has the directory.
-function isMain(checkout: string): boolean {
-  return fs.statSync(path.join(checkout, ".git"), { throwIfNoEntry: false })?.isDirectory() ?? true;
-}
-
-function hashedBlock(checkout: string): number {
-  return createHash("sha256").update(checkout).digest().readUInt32BE(0) % WORKTREE_BLOCKS;
-}
-
-function blockBase(block: number): number {
-  return MAIN_CHECKOUT_BASE + BLOCK_SIZE * (1 + block);
-}
-
-export function resolveDevPorts(
-  checkoutPath: string,
-  env: NodeJS.ProcessEnv = process.env,
-): DevPorts {
-  const checkout = fs.realpathSync(checkoutPath);
-  const base =
-    parseBase(env.DEV_PORT_BASE) ??
-    parseBase(envLocalBase(checkout)) ??
-    (isMain(checkout) ? MAIN_CHECKOUT_BASE : blockBase(hashedBlock(checkout)));
-  return { app: base, server: base + 1, www: base + 2 };
-}
-
-// keep: a worktree's base is chosen once and kept in its `.env.local`, so a clash is fixed by editing that number. The choice starts at the path's hash and skips blocks the repository's other checkouts have already taken
-export function pinWorktreePortBase(checkoutPath: string, otherCheckouts: readonly string[]): void {
-  const checkout = fs.realpathSync(checkoutPath);
-  if (isMain(checkout) || parseBase(envLocalBase(checkout)) !== undefined) return;
-  const taken = otherCheckouts.map((other) => {
-    try {
-      return Number(envLocalBase(other));
-    } catch {
-      // Another checkout's unreadable `.env.local` must not stop this one from starting.
-      return Number.NaN;
-    }
-  });
-  let block = hashedBlock(checkout);
-  while (taken.some((base) => Math.abs(base - blockBase(block)) < BLOCK_SIZE)) {
+// The choice starts at a hash of the path and skips blocks the repository's other checkouts hold.
+function pinWorktreePortBase(checkout: string): number {
+  const taken = listCheckoutPaths(checkout).map((other) => Number(envLocalBase(other)));
+  const blockBase = (block: number) => MAIN_CHECKOUT_BASE + BLOCK_SIZE * (1 + block);
+  let block = createHash("sha256").update(checkout).digest().readUInt32BE(0) % WORKTREE_BLOCKS;
+  while (taken.some((other) => Math.abs(other - blockBase(block)) < BLOCK_SIZE)) {
     block = (block + 1) % WORKTREE_BLOCKS;
   }
+  const base = blockBase(block);
   const file = path.join(checkout, ".env.local");
   const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   fs.appendFileSync(
     file,
     `${existing === "" || existing.endsWith("\n") ? "" : "\n"}` +
       "# This worktree's dev ports: app, then server (+1) and www (+2). Chosen by `pnpm dev`; change it if something else holds them.\n" +
-      `DEV_PORT_BASE=${blockBase(block)}\n`,
+      `DEV_PORT_BASE=${base}\n`,
   );
+  return base;
+}
+
+// keep: a checkout's ports have one source, DEV_PORT_BASE in its `.env.local`. A worktree without one is given a block here, written to that file, so no reader ever sees a guess; the main checkout defaults to 20000 and is never written to
+export function resolveDevPorts(checkoutPath: string): DevPorts {
+  const checkout = fs.realpathSync(checkoutPath);
+  const base =
+    parseBase(envLocalBase(checkout)) ??
+    (isMainCheckout(checkout) ? MAIN_CHECKOUT_BASE : pinWorktreePortBase(checkout));
+  return { app: base, server: base + 1, www: base + 2 };
 }
 
 export function browserUrl(port: number): string {

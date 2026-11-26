@@ -6,7 +6,7 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 ## Environment
 
-Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A variable the shell sets wins even when its value is empty, and so does a key in `.env.local`: `LIVE_TEST_MODEL=` in either turns off a main-`.env` setting. This holds for `pnpm dev` too: the stack gets your shell's environment (minus the keys named in [`tools/dev/dev-stack-env.ts`](tools/dev/dev-stack-env.ts): `DATABASE_URL`, `PORT`, `INIT_CWD`, `npm_*`, `NX_*`), so `COMPACTION_SUMMARIZER_MODEL=foo pnpm dev` reaches the server. `pnpm dev:restart` restarts the services with the environment the stack started with and reads the `.env` files again, so `MODEL_PROVIDER=mock pnpm dev` then `pnpm dev:restart` stays on the mock. To change or drop a shell variable, `pnpm dev --stop`, then start again with the environment you want. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` gets no repo env, and a bare `vite dev` in `apps/app` reads only its own checkout's `.env*` files (Vite `loadEnv`), so a linked worktree gets none of the main `.env`.
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A variable the shell sets wins even when its value is empty, and so does a key in `.env.local`: `LIVE_TEST_MODEL=` in either turns off a main-`.env` setting. This holds for `pnpm dev` too: the stack gets your shell's environment (minus `INIT_CWD`, `npm_*` and `NX_*`, which pnpm and Nx set for the command itself), so `COMPACTION_SUMMARIZER_MODEL=foo pnpm dev` reaches the server. `pnpm dev:restart` restarts the services with the environment the stack started with and reads the `.env` files again, so `MODEL_PROVIDER=mock pnpm dev` then `pnpm dev:restart` stays on the mock. To change or drop a shell variable, `pnpm dev --stop`, then start again with the environment you want. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` gets no repo env, and a bare `vite dev` in `apps/app` reads only its own checkout's `.env*` files (Vite `loadEnv`), so a linked worktree gets none of the main `.env`.
 
 Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<worktree directory name>` on the same server (`:54422`), whatever branch is checked out in it. Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
 
@@ -82,7 +82,7 @@ pnpm dev
 | `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
 | `DATABASE_URL` | Derived as `meridian_<worktree directory name>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
-| Ports | Each checkout's own block. A worktree's is chosen the first time `pnpm dev` or `pnpm dev:urls` runs there and kept as `DEV_PORT_BASE` in its `.env.local`; `pnpm dev:urls` prints them |
+| Ports | Each checkout's own block, kept as `DEV_PORT_BASE` in its `.env.local` (chosen the first time `pnpm dev` or `pnpm dev:urls` runs in a worktree); `pnpm dev:urls` prints them |
 | `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
 | `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
@@ -209,11 +209,13 @@ pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postg
 Each checkout's stack runs on its own `localhost` ports
 ([`tools/dev/lib/dev-ports.ts`](tools/dev/lib/dev-ports.ts)). The main checkout uses
 20000 (app), 20001 (server) and 20002 (www). A linked worktree gets a block of its
-own between 20010 and 27999: the first `pnpm dev` or `pnpm dev:urls` there picks one
-from a hash of the worktree's path, skips blocks this repository's other checkouts
-already hold, and writes it to the worktree's `.env.local` as `DEV_PORT_BASE=<port>`.
-From then on that line is the worktree's port. If another program holds it, `pnpm dev`
-fails naming the busy port: change the number in `.env.local`.
+own between 20010 and 27999: the first command there that needs the ports (`pnpm dev`,
+`pnpm dev:urls`) picks one from a hash of the worktree's path, skips blocks this
+repository's other checkouts already hold, and writes it to the worktree's `.env.local`
+as `DEV_PORT_BASE=<port>`. That line is the only place a checkout's ports come from;
+`DEV_PORT_BASE` in the shell is ignored. If another program holds a port, `pnpm dev`
+fails naming it: change the number in `.env.local`. The same line in the main
+checkout's `.env.local` moves the main stack off 20000.
 
 ```bash
 pnpm dev                    # start the app and server; prints the URLs when both answer
@@ -224,7 +226,6 @@ pnpm dev:urls               # this checkout's URLs, and whether the stack is up
 pnpm dev:restart            # restart the services in place, same environment
 pnpm dev --stop             # stop this checkout's stack
 pnpm dev:stacks             # every checkout's running stack, its memory and idle time
-pnpm dev --print            # dry run: print what would start
 ```
 
 `pnpm dev` starts one background supervisor (`tools/dev/dev-supervisor.ts`) that

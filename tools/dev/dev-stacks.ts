@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { listCheckoutPaths, resolveCurrentRepoRoot } from "./lib/dev-env";
+import { listCheckoutPaths } from "./lib/checkout";
+import { resolveCurrentRepoRoot } from "./lib/dev-env";
 import { processTree, runningStack } from "./lib/dev-stack";
 
 const rows: string[][] = [["CHECKOUT", "APP PORT", "MEMORY", "IDLE", "CLIENT"]];

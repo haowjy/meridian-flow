@@ -7,7 +7,6 @@ import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 import { architectureMapPlugin } from "../../tools/architecture-map/vite-plugin.mjs";
-import { loopbackOrigin, resolveDevPorts } from "../../tools/dev/lib/dev-ports";
 import { resolveReleaseId } from "../../tools/release/release-id.mjs";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
@@ -25,10 +24,13 @@ export default defineConfig(({ command, mode }) => {
       process.env[key] = value;
     }
   }
-  // `pnpm dev` sets MERIDIAN_API_ORIGIN; the fallback is this checkout's own server port.
-  const apiDevOrigin =
-    readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN) ??
-    loopbackOrigin(resolveDevPorts(repoRoot).server);
+  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds and tests serve no requests, so they run without one
+  const apiDevOrigin = readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
+  if (command === "serve" && !process.env.VITEST && !apiDevOrigin) {
+    throw new Error(
+      "MERIDIAN_API_ORIGIN is not set. Start the app with `pnpm dev`, which sets it.",
+    );
+  }
 
   return {
     server: {
@@ -40,11 +42,13 @@ export default defineConfig(({ command, mode }) => {
       },
       strictPort: true,
       allowedHosts: [".localhost", ".ts.net"],
-      proxy: {
-        // keep: no `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
-        "/api/threads/ws": { target: apiDevOrigin, ws: true },
-        "/ws/loro": { target: apiDevOrigin, ws: true },
-      },
+      proxy: apiDevOrigin
+        ? {
+            // keep: no `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
+            "/api/threads/ws": { target: apiDevOrigin, ws: true },
+            "/ws/loro": { target: apiDevOrigin, ws: true },
+          }
+        : undefined,
     },
     resolve: {
       dedupe: ["loro-crdt"],
@@ -55,7 +59,7 @@ export default defineConfig(({ command, mode }) => {
       tsconfigPaths: true,
     },
     plugins: [
-      apiHttpDevProxyPlugin(apiDevOrigin),
+      ...(apiDevOrigin ? [apiHttpDevProxyPlugin(apiDevOrigin)] : []),
       architectureMapPlugin(path.join(repoRoot, ".context/system-architecture/map.config.mjs")),
       linguiMacroBabelPlugin(),
       tailwindcss(),

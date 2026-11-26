@@ -3,16 +3,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { checkDevReadiness } from "./dev-readiness";
-import { resolveStackEnv } from "./dev-stack-env";
-import { listCheckoutPaths } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import {
-  browserUrl,
-  type DevPorts,
-  loopbackOrigin,
-  pinWorktreePortBase,
-  resolveDevPorts,
-} from "./lib/dev-ports";
+import { browserUrl, type DevPorts, loopbackOrigin, resolveDevPorts } from "./lib/dev-ports";
 import {
   acquireStartLock,
   browserPorts,
@@ -28,15 +20,7 @@ import {
 } from "./lib/dev-stack";
 import { tailnetUrl } from "./lib/dev-tailscale";
 
-const FLAGS = [
-  "--stop",
-  "--restart",
-  "--urls",
-  "--print",
-  "--production-client",
-  "--www",
-  "--tailscale",
-];
+const FLAGS = ["--stop", "--restart", "--urls", "--production-client", "--www", "--tailscale"];
 
 const repoRoot = fs.realpathSync(path.resolve(import.meta.dirname, "../.."));
 const argv = process.argv.slice(2);
@@ -46,18 +30,16 @@ if (unknown.length > 0) {
   process.exit(2);
 }
 const has = (flag: string) => argv.includes(flag);
-const clientBuild: ClientBuild = has("--production-client") ? "production" : "development";
-// keep: taken before `.env` is loaded, so the stack receives only what this shell set
-const callerEnv = { ...process.env };
-let ports: DevPorts;
+
+type StackSummary = Pick<DevStackState, "clientBuild" | "www" | "ports" | "tailnetHost">;
+type Requested = { clientBuild: ClientBuild; www: boolean; tailscale: boolean };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type StackSummary = Pick<DevStackState, "clientBuild" | "www" | "tailnetHost">;
-
-function urlLines(stack: StackSummary): string[] {
-  const { tailnetHost } = stack;
-  return [
+function report(headline: string, stack: StackSummary): void {
+  const { ports, tailnetHost } = stack;
+  const lines = [
+    `${headline}: ${stack.clientBuild} client`,
     `app     ${browserUrl(ports.app)}`,
     `server  ${browserUrl(ports.server)}`,
     ...(stack.www ? [`www     ${browserUrl(ports.www)}`] : []),
@@ -65,12 +47,13 @@ function urlLines(stack: StackSummary): string[] {
       ? [`map     ${browserUrl(ports.app)}/architecture/`]
       : []),
     ...(tailnetHost
-      ? browserPorts({ ports, www: stack.www }).map(
+      ? browserPorts(stack).map(
           (port) => `tailnet ${tailnetUrl(tailnetHost, port)}${port === ports.www ? " (www)" : ""}`,
         )
       : []),
     `logs    ${DEV_LOG}`,
   ];
+  for (const line of lines) console.log(line);
 }
 
 function logTail(): string {
@@ -82,13 +65,15 @@ function logTail(): string {
 }
 
 async function waitUntilReady({
+  ports,
   timeoutMs,
   supervisorAlive,
   isCurrent,
 }: {
+  ports: DevPorts;
   timeoutMs: number;
   supervisorAlive: () => boolean;
-  isCurrent: (state: DevStackState | null) => boolean;
+  isCurrent: (state: DevStackState) => boolean;
 }): Promise<DevStackState> {
   const deadline = Date.now() + timeoutMs;
   const origins = { app: loopbackOrigin(ports.app), server: loopbackOrigin(ports.server) };
@@ -110,34 +95,22 @@ async function waitUntilReady({
 
 const startupMs = (build: ClientBuild) => (build === "production" ? 180_000 : 60_000);
 
-function report(headline: string, stack: StackSummary): void {
-  console.log(`${headline}: ${stack.clientBuild} client`);
-  for (const line of urlLines(stack)) console.log(line);
+// keep: pnpm and Nx set these for the script they are running; passed on, they would steer the stack's own pnpm and Nx calls
+function stackEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => key !== "INIT_CWD" && !key.startsWith("npm_") && !key.startsWith("NX_"),
+    ),
+  );
 }
 
-async function start(): Promise<void> {
-  const www = has("--www");
-  if (has("--print")) {
-    console.log(
-      `[dry-run] would start ${clientBuild} client${www ? " with www" : ""}${has("--tailscale") ? ", published on the tailnet" : ""}`,
-    );
-    for (const line of urlLines({ clientBuild, www })) console.log(line);
-    return;
-  }
-  const releaseLock = acquireStartLock(repoRoot);
-  try {
-    await launch(www);
-  } finally {
-    releaseLock();
-  }
-}
-
-async function launch(www: boolean): Promise<void> {
+async function start(requested: Requested): Promise<DevStackState> {
   if (!runningStack(repoRoot) && (await stopStack(repoRoot))) {
     console.log("note: stopped services left running by a stack whose supervisor had died");
   }
   await assertDevInfraReady();
-  await waitForFreePorts([ports.app, ports.server, ...(www ? [ports.www] : [])], 0);
+  const ports = resolveDevPorts(repoRoot);
+  await waitForFreePorts([ports.app, ports.server, ...(requested.www ? [ports.www] : [])], 0);
   const stopRecord = readIdleStopRecord(repoRoot);
   if (stopRecord) {
     console.log(`note: ${stopRecord}`);
@@ -149,15 +122,15 @@ async function launch(www: boolean): Promise<void> {
     "bun",
     [
       path.join(repoRoot, "tools/dev/dev-supervisor.ts"),
-      ...(clientBuild === "production" ? ["--production-client"] : []),
-      ...(www ? ["--www"] : []),
-      ...(has("--tailscale") ? ["--tailscale"] : []),
+      ...(requested.clientBuild === "production" ? ["--production-client"] : []),
+      ...(requested.www ? ["--www"] : []),
+      ...(requested.tailscale ? ["--tailscale"] : []),
     ],
     {
       cwd: repoRoot,
       // keep: detached puts the supervisor in a session of its own, so it outlives the shell that started it
       detached: true,
-      env: resolveStackEnv(callerEnv),
+      env: stackEnv(),
       stdio: ["ignore", logFd, logFd],
     },
   );
@@ -167,12 +140,12 @@ async function launch(www: boolean): Promise<void> {
   });
   supervisor.unref();
   fs.closeSync(logFd);
-  const started = await waitUntilReady({
-    timeoutMs: startupMs(clientBuild),
+  return waitUntilReady({
+    ports,
+    timeoutMs: startupMs(requested.clientBuild),
     supervisorAlive: () => !exited,
-    isCurrent: (state) => state?.pid === supervisor.pid,
+    isCurrent: (state) => state.pid === supervisor.pid,
   });
-  report("started", started);
 }
 
 async function main(): Promise<void> {
@@ -182,54 +155,51 @@ async function main(): Promise<void> {
     return;
   }
   const running = runningStack(repoRoot);
-  if (!running && !has("--print") && !callerEnv.DEV_PORT_BASE) {
-    pinWorktreePortBase(repoRoot, listCheckoutPaths(repoRoot));
-  }
-  // A running stack's ports come from its record: DEV_PORT_BASE set only in the shell that started it is not visible here.
-  ports = running?.ports ?? resolveDevPorts(repoRoot, callerEnv);
+  const restart = has("--restart") && running !== null;
+  const requested: Requested = {
+    // A restart keeps the running stack's client build unless the flag names the other one.
+    clientBuild: has("--production-client")
+      ? "production"
+      : restart
+        ? running.clientBuild
+        : "development",
+    www: has("--www"),
+    tailscale: has("--tailscale"),
+  };
 
   if (has("--urls")) {
-    report(running ? "running" : "not running", running ?? { clientBuild, www: has("--www") });
+    report(
+      running ? "running" : "not running",
+      running ?? { ...requested, ports: resolveDevPorts(repoRoot) },
+    );
     return;
   }
-  if (has("--restart") && running) {
-    if (
-      (has("--production-client") && running.clientBuild !== "production") ||
-      (has("--www") && !running.www) ||
-      (has("--tailscale") && !running.tailnetHost)
-    ) {
-      throw new Error(
-        "a restart keeps the running stack's client build, services and tailnet routes. To change them: pnpm dev --stop, then start again",
-      );
+  if (!running) {
+    const releaseLock = acquireStartLock(repoRoot);
+    try {
+      report("started", await start(requested));
+    } finally {
+      releaseLock();
     }
-    process.kill(running.pid, "SIGUSR2");
-    await waitUntilReady({
-      timeoutMs: startupMs(running.clientBuild),
-      supervisorAlive: () => processStart(running.pid) === running.processStart,
-      isCurrent: (state) => state !== null && state.generation > running.generation,
-    });
-    report("restarted", running);
     return;
   }
-  if (running) {
-    if (
-      running.clientBuild !== clientBuild ||
-      (has("--www") && !running.www) ||
-      (has("--tailscale") && !running.tailnetHost)
-    ) {
-      throw new Error(
-        `a stack is already running with the ${running.clientBuild} client${running.www ? " and www" : ""}${running.tailnetHost ? ", published on the tailnet" : ""}. Stop it first: pnpm dev --stop`,
-      );
-    }
-    await waitUntilReady({
-      timeoutMs: 10_000,
-      supervisorAlive: () => processStart(running.pid) === running.processStart,
-      isCurrent: (state) => state !== null,
-    });
-    report("already running", running);
-    return;
+  if (
+    running.clientBuild !== requested.clientBuild ||
+    (requested.www && !running.www) ||
+    (requested.tailscale && !running.tailnetHost)
+  ) {
+    throw new Error(
+      `a stack is already running with the ${running.clientBuild} client${running.www ? " and www" : ""}${running.tailnetHost ? ", published on the tailnet" : ""}. To change that, stop it first: pnpm dev --stop`,
+    );
   }
-  await start();
+  if (restart) process.kill(running.pid, "SIGUSR2");
+  const ready = await waitUntilReady({
+    ports: running.ports,
+    timeoutMs: restart ? startupMs(running.clientBuild) : 10_000,
+    supervisorAlive: () => processStart(running.pid) === running.processStart,
+    isCurrent: (state) => !restart || state.generation > running.generation,
+  });
+  report(restart ? "restarted" : "already running", ready);
 }
 
 main().catch((error: unknown) => {

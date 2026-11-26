@@ -7,22 +7,16 @@ import { browserUrl, type DevService, loopbackOrigin, resolveDevPorts } from "./
 import {
   browserPorts,
   type ClientBuild,
-  clearStackState,
   type ProcessRef,
   processStart,
   processTree,
   recordIdleStop,
-  resolveIdleStopMinutes,
+  retireStack,
   terminateTree,
   waitForFreePorts,
   writeStackState,
 } from "./lib/dev-stack";
-import {
-  publishOnTailnet,
-  readTailnetHost,
-  tailnetUrl,
-  unpublishFromTailnet,
-} from "./lib/dev-tailscale";
+import { publishOnTailnet, readTailnetHost, tailnetUrl } from "./lib/dev-tailscale";
 
 const POLL_MS = 15_000;
 const ACTIVE_CENTISECONDS_PER_POLL = 30;
@@ -35,9 +29,16 @@ const clientBuild: ClientBuild = process.argv.includes("--production-client")
 const www = process.argv.includes("--www");
 // keep: the environment the stack started with, before any `.env` is loaded; a restart reuses it and reads `.env` again
 const launchEnv = { ...process.env };
-const ports = resolveDevPorts(repoRoot, launchEnv);
-const idleMinutes = resolveIdleStopMinutes(launchEnv);
-const startedAt = new Date().toISOString();
+const ports = resolveDevPorts(repoRoot);
+const idleMinutes = Number(launchEnv.DEV_IDLE_STOP_MINUTES || 60);
+if (!Number.isFinite(idleMinutes) || idleMinutes < 0) {
+  throw new Error(
+    `DEV_IDLE_STOP_MINUTES must be a number of minutes (0 disables), got '${launchEnv.DEV_IDLE_STOP_MINUTES}'`,
+  );
+}
+const reportedStart = processStart(process.pid);
+if (!reportedStart) throw new Error("ps did not report the supervisor's own start time");
+const ownStart: string = reportedStart;
 
 const services: ReadonlyArray<{ name: DevService; pkg: string }> = [
   { name: "server", pkg: "@meridian/server" },
@@ -65,9 +66,8 @@ function publish(): void {
   lastPublishedAt = Date.now();
   writeStackState(repoRoot, {
     pid: process.pid,
-    processStart: processStart(process.pid) ?? "",
+    processStart: ownStart,
     services: runningServices,
-    startedAt,
     clientBuild,
     www,
     tailnetHost,
@@ -130,16 +130,12 @@ async function shutdown(reason: string, code = 0): Promise<void> {
   // keep: wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
   await restartInFlight;
   await stopServices();
-  if (tailnetHost) {
-    try {
-      unpublishFromTailnet(tailnetHost, browserPorts({ ports, www }));
-    } catch (error) {
-      // keep: the record stays, so the next `pnpm dev` or `pnpm dev --stop` removes the routes
-      log(`tailnet routes left in place: ${errorText(error)}`);
-      process.exit(1);
-    }
+  try {
+    retireStack(repoRoot, { pid: process.pid, tailnetHost, ports, www });
+  } catch (error) {
+    log(errorText(error));
+    process.exit(1);
   }
-  clearStackState(repoRoot, process.pid);
   process.exit(code);
 }
 

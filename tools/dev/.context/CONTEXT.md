@@ -18,10 +18,17 @@ loader through `db:migrate` with no file defining the URL. Failure to derive a
 scoped database is loud, never a fallback.
 
 A linked worktree's database is `<base>_<directory name>`, lowercased with other
-characters turned into hyphens. It follows the directory, as the ports do, so the
-branch checked out there doesn't matter and a running stack never points at a database
-its checkout no longer names. Two worktrees whose directories share a name would share
-a database, so the loader refuses to run in either.
+characters turned into hyphens. It follows the directory, so the branch checked out
+there doesn't matter and a running stack never points at a database its checkout no
+longer names. Two worktrees whose directories share a name would share a database, so
+the loader refuses to run in either.
+
+Ports and the database name identify a worktree by two different rules, on purpose. A
+port is chosen once and stored in the worktree's `.env.local`, where it can be edited,
+because a port clash is loud: the second stack fails to bind. A database name is
+derived on every run and never stored, because a database clash is silent: two
+worktrees would write to the same data. A stored name copied from one worktree to
+another would do exactly that, so don't make the database name a setting.
 
 `db:migrate` resolves the checkout the same way and
 refuses a registered main database unless a human passes `--allow-main-database`;
@@ -88,30 +95,37 @@ every DB file.
 ## Stack and readiness
 
 A checkout's ports are a block of ten, of which app, server and www take the first
-three. `resolveDevPorts` (`lib/dev-ports.ts`) reads the block's base: `DEV_PORT_BASE`
-from the shell, else from the checkout's `.env.local`, else 20000 for the main checkout
-(whose `.git` is a directory) and `20010 + (sha256(path) % 799) * 10` for a linked
-worktree.
+three. The block's base has one source: `DEV_PORT_BASE` in the checkout's `.env.local`,
+read by `resolveDevPorts` (`lib/dev-ports.ts`). When the line is missing, the main
+checkout (whose `.git` is a directory) gets 20000, and a linked worktree is given a
+block on the spot: `20010 + (sha256(path) % 799) * 10`, moved past any block within ten
+ports of a base in another checkout's `.env.local`, and appended to the worktree's
+`.env.local`. So no reader ever sees a guess that a later choice could contradict, and
+the hash matters only for that first choice. Moving a stack is editing the number.
+There is no shell override and no registry to go stale. A taken port fails the start
+with the port named; the launcher never moves to a free one. The main checkout is never
+written to: a tool that copies ignored files from it into a new worktree would copy the
+base too.
 
-A worktree's base is chosen once. `pnpm dev` and `pnpm dev:urls` call
-`pinWorktreePortBase` when no stack is running; it does nothing when `.env.local`
-already has a base. `pnpm dev --stop` reads only the record, so a mistyped base can't
-keep a stack from being stopped.
-Otherwise it starts at the hashed block, skips any block within ten ports of a base in
-another checkout's `.env.local`, and appends `DEV_PORT_BASE` to the worktree's
-`.env.local`. The file is the only record, so moving a stack is editing that number,
-and there is no registry to go stale. A taken port fails the start with the port named;
-the launcher never moves to a free one, because every reader has to find the same
-ports. The main checkout is never written to: a tool that copies ignored files from it
-into a new worktree would copy the base too.
+Readers follow one rule. Code that talks to a stack reads its record, through
+`runningStack` or `requireRunningStack` (`lib/dev-stack.ts`): `pnpm dev` for a stack
+that is already up, `./mf`, Playwright and the QA probes. With no stack they fail
+saying so, not with a refused connection. Only code that starts a stack or has to stay
+clear of its ports calls `resolveDevPorts`: the launcher, the supervisor and
+`tools/qa/shared-db-server.ts`. The app's Vite config reads `MERIDIAN_API_ORIGIN`,
+which whoever starts the dev server sets, and refuses to serve without it.
+`pnpm dev --stop` reads only the record, so a mistyped base can't keep a stack from
+being stopped.
 
 Browser URLs are `http://localhost:<port>`; processes reach each other on
 `http://127.0.0.1:<port>`, where every service binds. There is no proxy, certificate
 or per-worktree hostname.
 
-`pnpm dev` (`dev.ts`) takes the shell's environment before any `.env` is loaded,
-checks Postgres and the ports, and starts `dev-supervisor.ts` detached with that
-environment. The supervisor loads `.env` through `applyDevEnvToProcess` each time it
+`pnpm dev` (`dev.ts`) checks Postgres and the ports and starts `dev-supervisor.ts`
+detached with the shell's environment, less the variables pnpm and Nx set for the
+command itself. Nothing in `dev.ts` loads `.env` into that environment
+(`assertDevInfraReady` fills a copy), or the values would outlive a restart that is
+meant to read the file again. The supervisor loads `.env` through `applyDevEnvToProcess` each time it
 starts the services, sets `PORT`, `MERIDIAN_API_ORIGIN`, `MERIDIAN_APP_ORIGIN` and, with
 `--www`, `MERIDIAN_WWW_ORIGIN`, and writes `.meridian/dev-stack.json`. `pnpm dev`
 reports `started` only after that record names the supervisor it launched and the
@@ -151,11 +165,11 @@ proxies to the stack's own `127.0.0.1:<port>`, and is not a Funnel. Publishing c
 every port first and fails on any other route; stopping removes only the stack's own.
 
 A route never exists without a record that names it. The supervisor writes the record
-with `tailnetHost` before it publishes the first route, and deletes the record only
-after it has removed the routes. If the removal fails it exits and leaves the record.
-`stopStack` does the same for a record that is still there once the processes are gone,
-which is a supervisor that was killed or could not reach Tailscale: it removes the
-routes, then the record, and fails with the record kept when Tailscale doesn't answer.
+with `tailnetHost` before it publishes the first route. Teardown is one function,
+`retireStack` (`lib/dev-stack.ts`): it removes the stack's routes, then the record, and
+throws with the record kept when Tailscale doesn't answer. The supervisor calls it as
+it stops. `stopStack` calls it for a record that is still there once the processes are
+gone, which is a supervisor that was killed or could not reach Tailscale.
 The next `pnpm dev` runs `stopStack` first, so it can't start a stack on a port that an
 old route still publishes. One case is not covered: a removed checkout takes its record
 with it, so if Tailscale fails at that moment the route stays until someone removes it

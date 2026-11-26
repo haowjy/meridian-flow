@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { isMainCheckout, listCheckoutPaths, runGit } from "./checkout";
 import { validateDbName } from "./dev-db";
 
 const MAX_SLUG_LENGTH = 48;
@@ -25,24 +25,6 @@ export const DEV_DATABASES: readonly DevDatabase[] = [
   },
 ];
 
-function gitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("GIT_")) delete env[key];
-  }
-  return env;
-}
-
-export function runGit(cwd: string, args: string[], timeout?: number): string {
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    env: gitEnv(),
-    ...(timeout === undefined ? {} : { timeout }),
-  }).trim();
-}
-
 export function resolveCurrentRepoRoot(cwd = process.cwd(), timeout?: number): string {
   const repoRoot = runGit(cwd, ["rev-parse", "--show-toplevel"], timeout);
   if (!repoRoot) throw new Error(`git did not report a repository root for ${cwd}`);
@@ -58,10 +40,6 @@ export function resolveMainCheckoutRoot(repoRoot: string): string {
 function isSameDirectory(a: string, b: string): boolean {
   const [first, second] = [statSync(a), statSync(b)];
   return first.dev === second.dev && first.ino === second.ino;
-}
-
-export function isMainCheckout(repoRoot: string): boolean {
-  return isSameDirectory(repoRoot, resolveMainCheckoutRoot(repoRoot));
 }
 
 function readEnvFile(envPath: string): Record<string, string> {
@@ -98,7 +76,7 @@ function rewriteDatabaseName(url: string, dbName: string): string {
   return rewritten.toString();
 }
 
-// keep: a worktree's database follows its directory, as its ports do, so switching branch inside it keeps its data
+// keep: a worktree's database follows its directory, so switching branch inside it keeps its data
 function databaseSlug(checkoutRealpath: string): string {
   const name =
     path
@@ -112,10 +90,9 @@ function databaseSlug(checkoutRealpath: string): string {
 }
 
 function liveLinkedWorktrees(repoRoot: string): string[] {
-  const mainRoot = resolveMainCheckoutRoot(repoRoot);
   // Git still lists a worktree whose directory is gone.
   return listCheckoutPaths(repoRoot)
-    .filter((worktree) => existsSync(worktree) && !isSameDirectory(worktree, mainRoot))
+    .filter((worktree) => existsSync(path.join(worktree, ".git")) && !isMainCheckout(worktree))
     .map((worktree) => realpathSync(worktree));
 }
 
@@ -132,13 +109,6 @@ function resolveOwnDatabaseSlug(repoRoot: string): string {
     );
   }
   return slug;
-}
-
-export function listCheckoutPaths(repoRoot: string): string[] {
-  return runGit(repoRoot, ["worktree", "list", "--porcelain"])
-    .split("\n")
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length));
 }
 
 export function resolveLiveWorktreeDatabaseNames(

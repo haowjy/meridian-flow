@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { browserUrl } from "./tools/dev/lib/dev-ports";
-import { stackPorts } from "./tools/dev/lib/dev-stack";
+import { requireRunningStack } from "./tools/dev/lib/dev-stack";
 
 export default defineConfig({
   testDir: "apps/app/e2e",
@@ -9,7 +9,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: process.env.APP_URL?.trim() || browserUrl(stackPorts(__dirname).app),
+    baseURL: process.env.APP_URL?.trim() || browserUrl(requireRunningStack(__dirname).ports.app),
     ...devices["Desktop Chrome"],
   },
 });

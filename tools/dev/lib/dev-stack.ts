@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { type DevPorts, resolveDevPorts } from "./dev-ports";
+import type { DevPorts } from "./dev-ports";
 import { unpublishFromTailnet } from "./dev-tailscale";
 
 export type ClientBuild = "development" | "production";
@@ -17,7 +17,6 @@ export interface DevStackState {
   pid: number;
   processStart: string;
   services: ProcessRef[];
-  startedAt: string;
   clientBuild: ClientBuild;
   www: boolean;
   // Set while the stack is published on the tailnet (`pnpm dev --tailscale`).
@@ -85,12 +84,6 @@ export function writeStackState(checkout: string, state: DevStackState): void {
   fs.renameSync(temporary, file);
 }
 
-// keep: with `ownerPid`, only that supervisor's record is removed; a supervisor that lost a start race must not delete the winner's
-export function clearStackState(checkout: string, ownerPid?: number): void {
-  if (ownerPid !== undefined && readStackState(checkout)?.pid !== ownerPid) return;
-  fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
-}
-
 function isSameProcess(ref: ProcessRef): boolean {
   return processStart(ref.pid) === ref.start;
 }
@@ -100,9 +93,33 @@ export function runningStack(checkout: string): DevStackState | null {
   return state && isSameProcess({ pid: state.pid, start: state.processStart }) ? state : null;
 }
 
-// keep: a running stack's ports come from its record; `DEV_PORT_BASE` set only in the shell that started it is not visible to anyone else
-export function stackPorts(checkout: string, env: NodeJS.ProcessEnv = process.env): DevPorts {
-  return runningStack(checkout)?.ports ?? resolveDevPorts(checkout, env);
+// Every reader that talks to a stack finds it here, through its record.
+export function requireRunningStack(checkout: string): DevStackState {
+  const stack = runningStack(checkout);
+  if (stack) return stack;
+  throw new Error(
+    `no dev stack is running in ${checkout}. ${readIdleStopRecord(checkout) ?? "Start it with pnpm dev."}`,
+  );
+}
+
+// keep: routes go before the record, which is the only thing that names them. When Tailscale doesn't answer, this throws with the record kept, so the next stop or start tries again
+export function retireStack(
+  checkout: string,
+  stack: Pick<DevStackState, "pid" | "tailnetHost" | "ports" | "www">,
+): void {
+  if (stack.tailnetHost) {
+    try {
+      unpublishFromTailnet(stack.tailnetHost, browserPorts(stack));
+    } catch (error) {
+      throw new Error(
+        `this stack's processes are stopped, but its tailnet routes are still published: ${error instanceof Error ? error.message : String(error)}\nRun \`pnpm dev --stop\` again once Tailscale answers. If it never will, delete ${STATE_FILE} in this checkout.`,
+      );
+    }
+  }
+  // Only this stack's record: a start that overlapped the stop has written its own.
+  if (readStackState(checkout)?.pid === stack.pid) {
+    fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
+  }
 }
 
 // The ports a browser opens; the server is reached through the app's.
@@ -222,10 +239,7 @@ export async function stopStack(checkout: string): Promise<boolean> {
   if (!state) return false;
   const supervisor = { pid: state.pid, start: state.processStart };
   const supervisorAlive = isSameProcess(supervisor);
-  const roots = [
-    ...(supervisorAlive ? [supervisor] : []),
-    ...(state.services ?? []).filter(isSameProcess),
-  ];
+  const roots = [...(supervisorAlive ? [supervisor] : []), ...state.services.filter(isSameProcess)];
   const stack = new Map<number, ProcessRef>();
   for (const root of roots) for (const info of processTree(root.pid)) stack.set(info.pid, info);
   if (supervisorAlive) {
@@ -235,18 +249,8 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
-  // keep: routes go before the record, which is the only thing that names them. A supervisor that stopped cleanly has removed both; a record still here belongs to one that was killed or could not reach Tailscale
-  if (state.tailnetHost && readStackState(checkout)?.pid === state.pid) {
-    try {
-      unpublishFromTailnet(state.tailnetHost, browserPorts(state));
-    } catch (error) {
-      throw new Error(
-        `this stack's processes are stopped, but its tailnet routes are still published: ${error instanceof Error ? error.message : String(error)}\nRun \`pnpm dev --stop\` again once Tailscale answers. If it never will, delete ${STATE_FILE} in this checkout.`,
-      );
-    }
-  }
-  // Only this stack's record: a start that overlapped this stop has written its own.
-  clearStackState(checkout, state.pid);
+  // A supervisor that stopped cleanly has retired its own record; one still here belongs to a supervisor that was killed or could not reach Tailscale.
+  if (readStackState(checkout)?.pid === state.pid) retireStack(checkout, state);
   return stack.size > 0;
 }
 
@@ -287,14 +291,4 @@ export function readIdleStopRecord(checkout: string): string | null {
 
 export function clearIdleStopRecord(checkout: string): void {
   fs.rmSync(path.join(checkout, IDLE_STOP_FILE), { force: true });
-}
-
-export function resolveIdleStopMinutes(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.DEV_IDLE_STOP_MINUTES;
-  if (raw === undefined || raw === "") return 60;
-  const minutes = Number(raw);
-  if (!Number.isFinite(minutes) || minutes < 0) {
-    throw new Error(`DEV_IDLE_STOP_MINUTES must be a number of minutes (0 disables), got '${raw}'`);
-  }
-  return minutes;
 }

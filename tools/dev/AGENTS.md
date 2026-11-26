@@ -6,11 +6,14 @@ this directory never imports application packages. The `./mf` CLI lives in
 
 ## Rules
 
-- A checkout's ports come only from `resolveDevPorts` in `lib/dev-ports.ts`. The
-  launcher, the app's Vite config, `./mf` and the browser tests all call it or read the
-  running stack's record; never hard-code a port or pick a free one at start. A
-  worktree's base port is `DEV_PORT_BASE` in its `.env.local`, written once by
-  `pinWorktreePortBase`; to move a stack, change that line.
+- A checkout's ports have one source: `DEV_PORT_BASE` in its `.env.local`, read by
+  `resolveDevPorts` in `lib/dev-ports.ts`, which writes the line the first time a
+  worktree is asked. To move a stack, change that line. Never hard-code a port, read one
+  from the shell, or pick a free one at start.
+- Code that talks to a stack finds it through its record: `requireRunningStack` or
+  `runningStack` in `lib/dev-stack.ts`, as `./mf` and the browser tests do. Only code
+  that starts a stack, or must stay off its ports, calls `resolveDevPorts`.
+- `isMainCheckout` in `lib/checkout.ts` is the one test for the main checkout.
 - Only the supervisor publishes a stack on the tailnet (`lib/dev-tailscale.ts`), and it
   removes only routes that point at its own ports. Never run `tailscale serve reset`,
   and never replace a route that points anywhere else.
@@ -36,9 +39,9 @@ this directory never imports application packages. The `./mf` CLI lives in
   answer.
 - Stop by recorded pid. Never stop dev servers by pattern (`pkill -f "pnpm dev"`,
   `killall node` match every worktree's stack) or by whatever holds a port.
-- `dev-ports.ts` and `dev-stack.ts` are imported by `tools/mf`, `apps/app/vite.config.ts`
-  and `apps/app/e2e`. Keep them free of import-time side effects, with Node built-ins
-  as their only runtime dependencies.
+- `lib/checkout.ts`, `dev-ports.ts`, `dev-stack.ts` and `dev-tailscale.ts` are imported
+  by `tools/mf`, `playwright.config.ts`, `apps/app/e2e` and `tools/qa`. Keep them free of
+  import-time side effects, with Node built-ins as their only runtime dependencies.
 - Scripts run under `bun` (`#!/usr/bin/env bun`, `bun tools/dev/x.ts` in `package.json`), not
   tsx. Bun is pinned in `.tool-versions`. Vite, Nitro and Vitest stay on Node: don't use
   `bunx --bun` for them.

@@ -17,7 +17,7 @@ import postgres from "postgres";
 import { LOCAL_DEV_POSTGRES_PORT } from "../../dev/lib/dev-db.ts";
 import { resolveCurrentRepoRoot } from "../../dev/lib/dev-env.ts";
 import { loopbackOrigin } from "../../dev/lib/dev-ports.ts";
-import { runningStack } from "../../dev/lib/dev-stack.ts";
+import { requireRunningStack } from "../../dev/lib/dev-stack.ts";
 
 const root = resolveCurrentRepoRoot();
 /** stdout and stderr together: `thread send` reports its tool results on stderr. */
@@ -29,9 +29,7 @@ const mf = (...args: string[]) => {
 };
 const serverUrl = () => {
   if (process.env.MF_SERVER_URL) return process.env.MF_SERVER_URL;
-  const stack = runningStack(root);
-  if (!stack) throw new Error("This checkout's dev stack is not running; run pnpm dev");
-  return loopbackOrigin(stack.ports.server);
+  return loopbackOrigin(requireRunningStack(root).ports.server);
 };
 const http = (method: string, path: string, body?: unknown) => {
   const out = execFileSync(
