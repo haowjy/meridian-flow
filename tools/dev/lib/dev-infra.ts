@@ -43,7 +43,7 @@ export async function prepareDevDatabases(
     if (isLocalDevPostgres(databaseUrl)) ensureDevInfraUp(repoRoot);
     const { targetDb, created } = await ensureDatabaseForUrl(databaseUrl).catch(
       (error: unknown) => {
-        throw new Error(`${db.label} unreachable:\n  ${formatPgError(error)}`);
+        throw new Error(`${db.label}: ${formatPgError(error)}`);
       },
     );
     try {

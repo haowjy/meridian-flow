@@ -18,7 +18,7 @@ import {
   stopStack,
   waitForFreePorts,
 } from "./lib/dev-stack";
-import { readTailnetHost, tailnetUrl } from "./lib/dev-tailscale";
+import { assertTailnetPortsFree, readTailnetHost, tailnetUrl } from "./lib/dev-tailscale";
 
 const FLAGS = ["--stop", "--restart", "--urls", "--production-client", "--www", "--tailscale"];
 
@@ -189,7 +189,12 @@ async function main(): Promise<void> {
       if (running) {
         // keep: what can fail is tried before the stop, so an add that can't happen leaves the running stack up
         if (wanted.www && !running.www) await waitForFreePorts([running.ports.www], 0);
-        if (wanted.tailscale && !running.tailnetHost) readTailnetHost();
+        if (wanted.tailscale) {
+          assertTailnetPortsFree(
+            readTailnetHost(),
+            browserPorts({ ports: running.ports, www: wanted.www }),
+          );
+        }
         console.log(`note: starting the stack again to add ${missing.join(" and ")}`);
         await stopStack(repoRoot);
       }
