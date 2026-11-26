@@ -80,7 +80,7 @@ pnpm dev                                        # creates and sets up the worktr
 | `DATABASE_URL` | Derived as `meridian_<worktree directory name>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
 | Ports | Each checkout's own block, kept as `DEV_PORT_BASE` in its `.env.local` (chosen the first time `pnpm dev` or `pnpm dev:urls` runs in a worktree); `pnpm dev:urls` prints them |
-| `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
+| `pnpm dev:infra` | Shared — starts Postgres if it is not running and healthy, as the container already is; never recreates it. `pnpm dev` does this itself |
 | `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
@@ -99,7 +99,7 @@ Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm dev:infra` | Start the Postgres Docker container (`:54422`) if it is not running and healthy; a running container is left alone, so any branch's `bootstrap` is safe |
+| `pnpm dev:infra` | Start the Postgres Docker container (`:54422`) if it is not running and healthy. It is never recreated, so any branch's `pnpm dev` or `bootstrap` is safe |
 | `pnpm dev:infra:upgrade` | Build the image and recreate the container onto the tag in `docker-compose.yml`; the data volume stays. The one command that moves the shared server to a new image (e.g. after merging `main` that bumps the pg_bigm tag, or from the older plain `postgres:16`) |
 | `pnpm db:check-extensions` | Prove pg_bigm is preloaded and the search extensions install and serve a 1-character Han `LIKE` (rolled back) |
 | `pnpm db:migrate` | Apply Drizzle migrations |

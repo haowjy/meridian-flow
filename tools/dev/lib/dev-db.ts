@@ -143,7 +143,7 @@ export async function ensureDatabaseForUrl(
   const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
 
-  const targetSql = postgres(databaseUrl, { max: 1 });
+  const targetSql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
   try {
     await targetSql`SELECT 1`;
     return { targetDb, created: false };
@@ -231,7 +231,7 @@ export function formatPgError(error: unknown): string {
     return `${message}\n  Hint: check DATABASE_URL credentials in .env (default: postgres/postgres).`;
   }
   if (err.code === "3D000") {
-    return `${message}\n  Hint: run pnpm bootstrap after the Postgres container is up.`;
+    return `${message}\n  Hint: pnpm dev creates it; pnpm bootstrap does so without starting a stack.`;
   }
   return message;
 }

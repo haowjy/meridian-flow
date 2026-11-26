@@ -18,7 +18,7 @@ import {
   stopStack,
   waitForFreePorts,
 } from "./lib/dev-stack";
-import { tailnetUrl } from "./lib/dev-tailscale";
+import { readTailnetHost, tailnetUrl } from "./lib/dev-tailscale";
 
 const FLAGS = ["--stop", "--restart", "--urls", "--production-client", "--www", "--tailscale"];
 
@@ -116,9 +116,6 @@ async function start(wanted: Wanted): Promise<DevStackState> {
   if (!runningStack(repoRoot) && (await stopStack(repoRoot))) {
     console.log("note: stopped services left running by a stack whose supervisor had died");
   }
-  for (const { database, created } of await prepareDevDatabases(repoRoot)) {
-    if (created) console.log(`note: created database "${database}"`);
-  }
   const ports = resolveDevPorts(repoRoot);
   await waitForFreePorts([ports.app, ports.server, ...(wanted.www ? [ports.www] : [])], 0);
   const stopRecord = readIdleStopRecord(repoRoot);
@@ -186,7 +183,13 @@ async function main(): Promise<void> {
   if (!running || missing.length > 0) {
     const releaseLock = acquireStartLock(repoRoot);
     try {
+      for (const { database, created } of await prepareDevDatabases(repoRoot)) {
+        if (created) console.log(`note: created database "${database}"`);
+      }
       if (running) {
+        // keep: what can fail is tried before the stop, so an add that can't happen leaves the running stack up
+        if (wanted.www && !running.www) await waitForFreePorts([running.ports.www], 0);
+        if (wanted.tailscale && !running.tailnetHost) readTailnetHost();
         console.log(`note: starting the stack again to add ${missing.join(" and ")}`);
         await stopStack(repoRoot);
       }

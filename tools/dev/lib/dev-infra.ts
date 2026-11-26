@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { ensureDatabaseForUrl, isLocalDevPostgres } from "./dev-db";
+import { ensureDatabaseForUrl, formatPgError, isLocalDevPostgres } from "./dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES } from "./dev-env";
 import { formatMigrationFailure, runMigrations } from "./migration-runner";
 
@@ -22,7 +22,8 @@ function devPostgresIsHealthy(): boolean {
 export function ensureDevInfraUp(repoRoot: string): void {
   if (devPostgresIsHealthy()) return;
   const composeFile = path.join(repoRoot, "tools/dev/docker-compose.yml");
-  execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait"], {
+  // keep: `--no-recreate`. Without it compose rebuilds a stopped or still-starting container to match this checkout's compose file, and the container serves every checkout; only `pnpm dev:infra:upgrade` may move it
+  execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait", "--no-recreate"], {
     cwd: repoRoot,
     stdio: "inherit",
   });
@@ -40,7 +41,11 @@ export async function prepareDevDatabases(
     const databaseUrl = env[db.envVar];
     if (!databaseUrl) continue;
     if (isLocalDevPostgres(databaseUrl)) ensureDevInfraUp(repoRoot);
-    const { targetDb, created } = await ensureDatabaseForUrl(databaseUrl);
+    const { targetDb, created } = await ensureDatabaseForUrl(databaseUrl).catch(
+      (error: unknown) => {
+        throw new Error(`${db.label} unreachable:\n  ${formatPgError(error)}`);
+      },
+    );
     try {
       await runMigrations({
         databaseUrl,
