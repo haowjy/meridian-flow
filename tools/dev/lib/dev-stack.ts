@@ -241,7 +241,7 @@ export async function stopStack(checkout: string): Promise<boolean> {
       unpublishFromTailnet(state.tailnetHost, browserPorts(state));
     } catch (error) {
       throw new Error(
-        `this stack's processes are stopped, but its tailnet routes are still published: ${error instanceof Error ? error.message : String(error)}\nRun \`pnpm dev --stop\` again once Tailscale answers.`,
+        `this stack's processes are stopped, but its tailnet routes are still published: ${error instanceof Error ? error.message : String(error)}\nRun \`pnpm dev --stop\` again once Tailscale answers. If it never will, delete ${STATE_FILE} in this checkout.`,
       );
     }
   }

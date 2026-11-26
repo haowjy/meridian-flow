@@ -24,7 +24,7 @@ function tailscale(args: string[]): string {
       stdout?: string;
       message: string;
     };
-    if (code === "ENOENT") throw new Error("--tailscale needs the `tailscale` command on PATH");
+    if (code === "ENOENT") throw new Error("the `tailscale` command is not on PATH");
     const output = [stderr, stdout].map((text) => text?.trim()).filter(Boolean);
     throw new Error(`\`tailscale ${args.join(" ")}\` failed: ${output.join("\n") || message}`);
   }
