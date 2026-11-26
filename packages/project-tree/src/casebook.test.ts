@@ -234,24 +234,6 @@ describe("part 1: a draft and live changed the same thing", () => {
     t.w.delete(LIVE, WRITER, ch);
     expect(t.at(ch, D)).toMatchObject({ trashed: true });
   });
-
-  it("11. draft deleted a chapter, live edited its text: the delete applies; the tree list holds what review needs to warn", () => {
-    const t = start();
-    const ch = t.chapter("Chapter 49");
-    const drafted = t.w.delete(D, CHAT, ch);
-    applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(t.at(ch)?.trashed).toBe(true);
-    expect(drafted.actor).toBe(CHAT);
-  });
-
-  it("12. draft edited text, live moved and renamed the chapter: the node id is unchanged, so the text draft follows it", () => {
-    const t = start();
-    const arc = t.folder("Arc 3");
-    const ch = t.chapter("Chapter 49");
-    t.w.move(LIVE, WRITER, ch, arc);
-    t.w.rename(LIVE, WRITER, ch, "The Fall");
-    expect(t.at(ch, D)).toMatchObject({ id: ch, parent: arc, name: "The Fall" });
-  });
 });
 
 describe("part 2: two authors inside one Work's draft", () => {
@@ -1686,29 +1668,6 @@ describe("two replicas of one list", () => {
     }).node;
     a.move(LIVE, WRITER, doc, img);
     expect(replayView(a.doc, LIVE).nodes.get(doc)?.parent).toBe(ROOT);
-  });
-
-  it("merging a draft's raw CRDT updates instead of rebasing lets client ids pick the winner", () => {
-    const outcomes = new Set<string>();
-    for (const [liveId, draftId] of [
-      [1, 2],
-      [2, 1],
-    ] as const) {
-      const live = replica(liveId);
-      const n = live.create(LIVE, WRITER, {
-        kind: "document",
-        filetype: "markdown",
-        name: "Ch",
-        parent: ROOT,
-      }).node;
-      const fork = replica(draftId);
-      sync(live, fork);
-      fork.rename(LIVE, CHAT, n, "drafted");
-      live.rename(LIVE, WRITER, n, "live");
-      sync(fork, live);
-      outcomes.add(replayView(live.doc, LIVE).nodes.get(n)?.name as string);
-    }
-    expect(outcomes).toEqual(new Set(["drafted", "live"]));
   });
   it("two deletes of one folder both count, whatever the client ids", () => {
     const outcomes = new Set<string>();

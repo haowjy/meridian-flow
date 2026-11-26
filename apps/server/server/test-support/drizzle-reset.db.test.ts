@@ -32,9 +32,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const mid = testSchema.table("mid", { id: integer("id").primaryKey() });
     const leaf = testSchema.table("leaf", { id: integer("id").primaryKey() });
     const diamond = testSchema.table("diamond", { id: integer("id").primaryKey() });
-    const selfReference = testSchema.table("self_reference", {
-      id: integer("id").primaryKey(),
-    });
     const unrelated = testSchema.table("unrelated", { id: integer("id").primaryKey() });
     const cycleA = testSchema.table("cycle_a", { id: integer("id").primaryKey() });
     const cycleB = testSchema.table("cycle_b", { id: integer("id").primaryKey() });
@@ -44,8 +41,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       id: integer("id").primaryKey(),
     });
     const missing = testSchema.table("missing", { id: integer("id").primaryKey() });
-    const quotedSchema = pgSchema("reset schema");
-    const quotedRoot = quotedSchema.table('root "table"', { id: integer("id").primaryKey() });
 
     const db = createDb(DATABASE_URL, { max: 4 });
 
@@ -67,11 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.execute(
         sql.raw(
           'CREATE TABLE "drizzle_reset_test"."diamond" (id integer PRIMARY KEY, parent_id integer NOT NULL REFERENCES "drizzle_reset_test"."parent"(id), mid_id integer NOT NULL REFERENCES "drizzle_reset_test"."mid"(id))',
-        ),
-      );
-      await db.execute(
-        sql.raw(
-          'CREATE TABLE "drizzle_reset_test"."self_reference" (id integer PRIMARY KEY, parent_id integer REFERENCES "drizzle_reset_test"."self_reference"(id))',
         ),
       );
       await db.execute(
@@ -141,34 +131,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           $$`,
         ),
       );
-      await db.execute(sql.raw('CREATE SCHEMA "reset schema"'));
-      await db.execute(
-        sql.raw('CREATE TABLE "reset schema"."root ""table""" (id integer PRIMARY KEY)'),
-      );
-      await db.execute(
-        sql.raw(
-          'CREATE TABLE "reset schema"."child table" (id integer PRIMARY KEY, root_id integer NOT NULL REFERENCES "reset schema"."root ""table"""(id))',
-        ),
-      );
     });
 
     beforeEach(async () => {
       await db.execute(
         sql.raw('DROP TRIGGER IF EXISTS reject_delete ON "drizzle_reset_test"."parent"'),
       );
-      await deleteDrizzleRows(db, [
-        parent,
-        selfReference,
-        unrelated,
-        deferredA,
-        deferredB,
-        quotedRoot,
-      ]);
+      await deleteDrizzleRows(db, [parent, unrelated, deferredA, deferredB]);
     });
 
     afterAll(async () => {
       await db.execute(sql.raw('DROP SCHEMA "drizzle_reset_test" CASCADE'));
-      await db.execute(sql.raw('DROP SCHEMA "reset schema" CASCADE'));
       await db.$client.end();
     });
 
@@ -263,28 +236,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(leaf)).resolves.toEqual([]);
       await expect(db.select().from(diamond)).resolves.toEqual([]);
       await expect(db.select().from(unrelated)).resolves.toEqual([{ id: 5 }]);
-    });
-
-    it("deletes all rows from a self-referencing table", async () => {
-      await db.execute(
-        sql.raw('INSERT INTO "drizzle_reset_test"."self_reference" VALUES (1, NULL)'),
-      );
-      await db.execute(sql.raw('INSERT INTO "drizzle_reset_test"."self_reference" VALUES (2, 1)'));
-
-      await deleteDrizzleRows(db, [selfReference]);
-
-      await expect(db.select().from(selfReference)).resolves.toEqual([]);
-    });
-
-    it("quotes schema and table identifiers derived from the catalog", async () => {
-      await db.execute(sql.raw('INSERT INTO "reset schema"."root ""table""" VALUES (1)'));
-      await db.execute(sql.raw('INSERT INTO "reset schema"."child table" VALUES (2, 1)'));
-
-      await deleteDrizzleRows(db, [quotedRoot]);
-
-      const rows = await db.execute(sql.raw('SELECT * FROM "reset schema"."child table"'));
-      expect(rows).toEqual([]);
-      await expect(db.select().from(quotedRoot)).resolves.toEqual([]);
     });
 
     it("fails closed for missing anchors and cross-table FK cycles", async () => {

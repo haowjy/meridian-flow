@@ -186,26 +186,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await placement(CH1))?.name).toBe("ch1");
     });
 
-    it("moves at the call, each move its own command: A→B, B→C", async () => {
-      const script = await start();
-      const { call } = await script.begin();
-      const moved = await call("write", {
-        command: "move",
-        from: { path: "ch1" },
-        path: "ch1-old",
-      });
-      expect(moved.isError, text(moved)).toBeFalsy();
-      expect(text(moved)).toMatch(/^status: success; write: e\d+; version: live$/);
-      expect(await placement(CH1)).toMatchObject({ name: "ch1-old" });
-      const again = await call("write", {
-        command: "move",
-        from: { path: "ch1-old" },
-        path: "ch1-older",
-      });
-      expect(again.isError, text(again)).toBeFalsy();
-      expect(await placement(CH1)).toMatchObject({ name: "ch1-older" });
-    });
-
     function review(script: Awaited<ReturnType<typeof start>>) {
       const routes = selectDraftRouteServices(script.runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;

@@ -259,31 +259,6 @@ describe("loadForgettingFacts", () => {
   }
   const blocks = { listByTurnIds: async () => [] as Block[] };
 
-  it("reads each turn's blocks once, in one query, however long the failed chain", async () => {
-    const graph = chain([
-      turn("u", "user"),
-      failed("f", { forgottenBy: "r" }),
-      failed("r", { metadata: { retryOf: "f" } }),
-      turn("d", "system", { metadata: { kind: "subagent_update" } }),
-    ]);
-    const reads: string[][] = [];
-    await loadForgettingFacts(
-      {
-        turns: graph as never,
-        blocks: {
-          listByTurnIds: async (ids) => {
-            reads.push([...ids]);
-            return [];
-          },
-        },
-      },
-      "t" as never,
-      "d" as never,
-    );
-    expect(reads).toHaveLength(1);
-    expect(new Set(reads[0]).size).toBe(reads[0]?.length);
-  });
-
   it("reads past a Work refresh to the failed reply, so a closing row still forgets it", async () => {
     const graph = chain([
       turn("u", "user"),

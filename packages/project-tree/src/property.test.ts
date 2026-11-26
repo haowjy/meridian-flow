@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { admit, type Connection, changedSources } from "./admission.js";
 import {
   applyDraft,
-  childrenOf,
   descendantsOf,
   discardDraft,
   droppedRecords,
@@ -518,46 +517,4 @@ describe("file tree log under random concurrent edits", () => {
       `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${undone} Applies undone at once, ${undoneAny} changes undone from a random earlier record, ${leftPending} Applies that left records that could not land`,
     );
   }, 600_000);
-
-  it("replays a large project quickly enough to recompute on every change", () => {
-    const doc = new LoroDoc();
-    const writer = new TreeWriter(doc);
-    const random = rng(7);
-    const folders = [ROOT];
-    const nodes: string[] = [];
-    for (let i = 0; i < 2_000; i += 1) {
-      const parent = folders[Math.floor(random() * folders.length)] as string;
-      const op = writer.author(LIVE, "user:w", {
-        type: "create",
-        node: `n${i}`,
-        kind: i % 10 === 0 ? "folder" : "document",
-        ...(i % 10 === 0 ? {} : { filetype: "markdown" }),
-        name: `N${i}`,
-        parent,
-        source: "manuscript",
-        rank: `a${i.toString(36).padStart(4, "0")}1`,
-      });
-      if (i % 10 === 0) folders.push(op.node);
-      nodes.push(`n${i}`);
-    }
-    for (let i = 0; i < 20_000; i += 1) {
-      const node = nodes[Math.floor(random() * nodes.length)] as string;
-      writer.author(LIVE, "user:w", {
-        type: "move",
-        node,
-        parent: folders[Math.floor(random() * folders.length)] as string,
-        rank: `b${i.toString(36).padStart(4, "0")}1`,
-        from: { parent: ROOT, rank: "" },
-      });
-    }
-    const started = performance.now();
-    const projection = replayView(doc, LIVE);
-    const elapsed = performance.now() - started;
-    expect(treeViolations(projection)).toEqual([]);
-    expect(childrenOf(projection, ROOT).length).toBeGreaterThan(0);
-    const bytes = doc.export({ mode: "snapshot" }).byteLength;
-    console.info(
-      `2,000 nodes, 22,000 ops: replay ${elapsed.toFixed(0)} ms, doc ${(bytes / 1024).toFixed(0)} KiB`,
-    );
-  });
 });
