@@ -1,17 +1,15 @@
+import http from "node:http";
 import https from "node:https";
 import type { Plugin } from "vite";
 
-import { resolveApiDevOriginForAppHost } from "../src/core/transport/dev-transport";
 import { getApiRouteOwner } from "../src/server/api-route-ownership";
 
 export function shouldProxyApiHttpPath(pathname: string, isWebSocket = false): boolean {
   return !isWebSocket && getApiRouteOwner(pathname) === "server";
 }
 
-export function apiHttpDevProxyPlugin(
-  apiDevOriginFallback: string,
-  proxyAgent?: https.Agent,
-): Plugin {
+export function apiHttpDevProxyPlugin(apiDevOrigin: string): Plugin {
+  const request = new URL(apiDevOrigin).protocol === "https:" ? https.request : http.request;
   return {
     name: "meridian-api-http-dev-proxy",
     apply: "serve",
@@ -22,10 +20,7 @@ export function apiHttpDevProxyPlugin(
           return;
         }
 
-        const requestHost = req.headers.host ?? "app.meridian.localhost";
-        const apiDevOrigin = resolveApiDevOriginForAppHost(requestHost, apiDevOriginFallback);
-        const url = new URL(req.url, `https://${requestHost}`);
-        const pathname = url.pathname;
+        const pathname = new URL(req.url, apiDevOrigin).pathname;
 
         if (!shouldProxyApiHttpPath(pathname, req.headers.upgrade?.toLowerCase() === "websocket")) {
           next();
@@ -33,16 +28,10 @@ export function apiHttpDevProxyPlugin(
         }
 
         const target = new URL(req.url, apiDevOrigin);
-        const proxyReq = https.request(
+        // keep: Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+        const proxyReq = request(
           target,
-          {
-            method: req.method,
-            agent: proxyAgent,
-            headers: {
-              ...req.headers,
-              host: target.host,
-            },
-          },
+          { method: req.method, headers: req.headers },
           (proxyRes) => {
             res.writeHead(proxyRes.statusCode ?? 500, proxyRes.statusMessage, proxyRes.headers);
             proxyRes.pipe(res);
@@ -53,7 +42,7 @@ export function apiHttpDevProxyPlugin(
           if (!res.headersSent && !res.writableEnded) {
             res.statusCode = 502;
             res.setHeader("content-type", "text/plain; charset=utf-8");
-            res.end(`API dev proxy upstream TLS/request failure: ${error.message}`);
+            res.end(`API dev proxy upstream request failure: ${error.message}`);
             return;
           }
           if (!res.writableEnded) {

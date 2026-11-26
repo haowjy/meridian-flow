@@ -30,9 +30,9 @@ describe("resolveDevAuthUser", () => {
 
 describe("devAuthAppliesToRequest", () => {
   const req = (method: string, headers: Record<string, string> = {}) =>
-    new Request("https://server.meridian.localhost/api/x", {
+    new Request("http://localhost:20001/api/x", {
       method,
-      headers: { host: "server.meridian.localhost", ...headers },
+      headers: { host: "localhost:20001", ...headers },
     });
 
   it.each([
@@ -47,16 +47,23 @@ describe("devAuthAppliesToRequest", () => {
     ],
     [
       "same-origin WebSocket",
-      new Request("https://server.app.meridian.localhost/ws/loro", {
+      new Request("http://localhost:20000/ws/loro", {
         headers: {
-          host: "server.app.meridian.localhost",
-          origin: "https://app.meridian.localhost",
+          host: "localhost:20000",
+          origin: "http://localhost:20000",
           upgrade: "websocket",
         },
       }),
       true,
     ],
-    ["Origin on a loopback port", req("GET", { origin: "http://127.0.0.1:1234" }), false],
+    [
+      "a page on another local port",
+      new Request("http://localhost:20000/api/x", {
+        method: "POST",
+        headers: { host: "localhost:20000", origin: "http://localhost:8080" },
+      }),
+      false,
+    ],
     ["Origin null", req("POST", { origin: "null" }), false],
     [
       "rebound Host",

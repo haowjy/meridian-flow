@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-const SESSION_HASH_LENGTH = 8;
 const MAX_SLUG_LENGTH = 48;
 
 function stableHash(value: string): string {
@@ -33,11 +32,7 @@ export interface SessionIdentityInput {
 }
 
 export interface SessionIdentity {
-  branchLabel: string;
-  worktreeLabel: string;
-  worktreeHash: string;
   slug: string;
-  sessionName: string;
 }
 
 function resolveBranchLabel(branchName: string, detachedHeadRef?: string | null): string {
@@ -61,15 +56,5 @@ function resolveSlug(branchLabel: string, worktreeLabel: string): string {
 export function resolveSessionIdentity(input: SessionIdentityInput): SessionIdentity {
   const branchLabel = resolveBranchLabel(input.branchName, input.detachedHeadRef);
   const worktreeLabel = sanitizeSegment(path.basename(input.repoRootRealpath)) || "worktree";
-  const slug = resolveSlug(branchLabel, worktreeLabel);
-  const worktreeHash = stableHash(input.repoRootRealpath).slice(0, SESSION_HASH_LENGTH);
-  const sessionName = `meridian-${slug}-${worktreeHash}`;
-
-  return {
-    branchLabel,
-    worktreeLabel,
-    worktreeHash,
-    slug,
-    sessionName,
-  };
+  return { slug: resolveSlug(branchLabel, worktreeLabel) };
 }

@@ -20,10 +20,7 @@ export async function downloadApiFile(
       const sameOrigin = url.origin === origin.origin;
       const request = (url.protocol === "https:" ? https : http).get(
         url,
-        {
-          headers: sameOrigin ? { cookie: session.cookie } : {},
-          ...(url.protocol === "https:" && sameOrigin && session.ca ? { ca: session.ca } : {}),
-        },
+        { headers: sameOrigin ? { cookie: session.cookie } : {} },
         (response) => {
           const status = response.statusCode ?? 0;
           const location = response.headers.location;

@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { resolveAppUrl } from "./portless";
+import { resolveAppUrl } from "./dev-urls";
 
 process.env.MODEL_PROVIDER = "mock";
 

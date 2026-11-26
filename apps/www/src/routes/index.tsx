@@ -4,7 +4,7 @@ import { LandingPage } from "~/features/landing/LandingPage";
 
 const SITE = "https://www.meridian-flow.com/";
 const PRODUCTION_APP_ORIGIN = "https://app.meridian-flow.com";
-const DEV_APP_ORIGIN = "https://app.meridian.localhost";
+const DEV_APP_ORIGIN = "http://localhost:20000";
 
 const getAppOrigin = createServerFn({ method: "GET" }).handler(
   () =>

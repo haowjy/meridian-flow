@@ -30,10 +30,11 @@ export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
 
 // keep: Dev auth checks Host then Origin then Sec-Fetch-Site; Chrome omits fetch metadata on WebSocket handshakes and DNS-rebound HTTP hosts
 export function devAuthAppliesToRequest(request: Request): boolean {
-  if (!isLocalHost(request.headers.get("host"))) return false;
+  const host = request.headers.get("host");
+  if (!isLocalHost(host)) return false;
 
   const origin = request.headers.get("origin");
-  if (origin !== null && !isTrustedOriginHostname(hostnameOf(origin))) return false;
+  if (origin !== null && !isTrustedOrigin(origin, host)) return false;
 
   if (request.headers.get("sec-fetch-site") !== "cross-site") return true;
   return (
@@ -65,11 +66,9 @@ export function isLocalHost(host: string | null | undefined): boolean {
   );
 }
 
-function isTrustedOriginHostname(hostname: string | null): boolean {
-  return (
-    hostname !== null &&
-    (hostname === "meridian.localhost" ||
-      hostname.endsWith(".meridian.localhost") ||
-      isTailnet(hostname))
-  );
+// keep: every dev stack is a port on localhost, so trusting "localhost" would let any local page act as the dev user; only the page's own origin (the dev proxies forward Host unchanged) or the tailnet passes
+function isTrustedOrigin(origin: string, host: string | null): boolean {
+  if (!URL.canParse(origin)) return false;
+  const url = new URL(origin);
+  return url.host === host?.toLowerCase() || isTailnet(url.hostname);
 }

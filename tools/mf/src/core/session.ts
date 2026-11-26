@@ -1,11 +1,8 @@
-import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
 import https from "node:https";
-import path from "node:path";
 import { deserializeTransport } from "@meridian/contracts/protocol";
-import { portlessCa } from "../../../dev/dev-readiness";
-import { resolveCheckoutRouteUrls } from "../../../dev/dev-session-state";
-import { readIdleStopRecord } from "../../../dev/lib/dev-idle.ts";
+import { loopbackOrigin } from "../../../dev/lib/dev-ports";
+import { readIdleStopRecord, runningStack } from "../../../dev/lib/dev-stack";
 import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -54,7 +51,6 @@ export function jsonResponse<T>(schema: {
 export interface Session {
   readonly serverUrl: string;
   readonly cookie: string;
-  readonly ca: string[] | undefined;
   request<T>(
     method: HttpMethod,
     requestPath: string,
@@ -79,7 +75,6 @@ export function rawRequest(input: {
   method: HttpMethod;
   headers?: Record<string, string>;
   body?: string | Uint8Array;
-  ca?: string[];
   timeoutMs: number;
   maxResponseBytes: number;
   signal?: AbortSignal;
@@ -111,7 +106,6 @@ export function rawRequest(input: {
             : {}),
           ...input.headers,
         },
-        ...(url.protocol === "https:" && input.ca ? { ca: input.ca } : {}),
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -188,11 +182,7 @@ export function httpError(method: string, requestPath: string, response: RawResp
   return new CliError("http_error", summary, { details, httpStatus: response.status });
 }
 
-export function createSession(input: {
-  serverUrl: string;
-  cookie: string;
-  ca: string[] | undefined;
-}): Session {
+export function createSession(input: { serverUrl: string; cookie: string }): Session {
   async function request<T>(
     method: HttpMethod,
     requestPath: string,
@@ -211,7 +201,6 @@ export function createSession(input: {
         : body !== undefined
           ? { body: JSON.stringify(body) }
           : {}),
-      ca: input.ca,
       timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
       ...(options?.signal ? { signal: options.signal } : {}),
@@ -221,34 +210,23 @@ export function createSession(input: {
     }
     return options.decode(response.body, `${method} ${requestPath}`);
   }
-  return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
+  return { serverUrl: input.serverUrl, cookie: input.cookie, request };
 }
 
-function resolvePortlessServerOrigin(repoRoot: string): string {
-  let output: string;
-  try {
-    output = execFileSync(path.join(repoRoot, "node_modules", ".bin", "portless"), ["list"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 5_000,
-    });
-  } catch {
-    throw new CliError("unavailable", "Portless is not running", { hint: stackHint(repoRoot) });
-  }
-  try {
-    return resolveCheckoutRouteUrls(repoRoot, output).server;
-  } catch (error) {
-    throw new CliError("unavailable", error instanceof Error ? error.message : String(error), {
+function resolveCheckoutServerOrigin(repoRoot: string): string {
+  const stack = runningStack(repoRoot);
+  if (!stack) {
+    throw new CliError("unavailable", "This checkout's dev stack is not running", {
       hint: stackHint(repoRoot),
     });
   }
+  return loopbackOrigin(stack.ports.server);
 }
 
 export async function openSession(input: {
   repoRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<Session> {
-  const serverUrl = input.env.MF_SERVER_URL?.trim() || resolvePortlessServerOrigin(input.repoRoot);
-  return createSession({ serverUrl, cookie: input.env.MF_COOKIE?.trim() ?? "", ca: portlessCa() });
+  const serverUrl = input.env.MF_SERVER_URL?.trim() || resolveCheckoutServerOrigin(input.repoRoot);
+  return createSession({ serverUrl, cookie: input.env.MF_COOKIE?.trim() ?? "" });
 }

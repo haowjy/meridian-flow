@@ -273,21 +273,6 @@
         "count": 3
       },
       {
-        "path": "playwright.config.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "tools/dev/lib/worktree-cleanup-readiness.ts",
-        "line": "} catch {",
-        "count": 3
-      },
-      {
-        "path": "tools/dev/prune-worktrees.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "tools/mf/src/commands/api/api.ts",
         "line": "} catch {}",
         "count": 1
@@ -411,11 +396,6 @@
       },
       {
         "path": "tools/dev/lib/migration-runner.db.test.ts",
-        "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
-        "count": 1
-      },
-      {
-        "path": "tools/dev/lib/worktree-cleanup-readiness.test.ts",
         "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
         "count": 1
       },

@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: Number(process.env.PORT) || 3000,
-    // keep: bind exactly PORT and keep `strictPort`: Vite's auto-increment drifts off the portless route on restart (502) and orphans the listener
+    // keep: bind exactly PORT and keep `strictPort`: `pnpm dev`, `./mf` and the tests all compute this port, so a server that moved to a free one is unreachable
     strictPort: true,
     allowedHosts: [".localhost", ".ts.net"],
   },

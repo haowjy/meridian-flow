@@ -1,6 +1,5 @@
 #!/usr/bin/env tsx
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import https from "node:https";
 import net, { type Socket } from "node:net";
@@ -25,24 +24,14 @@ function requireEnvironment(): { listenPort: number; apiOrigin: URL } {
 
   const listenPort = Number(process.env.PORT);
   if (!Number.isInteger(listenPort) || listenPort < 1 || listenPort > 65_535) {
-    throw new Error("The production-client gateway requires the PORT assigned by Portless.");
+    throw new Error("The production-client gateway requires the PORT that pnpm dev assigns.");
   }
 
   const rawApiOrigin = process.env.MERIDIAN_API_ORIGIN;
   if (!rawApiOrigin) throw new Error("MERIDIAN_API_ORIGIN is required.");
   const apiOrigin = new URL(rawApiOrigin);
-  if (apiOrigin.protocol !== "https:") {
-    throw new Error("MERIDIAN_API_ORIGIN must use HTTPS for a Portless dev stack.");
-  }
-  if (!/^(?:[a-z0-9-]+\.)?server\.meridian\.localhost$/.test(apiOrigin.hostname)) {
-    throw new Error("MERIDIAN_API_ORIGIN must name this checkout's local Portless server.");
-  }
-
-  const caPath = process.env.NODE_EXTRA_CA_CERTS;
-  if (!caPath || !fs.existsSync(caPath)) {
-    throw new Error(
-      "Portless must provide NODE_EXTRA_CA_CERTS so SSR and proxied API requests trust its CA.",
-    );
+  if (!isLocalHost(apiOrigin.host)) {
+    throw new Error("MERIDIAN_API_ORIGIN must name this checkout's local dev server.");
   }
 
   return { listenPort, apiOrigin };
@@ -62,18 +51,10 @@ async function reserveEphemeralPort(): Promise<number> {
   return address.port;
 }
 
-function proxyHeaders(request: IncomingMessage, target: URL, changeOrigin: boolean) {
-  return {
-    ...request.headers,
-    ...(changeOrigin ? { host: target.host } : {}),
-  };
-}
-
 function proxyHttp(
   request: IncomingMessage,
   response: ServerResponse,
   origin: URL,
-  changeOrigin: boolean,
   resources: Set<() => void>,
 ): void {
   const target = new URL(request.url ?? "/", origin);
@@ -99,7 +80,8 @@ function proxyHttp(
     target,
     {
       method: request.method,
-      headers: proxyHeaders(request, target, changeOrigin),
+      // keep: Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+      headers: request.headers,
     },
     (receivedResponse) => {
       upstreamResponse = receivedResponse;
@@ -171,7 +153,7 @@ function proxyUpgrade(
 
   const connectEvent = target.protocol === "https:" ? "secureConnect" : "connect";
   upstream.once(connectEvent, () => {
-    const headers = proxyHeaders(request, target, true);
+    const headers = request.headers;
     const lines = [`${request.method ?? "GET"} ${target.pathname}${target.search} HTTP/1.1`];
     for (const [name, value] of Object.entries(headers)) {
       if (value === undefined) continue;
@@ -266,7 +248,6 @@ async function main(): Promise<void> {
   const appExit = observeChild(app);
   const resources = new Set<() => void>();
 
-  // keep: Check the real Host before proxyHeaders rewrites it, or the dev-auth rule sees a rewritten local Host
   const gateway = http.createServer((request, response) => {
     if (!isLocalHost(request.headers.host)) {
       response.writeHead(403).end();
@@ -274,7 +255,7 @@ async function main(): Promise<void> {
     }
     const pathname = new URL(request.url ?? "/", "http://gateway.local").pathname;
     const serverOwned = getApiRouteOwner(pathname) === "server";
-    proxyHttp(request, response, serverOwned ? apiOrigin : appOrigin, serverOwned, resources);
+    proxyHttp(request, response, serverOwned ? apiOrigin : appOrigin, resources);
   });
   gateway.on("upgrade", (request, socket, head) => {
     if (!isLocalHost(request.headers.host)) {
