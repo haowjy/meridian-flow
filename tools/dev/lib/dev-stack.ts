@@ -50,8 +50,19 @@ function ps(args: string[]): string {
   }
 }
 
+// keep: `ps` pads a one-digit day ("Dec  1"); every reader of `lstart` goes through here, or the same process compares unequal to itself on days 1 to 9
+function normalizeStart(fields: readonly string[]): string {
+  return fields.filter(Boolean).join(" ");
+}
+
 export function processStart(pid: number): string | null {
-  return ps(["-o", "lstart=", "-p", String(pid)]).trim() || null;
+  return (
+    normalizeStart(
+      ps(["-o", "lstart=", "-p", String(pid)])
+        .trim()
+        .split(/\s+/),
+    ) || null
+  );
 }
 
 export function readStackState(checkout: string): DevStackState | null {
@@ -116,7 +127,12 @@ export function processTree(rootPid: number): ProcessInfo[] {
   for (const line of ps(["-A", "-o", "pid=,ppid=,rss=,time=,lstart="]).split("\n")) {
     const [pidField, parentField, rss, time, ...start] = line.trim().split(/\s+/);
     if (start.length === 0) continue;
-    const row: Row = { pid: Number(pidField), start: start.join(" "), rssKb: Number(rss), time };
+    const row: Row = {
+      pid: Number(pidField),
+      start: normalizeStart(start),
+      rssKb: Number(rss),
+      time,
+    };
     if (row.pid === rootPid) root = row;
     const parent = Number(parentField);
     byParent.set(parent, [...(byParent.get(parent) ?? []), row]);
@@ -198,7 +214,10 @@ export async function stopStack(checkout: string): Promise<boolean> {
   if (!state) return false;
   const supervisor = { pid: state.pid, start: state.processStart };
   const supervisorAlive = isSameProcess(supervisor);
-  const roots = [...(supervisorAlive ? [supervisor] : []), ...state.services.filter(isSameProcess)];
+  const roots = [
+    ...(supervisorAlive ? [supervisor] : []),
+    ...(state.services ?? []).filter(isSameProcess),
+  ];
   const stack = new Map<number, ProcessRef>();
   for (const root of roots) for (const info of processTree(root.pid)) stack.set(info.pid, info);
   if (supervisorAlive) {
@@ -208,7 +227,8 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
-  clearStackState(checkout);
+  // Only this stack's record: a start that overlapped this stop has written its own.
+  clearStackState(checkout, state.pid);
   return stack.size > 0;
 }
 

@@ -104,7 +104,7 @@ async function start(): Promise<void> {
 }
 
 async function launch(www: boolean): Promise<void> {
-  if (await stopStack(repoRoot)) {
+  if (!runningStack(repoRoot) && (await stopStack(repoRoot))) {
     console.log("note: stopped services left running by a stack whose supervisor had died");
   }
   await assertDevInfraReady();
