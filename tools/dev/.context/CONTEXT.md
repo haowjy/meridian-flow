@@ -31,8 +31,9 @@ worktrees would write to the same data. A stored name copied from one worktree t
 another would do exactly that, so don't make the database name a setting.
 
 `db:migrate` resolves the checkout the same way, the main checkout's database
-included: it can only install the baseline into an empty database or stop, so there is
-nothing to guard, and a refusal there made `pnpm bootstrap` fail on a fresh clone. Its
+included: it installs the baseline into a database that has none, in one transaction,
+or stops, so there is nothing to guard. A refusal there made `pnpm bootstrap` fail on a
+fresh clone and left `pnpm db:reset` with an erased database it would not refill. Its
 managed-test bypass accepts only a local disposable database whose owner
 PID is a live, distinct ancestor of the command. Any other direct admin or test
 command resolves the checkout the same way before touching a database.

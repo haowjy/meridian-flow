@@ -16,9 +16,10 @@ pnpm db:generate         # regenerate the baseline from schema and SQL inputs
 pnpm db:studio
 ```
 
-`db:migrate` never changes an installed database: it installs the baseline into an
-empty one, does nothing when the baseline is current, and stops with the next step
-when it differs. So it runs the same in the main checkout as in a worktree.
+`db:migrate` never changes an installed database: it installs the baseline into one
+that has none, in one transaction, does nothing when the baseline is current, and stops
+with the next step when it differs. So it runs the same in the main checkout as in a
+worktree.
 
 From this package:
 
