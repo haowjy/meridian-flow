@@ -69,16 +69,7 @@ export function ClipboardMenuItems({
   closeMenu,
 }: {
   editor: Editor;
-  /**
-   * Put the selection where this menu means before the verb runs. The
-   * formatting menu needs none: the writer's selection is already the subject.
-   */
   prepare?: () => void;
-  /**
-   * Dismiss the menu these rows sit in. Required, because a verb that ran has to
-   * take the menu with it and only the menu it was mounted in knows how it
-   * closes.
-   */
   closeMenu: () => void;
 }) {
   // A browser that refused once will refuse again for as long as this menu is

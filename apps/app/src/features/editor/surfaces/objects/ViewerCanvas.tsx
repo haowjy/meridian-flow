@@ -53,8 +53,6 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
 
     measure();
 
-    // An image has no natural size until it has loaded, and the diagram it
-    // stands beside would otherwise fit to a one-pixel box.
     const image = stage.querySelector("img");
     if (!image || image.complete) return;
     image.addEventListener("load", measure);
@@ -66,11 +64,6 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
   }, []);
 
   return (
-    // The pill is a SIBLING of the gesture host, not a child of it. The viewer
-    // takes pointer capture on `pointerdown` anywhere in its host, which would
-    // redirect the `pointerup` away from a button inside and swallow the click
-    // — measured in the browser, not guessed at. The host is the viewport;
-    // chrome sits beside it.
     <div className="meridian-viewer-frame">
       <div className="meridian-viewer-canvas" ref={hostRef}>
         <div className="meridian-viewer-stage" ref={stageRef}>

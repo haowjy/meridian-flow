@@ -268,8 +268,6 @@ async function advance(
   }
 
   syncChatFeeds(client, projectId, threadId);
-  // Rows already show the settled value in place; only Favorites membership
-  // can have changed, so only Favorites feeds refetch.
   void client.invalidateQueries({
     queryKey: projectQueryKeys.chatFeedFilter(projectId, { favorite: true }),
   });

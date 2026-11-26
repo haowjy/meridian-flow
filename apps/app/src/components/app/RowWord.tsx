@@ -4,14 +4,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
-/**
- * What a row says about what happened to it, in the row's trailing place (ListRow's `notice`),
- * never on a line of its own: "Undo" in jade, or a muted word with or without a mark ("Moved
- * back", "Applied", "Deleted"). Every short word on a row whose reason is a sentence is one, so
- * a phone reaches the sentence too. Hover, keyboard focus and a long press show the sentence ("Deleted"); a click or a tap does the word's one action, and a word with none shows
- * the sentence, which stays until the next tap elsewhere. The host decides how long the word
- * shows: until the writer's next action there, or leaving.
- */
 export function RowWord({
   word,
   sentence,
@@ -23,23 +15,11 @@ export function RowWord({
   ref,
 }: {
   word: ReactNode;
-  /** What happened, in one plain sentence; the button's description. Omit it when it would only repeat the word. */
   sentence?: ReactNode;
-  /** The button's name in full when the word alone doesn't say what it acts on ("Undo delete of Chapter 4"). */
   label?: string;
-  /**
-   * `action`: the word is a command. `done`: a fact with a check. `warning`: something came back.
-   * `note`: a fact with no mark, or one the word draws itself.
-   */
   tone?: "action" | "done" | "warning" | "note";
   onAction?: () => void;
-  /** The action is running: the word stays, inert. */
   pending?: boolean;
-  /**
-   * Focus for a word the writer's own command just made, where the control they pressed is now
-   * gone (a deleted row): `take` says once whether this word takes the focus; `back` names where
-   * it goes once the action brings the row back.
-   */
   focus?: { take: () => boolean; back?: () => HTMLElement | null };
   ref?: Ref<HTMLButtonElement>;
 }) {
@@ -127,9 +107,6 @@ export function RowWord({
       ) : tone === "done" ? (
         <Check aria-hidden className="size-3.5 text-jade-text" />
       ) : null}
-      {/* In a row, as in LabelNote: the outer span takes the row's text size, so the word
-              sits on the name's baseline rather than centred. Anywhere else it is text-xs like
-              the chips and buttons it sits among, and the line keeps its height. */}
       <span className="text-xs in-data-list-row:text-[length:inherit] in-data-list-row:leading-[inherit]">
         <span className="text-xs">{word}</span>
       </span>
@@ -149,12 +126,6 @@ export function RowWord({
   );
 }
 
-/**
- * Called as an action starts, with what has the focus: returns where to send the focus once the
- * action brings its row back, which waits for the row and gives it the focus unless the writer
- * moved it meanwhile. Focus still on `from`, or on a box that held it (where the browser or a
- * dialog's trap puts it when `from` leaves), is the action's to move.
- */
 export function followFocusFrom(from: Element): (back: () => HTMLElement | null) => void {
   const around = new Set<Element>();
   for (let at = from.parentElement; at; at = at.parentElement) around.add(at);
@@ -172,21 +143,12 @@ export function followFocusFrom(from: Element): (back: () => HTMLElement | null)
   };
 }
 
-/**
- * A row that left its list while a notice still speaks for it, and where it was: `after` names the
- * rows that came before it, nearest first.
- */
 export type GoneRow<T> = { key: string; row: T; after: readonly string[] };
 
 export type WithGone<T, G> =
   | { key: string; gone: false; row: T }
   | { key: string; gone: true; row: G };
 
-/**
- * Puts each gone row back after the nearest row that came before it and is still shown, or first,
- * so a list doesn't close up under the writer's pointer. A row still listed is shown once, as
- * listed.
- */
 export function withGone<T, G = T>(
   rows: readonly T[],
   keyOf: (row: T) => string,

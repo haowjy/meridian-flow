@@ -109,8 +109,6 @@ export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection || tableHasSpans(selection.table)) return false;
-    // Where a header row exists it is structural: it never moves, and no body
-    // row moves above it. A headerless table has no such floor.
     const floor = hasHeaderRow(selection.table) ? 1 : 0;
     if (
       selection.rowFrom < floor ||
@@ -246,8 +244,6 @@ export function addTableRow(direction: "above" | "below"): Command {
         top: insertedRow,
         bottom: insertedRow + 1,
       })) {
-        // A rowspan from above reaches into the new row without belonging to
-        // it; only cells that BEGIN here are the row this insert created.
         const rect = map.findCell(cellPos);
         if (rect.top !== insertedRow) continue;
         const cell = table.nodeAt(cellPos);
@@ -294,15 +290,6 @@ export const resetTableColumnWidths: Command = (state, dispatch) => {
   return true;
 };
 
-/**
- * Would this merge swallow the header row into the body?
- *
- * prosemirror-tables merges any rectangle and keeps the FIRST cell's type, so
- * a whole-column merge on a headed table yields one header cell spanning every
- * row: the header stops being a row and the table stops having one. Merging
- * the header row across itself is a different thing and stays allowed — that
- * is a title row.
- */
 export function mergeCrossesHeader(state: EditorState): boolean {
   if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
   const rect = selectedRect(state);

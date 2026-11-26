@@ -222,9 +222,6 @@ function DesktopDocumentChrome({
 }) {
   const freeze = useDocumentFreeze(projectId, document);
   const openRoute = useOpenContextRoute();
-  // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
-  // reviewed file itself may be project-owned, so only its own Work's archive freezes its
-  // identity row.
   const fileInWork =
     document.kind !== "new" &&
     isWorkScopedScheme(document.scheme) &&
@@ -234,8 +231,6 @@ function DesktopDocumentChrome({
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => {
-    // Main's address follows its own document's rename or move; a side document follows the
-    // replica's placement on its own.
     if (place !== "main" || !openRoute) return;
     if (!identityCommitMayNavigate(ownership, document.documentId, documentId)) return;
     const { request, options } = identityCommitRoute(documentId, next);

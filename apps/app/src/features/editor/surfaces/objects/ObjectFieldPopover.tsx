@@ -32,8 +32,6 @@ export function ObjectFieldPopover({
       id="object-fields"
       open={open}
       onOpenChange={onOpenChange}
-      // The object's own bounds, re-measured on every reposition: the picture
-      // scrolls with the manuscript and the popover travels with it.
       anchorRect={() => target?.element.getBoundingClientRect() ?? null}
       side="bottom"
       align="end"
@@ -79,8 +77,6 @@ function ObjectFieldInput({
     (control: HTMLInputElement | HTMLTextAreaElement | null) => {
       if (!control || !claimsFocus) return;
       control.focus();
-      // The caret at the end of what is already written: the writer came here to
-      // add to it more often than to replace it.
       control.setSelectionRange(control.value.length, control.value.length);
     },
     [claimsFocus],

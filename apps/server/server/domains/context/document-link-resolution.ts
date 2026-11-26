@@ -60,8 +60,7 @@ export function createDocumentLinkResolver({
         authority.kind === "chat"
           ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
           : authority.kind === "contextual"
-            ? // A bare name means the holder chat's file. A document holder has no chat: the
-              input.chatId
+            ? input.chatId
             : null;
       scope = chatId ? { kind: "chat", chatId } : null;
     } else if (authority.kind === "work") {

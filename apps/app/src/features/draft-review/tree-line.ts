@@ -27,30 +27,18 @@ export function hasTreeLine(
   return !item.isNew && treeLineOf(item) !== null;
 }
 
-/**
- * Whether Apply lands something of the item: its text, its creation or its tree line (a reorder
- * in place has no tree line).
- */
 export function hasApply(
   item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
   return item.pending || item.isNew || hasTreeLine(item);
 }
 
-/**
- * Whether the item is only a tree change: a delete, or a move with no text change. Its review is
- * the live document with the draft's tree line.
- */
 export function isTreeOnly(
   item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "pending">,
 ): boolean {
   return item.tree?.deleted === true || (!item.pending && hasTreeLine(item));
 }
 
-/**
- * Whether the item opens as a document: its text differs from Live, the Work created it (plain Live
- * text), or it is only a tree change. Otherwise it is a picture the Work added, shown as a preview.
- */
 export function opensAsDocument(
   item: Pick<
     DraftItem,

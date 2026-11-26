@@ -103,8 +103,6 @@ export function ReferenceSuggestionMenu({
           row.kind === "link-ahead" || row.kind === "folder-mention" ? undefined : rowLocation(row),
         opens: row.kind !== "link-ahead" && row.kind !== "folder-mention" && row.kind !== "file",
         before:
-          // The link-ahead row is a different kind of answer: everything above
-          // it exists, and it does not yet.
           row.kind === "link-ahead" && index > 0 ? (
             <div className="my-1 border-border-subtle border-t" />
           ) : undefined,

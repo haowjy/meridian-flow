@@ -1,10 +1,3 @@
-/**
- * Optimistic Work deletion with Undo, owned by the Manage Works dialog so the list and the
- * open Work share one delete state.
- *
- * Each delete opens its own Undo window, so several deletes each keep their own, and
- * closing a window reaches every surface. A refused delete is the Work's command failure.
- */
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
@@ -23,7 +16,6 @@ export function rememberWorkPlace(workId: string, place: WorkPlace): void {
   places.set(workId, place);
 }
 
-/** True once per delete from a list: its Undo takes the focus the deleted row had. */
 export function takeWorkFocus(workId: string): boolean {
   return focusing.delete(workId);
 }

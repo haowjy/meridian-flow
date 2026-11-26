@@ -115,8 +115,6 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
-  // The document picked from search, assigned by its id at commit, and how the
-  // form names it.
   const [selected, setSelected] = useState<{
     ref: DocumentRef | FolderRef;
     label: string;
@@ -127,8 +125,6 @@ function LinkFields({
   const [choosing, setChoosing] = useState(!draft.href);
   const [invalid, setInvalid] = useState(false);
   const [refused, setRefused] = useState(false);
-  // The existing link's own answer while its destination is unchanged; a
-  // destination the writer typed has no ref until it is committed.
   const resolution = useLinkResolution(
     editor,
     href ? { ref: selected?.ref ?? (href === draft.href ? draftLinkRef : null), href } : null,
@@ -167,8 +163,6 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Assigned the way the Editor's `@` assigns it: by the document's or
-              // folder's id, spelled with its full address.
               const { reference } = row.action;
               setHref(storedHref({ kind: reference.kind, uri: reference.uri }, ""));
               setSelected({
@@ -203,8 +197,6 @@ function LinkFields({
         if (linkInputStepsAsideFromReferences(value)) return null;
         return { query: value, text: value, triggerRange: { from: 0, to: value.length } };
       },
-      // Below the whole form, not at the caret: the field sits above Save, and
-      // a menu hanging from the caret covered it and swallowed its click.
       anchorRect: () => formRef.current?.getBoundingClientRect() ?? null,
     });
     transport.sync();

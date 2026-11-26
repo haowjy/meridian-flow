@@ -53,7 +53,6 @@ import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
-/** Uploads belong to a chat, so a Work provisions Scratch only. */
 const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["scratch"];
 
 export interface UnifiedContextPortFactory {

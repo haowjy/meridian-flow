@@ -82,14 +82,10 @@ function diagramInsertion(): SlashInsertion {
 
 type SlashTarget =
   | { mode: "convert"; pos: number; block: SlashBlock }
-  /** The block keeps its text and `node`, already placed, lands after it. */
   | { mode: "insert-after"; pos: number; node: PMNode; block: SlashBlock }
-  /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number }
-  /** The trigger's own block is retyped in place, or returns to body text. */
   | { mode: "toggle"; toggle: SlashToggle };
 
-/** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
   if (insertion.strategy === "image") return inlineImageTarget(doc, pos);
   if (insertion.strategy === "toggle") {
@@ -100,12 +96,10 @@ function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): Slash
   return blockTarget(doc, pos, insertion);
 }
 
-/** Where a picture goes: exactly where the trigger was, or nowhere. */
 function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
   return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
 }
 
-/** Where the chosen node goes, decided from the document AFTER the `/` and its filter text are gone — so "is this block empty" is a plain question about the block rather than arithmetic on the trigger's range. */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
   const type = doc.type.schema.nodes[block.node.type as string];
   const $pos = doc.resolve(pos);

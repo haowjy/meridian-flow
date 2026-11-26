@@ -166,8 +166,6 @@ export function createReferenceBrowserController(
     items: rows,
     keepOpenWhenEmpty: true,
     rowId: (row) => row.rowId,
-    // A sentence after `@` that names no document must still end in a new
-    // paragraph on Enter; the link-ahead row is reached by arrow or pointer.
     defaultActive: (row) => row.kind !== "link-ahead",
     query,
     anchorRect,
@@ -607,12 +605,6 @@ function rowForEntry(
   };
 }
 
-/**
- * The link-ahead row for a search, when it names no document the rows already
- * offer exactly: by stored name (`Chapter 13.md` typed is `Chapter 13`), or
- * by a visible-extension file's name without the extension (`outline` for
- * `outline.json`), the way a link reaches it.
- */
 function linkAheadRow(
   search: string,
   ranked: readonly ReferenceRow[],

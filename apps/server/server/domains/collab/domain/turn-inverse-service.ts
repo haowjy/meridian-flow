@@ -59,15 +59,7 @@ export type TurnInverseQuery = {
   documentIds?: DocumentId[];
   path?: string;
   principal?: Principal;
-  /**
-   * Documents the caller writes after the inverse, in the same transaction: a commit takes their
-   * keys with its own, in one ID order after the list keys.
-   */
   alsoLock?: readonly DocumentId[];
-  /**
-   * The owners the caller already locked (`ownersOf`): a commit that would lock any other
-   * throws `TreeOwnersMoved` before taking a lock.
-   */
   declared?: OwnerLocks;
   learned?: Learned;
 };
@@ -95,12 +87,6 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
-  /**
-   * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
-   * reply's tree receipts and the grants of every document it writes.
-   * Read with no lock, for the caller to lock them first and declare them in the query.
-   * Throws `TreeOwnersMoved` when the documents move under the read.
-   */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
   restoreStates(
@@ -134,14 +120,6 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   part.turnId === query.turnId &&
   !part.origin.draftId;
 
-/**
- * Each document's ordered steps, for both command and chip. Each of the turn's original edits is
- * one step, newest first, judged on what the steps before it leave. A part an Undo already took
- * out (the planner's `takenBy`) is neither a step nor a skip: the card's own Undo is done with
- * it, and the model's undo in the same chat is part of what the chat did. `undoneByWriter` says
- * the card's Undo was among them. The chip and the press plan the same way, so the card offers
- * Undo exactly when a press takes something back.
- */
 async function prepare(
   documents: InverseDocument[],
   query: TurnInverseQuery,
@@ -272,8 +250,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
               };
         const accepted =
           committed.treeReversed + [...committed.reversed.values()].reduce((n, m) => n + m, 0);
-        // An AI edit whose history the room cut stays as it is (design §2): planned with no step,
-        // or found so under the locks.
         const compactedIn = (plan: PreparedDocumentInverse) =>
           (plan.compacted ?? 0) + (committed.compacted?.get(plan.document.documentId) ?? 0);
         const compacted = plans.some((plan) => compactedIn(plan) > 0);

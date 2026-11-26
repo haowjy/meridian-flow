@@ -104,8 +104,6 @@ export function useContextTree({
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
   const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
-  // Where the header's New file and New folder go: the folder the writer last opened or closed
-  // into, else the open document's folder, else the top.
   const [place, setPlace] = useState<{ folderPath: string; activePath: string | null } | null>(
     null,
   );

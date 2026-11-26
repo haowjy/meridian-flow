@@ -56,11 +56,6 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
   });
 }
 
-/**
- * Ids for a case's three documents, as an editor would have left them. Base blocks with no id get
- * one; a side's block with none takes the id of the base block it is by guess (what the model's
- * write does), or a new id.
- */
 export function tagBySide(
   base: readonly PMNode[],
   live: readonly PMNode[],
@@ -199,7 +194,6 @@ export class Rng {
     this.s = seed >>> 0 || 1;
   }
   next(): number {
-    // mulberry32
     this.s = (this.s + 0x6d2b79f5) >>> 0;
     let t = this.s;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -350,8 +344,6 @@ export function genBase(rng: Rng, nBlocks: number): GBlock[] {
     else if (r < 0.1) out.push({ kind: "rule", id: newId(), origins: [i] });
     else if (r < 0.2) out.push(container(rng, [i]));
     else out.push(textBlock(rng, 2 + rng.int(7), [i]));
-    // A paragraph with a figure or container right after it: a side that deletes the paragraph and
-    // changes what follows puts the two in one replaced run.
     if (out.at(-1)?.kind === "text" && rng.chance(0.15))
       out.push(
         rng.chance(0.4)
@@ -749,7 +741,6 @@ function joinAdjacent(nodes: PMNode[]): PMNode[] {
   return out;
 }
 
-// Han characters are words of their own (the tokens segment them), as in production.
 const WORD = /\p{sc=Han}|[\p{L}\p{N}_]+/gu;
 
 export interface WordInfo {
@@ -778,7 +769,6 @@ export function wordsOf(blocks: readonly PMNode[]): {
       list.push(w);
       first = false;
     };
-    // Words inside a list, quote or table count, with the container's block index.
     const walk = (node: PMNode) => {
       if (node.type.name === "figure") add(`fig:${node.attrs.alt}`, false, false);
       node.forEach((n) => {
@@ -823,8 +813,8 @@ export interface OracleInput {
   liveTouched?: Set<number>;
   draftTouched?: Set<number>;
   pairSamples?: number;
-  orderConflict?: boolean; // the sides' moves admit no single order; the draft's order is used
-  ambiguous?: Set<string>; // words known to have been copied, so their text doesn't name one word
+  orderConflict?: boolean;
+  ambiguous?: Set<string>;
 }
 
 export function check(o: OracleInput, rnd: () => number = Math.random): string[] {
@@ -843,7 +833,6 @@ export function check(o: OracleInput, rnd: () => number = Math.random): string[]
       conflictWords.add(w);
     for (const id of c.baseIds) conflictBlocks.add(id);
   }
-  // A word repeated in any version has no single identity; only count checks apply to it.
   const repeated = new Set<string>();
   for (const v of [B, L, D]) for (const [w, n] of v.count) if (n > 1) repeated.add(w);
   for (const w of o.ambiguous ?? []) repeated.add(w);
@@ -874,7 +863,6 @@ export function check(o: OracleInput, rnd: () => number = Math.random): string[]
       continue;
     }
     if (!cb && !cm) fail(`draft insertion lost: ${w}`);
-    // A word live moved into a conflict region shows red there (live has it, the draft doesn't).
     if (cb && cl && !cm && !conflictWords.has(w)) fail(`kept-by-both word lost: ${w}`);
     if (cb && !cl && cm && !inConflictBlock(w)) fail(`resurrected live deletion: ${w}`);
   }
@@ -937,7 +925,6 @@ export function check(o: OracleInput, rnd: () => number = Math.random): string[]
     const inL = lu && lv;
     const inD = du && dv;
     if (inB && inL && inD) return rule(f(bu, bv), f(lu, lv), f(du, dv));
-    // One-sided words: only within one block of that side, where the side's order is unambiguous.
     if (inL && !inD && lu.block === lv.block) return f(lu, lv);
     if (inD && !inL && du.block === dv.block) return f(du, dv);
     if (inL && inD && !inB && f(lu, lv) === f(du, dv)) return f(lu, lv);
@@ -963,8 +950,6 @@ export function check(o: OracleInput, rnd: () => number = Math.random): string[]
   for (let i = 0; i + 1 < M.list.length; i++) {
     const [u, v] = [M.list[i], M.list[i + 1]];
     if (!ok(u) || !ok(v)) continue;
-    // Only base words: where a one-sided word lands relative to the other side's new paragraph
-    // break at the same point is a presentation choice (words first), not an invariant.
     if (!B.info.has(u) || !B.info.has(v)) continue;
     const exp = pairExp(u, v, (x, y) => x.block === y.block);
     const [mu, mv] = [M.info.get(u), M.info.get(v)];
@@ -1005,7 +990,6 @@ const P3 = `${LIN} | ${ELDER} | ${THUNDER}`;
 const SIX = ["aa", "bb", "cc", "dd", "ee", "ff"].map((w) => `p#${w}:${w} ${w} ${w}`);
 
 export const CASES: Case[] = [
-  // Pairing by id (identity/design.md section 3)
   {
     row: "a piece never moves its pair",
     name: "id-pair-beside-piece",
@@ -1586,7 +1570,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // Block structure settled before words (`draft-wins-stretch`), and pairings nothing settles
   {
     row: "r2 B1: live adds a paragraph between two the draft joined",
     name: "stretch-join-vs-add",
@@ -2026,7 +2009,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // block-attributes-merged: each attribute from the side that changed it (flat-model/design.md section 5)
   {
     row: "live indents an item, the draft checks it",
     name: "attrs-different-attributes",
@@ -2087,7 +2069,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["draft-wins-stretch"],
   },
-  // Two one-sided changes a few tokens apart are one change the two diffs placed differently
   {
     row: "live opens a quote after a sentence's end, the draft ends the sentence with a full stop and the quote",
     name: "neighbouring-changes-joined",
@@ -2098,7 +2079,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: ["neighbouring-changes-joined"],
   },
-  // Words typed where the other side deleted the paragraph have no paragraph to join
   {
     row: "live joins the next paragraph onto the first, the draft keeps the second and rewrites it",
     name: "typed-at-end-of-deleted",
@@ -2109,7 +2089,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["draft-wins-text", "typed-at-end-of-deleted"],
   },
-  // One side inserted words the other side's replacement also starts with
   {
     row: "live replaces a word with a phrase, the draft replaces it with a phrase that shares its words",
     name: "shared-edge-kept-once",
@@ -2120,7 +2099,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: ["shared-edge-kept-once"],
   },
-  // Both sides changed the space before one word
   {
     row: "both sides change the space before one word, differently",
     name: "draft-wins-space",

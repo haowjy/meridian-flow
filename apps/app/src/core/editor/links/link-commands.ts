@@ -16,10 +16,6 @@ import { linkKeyOfMark } from "./link-resolution";
 import { getLinkAnswerCache } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
 
-/**
- * The text of a link's range, and where an offset into that text stands in the document. Inline
- * atoms (an image, a mention) take no text, so offsets and positions part where one sits.
- */
 export function linkText(
   doc: ProseMirrorNode,
   from: number,
@@ -49,11 +45,6 @@ export type LinkSelection = {
   from: number;
   to: number;
   attributes: Record<string, unknown>;
-  /**
-   * The mark object itself. ProseMirror interns marks by attributes, so this
-   * is the identity that survives a remap: the same link resolved before and
-   * after an edit above it comes back as the same object.
-   */
   identity: Mark;
 };
 
@@ -130,15 +121,6 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
   };
 }
 
-/**
- * Where the draft's range sits after a document change, or null when the words
- * it was opened for are gone.
- *
- * A form is open for as long as the writer takes to type a URL, and the
- * document moves underneath it. Both edges bias away from the range: text
- * typed against either boundary belongs to the document, not to the phrase the
- * writer selected.
- */
 export function mapLinkDraft(
   state: EditorState,
   draft: LinkDraft,
@@ -150,16 +132,6 @@ export function mapLinkDraft(
   return { ...draft, ...at };
 }
 
-/**
- * The same link after a document change, or null when the writer's link is
- * gone. What keeps a surface aimed at one link from acting on another.
- *
- * Coordinates outlive the thing that was at them. A peer deletes the link and
- * the words after it slide back into those numbers; a peer edits the href and
- * the same range now means a different destination. Both read as "still there"
- * to a position alone, so the mark decides: same attributes, same destination,
- * and anything else means this surface has nothing left to act on.
- */
 export function relocateLink(
   state: EditorState,
   link: { anchor: LinkAnchor; identity: Mark },
@@ -225,8 +197,6 @@ export function commitLinkDraft(
     const from = shown.at(before.slice(0, prefix).join("").length, 1);
     const to = shown.at(before.slice(0, before.length - suffix).join("").length, -1);
     const inserted = after.slice(prefix, after.length - suffix).join("");
-    // Surviving text keeps its mark runs. New wording inherits only marks
-    // common to the replaced slice, never formatting sampled from its first word.
     let marks: readonly Mark[] | undefined;
     state.doc.nodesBetween(from, to, (node) => {
       if (!node.isInline) return;

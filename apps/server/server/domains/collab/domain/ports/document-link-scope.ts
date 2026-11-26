@@ -24,13 +24,6 @@ export type LinkScopeKey = (
   | { documentId: string }
   | { threadId: string }
 ) & {
-  /**
-   * Who reads. `accountId` is the file-policy principal whose readability the
-   * snapshot answers (default: the thread's account, else the project owner);
-   * `threadId` the reading thread. Presence uses the selected SQL tree view; hidden creates
-   * are visible only in a draft using them. A door never joins a snapshot read for
-   * another account or thread.
-   */
   viewer?: { accountId?: string; threadId?: string };
   memberships?: readonly { view: LinkView; members: readonly string[] }[];
   documentIds?: readonly string[];
@@ -50,23 +43,9 @@ export interface ScopePrepareRequest {
 export interface DocumentLinkScopes {
   within<T>(key: LinkScopeKey, operation: () => Promise<T>): Promise<T>;
   prepare(request: ScopePrepareRequest): Promise<void>;
-  /**
-   * Synchronous holder-bound view of the innermost snapshot. It keeps that
-   * snapshot, so work the operation defers past its end still spells from it.
-   */
   holder(input: { documentId: string; view: LinkView }): HolderLinkScope;
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
-  /**
-   * The document a draft view created at an address, as the view's tree reaches it, once `prepare` has loaded that address. Typed links never bind to a draft's
-   * hidden document; this is how an address names one. Null for the live view, another
-   * draft's creation, or what the reader may not read.
-   */
   draftCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
-  /**
-   * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
-   * document is visible there (wherever it now sits), else the one document at `uri`.
-   * Null when neither names exactly one document. The answer carries its current URI.
-   */
   pinHolder(input: {
     view: LinkView;
     documentId?: string;

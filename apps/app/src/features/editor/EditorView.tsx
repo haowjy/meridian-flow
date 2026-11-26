@@ -15,7 +15,6 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   filetype?: Filetype;
   showCollaborationDecorations?: boolean;
   focusKey?: string;
-  /** Main's document: the caret main gives goes to it, not to a side's or a sheet's. */
   inMain?: boolean;
 };
 

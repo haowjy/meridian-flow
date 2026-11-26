@@ -1,10 +1,3 @@
-/**
- * project-route-data — server-side loader helper that fetches a project's
- * threads + works (forwarding cookies) and seeds them into the
- * React Query cache before the workspace renders. Owns the project route's
- * SSR data priming so project data is ready on a cold refresh.
- */
-
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
@@ -29,7 +22,6 @@ function errorMessage(error: unknown): string {
 }
 
 function logUnexpectedSsrLoadError(error: unknown): void {
-  // Expected during optimistic create: the client navigates before POST /api/projects.
   if (errorMessage(error) === "Project not found") return;
 
   console.error("Failed to load project data during SSR:", error);
@@ -87,11 +79,6 @@ export function seedProjectRouteData(
   }
 }
 
-/**
- * After a change that committed at `since`, before this tab opened: every read the tab started
- * includes it, so only threads the route read before it are read again. A read already out began
- * after the tab opened, so it is joined, not restarted.
- */
 export function refreshRouteThreadsSince(client: QueryClient, projectId: string, since: number) {
   const readAt = threadsReadAt.get(client)?.get(projectId);
   if (readAt === undefined || readAt >= since) return;

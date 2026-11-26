@@ -10,15 +10,6 @@ export type ImageHtmlAttributes = {
   width: number | null;
 };
 
-/**
- * The picture as the wire spells it: whatever the serialize scope spells for
- * the stored source (an `asset:` ref as the address this project knows it by
- * or an empty destination, a stored `ref` as its target's current path,
- * anything else as it stands): a picture never fails the document.
- *
- * Shared by the two places a picture is serialized — alone as a block, and
- * among the words of a paragraph — so both climb the same ladder.
- */
 export function imageWireAttributes(node: PMNode, ctx: SerializeContext): ImageHtmlAttributes {
   return {
     url: spelledSource(node, ctx),
@@ -43,7 +34,6 @@ function imageWidth(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
-/** Attribute order is fixed so one picture has exactly one spelling. */
 export function imageHtmlTag(image: ImageHtmlAttributes): string {
   const attributes = [`src="${escapeHtmlAttribute(image.url)}"`];
   if (image.alt !== null) attributes.push(`alt="${escapeHtmlAttribute(image.alt)}"`);
@@ -52,13 +42,6 @@ export function imageHtmlTag(image: ImageHtmlAttributes): string {
   return `<img ${attributes.join(" ")} />`;
 }
 
-/**
- * The picture an AST node spells as a tag, or null when it is not one.
- *
- * Null for an unrecognized attribute as much as for another element: a tag
- * carrying something this package cannot write back is better left as the text
- * it already is than silently reduced to the part we understood.
- */
 export function parseImageHtmlAst(ast: unknown): ImageHtmlAttributes | null {
   const record = typeof ast === "object" && ast !== null ? (ast as Record<string, unknown>) : null;
   if (!record) return null;
@@ -113,12 +96,6 @@ function parseWidth(value: string | null | undefined): number | null | undefined
   return Number.isSafeInteger(width) && width > 0 ? width : undefined;
 }
 
-/**
- * JSX attributes as the flat name/value map the HTML reader speaks, or null for
- * anything this package would not write back: an expression attribute
- * (`width={n}`) is JavaScript nobody here evaluates, a spread is the same, and a
- * repeated name is a tag nobody meant to write.
- */
 function jsxAttributeMap(
   attributes: readonly MdxJsxAttribute[],
 ): ReadonlyMap<string, string | null> | null {

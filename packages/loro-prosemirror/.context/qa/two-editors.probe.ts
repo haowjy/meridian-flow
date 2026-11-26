@@ -1613,7 +1613,6 @@ function racedRemovals(): string[] {
       runHistory(r.a, "undo");
       return settle(r, "deletion in flight", showsAll("Delete-target before after.|PEER "), once("PEER"));
     },
-    // Review p18993 C3: the steps either side of a split a peer typed in go back and come again.
     "Undo and Redo either side of a split a peer typed in": (r) => {
       caret(r.a, "a", 2);
       type(r.a, "ONE");
@@ -1688,7 +1687,6 @@ function racedRemovals(): string[] {
       if (!runHistory(r.a, "undo")) return "split/retype: A's Ctrl+Z did not run";
       return settle(r, "split/retype then A Undo", showsAll("Delete-target before after."));
     },
-    // Review p18966: an agent's text op in a cell of a table B's typing brought back.
     "an agent's text op inside a restored table keeps it": (r) => {
       caret(r.b, "c3p", 5);
       remove(r.a, "t");
@@ -1726,11 +1724,9 @@ function racedRemovals(): string[] {
       type(r.b, "[k]");
       return settle(r, "typing in a kept table's cell", showsAll("Cell [k]three.", "Cell one."));
     },
-    // Two kept blocks on the caret's path: its paragraph removed by A, its table by C.
     "the caret's paragraph removed, then its table by another peer, then typing": (r) => {
       const c = r.third();
       caret(r.b, "c3p", 5);
-      // The cell's one paragraph goes: the cell shows its unstored empty one.
       const at = posOf(r.a, "c3p");
       const { state } = r.a.view;
       const empty = schema.nodes.paragraph.create({ id: "c3/empty" });
@@ -1745,9 +1741,6 @@ function racedRemovals(): string[] {
       type(r.b, "[k]");
       return settle(r, "typing under two removals", showsAll("Cell [k]three.", "Cell one."));
     },
-    // An upload finishing or a chip respelled: untracked writes elsewhere while the caret rests.
-    // The kept block stays removed in the docs and on B's screen, neither removed again nor
-    // written as new, also when the write reorders its siblings.
     "an untracked write elsewhere while a block is kept": (r) => {
       caret(r.b, "x", 14);
       remove(r.a, "x");
@@ -1769,8 +1762,6 @@ function racedRemovals(): string[] {
       );
     },
   };
-  // A draft's Undo deletes its override, so the draft reads Live's key again; Live then moves the
-  // block, and the draft's Redo writes its override over that move (last writer wins).
   const draftRedoAfterLiveWrite = (): string | null => {
     const live = RoomDocs.create(shape, freshPeerId());
     writeProseMirror(live, schema.topNodeType.create(null, start()));
@@ -1780,7 +1771,6 @@ function racedRemovals(): string[] {
     try {
       move(de, "x", "a");
       if (!runHistory(de, "undo")) return "draft case: Undo did not run";
-      // Before c: the writer keeps a, t, z and c in place and gives x the new key.
       move(le, "x", "c");
       const forwarded = draft.forward();
       notifyChanged(draft, forwarded.changed);
@@ -1799,14 +1789,6 @@ function racedRemovals(): string[] {
     }
   };
 
-  // A Draft tab's Ctrl+Z of an edit the writer then applied: the press deleted the draft's
-  // overrides and carried its text into Live, and the draft reads Live's, which hold them now.
-  // Ctrl+Z of text runs: the draft takes its text back, a pending change against Live; Ctrl+Z of
-  // structure finds no override to put back (the draft reads Live's value), so the draft shows
-  // what it applied. With the press undone first (`then`), Ctrl+Z of structure takes it back;
-  // text the press's Undo returned to the draft is new text, which neither Ctrl+Z nor `Undo
-  // turn` deletes (they take back the edit's own characters, design §2): it stays, no word lost.
-  /** Whether `text` holds every character of `want`, in order. */
   const holds = (text: string, want: string) => {
     let at = 0;
     for (const ch of text) if (ch === want[at]) at++;
@@ -1909,8 +1891,6 @@ function racedRemovals(): string[] {
   return failures;
 }
 
-// WASM memory only grows: a copy of Loro's that frees every handle stops growing once the probe's
-// largest document has fit, a leak grows with every seed.
 const wasmMemory = (
   createRequire(import.meta.url)(
     join(dirname(createRequire(import.meta.url).resolve("loro-crdt")), "loro_wasm.js"),

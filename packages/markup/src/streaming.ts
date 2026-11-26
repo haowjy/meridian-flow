@@ -37,7 +37,6 @@ export function parseStreamingDocument(
   return { blocks: candidate.blocks, openCode };
 }
 
-/** The last source character must belong to ordinary prose, not an opaque inline construct. */
 export function repairableTail(block: unknown, sourceLength: number): boolean {
   if (!block || typeof block !== "object") return false;
   const typed = block as { type?: string; children?: unknown[] };

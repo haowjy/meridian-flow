@@ -23,7 +23,6 @@ export function MobileTopBar({
   actions,
   chatAction,
 }: MobileTopBarProps) {
-  // Two trailing controls need a matching 44px reserve on the leading side.
   const balance = !breadcrumb && Boolean(chatAction) && Boolean(actions);
   return (
     // Solid background on purpose: iOS Safari flashes `backdrop-filter` layers

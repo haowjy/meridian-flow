@@ -1,8 +1,3 @@
-/**
- * Work command records read against the server snapshot: the snapshot with
- * every unsettled command laid over it, the Works still being created beside
- * it, and whether the snapshot already shows what a command asked for.
- */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 
@@ -12,16 +7,11 @@ import {
   workCommandSpecs,
 } from "./work-commands";
 
-/** A Work the server has not created yet, as the writer asked for it. */
 export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
   id: ParsedRequestId;
   draftId: string;
 };
 
-/**
- * A Work the server has not created yet: pending while its create is on its
- * way, failed once the server turned it away.
- */
 export type WorkCreation = { work: UncreatedWork; phase: "pending" | "failed" };
 
 function uncreatedWork(
@@ -33,13 +23,6 @@ function uncreatedWork(
 
 const isoAt = (time: number) => new Date(time).toISOString();
 
-/**
- * The server snapshot with every unsettled command laid over it, oldest first: what it expects
- * before the server answers, what the server returned after, until a read that started after
- * it settled has come back (`observed`). A create shows as a `WorkCreation` until the server has
- * the Work, then first in the list, where the server's newest-first order will put it. A Work
- * being created shows even before the first snapshot loads.
- */
 export function projectWorkCommands(
   snapshot: WorksSnapshot | undefined,
   records: readonly WorkCommandRecord[],
@@ -67,7 +50,6 @@ export function projectWorkCommands(
     if (!before) created.unshift(record.workId);
   }
   if (!changed || !snapshot) return { snapshot, creations };
-  // Commands keep the catalog fields a snapshot entry carries.
   const pick = (id: string) => byId.get(id) as WorksSnapshot["works"][number];
   return {
     snapshot: {
@@ -79,7 +61,6 @@ export function projectWorkCommands(
   };
 }
 
-/** The Work as one record leaves it. */
 function recordProjection(work: Work | undefined, record: WorkCommandRecord): Work | undefined {
   const spec = workCommandSpecs[record.operation] as {
     project: (w: Work | undefined, v: unknown, c: { at: string }) => Work | undefined;
@@ -89,7 +70,6 @@ function recordProjection(work: Work | undefined, record: WorkCommandRecord): Wo
   return spec.project(work, record.variables, { at: isoAt(record.since) });
 }
 
-/** Whether the server snapshot already shows what this command asked for. */
 export function snapshotHasCommandTarget(
   snapshot: WorksSnapshot | undefined,
   command: Pick<WorkCommandRecord, "operation" | "variables">,

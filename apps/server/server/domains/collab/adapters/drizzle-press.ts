@@ -418,9 +418,6 @@ export function createDrizzlePress(
       );
 
     if (request.verdict !== "apply") return run(NO_OWNERS);
-    // The sources the drafts' pending records change, and where Live has the nodes they name:
-    // their owners are locked with the drafts' and judged under the locks. A guess read before
-    // the locks, so it can miss; a miss restarts.
     const sources = () =>
       deps.treeLists.read({
         lists,
@@ -498,8 +495,6 @@ export function createDrizzlePress(
             for (const draft of [...draftIds].sort())
               if (await deps.drafts.lock(draft)) living.add(draft);
             await deps.treeLists.lock(lists);
-            // A restore's text is in the ledger, read under the draft's key: a second Undo of it
-            // finds its parts brought back already.
             const { scope } = pressed;
             const restored =
               scope.kind === "turn" && living.has(scope.draft)

@@ -1,28 +1,3 @@
-/**
- * Putting an open surface in the Esc chain, and telling the chain where it
- * sits.
- *
- * Depth is the hard part. React mounts child effects before parent effects, so
- * a dialog that opens with its source pane already open registers the pane
- * first — and the design mandates exactly that (a new empty diagram opens with
- * its starter source showing). A chain that read registrations as a stack
- * would call the dialog topmost and close both on one Escape. So a layer says
- * who it is inside, through context, and the kernel orders by nesting rather
- * than by arrival.
- *
- * A surface that can contain another layer therefore has to wrap what it
- * renders in `layer.scope(...)`. The three wrappers in this directory already
- * do; a lane that hand-rolls a portal owes the same call.
- *
- * A layer is also where its keys belong. `keys` registers them with the kernel
- * for as long as the surface is open, at `layer` scope, with the reach that
- * survives focus sitting inside portalled content, and naming the layer that
- * owns them — so a dialog's shortcut is in the kernel's bindings, runs its
- * scope ladder, loses to the pane the dialog opened, and collides through the
- * same validation as every other lane's. A `document` listener in a surface has
- * none of that.
- */
-
 import type { Editor } from "@tiptap/core";
 import {
   createContext,
@@ -67,27 +42,7 @@ export type UseChromeLayerOptions = {
   open: boolean;
   close: () => void;
   dismissal?: ChromeLayerDismissal;
-  /**
-   * Where focus goes when this surface closes and nothing took its place. The
-   * default hands the caret back to the prose, which is right for a surface the
-   * writer summoned at the caret.
-   *
-   * A surface supplies its own when the writer was typing somewhere else — the
-   * element that drives a suggestion menu (`SuggestionMenu`) — so they continue there,
-   * not at the caret. It runs under the same two guards, which is the point of
-   * routing it through here rather than racing this handler from its own timer.
-   */
   returnFocus?: () => void;
-  /**
-   * Keys this surface answers while it is open, in ProseMirror's spelling
-   * (`"Mod-Enter"`). A binding returns true when it took the key.
-   *
-   * They belong to the layer rather than to the content inside it, because the
-   * content is what comes and goes: a dialog's Ctrl+Enter has to open the pane
-   * that is closed, and a pane cannot register the key that summons it. Declare
-   * them inline — the handlers are read live, and only a change to the SET of
-   * keys re-registers.
-   */
   keys?: Readonly<Record<string, KeymapBinding>>;
 };
 

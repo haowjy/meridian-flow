@@ -72,7 +72,6 @@ export function destinationFor(principal: Principal, facts: FileFacts): FileDest
       ownerHandle: facts.draftOwner?.handle ?? null,
     };
   }
-  // A deleted document comes back live, where it was.
   if (target.kind === "restore") return { kind: "live" };
   return principal.agent
     ? destinationAt(

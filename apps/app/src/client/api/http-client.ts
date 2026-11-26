@@ -103,7 +103,6 @@ export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T>
 
 export type PostJsonOptions<T = unknown> = JsonOptions<T> & {
   headers?: HeadersInit;
-  /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
   signal?: AbortSignal;
 };

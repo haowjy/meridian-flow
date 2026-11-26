@@ -31,14 +31,10 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   { id: "link", render: ({ editor }) => <LinkSurfaces editor={editor} /> },
   { id: "at-reference-menu", render: (props) => <AtReferenceMenu {...props} /> },
   {
-    // What a follow found, when it found nothing. The app half that asked is
-    // `ProjectLinkRuntime`, which renders nothing and mounts no surface.
     id: "link-follow-outcome",
     render: ({ editor }) => <FollowOutcomeDialog editor={editor} />,
   },
   {
-    // A drag in the air and a refused file. What a picture does once it is IN the
-    // document is its own node's business, not this surface's.
     id: "image-ingress",
     render: ({ editor }) => <ImageIngressOverlay editor={editor} />,
   },

@@ -56,11 +56,6 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   return mergeEchoHunks(hunks);
 }
 
-/**
- * The blocks around `targets`: each target index widened by one neighbour on each side, clamped
- * to the document, merged, in order. The echo's window.
- * A target of -1 (an insert at the start) widens to the first block.
- */
 function windowOf(targets: Iterable<number>, blockCount: number): number[] {
   const indexes = new Set<number>();
   for (const target of targets) {

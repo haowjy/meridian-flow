@@ -1,13 +1,3 @@
-/**
- * The worker threads that run grep's matching (`match-worker.ts`), and the deadline that ends them.
- *
- * A pool grows on demand to {@link MAX_WORKERS} and keeps its idle threads, so the first grep pays
- * the start-up and later ones don't. A thread serves one request at a time, so a slow request holds
- * only its own thread: when that request's signal aborts, the thread is terminated (the one
- * way to stop a running `re2js` call) and replaced on the next demand. Callers beyond the cap queue
- * for a free thread, each for no longer than its own signal. Requests carry no pool state, so any
- * thread can serve any of them and a terminated thread loses nothing but the request that ran there.
- */
 import { Worker } from "node:worker_threads";
 import type { MatchReply, MatchRequest, MatchValue } from "./match-worker.js";
 

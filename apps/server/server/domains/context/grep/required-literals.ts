@@ -1,11 +1,3 @@
-/**
- * The literal text every match of a pattern must contain, read from the pattern
- * source, so a case-insensitive grep can skip a document with a plain substring
- * test before the regex engine reads it. Conservative: any construct it can't
- * place ends the literal run, and a pattern it can't reason about (a flag group,
- * `\Q`) yields nothing.
- */
-
 const MIN_LENGTH = 2;
 
 const FLAG_GROUP = /\(\?(?!:|P?<[A-Za-z_])/u;
@@ -33,18 +25,15 @@ export function requiredLiterals(pattern: string): string[] | undefined {
     const char = chars[i] as string;
     if (char === "\\") {
       const next = chars[++i] ?? "";
-      // Escapes that take operands (`\pL`, `\x41`, octal, `\cX`) are not worth parsing.
       if (/[pPxXcC0-9]/u.test(next)) return undefined;
       if (depth > 0) continue;
       if (/[A-Za-z]/u.test(next)) endRun();
       else run.push(next);
     } else if (char === "[") {
-      // A leading `]` (after an optional `^`) is a member, not the end.
       let j = i + 1;
       if (chars[j] === "^") j += 1;
       if (chars[j] === "]") j += 1;
       while (j < chars.length && chars[j] !== "]") {
-        // `[:alpha:]` inside a class has its own `]`.
         if (chars[j] === "[" && chars[j + 1] === ":") {
           const close = chars.indexOf("]", j + 2);
           if (close < 0) return undefined;

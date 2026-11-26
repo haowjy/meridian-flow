@@ -1,11 +1,3 @@
-/**
- * The writer's name for a chat's Scratch: its first chat's title.
- *
- * A lineage is never named by its handle (`c12`) or its id. The live chat list
- * answers first and stays current through renames. A lineage outlives its
- * first chat's trash while a fork lives, and the live list has no trashed
- * chats, so then the lineage route answers. Null until either does.
- */
 import { useQuery } from "@tanstack/react-query";
 import { getContextLineage } from "@/client/api/projects-api";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -26,7 +18,6 @@ export function useLineage(
           : thread.ref === key.rootThreadRef && thread.rootThreadId === thread.id,
       )
     : undefined;
-  // Only an id can ask the route; a handle names a chat the live list must hold.
   const rootThreadId = key && "rootThreadId" in key ? key.rootThreadId : null;
   const stored = useQuery({
     queryKey: ["projects", projectId, "lineage", rootThreadId],

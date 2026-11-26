@@ -39,15 +39,12 @@ export function createAgentEditRuntime<Tx>(input: {
   links: DocumentLinkScopes;
   aheadRefs: AheadRefRegistrar;
   rooms: DocumentRooms<Tx>;
-  /** Runs work in the caller's transaction, or in one of its own outside any. */
   transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
-  /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
   inTransaction(): boolean;
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
-  /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
     const filetype = await codeFiletypeOf(input.resolveDocumentFiletype, documentId);
     return filetype === null

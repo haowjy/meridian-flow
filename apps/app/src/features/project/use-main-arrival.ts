@@ -1,14 +1,3 @@
-/**
- * Every arrival of main, for both kinds, in one place. Main shows what its address names; when it
- * arrives at an item this writes the kind's slot (`client/project-shell/store.ts`), which is all
- * the side reads, so a change of kind needs no swap code. Main's empty pages (Recently opened, the
- * new-chat composer, Recent chats) null their slot: the side never holds what main left empty.
- *
- * It also closes the chat tabs of chats deleted elsewhere (`useDropGoneChatTabs`).
- *
- * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";

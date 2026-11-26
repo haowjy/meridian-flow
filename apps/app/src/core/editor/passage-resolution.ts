@@ -21,8 +21,6 @@ export function resolvePassage(
   // an answer, several are a coin flip about the writer's own prose.
   const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size });
   if (everywhere.length === 1) return { kind: "refound", ranges: everywhere };
-  // The block is still there but the term isn't found in it: the server's term is the writer's
-  // text, which formatting marks can split across nodes. The block is the promise left to keep.
   return block ? { kind: "block", ranges: [block] } : { kind: "stale" };
 }
 

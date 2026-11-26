@@ -505,11 +505,6 @@ function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | u
   return owner.archived ? "work_archived" : undefined;
 }
 
-/**
- * Room access follows the file's owners (each under its `ownerAccessKey`), its project and the
- * document itself: access is decided once, at Join, so every change that can end it must reach
- * a key the room is under.
- */
 function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
   return [

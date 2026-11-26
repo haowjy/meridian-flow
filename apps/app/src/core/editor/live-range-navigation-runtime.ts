@@ -87,11 +87,6 @@ export function showPassageInTarget(
     : null;
 }
 
-/**
- * The span of the block a search hit's hash names: the hash is a prefix of the full hash of the
- * block's `id`. Null when it names none, or more than one: two candidate blocks cannot promise one
- * passage, and picking either is the guess this feature refuses to make.
- */
 function blockRangeForHash(doc: Node, hash: string): TextRange | null {
   const prefix = hash.trim().toLowerCase();
   if (!prefix) return null;

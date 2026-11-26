@@ -40,8 +40,6 @@ export function useReadingPosition({
     let stop: (() => void) | null = null;
     let unreport: (() => void) | null = null;
     const begin = () => {
-      // A mount with no layout yet (hidden warm, or an editor that remounted before its pane was
-      // measured) begins once it has some: its first reveal is its first restoration.
       if (stop || !active || !scroller.clientHeight) return;
       if (initialized.current !== editor) {
         initialized.current = editor;
@@ -64,7 +62,6 @@ export function useReadingPosition({
       const frame = requestAnimationFrame(() => {
         restoring = false;
       });
-      // Measured once the place settles, not per keystroke: measuring reads the layout.
       const flush = () => {
         if (timer) clearTimeout(timer);
         timer = null;

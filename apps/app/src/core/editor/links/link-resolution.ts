@@ -1,52 +1,3 @@
-/**
- * What an internal link points at, right now.
- *
- * Resolution is per-request and never persisted (law 9): the mark stores what
- * the link names (a `ref` beside the href it was written with) and whether that
- * document is reachable, and where it lives now, is a question about the
- * project this minute. So the document holds the link and this holds the
- * answer, keyed by the link's whole identity: its ref and the classifier's
- * spelling of its href (`LinkKey`). Two links sharing an href but naming
- * different documents never share an answer, and a second normalizer never
- * appears.
- *
- * Gone is an answer too: a ref whose document was deleted, discarded, or is
- * no longer readable. It is not "nothing at this address yet", and it never
- * falls back to the address.
- *
- * Missing is a normal, rendered state, not an error: serial writers link
- * chapters and characters before they exist. A FAILED request is a different thing
- * entirely and caches nothing, because a link the editor could not ask about
- * must never be drawn as a link that does not exist.
- *
- * The port is the app's: only it knows the project, the work, the URI of the
- * document holding the link, and which documents the project holds. Until one
- * registers, every read is null and the manuscript renders exactly as it did
- * before this module existed.
- *
- * **A registration is a generation, and a generation owns everything true of
- * it** — its answers, the questions it has out, and the counter admitting them.
- * The app re-registers whenever any of those inputs change, so a scope change
- * landing mid-flight is ordinary rather than exotic; a promise already out
- * cannot be recalled, so the generation it was asked in is what it settles
- * against. That is the whole invalidation mechanism: there is no second verb
- * that drops answers, and no caller has to know one.
- *
- * **Local answers never wait on the network.** The port's `local` half runs
- * when a question is asked, so what the scope's own index can say is cached
- * before any request goes out, and a failed request fails only the questions
- * it carried. A local answer may also be provisional: shown at once while the
- * server is still asked, and replaced only by a server answer that names a
- * different document or says the ref is gone.
- *
- * A click outlives a generation. A question someone is waiting on through
- * `resolve()` is asked again in the generation that replaced its own, because
- * the writer asked to go somewhere and a catalog moving underneath them is not
- * an answer. Questions only a shown link or picture asked are dropped with
- * their generation; the editor's requester asks them again when the new one
- * publishes.
- */
-
 import {
   classifyWrittenSource,
   parseLinkRef,
@@ -118,16 +69,6 @@ export function goneLinkDocumentId(
 
 export type LinkQuestion = { ref: string | null; target: LinkTarget };
 
-/**
- * What the scope knows about one question without the network.
- *
- * - `answered`: the scope's own answer, final for the generation; the server
- *   is not asked.
- * - `unasked`: the question cannot be asked here (a relative path with no
- *   base, say). Cached like a failure: no answer, never drawn as missing.
- * - `ask`: the server answers. A `provisional` answer is shown at once and
- *   stands unless the server answers `gone` or a different document.
- */
 export type LocalLinkAnswer =
   | { kind: "answered"; answer: LinkAnswer }
   | { kind: "unasked" }
@@ -135,14 +76,6 @@ export type LocalLinkAnswer =
 
 export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
 
-/**
- * The port. `local` runs synchronously when a question is asked, so local
- * answers are cached before any network call and no server failure can touch
- * them. `remote` gets only the questions `local` sent on, at most `MAX_BATCH`
- * at a time, and answers in question order; null for one question is a
- * failure of that question. Throwing fails that batch and nothing else.
- * Without `local`, every question goes to `remote`.
- */
 export type InternalLinkResolver = {
   index?: LinkAssignmentIndex | null;
   local?: (question: LinkQuestion) => LocalLinkAnswer;
@@ -153,28 +86,10 @@ export type LinkAnswerCache = {
   subscribe: (listener: (uploadsChanged?: ReadonlySet<string>) => void) => () => void;
   readonly available: boolean;
   readonly baseUri: string | null;
-  /**
-   * What a link written into the holder is assigned against (`link-assignment.ts`):
-   * its address, its project, and the local document index the live
-   * registration was made with. Null with no registration.
-   */
   readonly assignment: LinkAssignmentScope | null;
   read: (link: LinkKey) => LinkResolutionEntry | null;
-  /**
-   * True when this generation's last question about the link failed (or
-   * could not be asked). A link nobody has asked about yet is not failed: a
-   * renderer that reads null for one is waiting on the scan, not on a retry.
-   */
   failed: (link: LinkKey) => boolean;
   request: (links: Iterable<LinkKey>) => void;
-  /**
-   * The answer, waited for — what a click needs, because the writer is already
-   * asking to go there. Null carries the same "nothing to say" meaning, and a
-   * previous failure is retried rather than remembered. A provisional answer
-   * waits for the server, which may still say gone or name another document. A registration landing
-   * while this waits asks the question again in the new generation rather than
-   * answering null; only unregistering (or destroying) the port does that.
-   */
   resolve: (link: LinkKey) => Promise<LinkResolutionEntry | null>;
   registerResolver: (
     resolve: InternalLinkResolver,
@@ -325,8 +240,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     };
     generation.asking.set(key, request);
     generation.answers.set(key, local.provisional ?? PENDING);
-    // Queued, not sent: the caller pumps once it has asked everything it has,
-    // so one scan of the document goes out as one batch.
     generation.queue.push(request);
     return promise;
   };
@@ -403,8 +316,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
         asked = true;
       }
       pump(generation);
-      // Pending and local answers are states a renderer may show, so say them
-      // once rather than per link — and never when nothing actually changed.
       if (asked) publish();
     },
 

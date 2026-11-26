@@ -86,7 +86,6 @@ function absorbs(version: MergedTok[], hunks: Hunk[], baseToks: Tok[]): boolean 
       !hunks.some((h) => h.ins.some((t) => t.key === o.tok.key)),
   );
   if (reinserted) return false;
-  // Each insertion must appear between the same kept base tokens it was inserted between.
   for (const h of hunks) {
     if (!h.ins.length) continue;
     let lo = -1;
@@ -106,31 +105,17 @@ function absorbs(version: MergedTok[], hunks: Hunk[], baseToks: Tok[]): boolean 
   return true;
 }
 
-/**
- * The draft's text for a window both sides changed, when it already carries live's change there (no
- * conflict). Live's text never wins this way: a live version that seems to contain the draft's change
- * can still have rewritten what the draft deleted, and the draft's text is the conflict default anyway.
- */
 export function draftAbsorbsLive(
   liveVersion: MergedTok[],
   draftVersion: MergedTok[],
   liveHunks: Hunk[],
   baseToks: Tok[],
 ): MergedTok[] | null {
-  // A paragraph start that live removed (a join) and the draft retyped (a type change) is still
-  // there in the draft: same paragraph count or it isn't absorbed.
   const paragraphStarts = (v: MergedTok[]) => v.filter((o) => isBlockTok(o.tok)).length;
   if (paragraphStarts(liveVersion) !== paragraphStarts(draftVersion)) return null;
   return absorbs(draftVersion, liveHunks, baseToks) ? draftVersion : null;
 }
 
-/**
- * Where one side inserts text at a boundary of the other side's replacement, and the
- * replacement's new text shares that edge, split that shared part off as a plain insertion, so
- * it merges as one insertion and only the rest can conflict (`shared-edge-kept-once`). Punctuation
- * alone is not a shared edge: two sentences that both end in "." are two sentences. Returns how many
- * hunks it split.
- */
 export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
   let peeled = 0;
   const part = (h: Hunk, a: number, b: number, from: number, to: number): Hunk => ({
@@ -256,12 +241,6 @@ export interface MovedText {
   destination: number[];
 }
 
-/**
- * Live cut text and pasted it elsewhere, and the draft changed the text where it was cut from. The
- * draft's change wins at the source; pasting live's old copy too would silently undo it, so the
- * paste is left out and shows in review as live text the draft lacks. With `reportOnly` the hunks
- * are left alone and the pastes are only listed (the draft's side of the same rule).
- */
 export function dropMovedText(
   baseToks: Tok[],
   liveHunks: Hunk[],
@@ -291,8 +270,6 @@ export function dropMovedText(
     for (let insAt = 0; insAt < inserted.length - best.len; insAt++)
       for (const delAt of positions.get(inserted[insAt][0].key) ?? []) {
         if (deleted.length - delAt <= best.len) break;
-        // Extend each matching diagonal only from its start, not again at every suffix.
-        // Ascending seed order preserves the first-inserted, first-deleted tie rule.
         if (
           insAt > 0 &&
           delAt > 0 &&
@@ -338,7 +315,6 @@ export function dropMovedText(
       destination: run.map(([, k]) => h.sidx?.[k] ?? h.sfrom + k),
     });
     if (reportOnly) continue;
-    // Keep any paragraph start that only held the pasted text from becoming an empty paragraph.
     const keep = h.ins.map((_, k) => k).filter((k) => !droppedAt.has(k));
     const empty = keep.length === 1 && h.ins[keep[0]].kind === "block" && wholeInsert;
     h.sidx = empty ? [] : keep.map((k) => h.sidx?.[k] ?? h.sfrom + k);

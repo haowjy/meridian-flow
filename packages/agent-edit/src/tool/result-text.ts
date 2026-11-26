@@ -1,6 +1,3 @@
-// The one renderer from a `read` or `write` result to the text the model sees.
-//
-// Hosts keep the typed result beside this text; nothing parses the text back.
 import { splitDocumentFile } from "../document-address.js";
 import { toHashline } from "../model/hashline.js";
 import type {
@@ -73,10 +70,6 @@ function statusLine(result: AgentEditResultV1): string {
   return facts.join("; ");
 }
 
-/**
- * The first drafted tree change of a reply says once that drafted changes wait for review, before
- * the status a model otherwise reads as done; after it, `version: draft (w2)` carries it.
- */
 function pendingLine(result: AgentEditResultV1): string[] {
   if (!result.tree?.firstDrafted || result.destination !== "draft") return [];
   return [
@@ -137,11 +130,6 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   return facts.join(", ");
 }
 
-/**
- * The version a write changed, in `read`'s terms: `live`, or `draft
- * (w3)` for a write held in a named Work's draft; No Work's draft has no
- * handle to name, so it is plain `draft`. Undo and redo name none.
- */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
     return result.draftWork === "/" ? "draft" : `draft (${result.draftWork})`;

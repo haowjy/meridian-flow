@@ -59,23 +59,9 @@ export interface WriteOptions {
   by?: CommitAuthor;
   origin?: string;
   random?: Random;
-  /**
-   * What the docs read as now, when the caller holds it (the editor's document before a
-   * transaction). A block of the write that is the same object as here, under the same parent, is
-   * known to read as written and is not compared again, so a write costs what it changed.
-   */
   previous?: readonly ShapeBlock[];
-  /**
-   * Removed blocks the caller's document still shows (the editor's caret rule, design §1): the
-   * write reads the docs as `readDocument` does with them, so it leaves them as they are.
-   */
   kept?: ReadonlySet<BlockId>;
   view?: StructureView;
-  /**
-   * The pairs of blocks this write moved text between (a split, a join, a paste, a drop): the
-   * writer knows them from the edit it is writing. A draft records each pair, so the two blocks
-   * are one change (design §2).
-   */
   pieces?: readonly (readonly [BlockId, BlockId])[];
 }
 
@@ -129,10 +115,6 @@ export class StructureWriter {
     this.set("order", id, encodeRemoval({ at, seen }));
   }
 
-  /**
-   * Record that this write moved text between `a` and `b`, so a draft's review takes them as one
-   * change. Live keeps no record: nothing reviews it.
-   */
   pieces(a: BlockId, b: BlockId): void {
     if (this.docs.draft && a !== b) this.set("pieces", pieceKey(a, b), true);
   }
@@ -232,17 +214,6 @@ export function setCommentBody(
   return commitStructure(docs, before, options);
 }
 
-/**
- * Write a whole document as the editor (or a seed) has it (design §6): diff it against the
- * normalized read and write only what differs. Blocks pair by `id`, so there is nothing to
- * reconcile: changed values are set, only blocks whose relative order changed are re-keyed, shown
- * blocks that left are tombstoned (the topmost of each removed subtree), and a textblock's text doc
- * gets a splice and a style patch.
- * Because the comparison is against the normalized read, a broken cycle, a hidden container or a
- * filled empty cell writes nothing by itself, and after the write the docs read as `blocks`.
- * With `options.previous`, blocks unchanged since it are skipped. Returns the docs it changed,
- * committed.
- */
 export function writeDocument(
   docs: RoomDocs,
   blocks: readonly ShapeBlock[],
@@ -372,12 +343,6 @@ export function commitStructure(
     : { key: STRUCTURE_KEY, doc: docs.structure, before, after };
 }
 
-/**
- * Bring block `id`'s text doc to `inline` if its normalized read differs; returns the change. A
- * new block's doc is created at its first content, and a draft forks Live's doc at its first write
- * (the change's `before` is then the frontier it forked at). The text gets one splice (common
- * prefix and suffix of the shown text) and the units outside it a style patch.
- */
 export function writeText(
   docs: RoomDocs,
   id: BlockId,

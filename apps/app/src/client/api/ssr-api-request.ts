@@ -1,10 +1,3 @@
-/**
- * ssr-api-request — builds the API request options used by TanStack Start SSR
- * loaders when they fetch through the server process instead of the browser.
- *
- * SSR fetches go to `MERIDIAN_API_ORIGIN` (set by `pnpm dev` locally and by the
- * deploy in production) and carry the incoming auth cookie for the API auth gate.
- */
 import { getGlobalStartContext } from "@tanstack/react-start";
 
 import { readOptionalEnvString } from "@/core/env";

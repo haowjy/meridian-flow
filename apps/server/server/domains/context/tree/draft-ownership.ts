@@ -1,9 +1,3 @@
-/**
- * Which documents a draft may hold: its own project's, and the home folder of the account that
- * owns its project (`ownedByRequest`). Never widen this to another account's home folder or
- * another project's documents. Every check that pairs a draft with a document (draft
- * admission, file facts) asks here.
- */
 import type { ContextSourceId, DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
 import { contextSources, drafts, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -48,10 +42,6 @@ export async function loadSourceOwners(
   );
 }
 
-/**
- * The owner of the source a document is placed in (live's row, else any Work's). A document no
- * view places has no source and no owner.
- */
 export async function loadDocumentOwners(
   db: DrizzleDb,
   documentIds: readonly DocumentId[],

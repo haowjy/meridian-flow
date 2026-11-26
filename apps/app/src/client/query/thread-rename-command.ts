@@ -228,10 +228,6 @@ export function reconcileThreadRename(
   }
 }
 
-/**
- * Route teardown for a non-latest abort: drop the intent quietly, no
- * writer-visible refusal, and do not refetch a list the caller is leaving.
- */
 export function abandonThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,

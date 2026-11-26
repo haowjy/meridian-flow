@@ -47,16 +47,12 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     () => review?.controller.owner.heldChanges(mode?.itemKey ?? "") ?? new Set<string>(),
     [review, mode?.itemKey, ownerRevision],
   );
-  // A plain draft page reads the rows against Live for its header's count; Review changes paints
-  // them against its target.
   const active = page !== null;
   const reviewing = mode !== null;
   const reference = useReviewReference(mode);
   const against = reference?.kind ?? "live";
   const referenceDocs = reference && reference.kind !== "live" ? reference.docs : null;
 
-  // Nothing to review closes onto the plain draft, once the list agrees the copy is not still
-  // syncing the draft's changes in.
   const closeIfEmpty = () => {
     const { mode } = latest.current;
     const left = rows.current?.filter((row) => !hidden.has(row.id));
@@ -64,7 +60,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   };
   useEffect(closeIfEmpty, [mode?.listed]);
 
-  // A target that is gone (a deleted draft, a file no longer in the project) compares against Live.
   const gone = useTargetGone(mode);
   useEffect(() => {
     if (gone) latest.current.mode?.retarget("live");
@@ -82,7 +77,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
       if (!mode || !review || review.controller.dispositionLocked) return;
       const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
       const next = nextAfter(row);
-      // The writer stays in this chapter's editor, so Ctrl+Z still reaches the press.
       if (next) mode.focus(next.id);
       else mode.close();
       void review.controller.pressChange(verdict, ref, row.id);
@@ -110,7 +104,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
         if (editor.isDestroyed) return;
         const next = nextAfter(row);
         takeRow(editor.view, row, draftId);
-        // As after a press: on to the next difference, the caret in the text so Ctrl+Z reaches the Take.
         if (next) latest.current.mode?.focus(next.id);
         editor.view.focus();
       },
@@ -121,9 +114,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
         settle();
       },
     };
-    // Review changes opens at its `change`, named by any of its members (a turn card names the
-    // first block the turn changed); one that no longer exists, or none, is the first (the last
-    // after a step back from the next chapter).
     const settle = () => {
       const { mode } = latest.current;
       const left = (rows.current ?? []).filter((row) => !hidden.has(row.id));
@@ -184,7 +174,6 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
     return () => resize.disconnect();
   }, [editor, surface]);
 
-  // The focused change comes into view: a step, a press's next change, a link's `change`.
   const focus = reviewing ? changeId : null;
   useEffect(() => {
     if (!focus || editor.isDestroyed) return;

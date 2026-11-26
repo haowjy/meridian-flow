@@ -6,7 +6,6 @@ import { type FileSuggestion, treeFileSuggestions } from "./file-suggestions";
 export function useFileSuggestions(
   projectId: string,
   schemes: readonly ProjectContextTreeScheme[],
-  /** Whose Scratch and Uploads the suggestions list: the document's own owner. */
   owner: ContextOwner,
 ): FileSuggestion[] {
   const { workId, rootThreadId, chatThreadId } = owner;

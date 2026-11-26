@@ -1,13 +1,3 @@
-/**
- * The commands of a Work's review surfaces (the Changes list, a chat's strip, a document's
- * page): every Apply and Discard of a document, a folder, a selection or the whole Work is one
- * press (`press-commands.ts`), run by the server over both halves, with one Undo.
- *
- * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
- * pill. Its notice is the draft notice, with the press's Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`) and, as it is made,
- * on the Ctrl+Z of each editor open on its documents (`EditorPressStep`); every Undo of it, on
- * its notice, the sidebar or an editor, is the press's one Undo and takes the others' steps away.
- */
 import type { CommandDriver } from "@meridian/command-driver";
 import {
   type DocumentId,
@@ -62,15 +52,7 @@ import {
 type Verdict = "apply" | "discard";
 type Scope = PressAction["scope"];
 type TurnScope = Extract<Scope, { kind: "turn" }>;
-/**
- * Each tree list whose rows showed the press's nodes in the Work's tree as it was sent, with the
- * sources they showed in: the sidebar stacks its Undo step goes on.
- */
 type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
-/**
- * `took`: the documents and folders the press changed, in their text or their place in the tree.
- * `landed`: when its answer came, before the lists were read again.
- */
 type Pressed = {
   commandId: string;
   drafts: readonly string[];
@@ -78,15 +60,7 @@ type Pressed = {
   placement: Placement;
   landed: number;
 };
-/**
- * `failed`: the press reached the server, which didn't take it. `told`: it was never sent, and
- * `submitCommand` has told the writer already.
- */
 type Unpressed = "failed" | "told";
-/**
- * What a press does, and the documents it expects to take whole (`null`: every row listed). A
- * change press or a restore takes part of a document: its row stays listed.
- */
 type PressTarget = { action: PressAction; documents: readonly string[] | null; whole: boolean };
 
 export type DraftItemRef = { documentId: string; itemKey: string };
@@ -101,10 +75,6 @@ export function usePressCommands({
 }: {
   projectId: string;
   work: Work | null;
-  /**
-   * The drafts the commands act on: one (a chat's, a page's), or every draft of `work` (the
-   * Changes tab), whose "all" is the Work's press. Empty acts on none.
-   */
   drafts: readonly string[];
   threadId?: string | null;
   surface: NoticeSurface["kind"];
@@ -146,11 +116,6 @@ export function usePressCommands({
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
-    /**
-     * Reads the lists again; a row a press took or gave back shows once this lands. An Undo
-     * turn reads its turn's card again too, dropping a read already out, so any card read that
-     * lands after this says whether the press is in force (`RestoreEntry.since`).
-     */
     const refresh = async (scope: Scope) => {
       if (scope.kind === "turn" && threadId)
         void queryClient.refetchQueries(
@@ -184,11 +149,6 @@ export function usePressCommands({
         : "failed";
     };
 
-    /**
-     * Where the nodes show in the Work's tree now, in the project's list and the account's: its
-     * view shows both what Live holds and what the Work made. None found, the project's list
-     * holds the step under every source.
-     */
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
       const project: TreeListRef = { kind: "project", projectId };
@@ -221,10 +181,6 @@ export function usePressCommands({
       return "";
     };
 
-    /**
-     * A press's step on the Undo stack of each list in its placement, one `undo` for all of them.
-     * The stacks belong to the lists' sessions, whoever holds them, as a gesture's steps do.
-     */
     const seatOf = (nodes: readonly string[], undo: () => Promise<boolean>) => {
       let placement: Placement = [];
       let seated: { session: TreeListSession; step: PressStep }[] = [];
@@ -250,10 +206,6 @@ export function usePressCommands({
       return { seat, place };
     };
 
-    /**
-     * A press on the sidebar's stack (`PressEntry`): the sidebar's Ctrl+Z, or its notice's Undo,
-     * takes back the press once. `dropped`: it was taken back, and its notice goes with it.
-     */
     const remember = (
       scope: Scope,
       verdict: PressAction["verdict"],
@@ -265,8 +217,6 @@ export function usePressCommands({
       const { seat, place } = seatOf(taken, async () => (await entry.undo()).ok);
       place(pressed.placement);
       const undo = async (): Promise<Undone> => {
-        // An Apply's Undo takes a created document out of Live: main, read before, follows it to
-        // the draft's plain page, where it is a draft's document again.
         const main = presented?.mainDocumentId(projectId);
         const answer = await unpress(pressed.commandId, pressed.drafts, scope);
         if (typeof answer === "string")
@@ -295,11 +245,6 @@ export function usePressCommands({
       return entry;
     };
 
-    /**
-     * A turn's restore in force: on the sidebar's stack and each editor's Ctrl+Z like any press,
-     * and in the owner under its turn and draft, where the turn's card reads it and offers its
-     * Undo. Taken back anywhere, it leaves the owner.
-     */
     const restoreInForce = (
       scope: TurnScope,
       pressed: Pressed,
@@ -377,11 +322,6 @@ export function usePressCommands({
       };
     };
 
-    /**
-     * The Ctrl+Z of each editor showing one of the documents now: in Live, or in a draft of the
-     * press's scope that changes it. Two drafts of one Work can both hold a chapter. A turn names
-     * its documents: its draft's fork of each, listed or not (an Apply took its rows).
-     */
     const editorsOf = (documents: readonly string[], scope: Scope): EditorHistory[] => {
       const inScope = pressDrafts(scope);
       const listed = rows(scope);
@@ -410,11 +350,9 @@ export function usePressCommands({
       heldRows?: HeldNoticeRows,
     ): Promise<CommandOutcome> => {
       const { verdict, scope } = target.action;
-      // A turn's press names its draft; any other presses the surface's.
       const acting = pressDrafts(scope);
       if (!driver || acting.length === 0 || !acting.every(Boolean))
         return Promise.resolve("blocked");
-      // The surface shows one notice: a new press ends the last, whichever draft it was on.
       for (const key of [...drafts, ...(workWide ? [workKey] : [])]) notices.end(key);
       const noticeKey = noticeOf(scope);
       const editor =
@@ -424,11 +362,8 @@ export function usePressCommands({
           (step) => run(target, input, step, heldRows),
         );
       let entry: PressEntry | null = null;
-      // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows(scope).map((row) => [row.documentId, nameOf(row.documentId)]));
-      // A folder has no row: its name is the Work's tree's.
       const named = (node: string) => names.get(node) ?? folderName(node);
-      // A document the Work created goes to Trash with its Discard: main leaves it first.
       if (verdict === "discard" && target.whole) {
         const taken = target.documents && new Set(target.documents);
         const created = rows().flatMap((row) =>
@@ -441,12 +376,10 @@ export function usePressCommands({
         const changed = pressed.took;
         if (changed.length === 0) return "settled";
         if (scope.kind === "turn") {
-          // The turn's card is its notice: it reads the press in force from the owner.
           entry = restoreInForce(scope, pressed, editor);
           return "done";
         }
         const where = noticeSurface(input.documentId, noticeKey);
-        // Taken back elsewhere (the sidebar, an editor): the notice goes with it.
         let shown: number | null = null;
         const step = remember(scope, verdict, pressed, editor, () => {
           if (shown !== null) notices.end(noticeKey, shown);
@@ -506,10 +439,6 @@ export function usePressCommands({
         },
         { documentId: item.documentId },
       );
-    /**
-     * The whole draft, or every draft of the Work, folders with only a tree change included.
-     * `name`: what the notice calls it when it took one thing, if not that thing's own name.
-     */
     const pressDraft = (verdict: Verdict, name: string | null = null, heldRows?: HeldNoticeRows) =>
       run(
         { action: { verdict, scope: draftScope }, documents: null, whole: true },
@@ -520,11 +449,6 @@ export function usePressCommands({
         undefined,
         heldRows,
       );
-    /**
-     * A Draft chat turn's restore (its card's `Undo turn`) in one draft it wrote: `documents` are the ones
-     * the turn wrote there, whose editors get the press's Ctrl+Z step. One at a time per turn and
-     * draft: while one is out or in force, the card offers its Undo instead.
-     */
     const restoreTurn = (turn: TurnId, draft: DraftId, documents: readonly string[]) => {
       if (owner.restore(turn, draft)) return;
       owner.setRestore(turn, draft, { kind: "sending" });
@@ -536,7 +460,6 @@ export function usePressCommands({
         },
         { documentId: null },
       );
-      // A press that changed nothing, or never landed, leaves nothing in force.
       void start.then(() => {
         if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
       });

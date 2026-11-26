@@ -119,8 +119,6 @@ const write1 = c1.record(
         command: "replace",
         ...file("ch1"),
         in: hashes[0],
-        // The whole paragraph as the model read it, its second sentence rewritten: planned on the
-        // read, the first sentence is unchanged and the writer's edit there stands.
         content: "The rain fell on the roof. Mara paced the hall, listening.",
       } as never,
       c1.context(),
@@ -207,9 +205,6 @@ check(
   { groups3, text: text(write3) },
 );
 
-// 5. Writes into an emptied document land (the unstored `/empty` paragraph, stored under a fresh
-// id by the first op): replaced with one paragraph or three, or inserted after. The result lists
-// what was written under its new hash. Then create writes a new document.
 const intoEmpty = async (command: Record<string, unknown>, want: string, what: string) => {
   await host.writerEdit("ch1", () => []);
   c1.request();
@@ -240,8 +235,6 @@ const created = await run(() =>
 );
 check(!created.isError && texts(await host.live("ch2")).join("|") === "Two|Fresh text.", "create writes a new document", text(created));
 
-// 6. A read below the history cutoff plans on the transcript: a block the model rewrites as read
-// keeps the writer's deletion made since, rather than bringing the deleted words back.
 await host.seed("ch3", [paragraph("q1", "Alpha one. Alpha two."), paragraph("q2", "Beta.")]);
 const c3 = chat("thread-3", "t3");
 c3.request();
@@ -267,8 +260,6 @@ check(
   { ch3, text: text(write6) },
 );
 
-// 7. The writer's turn Undo brings back text the chat last saw replaced: an exact find of that text
-// lands, though the chat's view still holds its own words there.
 await host.seed("ch4", [paragraph("r1", "Base alpha."), paragraph("r2", "Base beta.")]);
 const c4 = chat("thread-4", "t4");
 c4.request();
@@ -301,9 +292,6 @@ check(
   { ch4, text: text(write8) },
 );
 
-// 8. The writer types in a paragraph after the chat read it, and the chat removes it as it read it.
-// The removal did not read the typing, so the room's copy brings the paragraph back (design §1,
-// "Removed blocks", rule 1), and the receipt does not call it removed.
 await host.seed("ch5", [paragraph("s1", "Keep."), paragraph("s2", "Target")]);
 const c5 = chat("thread-5", "t5");
 c5.request();
@@ -329,9 +317,6 @@ check(
   receipt,
 );
 
-// 9. A Draft chat reads a chapter nobody has drafted: its fork room reads as Live. It rewrites two
-// paragraphs into the draft; Live is untouched. The writer applies one; the chat's next write to
-// that paragraph plans on its fork (no duplicate), and `format: "changes"` shows what still waits.
 const draftCore = coreFor("d1");
 const draftText = async (doc: string) => texts(await host.draft(doc, "d1"));
 await host.seed("ch6", [
@@ -394,9 +379,6 @@ check(
   listed9,
 );
 
-// 10. The Draft turn's restore press takes every write of it back in the draft (design §2: an
-// Undo always runs), the applied one too: Live keeps the applied paragraph, and the draft shows
-// taking it out as a change of its own.
 await host.restoreBefore("ch6", "d1", "t9");
 const changes10 = await draftCore.read({ ...file("ch6"), format: "changes" } as never, d9.context());
 check(
@@ -413,9 +395,6 @@ check(
   text(liveChanges),
 );
 
-// 11. A chat reads in Live, switches to Draft, and writes: the write plans on what it read (the Live
-// read, its ops in the fork), so the writer's sentence typed since stays, and the report names
-// the writer's Live change, forwarded into the fork, as the user's.
 await host.seed("ch7", [paragraph("v1", "Kade ran. The bell rang."), paragraph("v2", "Dusk.")]);
 const d11 = chat("thread-11", "t11");
 d11.request();
@@ -446,9 +425,6 @@ check(
   text(write11),
 );
 
-// 12. The model's own undo in a Draft chat runs on the fork, on design §2's Undo rule: every edit
-// goes back (Live untouched), one whose words the writer retyped in the draft too. The rewrite
-// only added to "One.", and the writer's retype deleted that already, so the writer's text stands.
 await host.seed("ch8", [paragraph("w1", "One."), paragraph("w2", "Two.")]);
 const d12 = chat("thread-12", "t12");
 d12.request();
@@ -477,10 +453,6 @@ check(
   { draft: draft12, live: texts(await host.live("ch8")), text: text(undo12) },
 );
 
-// 13. After the writer's turn Undo, the same rewrite by hash asked again lands nothing (on the
-// model's view it is a no-op, and the Undo stands), and is not answered "unchanged" in silence: the
-// answer says the text was edited since and shows it, with no instruction to write again. A write
-// planned on the text it shows lands.
 await host.seed("ch9", [paragraph("x1", "Plain line.")]);
 const c13 = chat("thread-13", "t13");
 c13.request();
@@ -509,8 +481,6 @@ check(
   { live: texts(await host.live("ch9")), text: text(landed13) },
 );
 
-// 14. A draft the writer emptied: a Draft chat's write into the unstored `/empty` paragraph lands in
-// the fork under fresh ids, and the result lists every block it wrote (`renamed` on a fork room).
 await host.seed("ch10", [paragraph("y1", "Gone soon.")]);
 await host.writerEdit("ch10", () => [], "d1");
 const d14 = chat("thread-14", "t14");
@@ -533,10 +503,6 @@ check(
   { draft: await draftText("ch10"), live: texts(await host.live("ch10")), text: text(write14) },
 );
 
-// 15. A chat reads in Draft (the draft's own text), is switched to Live, and writes the paragraph
-// as it read it with one sentence changed, after the writer typed in Live. Its read can't be
-// checked out in Live, so the write plans on the transcript: the writer's Live typing stays, only
-// the model's change lands, and the draft is not corrupted with duplicated text.
 await host.seed("ch11", [paragraph("z1", "Base opening. The bell rang.")]);
 await host.writerEdit("ch11", () => [paragraph("z1", "Draft opening. The bell rang.")], "d1");
 const c15 = chat("thread-15", "t15");
@@ -558,9 +524,6 @@ check(
   { live: texts(await host.live("ch11")), draft: await draftText("ch11"), text: text(write15) },
 );
 
-// 16. A chat reads in Draft before the draft wrote anything (its read is Live's text), is switched
-// to Live, and rewrites the paragraph after the writer typed in Live: it plans on that read, so
-// the writer's word stays and the report names the writer.
 await host.seed("ch12", [paragraph("k1", "Kade ran. The bell rang."), paragraph("k2", "Dusk.")]);
 const c16 = chat("thread-16", "t16");
 c16.request();
@@ -583,9 +546,6 @@ check(
   { live: texts(await host.live("ch12")), text: text(write16) },
 );
 
-// 17. A chat reads in Live, Live is compacted past that read, the writer types, and the chat,
-// switched to Draft, rewrites the paragraph as it read it: the transcript holds its Live read, so
-// the writer's word stays in the draft.
 await host.seed("ch13", [paragraph("g1", "Kade ran. The bell rang."), paragraph("g2", "Dusk.")]);
 const c17 = chat("thread-17", "t17");
 c17.request();
@@ -607,13 +567,6 @@ check(
   { draft: await draftText("ch13"), text: text(write17) },
 );
 
-// 18. A press since the chat's read leaves the write planned on the read, like an offline peer's.
-// Apply: the chat read the writer's new paragraph in the draft, the writer applied it, and the
-// chat rewrites it as it read it: Apply imports the draft's own ops into Live, so the paragraph
-// stays one paragraph in the draft and Live keeps what was applied. Discard: the chat read the
-// writer's draft rewrite of a paragraph (now a heading), the writer discarded it, and the chat
-// rewrites the heading as it read it: the discard stands, only the chat's word lands, and the
-// report names the press.
 await host.seed("ch14", [paragraph("m1", "The tower stood."), paragraph("m2", "Wind.")]);
 await host.writerEdit(
   "ch14",
@@ -664,8 +617,6 @@ check(
   { draft: texts(draft18), level: draft18[0].attrs.level, text: text(discard18) },
 );
 
-// 19. `format: "changes"`: a moved block is marked, a delimiter in the text is escaped, and a
-// comment whose body only the draft changed is listed.
 await host.seed("ch15", [
   paragraph("n1", "First."),
   paragraph("n2", "plain"),
@@ -697,8 +648,6 @@ check(
   changes19,
 );
 
-// 20. The model's undo after an undo goes past the edit it already took back, and an undo with
-// nothing left to take back says nothing false.
 await host.seed("ch16", [paragraph("q1", "One."), paragraph("q2", "Two.")]);
 const c20 = chat("thread-20", "t20");
 c20.request();

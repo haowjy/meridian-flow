@@ -37,12 +37,6 @@ export class Side {
     return items;
   }
 
-  /**
-   * The comments whose mark the block's text holds on a shown unit. By the stored text, not the
-   * read: a block retyped to one that shows no marks (a `code_block`) still carries the comment it
-   * shows again when its type goes back, and Live text keeps a mark whose body an Undo took back,
-   * which a draft's body for it would show again.
-   */
   carried(id: BlockId): ReadonlySet<string> {
     const known = this.carriedBy.get(id);
     if (known) return known;

@@ -30,11 +30,6 @@ import { liveLocationVersion, staleForSweep } from "./drizzle-block-text.js";
 
 export type ReadLiveCopy = (documentId: DocumentId) => Promise<LoroDocument>;
 
-/**
- * Caller owns the document mutation lock for this transaction. The cut reads the Live room as
- * this process holds it, with the rows the transaction sees merged in, so it may run ahead of
- * `content_seq` by typing not yet saved; the save that stores that typing makes the cut stale.
- */
 export async function captureDocumentDerivation(
   tx: DrizzleDb,
   documentId: DocumentId,
@@ -78,11 +73,6 @@ function chunks<T>(rows: readonly T[]): T[][] {
   return out;
 }
 
-/**
- * Caller owns the document mutation lock for this transaction. The outputs arrive already
- * normalized and hashed: nothing here reads block text back, and the block diff writes only the
- * blocks whose content hash changed.
- */
 export async function certifyDocumentDerivation(
   tx: DrizzleDb,
   cut: DocumentDerivationCut,
@@ -115,8 +105,6 @@ export async function certifyDocumentDerivation(
     room.extractorVersion === w.extractorVersion
   )
     return true;
-  // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
-  // `ls` shows `updatedAt` to the model and the writer.
   const edited = !(room?.documentHash ?? EMPTY_DOCUMENT_HASH).equals(outputs.documentHash);
   const [updated] = await tx
     .update(documents)
@@ -169,8 +157,6 @@ export async function certifyDocumentDerivation(
     await tx
       .delete(documentBlocks)
       .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
-  // A content hash does not cover how the text was extracted, so rows from an older extractor
-  // certify nothing: every block is rewritten once.
   const current = room?.extractorVersion === w.extractorVersion;
   const written = outputs.blocks.filter(
     (block) => !(current && stored.get(block.id)?.equals(block.contentHash)),

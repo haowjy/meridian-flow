@@ -30,13 +30,6 @@ export async function lockNamespaceKeys(
   await lockAdvisoryKeys(db, namespaces.map(contextNamespaceKey));
 }
 
-/**
- * Seam C (file-access §5): Work rows in id order, the lineages' draft-owner locks and the bound
- * edit grants' confirmation, then `afterWorkLocks` (a draft write's draft row, contract §14).
- * No namespace key: a tree write is a record in the project's list, whose lock a document or
- * namespace key must follow (`context/.context/tree-list-store.md`). An arrival takes the
- * namespace keys it settles ahead refs under after its records (`lockDocumentNamespaces`).
- */
 export async function lockContextNamespaces(
   db: Database,
   scopes: readonly ContextCommandScope[],
@@ -59,11 +52,6 @@ export async function lockContextNamespaces(
   await options.afterWorkLocks?.();
 }
 
-/**
- * Namespace keys of the sources these documents occupy now, Trash included, together with explicit sources (an Apply's final locations), in one
- * sorted acquisition. Arrivals that are not authored writes (Apply, Work restore) take these
- * after their Work locks and before any holder lock (contract §9.2, O6).
- */
 export async function lockDocumentNamespaces(
   db: Database,
   documentIds: readonly string[],

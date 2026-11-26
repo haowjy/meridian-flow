@@ -11,12 +11,6 @@ export type BlockAlignmentStep = {
   | { kind: "add"; next: number }
 );
 
-/**
- * Turns the blocks' correspondence into steps: an equal pair is kept, any other pair is changed in
- * place, and blocks with no counterpart are removed or added. A run of adjacent removes and adds is
- * one physical insert/delete, and a split or join (a pair with pieces beside it) shares its
- * boundary with the pieces, so the write records them as one change.
- */
 export function alignBlocks(
   oldBlocks: readonly Block[],
   newBlocks: readonly Block[],

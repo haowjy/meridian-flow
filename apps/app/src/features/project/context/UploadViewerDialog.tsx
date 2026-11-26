@@ -2,11 +2,6 @@ import type { ServerOpenDocument } from "@/client/stores";
 import { ViewerDialog } from "@/components/app/ViewerDialog";
 import { ContextViewerHost } from "./ContextViewerHost";
 
-/**
- * A chat's upload opens here, in the viewers every other file uses. An upload has no main
- * address, and the side shows a document only beside a chat, so the dialog is the one place that
- * can show it wherever the writer is.
- */
 export function UploadViewerDialog({
   projectId,
   document,

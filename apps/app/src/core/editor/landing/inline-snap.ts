@@ -1,9 +1,3 @@
-/**
- * Where an inline drop moves to so it never lands inside a unit the writer
- * reads as one thing: a code span, a chip (an atom, or a link that names a
- * file), a word. Pure over the document and, for an atom, the `Geometry` port.
- */
-
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
 import { chipLinkTarget } from "../links/link-chip";
@@ -95,8 +89,6 @@ function chipAround(doc: PMNode, pos: number): Mark | null {
   return before && after && before.eq(after) ? before : null;
 }
 
-// The same address counts as the same chip: the paste pipeline may give the
-// pasted copy a ref the chip in the document doesn't carry yet.
 function isOtherChip(link: Mark | null, around: Mark | null): boolean {
   return link !== null && !(around !== null && link.attrs.href === around.attrs.href);
 }

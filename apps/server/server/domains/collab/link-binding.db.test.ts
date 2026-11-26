@@ -1,9 +1,3 @@
-/**
- * Whole-document write doors bind outside their transaction and apply the
- * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
- * as the ordinary overwrite and certified for one holder.
- */
-
 import { randomUUID } from "node:crypto";
 import { LoroDocument, loroModel, toLoroHandle } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
@@ -45,7 +39,6 @@ const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS ===
 describe.skipIf(!enabled || !process.env.DATABASE_URL)(
   "whole-document link binding (postgres)",
   () => {
-    // Registration commits in its own root transaction: committed-data isolation, reset by FK order.
     const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);

@@ -135,14 +135,6 @@ function selectionActions(group: SelectionGroup): EntryActionSpec[] {
 
 const SELECTION_GRANTS = ["move", "delete", "restore"] as const satisfies readonly SelectionGrant[];
 
-/**
- * A row's menu, or none when the row has no actions (even inside a selection). Opened on a row
- * inside a selection of two or more, it is the selection's menu and acts on all of it (`run` gets
- * the selection's rows in screen order); opened on a row outside the selection, it selects that row
- * alone and is the row's own menu (`run` gets null). The selection is read once, as the menu opens,
- * so what it acts on is what it named. The row's actions are also what it grants a selection's menu
- * (Move, Delete, Restore; never Rename or creation).
- */
 export function useEntryMenu(
   entry: DragEntry,
   actions: readonly EntryAction[],

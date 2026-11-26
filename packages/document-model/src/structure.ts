@@ -22,11 +22,6 @@ export interface Removal {
   seen: ReadonlyMap<DocKey, DocVersion>;
 }
 
-/**
- * Whether an `order` value is a key, so the block is in place. Anything else is a removal: a
- * record, or an older build's `null`. A key is base-62 and never starts with `{`, so no read
- * parses a record to tell.
- */
 export function isOrderKey(value: unknown): value is string {
   return typeof value === "string" && !value.startsWith("{");
 }
@@ -69,15 +64,6 @@ interface ShowInput {
   node(id: BlockId): string | undefined;
 }
 
-/**
- * The one rule for which of the blocks `ids` show (design §1). A cycle (concurrent moves of a cell
- * and a `jsx_container`) reads with its smallest id as a child of the document, on every peer
- * alike. A block shows when it has a place in the order, its node is known, and its parent is the
- * document or a shown block; then a required container that cannot be filled (a table, a row)
- * with no shown child it accepts goes, which may empty its own parent, until nothing changes. No
- * text doc decides it. Returns the parents as read (the cycle rule applied) and the blocks that
- * show.
- */
 function showRule(
   shape: ShapeSchema,
   ids: readonly BlockId[],

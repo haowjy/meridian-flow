@@ -40,8 +40,6 @@ export function tablePressPlugin(editor: Editor): Plugin {
               ? cellContainerAtDOM(view, target)
               : null;
           if (!cell) {
-            // Tables already claimed grid extensions. Only native fallthrough
-            // restores the range hidden by the typing caret projection.
             if (event.shiftKey && view.state.selection instanceof CellSelection) {
               const transaction = objectTextSelectionTransaction(view.state, 1);
               if (transaction) view.dispatch(transaction);

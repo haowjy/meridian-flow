@@ -1,9 +1,3 @@
-/**
- * A Work's drafts (design §2, "The draft row stays, and a Work has several"): the list the version
- * chip shows, `+ New draft`, rename, `Delete draft` and its Undo, which draft a chat writes into,
- * and the purge of a draft deleted 30 days ago. Lock order: the Work's row first (the owner slot),
- * then the draft rows; the purge then takes the draft's tree lists, then its forks' documents.
- */
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import { newDraftId } from "@meridian/contracts";
 import type { WorkDraft } from "@meridian/contracts/drafts";
@@ -24,7 +18,6 @@ const DRAFT_PURGE_BATCH = 100;
 
 export type WorkDrafts = {
   list(workId: WorkId): Promise<WorkDraft[]>;
-  /** A draft of the Work; null when the Work is gone. An id the Work already has answers that draft. */
   create(input: {
     workId: WorkId;
     draftId?: DraftId;
@@ -36,19 +29,9 @@ export type WorkDrafts = {
     draftId: DraftId;
     name: string | null;
   }): Promise<WorkDraft | null>;
-  /**
-   * `Delete draft`: the draft is kept and listed nowhere; root chats naming it name the Work's
-   * default, and a deleted default passes on to the Work's oldest other draft, or a new one.
-   */
   remove(input: { workId: WorkId; draftId: DraftId; userId: string }): Promise<void>;
-  /** Its Undo: listed again, as one of the Work's drafts (its chats stay where the delete put them). */
   restore(input: { workId: WorkId; draftId: DraftId }): Promise<WorkDraft | null>;
-  /**
-   * The draft a chat's lineage writes into: its root names `draftId` when that is one of the
-   * root's Work's living drafts; anything else changes nothing. Answers the chat's draft.
-   */
   setChatDraft(input: { threadId: ThreadId; draftId: DraftId }): Promise<DraftId | null>;
-  /** Drafts deleted before the retention cutoff, purged with their forks; how many. */
   purgeDeleted(now?: Date): Promise<number>;
 };
 
@@ -57,7 +40,6 @@ export function createDrizzleWorkDrafts(
   deps: {
     workProjection: Pick<WorkProjectionMutation, "mutate" | "recountAfterCommit">;
     treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
-    /** Ends a purged draft's loaded fork rooms without saving. */
     endRooms(rooms: readonly DocumentRoom[]): Promise<void>;
   },
 ): WorkDrafts {
@@ -86,7 +68,6 @@ export function createDrizzleWorkDrafts(
     return row ? answer(row) : null;
   }
 
-  /** The Work's row locked, as every draft command's first lock; null for a Work that is gone. */
   const withWork = <T>(workId: WorkId, run: () => Promise<T>) =>
     deps.workProjection.mutate({ works: [workId] }, run, { requireActive: false });
 
@@ -138,7 +119,6 @@ export function createDrizzleWorkDrafts(
           .where(and(eq(drafts.id, draftId), eq(drafts.workId, workId), isNull(drafts.deletedAt)))
           .returning({ projectId: drafts.projectId });
         if (!gone) return;
-        // A deleted default leaves the Work none: the oldest other draft, or a new one, takes it.
         const [kept] = await tx()
           .select({ id: drafts.id })
           .from(drafts)
@@ -241,7 +221,6 @@ export function createDrizzleWorkDrafts(
           // A fork's save checks the draft under its document's key: holding the keys, the
           // delete lands before or after each save, never under one.
           for (const { documentId } of rooms) await lockDocumentMutation(tx(), documentId);
-          // Its forks, their snapshots (by trigger), its press rows and tree rows go with it.
           await tx().delete(drafts).where(eq(drafts.id, id));
           return rooms.map(
             ({ documentId }): DocumentRoom => ({ kind: "fork", draftId: id, documentId }),

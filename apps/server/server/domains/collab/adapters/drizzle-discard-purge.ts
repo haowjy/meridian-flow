@@ -1,12 +1,3 @@
-/**
- * Day-30 purge of presses and their Undos: the command row, which carries its `press_changes`
- * rows with it, in one transaction. This is the only reader of the clock for them: an Undo after the purge
- * finds no press and takes nothing back. A drafted create is not ours: the tree purges
- * it on its own clock (`purgeUnviewed`), and the tree's `discarded` settlements stay.
- *
- * Lock order, a prefix of Undo's: the draft's owner (no `requireActive`: an archived or deleted
- * Work's entries expire too), so an Undo sees all of a press or none of it.
- */
 import type { CommandId, DraftId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
@@ -17,7 +8,6 @@ import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 
 const DISCARD_PURGE_BATCH_LIMIT = 100;
-/** A press can be undone for as long as its row lives; an Undo's row only ever names its press. */
 const PURGED_KINDS = ["press", "unpress"] as const;
 
 export function createDrizzleDiscardPurge(
@@ -33,10 +23,6 @@ export function createDrizzleDiscardPurge(
     });
   }
 
-  /**
-   * One batch of the oldest due entries, each its own transaction: a failure is logged with its id
-   * and stays for the next pass, and does not stop the entries after it. Returns how many it took.
-   */
   async function purgeBatch(now: Date): Promise<number> {
     const due = await currentDrizzleDb(db)
       .select({

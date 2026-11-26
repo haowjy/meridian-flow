@@ -53,8 +53,6 @@ export function ProjectChatContextNavigationProvider({
   const { noWork } = useWorks(projectId);
   const noWorkId = noWork?.id;
   const { threads } = useProjectThreads(projectId);
-  // The chat's own lineage answers to its handle even after its first chat is
-  // trashed (a fork keeps the notes); the live list is only for other chats.
   const ownHandle = useLineage(projectId, rootThreadId ? { rootThreadId } : null)?.rootThreadRef;
   const lineages = useMemo<ChatLineages>(
     () => ({
@@ -62,8 +60,7 @@ export function ProjectChatContextNavigationProvider({
       idForRef: (ref) =>
         ref === ownHandle
           ? rootThreadId
-          : // A handle names the first chat, so it is that chat's own id.
-            (threads?.find((thread) => thread.ref === ref && thread.rootThreadId === thread.id)
+          : (threads?.find((thread) => thread.ref === ref && thread.rootThreadId === thread.id)
               ?.id ?? null),
     }),
     [ownHandle, rootThreadId, threads],
@@ -113,7 +110,6 @@ export function ProjectChatContextNavigationProvider({
           (found, placeBeside) => openLive(door, found, placeBeside),
           door.workId,
         );
-      // The passage door opens the document wherever the placement puts it, once, and lands there.
       passages.land(passage, document.documentId, (signal) =>
         place(
           document,
@@ -125,8 +121,6 @@ export function ProjectChatContextNavigationProvider({
     },
     [openLive, passages, place],
   );
-  // Only a route-backed door overrides the follower's missing outcome: its route says so in
-  // place. A resource door has no route, so it keeps the follower's shared outcome.
   const openMissing = useCallback(
     (_door: Placement, target: RouteTarget) => {
       route(target);
@@ -140,8 +134,6 @@ export function ProjectChatContextNavigationProvider({
       if (chatIdForUploadsUri(uri, chats)) return null;
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return null;
-      // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
-      // `scratch://x` is the chat's lineage or the active Work, so name that owner's handle.
       const ownerRef = target.rootThreadId
         ? target.rootThreadId === rootThreadId
           ? ownHandle

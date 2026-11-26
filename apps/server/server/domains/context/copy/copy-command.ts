@@ -86,11 +86,6 @@ export interface ContextCopyCommand {
   copy(input: ContextCopyInput): Promise<Result<CopyContextEntriesResult, ContextError>>;
 }
 
-/**
- * Prepares in flight in this process, by operation ID: a duplicate request waits for the
- * first instead of reading every source and binding the tree again. Only a committed receipt
- * is durable; another process would still re-prepare.
- */
 const inFlight = new Map<string, Promise<void>>();
 
 function tryHoldOperation(operationId: string): (() => void) | null {
@@ -372,7 +367,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const settled = prepared.settled.length ? { settled: prepared.settled } : {};
     if (!prepared.plan) return Ok({ status: "copied", entries: [], folders: [], ...settled });
 
-    // The folder moved after the route found it: the plan was made for its old address.
     let planned =
       dest.uri === input.destination.uri
         ? prepared.plan
@@ -402,11 +396,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     return Ok({ status: "copied", entries: entries.map(toEntry), folders, ...settled });
   }
 
-  /**
-   * The destination as it stands under the lock. A folder named by id may have moved since the
-   * route found it, which only changes its address; the lock this command holds is the old Work's
-   * namespace, so one that moved to another Work or scheme is sent again (nothing is stored).
-   */
   async function resolvedDestination(
     input: ContextCopyInput,
   ): Promise<Result<CopyDestinationHandoff, ContextError>> {
@@ -457,11 +446,6 @@ interface PreparedCopy {
   plan: Result<PlannedCopy, ContextError> | null;
 }
 
-/**
- * A selection copies through its outermost roots: a root inside another selected folder, or
- * one selected twice, is already in that copy, and copying it again would give one source two
- * targets and send the folder's internal links to the stray copy.
- */
 function outermostRoots(sources: readonly CopySourceHandoff[]): CopySourceHandoff[] {
   const uriOf = (source: CopySourceHandoff) => trimTrailingSlash(source.uri);
   return sources.filter((source, index) => {

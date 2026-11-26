@@ -155,11 +155,6 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
   }
 }
 
-/**
- * Raw HTML does not re-enter the Markdown/MDX parser for its children. Carry
- * the ordinary top-level spelling in an HTML attribute so the same registered
- * block codec owns both directions, including block kinds added later.
- */
 function serializeDelegatedCellBlock(
   block: PMNode,
   ctx: SerializeContext,

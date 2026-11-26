@@ -15,17 +15,10 @@ export type TrashEntry = {
   name: string;
   scheme: ProjectContextTreeScheme;
   folders: readonly string[];
-  /** The documents a folder's delete took with it; 0 for a document. */
   documents: number;
   kept: TrashEntryFacts | null;
 };
 
-/**
- * What is in Trash is a fact of the lists: an entry shows while the replay holds its delete in
- * force, so a delete shows at once, a restore leaves at once and a refused one comes back. Newest
- * first; an entry the server has not answered for yet is the newest. Null until the lists and the
- * sources have been read.
- */
 export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
@@ -33,7 +26,6 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
   const projectSources = useProjectContextSources(projectId);
   const accountSources = useAccountContextSources();
   const versions = [project, account].map((list) => list.snapshot?.version);
-  // The replay's input is each list's version.
   return useMemo(() => {
     if (!projectSources || !accountSources) return null;
     if (![project, account].every(({ session, snapshot }) => session && snapshot)) return null;
@@ -42,7 +34,6 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
     const schemes = new Map(
       [...projectSources, ...accountSources].map((source) => [source.id as string, source.scheme]),
     );
-    // Two deletes of one node (two clients, or a folder deleted again) are one entry.
     const seen = new Set<string>();
     return [project, account].flatMap(({ session }) => {
       const projection = session?.replay();
@@ -74,11 +65,6 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
   }, [project, account, projectSources, accountSources, ...versions]);
 }
 
-/**
- * The rows with the server's facts. The facts are read when Trash is first shown and again while
- * a row has none, after each change to a list (the server may not have admitted the delete the
- * first time), never for a change to anything else.
- */
 export function useDocumentTrash(projectId: string) {
   const rows = useTrashRows(projectId);
   const query = useQuery({

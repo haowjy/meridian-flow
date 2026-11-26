@@ -1,15 +1,3 @@
-/**
- * One client's own presence: the fields it publishes (its caret, which uploads it is sending,
- * `upload-presence.ts`), and whether they are on the wire at all. The wire is the room's Loro
- * ephemeral store, one entry per copy keyed by its peer id; the transport relays its local
- * updates and applies peers'.
- *
- * One owner holds both questions. While presence is live the store's entry IS the desired state
- * and a field write goes straight to it. Suspension (inline review hides the document behind it,
- * a schema fence hides a client that may no longer write, a detached transport, a hidden page)
- * deletes the entry and holds the desired map: writes land in it, and resume publishes the map
- * as it now stands rather than as it was when the suspension began.
- */
 import { EphemeralStore, type Value } from "loro-crdt";
 
 export type PeerState = { [field: string]: Value };
@@ -47,7 +35,6 @@ export function createLocalPresence(self: string): LocalPresence {
     if (event.by === "local") return;
     for (const handler of [...handlers]) handler();
   });
-  // Peers drop an entry PRESENCE_TIMEOUT_MS after its last write, so a still caret is re-sent.
   const refresh = setInterval(() => {
     if (suspensions === 0 && desired) store.set(self, desired);
   }, PRESENCE_TIMEOUT_MS / 3);

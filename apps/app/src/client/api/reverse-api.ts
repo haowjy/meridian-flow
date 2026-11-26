@@ -1,11 +1,3 @@
-/**
- * reverse-api — HTTP client for thread-scoped context undo.
- *
- * Thin wrappers over the reverse endpoint used by the chat turn footer. The
- * endpoint returns semantic reversal statuses in the response body, including
- * non-error outcomes that still use HTTP 200, so callers must branch on
- * `status` rather than treating a resolved fetch as success.
- */
 import {
   apiThreadContextReversePath,
   type ReversalOutcome,
@@ -21,7 +13,6 @@ export type ReverseTurnInput = {
   turnId: string;
 };
 
-/** One click: a new command id, sent again unchanged until the server answers. */
 export async function reverseTurn(
   threadId: string,
   input: ReverseTurnInput,
@@ -40,8 +31,6 @@ export async function reverseTurn(
   }
 }
 
-/** A Work the reverse endpoint reports as put back. `name` is the writer-facing
- * Work name when the server sends one; `null` when it only sent an id. */
 export function successfulWorkReversals(outcome: ReversalOutcome): WorkReversalResult[] {
   return (outcome.workReceipts ?? []).filter((result) => result.status === "reversed");
 }

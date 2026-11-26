@@ -1,4 +1,3 @@
-/** Wiring-only assembly of collab application services into the public domain. */
 import type {
   AgentEditAccess,
   CollabDomain,

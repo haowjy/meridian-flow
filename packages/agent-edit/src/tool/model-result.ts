@@ -93,34 +93,25 @@ export interface AgentEditModelPayload {
   read?: {
     format: "full" | "outline" | "edits" | "changes";
     documentBlocks?: number;
-    /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
-    /** The Work a `draft` read names, as a write's `draftWork` does; `/` for no Work's draft. */
     draftWork?: string;
   };
   blocks?: AgentEditBlockGroup[];
   concurrent?: AgentEditConcurrentListing;
   awarenessDegraded?: boolean;
-  /** The write left the document empty; its one blank block is the empty document, not a leftover. */
   documentEmpty?: boolean;
-  /** The document already matched the write, so nothing was recorded and no write id exists. */
   unchanged?: boolean;
 }
 
 export interface AgentEditTreeFacts {
   moved?: { made: number; of: number };
   notMoved?: string[];
-  /**
-   * A move's sources in another list (a project's files and `user://` are two): each was copied
-   * to `to`, and the original stays at `from`.
-   */
   copied?: Array<{ from: string; to: string }>;
   deleted?: number;
   kept?: string;
   placedAtEnd?: string;
   already?: "deleted" | "at_destination" | "live";
   leftOut?: Array<{ path: string; why: "would_loop" | "purged" }>;
-  /** The first drafted tree change of a reply says once that drafted changes wait for review. */
   firstDrafted?: true;
   concurrent?: Array<{ author: string; lines: string[] }>;
 }
@@ -157,13 +148,6 @@ type AgentEditResultEnvelope = Record<string, unknown> & {
   status: WriteStatus;
 };
 
-/**
- * Validates only the durable envelope fields used by recovery.
- *
- * Payload fields remain opaque because recovery preserves them rather than
- * interpreting them. Naming this as an envelope check keeps the type guard
- * honest instead of claiming arbitrary persisted JSON is a full model result.
- */
 export function isAgentEditResultEnvelope(input: unknown): input is AgentEditResultEnvelope {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false;
   const result = input as Record<string, unknown>;

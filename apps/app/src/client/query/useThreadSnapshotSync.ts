@@ -1,14 +1,3 @@
-/**
- * useThreadSnapshotSync — the binding of the chat's `ThreadSync` to React.
- *
- * `createThreadSync` (in `@meridian/thread-client/sync`) is the chat's one mounted subscriber and
- * decides when to read, what is missing, how a read applies and joins the stream, and in what
- * order frames reach the turns. This hook gives it the app's ports: the store's cell for the
- * chat's value, React Query as the fetcher, the account signal, and the store's effects as its
- * observer. It starts the sync once the chat is no longer pending creation and stops it on
- * cleanup. React Query's `queryFn` hands every completed read to `sync.receive`, so the cache
- * publishes only reads the sync applied.
- */
 import { acceptsSnapshot, createThreadSync, SNAPSHOT_RETRY_MS } from "@meridian/thread-client/sync";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useReducer, useRef } from "react";
@@ -31,19 +20,12 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
-  /**
-   * The thread's history is in the transcript store (or its load failed). Not
-   * merely fetched: a render can see the accepted snapshot a commit before its
-   * turns reach the store, and a reader that took that for "history is empty"
-   * would give up on a turn that is about to arrive.
-   */
   settled: boolean;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
 };
 
-/** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
   const transport = useThreadTransport();
@@ -68,7 +50,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       state: ports.state,
       /** Bumped by cleanup: a request queued under an earlier mount must not run after it. */
       epoch: 0,
-      /** Late-bound: the query that fetches is built after the sync that needs to ask it. */
       bind(next: (kind: "fresh" | "any") => void) {
         request = next;
       },
@@ -88,9 +69,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
         }
       },
     }),
-    // Mounting never reads by itself: the sync asks for a read when it needs one. A cached
-    // snapshot joins the stream and its replay brings it up to date (for example a background
-    // child's report waking the parent), so a warm switch downloads nothing.
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: false,
     enabled: !isPendingCreation && !accountSignal.aborted,

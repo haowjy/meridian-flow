@@ -14,16 +14,6 @@ import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./obj
 
 export type ObjectAt = { node: PMNode; pos: number };
 
-/**
- * Is a live caret in the node's text, as opposed to standing on the node? This
- * decides whether a diagram shows its source or its picture, for the node view
- * and for the landing walk alike.
- *
- * Two things are deliberately not "inside": a `NodeSelection` (how a writer
- * picks a diagram up, not how they edit its text), and an unfocused editor,
- * whose selection is only where the caret WOULD be. A drag blurs the editor, so
- * a diagram drawn as a picture stays one for the drop.
- */
 export function caretInsideNodeAt(state: EditorState, focused: boolean, pos: number): boolean {
   const node = state.doc.nodeAt(pos);
   if (!node || !focused || state.selection instanceof NodeSelection) return false;
@@ -50,11 +40,6 @@ export function selectedObject(state: EditorState): ObjectAt | null {
   return null;
 }
 
-/**
- * The object the caret would walk onto next. The caret must stand at its block's edge: its
- * first or last character, or for an up or down arrow (`vertical`) its first or last line,
- * which only the view can tell and passes as `atEdge`.
- */
 export function objectBeside(
   state: EditorState,
   direction: 1 | -1,
@@ -102,11 +87,6 @@ export function objectBeside(
   return null;
 }
 
-/**
- * The cell above or below the one at `depth` of `$pos`, or null past the table's first or last
- * row. Up and down need this because document order is not screen order across a row: the cell
- * after this one is to the right, not below.
- */
 function cellAcross($pos: ResolvedPos, depth: number, direction: 1 | -1): ObjectAt | null {
   const table = $pos.node(depth - 2);
   const start = $pos.start(depth - 2);
@@ -115,11 +95,6 @@ function cellAcross($pos: ResolvedPos, depth: number, direction: 1 | -1): Object
   return node && next !== null ? { node, pos: start + next } : null;
 }
 
-/**
- * An up or down arrow off the selected object at `object`: when the object is the first or last
- * block of a table cell, the cell above or below it, else past the first or last row the table
- * (the arrow passes beside it); elsewhere the object itself.
- */
 export function verticalStepFrom(
   state: EditorState,
   object: ObjectAt,
@@ -211,7 +186,6 @@ export function caretBesideObjectTransaction(
   return state.tr.setSelection(selection).scrollIntoView();
 }
 
-/** Where Esc lands when it leaves an object ( last step): after it, before it when the object ends the document, and — when the object IS the document — in a paragraph made for the purpose. */
 export function caretHomeFromObjectTransaction(
   state: EditorState,
   pos: number,
@@ -222,13 +196,6 @@ export function caretHomeFromObjectTransaction(
   const $after = state.doc.resolve(pos + node.nodeSize);
   const bound = isolatingBoundAround($after);
 
-  // Forward to the first place the writer can type, stepping OVER a leaf that
-  // holds no text rather than selecting it. Esc asked to leave object-land, so
-  // landing on another selected object would leave the next keystroke poised
-  // to replace it — and searching only for the position immediately beside the
-  // object is what made a scene break look like a dead end and sent the caret
-  // backward into the block above. A rendered diagram is one more thing with
-  // no text to offer, whatever the schema says about its `code_block`.
   const forwardText = writerText(state, $after, 1, bound.end);
   if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
@@ -353,23 +320,12 @@ function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection
   return null;
 }
 
-/**
- * Ctrl/Cmd+Home: when a table or other block object opens the document, the gap cursor
- * before it; the browser's own key would put the caret inside it. Declines where a text
- * caret is the document's start, which the browser's key reaches already.
- */
 export function documentStartTransaction(state: EditorState): Transaction | null {
   const $start = state.doc.resolve(0);
   if (!gapCursorFits($start)) return null;
   return state.tr.setSelection(new GapCursor($start)).scrollIntoView();
 }
 
-/**
- * The document's end, one place however the writer reaches it: Ctrl/Cmd+End, a press below
- * the last block, or an arrow off it. After a table or other block object that is the gap
- * cursor. After a fence or diagram, which no gap cursor can follow, it is a new empty line,
- * written only by this action. Declines where the end is text the browser's caret reaches.
- */
 export function documentEndTransaction(state: EditorState): Transaction | null {
   const { doc } = state;
   const $end = doc.resolve(doc.content.size);

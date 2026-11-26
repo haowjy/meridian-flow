@@ -1,9 +1,3 @@
-/**
- * WorkClosedChip — what a field says when the Work it edits was closed (archived or deleted)
- * and so kept none of what the writer typed: a quiet chip at the field's trailing edge. The
- * sentence says what to do; it opens on hover or focus, and on a long press where there is no
- * hover. The chip adds no row and covers nothing, and the field keeps the typed text.
- */
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Chip } from "@/components/ui/chip";
@@ -19,7 +13,6 @@ export function WorkClosedChip({
 }: {
   sentence: string;
   id?: string;
-  /** What the chip says; the default is the Work's. */
   label?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -52,7 +45,6 @@ export function WorkClosedChip({
           {label ?? <Trans>Work was closed</Trans>}
         </Chip>
       </TooltipTrigger>
-      {/* Beside the chip: above or below it the sentence covers the field it belongs to. */}
       <TooltipContent side="right">{sentence}</TooltipContent>
     </Tooltip>
   );

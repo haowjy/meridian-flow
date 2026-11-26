@@ -1,14 +1,3 @@
-/**
- * Where a point in the editor lands: the one answer to "what is under the
- * pointer" for a press and a drag.
- *
- * Pure over a `Geometry` port, so the walk runs on fake boxes. It is total:
- * every point gets a landing, including a margin or the space below the last
- * block. Boxes decide everything but the character within a line, and that
- * character is clamped to the line's block, so an answer never leans into the
- * neighbouring block.
- */
-
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 
@@ -176,12 +165,6 @@ function nearerOf(
   return y - upper.bottom <= lower.top - y ? above : below;
 }
 
-/**
- * A seam is legal where the container can hold a paragraph there. Between the
- * text children of a list item it would split the item's own text (the item's
- * parent is a list: it cannot hold a paragraph and is not a table), so only a
- * neighbouring object (a figure) gets one.
- */
 function allowsSeam(
   container: PMNode,
   parent: PMNode | null,

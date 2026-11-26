@@ -69,9 +69,6 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
       };
       const at = out.length;
       walk(item.children, step);
-      // A block's marker speaks for its innermost list, so an item with no block of its
-      // own (empty, or whose first block sits in a deeper list, through any quotes) gets an
-      // empty paragraph.
       const first = out[at]?.path?.replaceAll("|", "").slice(step.length) ?? "-";
       if (first.includes("-")) {
         out.splice(at, 0, { ...own(step), ...item0 } as FlatBlock<T>);

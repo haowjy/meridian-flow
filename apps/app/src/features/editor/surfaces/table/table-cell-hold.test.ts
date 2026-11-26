@@ -96,10 +96,6 @@ function sweep(instance: Editor, anchor: string, head: string): void {
 }
 
 describe("the cell a grip is aimed at, across a peer's write", () => {
-  /**
-   * A peer's inserted row leaves ANOTHER cell at the number the pointer last
-   * read, so a position that still starts a cell says nothing about which cell.
-   */
   it("moves with its cell when a peer inserts a row above it, past the imposter left behind", () => {
     const current = mount();
     const { local } = current;

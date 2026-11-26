@@ -1,17 +1,3 @@
-/**
- * The slash catalog — what the menu offers, and who says so.
- *
- * This is the seam that survived the toolkit demolition (§8: "salvage the
- * catalog getter, rewrite the trigger"): the item shape, the fuzzy filter, and
- * the read-at-open getter. The host owns the catalog because the labels are
- * localized and the image entry needs the host's file picker; everything else
- * in this directory builds around it.
- *
- * Ids are a closed union on purpose. The surface renders an icon per id and
- * `slash-insertion.ts` builds a node per id, so an entry that reached the
- * catalog without either is a compile error rather than a blank row.
- */
-
 import type { HeadingLevel } from "@meridian/prosemirror-schema";
 
 import type { EditorAnchor } from "../../anchors";

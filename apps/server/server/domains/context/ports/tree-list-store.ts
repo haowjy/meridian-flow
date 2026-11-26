@@ -8,14 +8,6 @@ export type TreeList = { kind: "project"; projectId: string } | { kind: "account
 
 export type ListWriter = { writer: TreeWriter; list: string };
 
-/**
- * What the server's own change makes, in the lists' copies under their locks: each writer makes
- * its list's records (ranks placed against the copy's own view, settlements
- * appended), in the order of the `lists` the caller named, and `make` returns whatever the
- * caller reads back from the replay (the names a node ended at, what a delete took). The store
- * derives the new nodes from what the copies gained. `make` is synchronous: a copy is never
- * half-changed across an await.
- */
 export type ServerChange<T> = (lists: readonly ListWriter[]) => T;
 
 /**
@@ -60,15 +52,6 @@ export interface TreeListStore {
    * id is another's has no row.
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
-  /**
-   * Makes records the server wants in one or several lists, in the caller's transaction when
-   * there is one (a document command's), else in one of its own. The lists' keys are taken in
-   * one order (by list id) whatever order the caller names them, so no two paths on the same
-   * lists deadlock. The records join the lists and the rows follow with them; the updates reach
-   * `onCommitted` after the outermost commit. `make` runs under the keys on copies at the
-   * stored list, holds no document or namespace key and does no I/O. `committed` has an entry
-   * per list, in the caller's order, null where the list gained nothing.
-   */
   submit<T>(input: {
     lists: readonly TreeList[];
     make: ServerChange<T>;

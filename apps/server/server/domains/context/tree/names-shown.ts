@@ -97,14 +97,6 @@ export type Resolution =
     }
   | { kind: "not_a_folder"; node: TreeNode; at: number };
 
-/**
- * Resolves `path` from `root` (a source's top) one name at a time against the map and the tree
- * now (tree-tools.md, "Which tree a stale path is resolved against"). A name the model was shown
- * is followed to the node it meant, wherever that is now; a node in Trash is returned like any
- * other, and the folders of Trash along the way are listed in `trashed`. Where a segment names
- * nothing, it is tried joined to the next with `∕`, the look-alike a name's own `/` is stored as,
- * then to the one after, so a name typed `1/2/3` reaches the `1∕2∕3` it is stored as.
- */
 export function resolveShown(
   projection: TreeProjection,
   shown: NamesShown,

@@ -153,9 +153,6 @@ export function TreeChildren({
 
 type DropFolder = NonNullable<TreeDropTarget["folder"]>;
 
-// Edge bands, as a share of the row's height. A file's centre only re-files it
-// into its own folder, so its edges get more room than a folder's, whose centre
-// moves rows into it.
 const FILE_EDGE_BAND = 1 / 3;
 const FOLDER_EDGE_BAND = 1 / 4;
 
@@ -193,7 +190,6 @@ function DirRow({
       : undefined,
   });
   const isOpen = env.isExpanded(dir.entryId);
-  // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
   const drop = useTreeDropTarget(
     { scheme: env.scheme, treeRootId: env.tree.root.entryId, folder },
     {
@@ -281,7 +277,6 @@ function FileRow({
   parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
-  // A file is not a drop target of its own: its centre hands the drop to its folder (or the area).
   const drop = useTreeDropTarget(
     { scheme: env.scheme, treeRootId: env.tree.root.entryId, folder: parent },
     { edges: { folder: parent, siblingId: file.entryId, band: FILE_EDGE_BAND, after: true } },
@@ -366,7 +361,6 @@ function CreateRow({
   const env = useTreeEnv();
   const creation = env.creation;
   if (!creation) throw new Error("Create row requires creation capability");
-  // What opened the field (New file, New folder) takes focus back when it is cancelled.
   const [opener] = useState(() => document.activeElement);
   const form = useCreateEntryForm({
     projectId: env.projectId,

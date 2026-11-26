@@ -15,12 +15,10 @@ export function fileAccessChangeKey(change: FileAccessChange): string {
   return ownerAccessKey({ rootThreadId: change.rootThreadId });
 }
 
-/** The key a room registers under for a Work's or a lineage's lifecycle changes. */
 export function ownerAccessKey(owner: { workId: string } | { rootThreadId: string }): string {
   return "workId" in owner ? `work:${owner.workId}` : `lineage:${owner.rootThreadId}`;
 }
 
-/** A project's key: its tree list's room name, so a deleted project ends its tree and document sockets. */
 export function projectAccessKey(projectId: string): string {
   return loroRoomName({ kind: "tree", list: { kind: "project", projectId } });
 }

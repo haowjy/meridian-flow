@@ -147,12 +147,6 @@ function keyHunks(B: Side, S: Side, out: Hunk[]): void {
   }
 }
 
-/**
- * An unmatched interval may include a paragraph's changed tail and whole removed/added blocks.
- * Keep complete blocks independent of partial edge blocks; pair complete replacements in order and
- * detach excess blocks. Refinement can expose a partial edge by retaining a leading block token,
- * so normalization runs after refinement. Splits/joins with no complete block stay whole.
- */
 function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   const blockAt = (side: Side, pos: number) =>
     pos === side.toks.length ? side.blocks.length : side.blockOf[pos];
@@ -207,12 +201,6 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   return out;
 }
 
-/**
- * Token diff of one gap. Content (words, punctuation, inline and whole-block atoms) is aligned first;
- * a paragraph start then pairs with the start of the side paragraph its first aligned word landed in.
- * Every paragraph start has the same token, so aligning them as ordinary tokens lets a diff pair
- * unrelated paragraphs, or read a split as "this word left the paragraph".
- */
 function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   const bt = B.toks;
   const st = S.toks;
@@ -283,7 +271,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
     if (pair[0] < b1) matches.push(pair);
     [pbx, psy] = pair;
   }
-  // Paragraph starts: pair with the side paragraph holding the block's first aligned content.
   const all: Array<[number, number]> = [];
   let mi = 0;
   let lastSide = s0 - 1;
@@ -306,7 +293,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
           lastSide = sp;
         }
       } else if (end === i + 1) {
-        // An empty paragraph pairs with the next unclaimed empty side paragraph before the next match.
         const limit = k < matches.length ? matches[k][1] : s1;
         for (let sp = lastSide + 1; sp < limit; sp++)
           if (
@@ -327,8 +313,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
       lastSide = matches[mi][1];
     }
   }
-  // Pairs whose tokens differ (a word that changed marks, a paragraph that became a heading) are
-  // one-token replacements of their own.
   let pb = b0;
   let ps = s0;
   for (const [mx, my] of [...all, [b1, s1] as [number, number]]) {
@@ -433,11 +417,6 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
   }
 }
 
-/**
- * Splits a replacement where some new tokens are old ones with other marks (or other whitespace):
- * those become one-token replacements and the rest plain insertions and deletions, so a bolded word
- * and the sentence typed after it are two changes, not one.
- */
 function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
   const out: Hunk[] = [];
   for (const h of hunks) {

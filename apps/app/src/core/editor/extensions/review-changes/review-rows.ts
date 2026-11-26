@@ -245,13 +245,6 @@ function carrierOf(text: ReadonlyMap<BlockId, TextBlock>, id: string): TextBlock
 const bodyOf = (docs: RoomDocs, comment: string) =>
   (structureValues(docs).value("comments", comment) as CommentBody | null | undefined)?.body ?? "";
 
-/**
- * The draft's changes against Live, as rows in reading order: a row sits where its first draft
- * block is, and a row Live alone holds sits where Live has it, before the next block both show.
- * `live` and `fork` are the two sides' blocks as read now (`readDocument`). Every change
- * `changedBlocks` lists is a row, so the steps agree with the list's `changeCount`: each changed
- * block shows on itself, whatever it holds, and a comment body's change on the paragraph it is on.
- */
 export function reviewRows(
   draft: RoomDocs,
   live: readonly ShapeBlock[],
@@ -290,8 +283,6 @@ export function reviewRows(
         shown.delete(id);
     }
     if (shown.size === 0) {
-      // A comment body alone: on the paragraph it is on, or at the end where none holds it. Every
-      // change of blocks shows one on a side (`changedBlocks`), so this one names a comment.
       const comment = change.comments[0] as string;
       const carrier = carrierOf(forkText, comment) ?? carrierOf(liveText, comment);
       const id = carrier?.id ?? comment;

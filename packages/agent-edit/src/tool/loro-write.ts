@@ -1,6 +1,3 @@
-// The model's `read` and `write` on Loro (design §5): read the room fresh, plan on a view at the
-// frontiers the model read, lower with `applyOps`, save the view's update as one batch with its
-// record, and record what the result showed.
 import {
   decodeEnvelope,
   editSince,
@@ -503,9 +500,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         };
         let planDoc = planned.doc;
         let { assigner, resolved } = await resolveOn(planDoc);
-        // A find names text, not blocks: when the view doesn't hold it (the writer typed or
-        // restored it since), or what it matched there is gone from the room, it matches the room
-        // as it is now.
         if (
           planDoc !== copy &&
           "find" in command &&
@@ -526,8 +520,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
               ? resolved.error.details.documentBlocks
               : undefined,
           );
-          // A hash or number the view does not hold: the answer shows the document, and the next
-          // write plans on it.
           return resolved.error.code === "not_found"
             ? withCurrentText(failed, read, copy, commandLinks, address, context)
             : failed;
@@ -827,7 +819,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   ) {
     const ordinal = await options.ordinals.reserveWriteOrdinal(docId, session.threadId);
     const toolCallId = commandToolUseId ?? context.tool_use_id;
-    // Scoped to the turn so the same tool-call id in another turn is another write.
     const durableId =
       (toolCallId && context.turnId ? `turn:${context.turnId}:tool:${toolCallId}` : toolCallId) ??
       globalThis.crypto?.randomUUID?.() ??

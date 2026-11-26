@@ -41,10 +41,6 @@ export function ImageNodeView(props: NodeViewProps) {
   const pending = pendingUploadFromDecorations(props.decorations);
   const mine = pending?.owner === "mine" ? pending : null;
 
-  // The measured shape outlives the entry that carried it: the entry is dropped
-  // the moment `src` is written, and the picture is not on screen yet. A
-  // collaborator's upload announces the same shape, so the slot they are watching
-  // is the picture's box before it is the picture.
   const [shape, setShape] = useState<PendingImageFrame | null>(null);
   const announcedFrame = pending?.owner === "mine" ? pending.entry.frame : (pending?.frame ?? null);
   if (announcedFrame && !sameShape(announcedFrame, shape)) setShape(announcedFrame);
@@ -56,22 +52,11 @@ export function ImageNodeView(props: NodeViewProps) {
     actions.imageDisplayed();
   };
 
-  // The frame is held for a picture still on its way, and let go by a slot that
-  // is asking something instead: an upload that failed, one nobody can finish,
-  // a picture whose address would not resolve. Those say what happened and offer
-  // a verb, and neither fits inside a measured 32px square (law 5 wants both
-  // read and pressed). Nothing lands out of them either, so there is no line
-  // left to keep still. A stored width goes with it: that size is the picture's,
-  // and a card or a note would be crushed into it.
   const asking =
     mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
   const frame = asking ? null : shape;
   const drawnWidth = asking ? null : width;
 
-  // The grips live on the selected state and nowhere else (§5.2's jade ring),
-  // and only over something with a box to drag: a picture, or the measured slot
-  // one is arriving into. A frame that is asking a question instead has given
-  // its box back, and there is nothing there to be a size.
   const box = useRef<HTMLElement | null>(null);
   const resizable =
     objectSelectedInDecorations(props.decorations) &&

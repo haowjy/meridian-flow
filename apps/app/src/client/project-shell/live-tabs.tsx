@@ -8,15 +8,6 @@ import { type Lane, type MainTabs, mainTabKey, useMainTabs } from "./main-tabs";
 
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
-/**
- * Main's tabs, both lanes, as the project sees them now, for every reader of the tabs (the strip,
- * the tab list, the side's document list, the tab commands). The chat lane is the record: a chat
- * deleted elsewhere is dropped from it by `useDropGoneChatTabs`. The record can name a document deleted while the window
- * was closed: once the project's list has synced, a Project's document it does not show is gone,
- * and its tab is left out here while the record is left alone, so a document the list later shows
- * live again has its tab back. Each kept tab carries the document's current descriptor (a rename
- * or move made anywhere); `project` does the same for a document that has no tab.
- */
 export type LiveTabs = {
   lanes: MainTabs;
   project: (document: OpenDocument) => OpenDocument;
@@ -62,12 +53,9 @@ function useProjectLiveTabs(projectId: string): LiveTabs {
     () =>
       recorded.flatMap((tab): Lane<"document">["tabs"][number][] => {
         const { document } = tab;
-        // A draft-only document is one live doesn't hold, so the list says nothing about it: its
-        // draft settlement owns it.
         if (document.kind === "new" || !PROJECT_SCOPED_SCHEMES.has(document.scheme)) return [tab];
         const current = currentTab(trees, document);
         if (current) return [{ kind: "document", document: current }];
-        // Not in the list: gone once the list has synced, not before.
         return trees.isComplete ? [] : [tab];
       }),
     [recorded, trees],

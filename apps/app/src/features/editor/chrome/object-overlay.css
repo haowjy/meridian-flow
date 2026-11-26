@@ -18,19 +18,12 @@
   user-select: none;
 }
 
-/* Inside the object's own bounds, with no footprint: absolute against the node
-   view, which the manuscript already positions and sizes for the selection
-   ring. Nothing is measured, so nothing can go stale. */
 .meridian-object-overlay[data-placement="inside"] {
   position: absolute;
   top: 10px;
   right: 10px;
 }
 
-/* Measured onto the manuscript's scroll pane instead, and pulled back over its
-   own width so the right edge lands on the inline `left`. Absolute against the
-   pane, not fixed against the viewport: the pane then scrolls it with the
-   object and clips it at its own edge. */
 .meridian-object-overlay[data-placement="over"] {
   position: absolute;
   transform: translateX(-100%);

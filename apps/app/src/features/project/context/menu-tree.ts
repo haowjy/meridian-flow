@@ -15,11 +15,8 @@ export type MenuArea = {
   title?: string;
   icon: LucideIcon;
   tree: TreeView | null;
-  /** Unlisted areas are reachable (the open document lives there) but not offered at the root. */
   listed: boolean;
-  /** Whether the area takes changes: a destination picker offers only one that does. */
   writable: boolean;
-  /** A chat rebound onto a Work keeps its lineage's notes under one folder. */
   earlier?: { tree: TreeView | null; rootThreadId: string };
 };
 
@@ -54,7 +51,6 @@ function areaTop(area: MenuArea): DrillNode[] {
   return earlierHasNotes(area) ? [earlierNode(area), ...own] : own;
 }
 
-/** The folder nodes down `folders` (names from the tree root), as far as the tree has them. */
 function folderNodes(tree: TreeView, folders: readonly string[]): DrillNode[] {
   return folders.flatMap((_, index) => {
     const folder = tree.findFolder(folders.slice(0, index + 1).join("/"));
@@ -115,7 +111,6 @@ export function buildMenuTree({
   };
 }
 
-/** The tab a picked row opens as, from whichever area holds it. */
 export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpenDocument | null {
   for (const area of areas) {
     const own = area.tree?.files().find((file) => file.entryId === rowId);
@@ -127,26 +122,18 @@ export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpe
   return null;
 }
 
-/**
- * The trail that walks an area's own tree down through `folders` (names from
- * the area root): the area, then each folder, outermost first. Every menu that
- * opens along a path builds its trail here; callers choose how far down.
- */
 export function trailAlong(area: MenuArea, folders: readonly string[]): DrillNode[] {
   return [areaNode(area), ...(area.tree ? folderNodes(area.tree, folders) : [])];
 }
 
-/** The segments of a tree path, from the area root. */
 export function pathSegments(path: string): string[] {
   return path.split("/").filter(Boolean);
 }
 
-/** A folder or file of this tree by its id; an id of another source's tree is no row here. */
 export function menuEntryFor(tree: TreeView, rowId: string): TreeEntry | null {
   return tree.entry(rowId);
 }
 
-/** A crumb opens the list it sits in; an area absent from the root opens inside itself. */
 export function crumbTrailFor(
   area: MenuArea | null | undefined,
   path: string,

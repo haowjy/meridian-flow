@@ -32,63 +32,30 @@ import type { Node as PMNode } from "prosemirror-model";
 import { occurrenceIdentity, walkLinkOccurrences } from "./link-occurrences.js";
 import type { DocumentLinkScope } from "./types.js";
 
-/** One holder's synchronous view over a catalog. */
 export interface HolderLinkScope extends DocumentLinkScope {
   readonly holder: LinkHolder;
   resolve(
     link: { ref: string | null; href: string },
     address?: ResolvedDocumentHref | null,
   ): LinkResolution;
-  /** Pass 3 resolve: the document the view's tree reaches at the address, in this view. */
   documentFor(uri: string): CatalogDocument | null;
-  /** Pass 3 exact folder lookup in this view. */
   folderFor(uri: string): CatalogFolder | null;
-  /** Shipped image rule: an asset document id for a known manuscript image path, else null. */
   assetFor(manuscriptPath: string): string | null;
-  /**
-   * Whether an identity leads to a live document or folder now: a stored ref (an
-   * unsettled ahead ref by its href) or an upload's `asset:<id>`.
-   */
   isLive(link: { ref: string; href: string }): boolean;
 }
 
-/**
- * Where an upload is spelled. `path`: it holds its manuscript image path, read
- * against the manuscript root (the shipped rule). `last`: the last address its
- * own document row had in this project, spelled in full, as a gone link spells
- * its stored address; a deleted upload whose path another image now holds is
- * told apart from that image this way.
- */
 export type AssetAddress = { kind: "path"; path: string } | { kind: "last"; uri: string };
 
-/**
- * A `LinkCatalog` plus the two lookups the scope adds: pass 3's
- * extension-omitted match and the `asset:` image rule. `undefined` always
- * means "not loaded" (a snapshot miss), `null` "loaded, nothing there".
- */
 export interface HolderCatalog extends LinkCatalog {
-  /** Exact, then unique extension-omitted; nameable, readable and present in this view. */
   documentFor(uri: string): CatalogDocument | null | undefined;
-  /** Where an `asset:<id>` source is spelled; null when this project knows no image row for the id. */
   assetAddress(assetDocumentId: string): AssetAddress | null | undefined;
-  /** The asset id a written manuscript image path names, or null (keep it literal). */
   assetFor(manuscriptUri: string): string | null | undefined;
 }
 
 const ASSET_PREFIX = "asset:";
 
-/**
- * An upload with no address this reader may be shown (no row, another
- * project's id, a snapshot miss): an empty destination, which carries no id
- * and binds to nothing when written back.
- */
 export const UNSPELLED_UPLOAD: SpelledHref = Object.freeze({ href: "", address: null });
 
-/**
- * The rules over a catalog. `onMiss` hears every lookup the catalog never
- * loaded; the answer then is the stored spelling, so a miss is visible but
- * never wrong.
- */
 export function createHolderLinkScope(
   holder: LinkHolder,
   catalog: HolderCatalog,
@@ -110,7 +77,6 @@ export function createHolderLinkScope(
       if (attrs.src.startsWith(ASSET_PREFIX)) {
         const address = catalog.assetAddress(attrs.src.slice(ASSET_PREFIX.length));
         if (address === undefined) onMiss(attrs.src);
-        // The upload's identity is its src, which no reader is ever shown.
         if (!address) return UNSPELLED_UPLOAD;
         return address.kind === "path"
           ? { href: address.path, address: canonicalContextUri("manuscript", address.path) }
@@ -153,16 +119,13 @@ export function createHolderLinkScope(
   };
 }
 
-/** The two written-address grammars: a link reads against its holder, a source against the manuscript root. */
 export type WrittenGrammar = "link" | "source";
 
-/** Pass 3's answer for one written href; `literal` keeps it as written with no ref. */
 export type FreshAssignment =
   | { kind: "literal" }
   | { kind: "document"; ref: DocumentRef; href: string }
   | { kind: "folder"; ref: FolderRef; href: string }
   | { kind: "folder-address"; href: string }
-  /** `address` is what the host registers the minted ref at (`aheadAddress`). */
   | { kind: "ahead"; ref: AheadRef; href: string; address: string };
 
 /**
@@ -180,7 +143,6 @@ export function assignFreshLink(input: {
   holderUri: string | null;
   documentFor: (uri: string) => { documentId: string; uri: string } | null;
   folderFor: (uri: string) => { folderId: string; uri: string } | null;
-  /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
 }): FreshAssignment {
   const classified =
@@ -282,7 +244,6 @@ export function settledAheads(
   return settled;
 }
 
-/** A written image/figure source as a decoded document address, or null. */
 export function writtenSourceTarget(src: string): ResolvedDocumentHref | null {
   const written = classifyWrittenSource(src);
   return written.kind === "internal" && written.target === "document"

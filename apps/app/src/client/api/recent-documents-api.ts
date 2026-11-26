@@ -8,11 +8,6 @@ import {
 
 import { getJson, postJson } from "./http-client";
 
-/**
- * The writer's history inside one project. The read is project-scoped because
- * the landing renders inside a project; the write below is not, because what an
- * open records is that this writer touched this document.
- */
 export async function listRecentDocuments(
   projectId: string,
   signal?: AbortSignal,
@@ -26,12 +21,6 @@ export async function listRecentDocuments(
   return response.documents;
 }
 
-/**
- * `recorded` moved the stored row. `unchanged` means the server already had
- * this document inside its write interval and left the row where it was.
- * `failed` is a network or authority fault. Those are not the same outcome:
- * an unchanged row still exists, and a failure proves nothing.
- */
 export type RecordRecentDocumentResult = { kind: "recorded" | "unchanged" | "failed" };
 
 /**

@@ -1,5 +1,3 @@
-// `read` with `format: "changes"` (design §1, "What the AI reads"): a draft's pending changes
-// against Live as CriticMarkup, from the changes Review changes shows (`changedBlocks`).
 import {
   type BlockId,
   type CommentBody,
@@ -33,7 +31,6 @@ export function draftChangeLines(
       .map((id) => fork.topOf.get(id) ?? base.topOf.get(id)),
   );
 
-  // Live-only blocks go after the nearest Live block before them that the draft shows too.
   const after = new Map<BlockId | null, BlockId[]>();
   let anchor: BlockId | null = null;
   for (const id of base.order) {

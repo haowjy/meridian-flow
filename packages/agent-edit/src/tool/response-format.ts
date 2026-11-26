@@ -19,10 +19,6 @@ export interface ApplySuccessResponseInput {
   copied?: { summary: CopySummary; edges: readonly string[] };
 }
 
-/**
- * A write that changes nothing: the document as the model last read it already held its content.
- * Nothing is reserved, applied or saved; the result still reports what changed since.
- */
 export function formatUnchangedSuccess(): InternalWriteResult {
   return {
     status: "success",

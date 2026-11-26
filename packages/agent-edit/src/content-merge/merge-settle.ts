@@ -52,12 +52,6 @@ export function isOneTextTwice(live: MergedTok[], draft: MergedTok[]): boolean {
   return [own(liveInline), own(draftInline)].every((n) => n > 0 && n < shared);
 }
 
-/**
- * Both sides inserted at one point (`insertions-kept-both`). Text before any new paragraph merges word by word (a shared
- * word is kept once, in the draft's form). New paragraphs merge whole: an identical paragraph is kept
- * once, different ones are both kept (live's first). A live paragraph that could be one of the
- * draft's, and is not equal to it, never gets here: `settleStretches` dropped it as a clash.
- */
 export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fire): MergedTok[] {
   fire("insertions-kept-both");
   if (isSubsequence(live, draft)) return draft;
@@ -89,11 +83,6 @@ export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fir
   return out;
 }
 
-/**
- * Two tokens that no side had side by side need a space between them when the second is a word and
- * the first is a word or ends a clause or sentence, unless either is spaceless script. The second
- * has no space of its own when it began a paragraph on its side.
- */
 const needsSpace = (prev: Tok, next: Tok) =>
   isWordTok(next) &&
   (isWordTok(prev) || (prev.kind === "text" && /[.!?\u2026,;:]$/.test(prev.core))) &&
@@ -141,7 +130,6 @@ export function settleWhitespace(
     });
     const [baseKey, liveKey, draftKey] = neighbours.map(whitespaceKey);
     const [baseTok, liveTok, draftTok] = neighbours;
-    // Whoever changed the whitespace wins; the draft if both did.
     let from: TextTok | null;
     if (liveKey !== null && draftKey !== null) {
       if (liveKey === baseKey) from = draftTok;

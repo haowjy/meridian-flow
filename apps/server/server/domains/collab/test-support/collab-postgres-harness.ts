@@ -94,7 +94,6 @@ const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
 );
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
 
-/** Each suite owns its connection; importing this module allocates no database resources. */
 export function createTestDatabase(): Database {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required for DB tests");

@@ -64,15 +64,11 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
       data-compaction-divider
       data-compaction-state={view.state}
       data-compaction-trigger={view.trigger}
-      // With a summary, the toggle carries the state words (and what it
-      // reveals); naming the section too would read them twice.
       aria-label={view.summary ? undefined : full}
       className="@container/divider flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       <div className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         {view.summary ? (
-          // The state words are the summary's disclosure: icon and label are
-          // one button, so the row carries no separate "Summary" control.
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
@@ -80,9 +76,6 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             aria-controls={panelId}
             aria-label={t`${full}, summary`}
             data-focus-landing
-            // Not a FoldToggle: a leading chevron would move the icon off the edge every
-            // other divider state holds, and shift it when compaction finishes. It folds
-            // like one otherwise: no hover fill, hover darkens the words.
             className="focus-ring focus-ring-outside flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md py-1 text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground motion-reduce:transition-none"
           >
             <DividerMark state={view.state} />

@@ -1,21 +1,3 @@
-/**
- * `grep` matching: one RE2 pattern that filters, counts and locates.
- *
- * RE2 syntax (ripgrep's dialect: no lookaround, no backreferences) run by
- * `re2js`, which never backtracks: V8's own `RegExp` took 20 s on `(a+)+$`
- * against 29 characters. Linear is not free, though: time grows with text length
- * times the compiled program's size, and one `re2js` call can't be interrupted. So the
- * matching runs in a worker thread (`match-pool.ts`) that the caller's abort signal
- * terminates, and no static limit on the pattern is needed beyond RE2's own refusals
- * and the pattern's length. The unit of matching is a line of the document's **grep
- * text** (see `@meridian/agent-edit`'s `grepBlockText`): `^` and `$` anchor lines.
- *
- * **A document reports several passages, not one.** The list is capped because
- * a result is a way in, not the document itself; the count beside it stays
- * honest about everything the cap left out. The hash leaves through its own
- * field, never inside the excerpt, so nothing downstream has to know the
- * hashline format to show a sentence to a writer.
- */
 import { markdownTextView } from "@meridian/agent-edit";
 import { RE2JS } from "re2js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -88,7 +70,6 @@ export async function grepBlocks(
     PASSAGE_CAP,
     signal,
   );
-  // Offsets into the plain text map back to the markdown only for blocks that are returned.
   const matches = found.map(([index, from, to]): GrepPassage => {
     const block = blocks[index] as GrepBlock;
     const hash = block.hash ? { blockHash: block.hash } : {};

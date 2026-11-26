@@ -70,9 +70,6 @@ function seamSelection(
     const line = lineIn(state, far, !nearIsAbove, point, geometry, start);
     if (line) return line;
   }
-  // A fence with no prose on its other side (a diagram, a table, a cell's
-  // edge) is the nearest text there is: the caret goes to its edge facing the
-  // seam.
   for (const [fence, other] of [
     [near, far],
     [far, near],

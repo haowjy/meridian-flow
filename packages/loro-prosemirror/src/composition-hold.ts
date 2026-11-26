@@ -102,8 +102,6 @@ function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrit
 
 function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
   for (const [draft, publishDraft] of hold.drafts) {
-    // The draft reads Live's text for blocks it has not written, and its structure fork follows
-    // Live's structure once forwarded.
     const forwarded = draft.forward();
     if (forwarded.restore.length) publishDraft(forwarded.restore);
     const keys = new Set([
@@ -114,12 +112,6 @@ function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
   }
 }
 
-/**
- * A local write into a Live copy outside an import (its own editor's typing, an Undo): forward
- * the copy's drafts. Their editors hear of it after Live's docs already changed, so a draft
- * editor's caret inside a paragraph this tab's Live editor typed into can land a few characters
- * off; it holds for every other block.
- */
 export function forwardLocalWrite(live: RoomDocs, changed: Iterable<DocKey>) {
   const hold = holds.get(live);
   if (!hold || live.live) return;

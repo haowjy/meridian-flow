@@ -1,22 +1,3 @@
-/**
- * Open a document and land on the passage a search result promised.
- *
- * Retain the session, wait for this
- * document's first sync, then resolve against live state — because an anchor is
- * only meaningful once the document the writer is looking at is the document
- * the anchor was made against. Opening is deliberately not part of it: a
- * search row is a document door first, and the door opens whether or not the
- * passage inside it can still be found.
- *
- * A search hit carries a block hash and the term that matched.
- * The hash derives from the block's `id`, so it survives every edit inside the
- * block and dangles only when the block itself goes. The term is what turns "a block" into "the
- * passage": finding the block is not the same as the passage still being
- * there, and only the term can tell the two apart.
- *
- * The ladder lives in `passage-resolution.ts`. This module owns the timing.
- */
-
 import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
 import {
   showPassageInTarget,

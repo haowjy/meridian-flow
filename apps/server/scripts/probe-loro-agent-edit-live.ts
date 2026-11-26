@@ -21,7 +21,6 @@ if (!model) throw new Error("Set LIVE_TEST_MODEL (deepseek-flash)");
 const { gateway, cleanup } = await createGatewayFromEnv(process.env);
 const schema = buildDocumentSchema();
 const host = createInMemoryLoroHost(schema);
-/** The chat's core: Live (`null`), or Draft on the draft's fork room once the writer switches it. */
 const coreFor = (draftId: string | null) => {
   const chat = host.chat(draftId);
   return createLoroEditCore({
@@ -72,7 +71,6 @@ const messages: Message[] = [
 ];
 const log: string[] = [];
 
-/** One model turn: the user's message, then tool calls until the model answers in text. */
 async function turn(turnId: string, ask: string): Promise<WriteOutcome[]> {
   messages.push({ role: "user", content: [{ type: "text", text: ask }] });
   const planning = new Map(frontiers);
@@ -118,7 +116,6 @@ async function turn(turnId: string, ask: string): Promise<WriteOutcome[]> {
         use.toolName === "read"
           ? await core.read(input, context)
           : await host.command(() => core.write(input, context));
-      // The chat's latest read of the document, in whichever room: the port answers by document.
       if (outcome.frontier) frontiers.set("ch1", outcome.frontier);
       outcomes.push(outcome);
       const rendered = renderAgentEditResult(outcome.result);
@@ -183,7 +180,6 @@ const t3 = await turn("t3", 'List your edits to ch1.md: read it with format "edi
 const edits = t3.find((outcome) => outcome.command === "read" && !outcome.isError);
 if (!edits || !/e1/.test(renderAgentEditResult(edits.result))) fail("format edits lists e1");
 
-// The writer switches the chat to Draft mode: its writes go to draft d1's fork of ch1.
 core = coreFor("d1");
 const t4 = await turn(
   "t4",

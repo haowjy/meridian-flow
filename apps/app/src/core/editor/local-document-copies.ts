@@ -252,11 +252,6 @@ export class LocalDocumentCopies {
     }
   }
 
-  /**
-   * Deletes every copy of the document, which can never come back, once `drop` has heard which
-   * held words beyond its mark. False when another tab holds one open: that tab's own reading of
-   * the list clears it, and a copy left behind is found at the next start.
-   */
   async clear(documentId: DocumentId, drop: () => void): Promise<boolean> {
     const names = await this.namesOf(documentId);
     const run = async () => {
@@ -273,10 +268,6 @@ export class LocalDocumentCopies {
     return (await this.exclusively(names, { ifAvailable: true }, run)) ?? false;
   }
 
-  /**
-   * Deletes every copy of the account, waiting for the tabs that hold one; false when a copy was
-   * still held after the wait.
-   */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
       (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
@@ -304,7 +295,6 @@ export class LocalDocumentCopies {
         }
       }),
     );
-    // The account's lists go with its documents: they hold its tree and records not yet sent.
     const prefix = treeListCopyPrefix(this.accountId);
     await Promise.all(
       (await this.names())

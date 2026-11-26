@@ -23,7 +23,6 @@ export function DragHint() {
       aria-hidden
       className={cn(
         "pointer-events-none fixed z-50 max-w-72 overflow-hidden rounded-md px-2 py-1 text-xs shadow-float",
-        // A refusal is not an error: ink, not the deletion red.
         current.refused ? "bg-foreground text-background" : "bg-primary text-primary-foreground",
       )}
       style={{ left: current.x + 14, top: current.y + 18 }}

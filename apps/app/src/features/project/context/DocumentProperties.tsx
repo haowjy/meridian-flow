@@ -12,7 +12,6 @@ import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-p
 import { cn } from "@/lib/utils";
 import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 
-/** The create record's word on whether a document has properties; false until the list has said so. */
 function useHasProperties(projectId: string, tab: OpenDocument): boolean {
   const { tree } = useProjectTreeView(projectId, tab.kind === "new" ? "unfiled" : tab.scheme, {
     ...(tab.kind === "new" ? {} : documentContextOwner(tab)),
@@ -56,7 +55,6 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
           onToggle={() => setOpen(!open)}
           aria-controls={regionId}
           onKeyDown={(event) => {
-            // Left closes and Right opens, as a list's heading does.
             if (event.key === "ArrowLeft") setOpen(false);
             if (event.key === "ArrowRight") setOpen(true);
           }}

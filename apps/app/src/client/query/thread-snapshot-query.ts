@@ -17,8 +17,6 @@ export function threadSnapshotQueryOptions(threadId: string, guard?: SnapshotGua
     queryKey: threadQueryKeys.snapshot(threadId),
     queryFn: async ({ signal }): Promise<DeserializedThreadSnapshot> => {
       const requestSignal = guard ? AbortSignal.any([guard.accountSignal, signal]) : signal;
-      // A response the guard rejects throws here, so Query never publishes it: an obsolete
-      // HTTP success cannot become history or handoff authority.
       const snapshot = deserializeThreadSnapshot(
         await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
       );

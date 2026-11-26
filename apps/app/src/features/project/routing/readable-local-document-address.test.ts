@@ -1,5 +1,3 @@
-/** A plain address resolves against the replay: a document, "not there", or "waiting for the list". */
-
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import type { TreeViewResult } from "@/client/query/useProjectTree";

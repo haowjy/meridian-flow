@@ -62,7 +62,6 @@ export async function scanDocuments<Shown, Fault>(input: {
           input.documents.slice(index, index + STORED_SLICE).map(({ id }) => id),
         );
       const full = hits.length >= input.headLimit;
-      // A document's read, once.
       const loaded: { value?: { read: GrepRead<Shown>; text: string } } = {};
       const load = async (): Promise<ScanOutcome<NonNullable<typeof loaded.value>, Fault>> => {
         if (loaded.value) return { ok: true, value: loaded.value };

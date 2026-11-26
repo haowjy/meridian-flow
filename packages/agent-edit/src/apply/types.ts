@@ -9,28 +9,18 @@ import type { EditOp } from "../ports/model.js";
 export type ResolvedEdit = {
   documentId: string;
   file: string;
-  /** Shared only by edits crossing a recognized adjacent paragraph boundary. */
   structuralBoundary?: object;
-  /**
-   * On an insert or a delete: the block these blocks were split from, or joined into. The write
-   * records each with it as pieces of one text, so a draft reviews them as one change.
-   */
   pieceOf?: BlockRef;
 } & (
   | {
       kind: "ops";
       block: BlockRef;
       ops: readonly EditOp[];
-      /**
-       * Neighbours whose text at the shared boundary this block took, word for word. The write
-       * records each with it as pieces of one text, like a split or a join.
-       */
       tookFrom?: readonly BlockRef[];
     }
   | {
       kind: "insert";
       after?: BlockRef;
-      /** Ordered insertions sharing an old anchor chain through their newly inserted tail. */
       insertionRun?: object;
       /** The inserted source text; it names the empty-content refusal and never drives the insert. */
       newText: string;

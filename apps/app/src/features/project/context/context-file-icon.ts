@@ -11,8 +11,6 @@ export function fileKindIcon(file: TreeFile | string): LucideIcon {
     return FileText;
   }
 
-  // Unsaved create/rename suggestions have no server metadata yet, so preview
-  // them through the same contracts registry that the server will persist.
   const filetype = filetypeForKnownPath(file);
   if (!filetype) return FileText;
   const classification = classifyFiletype(filetype);

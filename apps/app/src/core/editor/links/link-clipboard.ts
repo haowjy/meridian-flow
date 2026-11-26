@@ -1,41 +1,3 @@
-/**
- * How an internal link keeps naming the same document when it travels on the
- * clipboard.
- *
- * Copying records, on every internal link in the clipboard HTML, what it
- * names beside the href as stored (`data-meridian-link`):
- *
- * - `data-meridian-address`: where it points now, as a full Context URI with
- *   any fragment or query. A link whose document has moved records the
- *   document's current address, never the stale one it was written with;
- * - `data-meridian-ref` and `data-meridian-project`: the stored ref and the
- *   project it names a document in, for a link that carries one.
- *
- * Pasting into an Editor keeps the ref only when the copy came from the same
- * project; the link is then `{ ref, href: address }`. Anything else (another
- * project, a link with no metadata, Markdown text) is assigned fresh from its
- * address by the editor's one paste door (`transformPasted`, through
- * `link-assignment.ts`), exactly as if the writer had typed it. The metadata is
- * never a capability: a kept `doc:` ref still resolves through the reader's
- * own catalog and draws gone when they cannot read it.
- *
- * An `image` or `figure` with a ref travels the same way, its metadata on the
- * picture's `<img>`: the sanitizer lets a recorded address through as the
- * source, a same-project paste keeps the ref, and anything else arrives with
- * no ref and is assigned its address fresh. An `asset:<id>` upload is the
- * same thing stored differently: it records `asset:<id>` as its ref, and the
- * address the project catalog holds that id at now when it holds it. A
- * same-project paste restores the `asset:` source from that recorded identity
- * alone, so a just-uploaded picture copies before the catalog knows it;
- * another project binds the recorded address, and drops the whole picture
- * (a figure with its caption) when none was recorded.
- *
- * The text/plain flavour spells every internal link as its full address, so
- * it means the same thing in another app or through the Markdown paste door;
- * a picture's source is spelled from the same answer, under its own grammar.
- * The chat composer reads the recorded address (chat has no folder).
- */
-
 import {
   type LinkHolder,
   type LinkResolution,
@@ -179,9 +141,6 @@ function keepPastedRefs(html: string, projectId: string | null): string {
       continue;
     }
     if (!address) {
-      // An upload copied before its catalog entry carries no address: outside
-      // its project there is nothing to bind, so the picture is not pasted. A
-      // figure is one picture; left behind, its shell parses as an empty figure.
       if (picture) (element.closest("figure[data-type='figure']") ?? element).remove();
       continue;
     }
@@ -231,8 +190,6 @@ function sourceResolution(
 ): LinkResolution {
   if (document) {
     const { documentId, uri } = document;
-    // The speller reads only `document.uri`; the answer carries no presence,
-    // so the other fields are neutral fillers, not facts about the document.
     return {
       kind: "document",
       document: {

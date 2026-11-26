@@ -1,9 +1,3 @@
-/**
- * The writer's connections, as the server resolves them for a project (or the account alone).
- * Reading the list is what starts the server's checks that are due, so the app reads it when it
- * opens, when the writer comes back, and while a screen shows a connection that isn't working.
- * The server's `mcp-connections-hint` makes it stale (`useProjectWake`).
- */
 import type { McpConnectionView } from "@meridian/contracts/mcp";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
@@ -22,10 +16,6 @@ const mcpConnectionsKey = (accountId: string, projectId: string | null) =>
 const CHECK_INTERVAL_MS = 60_000;
 const CHECKING_POLL_MS = 4_000;
 
-/**
- * `watch`: this observer shows the statuses, so it asks again while one is being checked, and
- * once a minute while one can't be reached. A refused token waits for the writer.
- */
 export function useMcpConnections(projectId: string | null, { watch = false } = {}) {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
@@ -59,10 +49,6 @@ export function invalidateMcpConnections(queryClient: QueryClient, accountId: st
   return queryClient.invalidateQueries({ queryKey: mcpConnectionsRoot(accountId) });
 }
 
-/**
- * Writes what the writer just did into every list that holds the connection, then asks again.
- * A single connection's answer carries no shadow, so the list's own is kept.
- */
 export function useMcpConnectionCache() {
   const queryClient = useQueryClient();
   const accountId = useAccountId();

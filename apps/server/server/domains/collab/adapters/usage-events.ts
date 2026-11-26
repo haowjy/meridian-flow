@@ -13,14 +13,12 @@ import { deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js"
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 
 export type UsageEvents = {
-  /** A press taken back, per document whose text it changed: how long after it was pressed. */
   pressUndone(input: {
     projectId: string;
     verdict: PressVerdict;
     pressedAt: Date;
     documentIds: readonly string[];
   }): void;
-  /** A turn's card Undo that changed something, per document: how long after the turn began. */
   turnUndone(input: { threadId: string; turnId: TurnId; documentIds: readonly string[] }): void;
 };
 
@@ -30,7 +28,6 @@ export function createUsageEvents(db: Database, sink: EventSink | undefined): Us
   if (!sink) return { pressUndone() {}, turnUndone() {} };
   const eventSink = sink;
   const afterCommit = (send: () => void | Promise<void>) => {
-    // Outside a transaction it runs now, detached: an event never fails the command.
     if (!deferUntilDrizzleCommit(send))
       void Promise.resolve()
         .then(send)

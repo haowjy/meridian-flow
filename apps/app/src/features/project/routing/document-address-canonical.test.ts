@@ -1,4 +1,3 @@
-/** Hidden reviews repair canonical locators while retaining their selected Work and draft. */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { canonicalDocumentAddress } from "./document-address-canonical";

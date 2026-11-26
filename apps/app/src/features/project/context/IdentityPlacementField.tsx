@@ -99,8 +99,6 @@ export function IdentityPlacementField({
     };
   }, [binding.state, provisionalPlacement, document]);
 
-  // The document's own owner scopes its Scratch suggestions, collisions and "Open
-  // existing"; the Editor's selected Work does not (a chat's Scratch has none).
   const { workId: locationWorkId, rootThreadId, rootThreadRef } = location;
   const owner = useMemo<ContextOwner>(
     () =>
@@ -111,8 +109,6 @@ export function IdentityPlacementField({
   );
   const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
     isWorkScopedScheme(scheme) ? owner : { workId: null };
-  // Filing moves the document, so it offers the places in its own list: the project's files, or
-  // the account's Your files.
   const inAccount = location.scheme === "user";
   const destinations = useMemo(
     () => WRITABLE_IDENTITY_DESTINATIONS.filter((scheme) => (scheme === "user") === inAccount),
@@ -192,8 +188,6 @@ export function IdentityPlacementField({
     setCommitReason(null);
   };
 
-  // Focus moving among the input, Save, Cancel and the suggestions keeps the field open, so Tab
-  // reaches Save and Cancel; leaving all of them reverts.
   const exitOnLeave = (event: FocusEvent<HTMLElement>) => {
     if (saving) return;
     const next = event.relatedTarget as Node | null;

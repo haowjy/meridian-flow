@@ -70,7 +70,6 @@ export function createShownLinkLedger(
         const renders = (byHash.get(item.hash) ?? []).filter((entry) =>
           entry.body.startsWith(shown),
         );
-        // The same text rendered from different states: only what every render showed counts.
         let common: Map<string, SpelledLinkFact> | undefined;
         for (const rendered of renders) {
           const keyed = new Map(factsOf(rendered, shown.length).map((fact) => [key(fact), fact]));
@@ -92,12 +91,6 @@ function sameFacts(left: readonly (SpelledLinkFact | null)[], right: typeof left
   return spell(left) === spell(right);
 }
 
-/**
- * What one render showed the model in one holder: the facts its codec spelled,
- * and the holder URI and view it spelled them from. All three come from the
- * command links that rendered, so a holder moving after the render cannot lend
- * the facts another base. Host-only; never in model text.
- */
 export interface LinkShowing {
   holderUri: string;
   view: LinkView;

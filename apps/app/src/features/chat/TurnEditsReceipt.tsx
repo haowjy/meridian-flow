@@ -80,9 +80,6 @@ export function TurnEditsReceipt({
   const restores = useTurnRestores(turn, documents, receipt, receiptReadAt);
   const hasEditedDocuments = documents.length > 0;
   const names = useOwnerNames();
-  // Reversible Work mutation receipts are content in their own right: their
-  // lines list as rows, and their presence is what keeps a Work-only turn's
-  // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
   const reversible = receipt?.control === "undo";
 
@@ -304,8 +301,6 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
-  // A chapter the turn drafted that still has changes opens in Review changes; any other row
-  // opens as a link does.
   const projectId = useProjectDocumentNavigationProjectId();
   const draftId = document.scope === "draft" ? document.draft : null;
   const drafted = useOwnerDrafts(projectId ?? null, draftId).fileForDocument(document.documentId);

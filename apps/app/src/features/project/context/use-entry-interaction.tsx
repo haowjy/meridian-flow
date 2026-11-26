@@ -60,7 +60,6 @@ export function useEntryInteraction({
 }) {
   const [renaming, setRenaming] = useState(false);
   const control = useRef<HTMLElement | null>(null);
-  // Set when the name field closes, so the row that replaces it takes focus back.
   const refocus = useRef(false);
   const controlRef = useCallback((element: HTMLElement | null) => {
     control.current = element;
@@ -73,9 +72,7 @@ export function useEntryInteraction({
     onArrived?.();
     if (control.current) focusWhenFree(control.current);
   }, [arriving, onArrived]);
-  // The picker is one component for both; which action opened it decides what a pick does.
   const [picking, setPicking] = useState<"move" | "copy" | null>(null);
-  // Set while the picker moves a selection rather than this row alone.
   const [pickedSelection, setPickedSelection] = useState<readonly DragEntry[] | null>(null);
   const shell = useShellTreeVersion();
   const entry = useMemo(
@@ -158,7 +155,6 @@ export function useEntryInteraction({
     menu,
     picker: {
       projectId,
-      // Closed, it still names the action it would open for.
       action: picking ?? "move",
       from: { scheme, owner: resolvedOwner },
       entry: { id, name: node.name, path: node.path, kind },

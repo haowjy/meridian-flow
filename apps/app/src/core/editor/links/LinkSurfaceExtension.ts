@@ -80,8 +80,6 @@ export function followLinkFrom(editor: Editor, key: LinkKey, at: LinkPoint): Lin
 function followLinkAtSelection(editor: Editor | null): boolean {
   const link = editor && linkAtSelection(editor);
   if (!editor || !link) return false;
-  // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
-  // place a plain click would.
   return (
     followLinkFrom(editor, linkKeyOfMark(link.attributes), caretPoint(editor.view)) !==
     "unavailable"
@@ -109,13 +107,7 @@ export const LinkSurfaceExtension = Extension.create({
     const editor = this.editor;
     const { surface, resolution } = this.storage;
 
-    // What the current press started from: where the pointer was, and where
-    // the writer's selection was before ProseMirror moved it. The selection is
-    // an anchor rather than two numbers — a press and its click are two events,
-    // and a peer's write can land between them.
     let press: { origin: LinkPoint; selection: EditorAnchor } | null = null;
-    // Registered in `view()`, because the kernel owns the approach: its timing,
-    // its pointer, and which block owns hover chrome at all.
     let releaseHover: (() => void) | null = null;
 
     const handleLinkPress = (view: EditorView, event: MouseEvent, button: number): boolean => {
@@ -138,14 +130,8 @@ export const LinkSurfaceExtension = Extension.create({
       if (intent.action === "place-caret") return false;
 
       const followed = followLinkFrom(editor, linkKeyOf(view, anchor), belowAnchor(anchor));
-      // Nothing to follow — an unrecognized href, a link known to be gone, or
-      // an internal link with no navigator registered yet. A primary click
-      // falls through so the caret still lands; a middle click has no caret to
-      // fall through to, and the cancel above is the whole answer.
       if (followed === "unavailable") return button === MIDDLE_BUTTON;
 
-      // The follow read the link. It did not also move the writer's place: they
-      // come back from that tab to the sentence they left.
       restoreSelection(view, started?.selection);
       return true;
     };
@@ -164,11 +150,6 @@ export const LinkSurfaceExtension = Extension.create({
         view(view) {
           const chrome = getEditorChrome(editor);
 
-          // One question, answered from the pointer's last known place rather
-          // than only from a mouse event: a hint left over a link the writer
-          // scrolled away from names a destination that is not under their
-          // hand. Moving between two elements inside one link changes nothing,
-          // because the answer is the anchor either way.
           releaseHover =
             chrome?.registerHoverAnchor<HTMLElement>({
               id: "link-hint",
@@ -296,8 +277,6 @@ export const LinkSurfaceExtension = Extension.create({
              * nothing to do with the manuscript.
              */
             auxclick(view, event) {
-              // Non-primary covers the right button too in some browsers, and
-              // that one belongs to the claim ladder.
               if (event.button !== MIDDLE_BUTTON) return false;
               return handleLinkPress(view, event, event.button);
             },
@@ -351,23 +330,8 @@ function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
   };
 }
 
-/**
- * Put the selection back where the press found it.
- *
- * ProseMirror places the caret on `mousedown`, long before the gesture is
- * known to be a follow, and preventing that would take drag-selection from a
- * link with it. So the caret moves and comes back, and what the writer keeps
- * is the end state: the place they return to from the new tab.
- *
- * Where the press found it is resolved from the held anchor rather than from the
- * numbers it had then. A peer who types one line up between the press and the
- * click moves every position in the document, and clamping stale numbers to the
- * document's size puts the caret in the middle of somebody else's sentence.
- */
 function restoreSelection(view: EditorView, selection: EditorAnchor | undefined): void {
   const at = selection && resolveAnchorIn(view.state, selection);
-  // Nothing to go back to: the writer's place was deleted while they pressed,
-  // and the caret the click already placed is the honest answer.
   if (!at) return;
   const { doc, selection: current } = view.state;
   if (current.from === at.from && current.to === at.to) return;
@@ -375,8 +339,6 @@ function restoreSelection(view: EditorView, selection: EditorAnchor | undefined)
   const size = doc.content.size;
   const $from = doc.resolve(Math.min(at.from, size));
   const $to = doc.resolve(Math.min(at.to, size));
-  // `between` lands on the nearest valid text position rather than throwing,
-  // which matters when a peer reshaped the block during the press.
   view.dispatch(view.state.tr.setSelection(TextSelection.between($from, $to)));
 }
 

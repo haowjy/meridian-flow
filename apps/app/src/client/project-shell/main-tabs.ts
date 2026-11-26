@@ -116,11 +116,6 @@ function writeLane<K extends MainTabKind>(
   write(accountId, projectId, { ...readMainTabs(accountId, projectId), [kind]: lane });
 }
 
-/**
- * Main arrived at an item: its tab is selected in its kind's lane, opened to the right of the tab
- * main showed last in that lane when it is new. A document already open takes its fresh descriptor
- * (a rename, a move) in place.
- */
 export function arriveMainTab(accountId: string, projectId: string, tab: MainTab): void {
   const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const key = mainTabKey(tab);
@@ -137,10 +132,6 @@ export function arriveMainTab(accountId: string, projectId: string, tab: MainTab
   writeLane(accountId, projectId, tab.kind, { tabs, selected: key });
 }
 
-/**
- * Main's item changed descriptor without a new arrival (a rename, a move): an open tab takes it.
- * A closed one stays closed, so a removal that closed it is not undone by the page re-rendering.
- */
 export function refreshMainTab(accountId: string, projectId: string, tab: MainTab): void {
   const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const at = current.tabs.findIndex((member) => mainTabKey(member) === mainTabKey(tab));
@@ -155,11 +146,6 @@ function refreshed(tabs: readonly MainTab[], at: number, tab: MainTab): readonly
     : tabs.map((member, i) => (i === at ? tab : member));
 }
 
-/**
- * Closes a tab. Returns the tab main should show in its place when it was main's (its right
- * neighbour, else its left, among `drawn`: the tabs the strip shows, not the whole record), or null
- * when none is left or it was not main's.
- */
 export function closeMainTab(
   accountId: string,
   projectId: string,

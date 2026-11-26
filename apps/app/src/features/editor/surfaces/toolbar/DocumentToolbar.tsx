@@ -78,9 +78,6 @@ export const DocumentToolbar = memo(function DocumentToolbar({
     }),
     [editable, schemaType, uploadAvailable],
   );
-  // Compare the matrix, not transaction revisions: review metadata and focus
-  // transactions must not rebuild the row. Alignment's value and the heading
-  // level matter even when their active flag stays true (center to right).
   const { controls, alignment, headingLevel } =
     useEditorState({
       editor,
@@ -91,9 +88,6 @@ export const DocumentToolbar = memo(function DocumentToolbar({
   };
 
   return (
-    // The row carries its own tooltip provider so the module renders anywhere,
-    // and with a delay: a pointer crossing ten dense controls should not set
-    // off ten tooltips, but resting on one must answer.
     <TooltipProvider delayDuration={400}>
       <div
         className="flex w-auto min-w-0 items-center gap-1"
@@ -244,8 +238,6 @@ function ToolbarMenuControl({
   const label = toolbarControlLabel(id);
   const blockedReason = blockedReasonMessage(id, editor ? state.blockedBy : "editor-loading");
 
-  // A greyed control opens nothing, so no menu is composed around it at all;
-  // the button keeps its geometry and explains itself instead.
   if (!editor || blockedReason) {
     return (
       <MenuTrigger label={label} blockedReason={blockedReason} active={state.active} icon={icon} />
@@ -253,9 +245,6 @@ function ToolbarMenuControl({
   }
 
   return (
-    // Through `EditorMenu` like every other menu in the editor: the kernel sees
-    // the open layer, so Escape spends one step on it and the caret goes back
-    // to the prose rather than to this button.
     <EditorMenu
       editor={editor}
       id={`toolbar-${id}`}
@@ -269,14 +258,6 @@ function ToolbarMenuControl({
   );
 }
 
-/**
- * A menu control's button, live or greyed.
- *
- * The rest props are the menu's. `EditorMenu` hands its trigger to Radix as a
- * slot, so the press, the ARIA state, and the anchor's ref arrive here and go
- * on through the tooltip to the button — a trigger that swallowed them would
- * be a control that cannot be opened.
- */
 function MenuTrigger({
   label,
   blockedReason,

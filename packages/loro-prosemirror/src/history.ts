@@ -140,13 +140,9 @@ export class UndoHistory {
       if (span) span.after = after;
       else {
         edit.texts.set(key, { before, after });
-        // The doc's first commit in the step is an item already; the rest of the step merges into
-        // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
         this.watched.get(key)?.manager.groupStart();
       }
     }
-    // The step's first reading of each doc, which no Undo or Redo reads again: a peer's typing in
-    // a block the step made, or one it joined away, stays unread.
     readOf(this.docs, edit, edit.read);
     step.at = this.now();
     if (edit.values.size > 0 && !this.joining) this.endStep();
@@ -191,7 +187,6 @@ export class UndoHistory {
       direction === "undo" ? [this.undoSteps, this.redoSteps] : [this.redoSteps, this.undoSteps];
     if (from.length === 0) return null;
     const now = selectionCursors(this.docs, state);
-    // A step whose run changes nothing (a peer already took out all it did) leaves the history.
     for (let step = from.pop(); step; step = from.pop()) {
       if (step.outside) {
         to.push(step);

@@ -68,7 +68,6 @@ export function upsertThreadInProject(
     (prev) => {
       const list = prev ?? [];
       if (list.some((t) => t.id === thread.id)) {
-        // Both modes belong to the list's own refetch: a snapshot may be older than it.
         const { aiWriteMode: _owned, effectiveAiWriteMode: _effective, ...rest } = thread;
         return list.map((t) => (t.id === thread.id ? { ...t, ...rest, ...(lifecycle ?? {}) } : t));
       }
@@ -92,14 +91,6 @@ export function patchThreadInProjectCaches(
   }
 }
 
-/**
- * Project one live lifecycle change into every cached representation of a
- * thread, across every mounted project (the thread store knows only the
- * thread id, not which project owns it). Feed rows deliberately receive only
- * `actionRequired`: Favorite remains owned by the normalized user-state
- * authority, while the project thread list also carries the active turn
- * identity.
- */
 export function projectThreadLifecycleInProjectCaches(
   client: QueryClient,
   threadId: string,

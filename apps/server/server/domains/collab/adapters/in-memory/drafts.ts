@@ -1,12 +1,6 @@
-/**
- * In-memory drafts: the same resolver semantics over a map, for in-memory composition. The rows
- * that name a draft live in other in-memory stores, so the composition passes `namedDraft`, which
- * reads the draft id the owner's row carries; an owner it doesn't know names no draft.
- */
 import type { DraftId, DraftOwner, ProjectId } from "@meridian/contracts";
 import type { Draft, DraftStore, DraftWriteBoundary } from "../../domain/ports/draft-store.js";
 
-/** The draft an owner's row names, with that row's project; null for an owner with no row. */
 export type NamedDraft = (
   owner: DraftOwner,
 ) => Promise<{ id: DraftId; projectId: ProjectId } | null>;
@@ -53,7 +47,6 @@ export function createInMemoryDraftStore(namedDraft: NamedDraft): DraftStore {
   };
 }
 
-/** No owner rows in memory: every owner is active; a per-owner queue stands in for its lock. */
 export function createInMemoryDraftWriteBoundary(): DraftWriteBoundary {
   const tails = new Map<string, Promise<unknown>>();
   return {

@@ -119,9 +119,6 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   // for a slot that went away while the chooser was up — no entry, no request,
   // and no asset the project has no use for.
   if (!at || !node || objectSurfaceKind(node) !== "image") return;
-  // The writer's own alt text outlives the picture it described only if they
-  // wrote one; a slot that never had one takes the new file's name, as an insert
-  // does.
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
   const id = openUpload(editor, {
     file,
@@ -228,8 +225,6 @@ function insertPendingImageNode(
     imagePos = seam + 1;
   }
 
-  // The caret lands after the picture: the writer asked for an image mid
-  // sentence and the sentence continues.
   transaction.setSelection(TextSelection.near(transaction.doc.resolve(imagePos + 1)));
   transaction.scrollIntoView();
   editor.view.dispatch(transaction);

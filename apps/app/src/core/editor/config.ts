@@ -1,12 +1,3 @@
-/**
- * editor config — assembles the TipTap editor option set for a document session.
- *
- * Wires the Meridian node/mark extensions, collaboration (the Loro binding on the session's
- * copy, peer carets) and code-highlight extensions into a `createEditorConfig`
- * factory, plus the `EditorUser` type and a sample document. Owns editor wiring,
- * not the session lifecycle (see `document-session.ts`).
- */
-
 import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocChange, RoomDocs } from "@meridian/document-model";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
@@ -64,22 +55,15 @@ import { sanitizePastedHTML } from "./sanitize-paste";
 import { editorSuggestionHost } from "./suggestion-host";
 import { UploadPresenceExtension } from "./upload-presence";
 
-/**
- * Who this client is, published with its caret: a peer on the same account labels it "You".
- * No name yet: every peer today is the writer's own tab or device.
- */
 export type EditorUser = {
   accountId: string;
 };
 
-/** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
-  /** The draft id the viewer reads: a picture still pending in its draft is signed through it. */
   owner?: string;
 };
 
-/** The copy an editor shows and writes: its docs, and the one path its writes leave by. */
 export type EditorCopy = {
   docs: RoomDocs;
   publish: (changes: readonly DocChange[]) => void;
@@ -87,23 +71,9 @@ export type EditorCopy = {
 
 export type CreateEditorExtensionsOptions = {
   copy: EditorCopy;
-  /** The document's undo, owned by its session; this editor attaches while mounted. */
   history: DocumentHistory;
   schemaType?: TrackedSchemaType;
-  /**
-   * A code document's filetype, which is its fence's language: it paints the fence, and the
-   * fence an empty file is filled with stores it, as the one the server writes does.
-   */
   filetype?: Filetype;
-  /**
-   * This client's presence, held by whatever decides when it is on the wire —
-   * normally the `DocumentSession`'s (`local-presence.ts`).
-   *
-   * The editor's only reach into awareness, deliberately. The caret's provider,
-   * the peer list a cursor color is picked against, and the image-upload
-   * announcement all come from here, so nothing assembled below can publish a
-   * local field the session cannot suspend.
-   */
   presence: LocalPresenceFields;
   user?: EditorUser;
   assetRenderContext?: AssetRenderContext;
@@ -123,20 +93,11 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 
 const lowlight = createLowlight(common);
 
-/**
- * The lowlight grammar a filetype paints with, where its name differs: lowlight's `shell` is a
- * terminal session (`#` is a prompt), and CSV has no grammar, so it would be detected as code.
- */
 const GRAMMAR_FOR_FILETYPE: Partial<Record<Filetype, string>> = {
   shell: "bash",
   csv: "plaintext",
 };
 
-/**
- * What a code file's fence is painted with: its filetype, whatever `language` the block stores,
- * so a rename to another type repaints and a file stored with no or another language reads as
- * its type. A filetype lowlight doesn't know is detected from the text.
- */
 function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
   const grammar = filetype && (GRAMMAR_FOR_FILETYPE[filetype] ?? filetype);
   if (!grammar || !lowlight.registered(grammar)) return lowlight;
@@ -162,15 +123,8 @@ function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
-  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
-  // kernel's registry to reach a scope, so they mount exactly where it does.
   TabKeymapExtension,
   TableEnterKeymapExtension,
-  // L-A formatting menu (M4)
-  // L-B object controls + diagram (M5)
-  // L-C table chrome (M6)
-  // L-D slash (M8) mounts with the catalog option instead: a surface that
-  // passes no catalog pays for no trigger.
   BlockDragExtension,
   LinkSurfaceExtension,
 ];
@@ -186,9 +140,6 @@ function pickCursorColor(peers: PeerAwareness): string {
 }
 
 const STARTER_KIT_COLLAB_SAFETY_OPTIONS = {
-  // Off for a different reason than the rest of this list: the stock
-  // dropcursor computes its own landing. `LandingExtension` draws the one
-  // caret (jade, matching the block drag's drop line) from the plan it lands.
   dropcursor: false,
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
   // display-only (no schema or wire impact) and it is the caret's only way
@@ -206,9 +157,6 @@ const STARTER_KIT_COLLAB_SAFETY_OPTIONS = {
 
 const DOCUMENT_STARTER_KIT_OPTIONS = {
   ...STARTER_KIT_COLLAB_SAFETY_OPTIONS,
-  // Schema names diverge from the server for these built-ins, so Meridian
-  // installs snake_case/parity wrappers below instead. A quote is not a node:
-  // `NestingExtension` owns it.
   blockquote: false,
   bold: false,
   bulletList: false,
@@ -313,12 +261,8 @@ export function createEditorExtensions({
       wikilinkPaste,
     }),
     ...collaboration,
-    // Mounted history records the binding's writes, so its key bindings mount with it
-    // rather than in the standalone set.
     UndoRedoKeymapExtension.configure({ history }),
     KeptExtension,
-    // A document with no shared room has no "uploading elsewhere", so the
-    // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
   ];
 }
@@ -350,10 +294,7 @@ export function createStandaloneEditorExtensions({
         lowlight: lowlightAs(filetype),
         defaultLanguage: filetype ?? null,
       }),
-      // A code file is one fence, so the fence's bracket/quote set is the
-      // whole document's.
       AutoPairExtension,
-      // Text drags only: the same caret and landing the document shows.
       LandingExtension,
     ];
   }
@@ -402,27 +343,15 @@ export function createStandaloneEditorExtensions({
       : []),
     ...(wikilinkPaste ? [WikilinkPasteExtension.configure(wikilinkPaste)] : []),
     MarkdownAutoformatExtension,
-    // Below the autoformat, which owns the delimiters this deliberately does
-    // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
     PassageHighlightExtension,
     ReviewChangesExtension,
-    // The one door a picture comes in through — picker, drop, pasted file,
-    // pasted address — and the owner of the clipboard's asset translation,
-    // which is why the markdown text parser is its prop rather than a
-    // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
-    // Where a dropped file that is not a picture goes, and who takes its upload back.
     FileDropExtension,
-    // Where dragged content lands, and the caret that promises it. The lanes
-    // that know a payload (rows, files) hand it their doors here, so the
-    // landing imports neither.
     LandingExtension.configure({
       entries: referenceDrop && referenceDropDoor(referenceDrop),
       files: fileDropDoor,
     }),
-    // Chrome mounts only on the document schema: a code file is one code
-    // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,
   ];
 }
@@ -446,8 +375,6 @@ export function createEditorConfig({
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
-  // Sanitization runs last so a caller transform can never reintroduce markup
-  // the schema would otherwise accept.
   const callerTransformPastedHTML = editorProps?.transformPastedHTML;
   const sanitizedEditorProps = {
     ...editorProps,

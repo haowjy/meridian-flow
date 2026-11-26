@@ -93,10 +93,6 @@ function useChatScratch(projectId: string, threadId: string | null) {
 
 type ChatScratch = ReturnType<typeof useChatScratch>;
 
-/**
- * A chat's Scratch in its Files menu: the same rows in their own list, so
- * Move… there ends like everywhere else (its notice shows at the menu's foot).
- */
 export function MenuScratchSection({
   projectId,
   threadId,
@@ -226,7 +222,6 @@ const EARLIER_NOTES_ID = "earlier:scratch";
 const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "copy", "delete"];
 const READ_ONLY: EntryCapabilities = ["copy"];
 
-/** One real owner per tree; the Earlier notes disclosure is outside both trees. */
 function ScratchTree({
   projectId,
   tree,

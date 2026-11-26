@@ -43,7 +43,6 @@ export function useLiveDocumentBinding({
     documentId ? { kind: "opening", documentId } : { kind: "absent" },
   );
 
-  // retryGeneration is in the deps so retry() re-runs the open after a failure.
   useEffect(() => {
     if (!documentId) {
       setState({ kind: "absent" });
@@ -64,7 +63,6 @@ export function useLiveDocumentBinding({
           ...(draftId ? { draftId } : {}),
           signal: abort.signal,
         });
-        // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
         if (opened.kind === "cancelled") return;
         if (opened.kind !== "opened") {
           if (opened.kind === "unavailable") {
@@ -86,7 +84,6 @@ export function useLiveDocumentBinding({
           documentId,
           session: candidate.session,
         });
-        // A read-only room replaces its session; the editor remounts on the new one.
         stopSession = candidate.subscribeSession((session) =>
           setState({ kind: "opened", documentId, session }),
         );

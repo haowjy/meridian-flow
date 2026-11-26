@@ -1,6 +1,3 @@
-// Observation frontiers on Loro (design §5): what a result showed is the frontiers of every doc of
-// the room copy it rendered from, and a write plans on a view of the room at them.
-
 import {
   type CommitAuthor,
   type DocKey,
@@ -72,12 +69,6 @@ function usableIn(doc: LoroDoc, at: Frontiers): boolean {
   );
 }
 
-/**
- * The frontiers a write plans on: what the model read (`recorded`), plus the reply's own batches
- * since (`own`, the exact envelopes its writes committed), per doc. Null when some recorded doc is
- * no longer in `docs` or a frontier lies below its cutoff: the write then plans on the transcript.
- * A doc the model never saw (created since the read) is left out, so the view lacks it.
- */
 export function planningFrontiers(
   docs: RoomDocs,
   recorded: FrontierMap,
@@ -105,12 +96,6 @@ export function planningFrontiers(
   return out;
 }
 
-/**
- * The chat's latest read of `documentId`, in whichever of its rooms it was (design §5): null when
- * it never read the document. A write plans on it when its room can check it out
- * (`planningFrontiers`), and on the transcript when not: a later read is never passed over for an
- * earlier one, whose text the model no longer works from.
- */
 export async function latestRead(
   lookup: FrontierLookup,
   documentId: string,

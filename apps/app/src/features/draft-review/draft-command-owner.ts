@@ -80,13 +80,6 @@ export class DraftCommandOwner {
       []) as readonly HeldNoticeRow<T>[];
   }
 
-  /**
-   * The account's journaled presses: one not answered yet, or answered and not yet in a list
-   * read, holds its items in flight (hidden, so their rows and review leave), in every tab and
-   * through a reload. A press of a change or a turn takes part of a document and holds nothing.
-   * One the server never took, since this tab opened, says so once, in a tab showing its project
-   * (`shownProject`).
-   */
   followPresses(records: readonly CommandRecord[], shownProject: string | null) {
     for (const record of records) this.reportFailure(record, shownProject);
     const holds = records.flatMap((record): JournalHold[] => {

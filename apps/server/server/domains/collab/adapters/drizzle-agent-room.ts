@@ -6,11 +6,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDestination } from "../domain/agent-destination.js";
 
-/**
- * The room a model call reads and writes `documentId` in (design §5): Live at a Live destination;
- * at a draft, the draft's fork room whether or not the draft has written there, except for a
- * document only the draft holds (its pending create), whose text is in its own Live room.
- */
 export async function agentRoomFor(db: DrizzleDb, documentId: string): Promise<DocumentRoom> {
   const destination = currentDestination();
   const draftId = destination.kind === "draft" ? destination.draftId : null;

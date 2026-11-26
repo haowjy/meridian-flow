@@ -3,11 +3,6 @@ import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-po
 
 export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
 
-/**
- * A read's context. `liveVersion` marks a `version: "live"` read: it reads the live document
- * even when the thread has a Work draft of it, where a default read follows the grant's
- * destination.
- */
 export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
 
 export type RoutedWriteOutcome = WriteOutcome & {

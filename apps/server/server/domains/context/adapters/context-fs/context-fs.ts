@@ -470,8 +470,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const { folders, documents } = await this.store.listTree(await this.readTreeView());
     const folderPaths = new Map<string | null, string | null>([[null, ""]]);
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
-    // Null for a folder whose chain to the root is incomplete (a deleted ancestor): its
-    // documents are not candidates, rather than listed at the source root.
     const folderPath = (id: string | null): string | null => {
       const known = folderPaths.get(id);
       if (known !== undefined) return known;
@@ -516,8 +514,6 @@ export class ContextFS implements ContextSchemeAdapter {
       );
       return new Map<string, string>(texts.flatMap((read) => [...read]));
     };
-    // One source has one owner, a project or (the home folder) an account; its
-    // chapters' reads join this snapshot, so it is read in their thread.
     return this.links.within(
       {
         documentId: first.id,
@@ -605,11 +601,6 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  /**
-   * A tree command in this source: the records of one command transaction. A drafted one is a
-   * record of the Work's draft, which the transaction makes and locks; a live one is live.
-   * `afterWrite` runs inside it once the records are made.
-   */
   private async inTreeCommand<T>(
     input: { origin?: WriteProvenance; drafted?: boolean; fromSourceId: string },
     write: (target: TreeWriteTarget) => Promise<Result<T, AdapterFault>>,
@@ -632,7 +623,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const fromSourceId = await this.store.contextSourceId();
     return this.inTreeCommand({ ...input, fromSourceId }, async (target) => {
       let arrived: readonly string[] = [];
-      // Under the transaction's locks, so the owners' lifecycles read now are the ones that commit.
       const judge = await (input.owners ?? NO_OWNERS).judge();
       const result = await this.writes.run(target, (scope) => {
         const made = input.make(scope, judge);
@@ -640,7 +630,6 @@ export class ContextFS implements ContextSchemeAdapter {
         return made;
       });
       await input.afterWrite?.(result, { view: target.view });
-      // Only live documents arrive at a live address; a drafted one has none.
       if (!target.view.draft && arrived.length > 0)
         await this.liveCreate.arrive(arrived as DocumentId[]);
       return Ok(result);

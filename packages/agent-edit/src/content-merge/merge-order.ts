@@ -2,11 +2,6 @@ import type { Node as PMNode } from "prosemirror-model";
 import type { Correspondence } from "../diff/correspond.js";
 import type { Side } from "../diff/tokens.js";
 
-/**
- * The blocks of `blocks` a side moved: those outside its longest run still in base order. `favored`
- * blocks tip a tie, so an adjacent swap (which moves either paragraph) is read as the two sides
- * moving different paragraphs, which leaves nothing to contest.
- */
 function movedBlocks(blocks: number[], partner: Int32Array, favored: Set<number>): Set<number> {
   const seq = [...blocks].sort((a, b) => partner[a] - partner[b]);
   const weight = seq.map((x) => (favored.has(x) ? 1.001 : 1));
@@ -61,15 +56,8 @@ interface Placement {
   contested: number[];
 }
 
-/**
- * One order for the blocks both sides kept: each pair's order comes from whichever side changed it
- * (the draft if both did). Blocks one side removed then go after their predecessor on the side that
- * kept them.
- */
 function placeBlocks(kept: number[], inLive: Int32Array, inDraft: Int32Array): Placement {
   const both = kept.filter((i) => inLive[i] >= 0 && inDraft[i] >= 0);
-  // A paragraph both sides moved to different places is contested: the draft's place wins for
-  // every pair involving it, and the move is reported.
   const draftMoved = movedBlocks(both, inDraft, movedBlocks(both, inLive, new Set()));
   const liveMoved = movedBlocks(both, inLive, draftMoved);
   const contested: number[] = [];
@@ -114,7 +102,6 @@ function placeBlocks(kept: number[], inLive: Int32Array, inDraft: Int32Array): P
   return { order, cyclic, contested };
 }
 
-/** Blocks both sides removed keep their base neighbour, so a merge on both sides still aligns. */
 function withRemovedBlocks(
   order: number[],
   baseCount: number,
@@ -153,10 +140,6 @@ function layOut(side: Side, c: Correspondence, order: number[]): number[] {
   return out;
 }
 
-/**
- * Block order, merged on its own: decide each pair of base blocks' order, then lay base, live and
- * draft out in that one order. The token merge then sees no moves, only edits.
- */
 export function mergeOrder(sides: {
   base: Side;
   live: Side;

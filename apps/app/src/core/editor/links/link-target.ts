@@ -120,8 +120,6 @@ function externalTarget(candidate: string): LinkTarget | null {
 }
 
 function validExternalHref(candidate: string): string | null {
-  // The writer's own spelling survives into the document; only rendering and
-  // following use the parser's.
   return parseExternalUrl(candidate) ? candidate : null;
 }
 

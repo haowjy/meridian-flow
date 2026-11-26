@@ -1,9 +1,3 @@
-/*
- * Everything Meridian-specific about the architecture map. The engine (tools/architecture-map)
- * names no project; the pages in this directory are the content. The browser imports this file
- * too, so it stays plain data: no functions, no imports. tools/architecture-map/README.md has the
- * reference for each key.
- */
 export default {
   title: "Meridian architecture",
 
@@ -12,12 +6,8 @@ export default {
   repo: "haowjy/meridian-flow",
   draft: "main",
 
-  // The directory holding README.md (which lists the top-level pages), the level pages,
-  // flows/, journeys/ and dependencies.md.
   pagesDir: ".context/system-architecture",
 
-  // The viewer's colours: the custom properties these blocks declare, read from the design tokens
-  // each time the viewer loads. The viewer sets `dark` on <html> for the dark theme.
   tokens: {
     files: [
       { file: "packages/design-tokens/src/ink-jade.css", blocks: [":root", "@theme"] },
@@ -26,8 +16,6 @@ export default {
     dark: { attribute: "data-ui-theme", value: "dark" },
   },
 
-  // Each directory matching `glob` is a service: a box on `page` whose Paths are inside it and
-  // whose Opens is a page named after the directory (apps/server → server.md).
   services: { glob: "apps/*", page: "system.md" },
 
   coverage: [
@@ -37,8 +25,6 @@ export default {
     { glob: "apps/app/src/features/*" },
   ],
 
-  // How the dependency check reads imports. Workspace packages resolve by name (the `name` in
-  // package.json) to their directory; an alias maps a prefix, from files under `within`.
   imports: {
     workspaces: ["apps/*", "packages/*"],
     aliases: [
@@ -47,11 +33,6 @@ export default {
     ],
   },
 
-  // The rules dependencies.md lists breaks of. A unit is a directory matching a glob, named by its
-  // last segment (domains/runtime → runtime). `cycle`: units that import each other in a loop.
-  // `from`/`to`: a unit of `from` importing anything under `to`. Only value imports count.
-  // `files`/`to`: a file under the directory `files` importing any module in the list `to` (a package, a
-  // package subpath or a repo path), one row per file and module; type-only imports count too.
   dependencies: {
     page: "dependencies.md",
     rules: [
@@ -77,8 +58,6 @@ export default {
     ],
   },
 
-  // The state machine pages: the index the viewer opens, and the git pathspec that finds every
-  // page the index must list.
   stateMachines: {
     index: ".context/state-machines/index.md",
     pages: "*.context/*state-machine*.md",
@@ -86,9 +65,6 @@ export default {
 
   nav: { journeys: "Journeys", machines: "State machines", dependencies: "Dependencies" },
 
-  // What the dev server shows in the viewer. true: any tracked file opens at its repo path.
-  // false: only the pages directory and the Markdown matched by `docs`. A tunnel to
-  // the app's port publishes the dev server, so false is for a private repository.
   serveSource: true,
   docs: ["**/.context/**/*.md"],
 };

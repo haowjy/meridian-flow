@@ -16,12 +16,6 @@ export type DeletedChatCard = {
   own?: boolean;
 };
 
-/**
- * A hand-back request the writer pressed whose answer has not been written to the composer: kept
- * with the draft so a reload re-posts the same body (the server replays its stored decision) and
- * the content still arrives exactly once. The package owns the shape: Stop's stored format, and
- * the x / Cancel queue's ids.
- */
 export type PendingHandBack = HandBackCommand;
 
 type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
@@ -79,10 +73,6 @@ export class ComposerSessionDraft {
   private received = new Set<string>();
   private handBacksPending: PendingHandBack[] = [];
   notices: DeletedChatCard[] = [];
-  /**
-   * The thread id a New chat will be created with. Uploads attached before Send belong to it, so
-   * it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
-   */
   chatId: string;
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
@@ -115,12 +105,6 @@ export class ComposerSessionDraft {
     this.dirty = true;
   };
 
-  /**
-   * Bring a creation that never reached the server back as one unit: its chat id, its words and
-   * its receipts. Uploads belong to the id they were attached under, so the id travels with them.
-   * A newer unsent draft with uploads of its own is parked and returns after the next Send; it is
-   * never folded into the recovered chat, whose uploads it does not own.
-   */
   recoverCreation(
     chatId: string,
     snapshots: ComposerDraftSnapshot[],
@@ -185,11 +169,6 @@ export class ComposerSessionDraft {
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
   }
 
-  /**
-   * Takes back what a deleted chat's move put in (its Undo): the box returns to what it held
-   * before, and the chat's note goes. The caller has checked with `holds` that the box still holds
-   * exactly what the move left.
-   */
   withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
     this.commit(before, {
       received: this.received,
@@ -226,13 +205,6 @@ export class ComposerSessionDraft {
     });
   }
 
-  /**
-   * A hand-back's content above what is typed, the receipt, and the command's retirement in one
-   * checked write. A request already received prepends nothing (two answers for one request, or
-   * a reload after the write). False when the write failed or the merged document wouldn't
-   * restore after a reload: the command stays, and a retry of the same request brings the
-   * content again. A document that can't restore never retires the command.
-   */
   receiveHandBack(requestId: string, returned: MessageDoc): boolean {
     if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
     const edited = this.withReturned([sentWords(returned)]);

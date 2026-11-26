@@ -1,7 +1,3 @@
-/**
- * The model's edit handles (`e<N>`), one counter per document (or tree node) and chat, shared by
- * its text writes and tree changes so Undo, Redo and `revert` order both by it.
- */
 import type { WriteOrdinals } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

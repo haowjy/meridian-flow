@@ -1,15 +1,3 @@
-/**
- * What this tab knows about the app being deployed under it: one app-wide store behind the header
- * word, fed by the release headers on every API answer and the thread socket's `connected` frame.
- *
- * - `current`: nothing newer is known.
- * - `update-available`: the server's release differs from this bundle's. The writer reloads.
- * - `must-reload`: the server can no longer understand this tab (its protocol is below the
- *   server's minimum), or the tab learned it is stale some other way: a lazy chunk that is gone,
- *   a document room that needs a newer schema, a command the server cannot read. New sends are
- *   held in the driver's journal and the tab reloads by itself once the writer has paused. A gone
- *   chunk means the screen asked for cannot render, so it reloads without the pause.
- */
 import {
   PROTOCOL_HEADER,
   PROTOCOL_VERSION,

@@ -129,8 +129,6 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
   const { editor } = context;
   if (!editor || editor.isDestroyed) return everyControlBlockedBy("editor-loading");
 
-  // Read-only outranks every contextual reason: nothing applies to a document
-  // the writer cannot change, and saying so once is the honest answer.
   const readOnly: ToolbarBlockedReason | null = context.editable ? null : "document-read-only";
   const blockType = blockTypeRefusal(editor);
   const alignment = currentAlignmentValue(editor);
@@ -158,8 +156,6 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       active: activeListKind(editor) === "bullet",
       blockedBy: readOnly ?? blockType,
     },
-    // No precondition on having a selection: a bare caret opens the
-    // two-field form instead.
     link: blockedFirst(readOnly, textMarkState(editor, "link")),
     alignment: {
       active: alignment !== "default",
@@ -365,8 +361,6 @@ function activeListKind(editor: Editor): "bullet" | "ordered" | null {
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
   if (context.schemaType !== "document") return "code-document";
-  // Nothing about an upload already running blocks the next one: each picture
-  // holds its own slot in the document and its own progress with it.
   return context.imageUploadAvailable ? null : "no-project";
 }
 
@@ -376,9 +370,6 @@ function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | 
       return context.nodeType === "code_block" ? "embedded-block" : "object-selection";
     case "source-block":
       return context.nodeType === "code_block" ? "code-block" : "embedded-block";
-    // A cell holds any block, so the cell itself refuses nothing: anything in
-    // it that does (a rendered fence, a component) owns the context more
-    // deeply and answered above. The table arm is the same story one level up.
     case "table":
     case "table-cell":
     case "document":
@@ -426,7 +417,6 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
 function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   const { state } = editor;
   const refusals = spannedRefusals(state);
-  // Nothing in the span holds text at all: a figure, a rule, an empty document.
   if (refusals.length === 0) {
     return chromeContextRefusal(resolveChromeContext(state)) ?? "object-selection";
   }

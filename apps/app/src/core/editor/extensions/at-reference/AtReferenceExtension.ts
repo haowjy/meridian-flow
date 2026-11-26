@@ -19,27 +19,19 @@ import {
 
 export type ReferenceBrowserCatalog = {
   port: ReferenceCatalogPort;
-  /** Cheap identity lookup over the catalog snapshots already installed for this surface. */
   resolveReference: (reference: {
     kind: "file" | "folder";
     id: string;
   }) => ReferenceTerminalRow | null;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
-  /**
-   * The Editor's link-ahead row: where a link to a not-yet-written document
-   * named `name` would point, or null for none. Omitted where a reference
-   * must name an existing document (the chat composer).
-   */
   linkAhead?: (name: string) => { uri: string } | null;
 };
 
 export type AtReferenceCatalog = ReferenceBrowserCatalog & {
-  /** The host's canonical node for a terminal row, shared by `@` and row drops. */
   referenceNode: (schema: Schema, row: ReferenceTerminalRow) => PMNode | null;
 };
 
-/** The exact Editor node shape written by `@`, also used by row drops. */
 export function editorReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNode | null {
   if (row.kind === "folder-mention") return folderReferenceNode(schema, row.action.reference);
   const reference = row.action.reference;

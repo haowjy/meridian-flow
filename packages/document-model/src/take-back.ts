@@ -16,19 +16,6 @@ import {
 } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
-/**
- * The rule every Undo follows (design §2, "An Undo always runs"): the editor's Ctrl+Z and Redo, a
- * press's Undo, a turn's restore press and agent-edit's undo. An Undo takes its edit back whatever was
- * written since. Text goes back by its inverse, which deletes the characters the edit put in that
- * still stand and puts back the ones it deleted (Loro's `UndoManager` in the editor,
- * `textInverse` here). Structure goes back key by key, each to the value it held before the edit,
- * last writer wins. A block the Undo takes away is removed with a record that counts as read only
- * what the edit's copy showed of the text under the blocks it touched (`Edit.read`), and rule 1
- * (`answerRemovals`) runs over the Undo's own write, so a block anyone typed into since comes
- * back: no one's words leave the screen. Rarely the text then shows twice, which the writer
- * deletes.
- */
-
 export interface SetValue {
   before: unknown;
   left: unknown;
@@ -97,18 +84,6 @@ export interface PutBackText {
   inserted: ReadonlySet<DocKey>;
 }
 
-/**
- * Write every structure value of an edit back, in one commit by `by`: each key gets the value it
- * held before the edit. A block the edit made goes as a removal through `StructureWriter.remove`,
- * and keeps its other keys to come back with; a removal record the edit replaced is written anew
- * the same way. Each removal counts as read what the edit's copy showed (`text.read`), what its
- * record had read, what a removal under it read, and the Undo's own ops; any other op is unread.
- * Then rule 1 runs over the commit, the text the Undo put in, the shown blocks it moved and the
- * blocks it brought back (`answerRemovals`): a removed block someone else typed into since comes
- * back, and so does a container a peer removed around a block the Undo puts back. Returns the
- * changes, the restores included, and the values of the way back. `view`, if given, reads the
- * structure as it is.
- */
 export function putBackValues(
   docs: RoomDocs,
   values: EditValues,
@@ -158,15 +133,6 @@ export function putBackValues(
   };
 }
 
-/**
- * What the removal of `id` an Undo writes counts as read of each text doc under it. Of a block the
- * edit made (no `record`), a doc where no character shows that the edit's copy did not (`read`)
- * and the undoing side did not put in counts as read whole: no one's words leave with it, ops
- * whose text an Undo since took out included. A record put back keeps what it did not read.
- * Otherwise it counts what the edit's copy showed, what the record put back had read
- * (`record`), what a removal on the doc's path below `id` read (a block that stays removed shows
- * none of its text) and the Undo's own ops, so rule 1 brings `id` back with those words.
- */
 function sawOf(
   docs: RoomDocs,
   view: StructureView,

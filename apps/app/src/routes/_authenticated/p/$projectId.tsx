@@ -17,12 +17,8 @@ import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  // A creation this account has not had confirmed owns the destination: the shell renders from
-  // its record while the POST is in flight. The server renders without the journal, so a project
-  // it cannot find is left for the client to decide (`unresolved`).
   loader: async ({ params, parentMatchPromise }) => {
     const { projectId } = params;
-    // The account this load is for, not the one whose provider happens to be mounted.
     const { user } = (await parentMatchPromise).loaderData ?? {};
     if (user && (await awaitPendingProjectCreation(user.userId, projectId)))
       return { projectId, project: null, data: null, unresolved: false };
@@ -73,14 +69,12 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   const creation = useProjectCreationState(projectId);
   useSettleConfirmedCreation(projectId, loaderData.data !== null);
-  // The server could not find this project; the client's loader knows whether it is an unsent create.
   const router = useRouter();
   const unresolved = loaderData.unresolved;
   useEffect(() => {
     if (unresolved) void router.invalidate({ filter: (match) => match.routeId === Route.id });
   }, [unresolved, router]);
   const project = useProject(projectId, loaderData.project ?? creation.project);
-  // A project being created has no route data yet; the creation stands in.
   if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;
 
   return (
@@ -88,7 +82,6 @@ function ProjectRoute() {
       <div className="flex h-full min-h-0 flex-col">
         <ProjectCreationNotice creation={creation} />
         <div className="min-h-0 flex-1">
-          {/* Project-scoped state (navigation, admission, seeding) never carries across projects. */}
           <ProjectRouteBootstrap
             key={project.id}
             project={project}

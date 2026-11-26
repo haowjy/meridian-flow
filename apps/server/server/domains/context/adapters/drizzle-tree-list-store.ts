@@ -37,21 +37,8 @@ import type {
 import { listIdOf, readConnection } from "./tree-list-facts.js";
 import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
 
-/**
- * This process's copy of one list, brought to the stored snapshot under the list's lock and
- * changed in place by what the transaction admits. `pending` is the root transaction (its
- * `Ownership.token`, the same in every savepoint under it) that changed it and has not
- * committed: a copy found in any other transaction's hands is behind the stored list or ahead of
- * it, so it is set aside and the list loaded again. A rollback sets aside the copies the
- * transaction held. A copy set aside is freed when nothing holds it: no transaction that took it
- * under the list's key has ended and no read is between its awaits.
- */
 type Copy = { doc: LoroDoc; writer: TreeWriter; pending: object | null; retired: boolean };
 
-/**
- * What a root transaction holds in this store: its identity, and the lists whose keys it has
- * taken. A savepoint's state is a fork; one that rolls back leaves its keys out of the parent's.
- */
 type Ownership = { token: object; keys: Set<string> };
 
 const ownership: DrizzleTransactionParticipant<Ownership> = {

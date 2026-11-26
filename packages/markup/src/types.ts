@@ -52,7 +52,6 @@ export interface ParsedContentWithSpans extends ParsedContent {
 export interface SerializeContext {
   schema: Schema;
   links: DocumentLinkScope;
-  /** The block is the first of a quote, where export keeps a callout's `[!type]` literal. */
   leadsQuote?: boolean;
 }
 
@@ -97,7 +96,6 @@ export interface MarkupCodecBuilder {
 }
 
 export interface MarkupCodec {
-  /** Pure syntax: every link `ref` is null and every href is as written. */
   parse(content: string, options?: ParseOptions): ParsedContent;
   parseWithSpans(content: string, options?: ParseOptions): ParsedContentWithSpans;
   parseWithSourceMap(content: string): ParsedContentWithSourceMap;
@@ -122,7 +120,6 @@ export interface SourceRange {
 }
 export interface PresentationSourceRun {
   kind: "text" | "link";
-  /** Text offset is within the addressed PM text node; links count sibling nodes. */
   at: { block: number; path: number[]; count: number; offset?: number };
   source: SourceRange | null;
 }

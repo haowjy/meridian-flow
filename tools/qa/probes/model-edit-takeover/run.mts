@@ -133,8 +133,6 @@ const cases: ModelEditCase[] = [
       await first.kill();
       const after = await state(h, thread, documentId);
       assert.equal(after.results.length, 1);
-      // The old process lost its claim and may abort its edit before the commit; the records
-      // agree either way.
       if (after.results[0] === "call-1:success")
         assert.deepEqual(after, {
           doc: ["Live seed.", "Added."],

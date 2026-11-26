@@ -1,24 +1,18 @@
-/** Defines scoped editor keymap registrations and dispatch. */
-
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
 import type { ChromeContext } from "./chrome-context";
 import type { ChromeLayer } from "./esc-chain";
 
-/** Deepest owner first, and each scope names a context it is only live in. */
 export const KEYMAP_SCOPE_ORDER = ["layer", "object", "table", "block", "document"] as const;
 
 export type KeymapScope = (typeof KEYMAP_SCOPE_ORDER)[number];
 
-/** What the kernel knows when a key arrives. */
 export type KeymapApplicability = {
   context: ChromeContext;
-  /** Transient surfaces open right now, shallowest first — `chrome.layers` itself. */
   layers: readonly ChromeLayer[];
 };
 
-/** Is a scope live in this state? */
 export function keymapScopeApplies(scope: KeymapScope, state: KeymapApplicability): boolean {
   switch (scope) {
     case "layer":
@@ -33,10 +27,8 @@ export function keymapScopeApplies(scope: KeymapScope, state: KeymapApplicabilit
   }
 }
 
-/** Which listeners offer a key: prose; prose and portalled chrome; or unclaimed native input. */
 export type KeymapRoute = "prose" | "chrome" | "native";
 
-/** ProseMirror's own binding shape: return true to consume the key. */
 export type KeymapBinding = (
   state: EditorState,
   dispatch?: (tr: Transaction) => void,
@@ -44,13 +36,9 @@ export type KeymapBinding = (
 ) => boolean;
 
 type KeymapContributionBase = {
-  /** The registering surface, e.g. `"slash-menu"`. Names the owner in a trace. */
   id: string;
-  /** Defaults to prose. Chrome also runs in prose; native only prepares unclaimed input. */
   route?: KeymapRoute;
-  /** Narrows further than the scope, for a contribution that applies to one kind of the scope's context — one object type, one table role. */
   appliesTo?: (context: ChromeContext) => boolean;
-  /** Keys in ProseMirror's `keymap` spelling: `"Alt-ArrowUp"`, `"Mod-Enter"`. */
   bindings: Readonly<Record<string, KeymapBinding>>;
 };
 
@@ -58,7 +46,6 @@ export type KeymapContribution = KeymapContributionBase &
   (
     | {
         scope: "layer";
-        /** The open layer these keys belong to, as `openLayer` handed it back. */
         layer: ChromeLayer | null;
       }
     | { scope: Exclude<KeymapScope, "layer">; layer?: never }
@@ -78,7 +65,6 @@ export function keymapContributionApplies(
   return contribution.appliesTo?.(state.context) ?? true;
 }
 
-/** Refuse a contribution the kernel cannot honour, at registration time. */
 export function assertKeymapContribution(
   contribution: KeymapContribution,
   registered: readonly KeymapContribution[] = [],
@@ -110,7 +96,6 @@ export function assertKeymapContribution(
   }
 }
 
-/** Do these two contributions answer for the same place, so a shared key would always be a collision? */
 function sameKeymapPlace(left: KeymapContribution, right: KeymapContribution): boolean {
   if ((left.route === "native") !== (right.route === "native")) return false;
   if (left.scope !== right.scope) return false;
@@ -118,13 +103,11 @@ function sameKeymapPlace(left: KeymapContribution, right: KeymapContribution): b
   return left.layer !== null && left.layer === right.layer;
 }
 
-/** A registered binding, still paired with the contribution that answers for it. */
 type KeymapRung = {
   contribution: KeymapContribution;
   binding: KeymapBinding;
 };
 
-/** Flatten registered contributions into one ProseMirror keymap. */
 export function mergeKeymapContributions(
   contributions: readonly KeymapContribution[],
   applicability: () => KeymapApplicability,
@@ -163,7 +146,6 @@ export function mergeKeymapContributions(
   );
 }
 
-/** Which layer answers this chord: the deepest open one that claimed it, or `null` — which is both "no layer claimed it" and the token the keys registered before their popover existed carry, so those answer exactly when no layer does. */
 function answeringLayer(
   live: readonly KeymapRung[],
   layers: readonly ChromeLayer[],

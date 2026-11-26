@@ -1,13 +1,3 @@
-/**
- * Main's address and main's document view, kept in step. An address arriving by push, pop or load
- * (a link, a reload, Back) is a command: it sets the view's pin to the draft its `item` names, or
- * drops the pin when it names none; naming the scope's draft also sets the toggle to Draft. A
- * replace is not, unless it changes main's document: it rewrites its entry in place (`arrivalOf`).
- * After that what the document shows (`shownDraft`) is the owner and the address's `item` follows
- * it by replace, so a draft the writer picks, leaves or flips the toggle on rewrites the address in
- * place and never adds a Back step. A pin that changes drops `review` and `change` in that same
- * replace (`writeItemKey`): Review changes is of the draft it was opened on.
- */
 import type { RouterHistory } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";

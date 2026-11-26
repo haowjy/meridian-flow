@@ -8,15 +8,11 @@ import { projectQueryKeys } from "./project-query-keys";
 type RenameVariables = { title: string; revision: number };
 
 type RenameRecord = {
-  /** Revision of the latest rename started. */
   revision: number;
-  /** Renames not yet settled. */
   pending: number;
-  /** The last confirmed title; what the latest rename's refusal reverts to. */
   confirmed: string;
 };
 
-/** Titles of project renames still on their way, the latest per project. */
 export function pendingProjectTitles(client: QueryClient): Map<string, string> {
   const titles = new Map<string, string>();
   for (const mutation of client

@@ -158,10 +158,6 @@ function CornerToggle({
   );
 }
 
-/**
- * The sidebar in main's cell, at its own width over main's left edge, leaving at least the phone
- * drawer's 56px of page to press (`NavigationDrawer`), clear of the side panel's toggle.
- */
 function sidebarOverSlots(width: number): SlotDefinition[] {
   return DESKTOP_PROJECT_SLOTS.map((slot) =>
     slot.id === "rail-l"

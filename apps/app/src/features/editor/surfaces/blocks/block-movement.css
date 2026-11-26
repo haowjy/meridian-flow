@@ -1,10 +1,3 @@
-/* The handle lives in the margin and is measured onto the pane, so it can
-   never take a pixel from the manuscript (law 7). Absolute against the pane,
-   not fixed against the viewport: the pane scrolls it with its block and clips
-   it at its own edge, where fixed left it a frame behind every scroll and — at
-   the top of a fast one — painted over the app's breadcrumb. Fading rather
-   than unmounting on the way out: a grip that blinks off the frame the pointer
-   left reads as a glitch. */
 .meridian-block-handle {
   position: absolute;
   /* The browser must not read a drag off the grip as a page scroll: this

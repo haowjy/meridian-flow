@@ -1,25 +1,3 @@
-/**
- * SuggestionMenu — the list a writer types underneath, for `/` and for `@`.
- *
- * The writer never leaves the sentence: focus stays in the prose, the query
- * they are typing IS the document text after the trigger, and this surface
- * only shows what the trigger has already matched. That is why nothing here is
- * focusable and why every row cancels its own mousedown — a menu that took
- * focus would stop the next keystroke from filtering.
- *
- * The keyboard is not here either. Arrow keys and Enter are registered against
- * the chrome kernel by whichever trigger opened the menu, at scope `layer`,
- * from the moment it opens; this component follows the highlight with the
- * scroll and renders it. Esc is the kernel's chain, reached by being an open
- * layer.
- *
- * A lane brings rows and reacts to a choice. Everything below — the eight-row
- * cap, the internal scroll, the fades on the list's own edges, the
- * announcement the caret's own element has to carry — is one behavior both
- * menus share, so neither lane can drift from the other on a Radix upgrade
- * (§5.7's height rule).
- */
-
 import type { Editor } from "@tiptap/core";
 import { ChevronRight } from "lucide-react";
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -33,44 +11,31 @@ import { useChromeSuppressed } from "./useEditorChrome";
 import "./suggestion-menu.css";
 
 export type SuggestionMenuRow = {
-  /** Stable within one menu: the React key and the option's id. */
   key: string;
-  /** A group heading or separator drawn above this row, when the lane wants one. */
   before?: ReactNode;
   content: ReactNode;
-  /** Small words at the row's end (a hint, where a file lives), on the label's baseline. */
   note?: ReactNode;
-  /** Choosing it opens a deeper list: the row ends with a chevron. */
   opens?: boolean;
 };
 
 export type SuggestionMenuProps = {
   editor: Editor;
-  /** The focused element whose typing drives this menu. */
   typingElement: HTMLElement;
-  /** Layer id, listbox id, and what a probe looks for. */
   id: string;
   open: boolean;
-  /** What the listbox is offering, for a screen reader. */
   label: string;
-  /** Read on every reposition: the trigger moves when the manuscript scrolls. */
   anchorRect: (() => DOMRect | null) | null;
   rows: readonly SuggestionMenuRow[];
   activeIndex: number;
-  /** Hover moves the highlight; the keyboard owner is the trigger. */
   onActivate: (index: number) => void;
   onChoose: (index: number) => void;
   onDismiss: () => void;
-  /** Above the rows (the @ menu's Back): the menu opens under the caret, so its top is where the writer looks. */
   header?: ReactNode;
-  /** What stands in for the rows when there are none: a `ListLine` or an `InlineErrorRow`. */
   empty?: ReactNode;
   className?: string;
-  /** Composer sits on the phone keyboard; open above it. Manuscript stays below the caret. */
   side?: "top" | "bottom";
 };
 
-/** Which of the scroller's own edges have more list behind them, for its fades. */
 type Overflow = "none" | "top" | "bottom" | "both";
 
 export function SuggestionMenu({
@@ -90,8 +55,6 @@ export function SuggestionMenu({
   className,
   side = "bottom",
 }: SuggestionMenuProps) {
-  // Law: a surface stands down while a drag or sweep is in flight, without
-  // guessing which gesture it was.
   const suppressed = useChromeSuppressed(editor);
   const shown = open && !suppressed;
 
@@ -131,8 +94,6 @@ export function SuggestionMenu({
 
   const activeKey = rows[activeIndex]?.key;
 
-  // Tells a screen reader what the caret's own element now controls. The prose
-  // keeps focus, so the announcement has to travel from there.
   useEffect(() => {
     if (!shown) return;
     typingElement.setAttribute("aria-expanded", "true");
@@ -189,7 +150,6 @@ export function SuggestionMenu({
                 tabIndex={-1}
                 className={cn(
                   dropdownRowVariants({ interactive: false }),
-                  // The highlighted option is the pointer's or keyboard's place: the hover step.
                   active && "bg-ink-fill",
                   "cursor-default [&_svg]:text-muted-foreground",
                 )}

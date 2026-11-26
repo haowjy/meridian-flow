@@ -1,4 +1,3 @@
-/** Canonical document locators repair both live and review addresses without changing identity. */
 import { isWorkScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { type CatalogFileEntry, isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ProjectAddress, scratchOwnerKey } from "./project-address";
@@ -17,7 +16,6 @@ export function canonicalDocumentAddress(
     path: document.path.join("/"),
   };
   const scope = document.scope;
-  // A Scratch document is addressed by its owner.
   const owner =
     scope.kind === "lineage"
       ? scratchOwnerKey({ workId: "", rootThreadId: scope.rootThreadId })

@@ -1,15 +1,3 @@
-/**
- * ThreadCachePort — the thin seam between the thread store's lifecycle
- * transitions and the React Query cache.
- *
- * The thread store owns per-thread turn state; the persisted thread-list and
- * snapshot projections live in React Query. The store depends on this port
- * (an interface), never on `QueryClient` directly, so the two ownerships stay
- * decoupled — that dual ownership behind a raw `queryClient` construction dep
- * was the structural root of the recurring `useThreadStore`/`QueryClient`
- * fragility.
- */
-
 import type { Thread } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -25,22 +13,13 @@ import {
 } from "@/client/query/thread-work-binding-cache";
 
 export interface ThreadCachePort {
-  /** Optimistically insert/merge a thread into its project's cached list. */
   upsertThread(thread: Thread, lifecycle?: ThreadListLifecycle): void;
-  /** Project live lifecycle state across project lists and Work feeds. */
   patchThread(threadId: string, lifecycle: ThreadListLifecycle): void;
-  /**
-   * Invalidate the persisted projections for a terminal turn: the thread
-   * snapshot and, when the owning project is known, Work draft-review lists,
-   * its thread list and the canonical Work list.
-   * `snapshot: false` leaves the snapshot to the caller, which asks for its own read.
-   */
   invalidateThread(
     threadId: string,
     projectId: string | null,
     options?: { snapshot?: boolean },
   ): void;
-  /** Refetch the durable snapshot when a historical live projection has no loaded turn. */
   invalidateThreadSnapshot(threadId: string): void;
 }
 

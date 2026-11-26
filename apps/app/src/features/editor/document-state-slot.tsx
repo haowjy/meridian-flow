@@ -12,7 +12,6 @@ import { createPortal } from "react-dom";
 type Slot = {
   element: HTMLElement | null;
   setElement: Dispatch<SetStateAction<HTMLElement | null>>;
-  /** The toolbar's own place, while something holds it instead of the formatting controls. */
   toolbar: HTMLElement | null;
   setToolbar: Dispatch<SetStateAction<HTMLElement | null>>;
   taken: boolean;

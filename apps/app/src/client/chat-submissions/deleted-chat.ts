@@ -1,5 +1,3 @@
-/** Attested deletion clears browser copies after the chat's unsent words move to its project's New chat box. */
-
 import {
   type ComposerDraftScope,
   type ComposerSessionDraft,
@@ -34,17 +32,10 @@ export type DeletedChatPorts = {
   forgetOrder(): void;
   draft(accountId: string, scope: ComposerDraftScope): ComposerSessionDraft;
   surfaces(): DeletedChatSurface[];
-  /** Runs `run` once this tab is visible or focused: at once when it already is. */
   attended(run: () => void): void;
-  /** A fresh read of whether the chat is still deleted. */
   probe(): Promise<ThreadAvailability | "present" | "unknown">;
   lock: SubmissionLock;
 };
-/**
- * What the writer's own delete moved into New chat, for Undo to move back: the New chat box as it
- * was before and as the move left it (so a box the writer has typed in since is left alone), and
- * the moved words.
- */
 type OwnMove = {
   projectId: string;
   before: ComposerDraftSnapshot | null;
@@ -139,7 +130,6 @@ export async function cleanDeletedChat(
     const snapshot = ports.records();
     if (snapshot === null) return false;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
-    // The box remembers its project for a chat no pane is showing (a reload, another tab's delete).
     const project = projectId ?? source.project ?? records.find((e) => e.projectId)?.projectId;
     const unsent = records.filter((entry) => !entry.control).sort(compareSubmissions);
     const snapshots = unsent.map(
@@ -191,7 +181,6 @@ export async function cleanDeletedChat(
   return false;
 }
 
-/** Once per bind, bounded read-only probes. Not-found and inconclusive results are inert. */
 export async function sweepDeletedChats(
   threadIds: string[],
   current: () => boolean,
@@ -235,8 +224,6 @@ export async function cleanDeletedChatsOnBind(
   const shown = (id: string) =>
     [...(surfaces.get(surfaceKey(accountId, id)) ?? [])].some((pane) => pane.visible());
   const offScreen = (id: string) => !addressed(id) && !shown(id);
-  // The chat the address names is its pane's to settle, unless its project is deleted: that
-  // project never mounts the chat, so nothing else would move its words.
   await sweepDeletedChats(
     [...ids].filter((id) => !shown(id)),
     current,

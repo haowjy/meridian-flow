@@ -5,16 +5,6 @@ import type { Draft, DraftOwnerView, DraftStore, DraftWriteBoundary } from "./po
 
 export interface Drafts {
   viewForOwner(owner: DraftOwner | null): Promise<TreeView>;
-  /**
-   * The write boundary only: locks the owner (the Work row, or the lineage lock) under the
-   * caller's `WorkWriteOptions`, by default refusing an archived, deleted or frozen one (archive
-   * and Trash stop new AI writes), then the draft the write names, row-locked: `draftId` while
-   * it is still the owner's and not deleted, else the owner's default. With no ambient
-   * transaction it runs in its own. Inside one it joins only a transaction the ContextFS command
-   * boundary approved (`approveDraftWriteJoin`: it has locked nothing but owners); any other
-   * ambient caller gets `DraftWriteJoinRefusedError`, so it never takes the owner lock after
-   * namespace or document locks.
-   */
   lockForWrite(owner: DraftOwner, draftId: DraftId, options?: WorkWriteOptions): Promise<Draft>;
   ownerOf(draftId: DraftId): Promise<DraftOwnerView | null>;
   ofOwner(owner: DraftOwner): Promise<Draft | null>;

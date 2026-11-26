@@ -245,16 +245,6 @@ export function createDrizzleDocumentTrash(deps: {
     });
   }
 
-  /**
-   * Empties one Trash entry: a `purge` record naming the delete, then the content of the
-   * documents it took. The whole subtree goes in one submission (a folder purged while a child's
-   * row stands fails the deferred foreign key). Null when the entry is not there, a node outside
-   * it stands inside it, or a Work can still bring it back: retention waits.
-   *
-   * What holds a document is asked before the purge, under the list's key: the purge removes the
-   * rows the question reads. The first submission makes nothing (a read under the key, which the
-   * transaction keeps), the second purges.
-   */
   async function purgeEntry(list: TreeList, deleteId: string): Promise<Released | null> {
     try {
       return await runInDrizzleTransaction(deps.db, async () => {
@@ -296,11 +286,6 @@ export function createDrizzleDocumentTrash(deps: {
     }
   }
 
-  /**
-   * The Trash entries whose nodes have all been in Trash since `cutoff`, oldest first. The page
-   * key is the database's own text of the time: a JS date would drop its microseconds and the
-   * same entry would come back as the next page.
-   */
   async function dueEntries(cutoff: Date, after: { at: string; id: string } | undefined) {
     const rowsDue = await currentDrizzleDb(deps.db).execute<{
       deleteId: string;
@@ -328,12 +313,6 @@ export function createDrizzleDocumentTrash(deps: {
     }));
   }
 
-  /**
-   * A document no view shows: its drafted create was discarded, or refused and not kept, and
-   * it has been that way since `cutoff`. It has no node in any view, so the purge record names its
-   * create's Discard; the lists that can reshow it (an Undo of the Discard) are locked while its
-   * content is released.
-   */
   async function purgeUnviewed(documentId: DocumentId, cutoff: Date): Promise<Released | null> {
     const tx = () => currentDrizzleDb(deps.db);
     try {

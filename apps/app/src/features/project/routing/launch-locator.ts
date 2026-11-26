@@ -1,14 +1,3 @@
-/**
- * launch-locator — where a review launch's document is now.
- *
- * A launch carries the locator its draft row captured, which a rename, a move or a reused
- * path can have outdated. The document's identity decides, in the order the route owners read
- * it: its workspace tab (kept current by renames and moves, and only an optimization), the
- * address that names it, a draft-only document's own draft admission, and the live tree (a
- * launch carrying a review selector navigates at once with its known path). A cached locator is never the answer by itself:
- * when identity cannot be resolved the launch fails rather than navigating to whatever
- * document holds the old path.
- */
 import type { OpenDocument } from "@/client/stores";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import { parseContextUri } from "@/lib/context-uri";
@@ -22,13 +11,8 @@ export function resolveLaunchLocator(input: {
   tabs: readonly OpenDocument[];
   addressed: ProjectDestination;
   addressNamesIt: boolean;
-  /** The prepared review tab is a pending new-document draft: the draft list is its admission. */
   draftOnly: boolean;
   tree: Pick<TreeView, "findDocument"> | null;
-  /**
-   * The launch carries a review selector (`{workId, itemKey}`): destination admission binds the
-   * server's document and canonicalizes the path, so a miss here never fails the launch.
-   */
   selected: boolean;
 }): ContextRouteRequest {
   const { requested } = input;
@@ -39,7 +23,6 @@ export function resolveLaunchLocator(input: {
   );
   if (tab && tab.kind !== "new") return { ...routeTargetForTab(tab), documentId };
   if (input.addressNamesIt && input.addressed.kind === "document") {
-    // The address spells its path without the leading slash; routes, tabs and launches spell it with.
     return contextRouteRequest({
       ...requested,
       scheme: input.addressed.scheme,

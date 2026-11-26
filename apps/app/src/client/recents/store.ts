@@ -96,8 +96,6 @@ function parseItem(value: unknown): AccountRecentItem | null {
     return null;
   }
   const address = item.address as Partial<RecentAddress>;
-  // An item stored with a `local` address (a document known only by device handle) is dropped:
-  // a document's id is its address now, and the server's list brings it back.
   if (
     address.kind === "document" &&
     typeof address.scheme === "string" &&
@@ -265,10 +263,6 @@ export class DeviceAccountRecentsStore {
     return true;
   }
 
-  /**
-   * A joined document's old id is an alias the server never saw: its row moves to
-   * the id the server knows, and the newer of two rows for one document stays.
-   */
   followIdentity(accountId: string, projectId: string, from: string, to: string): boolean {
     const state = this.bound(accountId);
     if (!state?.items.some((i) => i.projectId === projectId && i.documentId === from)) return false;

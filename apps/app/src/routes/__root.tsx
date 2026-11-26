@@ -104,8 +104,6 @@ function RootDocument({
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <HeadContent />
-        {/* Generated from the family icon data, so the link chip's images and
-            the scheme icons share one source. */}
         <style dangerouslySetInnerHTML={{ __html: LINK_CHIP_ICON_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>

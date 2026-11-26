@@ -1,4 +1,3 @@
-/** Drizzle-backed lookup functions used by collab service composition. */
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { threads, turns } from "@meridian/database/schema";

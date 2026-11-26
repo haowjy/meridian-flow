@@ -1,22 +1,3 @@
-/**
- * What a block move operates on, and every transaction that moves one.
- *
- * The handle points at a TOP-LEVEL block: a direct child of the document. That
- * single choice is what makes the drop seams safe by construction — a seam
- * between two top-level children can never land inside a table, a figure or a
- * code fence, so "never drop inside a protected node" is a property of the
- * geometry rather than a check somebody has to remember.
- *
- * What moves is the block's run (`blockRun`): a list item with what is under
- * it (`extentOf`), any other block alone. A moved run keeps its list depth
- * where it lands, at most one level under the block above it (`moveUnder`).
- * Rows belong to the table surface (§4, deepest owner).
- *
- * Pure over `EditorState` — every function returns a `Transaction` or a
- * reading, never dispatches. The surface beside it does the dispatching, so
- * the move itself is testable without a view.
- */
-
 import { type BlockFacts, extentOf, isBodyText, nestNodes } from "@meridian/prosemirror-schema";
 import { Fragment, type Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
@@ -51,9 +32,6 @@ export function blockAtIndex(doc: PMNode, index: number): BlockTarget | null {
 export function blockAt(doc: PMNode, pos: number): BlockTarget | null {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
   const $pos = doc.resolve(clamped);
-  // Depth 0 is a position BETWEEN top-level blocks (a pointer in the gap, a
-  // node selection on a top-level block). `index(0)` then names the block
-  // after the gap, and at the very end of the document there is none.
   const index = $pos.depth === 0 ? Math.min($pos.index(0), doc.childCount - 1) : $pos.index(0);
   return blockAtIndex(doc, index);
 }
@@ -118,8 +96,6 @@ export function moveBlockToSeamTransaction(
   const seam = seams[seamIndex];
   const tr = state.tr;
   tr.delete(run.pos, run.end);
-  // The seam was measured on the document before the lift, so a seam below the
-  // run has shifted up by exactly the run's size.
   const landing = seam < run.pos ? seam : seam - size;
   tr.insert(landing, Fragment.fromArray(moved));
 
@@ -142,7 +118,6 @@ export function moveBlockStepTransaction(
 ): Transaction | null {
   const facts = topLevelFacts(state.doc);
   const run = blockRun(state.doc, source);
-  // The list step the neighbouring item is read at: this run's own, or the outermost for a block in no list.
   const level = Math.max(listDepth(facts[run.index]), 1) - 1;
   if (direction === "up") {
     if (run.index === 0) return null;

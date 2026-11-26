@@ -33,7 +33,6 @@ type EditorMountBase = {
   viewingOwner?: string;
   schemaType: TrackedSchemaType;
   filetype?: Filetype;
-  /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
 };
 
@@ -48,10 +47,6 @@ export type EditorMountIdentity = EditorMountBase & {
 
 export type EditorSurfaceOptions = {
   editable: boolean;
-  /**
-   * ProseMirror props: DOM attributes and handlers. Applied live, so a caller
-   * that rebuilds this object pays an extra `view.setProps` — never a remount.
-   */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
   /**
    * Whether this editor may publish the client's caret. A view hidden
@@ -172,7 +167,6 @@ export function useMountedEditor({
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
-  // Going to the back takes the caret off the wire, once, on this editor's say.
   useEffect(() => {
     if (!surface.publishPresence) construction.caretGate.retire();
   }, [construction, surface.publishPresence]);

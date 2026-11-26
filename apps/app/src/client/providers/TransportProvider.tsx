@@ -48,10 +48,7 @@ export function TransportProvider({ children }: { children: ReactNode }) {
     };
   }, [transport]);
 
-  // Each composer shows the connection's state; the change is spoken once, here, through the
-  // app's one live region.
   useEffect(() => {
-    // A retry passes through `connecting`, which says nothing: only a new word is spoken.
     let said: string | null = null;
     return transport.onConnectionState((state) => {
       const trouble = connectionTrouble(state);

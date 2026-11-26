@@ -246,7 +246,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     page: AheadRecoveryPage,
   ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
-    // Any view's document: a link typed in a document only a Work has registers as well.
     const pending = await this.db
       .selectDistinctOn([documentLinks.aheadId], {
         aheadId: documentLinks.aheadId,

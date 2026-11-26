@@ -27,14 +27,6 @@ export function isMeridianApiError(value: unknown): value is MeridianApiError {
   return value instanceof MeridianApiError;
 }
 
-/**
- * Parse a server HTTP/WS error payload into a `MeridianApiError`.
- *
- * Accepts either the bare envelope (`{ code, message, retryable, source, ... }`)
- * or the wrapped interrupt body (`{ kind: "error", error: MeridianError }`) so
- * the same helper works for HTTP bodies and WS frames after their type-tag is
- * removed by the caller.
- */
 export function meridianApiErrorFromPayload(
   payload: unknown,
   status?: number,

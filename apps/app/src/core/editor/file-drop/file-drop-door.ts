@@ -58,7 +58,6 @@ export const fileDropDoor: DropDoor = {
       };
     }
 
-    // A chip's slot is the same wherever it is: probed with a stand-in, committed with the files.
     const probe = chipFor(editor, "file", crypto.randomUUID(), "unfiled");
     const placed = probe && placeNodes(editor.view, at, [probe]);
     if (!placed) return { kind: "refuse", hint: t`Can’t drop here` };
@@ -155,7 +154,6 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     if (!placed) {
       status?.refuse(t`Can’t drop here`);
     } else {
-      // The entries exist before the chips do, so no chip ever draws a gap.
       for (const { documentId, file } of ready)
         uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file));
       placed.commit(editor.view);

@@ -1,12 +1,3 @@
-/**
- * React's view of the chrome kernel.
- *
- * The kernel is a plain store, so these hooks are the whole adapter: read the
- * resolved context, read suppression, and register an open surface as a layer.
- * A surface that reaches into `getEditorChrome` directly and holds its own
- * `useState` copy will drift; read through here.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useMemo, useSyncExternalStore } from "react";
 

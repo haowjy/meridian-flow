@@ -26,13 +26,6 @@ import { useWorkReviewCount } from "../../tree-version";
 import { useBringWorkBack } from "../../work/EndedWorkNotice";
 import { useChangesScope } from "./ChangesSource";
 
-/**
- * The Work scope under the project name: which Work's drafts the documents show
- * and whose chats the Chat list holds. A lens, not a move: picking a Work never
- * changes the open chapter or chat, and never rebinds a chat. A picked Work that is
- * archived or deleted, here or on another device, stays picked: the chip says so,
- * and its menu brings the Work back.
- */
 export function WorkScopePicker({
   projectId,
   chatThreadId,
@@ -41,12 +34,9 @@ export function WorkScopePicker({
   onManage,
 }: {
   projectId: string;
-  /** The chat on screen: under None the chip names its Work, whose drafts the sidebar shows. */
   chatThreadId: string | null;
-  /** The scoped Work's id, the No Work row's included. */
   workId: string | null;
   onPick: (workId: string) => void;
-  /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
   onManage: () => void;
 }) {
   const { works, deleted, noWork, nameOf } = useWorks(projectId);
@@ -59,7 +49,6 @@ export function WorkScopePicker({
   const scopedName = scoped ? nameOf(scoped) : "";
   const ended = scoped ? workLifecycleState(scoped) : "active";
   const noWorkScoped = workId !== null && workId === noWork?.id;
-  // The chip says whose drafts the toggle and Changes show, and the count Changes has.
   const changes = useChangesScope(projectId, chatThreadId);
   const pending = changes.count;
   const shown = changes.work && !changes.work.isNoWork ? changes.work : scoped;
@@ -68,7 +57,6 @@ export function WorkScopePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* The Work in scope is state, not a link: it rests on the selected fill, like the selected tab. */}
         <button
           type="button"
           className={cn(
@@ -184,7 +172,6 @@ function PickRow({
   );
 }
 
-/** Only state that asks for action: documents to review and chats waiting on the writer. */
 function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = useWorkReviewCount(work);
   if (toReview === 0 && needsYou === 0) return null;

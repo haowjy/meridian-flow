@@ -1,5 +1,3 @@
-/** Singular session drivers behind every suggestion transport. */
-
 import type { SuggestionChoiceAction } from "./suggestion-menu-store";
 import {
   createInternalSuggestionLifecycle,
@@ -34,7 +32,6 @@ export type SuggestionDriver<TCandidate, TRow, TMeta = null> = {
   exit: () => void;
 };
 
-/** Internal deep seam shared by the default and reference drivers. */
 export function createSuggestionDriverCore<TRow, TMeta = null>() {
   return createInternalSuggestionLifecycle<TRow, TMeta>();
 }

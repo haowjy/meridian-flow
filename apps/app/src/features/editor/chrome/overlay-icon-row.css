@@ -1,7 +1,3 @@
-/* One line of editor text is the ceiling for anything hovering over an object: a one-line fence is ~50px tall, and a row that ate 40px of
-   it read as a second block squatting on the first. Every control in an object
-   overlay is therefore the dense `xs` button size — the ceiling is held by the
-   shared button scale, not by heights hand-rolled per surface. */
 .meridian-overlay-icon-row {
   display: flex;
   gap: 0.25rem;

@@ -1,15 +1,3 @@
-/**
- * What a drop that asks offers. A list row dropped within one list moves at
- * once. One dropped on another list (the project's files and Your files are
- * two) can only be copied, and any other source names a document without being
- * a row to reposition, so the list holds the drop as a `PendingChoice` and asks
- * at the drop point: Move, Copy or Cancel, or Copy and Cancel between lists. The hover
- * hint, the decision to ask and the menu all come from `dropChoices`, derived
- * from `resolveDrop` against the trees as they are when each asks, so a
- * destination renamed or removed while the menu was open is judged by
- * identity, not by what the drop saw. A new action is a new item here and a
- * branch in the list's `choose`; the menu's mechanics don't change.
- */
 import { t } from "@lingui/core/macro";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
@@ -26,7 +14,6 @@ import {
 
 export type DropAction = "move" | "copy";
 
-/** One choice in the menu, as data. A disabled item says why. */
 export type DropChoiceItem = {
   action: DropAction;
   label: string;
@@ -41,13 +28,10 @@ export type DropChoiceItem = {
 export type PendingChoice = {
   drag: EntryDrag;
   target: TreeDropTarget;
-  /** Where the pointer let go, in client coordinates; the menu hangs here. */
   point: { x: number; y: number };
-  /** Puts focus back in the list when the menu closes. */
   returnFocus: () => void;
 };
 
-/** The label a Move would carry on the hover hint and as a menu item. */
 export function moveLabel({ destinationName, beside }: ReadyMove): string {
   const sibling = beside?.name ?? "";
   if (!beside) return t`Move to ${destinationName}`;
@@ -60,7 +44,6 @@ export function copyLabel({ destinationName, beside }: ReadyCopy): string {
   return beside.kind === "before" ? t`Copy before ${sibling}` : t`Copy after ${sibling}`;
 }
 
-/** The hover hint for a drop that asks: an ellipsis says a choice follows the drop. */
 export function askLabel(label: string): string {
   return t`${label}…`;
 }
@@ -68,7 +51,6 @@ export function askLabel(label: string): string {
 export const noLongerThere = () => t`Some of these items are no longer there`;
 export const insideItself = () => t`Can't go inside itself`;
 
-/** Why an action can't run, for a drop that was acceptable when it was made. */
 function reason(
   action: DropAction,
   resolved: ResolvedDrop | null,
@@ -83,10 +65,6 @@ function reason(
   return t`Can't copy these`;
 }
 
-/**
- * The menu for a pending drop and what each enabled item would do, both read
- * from the trees now.
- */
 export function dropChoices(
   resolved: ResolvedDrop | null,
   target: TreeDropTarget,
@@ -114,7 +92,6 @@ export function dropChoices(
           reason: reason("copy", resolved, copy),
         };
   return {
-    // Between two lists, and into the writer's own files, the action is Copy: the original stays.
     items: target.scheme === "user" || resolved?.crossesLists ? [copyItem] : [moveItem, copyItem],
     plans: {
       ...(move.kind === "ready" ? { move } : {}),

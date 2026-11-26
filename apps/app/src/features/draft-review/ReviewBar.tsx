@@ -38,8 +38,6 @@ export function ReviewBar() {
   const deleted = files.find((file) => file.documentId === mode.documentId)?.item.tree?.deleted;
   const live = mode.target === "live";
   const changed = live ? files.filter((file) => file.item.pending && file.contextLocation) : [];
-  // Against Live the stepper counts the whole draft: this chapter's rows as read here, every other
-  // chapter's from the list (`changeCount`).
   const here = changed.findIndex((file) => file.documentId === mode.documentId);
   const counted = (files: typeof changed) =>
     files.reduce(
@@ -53,8 +51,6 @@ export function ReviewBar() {
   const step = (direction: 1 | -1) => {
     const next = focused + direction;
     if (next >= 0 && next < rows.length) return mode.focus(rows[next].id);
-    // Past this chapter's last change: the draft's next changed chapter, wrapping. A chapter not
-    // in the list (its last change just pressed) steps from either end of it.
     const from = here >= 0 ? here : direction === 1 ? -1 : changed.length;
     const file = changed.at((from + direction + changed.length) % changed.length);
     if (!file?.contextLocation || file.documentId === mode.documentId) {
@@ -136,8 +132,6 @@ export function ReviewBar() {
 
 function fitReviewLine(line: HTMLDivElement | null) {
   if (!line) return;
-  // The target picker's name shrinks before anything overflows, so a cut name gives the count's
-  // room to the name; only an overflow hides the stepper, never a long name.
   const fits = (level: number) =>
     line.scrollWidth <= line.clientWidth &&
     (level >= 2 ||

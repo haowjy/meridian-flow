@@ -1,7 +1,3 @@
-// An in-memory host for the Loro core: the rooms adapter for a Live or a Draft chat, write records,
-// the model's edit list, undo and revert on the one Undo rule in the room each write landed in, and the
-// writer's turn Undo, Apply, Discard and a turn's restore press, for hand-run probes. The server's host
-// does the same on Postgres.
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
   applyBlocks,

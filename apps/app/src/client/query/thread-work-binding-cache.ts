@@ -140,9 +140,6 @@ export function convergeThreadWorkBinding(
     }
 
     const workId = transition.workId;
-    // The acknowledgment reads the binding on every chat switch, and nearly always finds it
-    // unchanged. A caller that knows the binding it started from names it; otherwise the snapshot is the
-    // record, and a chat without one yet has nothing cached to correct.
     const snapshotWorkId = client.getQueryData<ThreadSnapshotResponse>(
       threadQueryKeys.snapshot(threadId),
     )?.thread.workId;
@@ -158,8 +155,6 @@ export function convergeThreadWorkBinding(
       threadId,
       projectId,
       refreshLists: false,
-      // The snapshot already carries the Work (`patchSnapshot`), and its reads belong to the
-      // thread sync alone.
       skipSnapshot: true,
     });
     convergeWorkProjection(client, { kind: "binding", projectId });
@@ -187,7 +182,6 @@ export async function readStableThreadWorkBinding(
         queryKey: projectQueryKeys.threads(input.projectId),
         exact: true,
       });
-      // Both reads land in their caches, so the common unchanged case leaves them fresh.
       const [threads, catalog] = await Promise.all([
         client.fetchQuery({ ...projectThreadsQueryOptions(client, input.projectId), staleTime: 0 }),
         refreshWorksSnapshot(client, input.projectId),

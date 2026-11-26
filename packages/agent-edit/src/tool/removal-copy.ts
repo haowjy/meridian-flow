@@ -1,5 +1,3 @@
-// The model's words for a removed document, from its removal record. One phrase serves every
-// reader, so a call that names the file and an undo that reached it say the same fact. Writer-facing copy is the app's own.
 import { CONTEXT_URI_SCHEME_NAMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 

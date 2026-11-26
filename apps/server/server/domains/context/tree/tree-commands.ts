@@ -1,11 +1,3 @@
-/**
- * The AI's tree commands, decided on one copy of the list under its lock (tree-tools.md): `create`
- * of a folder, `move` (rename, reorder, several at once), `delete` and `restore`. A path is
- * resolved through the names the model was shown, the operation is made for the node it meant
- * and carries only what the model changed, and the answer says what the call did and what the
- * model could not have known about the nodes it touched. Nothing here writes before it has
- * decided: a refusal makes no record.
- */
 import {
   canonicalLeaf,
   type Filetype,
@@ -61,16 +53,13 @@ export type TreeCommand =
   | { command: "delete"; path: string }
   | { command: "restore"; path: string };
 
-/** One record the call made, for the receipt: the node it acts on and the record's id. */
 export type MadeRecord = { record: string; node: string };
 
-/** A call that names nothing, or has nothing to make: the one refusal left. */
 export type Refused = {
   ok: false;
   status: "invalid_write" | "document_not_found";
   path: string;
   message: string;
-  /** A move of several that moved none: each source and why, as the message lists them. */
   notMoved?: string[];
   delta: ShownDelta;
 };
@@ -79,36 +68,25 @@ export type LeftOut = { path: string; why: "would_loop" | "purged" };
 
 export type Done = {
   ok: true;
-  /** The node the receipt hangs on: the one acted on, or the folder several were moved into. */
   subject: string;
   made: MadeRecord[];
-  /** Where the node landed, when that is not the path the call gave. */
   landed?: string;
   shownAt: string;
   landedAt: string;
   moved?: { made: number; of: number };
   notMoved: string[];
-  /** How many documents and files a folder's delete took. */
   deleted?: number;
-  /** Text after `kept:`. */
   kept?: string;
   placedAtEnd?: string;
-  /** The call's end was already true: nothing was made. */
   already?: "deleted" | "at_destination" | "live";
-  /** Nodes the call left alone: moving a folder into itself, or a node deleted for good. */
   leftOut?: LeftOut[];
-  /** Changes by others to the nodes the call named, by author. */
   concurrent: Array<{ author: string; lines: string[] }>;
-  /** Documents and files a delete took, for the Works whose drafts outlive it. */
   taken: string[];
-  /** Documents now at a live address. */
   arrived: string[];
-  /** Every node the call created, moved, renamed, deleted or restored, with its path before and after. */
   touched: TouchedNode[];
   delta: ShownDelta;
 };
 
-/** `before` is null for a node the call created, `after` for one it deleted. */
 export type TouchedNode = {
   node: string;
   kind: NodeKind;
@@ -118,20 +96,15 @@ export type TouchedNode = {
 
 export type TreeResult = Refused | Done;
 
-/** The words for who: every person is `the user` in v1, an agent is `agent`. */
 export function labelOf(actor: Actor): string {
   if (actor.startsWith("user:")) return "the user";
   if (actor.startsWith("agent:")) return "agent";
   return "unattributed";
 }
 
-/** Where the command's paths are: each source's area and the top of its tree. */
 export type Places = {
-  /** The area of the source the command runs in. */
   area: string;
-  /** The top of each area's tree, by area. */
   roots: ReadonlyMap<string, string>;
-  /** The area a path names and the path below it; null when it names none. */
   locate(path: string): { area: string; rest: string } | null;
 };
 
@@ -148,7 +121,6 @@ type Context = {
 const uriOf = (area: string, names: readonly string[], folder: boolean) =>
   `${area}${names.join("/")}${folder && names.length > 0 ? "/" : ""}`;
 
-/** The area a node's source is addressed by. */
 function areaOfNode(cx: Context, node: TreeNode): string {
   for (const [area, root] of cx.places.roots) if (root === sourceRoot(node.source)) return area;
   return cx.area;
@@ -167,7 +139,6 @@ function noteConcurrent(cx: Context, actor: Actor | undefined, line: string) {
   cx.concurrent.set(label, [...(cx.concurrent.get(label) ?? []), line]);
 }
 
-/** Who deleted a node in Trash: the author of the delete in force that took it. */
 function deleterOf(cx: Context, projection: TreeProjection, node: TreeNode): Actor | undefined {
   const entry = deleteCovering(projection, node.id);
   return actorOfRecord(cx, entry?.from ?? entry?.id);
@@ -181,7 +152,6 @@ const refuse = (status: Refused["status"], path: string, message: string): Refus
   delta: { whole: [], names: [] },
 });
 
-/** A call that made nothing and says why: the call's end was already true, or it left nodes out. */
 function nothingDone(
   subject: string,
   shownAt: string,
@@ -202,7 +172,6 @@ function nothingDone(
   };
 }
 
-/** A refusal for a resolution that names no node. */
 function unresolved(
   cx: Context,
   projection: TreeProjection,
@@ -225,11 +194,6 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
-/**
- * Whether one node's `move` goes into the folder `path` names, under its own name, or lands at
- * `path` itself, its name included: into for a document, and for a folder only when `path` names
- * another folder that exists. A copy between lists reads `path` by the same rule.
- */
 export function movesInto(
   path: string,
   movingFolder: boolean,
@@ -240,7 +204,6 @@ export function movesInto(
 
 type Located = { segments: string[]; folder: boolean; area: string; root: string };
 
-/** A path the model wrote, in the area and tree it names. */
 function pathFrom(cx: Context, path: string): Located {
   const at = cx.places.locate(path);
   const area = at?.area ?? cx.area;
@@ -256,10 +219,8 @@ const uriOfPath = (cx: Context, path: string) => {
   return at ? `${at.area}${at.rest}` : path;
 };
 
-/** The name a written segment gives: a twin's `~id` is not part of it. */
 const nameOf = (segment: string) => readSegment(segment).name;
 
-/** What others did to a node since the model last saw its name and place, as the one line each. */
 function noteChanges(
   cx: Context,
   projection: TreeProjection,
@@ -293,7 +254,6 @@ function remember(cx: Context, record: string, node: string) {
   cx.made.push({ record, node });
 }
 
-/** The folders of `segments` under `start`, made where they do not exist yet. */
 function ensureFolders(
   cx: Context,
   start: string,
@@ -302,7 +262,6 @@ function ensureFolders(
 ): string {
   let parent = start;
   for (const name of segments) {
-    // A segment's `~id` that reached nothing names no folder: the folder is made under its name.
     const created = cx.scope.writer.create(cx.scope.view, cx.scope.actor, {
       kind: "folder",
       name: readSegment(name).name,
@@ -316,16 +275,13 @@ function ensureFolders(
   return parent;
 }
 
-/** Where a path's leaf goes, decided and not yet made: the folders still to create under `parent`. */
 type Destination = {
   parent: string;
   missing: readonly string[];
-  /** Folders along the path that are in Trash: the call is made and they stand. */
   trashed: TreeNode[];
   through: Array<{ folder: string; name: string; node: string }>;
 };
 
-/** The folder `folders` names, resolved through the map, with what is missing left to make. */
 function destinationParent(
   cx: Context,
   to: Located,
@@ -378,7 +334,6 @@ function destinationParent(
   };
 }
 
-/** Makes the folders a decided destination lacks, and returns the folder the leaf goes in. */
 function makeDestination(
   cx: Context,
   destination: Destination,
@@ -387,7 +342,6 @@ function makeDestination(
   return ensureFolders(cx, destination.parent, destination.missing, filled);
 }
 
-/** The sentence for folders a call went into that were deleted since: they stand, holding it. */
 function keptTrashed(cx: Context, projection: TreeProjection, trashed: readonly TreeNode[]) {
   if (trashed.length === 0) return undefined;
   return trashed
@@ -398,11 +352,6 @@ function keptTrashed(cx: Context, projection: TreeProjection, trashed: readonly 
     .join("; ");
 }
 
-/**
- * Where a position puts the nodes moved into `parent`, and what to say when it puts them at the end
- * instead: its anchor left the folder, or is one of the nodes being moved. The anchor's name is
- * looked up in the destination folder.
- */
 function placeFor(
   cx: Context,
   parent: string,
@@ -427,7 +376,6 @@ function placeFor(
   return { place: { kind: position.kind, siblingId: anchor.id } };
 }
 
-/** The nearest folder above `node` that is in `named`. */
 function carrierOf<T>(
   projection: TreeProjection,
   node: string,
@@ -440,7 +388,6 @@ function carrierOf<T>(
   return undefined;
 }
 
-/** Whether `parent` is `node` or inside it: a move there would put a folder inside itself. */
 function loops(projection: TreeProjection, node: TreeNode, parent: string): boolean {
   return (
     node.kind === "folder" &&
@@ -448,10 +395,6 @@ function loops(projection: TreeProjection, node: TreeNode, parent: string): bool
   );
 }
 
-/**
- * Says in `concurrent` who put the destination inside `node`, when the model's own path does not:
- * the folder directly under `node` on the way down to the destination is what someone moved in.
- */
 function noteLoopCause(
   cx: Context,
   projection: TreeProjection,
@@ -475,7 +418,6 @@ function noteLoopCause(
   );
 }
 
-/** A move that made nothing: the node, and what is true of it. `notMoved` is the several-move line. */
 type Skipped = {
   node?: string;
   notMoved?: string;
@@ -483,11 +425,9 @@ type Skipped = {
   leftOut?: LeftOut;
 };
 
-/** A move decided: its notes are written and its destination folder made; its records follow. */
 type Decided = {
   node: TreeNode;
   folder: string;
-  /** Whether it needs a move record; a rename alone does not. */
   moves: boolean;
   rename?: { name: string; filetype?: Filetype };
   shownAt: string;
@@ -572,7 +512,6 @@ function decideMove(
       skip: { node: node.id, already: "at_destination", notMoved: `${fromUri} (already there)` },
     };
 
-  // Decided: the records follow.
   noteChanges(cx, projection, node, source, fromUri);
   if (node.trashed)
     noteConcurrent(
@@ -604,10 +543,6 @@ function decideMove(
   };
 }
 
-/**
- * The records for decided moves into one folder: one `moveAll` at `place`, so several land
- * together in the order given, then any rename.
- */
 function writeMoves(cx: Context, decided: readonly Decided[], folder: string, place: MovePlace) {
   const { scope } = cx;
   const moving = decided.filter((item) => item.moves).map((item) => item.node.id);
@@ -627,7 +562,6 @@ function writeMoves(cx: Context, decided: readonly Decided[], folder: string, pl
   }
 }
 
-/** What a decided move did, once its records are written. */
 function landed(
   cx: Context,
   item: Decided,
@@ -656,18 +590,14 @@ function landed(
   };
 }
 
-/** What a path the model wrote reaches for a tool that is not a tree command. */
 export type PathReach =
   | {
       kind: "node";
-      /** `entries` is a folder's shown children, for the sentence that says what a path is. */
       node: { id: string; kind: TreeNode["kind"]; entries: number };
       uri: string;
       delta: ShownDelta;
-      /** A destination's folders that were in Trash and stand again for the call, and who deleted them. */
       kept?: string;
     }
-  /** The path names a node this view can't act on: in Trash (`by` deleted it), purged, or of the other version. */
   | { kind: "gone"; why: "deleted" | "purged" | "other_version"; by?: Actor }
   | { kind: "unresolved" };
 
@@ -687,7 +617,6 @@ export function reachPath(
   area: string,
   shown: NamesShown,
   path: string,
-  /** Undo names what was deleted by its old path: a node in Trash is the one it means. */
   options: { deleted?: boolean; destination?: boolean } = {},
 ): PathReach {
   const cx: Context = {
@@ -722,10 +651,6 @@ export function reachPath(
   };
 }
 
-/**
- * Whether `folder` holds a node at `rest` (a path below it, through the names shown), in Trash
- * included: what an undo at an old address asks of a folder that moved from above it.
- */
 export function folderHolds(
   scope: Pick<TreeScope, "writer" | "view">,
   shown: NamesShown,
@@ -735,10 +660,6 @@ export function folderHolds(
     resolveShown(projection, shown, folder, splitSegments(rest)).kind === "node";
 }
 
-/**
- * What stayed standing in a folder after a delete or an Undo took only what the model saw or
- * made: the folder with what is in it, and who put that there (the last record to set its place).
- */
 function keptStanding(
   cx: Context,
   after: TreeProjection,
@@ -756,7 +677,6 @@ function keptStanding(
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
 }
 
-/** The path the node had in Trash, matched against what the model wrote for it. */
 function pathMatches(
   projection: TreeProjection,
   node: TreeNode,
@@ -776,7 +696,6 @@ function pathMatches(
   );
 }
 
-/** One tree command on the copy under the lock. */
 export function runTreeCommand(
   scope: TreeScope,
   places: Places,
@@ -854,7 +773,6 @@ export function runTreeCommand(
         const into = movesInto(command.path, fromPath.folder, () => {
           const there = resolveShown(projection, shown, to.root, to);
           const self = resolveShown(projection, shown, fromPath.root, fromPath);
-          // The folder named is another folder: the same path with a position is a reorder.
           return (
             there.kind === "node" &&
             there.node.kind === "folder" &&
@@ -896,7 +814,6 @@ export function runTreeCommand(
           delta: changeDelta(emptied, filled),
         });
       }
-      // Several into one folder: each on its own, what could be moved is moved.
       const folder = destinationParent(cx, to, to.segments);
       if (folder.kind === "purged")
         return finish(
@@ -909,7 +826,6 @@ export function runTreeCommand(
       const notMoved: string[] = [];
       const leftOut: LeftOut[] = [];
       const going: Decided[] = [];
-      /** Each node named, first naming first, and whether it moves: what a folder carries goes with it. */
       const named = new Map<string, { from: string; goes: boolean }>();
       let nothingToMake: string | undefined;
       for (const from of command.from) {
@@ -982,7 +898,6 @@ export function runTreeCommand(
       const after = cx.scope.writer.view(cx.scope.view);
       const movedNode = decided[0]?.node.id as string;
       const folderNode = after.nodes.get((after.nodes.get(movedNode) as TreeNode).parent);
-      // The receipt hangs on a node: at a source's top there is no folder, so it hangs on a moved one.
       const subject = folderNode ? folderNode.id : movedNode;
       const landedAt = folderNode ? nodeUri(cx, after, folderNode) : uriOf(to.area, [], true);
       return finish({

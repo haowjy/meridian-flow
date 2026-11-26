@@ -1,7 +1,3 @@
-// What a result showed on Loro, and who changed what since the model's last read (design §5,
-// "The concurrent-change report"): the frontiers say which docs changed, the docs' commit messages
-// say who (`readCommitMessage`: a chat's turn, the writer's Apply or Discard, or else the writer).
-
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
   type BlockId,

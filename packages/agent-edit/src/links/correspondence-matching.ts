@@ -1,8 +1,5 @@
-// Exact lexicographic link assignment with explicit document-order completion on its optimal face.
-
 export interface CandidateRow {
   occurrences: number[];
-  /** Six tuple components per compatible occurrence, in the same order. */
   scores: number[];
 }
 const WIDTH = 6;
@@ -15,7 +12,6 @@ function compare(a: ArrayLike<number>, aOffset: number, b: ArrayLike<number>, bO
   return 0;
 }
 
-/** Choose the earliest document key among optimal assignments, independently of Hungarian traversal. */
 function documentOrder(
   tight: readonly number[][],
   matching: Int32Array,
@@ -78,7 +74,6 @@ function documentOrder(
 
   for (let row = 0; row < matching.length; row++) {
     for (const column of tight[row]) {
-      // Real columns are sorted by old occurrence, before equivalent unmatched dummies.
       if (column >= oldColumns || column === matching[row]) break;
       if (owner[column] >= 0 && owner[column] < row) continue;
       if (force(row, column)) break;
@@ -86,7 +81,6 @@ function documentOrder(
   }
 }
 
-/** Rectangular Hungarian assignment in the lexicographically ordered group Z^6. */
 function assignment(
   rows: readonly number[],
   columns: readonly number[],

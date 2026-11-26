@@ -1,27 +1,3 @@
-/**
- * The markdown door for clipboard text.
- *
- * Everything in a Meridian document is markdown, so text arriving on the
- * clipboard is read as the document it describes rather than the characters it
- * contains: a writer, or the AI relay they are working with, who pastes
- * headings, lists, fences, tables and links gets headings, lists, fences,
- * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
- * the wire uses, so nothing here has to know what markdown looks like. Pasted
- * `[[Name]]` parses as text here. The wikilink paste extension, where it is
- * mounted, contributes a parse extension that keeps an escaped `\[[` visible
- * to its transform, which spells it out again (`links/WikilinkPasteExtension.ts`).
- *
- * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
- * and MDX reads `<` and `{` as syntax. Fiction contains both.
- *
- * The door only opens when it has something to offer. ProseMirror's own
- * plain-text paste already produces paragraphs of literal text, so a parse that
- * amounts to those same paragraphs is declined and the default runs instead:
- * ordinary pasted prose never takes a detour through a parser that could
- * re-spell it. `markdownPasteAddsStructure` is that decision, made on the
- * parsed blocks rather than on a guess about the raw text.
- */
-
 import { markdownCodec, mdxCodec, type SerializedBlock } from "@meridian/markup";
 import { isBodyText } from "@meridian/prosemirror-schema";
 import {
@@ -41,17 +17,11 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
   return blocks.some((block) => !isBodyText(block) || carriesInlineStructure(block));
 }
 
-/**
- * Parsing is pure syntax: every link comes out unbound. The editor's
- * `transformPasted` binds them, and every picture source, for every paste,
- * text or HTML (`links/link-clipboard.ts`).
- */
 export function markdownClipboardParser(
   schema?: Schema,
   remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
-    // Paste-without-formatting asked for the characters, and gets them.
     if (plain) return defaultPlainTextPaste();
 
     let blocks: readonly PMNode[];
@@ -67,8 +37,6 @@ export function markdownClipboardParser(
     const meaningful = blocks.filter(isMeaningfulBlock);
     if (!markdownPasteAddsStructure(meaningful)) return defaultPlainTextPaste();
 
-    // One paragraph is inline content wherever the caret is: a bolded phrase
-    // pasted mid-sentence must join the sentence, not break it in two.
     const only = meaningful.length === 1 ? meaningful[0] : undefined;
     if (only && isBodyText(only)) return new Slice(Fragment.from(only), 1, 1);
 
@@ -92,13 +60,6 @@ function isMeaningfulBlock(block: PMNode): boolean {
   return !(isBodyText(block) && block.childCount === 0);
 }
 
-// Block structure cannot live inside a code fence — its content is the literal
-// characters — so a paste landing in one declines and lets ProseMirror's
-// default plain-text handling run. ProseMirror already keeps clipboard text
-// literal inside a code block, but the rule is ours, so it is stated here
-// rather than inherited. Table cells deliberately do not decline: a cell holds
-// any block, so it takes structured paste exactly like prose (a fence inside a
-// cell still refuses, because the rule is the fence's).
 function canHostBlocks($context: ResolvedPos): boolean {
   for (let depth = $context.depth; depth >= 0; depth -= 1) {
     if ($context.node(depth).type.spec.code) return false;
@@ -118,8 +79,6 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
 ) => {
   const schema = view.state.schema;
   let content = copied.content;
-  // A cell selection's slice is open around its table. The text codec needs the enclosing
-  // blocks too; throwing here also prevents ProseMirror from copying the parallel HTML slice.
   if (content.firstChild?.type.spec.tableRole === "row") {
     content = Fragment.from(schema.nodes.table.create(null, content));
   }
@@ -141,6 +100,5 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
   } catch {
     entries = mdxCodec({ schema }).serializeBlocks(blocks, links);
   }
-  // Joined by the document's own gaps, so tight items stay tight.
   return entries.map((entry) => entry.gap + entry.body).join("");
 };

@@ -1,33 +1,23 @@
-/**
- * The token model every diff caller shares: a document's top-level blocks flattened to block starts,
- * words with the whitespace before them, punctuation, inline atoms and whole non-text blocks.
- *
- * A text token's key is its marks and text. Its leading whitespace stays outside the key because it
- * depends on what precedes the token (a split turns " word" into "word"); alignment ignores it and
- * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
- */
-
 import { blankDocument, newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 
 export type Tok =
-  | { kind: "block"; key: string; node: PMNode } // start of a textblock; only type, attrs and marks are read
-  | { kind: "atom"; key: string; node: PMNode } // a whole non-textblock block (list, table, figure, rule)
+  | { kind: "block"; key: string; node: PMNode }
+  | { kind: "atom"; key: string; node: PMNode }
   | {
       kind: "text";
       key: string;
       ws: string;
       core: string;
-      word: boolean; // a word (letters, digits, marks, underscore), not punctuation
+      word: boolean;
       marks: readonly Mark[];
-      wsMarks?: readonly Mark[]; // when the leading space came from a run with other marks
+      wsMarks?: readonly Mark[];
     }
-  | { kind: "inline"; key: string; node: PMNode }; // inline atom: image, hard_break
+  | { kind: "inline"; key: string; node: PMNode };
 
 export const isBlockTok = (t: Tok) => t.kind === "block" || t.kind === "atom";
 export const isWordTok = (t: Tok) => t.kind === "text" && t.word;
-/** Identity ignoring marks and whitespace: a word that only gained a mark stays paired with itself. */
 export const coreKey = (t: Tok) => (t.kind === "text" ? `T${t.core}` : t.key);
 
 const keyCache = new WeakMap<PMNode, string>();
@@ -57,7 +47,6 @@ export function blockKey(node: PMNode): string {
 
 const SPACELESS_SCRIPTS =
   "\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Thai}\\p{sc=Lao}\\p{sc=Khmer}\\p{sc=Myanmar}";
-/** A character of a script written without spaces between words. */
 export const SPACELESS = new RegExp(`[${SPACELESS_SCRIPTS}]`, "u");
 const LETTER = `(?:(?![${SPACELESS_SCRIPTS}])[\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D])`;
 /**
@@ -72,7 +61,6 @@ const SEGMENT = new RegExp(
   "gu",
 );
 
-/** `text` as whitespace, word and other segments, which concatenate back to it. */
 export function segmentText(
   text: string,
 ): Array<{ segment: string; space: boolean; word: boolean }> {
@@ -160,16 +148,14 @@ export function shareBlockTokens(sides: readonly (readonly PMNode[])[]): void {
     }
 }
 
-/** A document side: its blocks and flattened tokens, with the maps between them. */
 export interface Side {
   blocks: readonly PMNode[];
   toks: Tok[];
-  starts: number[]; // token index of each block start; starts[blocks.length] = toks.length
-  blockOf: Int32Array; // token index -> block index
+  starts: number[];
+  blockOf: Int32Array;
 }
 
 const sideCache = new WeakMap<readonly PMNode[], Side>();
-/** Cached by the blocks array: a caller that keeps its base array between recomputes flattens it once. */
 export function buildSide(blocks: readonly PMNode[]): Side {
   let side = sideCache.get(blocks);
   if (!side) {
@@ -192,17 +178,12 @@ function flatten(blocks: readonly PMNode[]): Side {
   return { blocks, toks, starts, blockOf };
 }
 
-/** What `buildBlocks` had to change to make the tokens blocks: counts, no text. */
 export interface ShapeRepairs {
-  /** A mark the block's type cannot hold was dropped. */
   markDropped: number;
-  /** An inline node the block cannot hold moved to a paragraph after it. */
   inlineMovedOut: number;
-  /** Inline content with no paragraph to hold it got one. */
   strayInlineWrapped: number;
 }
 
-/** Rebuilds blocks from tokens. Never drops content: inline nodes a block can't hold follow it in a paragraph. */
 export function buildBlocks(
   schema: Schema,
   toks: readonly Tok[],
@@ -235,7 +216,6 @@ export function buildBlocks(
       blocks.push(t.node);
     } else {
       if (!cur) {
-        // Inline content with no textblock to hold it (after a whole block, or at the start).
         cur = { shell: schema.nodes.paragraph.create({ id: newBlockId() }), inline: [] };
         shape.strayInlineWrapped++;
       }
@@ -283,16 +263,13 @@ const coarse = <T>(a: T, b: T, empty: (x: T) => boolean): Array<[number, T]> => 
   ...(empty(b) ? [] : [[DIFF_INSERT, b] as [number, T]]),
 ];
 
-/** The one diff-match-patch call: a character diff of two strings, with no wall-clock deadline. */
 function textDiff(a: string, b: string): Array<[number, string]> {
   if (a.length + b.length > MAX_DIFF_CHARS) return coarse(a, b, (x) => !x);
   return makeDiff(a, b, NO_DEADLINE) as Array<[number, string]>;
 }
 
-/** Largest count of distinct keys one UTF-16 code per key can name (the surrogate block is skipped). */
 const MAX_CODES = 0xffff - 0x800 - 1;
 
-/** One code per distinct key, so dmp can diff key sequences as strings. Null once the codes run out. */
 function encodeKeys(keys: readonly string[], codes: Map<string, string>): string | null {
   let s = "";
   for (const k of keys) {
@@ -308,12 +285,6 @@ function encodeKeys(keys: readonly string[], codes: Map<string, string>): string
   return s;
 }
 
-/**
- * Diffs two key sequences as `[op, count]` runs. An oversized unit in `align.ts` uses `boundedDiff`
- * instead, which stays exact longer. The common prefix and suffix are trimmed first; if the middle
- * is still past `MAX_DIFF_KEYS`, or has more distinct keys than a code can name, it is one delete
- * and one insert (coarser, never wrong).
- */
 export function diffKeys(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   let lo = 0;
   while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
@@ -338,11 +309,9 @@ export function diffKeys(a: readonly string[], b: readonly string[]): Array<[num
   return out;
 }
 
-/** A string as the word, space and punctuation segments the review tokenizer uses; they concatenate back to it. */
 const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
 
 const wordKeys = new WeakMap<PMNode, string[]>();
-/** A block's words in order (a non-text block is one pseudo-word: its key). */
 export function blockWords(node: PMNode): string[] {
   let w = wordKeys.get(node);
   if (!w) {
@@ -355,7 +324,6 @@ export function blockWords(node: PMNode): string[] {
 }
 
 const containedWords = new WeakMap<PMNode, string[]>();
-/** The words a block holds: a container's are its descendant textblocks' in order (a leaf block holds none). */
 export function contentWords(node: PMNode): string[] {
   if (node.isTextblock) return blockWords(node);
   let w = containedWords.get(node);
@@ -370,7 +338,6 @@ export function contentWords(node: PMNode): string[] {
 }
 
 const wordCounts = new WeakMap<PMNode, Map<string, number>>();
-/** Shared words ignoring order: an upper bound on the in-order count, and cheap. */
 export function sharedBound(a: PMNode, b: PMNode): number {
   const get = (n: PMNode) => {
     let m = wordCounts.get(n);
@@ -388,11 +355,6 @@ export function sharedBound(a: PMNode, b: PMNode): number {
   return n;
 }
 
-/**
- * Share of words two blocks have in order, over the longer block's words (or the shorter's, for
- * `inPlace` pairs, where position already agrees). A container (a table, a JSX container) counts the words of
- * its textblocks. 1 for equal blocks, 0 for different kinds of block or when it can't reach `floor`.
- */
 export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): number {
   if (a.type !== b.type && !(a.isTextblock && b.isTextblock)) return 0;
   if (blockKey(a) === blockKey(b)) return 1;
@@ -408,7 +370,6 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
   return common / denom;
 }
 
-/** One run of a word diff: text both sides share, or text only one side has. */
 export interface WordPart {
   kind: "same" | "removed" | "added";
   text: string;
@@ -420,12 +381,6 @@ const PART_KIND = {
   [DIFF_INSERT]: "added",
 } as const;
 
-/**
- * Diff at word granularity over the review's own segments. The AI write lowering, the room writer,
- * Review changes and an edit's excerpt all read it, so one edit has one set of changed words
- * wherever it shows; the write then refines a changed run that only gained characters by character
- * (`retainShared`).
- */
 export function wordDiff(a: string, b: string): WordPart[] {
   const wa = splitWords(a);
   const wb = splitWords(b);

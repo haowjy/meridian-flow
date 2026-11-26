@@ -55,10 +55,6 @@ if (DEBUG_FEATURE_ALLOWED) {
 
 if (typeof indexedDB !== "undefined") void deleteStaleYjsCopies(indexedDB);
 
-// Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
-// so the entire feature (and its lazy chunk) is dead-code-eliminated from
-// production builds. Off by default in dev; toggle with ?debug=1 / ⌘⌃D, then
-// Alt+click any turn/block to inspect its record. See features/debug.
 const DebugOverlay =
   import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
@@ -217,7 +213,6 @@ function AuthenticatedProviderTree({
               <DensityPopoverCollisionProvider>
                 <ImportsProvider key={user.userId}>
                   <div className="app-frame">
-                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
                     <Outlet />
                   </div>
                   <SettingsDialog />

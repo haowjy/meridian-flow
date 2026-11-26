@@ -1,20 +1,4 @@
-import type { DraftId } from "@meridian/contracts";
-/**
- * Copy's destination half in one ContextFS source: naming and identity, planned without a
- * lock, and the insertion of a plan inside the caller's command transaction.
- *
- * A copy keeps its source's names: one that a sibling has makes a twin (rule 14), so planning
- * reads nothing of the destination and holds nothing. The insert is one `submit` on the list,
- * and the entries it answers carry the paths that landed (a twin's segment has its `~id`).
- *
- * A copied folder is inserted before its children, and the children take ranks in source
- * order, so the copy reproduces the source's visible order. Two passes, because a link may cross
- * roots: the plan mints every identity first (a selected root takes the device's id when it
- * sent one), and the caller binds each document against the whole old→new map before anything
- * is written.
- */
-
-import type { DocumentId, UserId } from "@meridian/contracts";
+import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { type ContextSiblingPosition, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
@@ -196,10 +180,7 @@ export async function insertPlannedTrees(
   }
   if (refusal) return Err(refusal);
   if (!created.created) return Ok({ kind: "replan" });
-  // An upload's arrival publishes with its live identity; a tracked document's waited for its
-  // content, in the creation aggregate.
   await deps.arrivals?.settle(binaryIds as DocumentId[]);
-  // Projections read committed rows and need no namespace lock. Match Copy's bounded fan-out.
   runAfterDrizzleCommit(() => {
     const queue = documents.map((document) => document.id as DocumentId);
     const worker = async () => {

@@ -1,12 +1,3 @@
-/**
- * Nodes and their spelled addresses, in Trash included: the tree owner's address loader.
- * Answers where a node is in a view, deleted or not; `tree-view.ts` decides what a reader
- * sees and uses these to spell what it decided. A document in no view has no place and no
- * address.
- *
- * A node in Trash, or deleted in a Work, reads as deleted and keeps the address its folder
- * chain spells; a delete takes the whole subtree, so a node's own flag says it.
- */
 import type {
   ContextSourceId,
   DocumentId,
@@ -31,41 +22,25 @@ import type { TreeList } from "../ports/tree-list-store.js";
 import { ownerFrom, ownerProjectIdSql } from "./source-owner.js";
 import { LIVE_TREE, type TreeView } from "./tree-relations.js";
 
-/** A decoded canonical address resolved to storage coordinates. */
 export type DocumentCoordinates = {
-  /** Who owns the source: its project (a Work's source, its Work's project), or the account for `user://`. */
   owner: TreeList;
-  /** The account the owner answers to (a project's owner, or the account); keys the `user://` namespace. */
   userId: string;
   scheme: ContextUriScheme;
-  /** Address coordinate: null for project-scoped schemes and for No Work. */
   workId: string | null;
-  /** Lock coordinate: a Work-scoped source locks by its persisted Work row, No Work included. */
   lockWorkId: string | null;
-  /** A lineage Scratch's first chat; null or absent for every other source. */
   rootThreadId?: string | null;
-  /** The chat whose uploads hold the document; null or absent for every other source. */
   chatThreadId?: string | null;
-  /** Path inside the source, with extension. */
   path: string;
 };
 
-/** Where a document is in a view, in Trash or deleted in the Work included. */
 export type DocumentAddress = DocumentCoordinates & {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;
-  /** Decoded canonical URI. */
   uri: string;
   deleted: boolean;
   image: boolean;
 };
 
-/**
- * Every node the view places, the deleted ones too (`deleted`): live's `tree_nodes` rows, and
- * for a Work the same rows it has no row for plus its own. For address and chain reads by id;
- * what a reader shows is `visibleDocuments` / `visibleFolders`. A walk that steps by name uses
- * those, not this.
- */
 export function placedNodesSql(view: TreeView): SQL {
   const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.segment, t.extension, t.stem,
       t.file_type, t.rank, t.location_version, t.trash_record IS NOT NULL AS deleted,
@@ -83,19 +58,11 @@ export function placedNodesSql(view: TreeView): SQL {
     WHERE b.draft_id = ${draft})`;
 }
 
-/** Which content documents to spell. */
 export type DocumentAddressSelection =
   | { ids: readonly string[] }
-  /** Every document whose name is one of these, in these projects or this account's home folder. */
   | { names: readonly string[]; projectIds: readonly string[]; accountId?: string }
-  /** Every document in this source whose rendered filename is exactly this. */
   | { sourceId: string; filename: string };
 
-/**
- * Content documents and their canonical addresses where the view places them: each folder
- * chain walked up to its source root. A document the view does not place is not answered; a
- * path that cannot be spelled canonically is dropped.
- */
 export async function loadDocumentAddresses(
   db: DrizzleDb,
   selection: DocumentAddressSelection,
@@ -189,7 +156,6 @@ export async function loadDocumentAddresses(
   });
 }
 
-/** A stored image's `file_type` is its filetype (`png`, `jpg`, `svg`), not the word `image`. */
 function isImageFiletype(fileType: string): boolean {
   const disposition = classifyFiletype(fileType);
   return disposition.kind === "binary" && disposition.fileType === "image";
@@ -222,18 +188,11 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   return sql`d.context_source_id = ${selection.sourceId}::uuid AND d.segment = ${selection.filename}`;
 }
 
-/**
- * The live source a scheme names: a project-scoped one in its project (the home folder in its
- * account), a lineage Scratch by its first chat, a Work-scoped one in the named Work
- * or No Work. A deleted Work's source stays until its purge removes it: its files read, and
- * file policy refuses the writes.
- */
 export async function presentSourceId(
   db: DrizzleDb,
   input: {
     scheme: string;
     workId: string | null;
-    /** Whose source: the project the scheme is read in, or the account for the home folder. */
     owner: TreeList;
     rootThreadId?: string | null;
     chatThreadId?: string | null;
@@ -283,17 +242,14 @@ export async function presentSourceId(
   return source?.id ?? null;
 }
 
-/** One folder of a chain: walked by id, so a folder in Trash spells too. */
 export type FolderLink = {
   id: FolderId;
   parentId: FolderId | null;
   name: string;
-  /** Its path segment: the name, and a later twin's `~` suffix. */
   segment: string;
   deleted: boolean;
 };
 
-/** Each folder and its ancestors in the view, nearest first (the folder itself first). */
 export async function loadFolderChains(
   db: DrizzleDb,
   folderIds: readonly (FolderId | null)[],
@@ -342,7 +298,6 @@ export type FolderAddress = Omit<NodeAddress, "documentId" | "image"> & {
   deleted: boolean;
 };
 
-/** Canonical locations of folders in a view, in Trash included. */
 export async function loadFolderAddresses(
   db: DrizzleDb,
   folderIds: readonly string[],
@@ -391,7 +346,6 @@ export async function loadFolderAddresses(
   });
 }
 
-/** Source-relative path of a folder chain (nearest first), with a trailing slash unless empty. */
 export function chainPrefix(chain: readonly FolderLink[]): string {
   return [...chain]
     .reverse()
@@ -399,29 +353,22 @@ export function chainPrefix(chain: readonly FolderLink[]): string {
     .join("");
 }
 
-/** A node's location in some view: the row's, or a draft's. */
 export type NodeLocation = {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
-  /** The path segment as the view shows it: the filename, and a later twin's `~` suffix. */
   segment: string;
   fileType: string;
 };
 
-/** Where a node is, spelled as a canonical address. */
 export type NodeAddress = {
   documentId: DocumentId;
-  /** As `DocumentCoordinates.owner`. */
   owner: TreeList;
-  /** As `DocumentCoordinates.userId`. */
   userId: UserId;
   scheme: ContextUriScheme;
   workId: WorkId | null;
   workHandle: string | null;
-  /** A lineage Scratch's first chat; null for every other source. */
   rootThreadId: string | null;
-  /** The chat whose uploads these are; null for every other source. */
   chatThreadId: string | null;
   contextSourceId: ContextSourceId;
   path: string;
@@ -429,10 +376,6 @@ export type NodeAddress = {
   image: boolean;
 };
 
-/**
- * Spell each location as an address, in input order; null when a folder in its chain is
- * missing, or its source or scheme can't be spelled canonically.
- */
 export async function spellNodeAddresses(
   db: DrizzleDb,
   locations: readonly NodeLocation[],
@@ -519,10 +462,6 @@ export async function spellNodeAddresses(
 
 export type DocumentPlacement = { contextSourceId: ContextSourceId; fileType: string };
 
-/**
- * Each document's source and type from a row that places it (live's, else a Work's): they do
- * not differ between views. A document in no view has none.
- */
 export async function loadDocumentPlacements(
   db: DrizzleDb,
   documentIds: readonly DocumentId[],
@@ -558,7 +497,6 @@ export async function loadDocumentPlacement(
   return (await loadDocumentPlacements(db, [documentId])).get(documentId) ?? null;
 }
 
-/** Who owns a document, a project or an account, whether or not any view places it. */
 export async function ownerOfDocument(
   db: DrizzleDb,
   documentId: DocumentId,

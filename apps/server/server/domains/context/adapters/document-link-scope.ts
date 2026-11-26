@@ -194,7 +194,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const id of newIds) snapshot.rows.set(id, null);
     for (const row of loadedById) remember(snapshot, row);
 
-    // Written relative links resolve against the holder, at its address in its view.
     if (holder && request.written?.length) {
       for (const target of writtenAddresses(request.written, holderUri, request.uploadsChat)) {
         (target.kind === "folder" ? folderAddresses : addresses).add(target.uri);
@@ -455,7 +454,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       (row): row is Row => row !== null && !snapshot.readable.has(row.id),
     );
     if (unknown.length === 0) return;
-    // A document that exists only in a Work's draft has its facts from that Work's view.
     const draftViews = new Map<DocumentId, TreeView>();
     for (const { statuses, draft } of snapshot.views.values()) {
       if (!draft) continue;
@@ -609,7 +607,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
   };
 }
 
-/** A document the reader may name, read and reach: the one authorization boundary. */
 function reachable(document: CatalogDocument | null): document is CatalogDocument {
   return (
     document !== null && document.presence !== "deleted" && document.readable && document.nameable
@@ -649,10 +646,6 @@ const EMPTY_CATALOG: HolderCatalog = {
 
 const UNLOADED = Symbol("unloaded");
 
-/**
- * The snapshot as one view sees it, from one holder (null for a reader door); reads the
- * maps at each call, so later prepares count.
- */
 function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
@@ -661,7 +654,6 @@ function snapshotCatalog(
   const key = viewKey(view);
   const owned = (row: Row) =>
     ownedByRequest(row.list, { projectId: snapshot.projectId, accountId: snapshot.viewer });
-  /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
     const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
     if (status) return status;
@@ -693,7 +685,6 @@ function snapshotCatalog(
       nameable: owned(row),
     };
   };
-  /** The document this view's tree reaches at an address a link names; undefined: not loaded. */
   const reachedAt = (uri: string): CatalogDocument | null | undefined => {
     const id = snapshot.resolved.get(key)?.get(uri);
     if (id === undefined) {
@@ -729,10 +720,6 @@ function snapshotCatalog(
       : undefined;
   };
   return {
-    /**
-     * What this draft view created at an address a typed link names, as the tree reaches it. Only the view's own draft counts (`documentAt` shows
-     * an ahead ref any draft's creation), and only a document the reader may name and read.
-     */
     draftCreatedAt(uri) {
       if (view.kind !== "draft" || !snapshot.addresses.has(uri)) return null;
       const id = snapshot.resolved.get(key)?.get(uri);

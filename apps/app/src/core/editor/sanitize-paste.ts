@@ -148,13 +148,9 @@ function copyRecordedTarget(
 }
 
 function copyImageAttributes(source: Element, target: Element): boolean {
-  // A picture copied from a Meridian document names a document address,
-  // which is its source here; nothing a browser would fetch on its own.
   const address = copyRecordedTarget(source, target, clipboardPictureRef);
   const remote = clipboardRemoteSource(source.getAttribute(REMOTE_SRC_ATTRIBUTE));
   if (remote) target.setAttribute(REMOTE_SRC_ATTRIBUTE, remote);
-  // An upload recorded with no address keeps no source here: the link
-  // transform restores its `asset:` source in the same project or drops it.
   const recordedUpload = !address && target.hasAttribute(LINK_REF_ATTRIBUTE);
   if (!recordedUpload && !remote) {
     const rawSrc = source.getAttribute("src");
@@ -182,8 +178,6 @@ function isSafeImageSrc(src: string): boolean {
   if (/^data:/i.test(src)) return /^data:image\/[a-z\d.+-]+(?:;[^,]*)?,/i.test(src);
   if (src.startsWith("//")) return true;
   if (!EXPLICIT_URI_SCHEME.test(src)) return true;
-  // A document address with no Meridian metadata (`manuscript://art/map.png`)
-  // is a source like its bare-path spelling: the image door assigns it fresh.
   if (classifyLinkTarget(src)?.kind === "scheme") return true;
 
   try {

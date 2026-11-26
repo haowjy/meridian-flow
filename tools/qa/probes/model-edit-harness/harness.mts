@@ -39,8 +39,6 @@ function childBundle(): Promise<string> {
                 kind: args.kind,
                 pluginData: "inner",
               });
-              // A published package under our scope (mars-schema's CommonJS WASM loader) must stay
-              // external too: only workspace source, which resolves outside node_modules, is inlined.
               if (found.errors.length || !found.path.includes("/node_modules/")) return null;
               return { path: found.path, external: true };
             });

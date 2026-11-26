@@ -61,41 +61,28 @@ import { TrashSource } from "./TrashSource";
 import { useTrashDrop } from "./trash-drop";
 import { useSidebarUndo } from "./use-sidebar-undo";
 
-/** The trees the sidebar lists: the project's areas, and the picked named Work's Scratch. */
 const TREE_SCHEMES = [...EDITOR_CONTEXT_SCHEMES, "scratch"] as const;
 type TreeKey = (typeof TREE_SCHEMES)[number];
 
-/**
- * Every pane the sidebar can show: the strip's Chat, tree tabs and Changes, and the quiet rows
- * at its foot, Scratch (under a named Work), Unfiled and Trash.
- */
 type SourceKey = "chat" | TreeTab | "scratch" | "unfiled" | "trash" | "changes";
 const FOOT_SOURCES = ["scratch", "unfiled", "trash"] as const satisfies readonly SourceKey[];
 
 type WriteSources = {
   projectId: string;
-  /** The Work picker's scope, whose chats the Chat list shows first. */
   scopeWorkId: string | null;
-  /** The chat on screen: its row reads as current, Changes asks of it. */
   chatThreadId: string | null;
-  /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
-  /** Main's document's source, as far as the sidebar lists it: the source it shows. */
   activeScheme: ProjectContextTreeScheme | null;
-  /** Main's document, marked current wherever the tree on show puts it. */
   activeDocumentId: string | null;
   onSelectFile: (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
     options?: { focus?: true },
   ) => void;
-  /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
   catalogs: Record<TreeKey, TreeViewResult>;
-  /** Whether each tree shown takes changes: an ended Work's Scratch takes none, and on Draft no tree of a deleted Work does. */
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
-  /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkDraftCommands;
 };
 
@@ -107,22 +94,15 @@ function useWriteSources(): WriteSources {
   return sources;
 }
 
-/**
- * One sidebar source. `useDrop` is the drop at the source's root, used by its
- * tab (where `reveal` shows the source) and by its pane; `Body` is its pane.
- */
 type Source = {
   label: () => string;
-  /** The tab's name when it says more than the label (whose changes). */
   title?: (sources: WriteSources) => string;
-  /** A count on the tab of what waits on the writer; 0 shows none. */
   badge?: (sources: WriteSources) => number;
   icon: LucideIcon;
   useDrop: (reveal?: () => void) => SourceDrop;
   Body: ComponentType<{ drop: SourceDrop }>;
 };
 
-/** A drop at a tree's top level; a drag resting on it accepted shows the source. */
 function useRootDrop(scheme: TreeKey, reveal?: () => void): SourceDrop {
   const rootId = useWriteSources().catalogs[scheme].tree?.root.entryId ?? null;
   const target = useMemo(
@@ -171,7 +151,6 @@ const SOURCES: Record<SourceKey, Source> = {
           scopeWorkId={scopeWorkId}
           noWorkId={noWork?.id ?? null}
           currentThreadId={chatThreadId}
-          // The drawer closes once the navigation commits: a rejected one leaves it open.
           onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
           onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
         />
@@ -206,7 +185,6 @@ const SOURCES: Record<SourceKey, Source> = {
   trash: {
     label: () => t`Trash`,
     icon: Trash2,
-    // Dropping deletes, so the drag needs no look at Trash first.
     useDrop: () => useTrashDrop(useWriteSources().projectId),
     Body: ({ drop }) => {
       const { projectId, onPicked } = useWriteSources();
@@ -225,12 +203,10 @@ const SOURCES: Record<SourceKey, Source> = {
       const shownDraft = useShownDraft(projectId, chatThreadId);
       return (
         <ChangesSource
-          // A question asked of one Work must not be answered for the next one picked.
           key={changes.drafts.map((draft) => draft.id).join()}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
-          // Two drafts may change one document: the row of the draft main paints is the open one.
           isOpen={(file) =>
             file.documentId === activeDocumentId &&
             shownDraft(file.documentId)?.draftId === file.item.draftId
@@ -242,7 +218,6 @@ const SOURCES: Record<SourceKey, Source> = {
   },
 };
 
-/** A source nothing is dropped on. */
 const IDLE_DROP: SourceDrop = { dropProps: {}, dropState: "idle" };
 
 function isTreeKey(key: string): key is TreeKey {
@@ -253,32 +228,15 @@ function isTreeTab(key: string): key is TreeTab {
   return (TREE_TABS as readonly string[]).includes(key);
 }
 
-/** Whether Agents lists the entry at this tree path ("/.agents/skills", or "" at the top). */
 function listedInAgents(scheme: TreeKey, path: string): boolean {
   return agentsLocationOf(scheme, path.replace(/^\//, "")) !== null;
 }
 
-/**
- * The source that shows an entry of `scheme`: the one on screen when it lists the entry, else
- * Agents for one it lists, else the scheme's own tree. Agents and Your files both list
- * `~/.agents/`, so neither takes the other's place.
- */
 function sourceShowing(scheme: TreeKey, inAgents: boolean, shown: SourceKey): SourceKey {
   if (shown === scheme || (shown === "agents" && inAgents)) return shown;
   return inAgents ? "agents" : scheme;
 }
 
-/**
- * The sidebar's sources, on the desktop sidebar and the phone drawer: one pane at a time behind
- * a strip of tabs, so each list gets the full height. The strip is Chat, then the tree sources
- * the writer chose (⋯ picks them), then Changes while it has something to offer. Scratch (under
- * a named Work), Unfiled and Trash sit as quiet rows at the foot and show their pane the same
- * way. Tabs are icons named on hover; the pane names its source. Main's item's source becomes
- * the shown one when it changes (a document's tree, Trash for a deleted one, the Chat list for a
- * chat), unless Changes is shown; a document the sidebar doesn't list leaves it where it is.
- * The strip, the foot and every pane are one list: one selection, and a row dragged anywhere in
- * the sidebar drops on any tab, row or pane.
- */
 export function SourcesBody({
   projectId,
   scopeWorkId,
@@ -294,13 +252,10 @@ export function SourcesBody({
   "catalogs" | "writable" | "changes" | "changesCommands" | "activeDocumentId"
 > & {
   contextLive: boolean;
-  /** Who owns main's document when it is a Work's Scratch note. */
   activeWorkId: string | null;
 }) {
   const scratchWorkId = useScopeScratchSource(projectId)?.owner.workId ?? null;
-  // An archived or deleted Work's Scratch shows, and takes no change until it is back.
   const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
-  // Another owner's note (another Work's, a chat's) is in no list here.
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
   const activeScheme = listed ? mainScheme : null;
@@ -337,12 +292,10 @@ export function SourcesBody({
     setPicked(asked.source);
     settle();
   }, [asked, settle]);
-  // A deleted document main shows is Trash's, so Trash shows, as a document shows its tree.
   const trashShown = useTrashNavigation().shown;
   useEffect(() => {
     if (trashShown) follow("trash");
   }, [trashShown, follow]);
-  // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
   const creating = useOptionalTreeCreation()?.request;
   const creatingScheme = creating && isTreeKey(creating.scheme) ? creating.scheme : null;
   const creatingInAgents =
@@ -383,7 +336,6 @@ export function SourcesBody({
     version,
   });
   const mainTree = activeScheme && isTreeKey(activeScheme) ? activeScheme : null;
-  // Only a file of yours can be listed by two sources; which is known once your tree shows it.
   const activePath =
     mainTree === "user" && activeDocumentId
       ? (catalogs.user.tree?.findDocument(activeDocumentId)?.path ?? null)
@@ -393,7 +345,6 @@ export function SourcesBody({
   useEffect(() => {
     if (mainTree && placed) follow(sourceShowing(mainTree, inAgents, shownRef.current));
   }, [mainTree, placed, inAgents, follow]);
-  // Rows an action placed show in the source that holds them.
   const placedIn = useRef<(folderId: string) => void>(() => undefined);
   placedIn.current = (folderId) => {
     for (const scheme of TREE_SCHEMES) {
@@ -407,7 +358,6 @@ export function SourcesBody({
   useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
   const { openDraftFile } = useItemLauncher();
-  // On Draft a document the Work drafts opens on its plain draft.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
     (scheme, file, options) => {
       const draft = drafting && shell ? shell.draftOf(file.documentId) : null;
@@ -462,7 +412,6 @@ export function SourcesBody({
         const destination = destinationOf(target.scheme, target.folder);
         if (!destination || !dropImport) return;
         dropImport(destination, items);
-        // The imported rows' ids come from the server: the folder opens, and they arrive in it.
         revealPlaced(target.folder?.entryId ?? target.treeRootId, [], null);
       },
     }),
@@ -543,7 +492,6 @@ export function SourcesBody({
   );
 }
 
-/** The shown source's pane; keyed by source, so each source's drop hook keeps its own place. */
 function SourceView({ source }: { source: SourceKey }) {
   const { useDrop, Body } = SOURCES[source];
   const drop = useDrop();
@@ -558,9 +506,7 @@ function SourceTabs({
   onSelect,
 }: {
   projectId: string;
-  /** The writer's tree tabs, which the ⋯ menu shows and changes. */
   chosen: readonly TreeTab[];
-  /** The tabs on the strip now: Chat, the chosen trees, and Changes while it is offered. */
   tabs: readonly SourceKey[];
   source: SourceKey;
   onSelect: (key: SourceKey) => void;
@@ -589,7 +535,6 @@ function SourceTabs({
         {chosen.map(tab)}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            {/* Sized like the tabs it sits among. */}
             <IconButton
               size="sm"
               label={t`Choose tabs`}
@@ -626,11 +571,6 @@ function SourceTabs({
   );
 }
 
-/**
- * The sidebar's version, as the page's version chip draws it: "Live" or "Draft", offered while
- * the Work has pending changes. Every tree, click, rename, move and Ctrl+Z in the sidebar follows
- * it, and so does main's page. Outside the tab strip, so it never scrolls out of view.
- */
 function TreeVersionChip({ projectId }: { projectId: string }) {
   const shell = useShellTreeVersion();
   const touch = useCoarsePointer();
@@ -664,7 +604,6 @@ function TreeVersionChip({ projectId }: { projectId: string }) {
   );
 }
 
-/** A quiet row at the sidebar's foot that shows its source's pane, and takes drops as its tab would. */
 function FootSource({
   source,
   current,
@@ -693,16 +632,9 @@ function FootSource({
   );
 }
 
-/**
- * A tab, like the strip's ⋯ button: 28px, 44px under a finger. With a mouse every tab and ⋯
- * fit a default-width sidebar; under a finger six tabs and ⋯ fill the 320px phone drawer only
- * because the row drops its gaps and half its inset. More tabs, or a narrower sidebar, scroll
- * the strip.
- */
 const TAB_BUTTON =
   "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors coarse:size-11";
 
-/** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({
   source,
   active,

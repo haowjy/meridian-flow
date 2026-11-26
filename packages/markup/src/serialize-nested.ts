@@ -66,7 +66,6 @@ export function serializeNested(
 
   return blocks.map((block, index) => {
     const own = facts[index];
-    // Markers are decided in document order, before any later block asks for them.
     own.steps.forEach((step, k) => {
       if (step.type === "list") delimiterFor(index, k);
     });
@@ -112,8 +111,6 @@ function joinsDirectly(
   if (type === "paragraph" && before.attrs.level != null) return true;
   const opened = facts.steps.slice(shared + 1);
   if (opened.length > 0) {
-    // Every container the block opens on its first line counts as interrupting the item's
-    // paragraph, so a numbered list there must start at 1.
     if (opened[0].type === "quote" && beforeFacts.steps[shared + 1]?.type === "quote") return false;
     return (
       body.split("\n")[0] !== "" &&

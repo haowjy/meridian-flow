@@ -35,11 +35,6 @@ type RoomState = {
   hold: Promise<CopyHold> | null;
 };
 
-/**
- * Longest a released live session stays connected to the server without it acknowledging the
- * unsent edits. The clock runs only while connected and restarts on every drop, so being offline
- * never runs it down.
- */
 const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
 type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
@@ -418,10 +413,6 @@ export class DocumentSessionRegistry {
     );
   }
 
-  /**
-   * A fork room's session is made over its Live room's, which is open by then: the fork's
-   * room counts as retaining it (`isRetained`) from here until the fork's session is destroyed.
-   */
   private createSession(
     room: DocumentRoom,
     persistence: DocumentSessionOptions["persistence"],
@@ -626,7 +617,6 @@ export class DocumentSessionRegistry {
     for (const retained of this.retainedByOwner.values())
       for (const [key, owner] of retained) {
         add(key, owner);
-        // A retained fork wants its Live room open on the same terms.
         if (owner.lease.room.kind === "fork") {
           const live = this.rooms.get(owner.lease.documentId);
           if (live) add(owner.lease.documentId, { lease: live.lease, detached: owner.detached });
@@ -648,10 +638,6 @@ export class DocumentSessionRegistry {
     }
   }
 
-  /**
-   * The one place a retained session's socket closes: no owner wants it open and it has no
-   * deliverable unsent edits. Attaching is `getOrCreateLiveSession`'s.
-   */
   private detachUnwantedTransport(session: DocumentSession): void {
     if (session.getSnapshot().status === "detached" || this.mustKeepForUnsentEdits(session)) return;
     void session.detachTransport().catch(reportError);
@@ -686,14 +672,6 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.set(roomKey, timer);
   }
 
-  /**
-   * A session no host holds. One with unsent edits stays until they are
-   * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
-   * room that stays connected without acknowledging ends it at the cap; offline time never counts.
-   * Then one whose room still takes writes and whose history has entries is kept for its undo,
-   * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
-   * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
-   */
   private releaseUnheld(roomKey: string, state: RoomState, session: DocumentSession): void {
     if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
     else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
@@ -701,7 +679,6 @@ export class DocumentSessionRegistry {
     else this.retireLiveSession(roomKey, state);
   }
 
-  /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
   private keepForUndo(roomKey: string, state: RoomState, session: DocumentSession): void {
     const history = session.history;
     const kept = { changed: ++this.undoClock, stop: () => {} };
@@ -752,7 +729,6 @@ export class DocumentSessionRegistry {
       .retire(roomKey, session)
       .then(async () => {
         (await hold)?.release();
-        // Its Live room no longer reads for it.
         if (session.room.kind === "fork") this.scheduleTeardownIfUnretained(session.documentId);
       })
       .catch(() => undefined);
@@ -768,7 +744,6 @@ export class DocumentSessionRegistry {
     this.releaseUnheld(roomKey, state, session);
   }
 
-  // A restart cancels the pending teardown; a room no host retains still needs one.
   private scheduleTeardownIfUnretained(roomKey: string): void {
     if (this.rooms.get(roomKey)?.session && !this.isRetained(roomKey))
       this.scheduleTeardown(roomKey);

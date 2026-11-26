@@ -176,8 +176,6 @@ export function tableVerbStates(
   const map = TableMap.get(table);
   const header = hasHeaderRow(table);
   const spans = tableHasSpans(table);
-  // A header row is structural where it exists: nothing goes above it, and it
-  // does not travel. A headerless table has no such floor.
   const floor = header ? 1 : 0;
   const onHeader = rowFrom < floor;
 
@@ -210,9 +208,6 @@ export function tableVerbStates(
     deleteColumn: map.width <= 1 ? blocked("single-column") : RUNS,
 
     mergeCells: mergeTableCells(state) ? RUNS : blocked(mergeRefusal(state, cellCount)),
-    // Upstream refuses a multi-cell selection BEFORE it looks for a span, so
-    // "this cell is not merged" would be a lie about a selection that contains
-    // a merged cell.
     splitCell: splitCell(state)
       ? RUNS
       : blocked(cellCount > 1 ? "many-cells-selected" : "not-merged"),
@@ -285,13 +280,6 @@ export function runTableVerbOn(editor: Editor, target: TableMenuTarget, id: Tabl
   return runTableVerb(editor, id);
 }
 
-/**
- * The pointer sits inside one of the cells the selection covers.
- *
- * Not the selection's `from`..`to` range: a rectangle two columns wide in a
- * four-column table spans cells it does not contain, and aiming at one of
- * those is not aiming at what was swept.
- */
 function pointerInsideCellSelection(state: EditorState, docPos: number | null): boolean {
   const { selection } = state;
   if (docPos === null || !(selection instanceof CellSelection)) return false;
@@ -303,22 +291,6 @@ function pointerInsideCellSelection(state: EditorState, docPos: number | null): 
   return inside;
 }
 
-/**
- * The two cells a right-click on a swept rectangle opens a menu for, or null
- * when this right-click is not that. Synchronous by contract.
- *
- * A rectangle of cells is the one table selection no grip can make, and the
- * only path to merging two arbitrary cells. Nothing above this rung wants it:
- * the formatting menu admits `TextSelection` and `AllSelection` only, so
- * without this a writer who swept two cells and right-clicked got silence.
- *
- * A bare caret in a cell is NOT this: it falls to the ladder's `caret` rung,
- * where the formatting menu opens carrying the table's own lists.
- *
- * The cells rather than a boolean, because the claim is the last moment the
- * rectangle is on screen: the menu it opens has to hold what it acts on before
- * the next remote write turns the selection back into a caret.
- */
 export function claimedSweptCells(
   editor: Editor,
   target: ContextClaimTarget,
@@ -327,8 +299,6 @@ export function claimedSweptCells(
   const { selection } = editor.state;
   if (!(selection instanceof CellSelection)) return null;
   if (!pointerInsideCellSelection(editor.state, target.docPos)) return null;
-  // A grip or an overlay row standing over the table is chrome, and its own
-  // rung took the event further up the ladder.
   const chrome = getEditorChrome(editor);
   if (chrome && isEditorChromeElement(chrome, target.element)) return null;
   return { anchor: selection.$anchorCell.pos, head: selection.$headCell.pos };

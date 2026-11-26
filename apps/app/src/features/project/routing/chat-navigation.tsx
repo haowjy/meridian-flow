@@ -1,12 +1,3 @@
-/**
- * Project chat navigation. Main shows a new chat's composer (`/chats`), Recent chats
- * (`/chats/recent`) or one chat the address names;
- * `useMainArrival` records it in the chat slot. What chat sits beside a document is the side's
- * resolution (`side/side-item.ts`), not this. Every way of opening a chat in main navigates there.
- *
- * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import {
   createContext,
   type ReactNode,
@@ -29,39 +20,19 @@ import type { ProjectDestination } from "./project-address";
 import type { NavigationSettlement } from "./project-navigation";
 import type { NavigationOptions } from "./project-route";
 
-/**
- * The chat lane's page main shows: a new chat's composer, Recent chats, or the chat the address
- * names. Null when main is in Write.
- */
 export type ChatDisplay =
   | { kind: "new" }
   | { kind: "chat-recents" }
   | { kind: "thread"; threadId: string };
 
 export type ChatNavigation = {
-  /** The chat main shows; null when main holds no chat. */
   display: ChatDisplay | null;
-  /** The chat slot: the last chat on screen, in either pane. */
   lastShownChatId: string | null;
-  /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
   openChat: (threadId: string, options?: { replace?: boolean }) => Promise<NavigationSettlement>;
-  /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
   openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<NavigationSettlement>;
-  /** Main goes to Recent chats; already there, nothing moves. */
   openChatRecents: (options?: { replace?: boolean }) => Promise<NavigationSettlement>;
-  /**
-   * A just-sent new chat. Sent from main's composer it becomes main's chat; sent from the side's
-   * composer it fills the chat slot and stays there, beside main.
-   */
   acceptCreatedChat: (threadId: string) => void;
-  /** A deleted chat leaves the chat slot, and the side lets go of it. */
   forgetChat: (threadId: string) => void;
-  /**
-   * One-shot New chat focus intent for the pinned empty composer. Non-null
-   * exactly once per `openNewChat` call, until the composer that focused
-   * consumes it; a composer that mounts fresh already sees it in this same
-   * render, so mount timing never races a hold window.
-   */
   newChatFocusRequestId: number | null;
   consumeNewChatFocusRequest: (id: number) => void;
 };
@@ -71,7 +42,6 @@ type Go = (
   options: NavigationOptions,
 ) => Promise<NavigationSettlement>;
 
-/** Owns the chat commands for one project route; returns the provider value. */
 export function useProjectChatNavigation({
   accountId,
   projectId,
@@ -80,7 +50,6 @@ export function useProjectChatNavigation({
 }: {
   accountId: string;
   projectId: string;
-  /** The chat lane's page the address names; null when main is in Write. */
   mainChat: ChatDisplay | null;
   go: Go;
 }): ChatNavigation {
@@ -197,7 +166,6 @@ export function ChatNavigationProvider({
   return <ChatNavigationContext.Provider value={value}>{children}</ChatNavigationContext.Provider>;
 }
 
-/** Chat commands are pane-aware at the route boundary; consumers never write a URL. */
 export function useChatNavigation(): ChatNavigation {
   const navigation = useContext(ChatNavigationContext);
   if (!navigation) throw new Error("Chat navigation requires a project route");

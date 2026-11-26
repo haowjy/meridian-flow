@@ -1,11 +1,3 @@
-/**
- * The folder and file list under `IdentityPlacementField`'s name field. The
- * host owns the popover and the input; this list is a `Picker` whose Escape
- * calls `onClose`. A host `header` (e.g. a validation note) renders inside the
- * picker: any focusable it marks with `data-list-item` joins the arrow-key
- * walk in visual order.
- */
-
 import { t } from "@lingui/core/macro";
 import { Folder } from "lucide-react";
 import { forwardRef, type ReactNode, useImperativeHandle, useRef } from "react";
@@ -15,7 +7,6 @@ import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel, schemeLocation } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
 
-/** A row with an optional right-edge annotation (e.g. "new folder"). */
 export type AnnotatedFileSuggestion = FileSuggestion & { hint?: string };
 
 export type FileSuggestionListHandle = {
@@ -29,12 +20,9 @@ export const FileSuggestionList = forwardRef<
     suggestions: readonly AnnotatedFileSuggestion[];
     onSelect: (suggestion: FileSuggestion) => void;
     onClose: () => void;
-    /** When set, a leading `..` row navigates to the enclosing level. */
     onNavigateUp?: () => void;
-    /** Browse mode: rows share one folder, so per-row parent labels are noise. */
     hideParents?: boolean;
     emptyMessage: string;
-    /** Rendered above the rows, inside the picker's keyboard walk. */
     header?: ReactNode;
   }
 >(function FileSuggestionList(

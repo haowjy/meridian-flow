@@ -78,9 +78,6 @@ function usePictureTarget(
   const assetDocumentId = assetDocumentIdFromSrc(src);
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
   if (!key) {
-    // Not a document, so only a supported web URL draws as written. Anything
-    // else is a stored source no retry can change: nothing to draw, nothing
-    // to retry, and not a gone document.
     const url = inlinePictureSource(src);
     if (url) return { kind: "literal", url };
     if (remote) {
@@ -90,8 +87,6 @@ function usePictureTarget(
     }
     return { kind: "unavailable", message: t`Image could not be displayed.` };
   }
-  // A document address is not a URL: an editor with no link lane has no way
-  // to ask about it, which is a question that could not be asked.
   if (!cache) return { kind: "unanswered" };
   if (entry === UNASKED || entry?.state === "pending") return { kind: "resolving" };
   if (!entry) return { kind: "unanswered" };
@@ -191,15 +186,12 @@ export function useAssetImageRenderState(input: {
   const resolution = input.links?.resolution ?? null;
   const requester = input.links?.requester ?? null;
   const stored = pictureKeyOfNode({ ref: input.ref, src });
-  // Stable across renders while the stored link is: the subscription and the
-  // retry belong to the key, not to a fresh object.
   const keyRef = stored?.ref ?? null;
   const keyLink = stored?.href ?? null;
   const key = useMemo<LinkKey | null>(
     () => (keyLink ? { ref: keyRef, href: keyLink } : null),
     [keyRef, keyLink],
   );
-  // Asked about while shown, and released on unmount or when the key changes.
   useEffect(() => (key && requester ? requester.watch(key) : undefined), [key, requester]);
   const target = usePictureTarget(src, key, resolution);
   const targetIdentity = pictureTargetIdentity(target);
@@ -220,15 +212,11 @@ export function useAssetImageRenderState(input: {
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
   const fileFactsRef = useRef<AssetFileFacts | null>(null);
-  // The picture and document whose `<img>` failed past its refresh: a settled
-  // fact, so a re-sign renews the card instead of drawing it again.
   const undrawableRef = useRef<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const generation = useLinkGeneration(resolution);
   const generationRef = useRef(generation);
   generationRef.current = generation;
-  // The picture the signed-URL route last called gone, and the generation it
-  // was asked in. A later generation asks again.
   const [gone, setGone] = useState<{ picture: string; generation: unknown } | null>(null);
   const picture = `${projectId ?? ""}\u0000${owner ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
   const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
@@ -298,8 +286,6 @@ export function useAssetImageRenderState(input: {
       return;
     }
 
-    // A new resolution generation (every catalog change) asks again, and the
-    // same picture stays on screen while it does, as a signed-URL refresh's does.
     if (target.kind === "resolving") {
       setState((kept) => ({ kind: "loading", url: kept?.url ?? null }));
       return;

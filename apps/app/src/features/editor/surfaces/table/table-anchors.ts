@@ -8,8 +8,6 @@ const GRIP_SHORT = 15;
 const ADD_TAB = 18;
 const COLUMN_GRIP_GAP = 4;
 const ROW_GRIP_GAP = 6;
-// The Add column tab reaches ADD_TAB_GAP + ADD_TAB past a full-width table, into the
-// trailing gutter; `editor-column.ts` sizes that gutter's floor from these two.
 const ADD_TAB_GAP = 9;
 const ADD_TAB_INSET = 6;
 

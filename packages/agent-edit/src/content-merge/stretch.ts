@@ -80,21 +80,6 @@ export interface Stretch {
   draft: PMNode[];
 }
 
-/**
- * Returns live with its changes to each clashed stretch undone (the base's blocks in place, paired
- * one to one; its added and moved-in blocks of those changes gone), so the token merge finds the
- * draft's change alone there; null when nothing clashes.
- *
- * Two changes clash when they meet at one place and the token merge cannot be trusted with them:
- * - at a base block, when one side removed the block and the other changed it in any way, or both
- *   sides restructured it, or one side split or joined a container (a table row) that the
- *   other changed: the token merge sees a container as one token, so an edit cannot travel into its
- *   pieces as it does into a paragraph's;
- * - at a gap inside a join, when the other side has anything there.
- * Text against text, text against a split, a join or a move of that block (the edit travels with
- * it), additions by both sides at one gap (both kept) and removals of different blocks are left to
- * the token merge.
- */
 export function settleStretches(
   base: readonly PMNode[],
   live: readonly PMNode[],
@@ -105,7 +90,6 @@ export function settleStretches(
   const S = 2 * base.length + 1;
   const L = view(base, live, inLive);
   const D = view(base, draft, inDraft);
-  // One union-find over both sides' nodes; a clash joins a live change to a draft change.
   const off = S + live.length;
   const clashes = new Dsu(off + S + draft.length);
   const find = (x: number) => clashes.find(x);

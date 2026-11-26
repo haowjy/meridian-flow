@@ -1,17 +1,3 @@
-/**
- * Reads a project's list for the documents the app is holding (views, account recents, local
- * copies) and acts on what it says. Nothing is polled: it runs when the list, the sources or the
- * browser's copies change.
- *
- * Two different things happen, and only the second is irreversible:
- * - **Views close** when a document cannot be shown right now: it is in Trash, purged, or its
- *   source ended (a deleted Work or chat, which can be restored). The copy and its session stay,
- *   with any unsent text, until the document comes back or is gone for good.
- * - **A copy is deleted** only when the document is gone for good (`goneForGood`, the one
- *   predicate every deletion goes through): its node's purge in the list (Trash retention and a
- *   Work's purge both write one), or the account removed from the project. Losing the connection, an expired sign-in and a source
- *   that ended but can be restored are not final.
- */
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { ContextRemovalCoordinator, RemovalCommand } from "./context-removal-coordinator";
 import type { ProjectStandings } from "./project-standings";
@@ -45,7 +31,6 @@ export function observeListRemovals(input: {
   let askedToSignIn = false;
   let stopped = false;
 
-  /** Whether the document can never come back to this account. */
   const goneForGood = (documentId: string): boolean => {
     const standing = standings.standing(projectId, documentId);
     if (standing.kind === "purged") return true;

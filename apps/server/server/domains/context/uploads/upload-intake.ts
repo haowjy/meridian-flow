@@ -369,7 +369,6 @@ export function createUploadIntake<Bound>(deps: {
         const copied = await deps.objectStore.copy(incomingKey, current.objectKey);
         if (!copied.ok) {
           if (copied.error.code !== "not_found") return storageFailed;
-          // Another finish may have moved the intake on and removed the incoming object.
           current = await read();
           if (!current) return conflict;
           if (current.state === "finalized") return finalized(current);
@@ -379,7 +378,6 @@ export function createUploadIntake<Bound>(deps: {
 
       const stored = await deps.objectStore.readHead(current.objectKey, HEAD_BYTES);
       if (!stored.ok) {
-        // The sweep releases the final object with its row, and then there is nothing to read.
         const after = stored.error.code === "not_found" ? await read() : current;
         return after ? storageFailed : conflict;
       }

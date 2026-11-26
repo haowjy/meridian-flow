@@ -9,7 +9,6 @@ export type DropPlan =
       pos: number;
       hint?: string;
       effect?: "copy";
-      /** Absent while the content is unknown (text dragged in from outside): the drop reads it. */
       commit?(view: EditorView): void;
     }
   | {

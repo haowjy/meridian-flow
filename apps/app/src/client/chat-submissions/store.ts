@@ -58,11 +58,6 @@ export type ChatSubmission = {
   activatedSkillSlugs: string[];
   state?: "rejected";
   control?: { kind: "write_mode"; mode: AiWriteMode };
-  /**
-   * The server's answer to the control. The driver stamps it instead of deleting the record, so
-   * every tab, driving or not, reads one server fact; a stamped record is never posted again,
-   * and the journal prunes it at the first write after `ANSWER_GRACE_MS`.
-   */
   answer?: ControlAnswer;
   /**
    * Set before a message or control's first POST. Without it, the server cannot hold the
@@ -247,8 +242,6 @@ export class DeviceChatSubmissionJournal {
   setUser(accountId: string): void {
     if (this.state?.accountId === accountId) return;
     this.bindEpoch += 1;
-    // Per-account storage keys mean another account's records are never read
-    // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
     this.notify();
@@ -293,12 +286,6 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
-  /**
-   * Write a record. A new one gets the chat's next `seq`: the larger of the chat's durable
-   * counter and its largest held `seq`, plus one, with the counter raised in the same
-   * synchronous step (localStorage has no await between them); an existing one keeps its
-   * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
-   */
   record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));

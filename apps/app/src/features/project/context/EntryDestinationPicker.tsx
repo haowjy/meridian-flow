@@ -89,7 +89,6 @@ function OpenPicker({
   const unavailable = t`This location is unavailable`;
 
   const several = picked !== undefined && picked.length > 1;
-  // A row inside a selected folder goes with that folder, never on its own.
   const subjects = useMemo(() => {
     const rows: { ref: EntryRef; name: string; view: DragEntry["view"] }[] = several
       ? picked.map((row) => ({ ref: row.ref, name: row.name, view: row.view }))
@@ -263,8 +262,6 @@ function OpenPicker({
     };
   };
 
-  // The top level offers only areas that take changes (an ended Work's Scratch reads, and copies
-  // out, but takes nothing), and Move… only the areas of the row's own list.
   const inAccount = placed[0]?.at?.scheme === "user";
   const tree = {
     ...source.tree,
@@ -348,7 +345,6 @@ function OpenPicker({
         ];
       }}
     >
-      {/* Radix DropdownMenu has no standalone anchor. This inert trigger positions the externally opened picker at the row actions. */}
       <Button
         variant="quiet"
         tabIndex={-1}

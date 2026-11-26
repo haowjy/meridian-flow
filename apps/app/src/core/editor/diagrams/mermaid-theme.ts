@@ -1,30 +1,6 @@
-/**
- * A diagram drawn in the manuscript's own ink.
- *
- * Mermaid ships a lavender-on-white stock theme with Trebuchet labels. Dropped
- * into a chapter it reads as a screenshot from another application — the one
- * thing on the page that did not come from this product (§5.2: paper ground,
- * ink strokes, Inter labels).
- *
- * So the palette is the design tokens, read from the live document at render
- * time rather than copied into this file. Copies would be raw colors outside
- * `design-tokens`, and they would freeze: the writer's theme switch re-points
- * the same custom properties, and reading them per render is what lets a
- * diagram follow.
- */
-
 import { resolveUiTheme } from "@/lib/ui-theme";
 
-/**
- * Which token paints which part of a diagram.
- *
- * Structure is warm ink on lifted paper, the same ladder the manuscript uses:
- * nodes are cards, strokes are the subtle ink that hairlines use, labels are
- * prose. Jade stays out of it — jade is the interactive voice, and a diagram
- * is something the writer reads, not something they press.
- */
 const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
-  // ── shared ground ────────────────────────────────────────────────
   background: "--color-background",
   primaryColor: "--color-card",
   mainBkg: "--color-card",
@@ -35,8 +11,6 @@ const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
   titleColor: "--color-foreground",
   lineColor: "--color-muted-foreground",
 
-  // Alternates: mermaid reaches for these on subgraphs, clusters, and any
-  // second surface a diagram type invents.
   secondaryColor: "--color-ink-fill",
   secondaryBorderColor: "--color-border",
   secondaryTextColor: "--color-foreground",
@@ -46,13 +20,10 @@ const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
   clusterBkg: "--color-ink-fill",
   clusterBorder: "--color-border",
 
-  // Edge labels sit ON the paper, so they carry the page's own ground rather
-  // than a white card that would punch a hole in it.
   edgeLabelBackground: "--color-background",
   labelBackground: "--color-background",
   labelColor: "--color-foreground",
 
-  // ── sequence diagrams ────────────────────────────────────────────
   actorBkg: "--color-card",
   actorBorder: "--color-muted-foreground",
   actorTextColor: "--color-foreground",
@@ -65,8 +36,6 @@ const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
   loopTextColor: "--color-foreground",
   activationBkgColor: "--color-ink-fill",
   activationBorderColor: "--color-border",
-  // Notes are the one place a diagram raises its voice, so they borrow the
-  // warning family the editor already uses for "read this".
   noteBkgColor: "--color-warning-tint",
   noteTextColor: "--color-warning-ink",
   noteBorderColor: "--color-border",
@@ -78,7 +47,6 @@ const DIAGRAM_TOKENS: Readonly<Record<string, string>> = {
 export type MermaidTheme = {
   variables: Record<string, string>;
   fontFamily: string;
-  /** Changes exactly when the palette does, so a caller can skip re-applying. */
   signature: string;
 };
 
@@ -100,7 +68,6 @@ function createColorResolver(ground: string): (css: string) => string | null {
 
   return (css) => {
     if (!context || !css) return null;
-    // Overlay tokens (fills, borders) are translucent ink: read them as painted on the page.
     context.fillStyle = ground;
     context.fillRect(0, 0, 1, 1);
     context.fillStyle = "#000";
@@ -113,13 +80,6 @@ function createColorResolver(ground: string): (css: string) => string | null {
   };
 }
 
-/**
- * The palette as the document currently defines it.
- *
- * Returns null where there is no document to read (SSR, a test with no DOM);
- * mermaid then keeps its own defaults, which is the right answer for something
- * nobody is looking at.
- */
 export function readMermaidTheme(): MermaidTheme | null {
   if (typeof document === "undefined") return null;
 

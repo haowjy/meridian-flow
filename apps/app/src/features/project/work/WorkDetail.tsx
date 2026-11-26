@@ -22,7 +22,6 @@ import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from
 import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
 
-// An update refused after a reload has no field left to reopen: it shows here, under the title.
 const HEADER_FAILURES = ["archive", "unarchive", "update"] as const;
 
 export type LeaveGuard = (leave: () => void, cancel: () => void) => void;

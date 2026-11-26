@@ -1,10 +1,3 @@
-/**
- * Browser owner for the durable chat-submission journal.
- *
- * Reads and writes take an explicit `accountId`; a request for an account that
- * is not the current bind is refused, so a late callback cannot leak a row or
- * retire another account's unresolved intent.
- */
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -69,7 +62,6 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
-/** An unavailable read cannot authorize projection retirement or destination changes. */
 export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] | null {
   const current = browserJournal();
   return current?.accountId === accountId ? current.snapshot() : null;
@@ -87,17 +79,14 @@ export function retireChatSubmission(
   return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
 }
 
-/** A deleted chat's `seq` counter goes with its records. */
 export function forgetChatSubmissionOrder(accountId: string, threadId: string): void {
   browserJournal()?.forgetOrder(accountId, threadId);
 }
 
-/** In-tab writes and cross-tab storage changes share the same subscription. */
 export function subscribeChatSubmissions(listener: () => void): () => void {
   return browserJournal()?.subscribe(listener) ?? (() => undefined);
 }
 
-/** Provider-scoped pending flags also cover fork and handoff destinations. */
 export function isThreadAwaitingCreation(
   accountId: string,
   threadId: string | null | undefined,

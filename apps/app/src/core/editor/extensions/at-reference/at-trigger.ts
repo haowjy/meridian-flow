@@ -1,4 +1,3 @@
-/** Prose boundaries and literal-text escapes for the @ reference trigger. */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { PROSE_TRIGGER_BLOCKS } from "../suggestion";
 export function allowsAtTrigger(doc: PMNode, from: number): boolean {

@@ -74,7 +74,6 @@ export async function callAdapter<T>(
   } catch (error) {
     // Not a fault: the command's caller runs it again with more owners locked.
     if (error instanceof TreeOwnersMoved) throw error;
-    // A node id the caller reserved (an upload's) is already in use.
     if (error instanceof NodeIdRefusedError) return Err({ code: "conflict", uri });
     return Err({
       code: "io_error",

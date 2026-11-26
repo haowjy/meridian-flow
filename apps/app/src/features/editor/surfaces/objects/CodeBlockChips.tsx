@@ -57,8 +57,6 @@ export function CodeBlockChips({
       data-code-chips=""
       data-state={visible && !suppressed ? "open" : "closed"}
       data-placement={placement.placement}
-      // Chrome, never text ProseMirror owns: the cluster lives inside the
-      // fence's own node view so it travels with it.
       contentEditable={false}
       {...editorChromeAttributes(chrome)}
       style={placement.style}

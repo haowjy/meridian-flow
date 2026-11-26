@@ -1,4 +1,3 @@
-/** Event-sink adapters for agent-edit diagnostics and lifecycle observability. */
 import type {
   LinkSpliceFallbackDetail,
   LoroEditCoreOptions,
@@ -31,22 +30,10 @@ export function createDocumentProjectionDiagnostics(
 }
 
 export interface LinkScopeObserver {
-  /** `holder()` was asked with no open snapshot: the door never opened a scope. */
   unscoped(documentId: string): void;
-  /**
-   * A ref, address or asset the snapshot never loaded. `prepared` false means
-   * no door ever prepared this snapshot (a door forgot); true is benign, since a
-   * concurrent merge between prepare and the synchronous block can add a ref.
-   */
   snapshotMiss(input: { documentId: string; key: string; prepared: boolean }): void;
 }
 
-/**
- * Spelling outside a scope, or past what a door prepared, falls back to the
- * stored bytes: consistent and round-tripping, but not what a reader should
- * see. Tests fail on a door that forgot; production reports it next to the
- * other serialization anomalies.
- */
 export function createLinkScopeObserver(eventSink?: EventSink): LinkScopeObserver {
   const report = (name: string, payload: Record<string, string | boolean>) => {
     if (!eventSink) return;
@@ -99,10 +86,6 @@ export function createAgentEditObservabilityOptions(input: {
   };
 }
 
-/**
- * A result's observation frontier could not be computed: it goes out without
- * one, and the model's next frontier for the room chains from an older row.
- */
 function observationFailedObserver(
   eventSink?: EventSink,
 ): NonNullable<LoroEditCoreOptions["onObservationFailed"]> {
@@ -118,11 +101,6 @@ function observationFailedObserver(
   };
 }
 
-/**
- * A formatted find whose splice changed how its surroundings parse binds the
- * whole block group (contract §5.4): identity still holds, but unchanged links
- * there may churn their formatting. The only approximation in the write path.
- */
 function linkSpliceFallbackObserver(
   eventSink?: EventSink,
 ): NonNullable<LoroEditCoreOptions["onLinkSpliceFallback"]> {

@@ -1,4 +1,3 @@
-/** FIFO lock adapter for isolated scenarios, shared by their simulated tabs. */
 import { abortable, type SubmissionLock, submissionLockName } from "../lock";
 
 export class MemorySubmissionLock implements SubmissionLock {

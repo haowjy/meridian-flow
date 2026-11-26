@@ -52,11 +52,6 @@ function putFile(
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === "AbortError";
 
-/**
- * Start, PUT, finish. A PUT or finish that fails is tried once more from the start, which signs a
- * fresh URL and skips the PUT if the bytes are already stored. An error from `start` itself
- * and an `UploadRefusedError` from `finish` are final.
- */
 export async function uploadFileDirect(upload: DirectUpload): Promise<UploadIntakeResult> {
   for (let attempt = 0; ; attempt += 1) {
     const started = await upload.start(upload.signal);

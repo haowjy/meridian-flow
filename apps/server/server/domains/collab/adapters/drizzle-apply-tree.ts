@@ -1,13 +1,3 @@
-/**
- * Tree half of Apply: the drafted records of the click's items become live copies in the lists
- * that hold them (`applyDraft`), in the click's transaction, and the command keeps what Un-Apply
- * needs of each list (`apply_command_trees`). It reports which items landed, read from the lists
- * under their keys; the caller (`drizzle-apply-click.ts`) decides every answer and the text half.
- *
- * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the draft;
- * the lists' keys come next (`lockItems`), then the documents', and only then the writes.
- */
-
 import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
@@ -26,12 +16,9 @@ import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tr
 import type { TreeCut } from "../domain/press.js";
 import { treeListOfNode } from "./drizzle-draft-tree-lists.js";
 
-/** One item of an Apply as the tree half reads it. */
 export type TreeApplyItem = {
   node: string;
-  /** The list that holds the node; null when none does (purged). */
   list: TreeList | null;
-  /** The click includes the node's tree records. */
   tree: boolean;
 };
 
@@ -66,21 +53,13 @@ export function createApplyTreeOperations(input: {
     return listOf;
   }
 
-  /**
-   * Lands what the Work has pending on each item whose tree half runs: its own records, the
-   * delete that covers it, the drafted creates they stand on and the earlier records of the same
-   * facts, as one `applyDraft` per list, limited to `saw`. Returns the items one of whose
-   * chosen records landed as a live copy.
-   */
   async function apply(click: {
     draftId: DraftId;
     userId: UserId;
     commandId: CommandId;
-    /** The tree's name for this draft's part of the command (`assertNewCommand`: one per draft). */
     treeCommand: string;
     saw: TreeCut | undefined;
     items: readonly TreeApplyItem[];
-    /** Under the owners' locks: what each source takes. */
     judge: TreeJudge;
   }): Promise<Set<string>> {
     const { draftId, items } = click;
@@ -88,7 +67,6 @@ export function createApplyTreeOperations(input: {
     for (const { list } of items) if (list && !lists.includes(list)) lists.push(list);
     const landed = new Set<string>();
     if (lists.length === 0) return landed;
-    // The documents among the items, as the Work's view or live has them.
     const documents = new Set<DocumentId>();
     const actor = `user:${click.userId}`;
 
@@ -103,7 +81,6 @@ export function createApplyTreeOperations(input: {
           const pending = pendingRecords(writer.doc, draftId);
           const draft = writer.view({ draft: draftId });
           const mine = items.filter((it) => it.list === list);
-          // The item's records: the click asked for its tree records, or it has a pending create.
           const recordsOf = new Map<string, TreeRecord[]>();
           for (const it of mine) {
             if (
@@ -163,7 +140,6 @@ export function createApplyTreeOperations(input: {
   return { lockItems, apply };
 }
 
-/** The vector of `cut` for the list `end` copies; none when the cut names another list. */
 function cutOf(cut: TreeCut | undefined, scope: TreeList["kind"], end: ListWriter) {
   const one = cut?.[scope];
   return one && one.list === end.list ? one.vector : undefined;

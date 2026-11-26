@@ -39,8 +39,6 @@ export function withRowNote(children: ReactNode, note: ReactNode, end?: ReactNod
 
 export function LabelNote({ className, children, ...props }: ComponentProps<"span">) {
   return (
-    // The outer span keeps the label's text size, so the row centres it like the label, and the
-    // smaller words inside sit on its baseline. A text-xs box centred on its own sits higher.
     <span className={cn(role.secondary, className)} {...props}>
       <span className="text-xs">{children}</span>
     </span>

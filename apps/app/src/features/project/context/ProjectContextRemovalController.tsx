@@ -100,11 +100,6 @@ export function ProjectContextRemovalController({
   return null;
 }
 
-/**
- * Recently opened is main's opening history, newest first: the document main showed before
- * `documentId` is the next entry after it that stays. One main never recorded (a draft-only
- * page) was shown after them all, so the first entry that stays is the one before it.
- */
 function shownBefore(
   recent: readonly AccountRecentItem[],
   documentId: string,

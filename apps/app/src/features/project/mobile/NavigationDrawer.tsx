@@ -99,7 +99,6 @@ export function NavigationDrawer({
             </div>
 
             <WorkspaceNavBody projectId={projectId} onSwitched={() => onOpenChange(false)}>
-              {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>
                 <div className="flex shrink-0 flex-col py-1">
                   <WorkScopePicker

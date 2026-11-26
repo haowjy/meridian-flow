@@ -21,7 +21,6 @@ export function createAgentLevelFiles(
 
   async function versionsOf(ids: string[]): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
-    // Every save of the document's Live room moves its `content_seq`.
     const rows = await currentDrizzleDb(deps.db)
       .select({ id: documents.id, seq: documents.contentSeq })
       .from(documents)
@@ -65,13 +64,11 @@ export function createAgentLevelFiles(
         const readAll = async () => {
           for (const { document, path } of readable) {
             const text = await storedText(document, versions.get(document.id));
-            // What the documents hold is untrusted: Mars reads only well-formed UTF-8 text.
             if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text)
               problems[path] = `${path} isn't plain text: it holds a NUL byte or isn't valid UTF-8`;
             else files[path] = text;
           }
         };
-        // A home document has no project of its own: its links read in the project asking.
         if (input.projectId)
           await deps.links.within(
             { projectId: input.projectId, viewer: { accountId: input.userId } },

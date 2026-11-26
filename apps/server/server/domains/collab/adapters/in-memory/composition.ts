@@ -1,5 +1,3 @@
-/** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
-
 import {
   agentEditRooms,
   type LoroDocumentEdits,
@@ -37,11 +35,9 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "./static-document-link-scopes.js";
 
-/** `namedDraft` reads the draft a Work's or root chat's row names; by default nothing names one. */
 export function createInMemoryCollabDomain(
   namedDraft: NamedDraft = async () => null,
 ): CollabDomain {
-  // Nothing in memory carries a filetype: every document is prose.
   const resolveDocumentFiletype = async () => null;
   const schema = buildDocumentSchema();
   const memory = createMemoryDocumentRooms(shapeSchemaOf(schema));
@@ -58,10 +54,8 @@ export function createInMemoryCollabDomain(
     loro: {
       rooms: agentEditRooms(serverRooms, {
         roomFor: async (documentId) => ({ kind: "live", documentId }),
-        // The memory rooms run each commit as its own transaction.
         transaction: () => null as unknown as DrizzleDb,
         origin: "server:agent",
-        // Nothing in memory keeps an edit history.
         recordWrite: async () => {},
       }),
       ordinals: inMemoryWriteOrdinals(),
@@ -97,7 +91,6 @@ export function createInMemoryCollabDomain(
       rooms: serverRooms,
       documentSchemaVersion: async () => null,
       onRoomsEnded: () => () => undefined,
-      // Nothing is removed in memory.
       draftsHolding: async () => [],
       roomRemoval: async () => null,
     },
@@ -148,7 +141,6 @@ export function createInMemoryCollabDomain(
     lineage,
     effectiveReader: {
       ...createEffectiveDocumentReader({
-        // Nothing is derived in memory.
         blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
         documents: runtime.markdownDocuments,
         schema,
@@ -163,7 +155,6 @@ export function createInMemoryCollabDomain(
     drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
-      // No drafts in memory: a purged Work has none to dispose of.
       workDraftDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [], draftIds: [] })),
       },
@@ -223,7 +214,6 @@ function createInMemoryDraftStub(): CollabDrafts {
   };
 }
 
-/** Nothing in memory keeps an edit history, so no turn edited anything. */
 const IN_MEMORY_TURN_LIVE_LINEAGE = {
   async listLiveDocumentIdsForTurn(): Promise<DocumentId[]> {
     return [];
@@ -242,7 +232,6 @@ const IN_MEMORY_TURN_LIVE_LINEAGE = {
   },
 };
 
-/** Ordinals per document and chat, for this composition's life. */
 function inMemoryWriteOrdinals(): WriteOrdinals {
   const next = new Map<string, number>();
   return {
@@ -260,7 +249,6 @@ const NO_EDIT_HISTORY: LoroDocumentEdits = {
   execute: async () => ({ status: "invalid_write", message: "This host has no edit history." }),
 };
 
-/** The in-memory rooms behind the server's door: each commit or seed is its own transaction. */
 function memoryServerRooms(memory: MemoryDocumentRooms): ServerDocumentRooms {
   return {
     read: memory.read,

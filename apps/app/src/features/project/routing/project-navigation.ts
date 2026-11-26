@@ -1,5 +1,3 @@
-/** One history policy for project destinations, secondary choices, and delayed address repair. */
-
 import { type ProjectAddress, parseProjectAddress, projectAddressHref } from "./project-address";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
@@ -8,9 +6,7 @@ export type ProjectNavigationPort = {
   subscribe(listener: () => void): () => void;
   flush(): void;
   settlePendingTraversal(): undefined | Promise<boolean>;
-  /** Synchronous same-entry snapshot or query repair; does not invoke a destination blocker. */
   replaceEntry(href: string, state: Record<string, unknown>): void;
-  /** Dispatch after the shared leave decision; the adapter bypasses duplicate blockers. */
   navigate(
     href: string,
     options: { replace: boolean; state?: Record<string, unknown> },
@@ -41,7 +37,6 @@ export type ProjectLeaveGuard = {
   cancel(): void;
 };
 
-/** Whether the entry already holds exactly this address. */
 function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
   return entry.href === projectAddressHref(address);
 }
@@ -259,7 +254,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
         afterCommit: options.afterCommit,
       });
     },
-    /** Rewrites the current entry in place to its canonical address (bare project → `/chats`). */
     repairAddress(ticket: ProjectNavigationTicket): void {
       if (!isCurrent(ticket)) return;
       const entry = port.read();
@@ -273,7 +267,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
-      /** Marks the replaced entry, for what reads its history state. */
       mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };

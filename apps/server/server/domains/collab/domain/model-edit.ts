@@ -27,15 +27,6 @@ export type ModelEditWriteContext = RoutedWriteContext & {
 };
 
 export type ModelEdits = {
-  /**
-   * Claims the call's command id, runs `effect` under it and stores what it returns. The effect
-   * throws `ModelEditRefusal` to answer without changing anything; any other throw rolls the
-   * claim back with it. A repeat of a settled key answers its stored outcome without the effect.
-   * What an edit's result showed the model is recorded in the same transaction, under the result
-   * block's id (`modelEditIds(key).blockId`); a refused edit records none, and what its answer
-   * showed rides back in memory for the runtime to hand on once the block is stored. Refuses an
-   * ambient transaction.
-   */
   run(input: {
     key: ModelEditKey;
     owner: { threadId: string; turnId: string };

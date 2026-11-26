@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# A Draft chat turn's restore (its card's Undo turn), the AI's turn Undo on the one Undo rule, and a chat switched
-# from Draft to Live, through the HTTP routes and room sockets of a running stack on the mock model.
-# Recipe: work-drafts.md beside this file.
-#
-#   MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev
-#   bash apps/server/server/domains/collab/.context/qa/turn-restore-on-the-stack.sh
 set -euo pipefail
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -14,7 +8,6 @@ fails=0
 check() { if [[ $1 == "$2" ]]; then echo "ok   $3"; else echo "FAIL $3: got <$1>, want <$2>"; fails=$((fails + 1)); fi; }
 sql() { tools/dev/psql -w -Atc "$1"; }
 send() { ./mf thread send "$1" go --mock "@$2" --json >/dev/null; }
-# reply <file> <path> [<find> <content>]...: a mock reply that reads the path, then writes each pair.
 reply() {
   python3 - "$@" <<'PY'
 import json, sys
@@ -27,7 +20,6 @@ steps.append({"text": "Done."})
 json.dump({"steps": steps}, open(out, "w"))
 PY
 }
-# tool <file> <args-json>: a mock reply that makes one write call.
 tool() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -55,8 +47,6 @@ D=$(echo "$work" | field "d['draftId']")
 chat=$(./mf thread create --work "$handle" --write-mode draft --title "Draft chat" --json | field "d['threadId']")
 direct=$(./mf thread create --work "$handle" --write-mode direct --title "Live chat" --json | field "d['threadId']")
 
-# A. A Draft chat turn rewrites two paragraphs; the restore returns the draft to Live's text,
-# and its Undo brings the turn's text back.
 one="Restore $run one"
 CH1=$(put "$one" $'# One\n\nThe bell rang at noon.\n\nThe square was empty.')
 reply "$tmp/a.json" "manuscript://$one" "The bell rang at noon." "The bell tolled at dusk." "The square was empty." "The square filled with lanterns."
@@ -68,8 +58,6 @@ answer=$(press "$restore" restore "{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" 
 check "$(echo "$answer" | field "d['documents']")" "['$CH1']" "A: the restore names the document"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the draft reads as before the turn"
 check "$(pending "$CH1")" false "A: nothing waits for review"
-# A second tab still offers Undo turn, and the model's undo runs in the same chat: neither takes
-# the turn's writes back a second time.
 scope="{\"kind\":\"turn\",\"turn\":\"$(turn "$chat" "$CH1")\",\"draft\":\"$D\"}"
 check "$(press "$(uuid)" restore "$scope" | field "d['documents']")" "[]" "A: a second restore changes nothing"
 check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: and the old words show once"
@@ -85,9 +73,6 @@ check "$(draft "$one")" "The bell rang at noon.||The square was empty.|" "A: the
 undo "$redo" >/dev/null
 check "$(draft "$one")" "The bell tolled at dusk.||The square filled with lanterns.|" "A: the Redo's Undo brings the turn's text back once"
 
-# B. One change of the turn applied first: the restore takes every write of the turn back in
-# the draft (design §2: an Undo always runs), so Live keeps the applied text and the draft shows
-# taking it out as a change of its own.
 two="Restore $run two"
 CH2=$(put "$two" $'# Two\n\nThe road ran north.\n\nThe river ran south.')
 reply "$tmp/b.json" "manuscript://$two" "The road ran north." "The road climbed into the hills." "The river ran south." "The river froze."
@@ -100,8 +85,6 @@ check "$(live "$two")" "The road climbed into the hills.||The river ran south.|"
 check "$(draft "$two")" "The road ran north.||The river ran south.|" "B: the draft reads as before the turn"
 check "$(pending "$CH2")" true "B: taking the applied change out waits for review"
 
-# C. A Live chat turn rewrites two paragraphs; the writer retypes one. The card's Undo takes both
-# back: the retyped one gets the text the turn deleted back beside the writer's (design §2).
 words() { python3 -c "import sys; t=sys.argv[1]; print(all(w in t for w in sys.argv[2].split()))" "$1" "$2"; }
 three="Restore $run three"
 CH3=$(put "$three" $'# Three\n\nThe bell rang.\n\nThe door was shut.')
@@ -114,8 +97,6 @@ check "$(echo "$card" | field "d['status']")" reversed "C: the card's Undo answe
 check "$(echo "$card" | field "[x['status'] for x in d['documents']]")" "['reversed']" "C: and names the document"
 check "$(words "$(live "$three")" "fell silent rang door was shut")" True "C: the writer's words stay, the turn's text is undone"
 
-# D. The model's own undo of an edit the writer retyped runs: the writer's words stay beside the
-# text the edit deleted.
 four="Restore $run four"
 put "$four" $'# Four\n\nThe lamp was lit.' >/dev/null
 reply "$tmp/d.json" "manuscript://$four" "The lamp was lit." "The lamp guttered out."
@@ -128,8 +109,6 @@ said=$(sql "select b.content->'result'->>'message' from turn_blocks b join turns
 check "$(echo "$said" | grep -c 'undone: e1')" 1 "D: the model's undo takes the edit out"
 check "$(words "$(live "$four")" "burned low was lit")" True "D: the writer's words stay and the lamp's text comes back"
 
-# E. A chat reads in Draft, the writer types in Live, the chat is switched to Live and writes: the
-# write plans on its Draft read (the draft wrote nothing there), so the writer's typing stays.
 five="Restore $run five"
 put "$five" $'# Five\n\nKade ran. The bell rang.' >/dev/null
 switcher=$(./mf thread create --work "$handle" --write-mode draft --title "Switching chat" --json | field "d['threadId']")

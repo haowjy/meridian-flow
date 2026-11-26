@@ -1,10 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Every client producer assigns the link it writes a ref: a document it knows by id,
- * an indexed address by the local index, anything else internal to a fresh
- * ahead ref. External links get none, and an unchanged submit keeps the
- * link it edits.
- */
 import { Editor } from "@tiptap/core";
 import { Slice } from "@tiptap/pm/model";
 import { afterEach, expect, it } from "vitest";
@@ -208,9 +202,6 @@ it("assigns what each producer writes", () => {
       ],
     ],
   ];
-  // Rich copy and paste end to end: the copy records the ref beside its
-  // address, the paste sanitizer and kept-ref transform let it through, the
-  // mark parses it, and assignment keeps it in its own project only.
   const richPaste = (projectId: string) => {
     const source = editor(STALE);
     source.commands.setTextSelection({ from: 1, to: 5 });

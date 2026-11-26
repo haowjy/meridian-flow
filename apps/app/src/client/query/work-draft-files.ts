@@ -21,13 +21,9 @@ export function projectWorkDraftFiles(
     items.map((item) => {
       const live = tree?.findDocument(item.documentId);
       const location = live ? parseContextUri(live.uri) : null;
-      // Until the tree answers, a document the draft moves is live where it was, not at the
-      // draft's new path: opening it there would land on an address nothing holds yet.
       const movedFrom = item.tree?.movedFrom;
       return {
         documentId: item.documentId,
-        // The item owns a drafted move's current identity. The live tree still names the
-        // old location until Apply, but review surfaces must agree with the open draft editor.
         documentName: movedFrom
           ? item.documentName
           : live
@@ -43,13 +39,6 @@ export function projectWorkDraftFiles(
   );
 }
 
-/**
- * The one order every list of draft files uses (the composer strip, the
- * sidebar's Changes tab, and "Next document"): by the
- * name each file is shown under, then by id. Draft list rows carry no creation time and
- * an update time would reshuffle the list as the AI keeps writing, so a file
- * keeps its place until its name changes.
- */
 export function sortDraftFiles<
   T extends {
     documentId: string;

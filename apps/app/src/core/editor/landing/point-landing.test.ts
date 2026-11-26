@@ -18,9 +18,6 @@ const cell = (text: string): JSONContent => ({
   content: [{ type: "paragraph", content: [{ type: "text", text }] }],
 });
 
-// A one-row table of three 150px cells in a 200px-wide pane: only the first
-// cell and part of the second are visible. Each cell has 10px of padding
-// around its paragraph.
 it("lands a point in the cell it is over, and clamps one beside a scrolled table to the visible cells", () => {
   fixture = createStandaloneEditor({
     content: {

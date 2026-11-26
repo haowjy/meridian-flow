@@ -115,11 +115,6 @@ const idOf = (n: PMNode): string | null => (n.attrs.id as string | null | undefi
 
 const compatible = (a: PMNode, b: PMNode) => (a.isTextblock ? b.isTextblock : a.type === b.type);
 
-/**
- * The longest run of `pairs` (old index, new index; sorted by old) that is also in order in new, by
- * weight: the pairs in it stay in place. Weights are whole numbers and a run's length dominates, so
- * a weight only breaks a tie between equally long runs.
- */
 function longestInOrder(pairs: Array<[number, number]>, stays: (i: number) => number) {
   const heavy = 2 * pairs.length + 1;
   const weight = (k: number) => heavy + stays(pairs[k][0]);
@@ -218,8 +213,6 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   while (o0 < o1 && n0 < n1 && blockKey(old[o1 - 1]) === blockKey(next[n1 - 1]))
     pairs.push([--o1, --n1]);
   const anchors = findAnchors(old, next, o0, o1, n0, n1);
-  // A gap that fits the budget is scored whole. A larger one is cut at its similar pairs first, and
-  // each piece between them is treated the same way; one that still does not fit pairs nothing new.
   const pairGap = (a0: number, a1: number, b0: number, b1: number) => {
     const rows = a1 - a0;
     const cols = b1 - b0;
@@ -326,11 +319,6 @@ function similarChain(
   return chain.reverse();
 }
 
-/**
- * A block whose content occurs once on each side is the same block: an anchor, as in a patience
- * diff. Candidates that cross (either could be the one that stayed) are not anchors; the gap's
- * best in-order pairing keeps one of them.
- */
 function findAnchors(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -356,7 +344,6 @@ function findAnchors(
     if (at.length === 1 && other?.length === 1) cand.push([at[0], other[0]]);
   }
   cand.sort((x, y) => x[0] - y[0]);
-  // Length of the longest in-order set ending at, and starting at, each candidate (patience sorting).
   const lengthsEndingAt = (values: number[]) => {
     const tails: number[] = [];
     return values.map((v) => {
@@ -388,17 +375,10 @@ const sameType = (a: PMNode, b: PMNode) => a.type === b.type;
 
 const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
 
-/**
- * An unpaired block beside a pair is a piece when at least half its words are in the pair's other
- * side and the pair reads better with it: the rest of a split or a join. Words segment differently
- * on the two sides when a split lands inside a word of a script without spaces, so the piece also
- * counts when pair and piece together are exact text of the other side.
- */
 function findPieces(
   old: readonly PMNode[],
   next: readonly PMNode[],
   c: Correspondence,
-  /** Blocks that have a pair of their own by id, so they are nobody's piece. */
   owned?: { old: Uint8Array; next: Uint8Array },
 ) {
   const { partner, back } = c;
@@ -467,12 +447,6 @@ function findPieces(
   }
 }
 
-/**
- * In guess mode a unit's pair is its first old block and its first new block; every other block of
- * the unit is a piece of that one. The first block keeps its identity through a split and a join.
- * A pair made by id stays as it is (`final` lists its old blocks): the id
- * says which block is which, so a piece before it does not take its place.
- */
 function rootUnits(
   old: readonly PMNode[],
   next: readonly PMNode[],

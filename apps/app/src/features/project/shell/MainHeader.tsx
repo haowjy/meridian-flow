@@ -107,7 +107,6 @@ function RecentlyOpenedDoor({
       onClick={(event) => {
         const focused = event.currentTarget === document.activeElement;
         onClick();
-        // The landing is main's own page with its own header: the focus follows to its door.
         if (focused) holdFocus(() => document.querySelector("[data-recents-door][aria-current]"));
       }}
     >

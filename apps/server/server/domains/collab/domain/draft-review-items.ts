@@ -1,13 +1,3 @@
-/**
- * The review list (contract §13.1, sync 8 §3.1): a draft's items are its tree state (every
- * document it created, moved or deleted, and the documents it edited) merged by document with its
- * pending forks. An item is listed when the tree view's one reviewable-pending
- * predicate holds (`TreeStateNode.pending`): a created document, a move or delete live doesn't
- * already agree with, or a pending fork of a document the draft isn't deleting, so a write and its
- * undo net to no item. That one predicate feeds the list, the Work counts and the confirmation.
- * Every item is keyed `${draftId}:${documentId}` (F12) and carries the tree-derived address and
- * whether it has text changes.
- */
 import type { DraftId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";

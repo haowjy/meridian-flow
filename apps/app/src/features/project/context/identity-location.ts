@@ -31,7 +31,6 @@ export function identityDestination(
 ): IdentityDestination {
   const scheme = choice?.scheme ?? location.scheme;
   const folderPath = choice?.folderPath ?? location.parentPath;
-  // A chat's Scratch stays in its lineage; nothing else becomes a lineage's.
   if (scheme === location.scheme && location.rootThreadId !== undefined)
     return {
       scheme,

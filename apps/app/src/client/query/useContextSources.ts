@@ -5,10 +5,6 @@ import { getAccountContextSources, getProjectContextSources } from "@/client/api
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 
-/**
- * A source ended while this browser was offline is learned on reconnect, whatever the age of the
- * answer: the hint that says so rides a subscription that was not there.
- */
 const FRESHNESS = {
   staleTime: 30_000,
   refetchOnWindowFocus: true,

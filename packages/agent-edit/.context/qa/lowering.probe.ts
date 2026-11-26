@@ -1,5 +1,3 @@
-// Hand-run probe of how `lowerBlock` lowers real AI paragraph rewrites to Loro text ops.
-// Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/lowering.probe.ts [--examples]
 import { readFileSync } from "node:fs";
 import {
   configureDoc,

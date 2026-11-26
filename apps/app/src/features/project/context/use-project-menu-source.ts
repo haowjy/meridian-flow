@@ -64,14 +64,12 @@ export function useProjectMenuSource({
     heading: string;
   } | null;
 }): ProjectMenuSource {
-  // The menu's moves and creates write the shell's version: it reads the same one.
   const version = useTreeVersion();
   const projectViews = useProjectTreeViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,
     version,
   });
   const { primary, earlier } = useScratchTrees(projectId, scratch);
-  // On a deleted Work's Draft no tree takes a change; a Work's Scratch takes none once it ends.
   const open = version.ended !== "deleted";
   const scratchWritable = useWorkSourceWritable(projectId, scratch?.owner.workId) && open;
   const scratchArea = useMemo<MenuArea | null>(

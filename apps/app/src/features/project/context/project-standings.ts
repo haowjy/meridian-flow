@@ -1,9 +1,3 @@
-/**
- * Where each document stands in its project's list, shared by everything that asks "is it still
- * there": the removal observer, the notice and the editor's own banner. A project's list is held
- * open while anything watches it; its replay is the session's, computed once per change however
- * many ask.
- */
 import { type DocumentStanding, listIsReadable, standingAcross } from "@/core/tree-list/standing";
 import type { TreeListHandle, TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import type { TreeListSnapshot } from "@/core/tree-list/tree-list-session";
@@ -70,7 +64,6 @@ export class ProjectStandings {
     };
   }
 
-  /** Resolves once the project's list has been read: from then on an absence is an answer. */
   whenReadable(projectId: string, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
       let stop = () => {};

@@ -1,4 +1,3 @@
-/** useTurnLiveLineage — edited-document lineage and receipt state for one transcript turn. */
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -14,11 +13,6 @@ import { useIsThreadPendingCreation } from "@/client/stores";
 import type { ListQueryStatus } from "./list-query";
 import { threadQueryKeys } from "./thread-query-keys";
 
-/**
- * The turn cards read what became of their drafted documents, and nothing pushes that to them:
- * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
- * in flight is the one the writer waits on, so it is not restarted.
- */
 export function refreshTurnCards(queryClient: QueryClient, documentId?: string): Promise<void> {
   return queryClient.invalidateQueries(
     {
@@ -34,11 +28,6 @@ export function refreshTurnCards(queryClient: QueryClient, documentId?: string):
   );
 }
 
-/**
- * A card's Undo depends on the text, so an edit to the open document, the writer's own typing
- * among them, refreshes the cards a moment after it settles. One read per pause in typing, and
- * only for the on-screen cards whose lineage names the edited document.
- */
 export function useRefreshTurnCardsOnEdit(editor: Editor | null, documentId: string): void {
   const queryClient = useQueryClient();
   useEffect(() => {
@@ -62,7 +51,6 @@ export function useRefreshTurnCardsOnEdit(editor: Editor | null, documentId: str
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {
   documents: TurnLiveLineageDocumentItem[] | null;
   receipt: TurnReceiptChip | null;
-  /** When `receipt` was read (0 before any read): a card weighs it against what this tab did since. */
   readAt: number;
 };
 
@@ -77,9 +65,6 @@ export function useTurnLiveLineage(
   const query = useQuery<ListTurnLiveLineageResponse>({
     queryKey: threadQueryKeys.liveLineage(threadId ?? "", turnId ?? ""),
     queryFn: () => listTurnLiveLineage(threadId as string, turnId as string),
-    // The receipt chip is computed from the documents as they are now, so any edit to them (the
-    // writer's, a peer's, another chat's turn) changes it and nothing pushes that change. A switch
-    // inside the window refetches nothing; a later mount or a window focus reads again.
     staleTime: 15_000,
     enabled,
   });

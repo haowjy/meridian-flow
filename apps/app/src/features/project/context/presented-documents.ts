@@ -1,13 +1,3 @@
-/**
- * The documents this browser tab's hosts mount, each under a token minted per mount. Main's and
- * the side's are presented: a removal, a notice or an availability watch acts on them. A kept
- * host (the last document shown that is no longer on screen, mounted hidden for its undo) is
- * mounted but not presented. One document has at most one host, so the document id names it.
- *
- * `shown` is the mounted documents newest first by when they were last on screen: the desktop
- * picks its kept host from it. A close, a Discard or a removal `forget`s a
- * document, so it is no longer picked and its host unmounts.
- */
 import type { OpenDocument } from "@/client/stores";
 
 export type PresentedPlace = "main" | "side";
@@ -29,7 +19,6 @@ export class PresentedDocuments {
   private readonly listeners = new Set<() => void>();
   private clock = 0;
 
-  /** `presented` hears each new presentation: an open can land after a removal raced it. */
   constructor(
     private readonly presented: (projectId: string, tab: OpenDocument) => void = () => {},
   ) {}
@@ -112,7 +101,6 @@ export class PresentedDocuments {
     return this.documents(projectId).some((tab) => tab.documentId === documentId);
   }
 
-  /** The same array until its contents change, so readers re-render only on a real change. */
   private cached(
     lists: Map<string, readonly OpenDocument[]>,
     projectId: string,
@@ -136,7 +124,6 @@ export class PresentedDocuments {
       (lists) => [lists, lists.get(projectId)] as const,
     );
     for (const [lists] of stale) lists.delete(projectId);
-    // A change to a kept host's descriptor leaves `documents` as it was: keep its array.
     for (const [lists, prior] of stale) {
       const next =
         lists === this.presentedLists ? this.documents(projectId) : this.shown(projectId);

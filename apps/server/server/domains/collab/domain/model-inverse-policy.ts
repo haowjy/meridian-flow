@@ -126,8 +126,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       plans: [inversePlan],
       sequence: steps.map((step) => ({ plan: inversePlan, step })),
     });
-    // The answer is what the commit took: it plans again under the locks, and a write since the
-    // capture can leave a step less, or nothing, to take.
     const planned = steps.reduce((n, step) => n + step.parts.length, 0);
     const took = stepEntries.filter((_, i) => (committed.taken[i] ?? 0) > 0);
     const parts = committed.taken.reduce((n, taken) => n + taken, 0);

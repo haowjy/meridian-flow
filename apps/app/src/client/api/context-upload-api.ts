@@ -15,7 +15,6 @@ type ContextUploadTarget = {
   projectId: string;
   scheme: string;
   query: Readonly<Record<string, string>>;
-  /** Minted by the caller: a document's link to the file stands before the file does. */
   intakeId: string;
   file: File;
 };

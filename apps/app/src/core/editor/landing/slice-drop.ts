@@ -82,9 +82,6 @@ function slicePlan(
   if (source.moved && landsInMovedRange(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {
-    // A code block holds characters: a slice reads as its text and its hard
-    // breaks. Any other leaf (a picture, a chip) has none to give, and a move
-    // would delete it for nothing.
     let leaves = true;
     slice.content.descendants((node) => {
       if (node.isLeaf && !node.isText && !node.type.spec.linebreakReplacement) leaves = false;
@@ -109,8 +106,6 @@ function slicePlan(
     };
   }
 
-  // A block slice settles where ProseMirror's own fit would put it, so the
-  // caret draws that position.
   const inline = landing.kind === "inline" ? inlineLanding(state.doc, landing.pos, slice) : null;
   const pos = inline
     ? (dropPoint(state.doc, inline.pos, inline.slice) ?? landing.pos)
@@ -315,8 +310,6 @@ function tableRefusal(
     if (!(start.deletedAfter && end.deletedBefore)) {
       const now = transaction.doc.nodeAt(start.pos);
       if (!(now && isTable(now) && sameGrid(node, now))) {
-        // A table around the landing may have broken from the insert or from
-        // the move's deletion; the first reads as the drop's fault.
         broken = pos > at && pos < at + node.nodeSize ? inCell : t`Can’t move part of a table`;
       }
     }

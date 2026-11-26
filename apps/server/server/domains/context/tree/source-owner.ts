@@ -28,10 +28,6 @@ export function sameOwner(a: TreeList, b: TreeList): boolean {
     : b.kind === "account" && a.userId === b.userId;
 }
 
-/**
- * Whether a row belongs to the request: a project's to the project the request is in, an
- * account's to the account making it. The one rule wherever a file is matched to a request.
- */
 export function ownedByRequest(
   owner: TreeList,
   request: { projectId: string | null; accountId: string | null },

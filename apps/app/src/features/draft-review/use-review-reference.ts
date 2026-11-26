@@ -21,11 +21,6 @@ export function referenceOf(target: string): ReviewAgainst {
   return { kind: "draft", draftId: target };
 }
 
-/**
- * The reference room of a review against another draft or file, held open while the review
- * shows it: another draft's fork of this document, or the other file as this draft shows it (its
- * fork, or its Live room when the draft created it). Null docs until the room is open.
- */
 export function useReviewReference(mode: ReviewMode | null): ReviewReference | null {
   const registry = useOptionalLiveDocumentSessionRegistry();
   const host = useId();

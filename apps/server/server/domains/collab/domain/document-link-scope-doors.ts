@@ -34,10 +34,6 @@ export function scopeMarkdownEngine(
   };
 }
 
-/**
- * The project a model edit's links read in: the request's, never the file's (a home document has
- * none). An agent's is its thread's project; a writer's (a card's Undo) is the thread's it runs in.
- */
 function requestScope(context: {
   grant: FileGrant;
   threadId?: string | undefined;
@@ -48,10 +44,6 @@ function requestScope(context: {
   throw new Error("A model edit runs in no thread and no agent's project");
 }
 
-/**
- * A model read is scoped by its request's project, which exists even for a chapter the call is
- * creating; it reads as the account it acts for, in the thread it reads in.
- */
 export function scopeAgentEdit(
   router: AgentEditRouter,
   scopes: DocumentLinkScopes,

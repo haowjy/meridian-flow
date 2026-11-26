@@ -1,14 +1,3 @@
-/**
- * EditorDialog — the lightbox an object opens over the still-mounted page
- * (Q1: never a route, never a takeover; the chapter stays visible behind the
- * scrim so the object's place in the document is seen rather than stated).
- *
- * It registers as a layer like every other surface, which is what makes law
- * 3's three-step walk fall out of one rule: a source pane inside the dialog
- * registers a layer of its own, so Esc closes the pane, then the dialog, then
- * leaves the object selected on the page.
- */
-
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -17,14 +6,6 @@ import { cn } from "@/lib/utils";
 
 import { useChromeLayer } from "./chrome-layers";
 
-/**
- * How much screen a dialog is entitled to. The shell owns both numbers, so a
- * surface never has to out-specify them from its own stylesheet: a `form` is a
- * centered card that stops growing once its fields are readable, a `workspace`
- * is a frame whose only ceiling is the viewport, because the content in it — a
- * diagram on a pan/zoom canvas — is the reason the writer opened the dialog.
- * `svh` rather than `vh`: a phone's URL bar must not clip the header off.
- */
 const DIALOG_SIZES = {
   form: "max-w-[min(64rem,92vw)]",
   workspace: "h-[88svh] w-[94vw] max-w-none",
@@ -37,7 +18,6 @@ export type EditorDialogProps = {
   id: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Read to assistive tech; visually hidden unless the surface shows it. */
   title: ReactNode;
   showTitle?: boolean;
   size?: EditorDialogSize;

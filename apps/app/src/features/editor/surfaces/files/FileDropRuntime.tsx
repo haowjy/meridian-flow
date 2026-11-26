@@ -21,7 +21,6 @@ export function FileDropRuntime({
   const scheme = parsed?.ok ? parsed.value.scheme : null;
 
   useEffect(() => {
-    // A chat lineage's Scratch is the model's to create in, so a writer's files are refused there.
     if (!editor || !projectId || !scheme || scheme === "uploads" || rootThreadId) return;
     const query: Record<string, string> = workId ? { workId } : {};
     const target = (intakeId: string, file: File) => ({ projectId, scheme, query, intakeId, file });

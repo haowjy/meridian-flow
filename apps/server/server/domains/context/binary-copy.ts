@@ -1,16 +1,3 @@
-/**
- * Whole-document copy of a binary file: the one place a copy depends on
- * how a document is stored. It duplicates the storage object inside the store, so deleting
- * either file never removes the other's bytes, and creates the destination
- * with `metadata.copiedFrom` through the copier's own port: in a draft-mode chat
- * that is a hidden row holding the draft's object, never shared (12b-Q2).
- * Tracked documents copy through agent-edit instead.
- *
- * Copying is two steps so a copy command can put every object before it writes any row:
- * `prepareBinaryCopy` duplicates the bytes, and `copyBinaryDocument` prepares and then
- * creates the destination in one go for callers with nothing to join.
- */
-
 import { copiedFilename, readSegment, renderFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";

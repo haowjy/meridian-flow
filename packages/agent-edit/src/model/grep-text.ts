@@ -1,13 +1,3 @@
-// The text `grep` matches, produced by one rule on both of grep's paths: the derivation
-// stores it per block, and a live hashline read computes it per block. Same blocks, same
-// function: the two agree by construction.
-//
-// A block is serialized the way a hashline body is (`serializeBlocks`, never the
-// whole-document `serialize`, which joins blocks with blank lines and writes an empty
-// paragraph as U+00A0) with every link and image destination spelled empty, so a match
-// never depends on which reader's address spelling a destination took. The block's text is
-// that markdown decoded to the writer's text view. A code file is not markdown: its block
-// is the code node's own text, with no fence.
 import type { DocumentLinkScope, MarkupCodec, PMNode } from "@meridian/markup";
 import { markdownPlainText } from "./markdown-text-view.js";
 

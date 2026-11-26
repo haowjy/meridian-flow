@@ -1,27 +1,10 @@
 import { t } from "@lingui/core/macro";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
-import type {
-  DocumentSessionLease,
-  LiveDocumentSessionRegistry,
-} from "@/core/editor/document-session-registry";
-import { contextRouteRequest } from "../routing/project-route";
-import type { ProjectStandings } from "./project-standings";
-/**
- * Opening a project document by id — the app's one answer to "take me there".
- *
- * Doors that already render a tree row carry its identity; id-only doors read it from the replay
- * of the project's list, waiting for the list only while it has not been read. Both commit main's
- * address before the destination acquires its live session. Every door opens the document in main,
- * except a chat's upload, which opens in the upload viewer. An open that finds nothing to show says
- * so in a failure toast, so no door handles a refusal itself.
- */
-
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import {
   createContext,
   createElement,
@@ -36,14 +19,21 @@ import {
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { isEditorScheme, type OpenDocument, type ServerOpenDocument } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
+import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
+import type {
+  DocumentSessionLease,
+  LiveDocumentSessionRegistry,
+} from "@/core/editor/document-session-registry";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
   useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
+import { contextRouteRequest } from "../routing/project-route";
 import { useProjectStandings } from "./account-feature-context";
 import { openDocumentFromFile } from "./open-document-from-file";
+import type { ProjectStandings } from "./project-standings";
 import { UploadViewerDialog } from "./UploadViewerDialog";
 
 export interface LiveDocumentBinding {
@@ -91,11 +81,6 @@ export class ProjectDocumentLiveOpener {
     },
   ) {}
 
-  /**
-   * Admits the document the project's list has in its tree. The list says whether it is there, so
-   * a document made here opens at once, before the server has heard of it: its session paints
-   * from the local copy and its room connects when the server has the create.
-   */
   async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
     const { projectId, documentId, signal } = input;
     const cancelled = () => signal?.aborted || this.dependencies.epochSignal.aborted;
@@ -201,12 +186,7 @@ export type OpenProjectDocumentRequest = {
   workId?: string;
   focus?: true;
   replace?: true;
-  /**
-   * Offers a document that opens in a pane to the side, once this open knows what it is: true when
-   * the side took it. A chat's upload never reaches it, since no pane holds one.
-   */
   placeBeside?: () => boolean;
-  /** The caller goes elsewhere when this open is refused, so the opener says nothing of it. */
   fallsBack?: true;
   signal?: AbortSignal;
 };
@@ -226,7 +206,6 @@ type NavigationAdapterDependencies = {
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
   locate(documentId: string): KnownDocumentIdentity | null;
-  /** Resolves once `locate` can place what the list shows; rejects only when `signal` aborts. */
   whenLocatable(signal: AbortSignal): Promise<void>;
   viewUpload(tab: ServerOpenDocument): void;
   refused(outcome: Extract<OpenDocumentOutcome, { kind: "refused" }>, retry: () => void): void;
@@ -234,7 +213,6 @@ type NavigationAdapterDependencies = {
 
 type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
 
-/** Turns a document identity into a committed destination; the destination owns content. */
 export class ProjectDocumentNavigationAdapter {
   private attempt = 0;
   private current: AbortController | null = null;
@@ -329,12 +307,6 @@ export class ProjectDocumentNavigationAdapter {
     }
   }
 
-  /**
-   * Where a document lives now: the caller's known row, or the replay of the list. It waits while
-   * the list has not been read, and while the list shows the document but the server's answer of
-   * the sources that place it has not come (a list read from this browser's copy, offline or
-   * reconnecting): a lookup then waits for the connection instead of failing.
-   */
   private async identify(
     projectId: string,
     {
@@ -379,7 +351,6 @@ export class ProjectDocumentNavigationAdapter {
       case "in-trash":
         return { kind: "trashed" };
       case "in-tree":
-        // The list shows it in a source the server did not list.
         return { kind: "refused", reason: "lookup-failed" };
       default:
         return { kind: "refused", reason: "gone" };
@@ -484,7 +455,6 @@ export function ProjectDocumentNavigationProvider({
   const { open: openTrash } = useTrashNavigation();
   const standings = useProjectStandings();
   const trees = useProjectTrees(projectId);
-  // Read at each open, so a change of the list does not make a new adapter.
   const treesRef = useRef(trees);
   treesRef.current = trees;
   const locatable = useRef(new Set<() => void>());

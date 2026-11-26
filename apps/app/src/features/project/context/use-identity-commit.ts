@@ -23,7 +23,6 @@ export type IdentityCommitted = {
 } & OpenDocumentOwner;
 
 export type IdentityCommitOwnership = {
-  /** Always true: a commit appends its records before it returns, so none is superseded. */
   isLatest: boolean;
   document: OpenDocument;
 };
@@ -36,11 +35,6 @@ export function identityCommitMayNavigate(
   return ownership.isLatest && activeDocumentId === committedDocumentId;
 }
 
-/**
- * The route command that follows a committed rename or move of the document the
- * address names. The address stays on that document, so it repairs in place: no
- * history entry, and the review it carries survives.
- */
 export function identityCommitRoute(
   documentId: string,
   next: Pick<IdentityCommitted, "scheme" | "path" | "workId" | "rootThreadId">,

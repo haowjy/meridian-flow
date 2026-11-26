@@ -25,16 +25,11 @@ export type EditorCommandSnapshot = {
   addressDocumentId?: string;
   documentTree: Parameters<typeof resolveLaunchLocator>[0]["tree"];
 };
-/**
- * Opening a document in main is one navigation: the address names the document, and main's host
- * follows it. Nothing is installed or selected.
- */
 export function createEditorDocumentCommand({
   read,
   presented,
 }: {
   read: () => EditorCommandSnapshot;
-  /** What the views present now (`PresentedDocuments`): a renamed document's current locator. */
   presented: () => readonly OpenDocument[];
 }): OpenContextRoute {
   return async (request, options) => {
@@ -85,7 +80,6 @@ export function createEditorDocumentCommand({
         const focused = target.documentId ?? preparedTab?.documentId;
         if (options?.focus && focused) armEditorFocus(focused);
       };
-      // Review changes is a destination: turning it on pushes, even on the page already shown.
       const opensReview = !!next.review && !current.address.review;
       if (
         options?.replace === undefined &&
@@ -136,7 +130,6 @@ export function createEditorDocumentCommand({
   };
 }
 
-/** A bare Scratch request takes the scope's Work as its owner. */
 function routeTargetOwner(request: ContextRouteRequest, scope: string | null): ContextRouteRequest {
   if (request.scheme !== "scratch" || request.workId || request.rootThreadId || !scope)
     return request;
@@ -171,7 +164,6 @@ export function prepareEditorDestination(
     changeId: reviewing ? changeId : undefined,
   } as ProjectAddress;
 }
-/** A prepared tab states the locator the route will use, not the one it was built from. */
 function tabAtLocator(tab: OpenDocument, locator: ContextRouteRequest): OpenDocument {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
     return tab;

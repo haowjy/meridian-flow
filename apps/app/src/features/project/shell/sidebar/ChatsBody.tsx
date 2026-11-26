@@ -32,7 +32,6 @@ import { useChatGroups } from "./use-chat-groups";
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
 
-/** Where the chat's row is now: its list and the chats above it there. */
 function placeOf(id: string): ChatPlace | null {
   const row = document.querySelector(chatSelector(id));
   const list = row?.closest<HTMLElement>("[data-chat-list]");
@@ -44,10 +43,8 @@ function placeOf(id: string): ChatPlace | null {
   return { list: key, after: ids.slice(0, ids.indexOf(id)).reverse() };
 }
 
-/** Unpinned chats a list shows at first, and adds with each Show more. */
 const PAGE = 20;
 
-/** What every chat row shares; stable across renders, so a row re-renders only for its own chat. */
 type RowContext = {
   projectId: string;
   deletes: ChatDeletes;
@@ -58,14 +55,6 @@ type RowContext = {
   onMoved: (threadId: string, pinned: boolean) => void;
 };
 
-/**
- * The Chat list: a find field over every chat; the scoped Work's chats, pinned first, under no
- * heading; then Other chats, folded, the other Works' pinned chats first, shown a page at a time.
- * Each chat shows once, in its own Work's list, and opening it doesn't move it; while Other chats
- * is folded, the open chat in it shows under its heading. Working helpers sit under their parent.
- * Each chat row opens, renames, pins and deletes its chat; a delete has an Undo. The API calls a
- * pin `favorite`.
- */
 export function ChatsBody({
   projectId,
   scopeWorkId,
@@ -100,7 +89,6 @@ export function ChatsBody({
       deletes,
       refused,
       touch,
-      // Opening a chat is the writer's next action here: a delete's Undo ends with it.
       onOpenChat: (id) => {
         deletes.dismiss();
         openChat.current(id);
@@ -120,7 +108,6 @@ export function ChatsBody({
       if (restored) setFocusRow({ id: notice.threadId });
     });
   };
-  // The chat just deleted stays in its place, struck through, with its Undo.
   const deleted: DeletedChat = notice
     ? {
         notice,
@@ -169,7 +156,6 @@ export function ChatsBody({
         focusRow.pinned === undefined ||
         (item.closest("[data-pinned-list]") !== null) === focusRow.pinned,
     );
-    // Still in the list it is leaving: wait for the move.
     if (!row && (rows.length > 0 || !listsSettled)) return;
     setFocusRow(null);
     const target = row ?? root.current?.querySelector<HTMLElement>("input");
@@ -183,7 +169,6 @@ export function ChatsBody({
     </div>
   );
   const othersCount = groups.othersPinned.length + groups.others.length;
-  // While Other chats is folded, the open chat in it shows under its heading.
   const openOther =
     [...groups.othersPinned, ...groups.others].find((chat) => chat.id === currentThreadId) ?? null;
 
@@ -258,10 +243,8 @@ export function ChatsBody({
   );
 }
 
-/** The chat whose delete is showing: its row stays where it was, struck through. */
 type DeletedChat = { notice: ChatDeleteNotice; row: () => ReactNode } | null;
 
-/** A list's chats with the deleted one kept where it was, in the list it was in. */
 function withDeleted<T extends RowChat>(
   list: string,
   chats: readonly T[],
@@ -280,10 +263,6 @@ function withDeleted<T extends RowChat>(
 
 const chatKey = (chat: RowChat) => chat.id;
 
-/**
- * A list's pinned chats, then its other chats a page at a time with Show more; the open chat
- * shows even past the page. Show more moves focus to the first chat it adds.
- */
 function PagedChats({
   list: listKey,
   pinned,
@@ -298,9 +277,7 @@ function PagedChats({
   openId: string | null;
   render: (chat: ThreadListItem) => ReactNode;
   deleted: DeletedChat;
-  /** Which list (this Work's or Other chats), so a deleted chat keeps its place there. */
   list: string;
-  /** Said when the list draws no row, a deleted chat it still holds included. */
   empty?: ReactNode;
 }) {
   const [shown, setShown] = useState(PAGE);
@@ -356,7 +333,6 @@ function PagedChats({
   );
 }
 
-/** The server's search over every chat's title, paged. */
 function SearchResults({
   projectId,
   search,
@@ -379,7 +355,6 @@ function SearchResults({
   );
 }
 
-/** A paged feed's rows, its Show more row, and its quiet failures. */
 function FeedRows({
   feed,
   row,
@@ -430,10 +405,6 @@ function FeedRows({
   );
 }
 
-/**
- * The chat the writer just deleted, struck through in its place with its Undo. Focus moves to
- * Undo when the delete makes it, not when the list remounts with it already showing.
- */
 function DeletedRow({
   notice,
   takeFocus,
@@ -467,7 +438,6 @@ function DeletedRow({
   );
 }
 
-/** A chat as either list names it: the thread list's row or a feed page's. */
 type RowChat = { id: string; title: string | null };
 
 const ChatRow = memo(function ChatRow({

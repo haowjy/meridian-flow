@@ -76,7 +76,6 @@ export function createConnections(deps: {
 
     async bake(thread) {
       if (!thread.parentThreadId) return baker.forWriter(thread.userId as UserId, thread.projectId);
-      // A subagent holds what its parent's bake in effect holds, whatever the writer's connections are now.
       const parent = await deps.repos.threads.findByIdIncludingDeleted(thread.parentThreadId);
       const held: readonly McpBakedConnection[] = parent
         ? ((await bakeOf(parent))?.bakedConnections ?? [])

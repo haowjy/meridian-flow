@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Awaiting-creation reads the journal before effects and observes both ownership sources. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

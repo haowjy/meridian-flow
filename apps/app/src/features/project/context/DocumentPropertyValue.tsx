@@ -34,7 +34,6 @@ export function DocumentPropertyValue({
     return (
       <ul className="flex flex-wrap gap-1">
         {value.map((item, index) => (
-          // The same word can appear twice in a list, so the position keeps the keys apart.
           <li key={`${index}:${String(item)}`} className="flex">
             <Chip kind="label" className="font-normal text-foreground">
               {typeof item === "boolean" ? <Flag value={item} /> : String(item)}

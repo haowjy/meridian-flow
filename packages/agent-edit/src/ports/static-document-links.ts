@@ -254,11 +254,6 @@ function catalogTree(
   };
 }
 
-/**
- * The cut's room version, holder and the whole catalog: coarser than the server's digest
- * (any catalog change counts), never finer, so a move always changes it.
- * FNV-1a, because this package also runs in the browser.
- */
 function cutRevision(state: Uint8Array, scope: HolderLinkScope, catalog: StaticDocumentCatalog) {
   let hash = 0x811c9dc5;
   const feed = (bytes: Uint8Array) => {

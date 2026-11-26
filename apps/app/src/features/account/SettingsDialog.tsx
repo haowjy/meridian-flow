@@ -53,8 +53,6 @@ export function useSettingsNavigation() {
     (section?: SettingsSection) => setSection(section ?? defaultSection, false),
     [setSection],
   );
-  // Section switches replace history so a single Back closes the overlay
-  // instead of replaying every rail click.
   const switchSection = useCallback(
     (section: SettingsSection) => setSection(section, true),
     [setSection],
@@ -112,8 +110,6 @@ function SectionContent({
 export function SettingsDialog() {
   const search = useSearch({ strict: false }) as { settings?: SettingsSection };
   const { open, switchSection, close } = useSettingsNavigation();
-  // `null` until the media query resolves (first client effect) — render no
-  // content for that frame rather than flashing the wrong presentation.
   const isPhone = usePhoneShell();
 
   const section = search.settings;

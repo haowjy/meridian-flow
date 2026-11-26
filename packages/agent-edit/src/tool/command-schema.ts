@@ -1,21 +1,9 @@
-// The agent's document contracts: the `read` input and the `write` mutation union.
-//
-// Each contract is built twice from the same fields: the model-facing tool input
-// names the document `path`, and the engine command names it `file` and adds the
-// host-only `documentId` and `tool_use_id`. Neither projection renames fields.
-// `move` and `delete` change where a whole document lives, not what it says, so only
-// the tool input has them: the host runs them, never the engine.
 import { z } from "zod";
 import { splitDocumentFile } from "../document-address.js";
 import { parseEditHandle } from "../ports/write-ordinals.js";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
 
-/**
- * `in` publishes as one compact JSON Schema instead of zod's nested projection.
- * The schema generator substitutes `modelJsonSchema` metadata for the generated
- * schema; positivity stays a parse check, so it isn't repeated at every use.
- */
 const BLOCK_SELECTOR_JSON_SCHEMA = {
   anyOf: [
     { type: ["string", "integer"] },

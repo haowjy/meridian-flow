@@ -223,7 +223,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     };
     let workScopeId =
       authority.kind === "contextual" ? (deps.primaryWorkAuthority?.workId ?? null) : null;
-    // Uploads are a chat's, never a Work's.
     if (
       scheme === "uploads" ||
       ("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage")

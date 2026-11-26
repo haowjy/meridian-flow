@@ -36,11 +36,6 @@ const onlyInDraft = (draft: DraftId, node: unknown) => sql`EXISTS (
   SELECT 1 FROM ${draftTreeNodes} n
   WHERE n.draft_id = ${draft} AND n.id = ${node} AND n.exists_only_in_draft)`;
 
-/**
- * A part no Undo, nor the writer's revert, has taken back: taking it back again would put its
- * deleted text back twice. An Undo of `ownTurn` doesn't count: the turn's own undo is in its plan
- * too, and taking back both, newest first, leaves the text as it was before the turn.
- */
 const notTakenBack = (ownTurn?: TurnId) => sql`NOT EXISTS (
   SELECT 1 FROM ${documentEditParts} u JOIN ${documentEdits} e ON e.id = u.edit_id
   WHERE (e.kind = 'undo' OR (e.kind = 'revert' AND e.actor = 'human'))
@@ -55,7 +50,6 @@ export async function restorePlan(
   draft: DraftId,
 ): Promise<RestorePlan> {
   const tree = await pendingOfTurn(tx, treeLists, turn, draft);
-  // A node the turn created goes to Trash with its text: no write into it goes back.
   const gone = new Set<string>(tree.created);
   const parts = (
     await standingParts(
@@ -165,12 +159,6 @@ export async function readRooms(
   return copies;
 }
 
-/**
- * What the turn card says of the turn's restore for each draft the turn wrote in: the drafts where
- * pressing it would change something (a write of the turn there would go back, or a tree change
- * of it is still pending there), and the restore in force for each draft, the latest that changed
- * something and has not been undone, so every tab and a reload read the same state.
- */
 export async function restoreStates(
   tx: DrizzleDb,
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,

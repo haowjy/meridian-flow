@@ -1,8 +1,3 @@
-/**
- * One precedence rule: an arrival at a target (a passage door, a review launch, a mark press)
- * beats mount-time memory. A reload or a pasted address is not an arrival: the writer's own
- * place wins, including over the change the address names.
- */
 import type { Editor } from "@tiptap/core";
 
 const pending = new Map<string, Set<object>>();

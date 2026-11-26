@@ -19,16 +19,12 @@ import {
 } from "./version.js";
 import type { DocChange } from "./write.js";
 
-/** What an import did to a copy (`RoomDocs.importBatch`). */
 export interface Imported {
-  /** The docs the import changed, the restore's included. */
   changed: DocKey[];
   pending: boolean;
-  /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange[];
 }
 
-/** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
 export class RoomDocsFreedError extends Error {
   constructor() {
     super("RoomDocs used after free()");
@@ -81,14 +77,6 @@ function checkBytes(key: DocKey, bytes: Uint8Array, snapshot: boolean): BytesMet
   return { startFrontiers: meta.startFrontiers, end };
 }
 
-/**
- * Throws `HistoryCutoffError` if `doc` would refuse `bytes` for depending on history below its
- * shallow cutoff. The metadata clears every update that starts at or after the cutoff, or brings
- * nothing `doc` lacks. One that starts below it may still land, when its ops below the cutoff are
- * ones `doc` already has and its new ops depend only on ops after it (a tab that rejoined and
- * sends from an old version); the metadata cannot tell that from a stale tab's offline typing, so
- * only that case is settled by importing into a fork.
- */
 function checkCutoff(key: DocKey, doc: LoroDoc, bytes: Uint8Array, meta: BytesMeta) {
   if (!doc.isShallow()) return;
   if (docCovers(docVersion(doc), meta.end)) return;
@@ -125,11 +113,8 @@ export class RoomDocs {
   readonly shape: ShapeSchema;
   readonly peer: PeerId;
   private readonly structureDoc: LoroDoc;
-  /** Text docs this copy owns, by block id. */
   readonly texts = new Map<BlockId, LoroDoc>();
-  /** Live's copy, for a draft's fork; not owned. */
   readonly live: RoomDocs | null;
-  /** A copy of Live this copy made for itself (`fork`, `at`), freed with it. */
   private ownedLive: RoomDocs | null = null;
   private readonly textWriteListeners = new Set<(id: BlockId, doc: LoroDoc) => void>();
   private readonly importListeners = new Set<() => void>();
@@ -145,7 +130,6 @@ export class RoomDocs {
     this.live = live;
   }
 
-  /** An empty Live copy. */
   static create(shape: ShapeSchema, peer: PeerId): RoomDocs {
     return new RoomDocs(shape, peer, new LoroDoc(), null);
   }
@@ -180,7 +164,6 @@ export class RoomDocs {
     return docs;
   }
 
-  /** A new draft fork of `live`: its structure forked, no text of its own yet. */
   static draftOf(live: RoomDocs, peer: PeerId): RoomDocs {
     return new RoomDocs(live.shape, peer, live.structure.fork(), live);
   }
@@ -268,7 +251,6 @@ export class RoomDocs {
     return copy;
   }
 
-  /** The doc a reader reads a block's text from: its own, else Live's for a draft. */
   textOf(id: BlockId): LoroDoc | undefined {
     this.alive();
     return this.texts.get(id) ?? this.live?.textOf(id);
@@ -279,12 +261,6 @@ export class RoomDocs {
     return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
   }
 
-  /**
-   * The doc a write into block `id` goes to: its own, else (in a draft) a fork of Live's taken now,
-   * else a new doc. A draft never writes into Live's text docs. `before` is the frontier the write
-   * starts from: the doc's own, or for a doc forked by this call the frontier it forked at, which
-   * is what the write's Undo record and a turn's restore press need (design §2).
-   */
   writableText(id: BlockId): { doc: LoroDoc; before: Frontiers } {
     const own = this.texts.get(id);
     let written: { doc: LoroDoc; before: Frontiers };

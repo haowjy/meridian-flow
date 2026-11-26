@@ -57,8 +57,6 @@ export function RecentDocumentsLanding({
   const settling = recent.status === "empty" && recent.isFetching;
   const loading = recent.status === "loading" || settling;
 
-  // No history: the heading promises a list that does not exist, so the
-  // first-run state stands alone rather than sitting under it.
   if (recent.status === "empty" && !settling) {
     return (
       <MainSurface
@@ -112,8 +110,6 @@ export function RecentDocumentsLanding({
                 )}
               />
             </RecentSelection>
-            {/* A failed refresh over cached rows keeps the list and offers a
-                quiet retry; a failed first load has nothing to show. */}
             {recent.isError ? (
               documents.length > 0 ? (
                 <p className="mt-5 text-xs text-muted-foreground">
@@ -167,15 +163,11 @@ function RecentDocumentRow({
     () => ({ ref: { kind: "file", id: item.documentId }, name: item.name, view: LIVE_VIEW }),
     [item.documentId, item.name],
   );
-  // A drag carries the selection by identity, never the path it was opened at, and asks Move or
-  // Copy as any reference does. A local document is no entry yet.
   const row = useEntryRow(entry, {
     active: false,
     draggable: address !== null,
     source: "reference",
   });
-  // A filed document moves and deletes from here; an Untitled one, or a note in a chat's
-  // Scratch (whose owner the list doesn't know), grants nothing.
   const actions = address && address.scheme !== "scratch" ? MOVE_DELETE : NONE;
   const [picking, setPicking] = useState<{
     action: "move" | "copy";
@@ -191,13 +183,11 @@ function RecentDocumentRow({
     },
     address?.scheme === "user" ? "account" : "project",
   );
-  // A link can't be pressed; `ListRow` names a selected link instead.
   const { "aria-pressed": _pressed, ...selectionProps } = row.rowProps;
   const listRow = (
     <ListRow
       href={href ?? undefined}
       onOpen={() => {
-        // The landing gives way to what opens: main's focus follows to it.
         focusMain();
         if (href) void router.navigate({ href });
         else onOpen(item);
@@ -237,10 +227,6 @@ function RecentDocumentRow({
 const MOVE_DELETE: readonly EntryAction[] = ["move", "delete"];
 const NONE: readonly EntryAction[] = [];
 
-/**
- * Opens a Recently opened row in main; false when it did not land. `leaving` is main leaving a
- * removed document: the row takes its history entry, and a refusal falls back to Recents unsaid.
- */
 export async function openRecent(
   item: AccountRecentItem,
   ports: {

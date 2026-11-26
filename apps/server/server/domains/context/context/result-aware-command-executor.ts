@@ -14,10 +14,6 @@ export interface ResultAwareCommandExecutor<TError> {
     scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
-  /**
-   * A command in an owner's draft, which the transaction locks, with the namespaces of
-   * `sourceIds` taken in key order with its own.
-   */
   runInDraft<T>(
     draft: ContextCommandDraft,
     operation: (draft: ContextCommandActiveDraft) => Promise<Result<T, TError>>,
@@ -86,7 +82,6 @@ export function createResultAwareCommandExecutor<TError>(input: {
     runInDraft(draft, operation, sourceIds) {
       return run(
         ({ draft: active }) => {
-          // The transaction contract: an `ensure` command always resolves a draft.
           if (!active) throw new Error("An ensuring command transaction resolved no draft");
           return operation(active);
         },

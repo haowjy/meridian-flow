@@ -1,9 +1,3 @@
-/**
- * Wakes the clients that show an Agents level when the text of one of its documents changes, by
- * whatever wrote it: another tab, `./mf`, the AI. Without it a file's verdict is read once, when
- * the tree first lists it, which for a file made and then filled is its empty text.
- */
-
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

@@ -1,9 +1,3 @@
-/**
- * The one ancestor matcher (file-access §3.1). Sharing grants and future
- * per-folder agent rules attach to nodes of the file tree and are looked up
- * over a file and its ancestors. Results come nearest first, so the most
- * specific rule is the first match and the best grant is a max over all.
- */
 import type { FileFacts, FileNode } from "./types.js";
 
 function nodeChain(facts: Pick<FileFacts, "self" | "ancestors">): FileNode[] {

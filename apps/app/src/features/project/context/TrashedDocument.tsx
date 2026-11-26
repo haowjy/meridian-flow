@@ -225,7 +225,6 @@ function deletedSentence(
       : t`Deleted from ${place} by ${name}.`;
   }
   if (actor?.kind === "agent") {
-    // A chat's AI is named by its chat: the record's title, else the chat list's.
     const chat = actor.chatTitle ?? (actor.chatId ? chats(actor.chatId) : null);
     if (chat)
       return deleted

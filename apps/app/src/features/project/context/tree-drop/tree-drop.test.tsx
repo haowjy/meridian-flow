@@ -108,7 +108,6 @@ it("never lets a group take a drag its row ignored", async () => {
     );
   }
   await withReactRoot(
-    // The area would take it; the row it sits in says nothing.
     scope((target) => (target.folder ? null : accept), <Nested />),
     async () => {
       const event = await fire("row", "dragenter");

@@ -56,11 +56,6 @@ export type DocumentSessionStatus =
   | "access-lost"
   | "destroyed";
 
-/**
- * The key a room's session goes by in this tab (registry, replacement, reading position, fence
- * quarantine): the bare document id for Live, which keeps what earlier builds stored under it,
- * and the room's name for a fork.
- */
 export function sessionRoomKey(room: DocumentRoom): string {
   return room.kind === "live" ? room.documentId : loroRoomName(room);
 }
@@ -313,8 +308,6 @@ export class DocumentSession {
         void store.close();
         return;
       }
-      // Through the binding like a peer's batch: past the bind horizon an editor may show the
-      // copy already.
       if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
       for (const batch of loaded.updates) this.importRemote(batch, false);
       this.forwardFromLive();
@@ -374,7 +367,6 @@ export class DocumentSession {
     return encodeRoomVersion(this.docs.version());
   }
 
-  /** Attach the session's only server transport after the local load. */
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
@@ -513,12 +505,6 @@ export class DocumentSession {
     return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
   }
 
-  /**
-   * Settles once the server acknowledged every batch this session sent so far. A session still
-   * loading its copy is waited for until its transport attaches, and a room that is reconnecting
-   * until its Join's batch is acknowledged. A fork's copy holds the Live ops it forwards, which
-   * its room never acknowledges, so a press waits on this (design §4).
-   */
   async whenSentAcknowledged(): Promise<void> {
     if (this.transportAttachmentPending)
       await new Promise<void>((resolve) => {
@@ -776,8 +762,6 @@ export class DocumentSession {
     const state = this.transportState;
     if (state?.kind === "unauthorized" || state?.kind === "reset") return "access-lost";
     if (!this.localPersistenceSynced) return "syncing";
-    // A lapsed sign-in keeps the text and takes edits like offline; the account's list asks the
-    // writer to sign in again.
     if (state?.kind === "terminal" || state?.kind === "signed-out") return "offline";
     if (!this.transportInitialSyncComplete) return "syncing";
     if (state?.kind === "disconnected") return "offline";

@@ -210,17 +210,12 @@ function ActiveSessionEditorView({
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  // This document's own address: what its relative links resolve against and
-  // what a link inserted into it is spelled relative to. Null until the tree
-  // carrying it arrives, or while it has no address yet, which spells full URIs.
   const indexedHolderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
       null,
     [linkableDocuments, documentId],
   );
-  // A draft-only holder takes its address from the review row. An ordinary review can outlive
-  // that row, so its live catalog address remains the fallback and continues to follow renames.
   const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
@@ -228,10 +223,6 @@ function ActiveSessionEditorView({
     t`Reference a file`,
     active ? scope.rootThreadId : null,
   );
-  // Where a link to a document nobody has written goes, unless a document is
-  // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
-  // names nothing (with folders, for a path link). Dashed until a follow's
-  // Create makes the document.
   const occupied = useMemo(
     () => new Set(linkableDocuments.documents.map((document) => document.uri)),
     [linkableDocuments],
@@ -268,10 +259,6 @@ function ActiveSessionEditorView({
       }),
     [sharedReferenceCatalog],
   );
-  // What a pasted `[[Name]]` may name: the Editor's link index (the same one
-  // its links resolve against and link-ahead checks), in Manuscript, KB, User,
-  // and this Work's Scratch, the areas a link names a document in (Uploads
-  // hold files, Unfiled holds untitled documents).
   const pasteTargets = useMemo(
     () =>
       linkableDocuments.documents.flatMap((document) => {
@@ -282,8 +269,6 @@ function ActiveSessionEditorView({
       }),
     [linkableDocuments],
   );
-  // Read at paste time. An index still loading converts nothing, rather than
-  // turning every link dashed.
   const wikilinkPasteCatalog = useCallback(
     () =>
       identity.schemaType === "document" && linkableDocuments.complete
@@ -292,9 +277,6 @@ function ActiveSessionEditorView({
     [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
   );
 
-  // Surface config: applied to the running editor, never a reason to rebuild it.
-  // Only the prose node's own attributes live here; a lane that answers a press
-  // does it in its own extension, where the state it reads already is.
   const leaveHintId = useId();
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
@@ -351,9 +333,6 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor]);
 
-  // A document the writer just made takes the caret at its start, and main's editor, editable
-  // or not, joins what main shows (the page load's caret, an open from a sidebar over main),
-  // unless something else (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
     if (!editor || !active) return;
     const made = effectiveEditable && claimEditorFocus(focusKey);

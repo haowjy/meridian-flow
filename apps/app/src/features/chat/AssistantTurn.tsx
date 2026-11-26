@@ -242,8 +242,6 @@ const TurnItemView = memo(function TurnItemView({
   }
 
   if (item.kind === "text") {
-    // Text is the assistant's voice: full prose, no icon, no rail — and it is
-    // only ever rendered here, outside the Thinking fold.
     return (
       <div className="space-y-[var(--chat-space-inline)]" data-turn-item-kind="text">
         <StreamingText
@@ -281,9 +279,6 @@ const FoldRun = memo(function FoldRun({ run }: { run: ViewRun }) {
     );
   }
 
-  // Claude-style timeline: adjacent tools stack as siblings instead of
-  // collapsing into a grouping disclosure. With text-altitude rows the
-  // visual weight is low enough that grouping reads as extra chrome.
   return (
     <div className="space-y-[var(--chat-space-inline)]" data-activity-block data-fold-activity-run>
       {run.tools.map((tool) => (

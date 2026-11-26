@@ -161,8 +161,6 @@ export function MainTabStrip({
       onKeyDown={moveAlongStrip}
       className="flex h-full min-w-0 shrink items-stretch"
     >
-      {/* The padding is room for the end tabs' flares, which this scroller would clip; the
-          negative margins take it back, so the first tab starts where the chip before it ends. */}
       <div
         ref={stripRef}
         onWheel={scrollStripWithWheel}
@@ -190,8 +188,6 @@ export function MainTabStrip({
           </div>
         ) : null}
       </div>
-      {/* New follows the lane's tabs only: after main's other item (a removed page) it would read
-          as a new one of those. */}
       {current ? null : (
         <BandIconButton
           label={newLabel}
@@ -612,10 +608,6 @@ function selectedTabFor(key: string): HTMLElement | null {
   return [...tabs].find((tab) => tab.checkVisibility()) ?? null;
 }
 
-/**
- * Arrow keys, Home and End move focus along the strip's tabs and main's other item; Enter or Space
- * opens the focused one. Control+Tab is the browser's, so the page never sees it.
- */
 function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
   const stops = [
     ...event.currentTarget.querySelectorAll<HTMLElement>(
@@ -638,7 +630,6 @@ function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
   event.preventDefault();
   const next = stops[Math.max(0, Math.min(stops.length - 1, to))];
   next?.focus({ preventScroll: true });
-  // The chip, not its overlay button, carries the scroll margin that clears the edge fade.
   next?.parentElement?.scrollIntoView({ inline: "nearest", block: "nearest" });
 }
 

@@ -38,7 +38,6 @@ it("a thread upsert inserts a new list row with its mode but never rewrites an e
   const row = () => client.getQueryData<Row[]>(key)?.[0];
   cache.upsertThread(thread);
   expect([row()?.aiWriteMode, row()?.effectiveAiWriteMode]).toEqual(["direct", "direct"]);
-  // The list's own refetch owns both fields: an older snapshot's modes must not replace them.
   cache.upsertThread({
     ...(thread as object),
     aiWriteMode: "draft",
@@ -91,7 +90,6 @@ it("a warm switch joins from the cached snapshot without rewinding the list row"
   first.start();
   first.receive(read("Old"));
   first.stop();
-  // A rename patches the list rows but not the cached snapshot.
   client.setQueryData(listKey, (rows: { title: string }[]) =>
     rows.map((r) => ({ ...r, title: "New" })),
   );

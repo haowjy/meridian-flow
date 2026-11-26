@@ -36,10 +36,6 @@ export interface ResolveWriteParams {
   command: WriteCommandName;
   content?: string;
   parsedContent?: ParsedContent;
-  /**
-   * Blocks copied from another document. They take the place of
-   * `content` and are inserted as nodes, never through markup.
-   */
   blocks?: readonly Block[];
   after?: string;
   before?: string;
@@ -86,12 +82,6 @@ interface NormalizedParams extends ResolveWriteParams {
   content: string;
 }
 
-/**
- * A write resolved up to ref assignment: scope, find matches and splices are fixed,
- * and `written` holds every parsed node assignment will see (a find's
- * reconstructed groups included), so the host can load what they name
- * before `assign` runs synchronously over the prepared scope.
- */
 export type WritePlan =
   | {
       ok: true;
@@ -197,7 +187,6 @@ function assignPlannedWrite(
   return { ok: true, edits };
 }
 
-/** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
 function assignScope(
   ctx: ConcreteResolveContext,
   step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
@@ -270,11 +259,6 @@ function insertEdit(
   };
 }
 
-/**
- * Copied blocks replace the scope whole: they go in after the block before it,
- * then the scope's blocks go. No old block is reused, so every copy gets a
- * fresh hash and none of the replaced text survives under a copied block.
- */
 function replaceScopeWithCopies(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -369,11 +353,6 @@ function assignSpan(links: WriteLinks, old: readonly Block[], written: readonly 
   return links === "preassigned" ? [...written] : links.assignSpan(old, written);
 }
 
-/**
- * The model's content as the blocks it becomes where it lands: read as if spliced into the
- * document beside block `beside`, so its indentation and `>` mean what they mean there. Null
- * where nothing is open (the start of the document, or a whole-document write).
- */
 function parseAt(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -643,7 +622,6 @@ function replaceScope(
   };
 
   const steps = alignBlocks(oldNodes, newBlocks);
-  // The new text of each old block that stays, to tell a neighbour that lost what this one gained.
   const stays = new Map<number, string>();
   for (const step of steps)
     if (step.kind === "keep" || step.kind === "change")

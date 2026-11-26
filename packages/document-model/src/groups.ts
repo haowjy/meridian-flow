@@ -1,6 +1,5 @@
 import type { BlockId } from "./shape.js";
 
-/** Union-find over block ids. */
 export class Groups {
   private readonly parent = new Map<BlockId, BlockId>();
   constructor(ids: Iterable<BlockId>) {

@@ -1,18 +1,3 @@
-/**
- * chat-projections — the one place that knows every cache holding a
- * denormalized chat row: the project thread list (`ThreadListItem[]`), every
- * `chatFeed` page (including filtered Work feeds).
- *
- * A mutation patches one chat row through `patchChatRow`; every cache that
- * carries that row updates atomically inside one `notifyManager.batch`, so a
- * subscriber never renders a half-applied state. The two row shapes differ
- * (`ThreadListItem` carries Work/lifecycle for the header; `ProjectChatItem`
- * carries the feed's denormalized preview/Favorite state), so a patch supplies
- * one updater per shape it actually touches; an updater returning `null`
- * removes the row from that cache. Omit `projectId` only for a project-agnostic
- * lifecycle signal that must reach every mounted project's caches — the thread
- * store patches by thread id alone and does not know which project owns it.
- */
 import type {
   ProjectChatFeedPage,
   ProjectChatItem,

@@ -213,7 +213,6 @@ export const NestingExtension = Extension.create({
             // Prose, in the document or a cell; a fence or an object keeps its own keys.
             appliesTo: (context) => context.owner === "document" || context.owner === "table-cell",
             bindings: {
-              // A link the keyboard focused follows on Enter (`LinkSurfaceExtension`).
               Enter: (state, dispatch, view) =>
                 (!view || view.dom.ownerDocument.activeElement === view.dom) &&
                 enterInNesting(state, dispatch),
@@ -228,7 +227,6 @@ export const NestingExtension = Extension.create({
         props: {
           transformCopied: (slice) => copiedSlice(slice),
           handleDOMEvents: {
-            // The box is drawn in the block's indent, so a press there is on the block's own element.
             mousedown: (view, event) => {
               if (!view.editable || event.button !== 0) return false;
               const target = event.target as HTMLElement | null;

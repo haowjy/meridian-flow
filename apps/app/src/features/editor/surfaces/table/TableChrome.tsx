@@ -66,8 +66,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
-  // Where a swept rectangle's menu hangs. Geometry only: which cells it acts on
-  // is the pair of holds beside it, and a screen point cannot say that.
   const [cellMenuAt, setCellMenuAt] = useState<{ x: number; y: number } | null>(null);
   const [sweptCells, holdSweptCells] = useSweptCells(editor);
 
@@ -91,9 +89,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     releaseAnchor,
   );
 
-  // A cell a peer took away takes the menu aimed at it with it. The hold is
-  // already gone by the time this runs; what it cannot know is that this
-  // surface had a menu open on it.
   useEffect(() => {
     if (anchorCell === null) {
       setOpenMenu(null);
@@ -101,8 +96,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     }
   }, [anchorCell]);
 
-  // Either swept cell taken away is a rectangle nobody can name any more, so
-  // the menu aimed at it goes with it rather than re-aiming at what is left.
   useEffect(() => {
     if (sweptCells !== null) return;
     setCellMenuAt(null);
@@ -126,12 +119,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
         const cell = at === null ? null : cellElementAt(editor.view, at.from);
         return cell !== null && pointerHoldsTableChrome(cell, x, y);
       },
-      // A nested table's gap is `holds` territory that also HITS: the pixels
-      // beside the inner frame are on the OUTER table's cell, so the probe
-      // answers fresh and `holds` alone never gets a vote. Both holds resolve
-      // to the cells drawing them now — a held cell a peer took away resolves
-      // to nothing and concedes — and the nesting judgment is the same zone
-      // `holds` reads (`table-anchors.ts`).
       reconcile: (held, hit, { x, y }) => {
         const heldAt = resolveNodeHold(editor.state, held);
         const heldCell = heldAt === null ? null : cellElementAt(editor.view, heldAt.from);
@@ -143,9 +130,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
       onSettle: (hold) => {
         const at = hold === null ? null : resolveNodeHold(editor.state, hold);
         const pos = at?.from ?? null;
-        // Whether the pointer is still on this table is true of the pointer
-        // whatever a menu is doing, and it is what fades the grips out the
-        // moment a menu that was holding them closes.
         setHovering(pos !== null);
         // An open menu owns the anchor: letting a stray hover move the grips out
         // from under the menu would leave it pointing at another row. The
@@ -189,10 +173,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     });
   }, [chrome, editable, selectAxis]);
 
-  // A rectangle the writer swept by hand is the one table selection no grip
-  // can make, and the only path to merging two arbitrary cells. Nothing above
-  // this rung wants it — the formatting menu admits text selections only — so
-  // without this the right-click lands on silence.
   useEffect(() => {
     if (!chrome) return;
     return chrome.registerContextClaim({
@@ -213,10 +193,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   useTableKeymap(chrome, editable);
 
-  // The kernel's resolved context, not a per-transaction re-render: this
-  // surface's only reading of the document is "is a table selected", and the
-  // context store answers it, notifying when that answer changes rather than
-  // on every keystroke of the chapter.
   const context = useChromeContext(editor);
   const selectedTablePos =
     context.owner === "object" && context.nodeType === "table" ? context.pos : null;
@@ -506,8 +482,6 @@ function useTableChromeRects(
     };
 
     measure();
-    // The table itself joins the cell and the manuscript root: a column drag
-    // resizes the frame live, before the width it settles on becomes a step.
     return watchManuscriptLayout(editor, [cell, cell.closest("table")], measure);
   }, [cell, editor]);
 

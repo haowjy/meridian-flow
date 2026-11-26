@@ -16,12 +16,6 @@ export type ContextRemovalRoutePort = {
     target: ContextRouteRequest | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
-  /**
-   * The writer is removing `documentId`, which main shows: main opens the document it showed
-   * before, one that still exists and is not among `removing`, else Recently opened. Nothing
-   * moves once `isCurrent` turns false. Resolves to where main landed (`documentId` null:
-   * Recently opened); null when it did not move.
-   */
   goBack(
     projectId: string,
     documentId: string,
@@ -135,7 +129,6 @@ export class ContextRemovalCoordinator {
     };
   };
 
-  /** What the list says changed, as one batch. A document already gone stays gone: the batch repeats nothing. */
   applyRemovals(commands: readonly RemovalCommand[]): void {
     if (this.unavailable()) return;
     for (const projectId of new Set(commands.map((command) => command.projectId))) {
@@ -171,13 +164,6 @@ export class ContextRemovalCoordinator {
     return Promise.all(documentIds.map((id) => this.copies?.clearLocalCopy(id as never)));
   }
 
-  /**
-   * The writer switched a page only a draft holds to Live, which lacks it: it closes
-   * as a Discarded one does, main going back to the document it showed before, else to Recently
-   * opened, and its tab closes once main has left it. `landed` hears where main went, as with
-   * `beginOwnRemoval`. Nothing happens when main doesn't show it; `isGoingBack` says whether main
-   * is leaving.
-   */
   leaveDraftOnly(
     projectId: string,
     documentId: string,

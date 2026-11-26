@@ -178,13 +178,6 @@ export interface GrepFile {
   readonly: boolean;
   matches: GrepPassage[];
   matchCount?: number;
-  /**
-   * Host-only: each ref-bearing link the returned passages spell, aligned with
-   * `matches`, and the holder URI and view the read's binding spelled them
-   * from. Tools strip it; the host records a passage's links only when the
-   * text the model receives shows that passage whole, and only for hits the
-   * reader may see.
-   */
   shown?: GrepShowing;
 }
 
@@ -197,11 +190,6 @@ export interface GrepQuery {
   mode: GrepMode;
   headLimit: number;
   signal: AbortSignal;
-  /**
-   * The documents the caller may read, asked before anything is matched or counted, each with
-   * the destination its access reads from: the text is read there, not where its source's
-   * scheme would send it (a moved document's content source is not its address's).
-   */
   readable(
     ids: readonly string[],
   ): Promise<ReadonlyMap<string, { level: "read" | "edit"; destination: FileDestination }>>;

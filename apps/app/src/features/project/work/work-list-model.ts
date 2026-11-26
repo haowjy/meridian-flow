@@ -51,7 +51,6 @@ export function workListEntries(
         ]
       : [],
   );
-  // A gone row belongs to the tab the Work was deleted from, or else to Deleted.
   const goneIn = (list: string | null) =>
     goneRows.filter(
       (entry) => (placeOf(entry.work.id)?.list.split(":").at(-1) ?? "deleted") === list,

@@ -1,12 +1,3 @@
-/**
- * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
- * heading; this owns the goal, which never saves on blur and so guards
- * navigation while a draft is dirty. Saving closes the editor at once and the
- * command is the driver's; a save the server did not apply (a closed Work, a
- * refusal) reopens the editor with the writer's text. An open editor never
- * closes because the Work changed underneath: an archived Work only shows it
- * when a save bounces.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
@@ -167,8 +158,6 @@ export function WorkGoal({
   const goalId = useId();
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
-  // An expanded goal can't be measured for clamping, so new text starts
-  // folded and is measured afresh: a short one then drops Show less.
   const [shownGoal, setShownGoal] = useState(work.goal);
   if (shownGoal !== work.goal) {
     setShownGoal(work.goal);

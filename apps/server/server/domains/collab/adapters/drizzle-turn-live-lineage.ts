@@ -78,8 +78,6 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           folder: sql<boolean>`${documents.id} is null`,
           draft: drafts.id,
           op: treeEditReceipts.op,
-          // The node's own address before the change (a create's: where it was made), so a
-          // folder's delete or a several-move reads as each node's own line.
           shownAt: sql<
             string | null
           >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
@@ -87,9 +85,6 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           copiedFrom: sql<
             string | null
           >`coalesce(${treeEditReceiptNodes.copiedFrom}, ${documents.metadata}->'copiedFrom'->>'uri')`,
-          // The model's own undo has the last word on it: the newest receipt of its chain (an
-          // undo, an undo of that) is an undo no card made. A card's Undo isn't one: the card's
-          // rows still say what the reply did.
           undone: sql<boolean>`coalesce((
             with recursive chain as (
               select r.id, r.kind, r.command_id, 1 as depth from tree_edit_receipts r

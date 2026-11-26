@@ -1,32 +1,3 @@
-/**
- * Who is sending a file into this document right now, on the one channel that forgets.
- *
- * A picture slot in flight is a document fact (its `uploadToken`), and so is a
- * file chip (its `doc:` ref), but the browser sending the bytes is not: the
- * answer stops being true the moment a tab closes, and a fact stored in the
- * document would outlive its own truth and be undoable besides. Awareness is
- * where a fact like that belongs — the same channel the collaborator carets
- * ride, ephemeral by construction and never in anyone's history.
- *
- * So this extension is a transport adapter and nothing more. Outward: what this
- * client is sending, as one field written through the session's presence port
- * (`core/editor/local-presence.ts`) — never onto `Awareness` by hand, because
- * whether this client is visible at all belongs to the session and a raw write
- * during suspension is a silent no-op. Inward: every other client's, into the
- * upload store (`core/uploads/upload-store.ts`), which a picture slot and a
- * file chip both read to say "uploading elsewhere".
- *
- * Two facts per upload, and no more. The id, because that is the join. A
- * picture's measured shape, because §5.6's promise is that the manuscript does
- * not move when bytes land, and a peer holding an unshaped box would take the
- * reflow the owner was spared. Not the percent and not the bytes: those never
- * leave the browser that has them, and a peer could do nothing with either.
- *
- * It mounts with collaboration, because a document with no shared room has no
- * elsewhere. Presence reaches only this document's room: to other clients, a chip copied into
- * another document before its file lands reads gone there until it does.
- */
-
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 

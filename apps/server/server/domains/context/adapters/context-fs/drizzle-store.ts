@@ -150,7 +150,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async readSubtree(id: string): Promise<ContextSubtree | null> {
     if (!isUuid(id)) return null;
-    // A Trash entry's members share one `trash_record`; what was in Trash before it has its own.
     const rows = await this.db.execute<{
       id: string;
       kind: "folder" | "document";

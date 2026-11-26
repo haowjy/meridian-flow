@@ -14,15 +14,6 @@ import {
 
 export type FormattingMenuPoint = { x: number; y: number };
 
-/**
- * Contexts whose prose this menu formats. A table cell's text is prose (§5.4),
- * so the cell keeps its own chain but the words in it are ours.
- *
- * Two contexts are missing on purpose. An object has no text to format, and a
- * source block belongs to the code strip (§5.3, law 4): a menu offering Heading
- * over a fence is the F6 accident, and a menu offering nothing over one is a
- * menu that took the browser's for no gain.
- */
 const FORMATTING_MENU_CONTEXTS: readonly ChromeContextKind[] = ["document", "table", "table-cell"];
 
 export function formattingOwnsContext(context: ChromeContext): boolean {
@@ -41,25 +32,9 @@ export function formattingMenuOpensFor(editor: Editor): boolean {
 
 export function claimsFormattingMenu(editor: Editor, target: ContextClaimTarget): boolean {
   if (!menuCouldOpenOver(editor, target)) return false;
-  // The kernel has already checked that the selection is prose and that the
-  // pointer sits inside it. Not "a selection exists": a selection three
-  // paragraphs away is not what the writer is pointing at.
   return target.insideTextSelection;
 }
 
-/**
- * The claim decision at the ladder's floor: a right-click in prose that no
- * more specific rung wanted.
- *
- * It does not ask about the selection at all, which is the point — a bare
- * caret and a right-click three paragraphs away from a sweep are the same
- * gesture, and both mean "give me the verbs for HERE". `placeCaretForMenu` is
- * what makes "here" true before the menu reads the document.
- *
- * A pointer with no document position under it declines: outside the prose
- * there is no block to aim the verbs at, and a menu over the editor's margin
- * would act on wherever the caret happened to be left.
- */
 export function claimsCaretFormattingMenu(editor: Editor, target: ContextClaimTarget): boolean {
   if (target.docPos === null) return false;
   return menuCouldOpenOver(editor, target);
@@ -67,12 +42,8 @@ export function claimsCaretFormattingMenu(editor: Editor, target: ContextClaimTa
 
 function menuCouldOpenOver(editor: Editor, target: ContextClaimTarget): boolean {
   if (editor.isDestroyed || !editor.isEditable) return false;
-  // A grip or an object row is chrome standing over the prose; its own lane
-  // takes those right-clicks, further up the ladder than either rung.
   const chrome = getEditorChrome(editor);
   if (chrome && isEditorChromeElement(chrome, target.element)) return false;
-  // What the POINTER is over, which is the finer answer: the writer aimed at a
-  // place, and that place may be a diagram or a fence.
   return formattingOwnsContext(target.context);
 }
 

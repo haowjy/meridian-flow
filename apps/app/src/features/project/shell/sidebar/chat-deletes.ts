@@ -1,15 +1,3 @@
-/**
- * The project's chat deletes: one notice, the deleted chat's row struck through with its Undo,
- * ended by the next delete or the writer's next pick in the Chat list. The project owns it, so switching the sidebar's list, closing the phone's drawer or
- * remounting the sidebar keeps it; leaving the project, signing out or reloading ends it.
- *
- * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of it)
- * and moves its unsent words into New chat, so the writer finds them there at once. Undo puts back
- * each thing the delete took that nothing has replaced since, the words included.
- *
- * Every restore in the project goes through here, so a restore from anywhere else (the Trash
- * line over the chat's draft) ends the notice as Undo would, without putting views back.
- */
 import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
 import {
@@ -31,14 +19,11 @@ export type ChatDeleteNotice = {
   threadId: string;
   title: string;
   status: "ready" | "restoring" | "failed";
-  /** Where the chat's row was when the writer deleted it, for the row to stay there. */
   place: ChatPlace | null;
 };
 
-/** A row's place in one list: the list's key and the chats listed before it, nearest first. */
 export type ChatPlace = { list: string; after: readonly string[] };
 
-/** A delete the server refused: the chat is back, and its row says so with Retry. */
 export type ChatDeleteRefusal = { threadId: string; title: string };
 
 type Ports = {
@@ -48,17 +33,13 @@ type Ports = {
   navigation(): ChatNavigation;
 };
 
-/** What the delete took from the screen, for Undo to put back. */
 type Taken = { main: boolean; current: boolean };
 
 type Held = {
   notice: ChatDeleteNotice;
   taken: Taken;
-  /** The delete's words have moved into New chat (or have nothing to move). */
   moved: Promise<unknown>;
-  /** True once the server has the chat in Trash. */
   landed: Promise<boolean>;
-  /** The notice ended while its Undo was in flight: Undo then puts no view back. */
   ended: boolean;
 };
 
@@ -121,14 +102,12 @@ export class ChatDeletes {
     this.publish();
   }
 
-  /** True once per delete, for the notice line to take focus when the delete makes it. */
   takeFocus(id: number): boolean {
     if (this.focusPending !== id) return false;
     this.focusPending = null;
     return true;
   }
 
-  /** Brings the chat back; true once the server and every list have it again. */
   async undo(): Promise<boolean> {
     const held = this.held;
     if (!held || held.notice.status === "restoring") return false;
@@ -155,10 +134,6 @@ export class ChatDeletes {
     return false;
   }
 
-  /**
-   * A restore other than Undo; `threadId` is the chat or the first chat of its lineage. When the
-   * notice's chat is back, the notice ends without its cleanup and without putting views back.
-   */
   async restore(threadId: string): Promise<ChatCommandOutcome> {
     const outcome = await restoreProjectChat(this.ports.client, this.ports.projectId, threadId);
     const held = this.held;

@@ -71,8 +71,6 @@ it("ignores the old generation answering late, after its waiter was carried", as
   resolution.registerResolver({ remote: () => new Promise((done) => (oldAnswer = done)) });
   let settled: unknown = "waiting";
   void resolution.resolve(KAEL_LINK).then((entry) => (settled = entry));
-  // The new generation shows a provisional answer; the click still waits for
-  // the server, and the old generation's late gone must not replace it.
   resolution.registerResolver({
     local: () => ({ kind: "ask", provisional: { state: "document", document: KAEL } }),
     remote: () => new Promise((done) => (newAnswer = done)),
@@ -89,8 +87,6 @@ it("ignores the old generation answering late, after its waiter was carried", as
 });
 
 it("keeps two refs sharing an href apart", async () => {
-  // The old Kael was deleted and a new document now sits at the same address:
-  // the link to the old one is gone, the link to the new one resolves.
   const resolution = createLinkAnswerCache();
   const asked: LinkQuestion[][] = [];
   resolution.registerResolver({

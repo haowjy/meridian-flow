@@ -40,8 +40,6 @@ export function useProjectWake(projectId: string): void {
         }
       });
     };
-    // Drafts' lists are stale, every draft's when the set holds `undefined`. An Apply of many
-    // documents sends a hint per document: as with chats, one read runs and one more follows it.
     let draftsRefreshing = false;
     let draftsTrailing: Set<string | undefined> | null = null;
     const readDrafts = (drafts: ReadonlySet<string | undefined>) => {

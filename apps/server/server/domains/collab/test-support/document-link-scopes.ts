@@ -10,7 +10,6 @@ export function createTestDocumentLinkScopes(
   db: Database,
   options: {
     fileAccess?: Pick<FileAccess, "listAccess">;
-    /** Hears the warnings a prepared scope's misses emit (they never throw). */
     eventSink?: EventSink;
   } = {},
 ) {

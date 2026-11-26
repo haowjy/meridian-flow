@@ -26,15 +26,6 @@
 .meridian-editor .ProseMirror {
   --meridian-picture-cap: calc(var(--meridian-pane-height, 100cqh) * 0.6);
   outline: none;
-  /* Height, insets, and the scroll-past-end reserve are the prose column's,
-     applied as utilities from `editor-column.ts` — one owner for the geometry
-     that decides where a click below the last line lands, and the reading
-     measure is in those insets too.
-
-     Font family, reading scale, AND color inherit from `prose-tokens` — the
-     editor must read identically to chat prose (one reading surface). A
-     `--color-foreground` override here once made the manuscript render darker
-     and visually heavier than chat at the same font size. */
 }
 
 .meridian-editor .ProseMirror p.is-empty::before {
@@ -45,11 +36,6 @@
   pointer-events: none;
 }
 
-/* Lists and quotes are runs of sibling blocks, not wrapper elements. The nesting
-   plugin (`core/editor/extensions/nesting`) gives each nested block its indent, the
-   inline offset of its own list marker, the kind of item it starts, the item's number
-   and, in a quote, one bar per quote it sits in; the marker is generated content in
-   the indent. */
 .meridian-editor .ProseMirror {
   --nest-list-step: 1.5rem;
   --nest-quote-step: 1.1875rem;
@@ -135,8 +121,6 @@
   background: var(--color-primary);
 }
 
-/* The box is a control: a press on it checks the task (`NestingExtension`). The
-   press lands on the block's own element, so the pointer is all CSS adds. */
 .meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="todo"]::before,
 .meridian-editor .ProseMirror[contenteditable="true"] .meridian-listed[data-item="done"]::before {
   pointer-events: auto;
@@ -156,28 +140,10 @@
   pointer-events: none;
 }
 
-/* A picture is a big glyph. Its bottom sits on the text baseline, so the words
-   before it and after it stand at its foot, the line box grows as tall as the
-   picture, and what follows wraps onto the line below — the "in line" of Docs
-   and Word. It is the same object at the same size
-   mid-sentence or alone in its paragraph, and the prose column is its only
-   bound.
-
-   Baseline alignment is asked of TipTap's own inline wrapper, because that is
-   the box the line box is built out of. An inline-block takes its baseline from
-   its last in-flow line box, which would hang the font's descender under the
-   picture and float it off the baseline. So the wrapper inside it is a block
-   and everything inside THAT is block-level: with no line box to read, CSS
-   falls back to the bottom margin edge, and that edge is the picture's foot. */
 .meridian-editor .ProseMirror span.react-renderer.node-image {
   vertical-align: baseline;
 }
 
-/* A very tall picture pushes the writer's text out of view, so the view caps it.
-   Stored `width` is untouched: this cap depends on the viewer's pane, and the
-   stored picture doesn't. A picture is the size of its box, so this holds a
-   picture with no box of its own, up to the moment it draws and is measured
-   (`imageBoxStyle` narrows the box to keep the ratio). */
 .meridian-editor .ProseMirror .meridian-image-node {
   display: block;
   max-width: 100%;
@@ -190,28 +156,11 @@
   object-fit: contain;
 }
 
-/* A picture the writer dragged to a size. The stored width lives on the wrapper
-   (the box the line is built out of), and the picture fills it — without this
-   the `<img>` would keep its own intrinsic width inside a box that changed
-   around it. `height: auto` is what keeps the ratio; the drag preserves it too,
-   and this is what holds it after a reload. The column still wins: `max-width`
-   above bounds a stored width exactly as it bounds a natural one. */
 .meridian-editor .ProseMirror .meridian-image-node--sized > img {
   width: 100%;
   height: auto;
 }
 
-/* The four grips a selected picture wears (§5.2's ring, made draggable).
-
-   Rendered inside the picture's own node view, which is the object overlay's
-   own default: chrome in the element it decorates scrolls and reflows with the
-   manuscript for free, so there is no rect to chase and no way to strand a grip
-   beside the paragraph that took the picture's place.
-
-   Just INSIDE the bounds, like every other object control (mockup 03b) — a grip
-   hanging outside them would be the first thing a picture at the column edge
-   lost to the clip. Nothing here reserves space: the layer is absolute over a
-   box the manuscript already sized. */
 .meridian-image-resize {
   position: absolute;
   inset: 0;
@@ -226,8 +175,6 @@
   border-radius: var(--radius-sm);
   background: var(--color-primary);
   pointer-events: auto;
-  /* A grip is a control, not prose: pressing one must not sweep a selection
-     through the paragraph the picture stands in. */
   user-select: none;
   touch-action: none;
 }
@@ -274,9 +221,6 @@
   line-height: 1.3;
 }
 
-/* The readable box a slot with no measured frame brings, as the pending
-   placeholder brings its own (`surfaces/images/image-ingress.css`). A measured
-   frame is already the picture's box and a minimum would overflow it. */
 .meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-node__placeholder {
   min-width: 8rem;
   min-height: 6rem;
@@ -296,11 +240,6 @@
   font-size: var(--text-sm);
 }
 
-/* Object chrome is rendered inside the object's own node view and placed
-   absolutely in its corner (`chrome/object-overlay.ts`), so the node view is
-   what that corner is measured from. `relative` with no offsets moves nothing
-   and reserves nothing; the class is TipTap's container for a node view, which
-   is exactly the set of elements the manuscript does not own. */
 .meridian-editor .ProseMirror .react-renderer {
   position: relative;
 }
@@ -349,14 +288,6 @@
   vertical-align: bottom;
 }
 
-/* The jade ring a selected object wears — law 1's click, read back. A ring
-   rather than an outline so it follows the object's own radius, and jade
-   rather than the focus tone because selection is a state, not focus.
-
-   The class is ours, painted by a decoration object physics derives from the
-   selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
-   node view's lifecycle and does not survive the document rebuild a peer's
-   write causes — see `core/editor/objects`. */
 .meridian-editor .meridian-object-selected {
   outline: none;
   border-radius: var(--radius-md);
@@ -370,19 +301,11 @@
   cursor: default;
 }
 
-/* A table wears the same ring, one node in and turned inward.
-   In: the node ProseMirror decorates is prosemirror-tables' scroll wrapper,
-   which is the full column even when the grid is narrower or aligned right.
-   Inward: that wrapper scrolls, and a scroll container clips its children's
-   shadows, so an outward ring on the grid would be invisible. */
 .meridian-editor .tableWrapper.meridian-object-selected {
   box-shadow: none;
 }
 
 .meridian-editor .tableWrapper.meridian-object-selected > table {
-  /* The table's own top and left strokes turn jade and sit outside the shadow; on the
-     right and bottom the cells' strokes paint over the shadow's outermost pixel, so the
-     second shadow reaches one pixel further there. Every side shows the same weight. */
   border-color: var(--color-primary);
   box-shadow:
     inset 0 0 0 0.125rem var(--color-primary),

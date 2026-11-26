@@ -1,12 +1,3 @@
-/**
- * The model-facing view revision: what a reader was shown, as an opaque token.
- *
- * `l1:` + sha256 over the cut's room version (every doc's version vector, so any op changes it),
- * the holder's URI, and how every ref-bearing link and `asset:` source spells in this view. A
- * tree-only move changes the spelling and so the token, though the room did not change. It is
- * computed in the same synchronous block as the render it identifies, and is a freshness signal,
- * never a write refusal. A Work's read appends the Work's key (`viewRevision`).
- */
 import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
 import type {
@@ -24,7 +15,6 @@ export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
   const triples = new Set<string>();
   for (const { kind, attrs } of walkLinkOccurrences(cut.blocks)) {
     const asset = kind !== "link" && attrs.href.startsWith("asset:");
-    // A no-ref link spells its stored bytes, which the version already covers.
     if (attrs.ref === null && !asset) continue;
     const spelled =
       kind === "link"
@@ -49,12 +39,6 @@ export function inView<T extends { revision: string | null }>(read: T, draft: st
   return draft && read.revision ? { ...read, revision: viewRevision(read.revision, draft) } : read;
 }
 
-/**
- * One agent `read` of a document in a holder's spelling: each block's body, destination-free
- * markdown, grep text, and the links it spells, plus the revision. One projection serves all
- * of it; the revision follows the render because projecting can repair the document.
- * `verbatim` is a code file, whose grep text is its code node's text.
- */
 export function readHashlines(
   doc: DocHandle,
   version: Uint8Array,

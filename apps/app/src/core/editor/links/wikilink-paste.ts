@@ -1,24 +1,3 @@
-/**
- * Pasted `[[Name]]` becomes a standard link. Writers bring notes over
- * from note apps, whose links would otherwise arrive as dead brackets. Only
- * paste converts: a typed `[[`, what the AI writes, and text already stored
- * stay text.
- *
- * Wiki-style syntax: `[[target]]`, `[[target|label]]`, `[[target#Heading]]`,
- * `[[target#^block]]`, with folders in the target (`Arc 1/Kael`) and `.md`
- * implied when it names no extension. `![[…]]` is an embed and stays text
- * (there is no transclusion); `\[[` is escaped and stays the literal
- * brackets; code is never touched. Which pastes convert at all is the
- * policy's (`WikilinkPasteExtension`).
- *
- * A target resolves as note apps do, with a fixed order where theirs
- * last step is "the first one it finds" (`rankWikilinkMatches`). A match is
- * assigned its document's id (`doc:`), spelled with its full address; one that
- * names no document becomes the same dashed link the `@` menu's link-ahead row
- * writes, with a fresh ahead ref for the address that row's rule gives
- * (`linkAhead`), one per address per paste.
- */
-
 import {
   type AheadRef,
   aheadAddress,
@@ -93,8 +72,6 @@ function wikilinkResolver(
     else byName.set(name, [located]);
   }
   const holder = catalog.holderUri ? locate(catalog.holderUri, null) : null;
-  // Ranking ignores case, so its answer is cached under the lowercased path;
-  // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
   const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
@@ -131,8 +108,6 @@ export function linkPastedWikilinks(
   const link = schema.marks.link;
   if (!link) return slice;
   const resolve = catalog ? wikilinkResolver(catalog) : () => null;
-  // A single projection carries comments across marks, paragraphs and nested blocks.
-  // Code is opaque according to the editor schema, never guessed from its prose.
   let text = "";
   const starts = new Map<number, number>();
   const opaqueRanges: { from: number; to: number }[] = [];

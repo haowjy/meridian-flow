@@ -151,15 +151,6 @@ declare module "@tiptap/core" {
 
 const unclosed = new WeakMap<Slice, Slice>();
 
-/**
- * ProseMirror lets a pasted node replace the block it lands in, instead of
- * merging into it, when the pasted node type is `defining`. That is a flag on
- * the type, and a heading is no longer a type: closing the slice's open start
- * for a leveled paragraph gives replaceRange the same input a `defining`
- * heading gave it. A list item replaces only an empty line, so a list pasted
- * there keeps its first item. A destination with the same attributes still
- * takes the content in place, as `defining` also lets it.
- */
 function closeShapedSlice(slice: Slice, $dest: ResolvedPos): Slice {
   const first = slice.content.firstChild;
   const replaces =
@@ -514,11 +505,6 @@ export const MeridianTableCell = TableCell.extend({
   },
 });
 
-/**
- * A picture's stored source. Rendered as `src` only when the browser may fetch it as written;
- * a web address goes in `data-remote-src`, which the browser never fetches and the parse rule
- * reads back; anything else is named by clipboard metadata (`links/link-clipboard.ts`).
- */
 function pictureSourceAttributes(source: unknown): Record<string, string> {
   const stored = typeof source === "string" ? source : "";
   const src = inlinePictureSource(stored);
@@ -549,11 +535,6 @@ const PICTURE_REF_ATTRIBUTE = {
   },
 };
 
-/**
- * The link mark's ref. Never rendered; read back only from the attribute the
- * link clipboard plugin leaves on a same-project rich paste, which the paste
- * sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
- */
 const LINK_MARK_REF_ATTRIBUTE = {
   default: null,
   rendered: false,
@@ -600,12 +581,6 @@ export const MeridianLink = Link.extend({
     ];
   },
 
-  /**
-   * The same `<a>` as `renderHTML` (which clipboard HTML still uses), plus
-   * its answer: the chip and its accessible state (`drawLinkAnswer`), the
-   * only place a link's answer is drawn. Those attributes are set on the live
-   * element, so its own attribute mutations are not a document change.
-   */
   addMarkView() {
     const { editor, options } = this;
     return ({ mark, HTMLAttributes }) => {
@@ -615,7 +590,6 @@ export const MeridianLink = Link.extend({
         0,
       ]);
       const element = dom as HTMLElement;
-      // A changed ref or href is a different mark, and a new view.
       const release = drawLinkAnswer(element, mark.attrs, mountedLinks(editor));
       return {
         dom: element,
@@ -673,7 +647,6 @@ export const MeridianLink = Link.extend({
     return href !== null && classifyLinkTarget(href)?.kind === "external";
   },
 
-  // A link the writer typed without a scheme goes to the secure one.
   defaultProtocol: "https",
 
   // The editor owns every follow (new tab for external, in-app for internal),
@@ -706,7 +679,6 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; o
     return [...(this.parent?.() ?? []), { tag: `img[${REMOTE_SRC_ATTRIBUTE}]` }];
   },
 
-  /** One gesture the browser would otherwise answer for itself. */
   addProseMirrorPlugins() {
     return [imageDragPreviewPlugin()];
   },

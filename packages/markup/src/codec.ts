@@ -202,9 +202,6 @@ function buildMarkupCodec(
         repairTail: null,
       };
     if (within) {
-      // The stub opens the same containers as the block the content lands beside, holding one
-      // rule. Its blocks are the rule and, when the stub opens two lists at once, the empty
-      // paragraph that carries the outer item before it. Spans count from the end of the stub.
       const stub = `${within}${STUB_RULE}\n`;
       const parsed = parseTopLevel(stub + content, { schema }, withSpans);
       return {

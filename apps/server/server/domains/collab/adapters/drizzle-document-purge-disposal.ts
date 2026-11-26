@@ -6,11 +6,6 @@ import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle
 import type { DocumentPurgeDisposal } from "../../context/ports/document-trash.js";
 import { retentionHolds } from "../../context/tree/retention-holds.js";
 
-/**
- * Every write to a document takes its key, so the keys are taken before the check: "nothing holds
- * the documents" is then stable until the caller commits. The caller holds the tree list's lock,
- * which sorts before them, and asks before it purges: a purge removes the rows the check reads.
- */
 export function createDrizzleDocumentPurgeDisposal(
   db: Database,
   deps: {

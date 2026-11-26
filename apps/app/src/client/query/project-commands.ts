@@ -126,7 +126,6 @@ export function projectDomain(client: QueryClient): CommandDomain {
     [PROJECT_CREATE_KIND]: {
       version: 1,
       migrate: (body) => body as ProjectCreateBody,
-      // The project's Work commands wait for it to succeed, through a refusal and its Retry.
       holdsLane: true,
       request: ({ body }) => {
         const { id, title } = body as ProjectCreateBody;

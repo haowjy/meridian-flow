@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Durability guards for handing returned content back to the composer. */
 
 import { expect, it } from "vitest";
 import { ComposerSessionDraft, type PendingHandBack } from "@/client/composer-drafts";

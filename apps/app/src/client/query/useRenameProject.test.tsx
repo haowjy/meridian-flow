@@ -1,8 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The project rename shows at once, and an older rename's refusal neither rolls
- * back over a newer title nor asks its field to reopen.
- */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";

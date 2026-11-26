@@ -48,11 +48,6 @@ export function renderReceipt(
   });
 }
 
-/**
- * An edit that did not land because what it named changed, as the model reads it: nothing was
- * kept anywhere, and the text it was planned against is no longer what stands. The host adds
- * the document as it now stands after the message; none of this asks for a retry.
- */
 export function returnedWriteResult(
   why: ReturnedWhy,
   detail: { removal?: DocumentRemovalRecord | null; work?: string; thisChat?: string } = {},

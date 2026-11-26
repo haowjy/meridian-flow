@@ -22,7 +22,6 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   useLingui();
   const { documentId } = tab;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.draftId : null;
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
@@ -40,10 +39,6 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   return null;
 }
 
-/**
- * The row's free end. Always rendered (it is the row's spacer), so a state that arrives fills
- * space the row already has.
- */
 export function ManuscriptStateSlot({
   state,
   touch = false,

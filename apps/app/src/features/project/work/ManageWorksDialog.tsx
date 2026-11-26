@@ -77,8 +77,6 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
     deletion.dismissAll();
     onClose();
   };
-  // A change row opens its review in main: the dialog gets out of its way on a push or a
-  // traversal, through the goal guard. The shell's own replaces repair the address in place.
   const router = useRouter();
   const leave = useRef((_: HistoryAction) => leaveVia(close));
   leave.current = (action) => leaveVia(close, () => undoTraversal(action));
@@ -115,8 +113,6 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
   };
   const toList = () => setView({ kind: "list" });
 
-  // A view change removes the control that made it, and the dialog itself catches the focus.
-  // It goes on to the new view's first control: an opened Work's name, or the list's tabs.
   const body = useRef<HTMLDivElement>(null);
   const { works } = useWorks(projectId);
   const shown =
@@ -231,7 +227,6 @@ function OpenedWork({
   const creation = creations.get(workId);
   if (work && work.id !== noWork?.id)
     return (
-      // Keyed: goal edits and the changes list belong to one Work.
       <WorkDetail
         key={work.id}
         projectId={projectId}

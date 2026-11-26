@@ -173,7 +173,6 @@ function slotStatus(editor: Editor, pos: number): string | null {
   return dom instanceof HTMLElement ? dom.getAttribute("data-pending-image") : null;
 }
 
-/** What this client is announcing on the ephemeral channel: tokens and shapes. */
 function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
   return (awareness.getLocalState()?.uploads ?? []) as readonly {
     token: string;

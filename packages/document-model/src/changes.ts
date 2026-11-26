@@ -60,8 +60,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   const L = sides.live.view;
   const F = sides.fork.view;
   const overridden = overriddenBlocks(F);
-  // Comment bodies the fork changed. One whose visibility differs between the sides changes how a
-  // block reads with no write of the fork's in it, so its Live carriers are read too.
   const bodies = F.overrideKeys("comments").filter(
     (comment) => !sameValue(L.baseValue("comments", comment), F.override("comments", comment)),
   );
@@ -79,10 +77,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   );
 
   const changed: BlockId[] = [];
-  // Hidden on both sides but written by the draft: a block the draft put inside a block it then
-  // removed, or a half split off and joined away. It is never a member (a press would write its
-  // removal over Live's own), but hangs off the change it is under or tied to, whose press
-  // deletes its overrides, so discarding the removal does not bring it back as a new change.
   const under: BlockId[] = [];
   for (const id of new Set([...L.ids, ...F.ids])) {
     const inLive = L.shown.has(id);
@@ -90,7 +84,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
     else if (!inLive) {
       if (overridden.has(id)) under.push(id);
     } else if (
-      // A block the fork has neither text nor an override for reads as Live's.
       (draft.texts.has(id) || overridden.has(id) || relit.has(id)) &&
       blockDiffers(sides.live, sides.fork, id)
     )
@@ -117,9 +110,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       break;
     }
 
-  // Changed blocks the `d.pieces` records connect are one change. A block that is no change only
-  // connects: a half split off and joined into the next paragraph, or a paragraph whose text
-  // left and came back. It is no member, so no press writes anything of it.
   const linked = linkedPieces(F.overrideKeys("pieces"));
   const first = new Map<BlockId, BlockId>();
   for (const id of groups.members()) {
@@ -174,7 +164,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   ];
 }
 
-/** The blocks the fork holds an override of `parent`, `order`, `node` or attributes for. */
 function overriddenBlocks(view: StructureView): Set<BlockId> {
   const out = new Set<BlockId>();
   for (const name of BLOCK_MAPS)
@@ -258,7 +247,6 @@ export interface ApplyOptions extends PressOptions {
   liveVersion: RoomVersion;
 }
 
-/** The overrides the fork holds for block `id`, by map: what Apply copies and a press deletes. */
 function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][] {
   const out: [StructureMap, string][] = [];
   for (const name of BLOCK_MAPS)
@@ -267,12 +255,6 @@ function overridesOf(view: StructureView, id: BlockId): [StructureMap, string][]
   return out;
 }
 
-/**
- * Delete the fork's overrides of the chosen changes' blocks, of the blocks hidden on both sides
- * that hang off them, of their comment bodies, and the `pieces` records of the components holding
- * their blocks (design §2, "A press deletes what it pressed"). Returns, by `pieces` key, the block
- * whose change each record goes with.
- */
 function deletePressed(
   draft: RoomDocs,
   view: StructureView,
@@ -301,20 +283,14 @@ function forwarded(draft: RoomDocs, into: DocChange[]): void {
   into.push(...imported.restore);
 }
 
-/** What a press wrote in one room: each text doc's span, and its one structure commit. */
 interface Wrote {
   docs: RoomDocs;
   texts: Map<DocKey, TextSpan>;
   structure: DocChange | null;
 }
 
-/** A text doc's change as an edit's span. */
 const spanOf = ({ before, after }: DocChange): TextSpan => ({ before, after });
 
-/**
- * Each chosen change's edit in each room, from what the press wrote there, split by the member
- * each key and text doc belongs to.
- */
 function pressedOf(
   chosen: readonly BlockChange[],
   rooms: (Wrote | null)[],
@@ -380,7 +356,6 @@ export function applyBlocks(
   const forkView = new StructureView(draft);
   const liveView = new StructureView(live);
   const liveBefore = new Map<DocKey, Frontiers>();
-  // Live's version of each doc the import below writes, before it: empty for a doc Live lacks.
   const held = new Map<DocKey, DocVersion>();
   const batch = new Map<DocKey, Uint8Array>();
   for (const id of blocks) {
@@ -540,7 +515,6 @@ export function undoPress(
       return stored ? [loadEdit(docs, stored)] : [];
     });
   result.live = takeBack(live, sides("live", live), new StructureView(live), options.by);
-  // The text Live's Undo took out comes back in the fork as the fork's own edit.
   const pending = new Map<DocKey, Frontiers>();
   for (const change of result.live) {
     const own = change.key === STRUCTURE_KEY ? undefined : draft.texts.get(change.key);

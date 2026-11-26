@@ -13,7 +13,6 @@ export function InlineEditInput({
 }: Omit<React.ComponentProps<"input">, "value"> & { value: string }) {
   return (
     <span className={cn("inline-edit-field inline-grid min-w-[1ch] max-w-full", className)}>
-      {/* Invisible twin that gives the grid cell the text's width. */}
       <span
         aria-hidden
         className="invisible col-start-1 row-start-1 overflow-hidden pr-px whitespace-pre"
@@ -27,8 +26,6 @@ export function InlineEditInput({
         value={value}
         placeholder={placeholder}
         {...props}
-        // Zero width with a full min-width: the twin alone sizes the cell; the
-        // input contributes nothing (a text input is ~3ch wide by default).
         className={cn(fieldReset, "col-start-1 row-start-1 w-0 min-w-full")}
       />
     </span>
@@ -42,7 +39,6 @@ export function InlineEditTextarea({
   ...props
 }: Omit<React.ComponentProps<"textarea">, "value"> & { value: string }) {
   const own = useRef<HTMLTextAreaElement | null>(null);
-  // Height follows content so the field is exactly as tall as the resting text.
   useLayoutEffect(() => {
     const node = own.current;
     if (!node) return;

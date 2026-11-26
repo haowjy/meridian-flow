@@ -1,14 +1,3 @@
-/**
- * What main and the side show, and what a document paints in whichever of them holds it.
- *
- * Main is the address: `resolveMainDocument` is the one order in which an address finds its
- * document, on the desktop and the phone. What sits beside it is `side/side-item.ts`.
- *
- * What a document paints, in whichever host holds it, is the one version rule (`shownDraft`) over
- * its view on this device (`document-views`) and the sidebar's Live/Draft choice: Live, or a
- * draft. A draft page binds the draft's fork room of the document whether or not the draft has
- * changed it: no list decides it.
- */
 import { type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -143,12 +132,6 @@ export type MainDocument = Readonly<{
   document: OpenDocument | null;
   draftOnly: boolean;
   catalogResolved: boolean;
-  /**
-   * The readable address's own verdict on its document. It is the only evidence for or
-   * against a document the live tree lacks, such as a pending new-document draft's, so
-   * absence proves nothing until the address is `settled`. `failed` is a verdict the route
-   * boundary shows with its retry; the host neither waits on it nor rejects the route.
-   */
   addressState: AddressState;
   isError: boolean;
 }>;
@@ -159,11 +142,6 @@ export function resolveMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  /**
-   * The document this route is bound to. A rename of it or a folder above it changes its path
-   * at once, so the host finds it by identity while the readable route repairs the URL to the
-   * same path.
-   */
   boundDocumentId?: string | null;
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
@@ -187,7 +165,6 @@ export function resolveMainDocument(input: {
       isError: false,
     };
   }
-  // Identity before path: a bound document is found wherever its path went.
   const rootThreadId = input.rootThreadId ?? undefined;
   const owner = resolveRouteDocumentOwner({
     locator: contextRouteRequest({

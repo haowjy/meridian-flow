@@ -65,9 +65,6 @@ export const ChromeKernelExtension = Extension.create({
     const { chrome, controller } = this.storage;
     const editor = this.editor;
 
-    // Rebuilt only when a surface registers or unregisters, so an ordinary
-    // keystroke costs one map lookup rather than a merge of every lane's keys.
-    // Routes separate editor commands, portalled layers and native preparation.
     let cachedBindings: Record<KeymapRoute, Record<string, KeymapBinding>> = {
       prose: {},
       chrome: {},
@@ -91,8 +88,6 @@ export const ChromeKernelExtension = Extension.create({
       return merged[route];
     };
 
-    // Tab writes in the prose, so the way out is Escape at home, then Tab or
-    // Shift-Tab: that next key is the browser's focus move.
     let leaveArmed = false;
 
     let sweepOrigin: { x: number; y: number } | null = null;
@@ -135,16 +130,12 @@ export const ChromeKernelExtension = Extension.create({
           });
 
           const readPointer = (event: PointerEvent) => {
-            // A finger does not hover. Remember the hand and let the lanes that
-            // follow the selection place their chrome instead ().
             const coarse = event.pointerType !== "mouse";
             controller.setCoarsePointer(coarse);
             if (coarse) {
               controller.hoverAnchors.pointerGone();
               return;
             }
-            // Mid-drag or mid-sweep every surface stands down, and the approach
-            // re-earns itself on release rather than reappearing where it was.
             if (chrome.suppressed) return;
             controller.hoverAnchors.pointerAt(event.clientX, event.clientY);
           };
@@ -154,9 +145,6 @@ export const ChromeKernelExtension = Extension.create({
           document.addEventListener("pointerdown", readPointer, { passive: true });
           document.addEventListener("pointerleave", forgetPointer, { passive: true });
 
-          // Scroll and reflow are pointer moves with no pointer event: the hand
-          // is still and what is under it is not. Asking again is what keeps
-          // chrome off a target the writer has scrolled away from.
           const stopWatchingLayout = watchManuscriptLayout(editor, [], () => {
             if (!chrome.suppressed) controller.hoverAnchors.remeasure();
           });
@@ -334,7 +322,6 @@ function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEv
   return true;
 }
 
-/** One step of the walk home, from wherever the key was pressed. */
 function performEscStep(
   view: EditorView,
   chrome: EditorChrome,

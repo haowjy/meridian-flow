@@ -82,11 +82,6 @@ function currentSnapshot(client: QueryClient, projectId: string): WorksSnapshot 
   return client.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
 }
 
-/**
- * The one way a Works snapshot enters the cache, for a read and for route data alike: it keeps
- * the newest by revision and, when the read began later, installs it and tells the driver which
- * Work outcomes this tab's data now includes.
- */
 function installSnapshot(
   client: QueryClient,
   projectId: string,
@@ -157,11 +152,6 @@ export function repairWorksSnapshot(
   return settleRepair(client, projectId, refreshWorksSnapshot(client, projectId, request));
 }
 
-/**
- * After a change that committed at `since`: reads the Works again unless a read that began at or
- * after it is installed or out, so one read covers every change before it. A project whose Works
- * this tab holds no read of has nothing to repair.
- */
 export function refreshWorksSnapshotSince(
   client: QueryClient,
   projectId: string,

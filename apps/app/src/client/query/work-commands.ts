@@ -1,9 +1,3 @@
-/**
- * The Work command table. One entry per operation says what it sends, what it shows while the
- * command is unsettled, which fields it owns once the server has answered, and when the server
- * snapshot already shows it. The command driver delivers each as a record of its own kind
- * (`createWorkKinds`); `work-command-projection` lays the records over the server snapshot.
- */
 import type { CommandKind, CommandRecord, HttpRequest } from "@meridian/command-driver";
 import type { Settlement, StoredResult } from "@meridian/contracts/commands";
 import { apiProjectWorksPath } from "@meridian/contracts/protocol";
@@ -23,17 +17,14 @@ import { convergeWorkProjection } from "./work-projection-cache";
 import { observeWorksReads, refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export type WorkCommandVariables = {
-  /** `draftId` is the Work's draft, minted with `workId`. */
   create: { workId: ParsedRequestId; draftId: string; name: string; goal?: string };
   update: { workId: string; data: UpdateWorkRequest };
   archive: { workId: string };
   unarchive: { workId: string };
   delete: { workId: string };
-  /** `name`: the Work as the writer saw it, for the row a restore that finds it gone leaves. */
   restore: { workId: string; name?: string };
 };
 
-/** How a closed Work turned a command away. */
 export type ReturnedWhy = Extract<Settlement, { rule: "returned" }>["why"];
 
 export type WorkOperation = keyof WorkCommandVariables;
@@ -131,8 +122,6 @@ const workCommands = {
       body: {},
     }),
     project: (work, _, { at }) => patch(work, { deletedAt: at }),
-    // The server returns nothing: the client clock stands in for the delete
-    // time, so the purge countdown is approximate until the next read.
     commit: (work) => patch(work, { deletedAt: work?.deletedAt ?? new Date().toISOString() }),
     reached: (work) => !work || work.deletedAt !== null,
     keepsFailure: true,
@@ -227,8 +216,6 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
 }
 
 export function workDomain(client: QueryClient): CommandDomain {
-  // A record settled before the tab opened is in every read the tab starts; only the route's
-  // threads and Works, read on the server first, may predate it.
   const opened = Date.now();
   const settled = (record: CommandRecord, operation: WorkOperation) => {
     const { projectId } = record.body as WorkCommandBody;

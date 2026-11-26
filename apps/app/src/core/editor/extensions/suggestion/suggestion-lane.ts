@@ -1,37 +1,3 @@
-/**
- * One mechanism for every menu the writer types underneath, reading a spec.
- *
- * `/` and `@` are the same machine with different envelopes: a plugin key, a
- * driver in extension storage, one `@tiptap/suggestion` plugin, arrow keys
- * registered against the chrome kernel, and a plugin view that closes the menu
- * when the host's catalog is withdrawn. None of that is where the lanes differ,
- * and all of it is where the failures live — first-keystroke keymap timing,
- * catalog withdrawal, dismissal, plugin lifetime. So it exists once here, and a
- * lane declares only its own answers: what opens it, where it may open, what
- * matched, how the rows read, and what a choice writes.
- *
- * A lane is one call to `createSuggestionLane`. Adding a trigger adds a spec,
- * the same way adding a closer adds a row to
- * [`../auto-pair/auto-pairs.ts`](../auto-pair/auto-pairs.ts) and adding a
- * selectable object adds a row to
- * [`../../objects/object-types.ts`](../../objects/object-types.ts).
- *
- * Two things this deliberately does NOT do, for every lane at once:
- *
- * - **Own Escape.** The host does. The lane registers semantic retreat beside
- *   its ordinary bindings, so editor Chrome and Composer can place the same
- *   backtrack/root-dismiss action in their own arbitration order.
- * - **Gate on transaction origin.** `shouldShow` is evaluated on every
- *   transaction, so using it to keep remote writes from opening a menu would
- *   also close an open menu every time a collaborator typed anywhere in the
- *   chapter. A lane's own predicate already needs the local caret.
- *
- * One thing it inherits rather than decides: a dismissal stays dismissed. The
- * suggestion plugin maps the dismissed range forward, so a second trigger typed
- * against a dismissed one is the same trigger — the menu comes back when the
- * trigger text is deleted, not when it is repeated.
- */
-
 import { type Editor, Extension, type Range } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -49,15 +15,6 @@ import {
   type SuggestionMenuModel,
 } from "@/core/completion";
 
-/**
- * What the host offers a lane.
- *
- * Read when the menu opens, never at construction: a catalog carries localized
- * labels and host callbacks that must stay live, and making them construction
- * facts would put a locale switch on the editor's remount path. Null leaves the
- * lane mounted and silent, so a read-only surface or a fenced document pays for
- * no menu.
- */
 export type SuggestionLaneOptions<TCatalog> = {
   catalog: () => TCatalog | null;
   suggestionHost: (editor: Editor) => SuggestionHost | null;
@@ -86,12 +43,6 @@ export type SuggestionLaneSpec<TCatalog, TCandidate, TRow = TCandidate, TMeta = 
   allows: (doc: PMNode, from: number) => boolean;
   items: (catalog: TCatalog, query: string) => readonly TCandidate[];
   rowId: (entry: TRow) => string;
-  /**
-   * How the visible list reads where the caret is — per-row state that depends
-   * on the document rather than the query. Asked once per update, so every row
-   * is judged against the same document a pick would act on. Absent means the
-   * rows ARE the matches.
-   */
   entries?: (input: {
     editor: Editor;
     catalog: TCatalog;

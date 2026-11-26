@@ -1,8 +1,3 @@
-/**
- * The import's reveal: one `submit` of `create` records for every planned node, named against
- * the list as it stands at the reveal, in the transaction that marks the import finished. The texts are already in their Live rooms under
- * the ids the nodes carry; the `documents` rows are written by the admission, like any create's.
- */
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";

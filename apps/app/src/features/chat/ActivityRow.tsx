@@ -20,9 +20,6 @@ const ICON_TOP_PAD = "pt-[3px]";
 const TITLE_ROW_PAD = "py-0.5";
 
 const COMPACT_LINE_BOX =
-  // `box-content` so the min-height describes the line box itself, leaving the
-  // content column's padding to be added on top of it exactly as the title row
-  // adds it.
   "box-content min-h-[calc(var(--text-compact)*var(--text-compact--line-height))]";
 
 export function ActivityRow({
@@ -65,9 +62,6 @@ export function ActivityRow({
       </div>
     );
 
-  // Prose layout: no title, just children. Side-by-side with the icon so a
-  // multiline paragraph's first line aligns to the chip and subsequent lines
-  // wrap under it (in the content column, never under the icon column).
   if (!title && children) {
     return (
       <div className="flex items-stretch gap-[var(--chat-space-block)]" data-activity-row>

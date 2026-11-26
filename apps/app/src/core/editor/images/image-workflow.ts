@@ -47,11 +47,7 @@ export function linkExternalPastedImages(
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      // A picture naming a document address (with a ref, or ref-less and
-      // resolved by its address) is the project's own, never a web import.
       if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
-      // A web picture, from any source, lands as a remote picture: nothing is fetched until the
-      // writer clicks, so the address a page or a model chose is never requested on a paste.
       if (remotePictureSource(src)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
@@ -144,13 +140,6 @@ export function assetDocumentIdFromSrc(src: string): string | null {
 
 const INLINE_PICTURE_SOURCE = /^data:image\//i;
 
-/**
- * A picture source the browser may draw as written, or null: an image `data:` URL, which
- * fetches nothing. An `asset:` upload or a document address names a document that only a signed
- * URL draws, and anything else (`/map.png`, `../map.png`, a malformed scheme) would be fetched
- * from the app's own origin. A web address is `remotePictureSource`'s: it shows a placeholder
- * until the writer loads it.
- */
 export function inlinePictureSource(src: string): string | null {
   return INLINE_PICTURE_SOURCE.test(src) ? src : null;
 }

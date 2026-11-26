@@ -24,10 +24,6 @@ export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
-/**
- * A press or Undo holds the lane of each draft it presses, so it goes after every earlier press
- * on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
- */
 const PRESS_LANE = "press:";
 
 export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {
@@ -52,10 +48,6 @@ export function pressRooms(record: CommandRecord): PressRooms {
 }
 
 export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
-  // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
-  // own reads of drafts all begin after it opened, so a press settled before then is in them;
-  // only the Works the server read for the page may predate it. A turn card follows its chat's
-  // waiting drafts (`useDraftDock`).
   const opened = Date.now();
   let bound: CommandDriver | null = null;
   const settled = (record: CommandRecord) => {

@@ -60,8 +60,6 @@ export function ProjectLinkRuntime({
   const open = useEditorLinkDestination();
   const startDrag = useReferenceDragStart();
 
-  // The holder's Work arrives with its resource record. Until then the scope is
-  // pending, so a click waits for the real scope instead of being dropped.
   const scope = useMemo<LinkResolutionScope | "pending" | null>(
     () =>
       !active || !projectId
@@ -84,8 +82,6 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
-  // `active` also clears a follow still pending when its editor goes to the back.
   const follower = useLinkFollower({ scope, index, resolution, open, reporter, active });
 
   useEffect(() => {
@@ -99,8 +95,6 @@ export function ProjectLinkRuntime({
           startDrag(event, { ref: entry, name }),
         )
       : () => {};
-    // What the outcome dialog's Close, Cancel, and Try again mean is the
-    // follower's: it knows which follow owns what is shown.
     const unregisterHandlers = surface.registerFollowHandlers({
       dismiss: follower.dismiss,
       retry: follower.retry,

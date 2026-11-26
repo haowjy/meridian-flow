@@ -1,10 +1,6 @@
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
-/**
- * A code document's filetype, or null for a prose document. Throws for a filetype that has no
- * text room: nothing derives or reads one as text.
- */
 export async function codeFiletypeOf(
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
   documentId: DocumentId,

@@ -14,7 +14,6 @@ import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-cli
 const CONNECTIONS = "/api/mcp/connections";
 const connectionPath = (id: McpConnectionId) => `${CONNECTIONS}/${encodeURIComponent(id)}`;
 
-/** The account's connections, and with a project that project's, shadows marked. Reading starts the checks that are due. */
 export async function listMcpConnections(
   signal: AbortSignal,
   projectId: string | null,

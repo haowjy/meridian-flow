@@ -95,7 +95,6 @@ export function projectWorkDrafts(
     drafts = drafts.filter((draft) => draft.id !== body.draft.id);
     if (record.kind !== KINDS.delete) drafts.push(body.draft);
   }
-  // A deleted default passes the mark on at the server: until its read, the oldest left holds it.
   if (drafts.length > 0 && !drafts.some((draft) => draft.isDefault))
     drafts = drafts.map((draft, at) => (at === 0 ? { ...draft, isDefault: true } : draft));
   return drafts.sort(
@@ -213,7 +212,6 @@ export function useWorkDrafts(projectId: string, workId: string | null): WorkDra
           pendingFolderCount: 0,
           createdAt: new Date().toISOString(),
         };
-        // An empty draft has an empty list: seed it, so its pages don't wait on a read.
         queryClient.setQueryData(projectQueryKeys.drafts(projectId, draft.id), {
           items: [],
           folders: [],

@@ -1,6 +1,3 @@
-// agent-edit's document model over a Loro room copy (design §1, §5): blocks are the normalized read,
-// a block's identity is its `id`, and every write is `applyOps` on the copy, committed by the
-// write's author.
 import {
   applyOps as applyShapeOps,
   type BlockId,
@@ -60,11 +57,6 @@ export class LoroDocument {
     return this.top().find((block) => block.id === id);
   }
 
-  /**
-   * Apply ops and forget the read: the next reader reads what the write left. An empty paragraph
-   * the ops stored under a fresh id keeps its ref, which moves to the new id, so a later edit
-   * anchored on it and the result that lists it follow it.
-   */
   apply(ops: readonly ShapeOp[]): ReturnType<typeof applyShapeOps> {
     const result = applyShapeOps(this.docs, ops, { ...this.write, newBlockId });
     if (result.ok)
@@ -200,8 +192,6 @@ export function loroModel(schema: Schema): LoroDocumentModel {
           key: block.id,
           hash: document.hashOf(block.id),
           fullHash: fullHashForBlockId(block.id),
-          // The model reads and writes Markdown, which has no ids, so its view of a block has none:
-          // a block it leaves alone compares equal to its own Markdown and keeps its id.
           node: withoutBlockIds(nodeOf(schema, block)),
         }),
       );

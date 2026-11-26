@@ -57,8 +57,6 @@ export function DocumentIdentityBar({
 
   const mode = useReviewMode();
   const draftItemKey = mode?.documentId === document.documentId ? mode.itemKey : null;
-  // A document in Unfiled, untitled or named, is invited to choose a home. Once it
-  // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
     !draftItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;

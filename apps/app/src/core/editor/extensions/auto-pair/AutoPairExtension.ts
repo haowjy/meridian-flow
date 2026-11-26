@@ -44,7 +44,6 @@ import {
 
 const AUTO_PAIR_NAME = "meridianAutoPair";
 
-/** A closer this plugin wrote, and where it sits in the current document. */
 type AutoClosedPair = { pos: number; spec: AutoPairSpec };
 
 type AutoPairState = { readonly closers: readonly AutoClosedPair[] };
@@ -62,7 +61,6 @@ const NOTHING_OPEN: AutoPairState = { closers: [] };
  */
 const MAX_TRACKED_CLOSERS = 32;
 
-/** The character immediately after the caret, or null at the block's end. */
 function characterAfter($pos: ResolvedPos): string | null {
   const node = $pos.nodeAfter;
   if (!node) return null;
@@ -71,7 +69,6 @@ function characterAfter($pos: ResolvedPos): string | null {
   return node.isText ? (node.text?.[0] ?? "") : "";
 }
 
-/** The character immediately before the caret, or null at the block's start. */
 function characterBefore($pos: ResolvedPos): string | null {
   const node = $pos.nodeBefore;
   if (!node) return null;
@@ -97,22 +94,6 @@ function autoClosedAt(state: EditorState, pos: number): AutoClosedPair | null {
   return state.doc.textBetween(pos, end) === entry.spec.close ? entry : null;
 }
 
-/**
- * The caret this keystroke lands at, or null when it is replacing something.
- *
- * ProseMirror reports the range the typed text replaces, and that range is
- * routinely wider than a caret even when nothing is being destroyed. Typing
- * into an empty paragraph swaps the block's trailing `<br>` for the character,
- * and the diff read back from the DOM is the whole block; select-all followed
- * by Backspace leaves the selection spanning the emptied document, and the
- * next character arrives against that. Both were the writer's first keystroke
- * on a blank page, and both stopped pairing while this only trusted a caret.
- *
- * So the question is not how wide the range is but whether it holds anything:
- * a range with no text in it destroys nothing, and when it is one text block
- * the character belongs inside that block. A range carrying text is a real
- * replacement and belongs to whoever wants it.
- */
 function insertionCaret(state: EditorState, from: number, to: number): number | null {
   const { selection } = state;
   if (selection.empty && from <= selection.from && selection.from <= to) return selection.from;
@@ -126,7 +107,6 @@ function insertionCaret(state: EditorState, from: number, to: number): number | 
   return from >= caret.$from.before() && to <= caret.$from.after() ? caret.from : null;
 }
 
-/** `[` here means `[]` with the caret in the middle. */
 function openPairTransaction(state: EditorState, at: number, typed: string): Transaction | null {
   const $at = state.doc.resolve(at);
   const context = resolveAutoPairContext($at, state.storedMarks);
@@ -143,7 +123,6 @@ function openPairTransaction(state: EditorState, at: number, typed: string): Tra
   return tr.scrollIntoView();
 }
 
-/** `]` in front of an `]` this plugin wrote is a step, not a character. */
 function stepOverTransaction(state: EditorState, at: number, typed: string): Transaction | null {
   const entry = autoClosedAt(state, at);
   if (!entry || entry.spec.close !== typed) return null;
@@ -153,7 +132,6 @@ function stepOverTransaction(state: EditorState, at: number, typed: string): Tra
   return tr.scrollIntoView();
 }
 
-/** Backspace between the halves of a pair this plugin wrote takes both. */
 function unpairTransaction(state: EditorState): Transaction | null {
   const { empty, $from } = state.selection;
   if (!empty) return null;

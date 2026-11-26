@@ -109,11 +109,8 @@ describe("device chat submission journal", () => {
     expect(journal.retire("account", "sub-1")).toBe(false);
     journal.setUser("account");
 
-    // The live send that started under the first bind must not delete the
-    // entry now that the account has re-bound.
     expect(journal.retire("account", "sub-1", epochA)).toBe(false);
     expect(journal.entries()).toHaveLength(1);
-    // The returned session retires it for real once it settles.
     expect(journal.retire("account", "sub-1", journal.epoch)).toBe(true);
     expect(journal.entries()).toEqual([]);
   });
@@ -169,7 +166,6 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   });
   journal.record("account", entry);
   journal.record("account", { ...entry, submissionId: "reminted" });
-  // One record, and the chat's seq counter.
   expect(storage.length).toBe(2);
   expect(journal.get(entry.recordId)).toEqual({ ...entry, submissionId: "reminted" });
   const retried = { ...entry, occurrence: { requestId: "retry-request", attempt: 2 } };
@@ -177,15 +173,12 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   const reloaded = new DeviceChatSubmissionJournal(storage);
   reloaded.setUser("account");
   expect(reloaded.get(entry.recordId)?.occurrence).toEqual(retried.occurrence);
-  // A new record takes the chat's next place in order; a rewrite keeps its own.
   journal.record("account", { ...entry, recordId: "later", submissionId: "later", seq: 99 });
   journal.record("account", { ...entry, submissionId: "again" });
   expect([entry.recordId, "later"].map((id) => journal.get(id)?.seq)).toEqual([1, 2]);
-  // A retired record's number is never reused, even when it was the largest held.
   journal.retire("account", "later");
   journal.record("account", { ...entry, recordId: "third", submissionId: "third" });
   expect(journal.get("third")?.seq).toBe(3);
-  // The counter goes with the chat's other state.
   journal.forgetOrder("account", entry.threadId);
   journal.record("account", { ...entry, recordId: "fresh", submissionId: "fresh" });
   expect(journal.get("fresh")?.seq).toBe(4);

@@ -96,16 +96,6 @@ describe("block-type commands refuse non-text targets", () => {
   });
 });
 
-/**
- * Turn into over a swept rectangle applies per block (§10) — the same shape
- * marks already have. A CellSelection reports only its FIRST cell as
- * `from`..`to`, so the command layer walks `selection.ranges` exactly as the
- * refusal reader does; anything else converts one cell and advertises all.
- *
- * Every sweep here is a partial rectangle. A sweep covering the whole table
- * IS the selected table (an object, pinned above), so a one-row fixture would
- * test the wrong thing.
- */
 describe("Turn into over a swept rectangle", () => {
   const gridCell = (block: JSONContent): JSONContent => ({
     type: "table_cell",

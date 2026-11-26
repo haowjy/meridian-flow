@@ -1,8 +1,3 @@
-/**
- * Stores one `SyncedThread` per chat (turns, fences, positions and run state, changed only by the
- * package's transitions) and the app's own per-thread state, such as pending creation.
- */
-
 import type {
   ThreadListItem,
   ThreadSnapshotResponse,
@@ -76,7 +71,6 @@ type ThreadStoreConfig = ThreadStoreSeed & {
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
 
-/** Generate an optimistic turn ID with the shared local-turn prefix. */
 function nextTurnId(counter: number): { id: string; next: number } {
   const next = counter + 1;
   return { id: `${OPTIMISTIC_TURN_ID_PREFIX}${next}`, next };
@@ -134,7 +128,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           readCell(threadId) ?? EMPTY_SYNCED_THREAD;
         const writeCell = (threadId: string, next: SyncedThread) =>
           set((state) => ({ syncedByThread: { ...state.syncedByThread, [threadId]: next } }));
-        /** Write the chat's next value; a transition that changed nothing writes nothing. */
         const update = (threadId: string, change: (synced: SyncedThread) => SyncedThread) => {
           const current = cellOf(threadId);
           const next = change(current);
@@ -142,9 +135,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         };
         const storeNow = () => new Date(get().now).toISOString();
 
-        // What the thread lists and the caches do when a turn starts,
-        // changes status, or a read lands. The sync's observations and the command actions that
-        // cause the same thing both call these.
         const turnChanged = (
           threadId: string,
           turnId: string,
@@ -172,7 +162,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         const observe = (threadId: string, observation: SyncObservation) => {
           switch (observation.kind) {
             case "turn":
-              // The sync asks for its own read at a turn's end.
               turnChanged(threadId, observation.turnId, observation.status, { snapshot: false });
               break;
             case "read":
@@ -351,8 +340,6 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
     };
   }, [accountSignal, queryClient]);
 
-  // Keep `store.now` fresh for relative-time labels ("just now" vs "2 min ago")
-  // via a timer instead of relying on route-loader refetches on every navigation.
   useEffect(() => {
     const timer = setInterval(() => {
       store.setState((state) => ({ ...state, now: Date.now() }));
@@ -367,33 +354,28 @@ export function useThreadStore<T>(selector: (state: ThreadStoreSlice) => T): T {
   return useStore(useThreadStoreApi(), selector);
 }
 
-/** The chat's run-state slice: its newest record, this device's intents, and the news the hooks speak. */
 export function useRunStateSlice(threadId: string): RunStateSlice {
   return useThreadStore(
     (state) => state.syncedByThread[threadId]?.runState ?? INITIAL_RUN_STATE_SLICE,
   );
 }
 
-/** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
 export function useRunState(threadId: string): RunStateView {
   return useRunStateSlice(threadId).view;
 }
 
 const NO_TURNS: Turn[] = [];
 
-/** The chat's authoritative asks, including resolved history and this device's answer attempts. */
 export function useThreadAsks(threadId: string): ChatAsks {
   return useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
 }
 
-/** The ask that takes over the chat's composer, if one is open. */
 export function useOpenAsk(threadId: string): OpenAsk | null {
   const asks = useThreadAsks(threadId);
   const turns = useThreadStore((state) => state.syncedByThread[threadId]?.turns ?? NO_TURNS);
   return useMemo(() => openAsk(asks, turns), [asks, turns]);
 }
 
-/** The receipt line an asking turn shows, once its ask is answered here or resolved. */
 export function useAskReceipt(threadId: string, turnId: string): AskReceipt | null {
   const asks = useThreadAsks(threadId);
   return useMemo(() => askReceipt(asks, turnId), [asks, turnId]);
@@ -403,7 +385,6 @@ export function useThreadActions(): ThreadStoreActions {
   return useStore(useThreadStoreApi(), useShallow(selectThreadActions));
 }
 
-/** True when an optimistic thread create is in flight (pre-server confirmation). */
 export function useIsThreadPendingCreation(threadId: string | null | undefined): boolean {
   const store = useThreadStoreApi();
   const subscribe = useCallback(

@@ -85,8 +85,6 @@ export function createDrizzleTreeHistory(
         })
         .returning({ id: treeEditReceipts.id });
       if (!row) throw new Error("A tree receipt was not inserted");
-      // A node's counter is the document's own for a document, so one ordinal orders its text
-      // edits and tree changes; a folder has no document, and the counter takes any node id.
       const nodes = input.nodes.some((node) => node.nodeId === input.subject)
         ? input.nodes
         : [{ nodeId: input.subject, beforeAt: null, afterAt: null }, ...input.nodes];
@@ -168,13 +166,7 @@ export function createDrizzleTreeHistory(
         )
         .orderBy(desc(treeEditReceipts.seq))
         .limit(1);
-      // What a receipt took from the path it was written at comes first: a blocker moved aside
-      // from a path never stands in for what was deleted there.
       if (written) return { node: written.node, folder: at.endsWith("/") };
-      // A folder's move writes a row for the folder only, so what was inside it is found by the
-      // folder's address above `at` (a folder's address ends in "/"). A folder's row touched `at`
-      // only when that folder holds a node at the rest of `at` now; the rows that touched it are
-      // walked in order, carrying what stood at `at`.
       const touched = (address: string | null, node: string) =>
         address === at ||
         (address?.endsWith("/") && at.startsWith(address) && holds(node, at.slice(address.length)));
@@ -204,7 +196,6 @@ export function createDrizzleTreeHistory(
           ),
         )
         .orderBy(treeEditReceipts.seq, desc(sql`length(${treeEditReceiptNodes.beforeAt})`));
-      // Before the chat's first row, something may stand at `at`.
       let standing = true;
       let left: { node: string; folder: boolean } | null = null;
       for (const row of rows) {

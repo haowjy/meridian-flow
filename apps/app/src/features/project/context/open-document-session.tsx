@@ -1,10 +1,3 @@
-/**
- * The session-bound half of an open document: one live room binding. Main's and the side's
- * documents both render through it, so a document has exactly one way to reach its
- * `DocumentSession` and no view owns a second copy of its Loro docs or room. The session paints from the
- * browser's local copy and connects to the room by itself; there is nothing to hand over when
- * the server learns of a document made here.
- */
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DocumentPresentation } from "./document-presentation";
@@ -51,7 +44,6 @@ function OpenDocumentSession({
     ...(draftId ? { draftId } : {}),
   });
   const state = binding.state;
-  // Until the binding catches up with a switch between Live and a draft, the old room is not shown.
   const room = state.kind === "opened" ? state.session.room : null;
   const opened =
     state.kind === "opened" &&

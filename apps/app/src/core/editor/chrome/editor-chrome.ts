@@ -209,9 +209,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
         : layerRetreats.at(-1);
       if (!retreat) return false;
       if (retreat.backtrack()) return true;
-      // With a real layer, its existing close path owns Radix animation and
-      // focus return. Before React registers that layer, the semantic lease is
-      // the only owner available and closes the suggestion directly.
       if (topmost) return false;
       retreat.dismiss();
       return true;
@@ -280,7 +277,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     registerHoverAnchor: (lane) => hoverAnchors.register(lane),
   };
 
-  /** Active layers, shallowest first. */
   function reorderLayers(): void {
     const active = [...layerRecords.values()].filter((record) => !record.closing);
     const depths = new Map<string, number>();
@@ -303,7 +299,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     notify();
   }
 
-  /** Ask every open top-level surface to close, and take its subtree out of the walk with it. */
   function replaceOpenTransients(): void {
     const roots = [...layerRecords.values()].filter(
       (record) => record.parentId === null && !record.closing,

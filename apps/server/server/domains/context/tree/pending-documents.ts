@@ -1,22 +1,3 @@
-/**
- * The one reviewable-pending predicate: a Work has a change to a document that review lists, the
- * Work's count counts and Apply all applies. It reads the Work's rows (`draft_tree_nodes`, the
- * view's difference from live, written by the replay of the list) and its text changes:
- *
- * - a document that exists only in the Work's draft (a creation);
- * - a document the Work's tree lacks while live shows it (a drafted delete);
- * - any other row the Work changed: it shows the document differently from live (a move,
- *   rename or reorder). A row that differs only in a twin's suffix is not one (`changed` is
- *   false), and a document in Trash in live is in Trash in every Work's view.
- * - the Work's fork of the document has a pending change, on a document the Work's tree shows: a
- *   drafted delete, or a document in no view, hides the text changes everywhere.
- *
- * A write and its undo net to no changed row, so they net to no item. The Work's review count adds the
- * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
- * each; the open browser counts the same two sets from its own replay (`changedFolders` in
- * `@meridian/project-tree`, which also writes a row for a folder whose change cannot land), and
- * this stored count serves the Works it has not opened.
- */
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 

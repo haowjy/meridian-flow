@@ -10,7 +10,6 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const live = (documentId: string): DocumentRoom => ({ kind: "live", documentId });
 
-/** The document's blocks in its Live room now, with ids. */
 export async function liveBlocks(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -23,7 +22,6 @@ export async function liveBlocks(
   }
 }
 
-/** The document's Live text as Markdown. */
 export async function liveMarkdown(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -31,10 +29,6 @@ export async function liveMarkdown(
   return codec.serialize(await liveBlocks(rooms, documentId), UNSCOPED_DOCUMENT_LINKS);
 }
 
-/**
- * The writer changes the document to `want(current)`, as a client's batch. Blocks `want` returns
- * without an id are new.
- */
 export async function writerEdit(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -54,10 +48,6 @@ export async function writerEdit(
   }
 }
 
-/**
- * The writer changes the document's text to `markdown`. A paragraph whose text is unchanged keeps
- * its block, as it would under the writer's typing; the rest are new.
- */
 export function writeLiveMarkdown(
   rooms: DocumentRooms<unknown>,
   documentId: string,

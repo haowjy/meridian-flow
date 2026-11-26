@@ -1,18 +1,3 @@
-/**
- * The link lane's per-editor store: which link is being approached, and which
- * of its two summoned surfaces is open.
- *
- * Headless and editor-free, like the chrome kernel's own store. The extension
- * beside it turns pointers and keys into these calls; React reads the state
- * with `useSyncExternalStore` and renders. Nothing here touches the document,
- * so the whole surface policy is testable as data.
- *
- * The hint is approach chrome and the other two are summoned surfaces, so they
- * are separate fields rather than one "current surface": a hover that lands
- * while a menu is open must not close the menu, and a menu that opens must not
- * have to remember to clear a hint.
- */
-
 import type { Mark } from "@tiptap/pm/model";
 
 import type { LinkAnchor } from "./link-commands";
@@ -51,17 +36,6 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
   return { from: menu.anchor.from, to: menu.anchor.to };
 }
 
-/**
- * What following a link found, once it is worth interrupting the writer about.
- * A link already resolved never lands here: it just opens.
- *
- * The outcome sits in the store rather than in the component that asked,
- * because the two halves belong on opposite sides of the chrome host. The app
- * registers the navigator and does the asking; what the writer reads is a
- * surface the host mounts like every other one. Without this field the asking
- * half has to render its own dialog, and a dialog the kernel never hears about
- * is a second owner of Escape.
- */
 export type LinkFollowOutcome = {
   state: "checking" | "failed" | "missing";
   target: LinkTarget;
@@ -100,11 +74,6 @@ export type LinkSurface = {
   retryFollow: () => void;
   registerFollowHandlers: (handlers: FollowHandlers) => () => void;
 
-  /**
-   * Where an internal link goes. Absent is a real state, not a bug: until the
-   * app registers one, internal links have no destination the editor can
-   * reach, so the Open verb is absent rather than dead (law 5).
-   */
   readonly navigator: InternalLinkNavigator | null;
   registerNavigator: (navigate: InternalLinkNavigator) => () => void;
 

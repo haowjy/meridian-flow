@@ -24,8 +24,6 @@ export function useBlockMovementKeymap(editor: Editor, surfaceId: string): void 
         const source = blockForSelection(state);
         if (!source) return false;
         const transaction = moveBlockStepTransaction(state, source, direction);
-        // The ends of the document are a no-op, and an unconsumed one: the key
-        // is left for whatever else might want it rather than swallowed here.
         if (!transaction) return false;
         dispatch?.(transaction);
         return true;

@@ -216,8 +216,6 @@ const cases: ModelEditCase[] = [
       await first.script(oneCall(path));
       await send(first, h, thread);
       await first.at("command.afterClaim");
-      // The session claim drops (a lost connection): the chat can be taken over while this
-      // process is alive and its transaction holds the key.
       await dropRunClaim(h, first);
       const second = await start();
       const swept = second.post({ op: "sweep" });
@@ -226,8 +224,6 @@ const cases: ModelEditCase[] = [
       await second.waitFor((m) => m.id === swept);
       await waitForAssistantTurn(h, thread);
       const after = await state(h, thread, documentId);
-      // The old process may notice its lost claim and abort the edit before its commit, or commit
-      // it; either way the three records say the same thing, once.
       assert.deepEqual(after.turns, ["error"]);
       assert.equal(after.results.length, 1);
       console.log(`  (the held edit ended as ${after.results[0]})`);

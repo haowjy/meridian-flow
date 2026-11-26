@@ -29,7 +29,6 @@ function envLocalBase(checkout: string): string | undefined {
   }
 }
 
-// The choice starts at a hash of the path and skips blocks the repository's other checkouts hold.
 function pinWorktreePortBase(checkout: string): number {
   const taken = listCheckoutPaths(checkout).map((other) => Number(envLocalBase(other)));
   const blockBase = (block: number) => MAIN_CHECKOUT_BASE + BLOCK_SIZE * (1 + block);

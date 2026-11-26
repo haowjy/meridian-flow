@@ -1,14 +1,3 @@
-/**
- * The shell's version: the sidebar's one Live/Draft state, which its version chip shows. On Draft the shell shows the picked
- * Work's tree (live, then the Work's pending records, replayed in the browser), and every tree
- * action, click and Ctrl+Z in the sidebar acts there; on Live it is the live tree. The toggle is
- * offered while the Work has pending changes, and with none the shell is live. Every page shows
- * the version it says (`shownDraft` in `views.ts`): the Work's draft where it has one, else Live,
- * and a page live doesn't have stays on its draft. The page's version chip is the same state:
- * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
- * (`review-launch`, a review address), sets the toggle; a change of the scope's draft owner puts
- * it on Draft.
- */
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,10 +44,6 @@ export type ShellTreeVersion = {
   work: Work | null;
   name: string | null;
   changed: ReadonlySet<string>;
-  /**
-   * What the Work's review count says: its changed documents and folders, the Changes list's
-   * items, less those a press has in flight.
-   */
   changeCount: number;
   pressedDrafts: ReadonlySet<string>;
   tree: WorkTreeChanges | null;
@@ -72,11 +57,6 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
   return useContext(ShellTreeVersionContext);
 }
 
-/**
- * A Work's review count, the one every surface shows: summed over its drafts, the shown draft's
- * open list (a change made offline or in flight is in it already) and the others' stored counts;
- * else the stored count the Works list carries, which the open list agrees with once it syncs.
- */
 export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
   const drafts = shell?.work?.id === work.id ? shell.workDrafts?.drafts : null;
   if (shell && drafts)
@@ -108,11 +88,6 @@ export function useDraftTreeVersion(
 
 const NO_OWNER = "new-chat";
 
-/**
- * Drafts' tree changes by draft, from the browser's replay of each draft's view in each list it
- * spans: what the Changes list builds its folder groups from, including a change not yet admitted
- * (made offline or in flight).
- */
 export function useDraftsTreeChanges(
   projectId: string,
   versions: readonly TreeVersion[],

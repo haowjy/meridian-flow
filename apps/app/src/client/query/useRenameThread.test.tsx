@@ -120,12 +120,9 @@ describe("useRenameThread account fence", () => {
       });
       expect(titleOf(queryClient)).toBe("Renamed");
 
-      // A→B→A replaces the account lifetime; the old epoch aborts.
       await act(async () => setAccount?.("account-b"));
       await act(async () => setAccount?.("account-a"));
 
-      // The request settles after the replacement; it must not confirm or
-      // announce into the new lifetime.
       await act(async () => {
         late.resolve({
           threadId: THREAD_ID,
@@ -166,13 +163,11 @@ describe("thread-rename command", () => {
 
   it("fences a stale list read behind a newer desired title", () => {
     const client = clientWithThread();
-    // A read captured before the rename starts.
     const fence = captureThreadRenameFence(client, PROJECT_ID);
 
     const context = beginThreadRename(client, PROJECT_ID, THREAD_ID, "Renamed");
     confirmThreadRename(client, context, "Renamed");
 
-    // The stale response still carries the pre-rename row.
     const applied = applyThreadRenameFence(client, PROJECT_ID, [threadItem("Original")], fence);
     expect(applied[0]?.title).toBe("Renamed");
   });
@@ -182,12 +177,10 @@ describe("thread-rename command", () => {
     const first = beginThreadRename(client, PROJECT_ID, THREAD_ID, "First");
     const second = beginThreadRename(client, PROJECT_ID, THREAD_ID, "Second");
 
-    // The older success must not rewind the title or the visible projection.
     expect(confirmThreadRename(client, first, "First")).toBe(false);
     expect(titleOf(client)).toBe("Second");
     expect(readCachedThreadTitle(client, PROJECT_ID, THREAD_ID)).toBe("Second");
 
-    // The newer intent still owns the record and settles against the first base.
     expect(confirmThreadRename(client, second, "Second")).toBe(true);
     expect(readThreadRenameRecord(client, PROJECT_ID, THREAD_ID).pendingCount).toBe(0);
     expect(titleOf(client)).toBe("Second");
@@ -206,7 +199,6 @@ describe("thread-rename command", () => {
     expect(record.failure).toBeUndefined();
 
     rejectThreadRename(client, second, new Error("refused second"));
-    // The first success never landed, so reverting the newer intent returns to base.
     expect(titleOf(client)).toBe("Original");
   });
 });

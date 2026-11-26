@@ -1,10 +1,3 @@
-/**
- * One IndexedDB database whose every change is one transaction, which the browser runs one at a
- * time across tabs and workers: it reads, decides and writes before it commits. The schema version
- * never changes, so no tab waits on another's upgrade; a connection asked to close (another tab
- * deleting the database) does, and the next call reopens.
- */
-
 export const settled = <T>(request: IDBRequest<T>) =>
   new Promise<T>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);

@@ -402,7 +402,6 @@ async function writeUnderGrant(
   };
 }
 
-/** The names a result printed for the document it was about: what the path reached, else the tree's own. */
 async function printedOf(
   call: ToolCall,
   address: ResolvedDocumentAddress,
@@ -414,7 +413,6 @@ async function printedOf(
   return area ? printedNames(call, area, [address.documentId], version) : reached?.delta;
 }
 
-/** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
 export async function readTrackedDocument(
   deps: ToolWiringDeps,
   input: ReadToolInput,
@@ -494,7 +492,6 @@ export async function readTrackedDocument(
     path,
     address.uri,
   );
-  // Only a draft that outlived a live delete reads a deleted document.
   const parsedUri = parseContextUri(address.uri);
   const surviving =
     parsedUri.ok && grant.destination.kind === "draft" && grant.facts.deleted
@@ -552,7 +549,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let reached: Reached | undefined;
     let parsed = written;
     if (!isInverse) {
-      // The path the model wrote is the node it was shown: a create only looks up its folders.
       const first = await reachShown(deps, call, ctx, written.path, {
         folderOf: creates,
         deleted: !creates,
@@ -620,7 +616,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    // A write to an existing document finds it before the command claims its id.
     let existing: ResolvedDocumentAddress | undefined;
     if (!isInverse && !creates) {
       const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
@@ -631,7 +626,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let refresh: DocumentId | undefined;
     const effect = async () => {
       refresh = undefined;
-      // What the tree took back of this call's `count`, said before the text engine's own line.
       let treeUndone: string[] = [];
       let engine = parsed;
       if (isInverse) {
@@ -646,9 +640,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           treeUndone = tree.undone;
           engine = { ...written, count: tree.count } as typeof written;
         }
-        // The node the model was shown, deleted or not: a removed document is answered below.
         const first = await reachShown(deps, call, ctx, written.path, { deleted: true });
-        // A reversed creation took the document and its text steps with it.
         if (tree?.kind === "then_text" && !first.node) return tree.answer;
         if (first.gone)
           return writeToolError(

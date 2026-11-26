@@ -122,7 +122,6 @@ describe("editor lifetime", () => {
       });
       expect(mountedEditor().getText()).toBe("words the writer typed");
 
-      // Surface changes preserve the pending edit and its undo history.
       await act(async () => {
         applyProps({ editable: false, ariaLabel: "Read-only live document" });
       });
@@ -144,8 +143,6 @@ describe("editor lifetime", () => {
         expect(redoEditorHistory(mountedEditor())).toBe(true);
       });
       expect(mountedEditor().getText()).toBe("words the writer typed");
-
-      // Navigating to another room must not carry this document's content or undo.
 
       await act(async () => {
         applyProps({ documentId: "document-2" });

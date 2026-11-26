@@ -41,23 +41,13 @@ export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 export interface LoroSyncOptions {
   docs: RoomDocs;
   origin?: string;
-  /** A fresh block id, for the empty paragraph a local transaction is the first write into. */
   newBlockId: () => BlockId;
-  /** Every local write's doc changes with their frontiers: what the copy publishes. */
   onLocalWrite?: (changes: DocChange[]) => void;
-  /**
-   * The copy's Ctrl+Z, which records every write but one marked `addToHistory: false`; that one
-   * commits under `UNTRACKED_ORIGIN` and closes the open step.
-   */
   history?: UndoHistory;
 }
 
 export interface LoroSyncState {
   docs: RoomDocs;
-  /**
-   * Removed blocks the editor still shows because the selection's head is in them (design §1,
-   * "The caret rule"): a peer removed them, and the writer has not acted in them or moved away.
-   */
   kept: ReadonlySet<BlockId>;
 }
 
@@ -100,9 +90,6 @@ const NONE: ReadonlySet<BlockId> = new Set();
 export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> {
   const { docs, history } = options;
   const tracked = options.origin ?? "editor";
-  // The text docs a restore in `apply` changed besides the blocks it brought back (a join's copy
-  // it took out, `restore`): the editor's document still shows them as they were, and
-  // `appendTransaction` reads them again.
   let restoredTexts: DocKey[] = [];
   return new Plugin<LoroSyncState>({
     key: loroSyncKey,
@@ -121,8 +108,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
         let { kept } = value;
         if (tr.docChanged) {
           if (kept.size > 0 && touchesKept(tr, kept)) {
-            // The writer acts in a block a peer removed: it comes back first, and is then an
-            // ordinary block (design §1, rule 2).
             const restored = restore(docs, kept);
             if (restored.length) options.onLocalWrite?.(restored);
             restoredTexts = restored.map(({ key }) => key).filter((key) => key !== STRUCTURE_KEY);
@@ -130,9 +115,7 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           }
           const recorded = tr.getMeta("addToHistory") !== false;
           const typing = typingOf(docs, oldState, newState, tr);
-          // Typing into an empty paragraph stores it: typing for the history, a full write.
           const fast = typing && !typing.stores ? typing : null;
-          // Typing joins the open Undo step; any other write starts one (design §2).
           if (recorded) history?.beforeWrite(oldState, { joins: typing !== null });
           else history?.endStep();
           const origin = recorded ? tracked : UNTRACKED_ORIGIN;
@@ -169,8 +152,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
       const hold = attachCompositionHold(docs, view);
       let cursors: SelectionCursors | null = null;
       let head: BlockId | null = null;
-      // The comments the editor's document shows bodies of: a batch that adds or removes a body
-      // changes how every block's text reads.
       let comments = visibleComments(docs);
       const unlisten = listenToImports(docs, {
         before: () => {
@@ -242,12 +223,6 @@ function rangeOf(step: Transaction["steps"][number]): { from: number; to: number
   return pos === undefined ? null : { from: pos, to: pos + 1 };
 }
 
-/**
- * Give a fresh id to every node near what `tr` changed that holds a placeholder id but is not
- * that placeholder: its parent's one child, an empty paragraph with no attributes. Only the
- * changed ranges and one position either side are read, so the neighbour of an inserted sibling
- * is too, and typing elsewhere costs the depth of the block it types in.
- */
 function storePlaceholders(tr: Transaction, newBlockId: () => BlockId): void {
   const stale = new Map<number, BlockId>();
   tr.steps.forEach((step, i) => {
@@ -303,7 +278,6 @@ function typingOf(
   const rule = docs.shape.node(block.type.name);
   if (!block.isTextblock || !rule || typeof was !== "string") return null;
   const id = stored?.get(was) ?? was;
-  // Any other placeholder the transaction stored makes it more than typing.
   if (stored && (stored.size !== 1 || id === was)) return null;
   if (
     step.to > $from.end() ||

@@ -6,8 +6,6 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
 
-// The heading shrinks beside the status; it clips nothing itself, so a refused
-// rename's message can hang below it. The text inside truncates instead.
 const headingClass = cn("relative flex min-w-0", role.pageHeading);
 
 const renameFailure = (cause: unknown) => workUpdateFailure(cause, t`Couldn’t rename this Work`);
@@ -37,8 +35,6 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         fieldClassName="flex min-w-0"
       >
         {({ start, triggerRef }) =>
-          // The heading's accessible name stays the Work's name, and the
-          // tooltip shows it whole when it truncates.
           archived ? (
             <span title={work.name} className="min-w-0 truncate">
               {work.name}

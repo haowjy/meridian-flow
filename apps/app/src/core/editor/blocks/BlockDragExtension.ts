@@ -81,8 +81,6 @@ export function draggedBlockPos(state: EditorState): number | null {
 
 export const BlockDragExtension = Extension.create({
   name: BLOCK_DRAG_NAME,
-  // Below the chrome kernel and object physics: this holds no keys and claims
-  // nothing, it only decorates.
   priority: 1030,
 
   addProseMirrorPlugins() {
@@ -97,10 +95,6 @@ export const BlockDragExtension = Extension.create({
             if (message !== undefined) return message;
             if (!current) return null;
             const carried = carryAnchor(current.hold, transaction.mapping);
-            // A deleted block leaves nothing to hold — which only the mapping
-            // of a local edit can say, and only for an editor with no shared
-            // document behind it. Identity answers on read, where the binding
-            // has finished describing the document this transaction produced.
             return carried ? { ...current, hold: carried } : null;
           },
         },
@@ -111,7 +105,6 @@ export const BlockDragExtension = Extension.create({
             if (!held?.lifted) return null;
             const pos = draggedBlockPos(state);
             if (pos === null || !state.doc.nodeAt(pos)) return null;
-            // A list item lifts with what is under it: the run a drop moves.
             const index = state.doc.resolve(pos).index(0);
             const [from, to] = extentOf(nestNodes(state.doc.content.content), index);
             const decorations: Decoration[] = [];

@@ -381,8 +381,6 @@ export function AgentPickerPanel({
                     runsOn={runsOn}
                     models={options?.models ?? null}
                     onChoose={(id) => {
-                      // A reasoning override follows the model: settled on it, and dropped once
-                      // it is the new model's own level.
                       const next = option(id);
                       const effort =
                         overrides.effort && settledReasoning(overrides.effort, next, levels);

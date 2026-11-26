@@ -30,11 +30,6 @@ function isBreakTag(ast: unknown): boolean {
 type MdastParent = { children?: unknown[] };
 type Positioned = { position?: { start?: { line?: number }; end?: { line?: number } } };
 
-/**
- * MDX reads a line of `<br/>` tags as one flow element per tag, which would
- * come back as a paragraph each. Tags sharing a line are one paragraph of
- * breaks, so each such run is regrouped into a paragraph of inline tags.
- */
 export function joinBreakLines(root: MdastRoot): MdastRoot {
   regroup(root as MdastParent);
   return root;

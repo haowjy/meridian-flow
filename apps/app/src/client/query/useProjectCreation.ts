@@ -17,18 +17,12 @@ import { projectQueryKeys } from "./project-query-keys";
 
 export { readPendingProjectCreation } from "./project-commands";
 
-/**
- * Journals the create, then opens the project: the destination only opens on a project that has
- * a record, and the POST follows. Resolves to the id, or `null` when the device could not keep
- * the command (the writer was told, nothing opened).
- */
 export function useCreateProject() {
   const userId = useAccountId();
   const driver = useCommandDriver();
   const client = useQueryClient();
   const router = useRouter();
 
-  // One press creates one project: a press while the record is being saved shares its result.
   const submitting = useRef<Promise<string | null> | null>(null);
   const create = useCallback(
     (input: { title: string }): Promise<string | null> => {
@@ -103,11 +97,6 @@ export function useProjectCreationState(projectId: string): ProjectCreationState
   };
 }
 
-/**
- * A confirmed create stands in for the project until the route has loaded its own data. When it
- * has, a read that started after the create settled has included it, and the driver may let the
- * record go.
- */
 export function useSettleConfirmedCreation(projectId: string, hasRouteData: boolean): void {
   const driver = useCommandDriver();
   const router = useRouter();

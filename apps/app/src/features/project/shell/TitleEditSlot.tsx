@@ -1,14 +1,3 @@
-/**
- * A title renamed in place, optimistically. Committing closes the field at
- * once and the new title shows from the rename's own cache update; a refused
- * rename reopens the field with the writer's text and the failure under it.
- * Only the latest rename can reopen it: a refusal a newer rename superseded
- * stays quiet, and one that lands while the writer is working elsewhere shows
- * without taking focus.
- * Callers own the resting trigger and the failure's positioned ancestor: the
- * failure is placed against the nearest `relative` element, so the owning
- * header can give it room beyond the title itself.
- */
 import {
   type ReactNode,
   type Ref,
@@ -45,25 +34,14 @@ export function TitleEditSlot({
   children,
 }: {
   editRef?: Ref<TitleEditHandle>;
-  /** What is titled, e.g. `work:<id>`; a newer rename of it supersedes an older one. */
   titleKey: string;
-  /** The field's accessible name. */
   label: string;
-  /** Shown under the reopened field when the rename was refused, from its cause. */
   failure: (cause: unknown) => string;
-  /**
-   * The sentence for a rename a closed Work bounced, or null for any other failure. A bounce
-   * shows as a chip at the field's trailing edge instead of a line under it.
-   */
   closed?: (cause: unknown) => string | null;
-  /** Rejects when the rename was refused. */
   rename: (title: string) => Promise<unknown>;
   maxLength?: number;
-  /** The field's typography and inset, matching the resting title. */
   fieldClassName?: string;
-  /** Where the failure sits under the field. */
   failureClassName?: string;
-  /** The resting title: `start` opens the field on `initial`. */
   children: (edit: {
     start: (initial: string) => void;
     triggerRef: RefObject<HTMLButtonElement | null>;
@@ -85,7 +63,6 @@ export function TitleEditSlot({
   const close = () => {
     setEditing(null);
     setRefusal(null);
-    // Back to the title, unless the writer already moved focus elsewhere.
     requestAnimationFrame(() => {
       const active = document.activeElement;
       if (!active || active === document.body) triggerRef.current?.focus();
@@ -146,7 +123,6 @@ export function TitleEditSlot({
   );
 }
 
-/** Focus rests on nothing, or on the title itself: the writer is not working elsewhere. */
 function focusIsIdle(triggerRef: RefObject<HTMLButtonElement | null>): boolean {
   const active = document.activeElement;
   return !active || active === document.body || active === triggerRef.current;

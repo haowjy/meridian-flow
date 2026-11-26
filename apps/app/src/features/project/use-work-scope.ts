@@ -17,12 +17,6 @@ export type WorkScope =
   | { status: "ready"; workId: string }
   | { status: "loading" | "error"; workId: null };
 
-/**
- * The one Work scope per project: whose drafts, chats and Scratch the shell shows. It is a stored
- * value, never read from the address, and only the writer's pick changes it. An archived or
- * deleted Work stays picked (it is ended, restorable, and its sources still read); only a Work the
- * catalog no longer holds (purged) resolves to No Work, and nothing navigates.
- */
 export function useWorkScopeState(projectId: string): WorkScope & { retry: () => void } {
   const accountId = useAccountId();
   const stored = useProjectScope(accountId, projectId);
@@ -44,11 +38,6 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
   }, [ready, noWorkId, known, stored, works.status, refetch]);
 }
 
-/**
- * Pick a Work, or No Work by its row id. Main, the address and the open documents stay put; each
- * page shows the picked Work's draft where it has one, else Live (`enterScope`). Written with the
- * scope, so the first render under the new scope already shows them.
- */
 export function useWorkScope(projectId: string): {
   workId: string | null;
   setWorkId(id: string): void;
@@ -70,16 +59,6 @@ export function useWorkScope(projectId: string): {
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }
 
-/**
- * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
- * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
- * and the Work chip all show these, so under No Work they follow the chat. `draftId` is the one
- * the shell shows on Draft: of a picked Work, the draft its version chip picked
- * (`useShownWorkDraft`) while the Work lists it, else its default; of a chat, the chat's own.
- * `draftId` is "" when there are none to show; `work` is the Work its commands act for. `known`
- * is false until the Works list has loaded: before that a picked Work's draft reads as "".
- * `workDrafts` is the picked Work's drafts.
- */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,

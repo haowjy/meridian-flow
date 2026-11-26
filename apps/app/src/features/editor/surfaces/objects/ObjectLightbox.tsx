@@ -46,25 +46,11 @@ export function ObjectLightbox({
     <EditorDialog
       editor={editor}
       id="object-lightbox"
-      // Open on its hold rather than on the resolved target: a remote write
-      // rebuilds the node view under the dialog, and the writer is still
-      // looking at the same diagram. A frame with nothing to draw is a frame,
-      // and closing here would lose the dialog on every peer keystroke.
       open={open}
       onOpenChange={onOpenChange}
       title={provider ? t`Diagram` : t`Image`}
-      // The canvas is the reason this dialog exists, so it takes the screen a
-      // viewer needs and the shell owns how much that is (`DIALOG_SIZES`).
       size="workspace"
       className="meridian-object-lightbox"
-      // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog
-      // as well as on the selected block. It rides the dialog's layer rather
-      // than a listener of this component's: focus is in portalled content, so
-      // the kernel's document route is what hears it — and the binding is then
-      // one the kernel can list, scope, and refuse a second claimant for.
-      //
-      // The dialog's key, not the pane's: it has to open a pane that is closed,
-      // and a pane cannot register the chord that summons it.
       keys={
         provider
           ? {
@@ -78,8 +64,6 @@ export function ObjectLightbox({
     >
       {target && provider ? (
         <DiagramFace
-          // The render state below belongs to one provider; a language change is
-          // a document change, and the pane starts over on the new one.
           key={provider.language}
           editor={editor}
           target={target}
@@ -127,28 +111,16 @@ function DiagramFace({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
-  // The pane's value and its change handler come from one place, because
-  // interpreting a textarea's string as an edit needs to know which version of
-  // the document it was typed against.
   const draft = useFenceDraft(editor, target);
   const source = draft.value;
-  // The pause between a keystroke and a reparse belongs to the render hook,
-  // which the page's own diagram shares: one answer to "when is this source
-  // settled enough to draw".
   const { svg, error, rendered } = useDiagramRender(provider, source);
 
-  // The pane is its own layer, which is what makes law 3's walk fall out of one
-  // rule: Esc closes the source, then the dialog, then leaves the diagram
-  // selected on the page.
   useChromeLayer(editor, {
     id: "diagram-source",
     open: sourceOpen,
     close: () => onSourceOpenChange(false),
   });
 
-  // Source that has never rendered has nothing for the viewer to show, which
-  // is law 2's reason for opening a brand-new diagram on its source as well.
-  // One-way: a writer who closes the pane over a broken diagram keeps it closed.
   const nothingToView = svg === null && error !== null;
   useEffect(() => {
     if (nothingToView) onSourceOpenChange(true);
@@ -199,19 +171,12 @@ function DiagramFace({
             name={provider.name}
             value={source}
             onChange={draft.onChange}
-            // Only report a failure the writer can act on: a message about
-            // source they have already changed is noise.
             error={rendered === source ? error : null}
           />
         ) : null}
         <ViewerCanvas contentKey={svg ?? ""}>
           {svg ? (
-            <div
-              className="meridian-diagram"
-              // A `SanitizedSvg` from the shared render boundary, like the
-              // page's own face: this file names no renderer and trusts none.
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
+            <div className="meridian-diagram" dangerouslySetInnerHTML={{ __html: svg }} />
           ) : null}
         </ViewerCanvas>
       </div>
@@ -232,11 +197,6 @@ function SourcePane({
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
-  // The writer asked for this pane and it exists to be typed in, so it takes
-  // the caret — but it has to win an argument first. The dialog's focus scope
-  // and the ⋯ menu that opened the pane both restore focus asynchronously on
-  // their way out, so a focus set now is taken back a moment later. Claiming
-  // it once the churn has passed is the whole trick; measured in the browser.
   useEffect(() => {
     const timer = window.setTimeout(() => areaRef.current?.focus(), SOURCE_FOCUS_DELAY_MS);
     return () => window.clearTimeout(timer);

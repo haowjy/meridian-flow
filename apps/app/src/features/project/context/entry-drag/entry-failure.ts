@@ -1,9 +1,3 @@
-/**
- * How a tree Move, Copy or delete runs. A Move or delete is appended to the copy of the list and
- * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
- * concerns. A Copy is a route, and its failure is a toast, with Retry unless sending it again
- * can't land it.
- */
 import { t } from "@lingui/core/macro";
 import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
@@ -28,32 +22,21 @@ export type EntryContext = {
   projectId: string;
   actions: EntryActions;
   removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
-  /**
-   * Where a delete's notice shows: `tree` in the sidebar, `main` on Recently opened. A delete of
-   * the document main shows follows main to where it goes back to. None: no notice.
-   */
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-/** What a Copy needs beyond a Move: the room version of a document's open session in this tab. */
 export type CopyContext = EntryContext & {
   roomVersionOf: RoomVersionOf;
 };
 
-/** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
 type CopyFailure = {
   key: string;
   error: unknown;
   copy: ReadyCopy;
 };
 
-/** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
 export const entryToast = (projectId: string, failure = "") => `entry:${projectId}:${failure}`;
 
-/**
- * Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route.
- * Either shows where its rows landed at once (`revealPlaced`), selected in `selection`.
- */
 export function runMove(
   context: EntryContext,
   move: ReadyMove,
@@ -63,7 +46,6 @@ export function runMove(
   if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
-/** Why the route refused for good, where it did: the Work is closed, or the writer can't copy there. */
 function finalRefusalReason(error: unknown): string | undefined {
   if (!isMeridianApiError(error)) return undefined;
   if (error.code === "permission_denied") return t`No access`;
@@ -71,7 +53,6 @@ function finalRefusalReason(error: unknown): string | undefined {
   return undefined;
 }
 
-/** Why the server left a copy out, where sending it again would leave it out the same way. */
 function settledReason(undone: readonly Settlement[]): string | undefined {
   if (
     undone.some(
@@ -84,7 +65,6 @@ function settledReason(undone: readonly Settlement[]): string | undefined {
   return undefined;
 }
 
-/** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
 function showCopyFailure(
   context: CopyContext,
   failure: CopyFailure,
@@ -111,7 +91,6 @@ export async function runCopy(
   revealPlaced(copy.into, copies, selection);
   try {
     const settled = await answered;
-    // The Work closed, or a source was gone or would land inside itself: something wasn't copied.
     const undone = settled.filter((one) => one.rule === "returned" || one.rule === "left_out");
     if (undone.length > 0) {
       leaveSelections(copies);
@@ -136,7 +115,6 @@ export async function runCopy(
   }
 }
 
-/** The documents deleting `entry` takes away. */
 export function ownRemovals(projection: TreeProjection | null, entry: EntryRef): string[] {
   if (entry.kind === "file" || !projection) return [entry.id];
   return descendantsOf(projection, entry.id).filter(
@@ -144,14 +122,8 @@ export function ownRemovals(projection: TreeProjection | null, entry: EntryRef):
   );
 }
 
-/**
- * Deletes one gesture's entries: one own removal covers every document they take away, so main's
- * go-back skips all of them. An entry inside another one's folder goes with that folder, never on
- * its own. Each list takes its entries as one update.
- */
 export async function runDelete(
   context: Omit<EntryContext, "actions">,
-  /** Each entry with the actions of the tree it was shown in: one gesture can span several. */
   requested: readonly (EntryRef & { name: string; actions: EntryActions })[],
 ): Promise<void> {
   const { projectId, removal } = context;
@@ -189,8 +161,6 @@ export async function runDelete(
     const step = list.remove(mine.map(({ entry }) => entry.id));
     taken.push({ list, step, names: mine.map(({ entry }) => entry.name) });
   }
-  // In the sidebar the rows carry the delete's Undo (`TreeNotice`); a line shows only where no row
-  // does: on main's Recently opened, or where main went back to when the delete took its document.
   if (context.notice && taken.length > 0 && (leaving || context.notice.at === "main"))
     shown = showDeleteNotice(context.notice, projectId, taken, leaving, covered.flat()[0] ?? "");
 }
@@ -212,7 +182,6 @@ function showDeleteNotice(
   const surface: NoticeSurface = leaving
     ? { kind: "page", documentId: leaving, draftId: null }
     : { kind: "landing" };
-  // The notice's one Undo covers every list's step: it ends when the last of them ends or rests.
   let id: number | null = null;
   const standing = new Set(taken.map(({ step }) => step));
   for (const { step } of taken) {
@@ -226,7 +195,6 @@ function showDeleteNotice(
   id = notices.showDiscard({
     projectId,
     draftId: deleteNoticeKey(projectId),
-    // Leaving main's document, the notice follows main to where it goes back to (`landed`).
     surface,
     scope: "deleted",
     name: names[0] ?? "",

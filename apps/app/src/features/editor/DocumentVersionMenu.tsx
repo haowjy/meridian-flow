@@ -1,10 +1,3 @@
-/**
- * Which version of the open document its view shows, as one chip and menu on desktop and phone:
- * Live, or a draft, with every draft of the document one pick away. It reads the host's
- * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: another
- * owner's picked draft becomes the view's pin; the scope's own draft and Live set the sidebar
- * toggle and drop the pin. `DraftSwitcher` draws it.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentDraftHint } from "@meridian/contracts/drafts";
@@ -34,15 +27,10 @@ export function DocumentVersionMenu({
   const { documentId } = document;
   const accountId = useAccountId();
   const paint = useHostDocumentPaint();
-  // The chip and the sidebar's Live/Draft toggle are one state (`shownDraft`): a pick here sets it.
   const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works, nameOf } = useWorks(projectId);
-  // The chip reads the paint, the one version rule, never whether the review's controls are up:
-  // a draft whose room is still opening is already the version on screen.
   const shown = paint?.draft ?? null;
-  // The picked Work's drafts are listed whether or not they change this document; picking one
-  // shows it on every page, as the sidebar's chip does.
   const menu = useWorkDraftMenu(projectId, shell, (draftId) => shown?.draftId === draftId);
   const draftOnly = useDraftOnly(projectId, shown?.draftId ?? null)(documentId);
   if (document.kind === "new") return null;
@@ -53,7 +41,6 @@ export function DocumentVersionMenu({
     return work ? nameOf(work) : label;
   };
   const listed: DocumentDraftHint[] = [...hints];
-  // A draft on screen that the hints have not caught up with is still a version of the document.
   if (shown && !hints.some((hint) => hint.draftId === shown.draftId))
     listed.push({
       draftId: shown.draftId,
@@ -98,8 +85,6 @@ export function DocumentVersionMenu({
       current: shown?.draftId === hint.draftId,
       scope: hint.draftId === scopeDraft,
       onSelect: () => {
-        // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft,
-        // and another owner's pin, which outranks the toggle, goes.
         const scoped = hint.draftId === shell?.draftId;
         if (scoped) shell.show("draft");
         setDocumentView(accountId, projectId, documentId, {
@@ -109,8 +94,6 @@ export function DocumentVersionMenu({
       },
     }));
   const drafts = [...workEntries, ...hinted];
-  // As the sidebar's chip shows only while there is a draft to switch to, this one shows only
-  // while the document has a version besides the one on screen.
   const showing = paint?.draft ? "draft" : "live";
   if (showing === "live" && drafts.length === 0) return null;
   const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
@@ -143,7 +126,6 @@ export function DocumentVersionMenu({
   );
 }
 
-/** A pick swaps the chip for the other version's: the menu's focus return follows to the new one. */
 function followToChip(documentId: string) {
   holdFocus(() =>
     document.querySelector<HTMLElement>(

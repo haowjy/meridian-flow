@@ -76,7 +76,6 @@ export function createDocumentDerivationService(input: {
         const ids = await input.store.stale({ after: sweepCursor, limit: 100 });
         sweepCursor = ids.length === 100 ? ids.at(-1) : undefined;
         await recover(ids);
-        // Bounded and fair: resumes after the last ref attempted, so failing refs rotate through.
         aheadCursor = (await input.store.recoverAheads(aheadCursor)).next ?? undefined;
         return ids.length;
       });
@@ -130,10 +129,6 @@ export async function deriveDocumentOutputs(
   };
 }
 
-/**
- * The cut's blocks in document order as Live reads them, normalized and hashed here, before the
- * certify transaction: nothing downstream reads text back under the lock.
- */
 export function createCutReader(deps: {
   schema: Schema;
   codec(): AgentEditCodecFactory;

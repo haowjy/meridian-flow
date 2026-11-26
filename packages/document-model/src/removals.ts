@@ -66,11 +66,6 @@ export function answerRemovals(
   return ids.size > 0 ? restore(docs, ids) : [];
 }
 
-/**
- * Every block id under a block (itself included) by the parents as read, shown or not: the text
- * docs a removal of it read. A textblock holds no blocks, so a removed paragraph costs no read of
- * the structure; it is read once, for the first container asked about.
- */
 function keysUnder(docs: RoomDocs): (id: BlockId) => BlockId[] {
   const values = structureValues(docs);
   let view: StructureView | undefined;

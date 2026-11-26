@@ -60,8 +60,6 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.drafts(projectId, pinnedOwner),
         })
     : null;
-  // `readOnly` is the Work's scope (an archived or deleted Work's Scratch); the presentation decides
-  // whether this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
@@ -129,8 +127,6 @@ export function ContextDocumentHost({
                 inMain={inMain}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
-                // A warm editor is hidden, not gone. Its chrome portals to
-                // the body, where `hidden` on an ancestor means nothing.
                 active={active}
                 editable={editable}
                 showToolbar={editable}
@@ -150,8 +146,6 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      // A document only a Work has is plain text in its Live room, open while the Work has it: a
-      // Discard closes the room, and its Undo opens it again.
       workOnly={
         draftRow?.isNew === true || fileForDocument(document.documentId)?.item.isNew === true
       }

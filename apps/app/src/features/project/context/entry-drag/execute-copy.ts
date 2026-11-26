@@ -19,7 +19,6 @@ import type { MoveArea, ReadyCopy } from "./move-plan";
 
 const withoutLeadingSlash = (path: string) => path.replace(/^\/+/, "");
 
-/** The destination as the route names it: a folder by id, or the top of a tree with its owner. */
 function destinationOf(copy: ReadyCopy): ContextDestinationParent {
   const { area, into, scheme } = copy;
   if (into !== area.tree.root.entryId) return { kind: "folder", folderId: into };
@@ -32,7 +31,6 @@ function destinationOf(copy: ReadyCopy): ContextDestinationParent {
   };
 }
 
-/** A source's owner as the route takes it: only a Work's own areas (Scratch) name a Work. */
 function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
   const { owner } = area;
   const scoped = isWorkScopedScheme(area.scheme);
@@ -43,11 +41,6 @@ function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
   };
 }
 
-/**
- * The server answers `source_behind` (a 503) after a short wait; typing this tab holds reaches
- * it, so the Copy is sent again, slower each time, for as long as it takes. Temporary: Copy moves
- * onto the command driver, which owns this wait.
- */
 const RESEND_FIRST_MS = 500;
 const RESEND_LAST_MS = 5_000;
 
@@ -58,15 +51,8 @@ const isSourceBehind = (error: unknown) =>
   "reason" in error.details &&
   error.details.reason === "source_behind";
 
-/** A document's open session's vector, when this tab holds one. */
 export type RoomVersionOf = (documentId: string) => Uint8Array | null;
 
-/**
- * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
- * at once, before the server answers; `answered` resolves with what the Copy left undone (nothing
- * made for a closed Work, a source left out) and rejects with the route's error on a refusal.
- * `roomVersionOf` gives a document's open session's vector, when this tab holds one.
- */
 export function copyRows(
   projectId: string,
   copy: ReadyCopy,
@@ -112,7 +98,6 @@ export function copyRows(
   };
 }
 
-/** The open session says what this tab holds of the document; a folder has no room. */
 function roomVersionField(
   row: ReadyCopy["copies"][number],
   roomVersionOf: RoomVersionOf,

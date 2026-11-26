@@ -26,12 +26,6 @@ export type LinkAssignmentScope = {
 
 export type AssignedLink = { ref: LinkRef | null; href: string };
 
-/**
- * Assign one written href. Contextual and external links keep `ref: null`
- * and the href as written. An internal one is spelled as its canonical
- * absolute address (plus any `#`/`?` suffix) and gets the indexed document's
- * ref, or a fresh ahead ref when the index has none there.
- */
 export function assignWrittenHref(
   href: string,
   holderUri: string | null,
@@ -49,12 +43,6 @@ export function assignWrittenHref(
   return { ref: assigned.ref, href: assigned.href };
 }
 
-/**
- * Assign one written `image`/`figure` source, under the manuscript-root
- * grammar (a bare source is a manuscript path). A source that is not a
- * document address (a web URL, `data:`) keeps `ref: null` as written; the
- * image paste door imports it.
- */
 export function assignWrittenSource(src: string, index: LinkAssignmentIndex | null): AssignedLink {
   const assigned = assignFreshLink({
     href: src,
@@ -84,13 +72,6 @@ function treeAt(trees: readonly TreeView[], uri: string) {
   return tree ? { tree, path } : null;
 }
 
-/**
- * The indexed document at an internal address, as the server's tree reads it: folders are
- * walked by segment, so a document `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the
- * folder; the leaf is the exact name or its alias, else the one document there that differs only
- * by an extension the link left off. A contextual address means the scope's own Work, which is
- * the only Work whose Scratch and Uploads the index holds.
- */
 export function indexedDocumentAt<T extends LinkAssignmentDocument>(
   index: { documents: readonly T[]; trees: readonly TreeView[] },
   uri: string,
@@ -121,21 +102,6 @@ export function indexedFolderAt<T extends LinkAssignmentFolder>(
   return index.folders.find((folder) => folder.folderId === folderId) ?? null;
 }
 
-/**
- * A pasted slice with every ref-less link and picture assigned (the client's
- * pass 3), each under its own grammar: a link mark's href against the holder
- * (`assignWrittenHref`), an `image`/`figure` source from the manuscript root
- * (`assignWrittenSource`). A link or picture that already carries a ref came
- * from a same-project rich paste or a producer that knew its document, and
- * keeps it; so does an `asset:` upload, which a same-project paste restores
- * (`link-clipboard.ts`). Each distinct written address is assigned once per
- * paste per grammar, so one address pasted twice shares an assignment.
- *
- * A node walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
- * inline text at its top level, which the block walk does not visit, and an
- * assignment is a function of the mark or picture alone, so runs need not be
- * found.
- */
 export function assignPastedSlice(slice: Slice, scope: LinkAssignmentScope): Slice {
   const { holderUri, index } = scope;
   const assignments = new Map<string, AssignedLink>();

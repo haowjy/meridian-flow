@@ -1,9 +1,3 @@
-/**
- * A position in a textblock as a Loro cursor in the block's text doc (the binding's `DocCursor`):
- * the one way the editor holds a place across anyone's edits (anchors and holds, reading position,
- * peers' carets). A cursor holds a character, so a caret after text holds the unit before it
- * (`after`), and text a peer types at the caret lands after it.
- */
 import type { RoomDocs } from "@meridian/document-model";
 import { cursorAt, type DocCursor, loroSyncKey } from "@meridian/loro-prosemirror";
 import type { Node } from "@tiptap/pm/model";

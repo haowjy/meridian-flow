@@ -270,15 +270,6 @@ export function TableMenuItems({ run, states, alignment, placement }: VerbProps)
   );
 }
 
-/**
- * Everything the arrangements read, gathered once per open, against the target
- * the menu was opened on. Null once that target is gone: a menu with nothing
- * left to act on closes rather than offering verbs to the selection.
- *
- * Recomputing the verb matrix on every keystroke of the chapter would be a
- * table walk per character; behind an open menu it is free, and Radix keeps
- * menu content unmounted until then.
- */
 export function tableMenuProps(
   editor: Editor,
   target: TableMenuTarget = { kind: "selection" },

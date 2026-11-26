@@ -1,6 +1,3 @@
-// Reads Markdown that is not a tracked document (text extracted from an EPUB or PDF) through
-// the same renderer as a document read: hashes, outline, `#heading` sections, `in` and `around`.
-
 import { freshPeerId, RoomDocs } from "@meridian/document-model";
 import { shapeSchemaOf } from "@meridian/loro-prosemirror";
 import type { DocumentLinkScope } from "@meridian/markup";
@@ -25,8 +22,6 @@ export function readStaticMarkdown(
   const docs = RoomDocs.create(shapeSchemaOf(deps.model.schema), freshPeerId());
   try {
     const handle = toLoroHandle(new LoroDocument(docs, deps.model.schema));
-    // A block's hash comes from its id, and every read builds a fresh copy: ids by position keep
-    // one text's hashes the same from one read to the next.
     let next = 0;
     const parsed = deps.codec.parse(markdown);
     deps.model.insertBlocks(handle, null, {

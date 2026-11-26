@@ -34,7 +34,6 @@ const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
 export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
 
-/** The class the jade ring paints on. */
 export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
 
 export function objectSelectedInDecorations(decorations: readonly { spec?: unknown }[]): boolean {
@@ -111,8 +110,6 @@ function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
   if (pos < 0 || pos > view.state.doc.content.size) return null;
 
   const $pos = view.state.doc.resolve(pos);
-  // A leaf object — an image, a scene break — is what the position sits
-  // directly before; a block one is an ancestor of the position inside it.
   const after = $pos.nodeAfter;
   if (after && isEditorObject(after)) return { node: after, pos: $pos.pos };
 

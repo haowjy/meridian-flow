@@ -52,8 +52,6 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
 
   useFormattingMenuDoors(editor, setAnchor);
 
-  // Held through the close so the menu fades out with its contents rather than
-  // emptying a frame before it goes.
   const lastModel = useRef<FormattingMenuModel | null>(null);
   if (anchor) lastModel.current = formattingMenuModel(editor);
   const model = lastModel.current;
@@ -119,8 +117,6 @@ function MarkButton({
   const Icon = MARK_ICONS[id];
 
   return (
-    // Icon-only, so the row's own tooltip names it — from `aria-label`, whether
-    // or not it can run.
     <EditorMenuItem
       aria-label={label}
       aria-pressed={state.active || undefined}
@@ -140,8 +136,6 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
   const label = turnIntoLabel();
   const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
 
-  // Every type refuses for one reason, so the list is not worth opening: the
-  // trigger greys in the list's place and answers for all of them.
   if (blockedReason) {
     return (
       <EditorMenuItem blockedReason={blockedReason}>

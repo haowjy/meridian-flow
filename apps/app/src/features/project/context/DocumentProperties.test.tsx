@@ -56,7 +56,6 @@ const chapter: Dto = {
 
 notifyManager.setScheduler((callback) => callback());
 
-/** Resolves once no query is pending; act then renders what they returned. */
 function settle(client: QueryClient) {
   const cache = client.getQueryCache();
   const done = () => cache.getAll().every((query) => query.state.status !== "pending");

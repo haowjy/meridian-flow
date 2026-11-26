@@ -79,9 +79,6 @@ export function SyncStatus({ session }: { session: DocumentSession }) {
     return () => clearTimeout(timer);
   }, [phase, session]);
 
-  // Autosync is assumed, so the healthy and transient states say nothing:
-  // "no news is good news." Terminal states win over any outage phase. Rendered
-  // inside the editor's status pill (SessionEditor). A removed room says nothing.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";

@@ -1,40 +1,3 @@
-/**
- * The fence's node view — the diagram the page shows instead of syntax.
- *
- * A `code_block` whose language a diagram provider claims renders as a diagram
- * and hides its own `<pre>`; every other language is the fence itself
- * (interaction model §5.2). WHICH languages render is the catalog's answer
- * (`diagrams/diagram-providers.ts`), never a name in this file; the three faces
- * the render layer wears are `DiagramBody`. What this file owns is the one
- * choice above them, which is whether the writer is looking at the diagram or at
- * its source.
- *
- * ## The invariant
- *
- * **A selection inside the fence implies a visible, connected source content
- * DOM, and rendering that implication must not itself change the selection.**
- *
- * The first half is why the source comes back at all: a caret in a hidden
- * element eats every keystroke it is given. The second half is structural, and
- * it is what the DOM below is shaped by:
- *
- * - the content host is the wrapper's FIRST child and is never added, removed,
- *   or reordered — only its visibility changes;
- * - the render layer is one stable sibling AFTER it, so neither a face swap nor
- *   a parse settling moves DOM in front of ProseMirror's live selection.
- *
- * DOM appearing and vanishing ahead of a live selection is what made the two
- * faces alternate: the observer re-read the selection across the change, the
- * new reading fell outside the fence, the render came back, and the reading
- * fell inside again.
- *
- * The face is a one-way derivation of the current selection, with no memory and
- * no test of how the caret got there, so it converges after one render whatever
- * put it in — a keystroke, a command, a peer's write mapped through the Loro binding, a
- * pointer answered at a boundary. This file used to claim a pointer could not
- * produce that caret. It could. Where an outside press may land is
- * `landing/press.ts`, and it is not what makes this file safe.
- */
 import type { Editor, NodeViewProps } from "@tiptap/core";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { useCallback, useSyncExternalStore } from "react";
@@ -47,14 +10,6 @@ import {
 } from "./diagrams";
 import { caretInsideNodeAt, engageObject, selectObjectTransaction } from "./objects";
 
-/**
- * `caretInsideNodeAt`, subscribed and read fresh on every render.
- *
- * Not local state written from an effect: a face held in state is a second copy
- * of the answer, and a copy can disagree with the selection for a frame. The
- * subscription is deliberately coarse — every transaction, focus, and blur
- * re-reads, and React drops the readings that come back the same.
- */
 function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): boolean {
   const subscribe = useCallback(
     (onStoreChange: () => void) => {

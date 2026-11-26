@@ -1,5 +1,3 @@
-/** Production dependency graph for the server collab domain. */
-
 import { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import { loroRoomName } from "@meridian/contracts/protocol";
@@ -113,45 +111,28 @@ export type { DocumentWriteHook } from "./contracts.js";
 
 type CollabDomainDeps = {
   db: Database;
-  /** How links and image sources spell, loaded per document operation (contract §4.4). */
   links: DocumentLinkScopes;
-  /** Durable registration of ahead refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
-  /** Overrides of the rooms' debounce, idle and size bounds; a DB suite shortens the debounce. */
   roomBounds?: Partial<RoomBounds>;
   notices?: NoticePort;
   workProjectionMutation: WorkProjectionMutation;
-  /**
-   * Confirms writes' grants under lock where they become durable (file-access
-   * §5); the writer's turn undo also asks it for its grants.
-   */
   fileAccess: Pick<
     FileAccess,
     "authorize" | "authorizeAt" | "confirmEdit" | "destinationAvailability"
   >;
-  /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
   arrivals?: DocumentArrivals;
-  /** Registers client-minted ahead refs after certified derives, and recovers failures (§11.3). */
   aheadRegistrations?: AheadRegistrationRecovery;
-  /** The project tree's lists: Apply and Discard settle a Work's records through `submit`. */
   treeLists: TreeListStore;
-  /** What took a document out of live (its Trash entry), for a pin or a room that lost it. */
   removals: DocumentRemovals;
-  /** A live document's text changed, through its room or a direct write (the AI, Apply). */
   liveTextHints?: {
     hint(documentId: DocumentId): void;
-    /** Cancels what is pending; the composition's `dispose` calls it. */
     stop(): void;
   };
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  /**
-   * Live's text advanced and committed: through a room or a direct write.
-   * The one notice every consumer of Live's text hangs on; each coalesces it on its own cadence.
-   */
   const liveAdvanced = (documentId: DocumentId) => {
     derivations.schedule(documentId);
     deps.liveTextHints?.hint(documentId);

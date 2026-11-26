@@ -52,30 +52,14 @@ import { reviewCount, useDraftsTreeChanges, useShellTreeVersion } from "../../tr
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
 
-/**
- * Whose changes the Changes tab lists: the Work picked in the sidebar, or under None the
- * chat on screen's own drafts when it has no Work (the chat Scratch rule).
- */
 export type ChangesScope = {
-  /** The Work the commands act for: the picked Work, else the chat on screen's (No Work for a chat's own drafts). */
   work: Work | null;
-  /** The shown draft; "" when there is nothing to list (None with no chat of its own). */
   draftId: string;
-  /**
-   * The drafts the tab lists, each under its name when there are several (a picked Work's, which
-   * Apply all presses together); else the one draft, unnamed.
-   */
   drafts: readonly { id: string; name: string | null }[];
   heading: string;
   empty: string;
-  /** What waits on the writer: the documents and folders the Work or the chat changes. */
   count: number;
-  /** Whether the strip offers the tab; under None only while the chat on screen's drafts wait. */
   offered: boolean;
-  /**
-   * Another Work with changes to review, when this scope has none: the empty state names it. The
-   * sidebar never switches the pick by itself; the chat's Work comes first.
-   */
   elsewhere: { work: Work; count: number } | null;
 };
 
@@ -89,7 +73,6 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const shell = useShellTreeVersion();
   const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
   const workDrafts = picked && shell?.work?.id === picked.id ? shell.workDrafts?.drafts : null;
-  // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
     const drafts =
@@ -104,7 +87,6 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       .sort((a, b) => Number(b.id === chatWorkId) - Number(a.id === chatWorkId));
     const other = count === 0 ? others[0] : undefined;
     const elsewhere = other ? { work: other, count: reviewCount(shell, other) } : null;
-    // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
       const name = nameOf(named);
@@ -132,43 +114,18 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }, [picked, work, draftId, workDrafts, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
-/**
- * One draft's rows as the tab shows them, read in the tab so its bar acts on what is drawn: its
- * folders and documents in the list's order, and the rows a press took that still say something.
- */
 type DraftSection = {
   draftId: string;
   heading: string | null;
-  /** The draft's list as read; its `draftId` is null until it has come. */
   list: OwnerDraftListStatus;
   tree: WorkTreeChanges | null;
-  /** Its rows' files, in the list's order. */
   files: readonly ReviewFileTarget[];
-  /** The folder changes Apply all takes along: every one that can land. */
   folders: readonly { id: string; name: string }[];
-  /** The rows as drawn, folders folded away, before the gone ones go back in. */
   items: readonly ChangeItem[];
-  /** Where each drawn row sits: its folder, or null at the top. */
   folderOf: ReadonlyMap<string, string | null>;
-  /** An Apply the server is still running (a large Apply all). */
   applying: boolean;
 };
 
-/**
- * The scope's drafted documents, one row each in the one file order, under the folders the Work
- * changes, and in a Work with several drafts under a heading per draft. A row opens its draft;
- * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
- * change the tab lists (the draft, or every draft of the Work), new documents, folders, moves and
- * deletes included. Each Apply is one command, which sidebar Undo takes back whole, and each
- * Discard's notice has its Undo. An Apply of several asks when it would delete documents,
- * naming each. A question takes the place of the buttons that asked it. A Discard made here shows
- * its notice in the row's place (Discard all: on every row it took); an Apply's facts sit below
- * the rows.
- *
- * An archived or deleted Work's commands go through as in any Work: Apply lands, and a Discard
- * the Work returns shows its chip on the control pressed. A frozen lineage (every chat in Trash)
- * offers no Apply, only Discard.
- */
 export function ChangesSource({
   projectId,
   scope,
@@ -178,9 +135,7 @@ export function ChangesSource({
 }: {
   projectId: string;
   scope: ChangesScope;
-  /** The scope's commands, held by the sidebar so their notice outlives this pane. */
   controller: WorkDraftCommands;
-  /** Whether the file is the document open in the editor. */
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
@@ -195,7 +150,6 @@ export function ChangesSource({
   const draftIds = useMemo(() => (draftsKey ? draftsKey.split(",") : []), [draftsKey]);
   const lists = useDraftLists(projectId, draftIds);
   const shell = useShellTreeVersion();
-  // The shown draft's tree changes are the shell's; the others' are replayed here.
   const ownTree = shell?.draftId ?? null;
   const replayedVersions = useMemo(
     () => draftIds.filter((id) => id !== ownTree).map((id) => draftTreeVersion(id)),
@@ -227,7 +181,6 @@ export function ChangesSource({
   });
   const files = sections.flatMap((section) => section.files);
   const changedFolders = sections.flatMap((section) => section.folders);
-  // A folder changed alone lists no document, and is still a change to review.
   const hasFiles = files.length > 0 || changedFolders.length > 0;
 
   const notice = useSurfaceNotice(controller.noticeKeys);
@@ -303,7 +256,6 @@ export function ChangesSource({
   useEffect(() => {
     if (!hasFiles) cancel();
   }, [hasFiles, cancel]);
-  // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
   if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
   const listRef = useRef<HTMLDivElement>(null);
@@ -341,7 +293,6 @@ export function ChangesSource({
               onDiscard={() => {
                 void controller.pressDraft(
                   "discard",
-                  // A lone folder change names itself in the notice.
                   files.length === 0 && changedFolders.length === 1 && onlyFolder
                     ? onlyFolder.name
                     : null,
@@ -351,7 +302,6 @@ export function ChangesSource({
               onApply={files.every((file) => hasApply(file.item)) ? startApply : undefined}
             />
           ) : goneRows ? (
-            // The rows a command took still show: the bar stays, greyed, so they don't move.
             <ReviewActions
               scope="all"
               density="full"
@@ -403,7 +353,6 @@ export function ChangesSource({
   );
 }
 
-/** One draft's rows as the tab shows them (`DraftSection`). */
 function draftSection({
   draftId,
   heading,
@@ -436,7 +385,6 @@ function draftSection({
     for (const inner of group.inner) walk(inner, here);
   };
   for (const group of groups) walk(group, null);
-  // One list of the rows as shown: a folder heads its documents, then the folders inside it.
   const itemsOf = (group: ChangeGroup<ReviewFileTarget>, depth: number): ChangeItem[] => [
     ...(group.folder
       ? [
@@ -469,7 +417,6 @@ function draftSection({
     heading,
     list,
     tree,
-    // Grouped, the list's order is the groups' order.
     files: groups.flatMap(groupFiles),
     folders: groupsOf(groups).flatMap((group) =>
       group.folder && !group.folder.fault ? [{ id: group.folder.id, name: group.folder.name }] : [],
@@ -480,7 +427,6 @@ function draftSection({
   };
 }
 
-/** One draft's rows in the Changes tab, under its name when the tab lists several. */
 function DraftChangesSection({
   projectId,
   section,
@@ -499,7 +445,6 @@ function DraftChangesSection({
   section: DraftSection;
   shown: readonly WithGone<ChangeItem, ChangeItem>[];
   controller: WorkDraftCommands;
-  /** The tab's notice, said on the rows it took. */
   notice: DraftNotice | null;
   wordOf: (key: string) => ReactNode;
   touch: boolean;
@@ -507,7 +452,6 @@ function DraftChangesSection({
   onPicked?: () => void;
   folded: (folder: string) => boolean;
   onFold: (folder: string) => void;
-  /** A row's own × or ✓ was pressed: snapshot the section for its notice. */
   onCommand: () => HeldNoticeRows;
 }) {
   const openDocument = useOpenProjectDocument(projectId);
@@ -618,12 +562,6 @@ const changeKey = (item: ChangeItem) => item.key;
 
 const NOTHING = () => {};
 
-/**
- * A folder the Work changes, heading what it holds: its name, what the Work does to it, and why
- * it cannot land if it cannot; a click folds its rows. It has no × or ✓ of its own: Discard all
- * and Apply all take it. Its own command's state (pending) shows under it, as a document's does
- * under its row.
- */
 function FolderGroupRow({
   folder,
   depth,
@@ -632,12 +570,9 @@ function FolderGroupRow({
   files,
   notice,
 }: {
-  /** What the owner's notice says on this row. */
   notice: ReactNode;
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
-  /** Under its changed folder's row. */
   depth: number;
-  /** Its rows show; a click folds them. */
   open: boolean;
   onToggle: () => void;
   files: readonly ReviewFileTarget[];
@@ -675,7 +610,6 @@ function FolderGroupRow({
   );
 }
 
-/** What the Work does to a folder, in the quiet line under its name. */
 function folderSummary(folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>): string {
   const { change } = folder;
   const was = change.kind === "changed" ? change.was : null;
@@ -689,7 +623,6 @@ function folderSummary(folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder
       : [was ? t`Was ${was}` : null, movedLine].filter(Boolean).join(". ");
 }
 
-/** Another Work with changes, named with its count: picking it switches the sidebar to it. */
 function ElsewhereLink({
   projectId,
   work,

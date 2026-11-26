@@ -141,7 +141,6 @@ async function resolveAddressCoordinates(
     .from(projects)
     .where(and(eq(projects.id, input.holderProjectId), isNull(projects.deletedAt)));
   if (!holder) throw new Error(`Holder project ${input.holderProjectId} does not exist`);
-  // The home folder is the holder's account's, not any project's.
   const owner: TreeList =
     scheme === "user"
       ? { kind: "account", userId: holder.userId }
@@ -189,8 +188,6 @@ async function resolveAddressCoordinates(
     }
     chatThreadId = chat.id;
   } else if (authority.kind === "work") {
-    // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: an
-    // address resolves against it and is occupied only once a restore makes it live again.
     const [work] = await tx
       .select({ id: works.id })
       .from(works)

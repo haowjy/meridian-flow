@@ -20,7 +20,6 @@ export function anchorRange(state: EditorState, range: AnchorRange): EditorAncho
   const start = docs && pointAt(docs, state.doc, range.from);
   const end = docs && pointAt(docs, state.doc, range.to);
   const relative = start && end ? { start, end } : null;
-  // A pin is kept only when it resolves back to where it was taken.
   const held = relative && resolveRelative(state, relative);
   const faithful = held?.from === range.from && held.to === range.to;
   return { from: range.from, to: range.to, relative: faithful ? relative : null };
@@ -91,8 +90,6 @@ export function holdNode(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
   const $pos = state.doc.resolve(pos);
   const node = $pos.nodeAfter;
-  // Text has no identity of its own, so a range of text is an `EditorAnchor`
-  // plus a mark's attributes (`LinkAnchor`), never a hold.
   if (!node || node.isText) return null;
   return {
     ...anchorRange(state, { from: pos, to: pos + node.nodeSize }),

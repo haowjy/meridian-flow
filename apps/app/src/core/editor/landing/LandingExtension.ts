@@ -1,27 +1,3 @@
-/**
- * Every drag over the editor, in one plugin: one caret, one `dragover`, one
- * `drop`, one plan per event. A paste at the caret takes the same inline rule
- * as a drop (`inlineLanding`). It also routes the click on inert space, since a
- * press and a drop ask the same question of the same walk. (A block moved by
- * its handle is not a drag in this sense: it draws and lands its own seam.)
- *
- * A drag has one kind (an editor selection, a project-tree row, a desktop
- * file, or text from outside) and the host has at most one door for it.
- * A text selection lifted by pressing its highlight (`selection-drag.ts`) is
- * not a separate path: it sends this plugin the same drag events a native drag
- * would, so the caret, the doors and the drop below serve it unchanged.
- *
- * `landingAt` says where the pointer is, the door turns the landing into a
- * plan, and the caret, the hint by the pointer and the drop all read that
- * plan, so the caret the writer sees is where the content stands.
- *
- * Doors for rows and files arrive as options from the composition root
- * (`core/editor/config.ts`), so this file imports neither lane. A payload with
- * no door in this host is left unclaimed, `dragover` and `drop` alike: a code
- * document has the slice door only, and the composer leaves files to its own
- * drop zone.
- */
-
 import { Extension } from "@tiptap/core";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -81,8 +57,6 @@ export const LandingExtension = Extension.create<LandingOptions>({
       if (current.hint) showDragHint(owner, { kind: current.kind, label: current.hint }, event);
       else clearDragHint(owner);
 
-      // Claimed whatever the plan says, and `dropEffect` carries a refusal:
-      // an unclaimed drag is a drop the browser opens or lands its own way.
       event.preventDefault();
       if (event.dataTransfer) {
         if (current.kind === "refuse") event.dataTransfer.dropEffect = "none";
@@ -170,10 +144,6 @@ export const LandingExtension = Extension.create<LandingOptions>({
             return true;
           },
 
-          // A paste at the caret lands by the same inline rule as a drop: a
-          // picture or a chip goes beside a chip or code span it is inside,
-          // and text inside a chip joins its label. Anything else is left to
-          // ProseMirror's own insert.
           handlePaste(view, _event, slice) {
             const { selection, doc } = view.state;
             if (!selection.empty || !view.editable) return false;

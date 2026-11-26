@@ -1,4 +1,3 @@
-/** The writer's tree actions for a project's screens: the project's list and the account's (`user://`). */
 import type { TreeProjection } from "@meridian/project-tree";
 import { useMemo } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
@@ -10,11 +9,9 @@ import { useAccountId } from "../account-feature-context";
 export type EntryActions = {
   project: TreeActions;
   account: TreeActions;
-  /** The list that holds `node`: the account's when its replay does, else the project's. */
   holding(node: string): { list: TreeActions; replay: TreeProjection | null };
 };
 
-/** The actions in the shell's Live/Draft version, or in `version` when the caller names one. */
 export function useEntryActions(projectId: string, version?: TreeVersion): EntryActions {
   const accountId = useAccountId();
   const shown = useTreeVersion();

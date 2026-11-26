@@ -12,12 +12,6 @@ export interface RoomPart {
   edit: StoredEdit;
 }
 
-/**
- * Takes `parts` back, newest first as given, each in the room it landed in (design §5), by design
- * §2's Undo rule (`undoEdits`): each goes back whatever was written since, but a part whose
- * history its room has cut (`compacted`). `docsOf` gives each room's copy, which the caller holds,
- * commits from and frees. Returns each room's changes, committed in its copy.
- */
 export function undoInRooms<P extends RoomPart>(
   parts: readonly P[],
   docsOf: (room: DocumentRoom) => RoomDocs,

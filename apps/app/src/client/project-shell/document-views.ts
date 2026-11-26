@@ -7,11 +7,6 @@ import { writeTreeVersionChoice } from "./store";
 export type DraftPin = { draftId: string; itemKey: string };
 
 export type DocumentView = {
-  /**
-   * `draft` with a pin paints that draft. `draft` without one paints Live but keeps an open
-   * review on screen: the writer who applied the last change keeps its editor ("No changes
-   * left", its Undo) until they choose Live.
-   */
   version: "draft" | "live";
   pin?: DraftPin;
 };
@@ -118,15 +113,6 @@ export function setDocumentView(
   write(accountId, projectId, isDefault(next) ? rest : { ...rest, [documentId]: next });
 }
 
-/**
- * The scope's draft owner became `draftId` (a Work pick, another chat on screen under No Work,
- * a new chat's composer): the toggle goes to Draft, so every page shows the new scope's draft
- * where it has one and Live where it has none (`shownDraft`). A view on one of the new owner's
- * drafts keeps its pin, and so does a view on a document only its draft holds (Live has no
- * version of it to return to); every other pin ends, so no page keeps a draft, or a change
- * focused in one, from the scope before. `keepVersion`: the owner moved to another draft of the
- * same Work, whose pick or delete has set the toggle already.
- */
 export function enterScope(
   queryClient: QueryClient,
   accountId: string,
@@ -152,11 +138,6 @@ export function enterScope(
   if (changed) write(accountId, projectId, next);
 }
 
-/**
- * A draft has ended (Applied, Discarded, or closed elsewhere): every view pinned to it drops the
- * pin. The version stays: an open
- * review of the ended draft keeps its editor until Live.
- */
 export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};

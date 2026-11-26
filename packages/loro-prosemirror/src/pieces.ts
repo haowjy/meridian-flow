@@ -48,7 +48,6 @@ export function movedPieces(tr: Transaction): [BlockId, BlockId][] {
         for (let i = 0; i + 1 < points.length; i++) {
           const at = points[i];
           if (replaced.some(([a, b]) => a <= at && at < b)) continue;
-          // The character after `at` was kept: where it stands now.
           const now = mapping.mapResult(at, 1);
           if (now.deleted || mapping.map(at + 1, -1) !== now.pos + 1) continue;
           pair(was, textblockAt(doc, now.pos));

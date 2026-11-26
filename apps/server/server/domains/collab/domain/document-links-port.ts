@@ -34,10 +34,6 @@ export function createScopedDocumentLinks(input: {
   };
 }
 
-/**
- * The registry rows for minted ahead refs: each under the project its holder scope had,
- * and in the draft its holder was minted in (B7), so the draft's occupant settles it there.
- */
 export function aheadRegistrations(mints: readonly AheadMint[]) {
   return mints.map((mint) => {
     const parsed = parseLinkRef(mint.ref);

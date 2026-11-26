@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Clipboard link metadata carries what a link or picture names into the
- * paste, keeps a ref only inside its own project, and never injects an href;
- * plain text spells current full addresses and never an id.
- */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { Schema, Slice } from "@tiptap/pm/model";
@@ -199,10 +194,6 @@ it("carries what a copied link names across the clipboard", async () => {
       documentSchema.text(words[at] ?? "", [documentSchema.marks.link.create({ href, ref })]),
     ]),
   );
-  // A picture spells its source as rich copy records it: the answered
-  // document's current address (manuscript-root grammar, suffix kept), the
-  // stored source for a gone or missing answer, and no source at all for an
-  // upload the catalog does not hold (its id is never text).
   const pictureTextRows: [label: string, src: string, ref: string | null, spelled: string][] = [
     [
       "a moved image spells its new address",
@@ -256,9 +247,6 @@ it("carries what a copied link names across the clipboard", async () => {
     .soft(text, "no ref or id in plain text")
     .not.toMatch(/doc:|ahead:|asset:|0000-4000|5f0c9a1e/);
 
-  // Pictures, through a real editor's whole copy and paste: the serializer,
-  // the sanitizer, the ref transform, the TipTap mirrors and the one paste
-  // assignment.
   const MAP = "00000000-0000-4000-8000-0000000000b1";
   const OTHER_MAP = "00000000-0000-4000-8000-0000000000b2";
   const SETTLED = "ahead:00000000-0000-4000-8000-0000000000b3";
@@ -318,8 +306,6 @@ it("carries what a copied link names across the clipboard", async () => {
   ]);
   const serialized = source.view.serializeForClipboard(source.state.doc.slice(0));
   const copied = { html: serialized.dom.innerHTML };
-  // An upload is stored as `asset:<id>`; the clipboard carries it as the
-  // catalog's current address for that id, like any ref-bearing picture.
   const UPLOAD = "00000000-0000-4000-8000-0000000000b5";
   const uploadSource = pictureEditor(
     "project-a",
@@ -328,8 +314,6 @@ it("carries what a copied link names across the clipboard", async () => {
   );
   const uploadSerialized = uploadSource.view.serializeForClipboard(uploadSource.state.doc.slice(0));
   uploadSource.destroy();
-  // A completed upload copied before the catalog holds it: the clipboard
-  // carries its recorded `asset:` identity with no address.
   const early = pictureEditor("project-a", []);
   registerImageIngressHost(early, {
     upload: async () => ({ src: `asset:${UPLOAD}`, alt: null }),
@@ -352,8 +336,6 @@ it("carries what a copied link names across the clipboard", async () => {
     html: earlyFigure.view.serializeForClipboard(earlyFigure.state.doc.slice(0)).dom.innerHTML,
   };
   earlyFigure.destroy();
-  // Escaping, root-relative and malformed spellings are no web URL either:
-  // in an `<img src>` they would be fetched from the app's own origin.
   const unusableSources = ["../map.png", "art/../../map.png", "/map.png", "ASSET:abc", "asset:"];
   const unusable = pictureEditor(
     "project-a",
@@ -369,8 +351,6 @@ it("carries what a copied link names across the clipboard", async () => {
   const unusableCopied = unusable.view.serializeForClipboard(unusable.state.doc.slice(0)).dom
     .innerHTML;
   unusable.destroy();
-  // A stored source is never a browser URL: the copy names its picture in the
-  // metadata, and an `<img src>` the clipboard serializer builds is fetched.
   for (const [label, html] of [
     ["ref pictures", copied.html],
     ["an upload", uploadSerialized.dom.innerHTML],
@@ -411,8 +391,6 @@ it("carries what a copied link names across the clipboard", async () => {
       ],
     },
     {
-      // The text spells the settled picture where it is now, so a Markdown-only
-      // paste binds the same document, not whatever took its old address.
       row: "a Markdown-only paste binds the picture at its current address",
       copied: { text: serialized.text.split("\n\n")[0] ?? "" },
       into: pictureEditor("project-a", [
@@ -422,8 +400,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [{ type: "image", src: "manuscript://uploads/map.png", ref: `doc:${MAP}` }],
     },
     {
-      // Outside HTML naming a document address carries no metadata: it is
-      // assigned fresh, exactly as its bare-path spelling is.
       row: "a metadata-free internal <img> is assigned fresh",
       copied: {
         html:
@@ -498,8 +474,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [{ type: "image", src: "manuscript://art/new.png", ref: `doc:${UPLOAD}` }],
     },
     {
-      // The upload has moved on from `old.png`: the address is empty now, so
-      // it is assigned fresh rather than naming the upload that used to be there.
       row: "a source the catalog holds no upload at is assigned fresh",
       copied: { text: "![](art/old.png)" },
       into: pictureEditor("project-a", [{ documentId: UPLOAD, uri: "manuscript://art/new.png" }]),

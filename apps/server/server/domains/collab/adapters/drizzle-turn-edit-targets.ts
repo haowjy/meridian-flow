@@ -75,10 +75,6 @@ export async function readTurnEditTargets(
   return [...targets.values()];
 }
 
-/**
- * The first block a write's delta changed, by id: one it put in or changed, or for a write that
- * only took blocks out, the block after them. The delta keeps one unchanged block either side.
- */
 function firstChangedBlock(delta: StoredDelta): string | undefined {
   const idOf = (block: Record<string, unknown>) => (block.attrs as { id?: string } | undefined)?.id;
   const before = new Map(delta.before.map((block) => [idOf(block), JSON.stringify(block)]));

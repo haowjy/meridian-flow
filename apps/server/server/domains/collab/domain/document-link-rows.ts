@@ -17,10 +17,6 @@ export type DocumentLinkRow = {
 
 const ASSET = /^asset:(.+)$/;
 
-/**
- * Never resolves whether a target exists: the index is a hint from a certified cut. External
- * hrefs, malformed refs and ref-less internal hrefs (which no producer writes) have no row.
- */
 export function deriveDocumentLinkRows(input: {
   occurrences: readonly StoredLinkOccurrence[];
   holderUri: string;
